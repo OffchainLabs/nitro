@@ -24,6 +24,8 @@ pub enum HirInstruction {
     IfElse(BlockType, Vec<HirInstruction>, Vec<HirInstruction>),
     Branch(u32),
     BranchIf(u32),
+    LocalGet(u32),
+    LocalSet(u32),
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
@@ -219,6 +221,13 @@ fn branch_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     ))(input)
 }
 
+fn locals_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
+    alt((
+        preceded(tag(&[0x20]), map(wasm_u32, HirInstruction::LocalGet)),
+        preceded(tag(&[0x21]), map(wasm_u32, HirInstruction::LocalSet)),
+    ))(input)
+}
+
 fn const_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
         preceded(tag(&[0x41]), map(wasm_s32, HirInstruction::I32Const)),
@@ -239,6 +248,7 @@ fn instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
         map(simple_opcode, HirInstruction::Simple),
         block_instruction,
         branch_instruction,
+        locals_instruction,
         const_instruction,
     ))(input)
 }

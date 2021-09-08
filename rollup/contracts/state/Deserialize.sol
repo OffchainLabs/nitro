@@ -175,7 +175,7 @@ library Deserialize {
 		uint8 length;
 		(length, offset) = u8(proof, offset);
 		bytes32[] memory counterparts = new bytes32[](length);
-		for (uint256 i = 0; i < counterparts.length; i++) {
+		for (uint8 i = 0; i < length; i++) {
 			(counterparts[i], offset) = b32(proof, offset);
 		}
 		merkle = MerkleProof(counterparts);

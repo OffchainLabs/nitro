@@ -146,6 +146,20 @@ impl Instruction {
                 }
                 ops.push(Instruction::simple(Opcode::BranchIf));
             }
+            HirInstruction::LocalGet(x) => {
+                ops.push(Instruction {
+                    opcode: Opcode::LocalGet,
+                    argument_data: x.into(),
+                    proving_argument_data: None,
+                });
+            }
+            HirInstruction::LocalSet(x) => {
+                ops.push(Instruction {
+                    opcode: Opcode::LocalSet,
+                    argument_data: x.into(),
+                    proving_argument_data: None,
+                });
+            }
             HirInstruction::I32Const(x) => ops.push(Instruction {
                 opcode: Opcode::I32Const,
                 argument_data: x as u64,

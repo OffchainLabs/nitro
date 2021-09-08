@@ -1,7 +1,7 @@
 use crate::utils::Bytes32;
 use digest::Digest;
 use sha3::Keccak256;
-use std::convert::TryInto;
+use std::convert::TryFrom;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Merkle {
@@ -38,14 +38,21 @@ impl Merkle {
         }
     }
 
-	#[must_use]
+    #[must_use]
     pub fn prove(&self, mut idx: usize) -> Vec<u8> {
+        if self.layers.is_empty() || idx >= self.layers[0].len() {
+            panic!(
+                "Attempted out of bounds merkle proof for index {} into length {}",
+                idx,
+                self.layers.get(0).map(Vec::len).unwrap_or_default(),
+            );
+        }
         let mut proof = Vec::new();
-        proof.push(self.layers.len().try_into().unwrap());
+        proof.push(u8::try_from(self.layers.len()).unwrap() - 1);
         for layer in &self.layers {
-			if layer.len() <= 1 {
-				break;
-			}
+            if layer.len() <= 1 {
+                break;
+            }
             let counterpart = idx ^ 1;
             proof.extend(layer.get(counterpart).cloned().unwrap_or_default());
             idx >>= 1;
