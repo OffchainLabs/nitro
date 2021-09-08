@@ -158,17 +158,20 @@ library Deserialize {
 		InstructionWindow memory instructions;
 		StackFrameWindow memory frameStack;
 		bytes32 globalsMerkleRoot;
+		bytes32 functionsMerkleRoot;
 		(values, offset) = valueStack(proof, offset);
 		(blocks, offset) = bytes32Window(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
 		(instructions, offset) = instructionWindow(proof, offset);
 		(globalsMerkleRoot, offset) = b32(proof, offset);
+		(functionsMerkleRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
 			blockStack: blocks,
 			frameStack: frameStack,
 			instructions: instructions,
 			globalsMerkleRoot: globalsMerkleRoot,
+			functionsMerkleRoot: functionsMerkleRoot,
 			halted: false
 		});
 	}

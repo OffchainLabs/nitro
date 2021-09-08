@@ -86,6 +86,7 @@ pub struct Machine {
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     funcs: Vec<Function>,
+    funcs_merkle_root: Bytes32,
     pc: (usize, usize),
     halted: bool,
 }
@@ -141,20 +142,30 @@ impl Machine {
     pub fn from_binary(bin: WasmBinary) -> Result<Machine> {
         let mut code = Vec::new();
         let mut globals = Vec::new();
+        let mut types = Vec::new();
+        let mut func_types = Vec::new();
         let mut start = 0;
         for sect in bin.sections {
             match sect {
+                WasmSection::Types(t) => {
+                    assert!(types.is_empty(), "Duplicate types section");
+                    types = t;
+                }
+                WasmSection::Functions(f) => {
+                    assert!(func_types.is_empty(), "Duplicate types section");
+                    func_types = f.into_iter().map(|x| types[x as usize].clone()).collect();
+                }
                 WasmSection::Code(sect_code) => {
-                    if !code.is_empty() {
-                        panic!("Duplicate code section");
-                    }
+                    assert!(code.is_empty(), "Duplicate code section");
                     code = sect_code
                         .into_iter()
                         .enumerate()
                         .map(|(idx, c)| {
+                            let func_ty = &func_types[idx];
+                            let locals_with_params: Vec<ValueType> =
+                                func_ty.inputs.iter().cloned().chain(c.locals).collect();
                             let mut insts = Vec::new();
-                            let empty_local_hashes = c
-                                .locals
+                            let empty_local_hashes = locals_with_params
                                 .iter()
                                 .cloned()
                                 .map(Value::default_of_type)
@@ -162,23 +173,30 @@ impl Machine {
                                 .collect::<Vec<_>>();
                             insts.push(Instruction {
                                 opcode: Opcode::InitFrame,
-                                argument_data: idx as u64,
+                                argument_data: 0,
                                 proving_argument_data: Some(Merkle::new(empty_local_hashes).root()),
                             });
+                            // Fill in parameters
+                            for i in (0..func_ty.inputs.len()).rev() {
+                                insts.push(Instruction {
+                                    opcode: Opcode::LocalSet,
+                                    argument_data: i as u64,
+                                    proving_argument_data: None,
+                                });
+                            }
                             for hir_inst in c.expr {
                                 Instruction::extend_from_hir(&mut insts, hir_inst);
                             }
-                            Function::new(insts, c.locals)
+                            Function::new(insts, locals_with_params)
                         })
                         .collect();
                 }
                 WasmSection::Start(s) => {
+                    assert!(start == 0, "Duplicate start section");
                     start = s as usize;
                 }
                 WasmSection::Globals(g) => {
-                    if !globals.is_empty() {
-                        panic!("Duplicate globals section");
-                    }
+                    assert!(globals.is_empty(), "Duplicate globals section");
                     globals = g
                         .into_iter()
                         .map(|g| {
@@ -191,7 +209,7 @@ impl Machine {
                         })
                         .collect();
                 }
-                WasmSection::Custom(_) | WasmSection::Types(_) | WasmSection::Functions(_) => {}
+                WasmSection::Custom(_) => {}
             }
         }
         assert!(!code.is_empty());
@@ -200,6 +218,7 @@ impl Machine {
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
             globals,
+            funcs_merkle_root: Merkle::new(code.iter().map(|f| f.code_hashes[0]).collect()).root(),
             funcs: code,
             pc: (start, 0),
             halted: false,
@@ -221,6 +240,7 @@ impl Machine {
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
         h.update(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
+        h.update(self.funcs_merkle_root);
         h.finalize().into()
     }
 
@@ -375,6 +395,8 @@ impl Machine {
         }
 
         data.extend(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
+
+        data.extend(self.funcs_merkle_root);
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
             if next_inst.opcode == Opcode::LocalGet || next_inst.opcode == Opcode::LocalSet {

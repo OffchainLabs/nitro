@@ -12,6 +12,7 @@ struct Machine {
 	StackFrameWindow frameStack;
 	InstructionWindow instructions;
 	bytes32 globalsMerkleRoot;
+	bytes32 functionsMerkleRoot;
 	bool halted;
 }
 
@@ -26,7 +27,8 @@ library Machines {
 			Bytes32Stacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
 			Instructions.hash(mach.instructions),
-			mach.globalsMerkleRoot
+			mach.globalsMerkleRoot,
+			mach.functionsMerkleRoot
 		));
 	}
 }
