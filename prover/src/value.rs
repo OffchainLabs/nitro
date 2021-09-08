@@ -81,8 +81,8 @@ impl Value {
         let mut h = Keccak256::new();
         h.update(b"Value:");
         h.update(&[self.ty() as u8]);
-		h.update(&self.contents().to_be_bytes());
-		h.finalize().into()
+        h.update(&self.contents().to_be_bytes());
+        h.finalize().into()
     }
 
     pub fn default_of_type(ty: ValueType) -> Value {
