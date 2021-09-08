@@ -1,4 +1,7 @@
-use crate::{lir::Opcode, value::ValueType};
+use crate::{
+    lir::Opcode,
+    value::{Value as LirValue, ValueType},
+};
 use nom::{
     branch::alt,
     bytes::streaming::tag,
@@ -26,16 +29,37 @@ pub enum HirInstruction {
     BranchIf(u32),
     LocalGet(u32),
     LocalSet(u32),
+    GlobalGet(u32),
+    GlobalSet(u32),
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
     F64Const(f64),
 }
 
+impl HirInstruction {
+    pub fn get_const_output(&self) -> Option<LirValue> {
+        match *self {
+            HirInstruction::I32Const(x) => Some(LirValue::I32(x as u32)),
+            HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
+            HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
+            HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FunctionType {
     pub inputs: Vec<ValueType>,
     pub outputs: Vec<ValueType>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Global {
+    pub value_type: ValueType,
+    pub mutable: bool,
+    pub initializer: Vec<HirInstruction>,
 }
 
 #[derive(Clone, Debug)]
@@ -51,6 +75,7 @@ pub enum WasmSection {
     // A function type, denoted as (parameters, return values)
     Types(Vec<FunctionType>),
     Functions(Vec<u32>),
+    Globals(Vec<Global>),
     Start(u32),
     // We ignore the locals list
     Code(Vec<Code>),
@@ -149,6 +174,10 @@ fn wasm_s64(input: &[u8]) -> IResult<&[u8], i64> {
     wasm_signed(input, 64).map(|(i, x)| (i, x))
 }
 
+fn wasm_bool(input: &[u8]) -> IResult<&[u8], bool> {
+    alt((value(false, tag(&[0])), value(true, tag(&[1]))))(input)
+}
+
 fn wasm_vec<'a: 'b, 'b: 'a, T>(
     mut parser: impl FnMut(&'a [u8]) -> IResult<&'a [u8], T>,
 ) -> impl FnMut(&'b [u8]) -> IResult<&'b [u8], Vec<T>> {
@@ -221,10 +250,12 @@ fn branch_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     ))(input)
 }
 
-fn locals_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
+fn variables_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
         preceded(tag(&[0x20]), map(wasm_u32, HirInstruction::LocalGet)),
         preceded(tag(&[0x21]), map(wasm_u32, HirInstruction::LocalSet)),
+        preceded(tag(&[0x23]), map(wasm_u32, HirInstruction::GlobalGet)),
+        preceded(tag(&[0x24]), map(wasm_u32, HirInstruction::GlobalSet)),
     ))(input)
 }
 
@@ -248,7 +279,7 @@ fn instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
         map(simple_opcode, HirInstruction::Simple),
         block_instruction,
         branch_instruction,
-        locals_instruction,
+        variables_instruction,
         const_instruction,
     ))(input)
 }
@@ -279,6 +310,16 @@ fn function_type(input: &[u8]) -> IResult<&[u8], FunctionType> {
     preceded(tag(&[0x60]), inner)(input)
 }
 
+fn global(input: &[u8]) -> IResult<&[u8], Global> {
+    map(tuple((value_type, wasm_bool, instructions)), |(t, m, i)| {
+        Global {
+            value_type: t,
+            mutable: m,
+            initializer: i,
+        }
+    })(input)
+}
+
 fn locals(input: &[u8]) -> IResult<&[u8], Vec<ValueType>> {
     map(wasm_vec(tuple((wasm_u32, value_type))), |v| {
         v.into_iter()
@@ -293,6 +334,10 @@ fn types_section(input: &[u8]) -> IResult<&[u8], Vec<FunctionType>> {
 
 fn functions_section(input: &[u8]) -> IResult<&[u8], Vec<u32>> {
     wasm_vec(wasm_u32)(input)
+}
+
+fn globals_section(input: &[u8]) -> IResult<&[u8], Vec<Global>> {
+    wasm_vec(global)(input)
 }
 
 fn code_func(input: &[u8]) -> IResult<&[u8], Code> {
@@ -321,6 +366,7 @@ fn section(mut input: &[u8]) -> IResult<&[u8], WasmSection> {
         0 => Ok((input, WasmSection::Custom(data.into()))),
         1 => map(types_section, WasmSection::Types)(data),
         3 => map(functions_section, WasmSection::Functions)(data),
+        6 => map(globals_section, WasmSection::Globals)(data),
         8 => map(wasm_u32, WasmSection::Start)(data),
         10 => map(code_section, WasmSection::Code)(data),
         _ => Err(Err::Error(Error::new(input, ErrorKind::Tag))),

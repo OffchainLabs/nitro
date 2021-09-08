@@ -22,6 +22,8 @@ library Instructions {
 	uint8 constant BRANCH_IF = 0x0D;
 	uint8 constant LOCAL_GET = 0x20;
 	uint8 constant LOCAL_SET = 0x21;
+	uint8 constant GLOBAL_GET = 0x23;
+	uint8 constant GLOBAL_SET = 0x24;
 	uint8 constant DROP = 0x1A;
 	uint8 constant I32_CONST = 0x41;
 	uint8 constant I64_CONST = 0x42;

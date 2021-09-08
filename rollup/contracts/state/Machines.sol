@@ -9,8 +9,9 @@ import "./StackFrames.sol";
 struct Machine {
 	ValueStack valueStack;
 	Bytes32Stack blockStack;
-	InstructionWindow instructions;
 	StackFrameWindow frameStack;
+	InstructionWindow instructions;
+	bytes32 globalsMerkleRoot;
 	bool halted;
 }
 
@@ -24,7 +25,8 @@ library Machines {
 			ValueStacks.hash(mach.valueStack),
 			Bytes32Stacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
-			Instructions.hash(mach.instructions)
+			Instructions.hash(mach.instructions),
+			mach.globalsMerkleRoot
 		));
 	}
 }

@@ -100,29 +100,48 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
-	function executeLocalGet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
-		StackFrame memory frame = StackFrames.peek(mach.frameStack);
-		Value memory proposedVal;
+	function merkleProveGetValue(bytes32 merkleRoot, uint256 index, bytes calldata proof) internal pure returns (Value memory) {
 		uint256 offset = 0;
+		Value memory proposedVal;
 		MerkleProof memory merkle;
 		(proposedVal, offset) = Deserialize.value(proof, offset);
 		(merkle, offset) = Deserialize.merkleProof(proof, offset);
-		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, proposedVal);
-		require(recomputedRoot == frame.localsMerkleRoot, "WRONG_MERKLE_ROOT");
-		ValueStacks.push(mach.valueStack, proposedVal);
+		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, index, proposedVal);
+		require(recomputedRoot == merkleRoot, "WRONG_MERKLE_ROOT");
+		return proposedVal;
 	}
 
-	function executeLocalSet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
-		Value memory newVal = ValueStacks.pop(mach.valueStack);
-		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+	function merkleProveSetValue(bytes32 merkleRoot, uint256 index, Value memory newVal, bytes calldata proof) internal pure returns (bytes32) {
 		Value memory oldVal;
 		uint256 offset = 0;
 		MerkleProof memory merkle;
 		(oldVal, offset) = Deserialize.value(proof, offset);
 		(merkle, offset) = Deserialize.merkleProof(proof, offset);
-		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, oldVal);
-		require(recomputedRoot == frame.localsMerkleRoot, "WRONG_MERKLE_ROOT");
-		frame.localsMerkleRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, newVal);
+		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, index, oldVal);
+		require(recomputedRoot == merkleRoot, "WRONG_MERKLE_ROOT");
+		return MerkleProofs.computeRoot(merkle, index, newVal);
+	}
+
+	function executeLocalGet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		Value memory val = merkleProveGetValue(frame.localsMerkleRoot, inst.argumentData, proof);
+		ValueStacks.push(mach.valueStack, val);
+	}
+
+	function executeLocalSet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		Value memory newVal = ValueStacks.pop(mach.valueStack);
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		frame.localsMerkleRoot = merkleProveSetValue(frame.localsMerkleRoot, inst.argumentData, newVal, proof);
+	}
+
+	function executeGlobalGet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		Value memory val = merkleProveGetValue(mach.globalsMerkleRoot, inst.argumentData, proof);
+		ValueStacks.push(mach.valueStack, val);
+	}
+
+	function executeGlobalSet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		Value memory newVal = ValueStacks.pop(mach.valueStack);
+		mach.globalsMerkleRoot = merkleProveSetValue(mach.globalsMerkleRoot, inst.argumentData, newVal, proof);
 	}
 
 	function executeEndBlock(Machine memory mach, Instruction memory, bytes calldata) internal pure {
@@ -170,6 +189,10 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeLocalGet;
 		} else if (opcode == Instructions.LOCAL_SET) {
 			impl = executeLocalSet;
+		} else if (opcode == Instructions.GLOBAL_GET) {
+			impl = executeGlobalGet;
+		} else if (opcode == Instructions.GLOBAL_SET) {
+			impl = executeGlobalSet;
 		} else if (opcode == Instructions.INIT_FRAME) {
 			impl = executeInitFrame;
 		} else if (opcode == Instructions.DROP) {

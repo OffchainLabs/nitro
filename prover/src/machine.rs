@@ -1,5 +1,5 @@
 use crate::{
-    binary::{WasmBinary, WasmSection},
+    binary::{HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
     lir::Opcode,
     merkle::Merkle,
@@ -84,6 +84,7 @@ pub struct Machine {
     value_stack: Vec<Value>,
     block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
+    globals: Vec<Value>,
     funcs: Vec<Function>,
     pc: (usize, usize),
     halted: bool,
@@ -139,10 +140,14 @@ where
 impl Machine {
     pub fn from_binary(bin: WasmBinary) -> Result<Machine> {
         let mut code = Vec::new();
+        let mut globals = Vec::new();
         let mut start = 0;
         for sect in bin.sections {
             match sect {
                 WasmSection::Code(sect_code) => {
+                    if !code.is_empty() {
+                        panic!("Duplicate code section");
+                    }
                     code = sect_code
                         .into_iter()
                         .enumerate()
@@ -170,6 +175,22 @@ impl Machine {
                 WasmSection::Start(s) => {
                     start = s as usize;
                 }
+                WasmSection::Globals(g) => {
+                    if !globals.is_empty() {
+                        panic!("Duplicate globals section");
+                    }
+                    globals = g
+                        .into_iter()
+                        .map(|g| {
+                            if let [insn] = g.initializer.as_slice() {
+                                if let Some(val) = insn.get_const_output() {
+                                    return val;
+                                }
+                            }
+                            panic!("Global initializer isn't a constant");
+                        })
+                        .collect();
+                }
                 WasmSection::Custom(_) | WasmSection::Types(_) | WasmSection::Functions(_) => {}
             }
         }
@@ -178,6 +199,7 @@ impl Machine {
             value_stack: vec![Value::RefNull],
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
+            globals,
             funcs: code,
             pc: (start, 0),
             halted: false,
@@ -198,6 +220,7 @@ impl Machine {
         ));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
+        h.update(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
         h.finalize().into()
     }
 
@@ -261,6 +284,14 @@ impl Machine {
             Opcode::LocalSet => {
                 let val = self.value_stack.pop().unwrap();
                 self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
+            }
+            Opcode::GlobalGet => {
+                self.value_stack
+                    .push(self.globals[inst.argument_data as usize]);
+            }
+            Opcode::GlobalSet => {
+                let val = self.value_stack.pop().unwrap();
+                self.globals[inst.argument_data as usize] = val;
             }
             Opcode::I32Const => {
                 self.value_stack.push(Value::I32(inst.argument_data as u32));
@@ -337,12 +368,20 @@ impl Machine {
             data.extend(func.code[self.pc.1].serialize_for_proof());
         }
 
+        data.extend(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
+
         if let Some(next_inst) = func.code.get(self.pc.1) {
             if next_inst.opcode == Opcode::LocalGet || next_inst.opcode == Opcode::LocalSet {
                 let locals = &self.frame_stack.last().unwrap().locals;
                 let idx = next_inst.argument_data as usize;
                 data.extend(locals[idx].serialize());
                 let locals_merkle = Merkle::new(locals.iter().map(|v| v.hash()).collect());
+                data.extend(locals_merkle.prove(idx));
+            } else if next_inst.opcode == Opcode::GlobalGet || next_inst.opcode == Opcode::GlobalSet
+            {
+                let idx = next_inst.argument_data as usize;
+                data.extend(self.globals[idx].serialize());
+                let locals_merkle = Merkle::new(self.globals.iter().map(|v| v.hash()).collect());
                 data.extend(locals_merkle.prove(idx));
             }
         }

@@ -26,6 +26,8 @@ pub enum Opcode {
 
     LocalGet = 0x20,
     LocalSet,
+    GlobalGet = 0x23,
+    GlobalSet,
 
     I32Const = 0x41,
     I64Const,
@@ -156,6 +158,20 @@ impl Instruction {
             HirInstruction::LocalSet(x) => {
                 ops.push(Instruction {
                     opcode: Opcode::LocalSet,
+                    argument_data: x.into(),
+                    proving_argument_data: None,
+                });
+            }
+            HirInstruction::GlobalGet(x) => {
+                ops.push(Instruction {
+                    opcode: Opcode::GlobalGet,
+                    argument_data: x.into(),
+                    proving_argument_data: None,
+                });
+            }
+            HirInstruction::GlobalSet(x) => {
+                ops.push(Instruction {
+                    opcode: Opcode::GlobalSet,
                     argument_data: x.into(),
                     proving_argument_data: None,
                 });
