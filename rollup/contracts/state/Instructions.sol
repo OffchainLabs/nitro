@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 struct Instruction {
-	uint8 opcode;
+	uint16 opcode;
 	uint256 argumentData;
 }
 
@@ -12,27 +12,28 @@ struct InstructionWindow {
 }
 
 library Instructions {
-	uint8 constant UNREACHABLE = 0x00;
-	uint8 constant NOP = 0x01;
-	uint8 constant BLOCK = 0x02;
-	uint8 constant END_BLOCK = 0x03;
-	uint8 constant END_BLOCK_IF = 0x04;
-	uint8 constant INIT_FRAME = 0x05;
-	uint8 constant ARBITRARY_JUMP_IF = 0x06;
-	uint8 constant BRANCH = 0x0C;
-	uint8 constant BRANCH_IF = 0x0D;
-	uint8 constant LOCAL_GET = 0x20;
-	uint8 constant LOCAL_SET = 0x21;
-	uint8 constant GLOBAL_GET = 0x23;
-	uint8 constant GLOBAL_SET = 0x24;
-	uint8 constant DROP = 0x1A;
-	uint8 constant I32_CONST = 0x41;
-	uint8 constant I64_CONST = 0x42;
-	uint8 constant F32_CONST = 0x43;
-	uint8 constant F64_CONST = 0x44;
-	uint8 constant I32_EQZ = 0x45;
-	uint8 constant I32_ADD = 0x6A;
-	uint8 constant I64_ADD = 0x7C;
+	uint16 constant UNREACHABLE = 0x00;
+	uint16 constant NOP = 0x01;
+	uint16 constant BLOCK = 0x02;
+	uint16 constant BRANCH = 0x0C;
+	uint16 constant BRANCH_IF = 0x0D;
+	uint16 constant LOCAL_GET = 0x20;
+	uint16 constant LOCAL_SET = 0x21;
+	uint16 constant GLOBAL_GET = 0x23;
+	uint16 constant GLOBAL_SET = 0x24;
+	uint16 constant DROP = 0x1A;
+	uint16 constant I32_CONST = 0x41;
+	uint16 constant I64_CONST = 0x42;
+	uint16 constant F32_CONST = 0x43;
+	uint16 constant F64_CONST = 0x44;
+	uint16 constant I32_EQZ = 0x45;
+	uint16 constant I32_ADD = 0x6A;
+	uint16 constant I64_ADD = 0x7C;
+
+	uint16 constant END_BLOCK = 0x8000;
+	uint16 constant END_BLOCK_IF = 0x8001;
+	uint16 constant INIT_FRAME = 0x8002;
+	uint16 constant ARBITRARY_JUMP_IF = 0x8003;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
@@ -54,10 +55,6 @@ library Instructions {
 		require(window.proved.length == 1, "BAD_WINDOW_LENGTH");
 		inst = window.proved[0];
 		window.proved = new Instruction[](0);
-	}
-
-	function maxOpcode() internal pure returns (uint8) {
-		return 0xFF;
 	}
 
 	function newNop() internal pure returns (Instruction memory) {

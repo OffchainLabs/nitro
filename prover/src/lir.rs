@@ -3,25 +3,12 @@ use digest::Digest;
 use sha3::Keccak256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
+#[repr(u16)]
 pub enum Opcode {
     Unreachable,
     Nop,
     Block,
     // Loop and If are wrapped into Block
-
-    // Custom opcodes:
-    /// Custom opcode not in wasm.
-    /// Branch is partially split up into these.
-    EndBlock,
-    /// Custom opcode not in wasm.
-    /// Like "EndBlock" but conditional.
-    /// Keeps its condition on the stack.
-    EndBlockIf,
-    /// Custom opcode not in wasm.
-    InitFrame,
-    /// Conditional jump to an arbitrary point in code.
-    ArbitraryJumpIf,
 
     Branch = 0x0C,
     BranchIf,
@@ -43,6 +30,25 @@ pub enum Opcode {
     I64Add = 0x7C,
 
     Drop = 0x1A,
+
+    // Custom opcodes:
+    /// Custom opcode not in wasm.
+    /// Branch is partially split up into these.
+    EndBlock = 0x8000,
+    /// Custom opcode not in wasm.
+    /// Like "EndBlock" but conditional.
+    /// Keeps its condition on the stack.
+    EndBlockIf,
+    /// Custom opcode not in wasm.
+    InitFrame,
+    /// Conditional jump to an arbitrary point in code.
+    ArbitraryJumpIf,
+}
+
+impl Opcode {
+    pub fn repr(self) -> u16 {
+        self as u16
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,17 +81,17 @@ impl Instruction {
         }
     }
 
-    pub fn serialize_for_proof(self) -> [u8; 33] {
-        let mut ret = [0u8; 33];
-        ret[0] = self.opcode as u8;
-        ret[1..].copy_from_slice(&*self.get_proving_argument_data());
+    pub fn serialize_for_proof(self) -> [u8; 34] {
+        let mut ret = [0u8; 34];
+        ret[..2].copy_from_slice(&self.opcode.repr().to_be_bytes());
+        ret[2..].copy_from_slice(&*self.get_proving_argument_data());
         ret
     }
 
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Instruction:");
-        h.update(&[self.opcode as u8]);
+        h.update(self.opcode.repr().to_be_bytes());
         h.update(self.get_proving_argument_data());
         h.finalize().into()
     }

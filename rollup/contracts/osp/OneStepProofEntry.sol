@@ -21,12 +21,9 @@ contract OneStepProofEntry {
 		if (mach.instructions.proved.length == 0 && mach.instructions.remainingHash == 0) {
 			mach.halted = true;
 		} else {
-			uint8 opcode = Instructions.peek(mach.instructions).opcode;
-			if (opcode >= 0 && opcode <= 0xFF) {
-				mach = prover0.executeOneStep(mach, proof[offset:]);
-			} else {
-				revert("TODO: instruction prover not specified");
-			}
+			// TODO switch provers based on opcode
+			// uint16 opcode = Instructions.peek(mach.instructions).opcode;
+			mach = prover0.executeOneStep(mach, proof[offset:]);
 		}
 
 		return Machines.hash(mach);

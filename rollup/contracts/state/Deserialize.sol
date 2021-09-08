@@ -16,6 +16,15 @@ library Deserialize {
 		offset++;
 	}
 
+	function u16(bytes calldata proof, uint256 startOffset) internal pure returns (uint16 ret, uint256 offset) {
+		offset = startOffset;
+		for (uint256 i = 0; i < 16/8; i++) {
+			ret <<= 8;
+			ret |= uint8(proof[offset]);
+			offset++;
+		}
+	}
+
 	function u64(bytes calldata proof, uint256 startOffset) internal pure returns (uint64 ret, uint256 offset) {
 		offset = startOffset;
 		for (uint256 i = 0; i < 64/8; i++) {
@@ -91,9 +100,9 @@ library Deserialize {
 
 	function instruction(bytes calldata proof, uint256 startOffset) internal pure returns (Instruction memory inst, uint256 offset) {
 		offset = startOffset;
-		uint8 opcode;
+		uint16 opcode;
 		uint256 data;
-		(opcode, offset) = u8(proof, offset);
+		(opcode, offset) = u16(proof, offset);
 		(data, offset) = u256(proof, offset);
 		inst = Instruction({
 			opcode: opcode,

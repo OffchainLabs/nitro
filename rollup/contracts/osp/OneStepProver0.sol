@@ -8,7 +8,7 @@ import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
 	function executeConstPush(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
-		uint8 opcode = inst.opcode;
+		uint16 opcode = inst.opcode;
 		ValueType ty;
 		if (opcode == Instructions.I32_CONST) {
 			ty = ValueType.I32;
@@ -49,7 +49,7 @@ contract OneStepProver0 is IOneStepProver {
 		Value memory b = ValueStacks.pop(mach.valueStack);
 		uint64 contents = a.contents + b.contents;
 
-		uint8 opcode = inst.opcode;
+		uint16 opcode = inst.opcode;
 		ValueType ty;
 		if (opcode == Instructions.I32_ADD) {
 			ty = ValueType.I32;
@@ -183,7 +183,7 @@ contract OneStepProver0 is IOneStepProver {
 		mach = startMach;
 
 		Instruction memory inst = Instructions.pop(mach.instructions);
-		uint8 opcode = inst.opcode;
+		uint16 opcode = inst.opcode;
 
 		function(Machine memory, Instruction memory, bytes calldata) internal view impl;
 		if (opcode == Instructions.BLOCK) {
