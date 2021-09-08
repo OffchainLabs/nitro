@@ -7,6 +7,7 @@ import "./Bytes32Stacks.sol";
 import "./Machines.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
+import "./MerkleProofs.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -42,37 +43,37 @@ library Deserialize {
 
 	function value(bytes calldata proof, uint256 startOffset) internal pure returns (Value memory val, uint256 offset)  {
 		offset = startOffset;
-		uint8 type_int = uint8(proof[offset]);
+		uint8 typeInt = uint8(proof[offset]);
 		offset++;
-		require(type_int <= uint8(Values.maxValueType()), "BAD_VALUE_TYPE");
+		require(typeInt <= uint8(Values.maxValueType()), "BAD_VALUE_TYPE");
 		uint64 contents;
 		(contents, offset) = u64(proof, offset);
 		val = Value({
-			value_type: ValueType(type_int),
+			valueType: ValueType(typeInt),
 			contents: contents
 		});
 	}
 
 	function valueStack(bytes calldata proof, uint256 startOffset) internal pure returns (ValueStack memory stack, uint256 offset) {
 		offset = startOffset;
-		bytes32 remaining_hash;
-		(remaining_hash, offset) = b32(proof, offset);
-		uint256 proved_length;
-		(proved_length, offset) = u256(proof, offset);
-		Value[] memory proved = new Value[](proved_length);
+		bytes32 remainingHash;
+		(remainingHash, offset) = b32(proof, offset);
+		uint256 provedLength;
+		(provedLength, offset) = u256(proof, offset);
+		Value[] memory proved = new Value[](provedLength);
 		for (uint256 i = 0; i < proved.length; i++) {
 			(proved[i], offset) = value(proof, offset);
 		}
 		stack = ValueStack({
 			proved: ValueArray(proved),
-			remaining_hash: remaining_hash
+			remainingHash: remainingHash
 		});
 	}
 
 	function bytes32Window(bytes calldata proof, uint256 startOffset) internal pure returns (Bytes32Stack memory stack, uint256 offset) {
 		offset = startOffset;
-		bytes32 remaining_hash;
-		(remaining_hash, offset) = b32(proof, offset);
+		bytes32 remainingHash;
+		(remainingHash, offset) = b32(proof, offset);
 		bytes32[] memory proved;
 		if (proof[offset] != 0) {
 			offset++;
@@ -84,7 +85,7 @@ library Deserialize {
 		}
 		stack = Bytes32Stack({
 			proved: Bytes32Array(proved),
-			remaining_hash: remaining_hash
+			remainingHash: remainingHash
 		});
 	}
 
@@ -96,14 +97,14 @@ library Deserialize {
 		(data, offset) = u256(proof, offset);
 		inst = Instruction({
 			opcode: opcode,
-			argument_data: data
+			argumentData: data
 		});
 	}
 
 	function instructionWindow(bytes calldata proof, uint256 startOffset) internal pure returns (InstructionWindow memory window, uint256 offset) {
 		offset = startOffset;
-		bytes32 remaining_hash;
-		(remaining_hash, offset) = b32(proof, offset);
+		bytes32 remainingHash;
+		(remainingHash, offset) = b32(proof, offset);
 		Instruction[] memory proved;
 		if (proof[offset] != 0) {
 			offset++;
@@ -115,26 +116,26 @@ library Deserialize {
 		}
 		window = InstructionWindow({
 			proved: proved,
-			remaining_hash: remaining_hash
+			remainingHash: remainingHash
 		});
 	}
 
 	function stackFrame(bytes calldata proof, uint256 startOffset) internal pure returns (StackFrame memory window, uint256 offset) {
 		offset = startOffset;
-		Value memory return_pc;
-		bytes32 locals_merkle_root;
-		(return_pc, offset) = value(proof, offset);
-		(locals_merkle_root, offset) = b32(proof, offset);
+		Value memory returnPc;
+		bytes32 localsMerkleRoot;
+		(returnPc, offset) = value(proof, offset);
+		(localsMerkleRoot, offset) = b32(proof, offset);
 		window = StackFrame({
-			return_pc: return_pc,
-			locals_merkle_root: locals_merkle_root
+			returnPc: returnPc,
+			localsMerkleRoot: localsMerkleRoot
 		});
 	}
 
 	function stackFrameWindow(bytes calldata proof, uint256 startOffset) internal pure returns (StackFrameWindow memory window, uint256 offset) {
 		offset = startOffset;
-		bytes32 remaining_hash;
-		(remaining_hash, offset) = b32(proof, offset);
+		bytes32 remainingHash;
+		(remainingHash, offset) = b32(proof, offset);
 		StackFrame[] memory proved;
 		if (proof[offset] != 0) {
 			offset++;
@@ -146,26 +147,37 @@ library Deserialize {
 		}
 		window = StackFrameWindow({
 			proved: proved,
-			remaining_hash: remaining_hash
+			remainingHash: remainingHash
 		});
 	}
 
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
-		ValueStack memory value_stack;
-		Bytes32Stack memory block_stack;
+		ValueStack memory values;
+		Bytes32Stack memory blocks;
 		InstructionWindow memory instructions;
-		StackFrameWindow memory frame_stack;
-		(value_stack, offset) = valueStack(proof, offset);
-		(block_stack, offset) = bytes32Window(proof, offset);
-		(frame_stack, offset) = stackFrameWindow(proof, offset);
+		StackFrameWindow memory frameStack;
+		(values, offset) = valueStack(proof, offset);
+		(blocks, offset) = bytes32Window(proof, offset);
+		(frameStack, offset) = stackFrameWindow(proof, offset);
 		(instructions, offset) = instructionWindow(proof, offset);
 		mach = Machine({
-			value_stack: value_stack,
-			block_stack: block_stack,
-			frame_stack: frame_stack,
+			valueStack: values,
+			blockStack: blocks,
+			frameStack: frameStack,
 			instructions: instructions,
 			halted: false
 		});
+	}
+
+	function merkleProof(bytes calldata proof, uint256 startOffset) internal pure returns (MerkleProof memory merkle, uint256 offset) {
+		offset = startOffset;
+		uint8 length;
+		(length, offset) = u8(proof, offset);
+		bytes32[] memory counterparts = new bytes32[](length);
+		for (uint256 i = 0; i < counterparts.length; i++) {
+			(counterparts[i], offset) = b32(proof, offset);
+		}
+		merkle = MerkleProof(counterparts);
 	}
 }

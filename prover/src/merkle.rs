@@ -38,9 +38,9 @@ impl Merkle {
         }
     }
 
+	#[must_use]
     pub fn prove(&self, mut idx: usize) -> Vec<u8> {
         let mut proof = Vec::new();
-        proof.extend((idx as u64).to_be_bytes());
         proof.push(self.layers.len().try_into().unwrap());
         for layer in &self.layers {
 			if layer.len() <= 1 {

@@ -337,6 +337,16 @@ impl Machine {
             data.extend(func.code[self.pc.1].serialize_for_proof());
         }
 
+        if let Some(next_inst) = func.code.get(self.pc.1) {
+            if next_inst.opcode == Opcode::LocalGet || next_inst.opcode == Opcode::LocalSet {
+                let locals = &self.frame_stack.last().unwrap().locals;
+                let idx = next_inst.argument_data as usize;
+                data.extend(locals[idx].serialize());
+                let locals_merkle = Merkle::new(locals.iter().map(|v| v.hash()).collect());
+                data.extend(locals_merkle.prove(idx));
+            }
+        }
+
         data
     }
 

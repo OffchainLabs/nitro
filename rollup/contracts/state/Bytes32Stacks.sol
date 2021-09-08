@@ -5,12 +5,12 @@ import "./Bytes32Arrays.sol";
 
 struct Bytes32Stack {
 	Bytes32Array proved;
-	bytes32 remaining_hash;
+	bytes32 remainingHash;
 }
 
 library Bytes32Stacks {
 	function hash(Bytes32Stack memory stack) internal pure returns (bytes32 h) {
-		h = stack.remaining_hash;
+		h = stack.remainingHash;
 		uint256 len = Bytes32Arrays.length(stack.proved);
 		for (uint256 i = 0; i < len; i++) {
 			h = keccak256(abi.encodePacked("Bytes32 stack:", Bytes32Arrays.get(stack.proved, i), h));
@@ -26,10 +26,10 @@ library Bytes32Stacks {
 	}
 
 	function isEmpty(Bytes32Stack memory stack) internal pure returns (bool) {
-		return Bytes32Arrays.length(stack.proved) == 0 && stack.remaining_hash == bytes32(0);
+		return Bytes32Arrays.length(stack.proved) == 0 && stack.remainingHash == bytes32(0);
 	}
 
 	function hasProvenDepthLessThan(Bytes32Stack memory stack, uint256 bound) internal pure returns (bool) {
-		return Bytes32Arrays.length(stack.proved) < bound && stack.remaining_hash == bytes32(0);
+		return Bytes32Arrays.length(stack.proved) < bound && stack.remainingHash == bytes32(0);
 	}
 }

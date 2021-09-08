@@ -19,20 +19,20 @@ library Bytes32Arrays {
 	}
 
 	function push(Bytes32Array memory arr, bytes32 val) internal pure {
-		bytes32[] memory new_inner = new bytes32[](arr.inner.length + 1);
+		bytes32[] memory newInner = new bytes32[](arr.inner.length + 1);
 		for (uint256 i = 0; i < arr.inner.length; i++) {
-			new_inner[i] = arr.inner[i];
+			newInner[i] = arr.inner[i];
 		}
-		new_inner[arr.inner.length] = val;
-		arr.inner = new_inner;
+		newInner[arr.inner.length] = val;
+		arr.inner = newInner;
 	}
 
 	function pop(Bytes32Array memory arr) internal pure returns (bytes32 popped) {
 		popped = arr.inner[arr.inner.length - 1];
-		bytes32[] memory new_inner = new bytes32[](arr.inner.length - 1);
-		for (uint256 i = 0; i < new_inner.length; i++) {
-			new_inner[i] = arr.inner[i];
+		bytes32[] memory newInner = new bytes32[](arr.inner.length - 1);
+		for (uint256 i = 0; i < newInner.length; i++) {
+			newInner[i] = arr.inner[i];
 		}
-		arr.inner = new_inner;
+		arr.inner = newInner;
 	}
 }

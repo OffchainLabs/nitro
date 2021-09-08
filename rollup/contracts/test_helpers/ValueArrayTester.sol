@@ -13,16 +13,16 @@ contract ValueArrayTester {
         require(ValueArrays.length(arr) == 3, "PUSH_LEN");
         for (uint256 i = 0; i < ValueArrays.length(arr); i++) {
             Value memory val = ValueArrays.get(arr, i);
-            require(val.value_type == ValueType.I32, "PUSH_VAL_TYPE");
+            require(val.valueType == ValueType.I32, "PUSH_VAL_TYPE");
             require(val.contents == i + 1, "PUSH_VAL_CONTENTS");
         }
         Value memory popped = ValueArrays.pop(arr);
-        require(popped.value_type == ValueType.I32, "POP_RET_TYPE");
+        require(popped.valueType == ValueType.I32, "POP_RET_TYPE");
         require(popped.contents == 3, "POP_RET_CONTENTS");
         require(ValueArrays.length(arr) == 2, "POP_LEN");
         for (uint256 i = 0; i < ValueArrays.length(arr); i++) {
             Value memory val = ValueArrays.get(arr, i);
-            require(val.value_type == ValueType.I32, "POP_VAL_TYPE");
+            require(val.valueType == ValueType.I32, "POP_VAL_TYPE");
             require(val.contents == i + 1, "POP_VAL_CONTENTS");
         }
     }

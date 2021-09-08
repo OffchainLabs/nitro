@@ -4,22 +4,22 @@ pragma solidity ^0.8.0;
 import "./Values.sol";
 
 struct StackFrame {
-	Value return_pc;
-	bytes32 locals_merkle_root;
+	Value returnPc;
+	bytes32 localsMerkleRoot;
 }
 
 struct StackFrameWindow {
 	StackFrame[] proved;
-	bytes32 remaining_hash;
+	bytes32 remainingHash;
 }
 
 library StackFrames {
 	function hash(StackFrame memory frame) internal pure returns (bytes32) {
-		return keccak256(abi.encodePacked("Stack frame:", Values.hash(frame.return_pc), frame.locals_merkle_root));
+		return keccak256(abi.encodePacked("Stack frame:", Values.hash(frame.returnPc), frame.localsMerkleRoot));
 	}
 
 	function hash(StackFrameWindow memory window) internal pure returns (bytes32 h) {
-		h = window.remaining_hash;
+		h = window.remainingHash;
 		for (uint256 i = 0; i < window.proved.length; i++) {
 			h = keccak256(abi.encodePacked("Stack frame stack:", hash(window.proved[i]), h));
 		}
@@ -37,11 +37,11 @@ library StackFrames {
 	}
 
 	function push(StackFrameWindow memory window, StackFrame memory frame) internal pure {
-		StackFrame[] memory new_proved = new StackFrame[](window.proved.length + 1);
+		StackFrame[] memory newProved = new StackFrame[](window.proved.length + 1);
 		for (uint256 i = 0; i < window.proved.length; i++) {
-			new_proved[i] = window.proved[i];
+			newProved[i] = window.proved[i];
 		}
-		new_proved[window.proved.length] = frame;
-		window.proved = new_proved;
+		newProved[window.proved.length] = frame;
+		window.proved = newProved;
 	}
 }

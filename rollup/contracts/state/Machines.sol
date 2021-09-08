@@ -7,10 +7,10 @@ import "./Instructions.sol";
 import "./StackFrames.sol";
 
 struct Machine {
-	ValueStack value_stack;
-	Bytes32Stack block_stack;
+	ValueStack valueStack;
+	Bytes32Stack blockStack;
 	InstructionWindow instructions;
-	StackFrameWindow frame_stack;
+	StackFrameWindow frameStack;
 	bool halted;
 }
 
@@ -21,9 +21,9 @@ library Machines {
 		}
 		return keccak256(abi.encodePacked(
 			"Machine:",
-			ValueStacks.hash(mach.value_stack),
-			Bytes32Stacks.hash(mach.block_stack),
-			StackFrames.hash(mach.frame_stack),
+			ValueStacks.hash(mach.valueStack),
+			Bytes32Stacks.hash(mach.blockStack),
+			StackFrames.hash(mach.frameStack),
 			Instructions.hash(mach.instructions)
 		));
 	}

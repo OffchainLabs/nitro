@@ -21,20 +21,20 @@ library ValueArrays {
 	}
 
 	function push(ValueArray memory arr, Value memory val) internal pure {
-		Value[] memory new_inner = new Value[](arr.inner.length + 1);
+		Value[] memory newInner = new Value[](arr.inner.length + 1);
 		for (uint256 i = 0; i < arr.inner.length; i++) {
-			new_inner[i] = arr.inner[i];
+			newInner[i] = arr.inner[i];
 		}
-		new_inner[arr.inner.length] = val;
-		arr.inner = new_inner;
+		newInner[arr.inner.length] = val;
+		arr.inner = newInner;
 	}
 
 	function pop(ValueArray memory arr) internal pure returns (Value memory popped) {
 		popped = arr.inner[arr.inner.length - 1];
-		Value[] memory new_inner = new Value[](arr.inner.length - 1);
-		for (uint256 i = 0; i < new_inner.length; i++) {
-			new_inner[i] = arr.inner[i];
+		Value[] memory newInner = new Value[](arr.inner.length - 1);
+		for (uint256 i = 0; i < newInner.length; i++) {
+			newInner[i] = arr.inner[i];
 		}
-		arr.inner = new_inner;
+		arr.inner = newInner;
 	}
 }

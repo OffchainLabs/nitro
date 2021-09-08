@@ -18,7 +18,7 @@ contract OneStepProofEntry {
 		(mach, offset) = Deserialize.machine(proof, offset);
 		require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
 
-		if (mach.instructions.proved.length == 0 && mach.instructions.remaining_hash == 0) {
+		if (mach.instructions.proved.length == 0 && mach.instructions.remainingHash == 0) {
 			mach.halted = true;
 		} else {
 			uint8 opcode = Instructions.peek(mach.instructions).opcode;

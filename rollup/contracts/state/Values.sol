@@ -12,13 +12,13 @@ enum ValueType {
 }
 
 struct Value {
-	ValueType value_type;
+	ValueType valueType;
 	uint64 contents;
 }
 
 library Values {
 	function hash(Value memory val) internal pure returns (bytes32) {
-		return keccak256(abi.encodePacked("Value:", val.value_type, val.contents));
+		return keccak256(abi.encodePacked("Value:", val.valueType, val.contents));
 	}
 
 	function maxValueType() internal pure returns (ValueType) {
@@ -30,12 +30,12 @@ library Values {
 	}
 
 	function isNumeric(Value memory val) internal pure returns (bool) {
-		return isNumeric(val.value_type);
+		return isNumeric(val.valueType);
 	}
 
 	function newInt32(int32 x) internal pure returns (Value memory) {
 		return Value({
-			value_type: ValueType.I32,
+			valueType: ValueType.I32,
 			contents: uint64(uint32(x))
 		});
 	}

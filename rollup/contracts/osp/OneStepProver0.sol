@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../state/Values.sol";
 import "../state/Machines.sol";
+import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
@@ -21,14 +22,14 @@ contract OneStepProver0 is IOneStepProver {
 			revert("CONST_PUSH_INVALID_OPCODE");
 		}
 
-		ValueStacks.push(mach.value_stack, Value({
-			value_type: ty,
-			contents: uint64(inst.argument_data)
+		ValueStacks.push(mach.valueStack, Value({
+			valueType: ty,
+			contents: uint64(inst.argumentData)
 		}));
 	}
 
 	function executeEqz(Machine memory mach, Instruction memory, bytes calldata) internal pure {
-		Value memory v = ValueStacks.pop(mach.value_stack);
+		Value memory v = ValueStacks.pop(mach.valueStack);
 
 		if (v.contents == 0) {
 			v.contents = 1;
@@ -36,16 +37,16 @@ contract OneStepProver0 is IOneStepProver {
 			v.contents = 0;
 		}
 
-		ValueStacks.push(mach.value_stack, v);
+		ValueStacks.push(mach.valueStack, v);
 	}
 
 	function executeDrop(Machine memory mach, Instruction memory, bytes calldata) internal pure {
-		ValueStacks.pop(mach.value_stack);
+		ValueStacks.pop(mach.valueStack);
 	}
 
 	function executeAdd(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
-		Value memory a = ValueStacks.pop(mach.value_stack);
-		Value memory b = ValueStacks.pop(mach.value_stack);
+		Value memory a = ValueStacks.pop(mach.valueStack);
+		Value memory b = ValueStacks.pop(mach.valueStack);
 		uint64 contents = a.contents + b.contents;
 
 		uint8 opcode = inst.opcode;
@@ -59,64 +60,89 @@ contract OneStepProver0 is IOneStepProver {
 			revert("TODO: floating point math");
 		}
 
-		ValueStacks.push(mach.value_stack, Value({
-			value_type: ty,
+		ValueStacks.push(mach.valueStack, Value({
+			valueType: ty,
 			contents: contents
 		}));
 	}
 
 	function executeBlock(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
-		bytes32 target = bytes32(inst.argument_data);
+		bytes32 target = bytes32(inst.argumentData);
 		if (target == 0) {
 			Instruction[] memory proved = new Instruction[](1);
 			proved[0] = inst;
 			InstructionWindow memory selfWindow = InstructionWindow({
 				proved: proved,
-				remaining_hash: Instructions.hash(mach.instructions)
+				remainingHash: Instructions.hash(mach.instructions)
 			});
 			target = Instructions.hash(selfWindow);
 		}
 
-		Bytes32Stacks.push(mach.block_stack, target);
+		Bytes32Stacks.push(mach.blockStack, target);
 	}
 
 	function executeBranch(Machine memory mach, Instruction memory, bytes calldata) internal pure {
 		// Jump to target
 		mach.instructions = InstructionWindow({
 			proved: new Instruction[](0),
-			remaining_hash: Bytes32Stacks.pop(mach.block_stack)
+			remainingHash: Bytes32Stacks.pop(mach.blockStack)
 		});
 	}
 
 	function executeBranchIf(Machine memory mach, Instruction memory, bytes calldata) internal pure {
-		Value memory cond = ValueStacks.pop(mach.value_stack);
+		Value memory cond = ValueStacks.pop(mach.valueStack);
 		if (cond.contents != 0) {
 			// Jump to target
 			mach.instructions = InstructionWindow({
 				proved: new Instruction[](0),
-				remaining_hash: Bytes32Stacks.pop(mach.block_stack)
+				remainingHash: Bytes32Stacks.pop(mach.blockStack)
 			});
 		}
 	}
 
+	function executeLocalGet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		Value memory proposedVal;
+		uint256 offset = 0;
+		MerkleProof memory merkle;
+		(proposedVal, offset) = Deserialize.value(proof, offset);
+		(merkle, offset) = Deserialize.merkleProof(proof, offset);
+		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, proposedVal);
+		require(recomputedRoot == frame.localsMerkleRoot, "WRONG_MERKLE_ROOT");
+		ValueStacks.push(mach.valueStack, proposedVal);
+	}
+
+	function executeLocalSet(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		Value memory newVal = ValueStacks.pop(mach.valueStack);
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		Value memory oldVal;
+		uint256 offset = 0;
+		MerkleProof memory merkle;
+		(oldVal, offset) = Deserialize.value(proof, offset);
+		(merkle, offset) = Deserialize.merkleProof(proof, offset);
+		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, oldVal);
+		require(recomputedRoot == frame.localsMerkleRoot, "WRONG_MERKLE_ROOT");
+		frame.localsMerkleRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, newVal);
+	}
+
 	function executeEndBlock(Machine memory mach, Instruction memory, bytes calldata) internal pure {
-		Bytes32Stacks.pop(mach.block_stack);
+		Bytes32Stacks.pop(mach.blockStack);
 	}
 
 	function executeEndBlockIf(Machine memory mach, Instruction memory, bytes calldata) internal pure {
-		Value memory cond = ValueStacks.peek(mach.value_stack);
+		Value memory cond = ValueStacks.peek(mach.valueStack);
 		if (cond.contents != 0) {
-			Bytes32Stacks.pop(mach.block_stack);
+			Bytes32Stacks.pop(mach.blockStack);
 		}
 	}
 
 	function executeInitFrame(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
-		Value memory return_pc = ValueStacks.pop(mach.value_stack);
-		StackFrame memory new_frame = StackFrame({
-			return_pc: return_pc,
-			locals_merkle_root: bytes32(inst.argument_data)
+		Value memory returnPc = ValueStacks.pop(mach.valueStack);
+		StackFrame memory newFrame = StackFrame({
+			returnPc: returnPc,
+			localsMerkleRoot: bytes32(inst.argumentData)
 		});
-		StackFrames.push(mach.frame_stack, new_frame);
+		StackFrames.push(mach.frameStack, newFrame);
 	}
 
 	function handleTrap(Machine memory mach) internal pure {
@@ -129,42 +155,33 @@ contract OneStepProver0 is IOneStepProver {
 		Instruction memory inst = Instructions.pop(mach.instructions);
 		uint8 opcode = inst.opcode;
 
-		uint256 pops;
 		function(Machine memory, Instruction memory, bytes calldata) internal view impl;
 		if (opcode == Instructions.BLOCK) {
 			impl = executeBlock;
 		} else if (opcode == Instructions.BRANCH) {
 			impl = executeBranch;
 		} else if (opcode == Instructions.BRANCH_IF) {
-			pops = 1;
 			impl = executeBranchIf;
 		} else if (opcode == Instructions.END_BLOCK) {
 			impl = executeEndBlock;
 		} else if (opcode == Instructions.END_BLOCK_IF) {
-			pops = 1;
 			impl = executeEndBlockIf;
+		} else if (opcode == Instructions.LOCAL_GET) {
+			impl = executeLocalGet;
+		} else if (opcode == Instructions.LOCAL_SET) {
+			impl = executeLocalSet;
 		} else if (opcode == Instructions.INIT_FRAME) {
-			pops = 1;
 			impl = executeInitFrame;
 		} else if (opcode == Instructions.DROP) {
-			pops = 1;
 			impl = executeDrop;
 		} else if (opcode == Instructions.I32_EQZ) {
-			pops = 1;
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST) {
 			impl = executeConstPush;
 		} else if (opcode == Instructions.I32_ADD || opcode == Instructions.I64_ADD) {
-			pops = 2;
 			impl = executeAdd;
 		} else {
 			revert("TODO: instruction not implemented");
-		}
-
-		if (ValueStacks.hasProvenDepthLessThan(mach.value_stack, pops)) {
-			// Shouldn't be possible due to wasm strict typing and validation
-			handleTrap(mach);
-			return mach;
 		}
 
 		impl(mach, inst, proof);

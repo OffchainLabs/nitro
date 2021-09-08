@@ -3,12 +3,12 @@ pragma solidity ^0.8.0;
 
 struct Instruction {
 	uint8 opcode;
-	uint256 argument_data;
+	uint256 argumentData;
 }
 
 struct InstructionWindow {
 	Instruction[] proved;
-	bytes32 remaining_hash;
+	bytes32 remainingHash;
 }
 
 library Instructions {
@@ -20,6 +20,8 @@ library Instructions {
 	uint8 constant INIT_FRAME = 0x05;
 	uint8 constant BRANCH = 0x0C;
 	uint8 constant BRANCH_IF = 0x0D;
+	uint8 constant LOCAL_GET = 0x20;
+	uint8 constant LOCAL_SET = 0x21;
 	uint8 constant DROP = 0x1A;
 	uint8 constant I32_CONST = 0x41;
 	uint8 constant I64_CONST = 0x42;
@@ -30,11 +32,11 @@ library Instructions {
 	uint8 constant I64_ADD = 0x7C;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
-		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argument_data));
+		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
 	}
 
 	function hash(InstructionWindow memory window) internal pure returns (bytes32 h) {
-		h = window.remaining_hash;
+		h = window.remainingHash;
 		for (uint256 i = 0; i < window.proved.length; i++) {
 			h = keccak256(abi.encodePacked("Instruction stack:", hash(window.proved[i]), h));
 		}
@@ -58,7 +60,7 @@ library Instructions {
 	function newNop() internal pure returns (Instruction memory) {
 		return Instruction({
 			opcode: NOP,
-			argument_data: 0
+			argumentData: 0
 		});
 	}
 }
