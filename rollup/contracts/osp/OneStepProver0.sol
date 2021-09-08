@@ -100,6 +100,17 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
+	function executeArbitraryJumpIf(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		Value memory cond = ValueStacks.pop(mach.valueStack);
+		if (cond.contents != 0) {
+			// Jump to target
+			mach.instructions = InstructionWindow({
+				proved: new Instruction[](0),
+				remainingHash: bytes32(inst.argumentData)
+			});
+		}
+	}
+
 	function merkleProveGetValue(bytes32 merkleRoot, uint256 index, bytes calldata proof) internal pure returns (Value memory) {
 		uint256 offset = 0;
 		Value memory proposedVal;
@@ -185,6 +196,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeEndBlock;
 		} else if (opcode == Instructions.END_BLOCK_IF) {
 			impl = executeEndBlockIf;
+		} else if (opcode == Instructions.ARBITRARY_JUMP_IF) {
+			impl = executeArbitraryJumpIf;
 		} else if (opcode == Instructions.LOCAL_GET) {
 			impl = executeLocalGet;
 		} else if (opcode == Instructions.LOCAL_SET) {
@@ -204,7 +217,7 @@ contract OneStepProver0 is IOneStepProver {
 		} else if (opcode == Instructions.I32_ADD || opcode == Instructions.I64_ADD) {
 			impl = executeAdd;
 		} else {
-			revert("TODO: instruction not implemented");
+			revert("Invalid instruction");
 		}
 
 		impl(mach, inst, proof);

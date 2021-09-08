@@ -20,6 +20,8 @@ pub enum Opcode {
     EndBlockIf,
     /// Custom opcode not in wasm.
     InitFrame,
+    /// Conditional jump to an arbitrary point in code.
+    ArbitraryJumpIf,
 
     Branch = 0x0C,
     BranchIf,
@@ -112,29 +114,30 @@ impl Instruction {
                 ops.push(Instruction::simple(Opcode::EndBlock));
             }
             HirInstruction::IfElse(_, if_insts, else_insts) => {
-                // Use an incorrectly nested block to make a conditional
-                let cond_idx = ops.len();
+                // begin block with endpoint end
+                //   conditional jump to else
+                //   [instructions inside if statement]
+                //   branch
+                //   else: [instructions inside else statement]
+                // end
+
+                let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
                 ops.push(Instruction::simple(Opcode::I32Eqz));
-                ops.push(Instruction::simple(Opcode::BranchIf));
-                ops.push(Instruction::simple(Opcode::EndBlock));
+                let jump_idx = ops.len();
+                ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
 
-                let if_idx = ops.len();
-                ops.push(Instruction::simple(Opcode::Block));
                 for inst in if_insts {
                     Self::extend_from_hir(ops, inst);
                 }
-                ops.push(Instruction::simple(Opcode::EndBlock));
-                ops[cond_idx].argument_data = ops.len() as u64;
+                ops.push(Instruction::simple(Opcode::Branch));
 
-                let else_idx = ops.len();
-                ops.push(Instruction::simple(Opcode::Block));
+                ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
                     Self::extend_from_hir(ops, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
-                ops[if_idx].argument_data = ops.len() as u64;
-                ops[else_idx].argument_data = ops.len() as u64;
+                ops[block_idx].argument_data = ops.len() as u64;
             }
             HirInstruction::Branch(x) => {
                 for _ in 0..x {

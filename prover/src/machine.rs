@@ -1,5 +1,5 @@
 use crate::{
-    binary::{HirInstruction, WasmBinary, WasmSection},
+    binary::{WasmBinary, WasmSection},
     lir::Instruction,
     lir::Opcode,
     merkle::Merkle,
@@ -22,7 +22,7 @@ fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
     let mut hashes = vec![prev_hash];
     let code_len = code.len();
     for inst in code.iter_mut().rev() {
-        if inst.opcode == Opcode::Block {
+        if inst.opcode == Opcode::Block || inst.opcode == Opcode::ArbitraryJumpIf {
             let end_pc = inst.argument_data as usize;
             if code_len - end_pc < hashes.len() {
                 inst.proving_argument_data = Some(dbg!(hashes[code_len - end_pc]));
@@ -267,6 +267,12 @@ impl Machine {
                         .map(Value::default_of_type)
                         .collect(),
                 });
+            }
+            Opcode::ArbitraryJumpIf => {
+                let x = self.value_stack.pop().unwrap();
+                if x.contents() != 0 {
+                    self.pc.1 = inst.argument_data as usize;
+                }
             }
             Opcode::Branch => {
                 self.pc.1 = self.block_stack.pop().unwrap();

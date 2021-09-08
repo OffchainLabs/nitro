@@ -18,6 +18,7 @@ library Instructions {
 	uint8 constant END_BLOCK = 0x03;
 	uint8 constant END_BLOCK_IF = 0x04;
 	uint8 constant INIT_FRAME = 0x05;
+	uint8 constant ARBITRARY_JUMP_IF = 0x06;
 	uint8 constant BRANCH = 0x0C;
 	uint8 constant BRANCH_IF = 0x0D;
 	uint8 constant LOCAL_GET = 0x20;

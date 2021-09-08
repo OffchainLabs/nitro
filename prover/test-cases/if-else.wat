@@ -3,7 +3,6 @@
 	(if (result i32)
 		(then
 			(i32.const 2)
-			(br 0)
 		)
 		(else (unreachable))
 	)
