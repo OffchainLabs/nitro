@@ -8,7 +8,8 @@ enum ValueType {
 	F64,
 	REF_NULL,
 	REF,
-	REF_EXTERN
+	REF_EXTERN,
+	STACK_BOUNDARY
 }
 
 struct Value {
@@ -22,7 +23,7 @@ library Values {
 	}
 
 	function maxValueType() internal pure returns (ValueType) {
-		return ValueType.REF_EXTERN;
+		return ValueType.STACK_BOUNDARY;
 	}
 
 	function isNumeric(ValueType val) internal pure returns (bool) {

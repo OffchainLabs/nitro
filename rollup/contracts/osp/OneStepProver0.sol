@@ -22,6 +22,8 @@ contract OneStepProver0 is IOneStepProver {
 			ty = ValueType.F32;
 		} else if (opcode == Instructions.F64_CONST) {
 			ty = ValueType.F64;
+		} else if (opcode == Instructions.PUSH_STACK_BOUNDARY) {
+			ty = ValueType.STACK_BOUNDARY;
 		} else {
 			revert("CONST_PUSH_INVALID_OPCODE");
 		}
@@ -103,6 +105,20 @@ contract OneStepProver0 is IOneStepProver {
 				remainingHash: Bytes32Stacks.pop(mach.blockStack)
 			});
 		}
+	}
+
+	function executeReturn(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		StackFrame memory frame = StackFrames.pop(mach.frameStack);
+		if (frame.returnPc.valueType == ValueType.REF_NULL) {
+			mach.halted = true;
+			return;
+		} else if (frame.returnPc.valueType != ValueType.REF) {
+			revert("INVALID_RETURN_PC_TYPE");
+		}
+		mach.instructions = InstructionWindow({
+			proved: new Instruction[](0),
+			remainingHash: bytes32(frame.returnPc.contents)
+		});
 	}
 
 	function executeCall(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
@@ -197,6 +213,31 @@ contract OneStepProver0 is IOneStepProver {
 		StackFrames.push(mach.frameStack, newFrame);
 	}
 
+	function executeMoveInternal(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		Value memory val;
+		if (inst.opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL) {
+			val = ValueStacks.pop(mach.valueStack);
+			ValueStacks.push(mach.internalStack, val);
+		} else if (inst.opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
+			val = ValueStacks.pop(mach.internalStack);
+			ValueStacks.push(mach.valueStack, val);
+		} else {
+			revert("MOVE_INTERNAL_INVALID_OPCODE");
+		}
+	}
+
+	function executeIsStackBoundary(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		Value memory val = ValueStacks.pop(mach.valueStack);
+		uint256 newContents = 0;
+		if (val.valueType == ValueType.STACK_BOUNDARY) {
+			newContents = 1;
+		}
+		ValueStacks.push(mach.valueStack, Value({
+			valueType: ValueType.I32,
+			contents: newContents
+		}));
+	}
+
 	function handleTrap(Machine memory mach) internal pure {
 		mach.halted = true;
 	}
@@ -216,6 +257,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeBranch;
 		} else if (opcode == Instructions.BRANCH_IF) {
 			impl = executeBranchIf;
+		} else if (opcode == Instructions.RETURN) {
+			impl = executeReturn;
 		} else if (opcode == Instructions.CALL) {
 			impl = executeCall;
 		} else if (opcode == Instructions.END_BLOCK) {
@@ -238,10 +281,14 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeDrop;
 		} else if (opcode == Instructions.I32_EQZ) {
 			impl = executeEqz;
-		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST) {
+		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;
 		} else if (opcode == Instructions.I32_ADD || opcode == Instructions.I64_ADD) {
 			impl = executeAdd;
+		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
+			impl = executeMoveInternal;
+		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
+			impl = executeIsStackBoundary;
 		} else {
 			revert("Invalid instruction");
 		}

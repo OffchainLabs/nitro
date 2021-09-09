@@ -17,6 +17,7 @@ library Instructions {
 	uint16 constant BLOCK = 0x02;
 	uint16 constant BRANCH = 0x0C;
 	uint16 constant BRANCH_IF = 0x0D;
+	uint16 constant RETURN = 0x0F;
 	uint16 constant CALL = 0x10;
 	uint16 constant LOCAL_GET = 0x20;
 	uint16 constant LOCAL_SET = 0x21;
@@ -35,6 +36,10 @@ library Instructions {
 	uint16 constant END_BLOCK_IF = 0x8001;
 	uint16 constant INIT_FRAME = 0x8002;
 	uint16 constant ARBITRARY_JUMP_IF = 0x8003;
+	uint16 constant PUSH_STACK_BOUNDARY = 0x8004;
+	uint16 constant MOVE_FROM_STACK_TO_INTERNAL = 0x8005;
+	uint16 constant MOVE_FROM_INTERNAL_TO_STACK = 0x8006;
+	uint16 constant IS_STACK_BOUNDARY = 0x8007;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));

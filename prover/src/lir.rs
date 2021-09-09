@@ -1,4 +1,7 @@
-use crate::{binary::HirInstruction, utils::Bytes32};
+use crate::{
+    binary::{BlockType, HirInstruction},
+    utils::Bytes32,
+};
 use digest::Digest;
 use sha3::Keccak256;
 
@@ -9,11 +12,11 @@ pub enum Opcode {
     Nop,
     Block,
     // Loop and If are wrapped into Block
-
     Branch = 0x0C,
     BranchIf,
 
-    Call = 0x10,
+    Return = 0x0F,
+    Call,
 
     Drop = 0x1A,
 
@@ -45,6 +48,14 @@ pub enum Opcode {
     InitFrame,
     /// Conditional jump to an arbitrary point in code.
     ArbitraryJumpIf,
+    /// Push a Value::StackBoundary to the stack
+    PushStackBoundary,
+    /// Pop a value from the value stack and push it to the internal stack
+    MoveFromStackToInternal,
+    /// Pop a value from the internal stack and push it to the value stack
+    MoveFromInternalToStack,
+    /// Pop a value from the value stack, then push an I32 1 if it's a stack boundary, I32 0 otherwise.
+    IsStackBoundary,
 }
 
 impl Opcode {
@@ -98,14 +109,13 @@ impl Instruction {
         h.finalize().into()
     }
 
-    pub fn extend_from_hir(ops: &mut Vec<Instruction>, inst: HirInstruction) {
+    pub fn extend_from_hir(ops: &mut Vec<Instruction>, return_values: usize, inst: HirInstruction) {
         match inst {
-            HirInstruction::Simple(op) => ops.push(Instruction::simple(op)),
             HirInstruction::Block(_, insts) => {
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
                 for inst in insts {
-                    Self::extend_from_hir(ops, inst);
+                    Self::extend_from_hir(ops, return_values, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -117,7 +127,7 @@ impl Instruction {
                     proving_argument_data: None,
                 });
                 for inst in insts {
-                    Self::extend_from_hir(ops, inst);
+                    Self::extend_from_hir(ops, return_values, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
             }
@@ -136,13 +146,13 @@ impl Instruction {
                 ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
 
                 for inst in if_insts {
-                    Self::extend_from_hir(ops, inst);
+                    Self::extend_from_hir(ops, return_values, inst);
                 }
                 ops.push(Instruction::simple(Opcode::Branch));
 
                 ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
-                    Self::extend_from_hir(ops, inst);
+                    Self::extend_from_hir(ops, return_values, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -186,6 +196,33 @@ impl Instruction {
                 argument_data: x.to_bits(),
                 proving_argument_data: None,
             }),
+            HirInstruction::Simple(Opcode::Return) => {
+                // Hold the return values on the internal stack while we drop extraneous stack values
+                ops.extend(
+                    std::iter::repeat(Instruction::simple(Opcode::MoveFromStackToInternal))
+                        .take(return_values),
+                );
+                // Keep dropping values until we drop the stack boundary, then exit the loop
+                Self::extend_from_hir(
+                    ops,
+                    return_values,
+                    HirInstruction::Loop(
+                        BlockType::Empty,
+                        vec![
+                            HirInstruction::Simple(Opcode::IsStackBoundary),
+                            HirInstruction::Simple(Opcode::I32Eqz),
+                            HirInstruction::Simple(Opcode::BranchIf),
+                        ],
+                    ),
+                );
+                // Move the return values back from the internal stack to the value stack
+                ops.extend(
+                    std::iter::repeat(Instruction::simple(Opcode::MoveFromInternalToStack))
+                        .take(return_values),
+                );
+                ops.push(Instruction::simple(Opcode::Return));
+            }
+            HirInstruction::Simple(op) => ops.push(Instruction::simple(op)),
         }
     }
 }

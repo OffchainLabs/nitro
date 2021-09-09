@@ -12,6 +12,7 @@ pub enum ValueType {
     RefNull,
     FuncRef,
     ExternRef,
+    StackBoundary,
 }
 
 impl ValueType {
@@ -30,6 +31,7 @@ pub enum Value {
     Ref((usize, usize), Bytes32),
     #[allow(dead_code)]
     RefExtern(u32, Bytes32),
+    StackBoundary,
 }
 
 impl Value {
@@ -56,6 +58,7 @@ impl Value {
             Value::RefNull => ValueType::RefNull,
             Value::Ref(_, _) => ValueType::FuncRef,
             Value::RefExtern(_, _) => ValueType::ExternRef,
+            Value::StackBoundary => ValueType::StackBoundary,
         }
     }
 
@@ -69,6 +72,7 @@ impl Value {
             Value::RefNull => Bytes32::default(),
             Value::Ref(_, x) => x,
             Value::RefExtern(_, x) => x,
+            Value::StackBoundary => Bytes32::default(),
         }
     }
 
@@ -105,6 +109,7 @@ impl Value {
             ValueType::F32 => Value::F32(0.),
             ValueType::F64 => Value::F64(0.),
             ValueType::RefNull | ValueType::FuncRef | ValueType::ExternRef => Value::RefNull,
+            ValueType::StackBoundary => panic!("Attempted to make default of StackBoundary type"),
         }
     }
 }

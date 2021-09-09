@@ -8,6 +8,7 @@ import "./StackFrames.sol";
 
 struct Machine {
 	ValueStack valueStack;
+	ValueStack internalStack;
 	Bytes32Stack blockStack;
 	StackFrameWindow frameStack;
 	InstructionWindow instructions;
@@ -24,6 +25,7 @@ library Machines {
 		return keccak256(abi.encodePacked(
 			"Machine:",
 			ValueStacks.hash(mach.valueStack),
+			ValueStacks.hash(mach.internalStack),
 			Bytes32Stacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
 			Instructions.hash(mach.instructions),

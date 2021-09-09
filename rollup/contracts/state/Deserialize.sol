@@ -156,12 +156,14 @@ library Deserialize {
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
 		ValueStack memory values;
+		ValueStack memory internalStack;
 		Bytes32Stack memory blocks;
 		InstructionWindow memory instructions;
 		StackFrameWindow memory frameStack;
 		bytes32 globalsMerkleRoot;
 		bytes32 functionsMerkleRoot;
 		(values, offset) = valueStack(proof, offset);
+		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = bytes32Window(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
 		(instructions, offset) = instructionWindow(proof, offset);
@@ -169,6 +171,7 @@ library Deserialize {
 		(functionsMerkleRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
+			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
 			instructions: instructions,

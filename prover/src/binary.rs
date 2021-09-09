@@ -203,6 +203,7 @@ fn simple_opcode(input: &[u8]) -> IResult<&[u8], Opcode> {
     alt((
         value(Opcode::Unreachable, tag(&[0x00])),
         value(Opcode::Nop, tag(&[0x01])),
+        value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
         value(Opcode::I32Add, tag(&[0x6A])),
         value(Opcode::I64Add, tag(&[0x7C])),

@@ -93,6 +93,7 @@ impl StackFrame {
 #[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
+    internal_stack: Vec<Value>,
     block_stack: Vec<(usize, Bytes32)>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
@@ -197,11 +198,19 @@ impl Machine {
                                     proving_argument_data: None,
                                 });
                             }
+                            insts.push(Instruction::simple(Opcode::PushStackBoundary));
                             for hir_inst in c.expr {
-                                Instruction::extend_from_hir(&mut insts, hir_inst);
+                                Instruction::extend_from_hir(
+                                    &mut insts,
+                                    func_ty.outputs.len(),
+                                    hir_inst,
+                                );
                             }
-                            // TODO: replace with Return
-                            insts.push(Instruction::simple(Opcode::Unreachable));
+                            Instruction::extend_from_hir(
+                                &mut insts,
+                                func_ty.outputs.len(),
+                                crate::binary::HirInstruction::Simple(Opcode::Return),
+                            );
                             Function::new(insts, locals_with_params)
                         })
                         .collect();
@@ -230,6 +239,7 @@ impl Machine {
         assert!(!code.is_empty());
         Ok(Machine {
             value_stack: vec![Value::RefNull],
+            internal_stack: Vec::new(),
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
             globals,
@@ -247,10 +257,10 @@ impl Machine {
         if self.halted {
             return Bytes32::default();
         }
-        // TODO: hash in functions so they can be jumped to
         let mut h = Keccak256::new();
         h.update(b"Machine:");
         h.update(&hash_value_stack(&self.value_stack));
+        h.update(&hash_value_stack(&self.internal_stack));
         h.update(&hash_block_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
@@ -325,6 +335,16 @@ impl Machine {
                     self.pc.1 = self.block_stack.pop().unwrap().0;
                 }
             }
+            Opcode::Return => {
+                let frame = self.frame_stack.pop().unwrap();
+                match frame.return_ref {
+                    Value::RefNull => {
+                        self.halted = true;
+                    }
+                    Value::Ref(pc, _) => self.pc = pc,
+                    v => panic!("Attempted to return into an invalid reference: {:?}", v),
+                }
+            }
             Opcode::Call => {
                 self.value_stack
                     .push(Value::Ref(self.pc, func.code_hashes[self.pc.1]));
@@ -385,6 +405,19 @@ impl Machine {
                     panic!("WASM validation failed: wrong types for i64.add");
                 }
             }
+            Opcode::PushStackBoundary => {
+                self.value_stack.push(Value::StackBoundary);
+            }
+            Opcode::MoveFromStackToInternal => {
+                self.internal_stack.push(self.value_stack.pop().unwrap());
+            }
+            Opcode::MoveFromInternalToStack => {
+                self.value_stack.push(self.internal_stack.pop().unwrap());
+            }
+            Opcode::IsStackBoundary => {
+                let val = self.value_stack.pop().unwrap();
+                self.value_stack.push(Value::I32((val == Value::StackBoundary) as u32));
+            }
         }
     }
 
@@ -403,6 +436,17 @@ impl Machine {
             self.value_stack.len() - unproven_stack_depth,
         ));
         for val in &self.value_stack[unproven_stack_depth..] {
+            data.extend(val.serialize_for_proof());
+        }
+
+        let unproven_internal_stack_depth = self.internal_stack.len().saturating_sub(1);
+        data.extend(hash_value_stack(
+            &self.internal_stack[..unproven_internal_stack_depth],
+        ));
+        data.extend(usize_to_u256_bytes(
+            self.internal_stack.len() - unproven_internal_stack_depth,
+        ));
+        for val in &self.internal_stack[unproven_internal_stack_depth..] {
             data.extend(val.serialize_for_proof());
         }
 
