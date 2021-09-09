@@ -50,27 +50,44 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.pop(mach.valueStack);
 	}
 
-	function executeAdd(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
-		Value memory a = ValueStacks.pop(mach.valueStack);
-		Value memory b = ValueStacks.pop(mach.valueStack);
-		uint256 contents = a.contents + b.contents;
+	function executeI32Arith(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 res;
 
-		uint16 opcode = inst.opcode;
-		ValueType ty;
-		if (opcode == Instructions.I32_ADD) {
-			ty = ValueType.I32;
-			contents &= (1 << 32) - 1;
-		} else if (opcode == Instructions.I64_ADD) {
-			ty = ValueType.I64;
-			contents &= (1 << 64) - 1;
+		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
+
+		if (opcodeOffset == 0) {
+			res = a + b;
+		} else if (opcodeOffset == 1) {
+			res = a - b;
+		} else if (opcodeOffset == 2) {
+			res = a * b;
 		} else {
-			revert("TODO: floating point math");
+			revert("TODO: more operations");
 		}
 
-		ValueStacks.push(mach.valueStack, Value({
-			valueType: ty,
-			contents: contents
-		}));
+		ValueStacks.push(mach.valueStack, Values.newI32(res));
+	}
+
+	function executeI64Arith(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 res;
+
+		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
+
+		if (opcodeOffset == 0) {
+			res = a + b;
+		} else if (opcodeOffset == 1) {
+			res = a - b;
+		} else if (opcodeOffset == 2) {
+			res = a * b;
+		} else {
+			revert("TODO: more operations");
+		}
+
+		ValueStacks.push(mach.valueStack, Values.newI64(res));
 	}
 
 	function executeBlock(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
@@ -283,8 +300,10 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;
-		} else if (opcode == Instructions.I32_ADD || opcode == Instructions.I64_ADD) {
-			impl = executeAdd;
+		} else if (opcode >= Instructions.I32_ADD && opcode <= Instructions.I32_MUL) {
+			impl = executeI32Arith;
+		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_MUL) {
+			impl = executeI64Arith;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
