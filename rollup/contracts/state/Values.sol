@@ -34,10 +34,32 @@ library Values {
 		return isNumeric(val.valueType);
 	}
 
-	function newInt32(int32 x) internal pure returns (Value memory) {
+	function assumeI32(Value memory val) internal pure returns(uint32) {
+		uint uintval = uint(val.contents);
+		require(val.valueType == ValueType.I32, "NOT_I32");
+		require(uintval < (1<<32), "BAD_I32");
+		return uint32(uintval);
+	}
+
+	function assumeI64(Value memory val) internal pure returns(uint64) {
+		uint uintval = uint(val.contents);
+		require(val.valueType == ValueType.I64, "NOT_I64");
+		require(uintval < (1<<64), "BAD_I64");
+		return uint64(uintval);
+	}
+
+	function newI32(uint32 x) internal pure returns (Value memory) {
 		return Value({
 			valueType: ValueType.I32,
-			contents: uint256(uint32(x))
+			contents: uint256(x)
 		});
 	}
+
+	function newI64(uint64 x) internal pure returns (Value memory) {
+		return Value({
+			valueType: ValueType.I64,
+			contents: uint256(x)
+		});
+	}
+
 }
