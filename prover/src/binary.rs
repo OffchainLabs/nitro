@@ -134,6 +134,8 @@ fn simple_opcode(input: &[u8]) -> IResult<&[u8], Opcode> {
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
         value(Opcode::I32Add, tag(&[0x6A])),
+        value(Opcode::I32Sub, tag(&[0x6B])),
+        value(Opcode::I32Mul, tag(&[0x6C])),
         value(Opcode::I64Add, tag(&[0x7C])),
     ))(input)
 }

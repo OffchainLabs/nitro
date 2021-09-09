@@ -33,6 +33,8 @@ pub enum Opcode {
     I32Eqz,
 
     I32Add = 0x6A,
+    I32Sub,
+    I32Mul,
 
     I64Add = 0x7C,
 

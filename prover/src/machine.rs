@@ -388,10 +388,28 @@ impl Machine {
                 self.value_stack.pop().unwrap();
             }
             Opcode::I32Add => {
-                let a = self.value_stack.pop();
                 let b = self.value_stack.pop();
+                let a = self.value_stack.pop();
                 if let (Some(Value::I32(a)), Some(Value::I32(b))) = (a, b) {
                     self.value_stack.push(Value::I32(a.wrapping_add(b)));
+                } else {
+                    panic!("WASM validation failed: wrong types for i32.add");
+                }
+            }
+            Opcode::I32Sub => {
+                let b = self.value_stack.pop();
+                let a = self.value_stack.pop();
+                if let (Some(Value::I32(a)), Some(Value::I32(b))) = (a, b) {
+                    self.value_stack.push(Value::I32(a.wrapping_sub(b)));
+                } else {
+                    panic!("WASM validation failed: wrong types for i32.add");
+                }
+            }
+            Opcode::I32Mul => {
+                let b = self.value_stack.pop();
+                let a = self.value_stack.pop();
+                if let (Some(Value::I32(a)), Some(Value::I32(b))) = (a, b) {
+                    self.value_stack.push(Value::I32(a.wrapping_mul(b)));
                 } else {
                     panic!("WASM validation failed: wrong types for i32.add");
                 }
