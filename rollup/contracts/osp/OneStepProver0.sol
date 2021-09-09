@@ -7,6 +7,10 @@ import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
+	function executeUnreachable(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		mach.halted = true;
+	}
+
 	function executeConstPush(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
 		uint16 opcode = inst.opcode;
 		ValueType ty;
@@ -47,7 +51,7 @@ contract OneStepProver0 is IOneStepProver {
 	function executeAdd(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
 		Value memory a = ValueStacks.pop(mach.valueStack);
 		Value memory b = ValueStacks.pop(mach.valueStack);
-		uint64 contents = a.contents + b.contents;
+		uint256 contents = a.contents + b.contents;
 
 		uint16 opcode = inst.opcode;
 		ValueType ty;
@@ -56,6 +60,7 @@ contract OneStepProver0 is IOneStepProver {
 			contents &= (1 << 32) - 1;
 		} else if (opcode == Instructions.I64_ADD) {
 			ty = ValueType.I64;
+			contents &= (1 << 64) - 1;
 		} else {
 			revert("TODO: floating point math");
 		}
@@ -98,6 +103,23 @@ contract OneStepProver0 is IOneStepProver {
 				remainingHash: Bytes32Stacks.pop(mach.blockStack)
 			});
 		}
+	}
+
+	function executeCall(Machine memory mach, Instruction memory inst, bytes calldata proof) internal pure {
+		uint256 offset = 0;
+		InstructionWindow memory proposedInstructions;
+		MerkleProof memory merkle;
+		(proposedInstructions, offset) = Deserialize.instructionWindow(proof, offset);
+		(merkle, offset) = Deserialize.merkleProof(proof, offset);
+		bytes32 recomputedRoot = MerkleProofs.computeRoot(merkle, inst.argumentData, proposedInstructions);
+		require(recomputedRoot == mach.functionsMerkleRoot, "WRONG_FUNC_MERKLE_ROOT");
+
+		Value memory retPc = Value({
+			valueType: ValueType.REF,
+			contents: uint256(Instructions.hash(mach.instructions))
+		});
+		ValueStacks.push(mach.valueStack, retPc);
+		mach.instructions = proposedInstructions;
 	}
 
 	function executeArbitraryJumpIf(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
@@ -186,12 +208,16 @@ contract OneStepProver0 is IOneStepProver {
 		uint16 opcode = inst.opcode;
 
 		function(Machine memory, Instruction memory, bytes calldata) internal view impl;
-		if (opcode == Instructions.BLOCK) {
+		if (opcode == Instructions.UNREACHABLE) {
+			impl = executeUnreachable;
+		} else if (opcode == Instructions.BLOCK) {
 			impl = executeBlock;
 		} else if (opcode == Instructions.BRANCH) {
 			impl = executeBranch;
 		} else if (opcode == Instructions.BRANCH_IF) {
 			impl = executeBranchIf;
+		} else if (opcode == Instructions.CALL) {
+			impl = executeCall;
 		} else if (opcode == Instructions.END_BLOCK) {
 			impl = executeEndBlock;
 		} else if (opcode == Instructions.END_BLOCK_IF) {

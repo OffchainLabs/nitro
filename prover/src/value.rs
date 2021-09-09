@@ -27,8 +27,9 @@ pub enum Value {
     F32(f32),
     F64(f64),
     RefNull,
-    Ref(u32),
-    RefExtern(u32),
+    Ref((usize, usize), Bytes32),
+    #[allow(dead_code)]
+    RefExtern(u32, Bytes32),
 }
 
 impl Value {
@@ -53,35 +54,47 @@ impl Value {
             Value::F32(_) => ValueType::F32,
             Value::F64(_) => ValueType::F64,
             Value::RefNull => ValueType::RefNull,
-            Value::Ref(_) => ValueType::FuncRef,
-            Value::RefExtern(_) => ValueType::ExternRef,
+            Value::Ref(_, _) => ValueType::FuncRef,
+            Value::RefExtern(_, _) => ValueType::ExternRef,
         }
     }
 
-    pub fn contents(mut self) -> u64 {
+    pub fn contents_for_proof(mut self) -> Bytes32 {
         self.canonicalize();
         match self {
             Value::I32(x) => x.into(),
-            Value::I64(x) => x,
+            Value::I64(x) => x.into(),
             Value::F32(x) => x.to_bits().into(),
-            Value::F64(x) => x.to_bits(),
-            Value::RefNull => 0,
-            Value::Ref(x) | Value::RefExtern(x) => x.into(),
+            Value::F64(x) => x.to_bits().into(),
+            Value::RefNull => Bytes32::default(),
+            Value::Ref(_, x) => x,
+            Value::RefExtern(_, x) => x,
         }
     }
 
-    pub fn serialize(self) -> [u8; 9] {
-        let mut ret = [0u8; 9];
+    pub fn serialize_for_proof(self) -> [u8; 33] {
+        let mut ret = [0u8; 33];
         ret[0] = self.ty().serialize();
-        ret[1..].copy_from_slice(&self.contents().to_be_bytes());
+        ret[1..].copy_from_slice(&*self.contents_for_proof());
         ret
+    }
+
+    pub fn is_i32_zero(self) -> bool {
+        match self {
+            Value::I32(0) => true,
+            Value::I32(_) => false,
+            _ => panic!(
+                "WASM validation failed: i32.eqz equivalent called on {:?}",
+                self,
+            ),
+        }
     }
 
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Value:");
         h.update(&[self.ty() as u8]);
-        h.update(&self.contents().to_be_bytes());
+        h.update(self.contents_for_proof());
         h.finalize().into()
     }
 
@@ -98,7 +111,7 @@ impl Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        self.ty() == other.ty() && self.contents() == other.contents()
+        self.ty() == other.ty() && self.contents_for_proof() == other.contents_for_proof()
     }
 }
 

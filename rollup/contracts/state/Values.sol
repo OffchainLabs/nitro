@@ -13,7 +13,7 @@ enum ValueType {
 
 struct Value {
 	ValueType valueType;
-	uint64 contents;
+	uint256 contents;
 }
 
 library Values {
@@ -36,7 +36,7 @@ library Values {
 	function newInt32(int32 x) internal pure returns (Value memory) {
 		return Value({
 			valueType: ValueType.I32,
-			contents: uint64(uint32(x))
+			contents: uint256(uint32(x))
 		});
 	}
 }

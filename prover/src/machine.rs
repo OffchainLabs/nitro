@@ -2,7 +2,7 @@ use crate::{
     binary::{WasmBinary, WasmSection},
     lir::Instruction,
     lir::Opcode,
-    merkle::Merkle,
+    merkle::{Merkle, MerkleType},
     utils::{usize_to_u256_bytes, Bytes32},
     value::{Value, ValueType},
 };
@@ -66,15 +66,26 @@ impl StackFrame {
         let mut h = Keccak256::new();
         h.update("Stack frame:");
         h.update(&self.return_ref.hash());
-        h.update(Merkle::new(self.locals.iter().map(|v| v.hash()).collect()).root());
+        h.update(
+            Merkle::new(
+                MerkleType::Value,
+                self.locals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
         h.finalize().into()
     }
 
-    fn serialize_for_proof(&self) -> [u8; 41] {
-        let mut data = [0u8; 41];
-        data[..9].copy_from_slice(&self.return_ref.serialize());
-        data[9..]
-            .copy_from_slice(&*Merkle::new(self.locals.iter().map(|v| v.hash()).collect()).root());
+    fn serialize_for_proof(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend(self.return_ref.serialize_for_proof());
+        data.extend(
+            Merkle::new(
+                MerkleType::Value,
+                self.locals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
         data
     }
 }
@@ -82,11 +93,11 @@ impl StackFrame {
 #[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
-    block_stack: Vec<usize>,
+    block_stack: Vec<(usize, Bytes32)>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     funcs: Vec<Function>,
-    funcs_merkle_root: Bytes32,
+    funcs_merkle: Merkle,
     pc: (usize, usize),
     halted: bool,
 }
@@ -110,8 +121,8 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_block_stack(pcs: &[usize], hashes: &[Bytes32]) -> Bytes32 {
-    hash_stack(pcs.iter().map(|&pc| hashes[pc]), "Bytes32 stack:")
+fn hash_block_stack(pcs: &[(usize, Bytes32)]) -> Bytes32 {
+    hash_stack(pcs.iter().map(|(_, h)| *h), "Bytes32 stack:")
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -174,7 +185,9 @@ impl Machine {
                             insts.push(Instruction {
                                 opcode: Opcode::InitFrame,
                                 argument_data: 0,
-                                proving_argument_data: Some(Merkle::new(empty_local_hashes).root()),
+                                proving_argument_data: Some(
+                                    Merkle::new(MerkleType::Value, empty_local_hashes).root(),
+                                ),
                             });
                             // Fill in parameters
                             for i in (0..func_ty.inputs.len()).rev() {
@@ -187,6 +200,8 @@ impl Machine {
                             for hir_inst in c.expr {
                                 Instruction::extend_from_hir(&mut insts, hir_inst);
                             }
+                            // TODO: replace with Return
+                            insts.push(Instruction::simple(Opcode::Unreachable));
                             Function::new(insts, locals_with_params)
                         })
                         .collect();
@@ -218,7 +233,10 @@ impl Machine {
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
             globals,
-            funcs_merkle_root: Merkle::new(code.iter().map(|f| f.code_hashes[0]).collect()).root(),
+            funcs_merkle: Merkle::new(
+                MerkleType::Function,
+                code.iter().map(|f| f.code_hashes[0]).collect(),
+            ),
             funcs: code,
             pc: (start, 0),
             halted: false,
@@ -233,14 +251,17 @@ impl Machine {
         let mut h = Keccak256::new();
         h.update(b"Machine:");
         h.update(&hash_value_stack(&self.value_stack));
-        h.update(&hash_block_stack(
-            &self.block_stack,
-            &self.funcs[self.pc.0].code_hashes,
-        ));
+        h.update(&hash_block_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
-        h.update(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
-        h.update(self.funcs_merkle_root);
+        h.update(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
+        h.update(self.funcs_merkle.root());
         h.finalize().into()
     }
 
@@ -265,14 +286,15 @@ impl Machine {
             }
             Opcode::Nop => {}
             Opcode::Block => {
-                self.block_stack.push(inst.argument_data as usize);
+                let idx = inst.argument_data as usize;
+                self.block_stack.push((idx, func.code_hashes[idx]));
             }
             Opcode::EndBlock => {
                 self.block_stack.pop();
             }
             Opcode::EndBlockIf => {
                 let x = self.value_stack.last().unwrap();
-                if x.contents() != 0 {
+                if !x.is_i32_zero() {
                     self.block_stack.pop().unwrap();
                 }
             }
@@ -290,18 +312,23 @@ impl Machine {
             }
             Opcode::ArbitraryJumpIf => {
                 let x = self.value_stack.pop().unwrap();
-                if x.contents() != 0 {
+                if !x.is_i32_zero() {
                     self.pc.1 = inst.argument_data as usize;
                 }
             }
             Opcode::Branch => {
-                self.pc.1 = self.block_stack.pop().unwrap();
+                self.pc.1 = self.block_stack.pop().unwrap().0;
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
-                if x.contents() != 0 {
-                    self.pc.1 = self.block_stack.pop().unwrap();
+                if !x.is_i32_zero() {
+                    self.pc.1 = self.block_stack.pop().unwrap().0;
                 }
+            }
+            Opcode::Call => {
+                self.value_stack
+                    .push(Value::Ref(self.pc, func.code_hashes[self.pc.1]));
+                self.pc = (inst.argument_data as usize, 0);
             }
             Opcode::LocalGet => {
                 let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
@@ -335,20 +362,27 @@ impl Machine {
             }
             Opcode::I32Eqz => {
                 let val = self.value_stack.pop().unwrap();
-                self.value_stack
-                    .push(Value::I32((val.contents() == 0) as u32));
+                self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
             }
             Opcode::Drop => {
                 self.value_stack.pop().unwrap();
             }
-            Opcode::I32Add | Opcode::I64Add => {
-                let a = self.value_stack.pop().unwrap();
-                let b = self.value_stack.pop().unwrap();
-                let new = a.contents().wrapping_add(b.contents());
-                if inst.opcode == Opcode::I32Add {
-                    self.value_stack.push(Value::I32(new as u32));
+            Opcode::I32Add => {
+                let a = self.value_stack.pop();
+                let b = self.value_stack.pop();
+                if let (Some(Value::I32(a)), Some(Value::I32(b))) = (a, b) {
+                    self.value_stack.push(Value::I32(a.wrapping_add(b)));
                 } else {
-                    self.value_stack.push(Value::I64(new));
+                    panic!("WASM validation failed: wrong types for i32.add");
+                }
+            }
+            Opcode::I64Add => {
+                let a = self.value_stack.pop();
+                let b = self.value_stack.pop();
+                if let (Some(Value::I64(a)), Some(Value::I64(b))) = (a, b) {
+                    self.value_stack.push(Value::I64(a.wrapping_add(b)));
+                } else {
+                    panic!("WASM validation failed: wrong types for i64.add");
                 }
             }
         }
@@ -369,14 +403,14 @@ impl Machine {
             self.value_stack.len() - unproven_stack_depth,
         ));
         for val in &self.value_stack[unproven_stack_depth..] {
-            data.extend(val.serialize());
+            data.extend(val.serialize_for_proof());
         }
 
         let func = &self.funcs[self.pc.0];
         data.extend(prove_window(
             &self.block_stack,
-            |s| hash_block_stack(s, &func.code_hashes),
-            |&pc| func.code_hashes[pc],
+            |s| hash_block_stack(s),
+            |(_, h)| *h,
         ));
 
         data.extend(prove_window(
@@ -385,32 +419,40 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        if self.pc.1 >= func.code.len() {
-            data.extend(Bytes32::default());
-            data.push(0);
-        } else {
-            data.extend(func.code_hashes[self.pc.1 + 1]);
-            data.push(1);
-            data.extend(func.code[self.pc.1].serialize_for_proof());
-        }
+        data.extend(func.code_hashes[self.pc.1 + 1]);
+        data.extend(func.code[self.pc.1].serialize_for_proof());
 
-        data.extend(Merkle::new(self.globals.iter().map(|v| v.hash()).collect()).root());
+        data.extend(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
 
-        data.extend(self.funcs_merkle_root);
+        data.extend(self.funcs_merkle.root());
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
-            if next_inst.opcode == Opcode::LocalGet || next_inst.opcode == Opcode::LocalSet {
+            if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
                 let locals = &self.frame_stack.last().unwrap().locals;
                 let idx = next_inst.argument_data as usize;
-                data.extend(locals[idx].serialize());
-                let locals_merkle = Merkle::new(locals.iter().map(|v| v.hash()).collect());
+                data.extend(locals[idx].serialize_for_proof());
+                let locals_merkle =
+                    Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
                 data.extend(locals_merkle.prove(idx));
-            } else if next_inst.opcode == Opcode::GlobalGet || next_inst.opcode == Opcode::GlobalSet
-            {
+            } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
                 let idx = next_inst.argument_data as usize;
-                data.extend(self.globals[idx].serialize());
-                let locals_merkle = Merkle::new(self.globals.iter().map(|v| v.hash()).collect());
+                data.extend(self.globals[idx].serialize_for_proof());
+                let locals_merkle = Merkle::new(
+                    MerkleType::Value,
+                    self.globals.iter().map(|v| v.hash()).collect(),
+                );
                 data.extend(locals_merkle.prove(idx));
+            } else if next_inst.opcode == Opcode::Call {
+                let idx = next_inst.argument_data as usize;
+                data.extend(self.funcs[idx].code_hashes[1]);
+                data.extend(self.funcs[idx].code[0].serialize_for_proof());
+                data.extend(self.funcs_merkle.prove(idx));
             }
         }
 

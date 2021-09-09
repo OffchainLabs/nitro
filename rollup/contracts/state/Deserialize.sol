@@ -55,8 +55,8 @@ library Deserialize {
 		uint8 typeInt = uint8(proof[offset]);
 		offset++;
 		require(typeInt <= uint8(Values.maxValueType()), "BAD_VALUE_TYPE");
-		uint64 contents;
-		(contents, offset) = u64(proof, offset);
+		uint256 contents;
+		(contents, offset) = u256(proof, offset);
 		val = Value({
 			valueType: ValueType(typeInt),
 			contents: contents
@@ -113,16 +113,9 @@ library Deserialize {
 	function instructionWindow(bytes calldata proof, uint256 startOffset) internal pure returns (InstructionWindow memory window, uint256 offset) {
 		offset = startOffset;
 		bytes32 remainingHash;
+		Instruction[] memory proved = new Instruction[](1);
 		(remainingHash, offset) = b32(proof, offset);
-		Instruction[] memory proved;
-		if (proof[offset] != 0) {
-			offset++;
-			proved = new Instruction[](1);
-			(proved[0], offset) = instruction(proof, offset);
-		} else {
-			offset++;
-			proved = new Instruction[](0);
-		}
+		(proved[0], offset) = instruction(proof, offset);
 		window = InstructionWindow({
 			proved: proved,
 			remainingHash: remainingHash

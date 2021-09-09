@@ -22,15 +22,12 @@ pub enum BlockType {
 #[derive(Clone, Debug, PartialEq)]
 pub enum HirInstruction {
     Simple(Opcode),
+    WithIdx(Opcode, u32),
     Block(BlockType, Vec<HirInstruction>),
     Loop(BlockType, Vec<HirInstruction>),
     IfElse(BlockType, Vec<HirInstruction>, Vec<HirInstruction>),
     Branch(u32),
     BranchIf(u32),
-    LocalGet(u32),
-    LocalSet(u32),
-    GlobalGet(u32),
-    GlobalSet(u32),
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
@@ -243,6 +240,10 @@ fn block_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     ))(input)
 }
 
+fn inst_with_idx(opcode: Opcode) -> impl Fn(u32) -> HirInstruction {
+    move |i| HirInstruction::WithIdx(opcode, i)
+}
+
 fn branch_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
         preceded(tag(&[0x0C]), map(wasm_u32, HirInstruction::Branch)),
@@ -250,12 +251,22 @@ fn branch_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     ))(input)
 }
 
+fn call_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
+    preceded(tag(&[0x10]), map(wasm_u32, inst_with_idx(Opcode::Call)))(input)
+}
+
 fn variables_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
-        preceded(tag(&[0x20]), map(wasm_u32, HirInstruction::LocalGet)),
-        preceded(tag(&[0x21]), map(wasm_u32, HirInstruction::LocalSet)),
-        preceded(tag(&[0x23]), map(wasm_u32, HirInstruction::GlobalGet)),
-        preceded(tag(&[0x24]), map(wasm_u32, HirInstruction::GlobalSet)),
+        preceded(tag(&[0x20]), map(wasm_u32, inst_with_idx(Opcode::LocalGet))),
+        preceded(tag(&[0x21]), map(wasm_u32, inst_with_idx(Opcode::LocalSet))),
+        preceded(
+            tag(&[0x23]),
+            map(wasm_u32, inst_with_idx(Opcode::GlobalGet)),
+        ),
+        preceded(
+            tag(&[0x24]),
+            map(wasm_u32, inst_with_idx(Opcode::GlobalSet)),
+        ),
     ))(input)
 }
 
@@ -279,6 +290,7 @@ fn instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
         map(simple_opcode, HirInstruction::Simple),
         block_instruction,
         branch_instruction,
+        call_instruction,
         variables_instruction,
         const_instruction,
     ))(input)
@@ -341,14 +353,15 @@ fn globals_section(input: &[u8]) -> IResult<&[u8], Vec<Global>> {
 }
 
 fn code_func(input: &[u8]) -> IResult<&[u8], Code> {
-    let (extra, input) = length_data(wasm_u32)(input)?;
+    let (remaining, input) = length_data(wasm_u32)(input)?;
+    let (extra, code) = map(tuple((locals, instructions)), |(l, i)| Code {
+        locals: l,
+        expr: i,
+    })(input)?;
     if !extra.is_empty() {
         return Err(Err::Error(Error::new(extra, ErrorKind::Eof)));
     }
-    map(tuple((locals, instructions)), |(l, i)| Code {
-        locals: l,
-        expr: i,
-    })(input)
+    Ok((remaining, code))
 }
 
 fn code_section(input: &[u8]) -> IResult<&[u8], Vec<Code>> {

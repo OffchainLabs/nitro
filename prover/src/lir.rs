@@ -13,6 +13,10 @@ pub enum Opcode {
     Branch = 0x0C,
     BranchIf,
 
+    Call = 0x10,
+
+    Drop = 0x1A,
+
     LocalGet = 0x20,
     LocalSet,
     GlobalGet = 0x23,
@@ -28,8 +32,6 @@ pub enum Opcode {
     I32Add = 0x6A,
 
     I64Add = 0x7C,
-
-    Drop = 0x1A,
 
     // Custom opcodes:
     /// Custom opcode not in wasm.
@@ -157,30 +159,9 @@ impl Instruction {
                 }
                 ops.push(Instruction::simple(Opcode::BranchIf));
             }
-            HirInstruction::LocalGet(x) => {
+            HirInstruction::WithIdx(op, x) => {
                 ops.push(Instruction {
-                    opcode: Opcode::LocalGet,
-                    argument_data: x.into(),
-                    proving_argument_data: None,
-                });
-            }
-            HirInstruction::LocalSet(x) => {
-                ops.push(Instruction {
-                    opcode: Opcode::LocalSet,
-                    argument_data: x.into(),
-                    proving_argument_data: None,
-                });
-            }
-            HirInstruction::GlobalGet(x) => {
-                ops.push(Instruction {
-                    opcode: Opcode::GlobalGet,
-                    argument_data: x.into(),
-                    proving_argument_data: None,
-                });
-            }
-            HirInstruction::GlobalSet(x) => {
-                ops.push(Instruction {
-                    opcode: Opcode::GlobalSet,
+                    opcode: op,
                     argument_data: x.into(),
                     proving_argument_data: None,
                 });

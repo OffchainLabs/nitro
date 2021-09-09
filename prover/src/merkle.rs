@@ -8,18 +8,28 @@ pub struct Merkle {
     layers: Vec<Vec<Bytes32>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MerkleType {
+	Value,
+	Function,
+}
+
 impl Merkle {
-    pub fn new(hashes: Vec<Bytes32>) -> Merkle {
+    pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
+		let prefix = match ty {
+			MerkleType::Value => "Value merkle tree:",
+			MerkleType::Function => "Function merkle tree:",
+		};
         let mut layers = Vec::new();
         layers.push(hashes);
         while layers.last().unwrap().len() > 1 {
             let mut new_layer = Vec::new();
             for window in layers.last().unwrap().chunks(2) {
                 let mut h = Keccak256::new();
-                h.update("Value merkle tree:");
+                h.update(prefix);
                 h.update(window[0]);
                 h.update(window.get(1).cloned().unwrap_or_default());
                 new_layer.push(h.finalize().into());
@@ -48,7 +58,7 @@ impl Merkle {
             );
         }
         let mut proof = Vec::new();
-        proof.push(u8::try_from(self.layers.len()).unwrap() - 1);
+        proof.push(u8::try_from(self.layers.len() - 1).unwrap());
         for layer in &self.layers {
             if layer.len() <= 1 {
                 break;

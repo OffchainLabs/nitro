@@ -29,6 +29,22 @@ impl From<[u8; 32]> for Bytes32 {
     }
 }
 
+impl From<u32> for Bytes32 {
+    fn from(x: u32) -> Self {
+		let mut b = [0u8; 32];
+		b[(32 - 4)..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
+impl From<u64> for Bytes32 {
+    fn from(x: u64) -> Self {
+		let mut b = [0u8; 32];
+		b[(32 - 8)..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
 impl IntoIterator for Bytes32 {
     type Item = u8;
     type IntoIter = std::array::IntoIter<u8, 32>;
