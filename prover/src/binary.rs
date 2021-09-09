@@ -11,6 +11,12 @@ use nom::{
     sequence::{preceded, tuple},
     Err, Finish, IResult, Needed,
 };
+use nom_leb128::{
+    leb128_i32,
+    leb128_i64,
+    leb128_u32,
+    leb128_u64,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockType {
@@ -83,92 +89,14 @@ pub struct WasmBinary {
     pub sections: Vec<WasmSection>,
 }
 
-/// Implements unsigned LEB128 integer decoding
-fn wasm_unsigned(mut input: &[u8], bits: u32) -> IResult<&[u8], u64> {
-    let mut res = 0;
-    let mut shift = 0;
-    let mut cont = true;
-    while cont {
-        if input.len() == 0 {
-            return Err(Err::Incomplete(Needed::new(1)));
-        }
-        let mut val = input[0];
-        cont = (val & (1 << 7)) != 0;
-        val &= !(1 << 7);
-
-        let too_large = Err::Error(Error::new(input, ErrorKind::TooLarge));
-        let shifted = match u64::from(val).checked_shl(shift) {
-            Some(x) => x,
-            None => return Err(too_large),
-        };
-        if shifted >= (1 << bits) {
-            return Err(too_large);
-        }
-        res += shifted;
-        shift += 7;
-        if shift >= bits && cont {
-            return Err(too_large);
-        }
-        input = &input[1..];
-    }
-    Ok((input, res))
-}
-
-/// Implements unsigned LEB128 integer decoding
-fn wasm_signed(mut input: &[u8], bits: u32) -> IResult<&[u8], i64> {
-    let mut res = 0;
-    let mut shift = 0;
-    let mut cont = true;
-    while cont {
-        if input.len() == 0 {
-            return Err(Err::Incomplete(Needed::new(1)));
-        }
-        let mut val = input[0];
-        cont = (val & (1 << 7)) != 0;
-        val &= !(1 << 7);
-
-        let negative = (val & (1 << 6)) != 0;
-        let mut val = i64::from(val & !(1 << 6));
-        if negative {
-            val = -val;
-        }
-
-        let too_large = Err::Error(Error::new(input, ErrorKind::TooLarge));
-        let shifted = match val.checked_shl(shift) {
-            Some(x) => x,
-            None => return Err(too_large),
-        };
-        if shifted >= (1 << bits) || shifted < -(1 << bits) {
-            return Err(too_large);
-        }
-        res += shifted;
-        shift += 7;
-        if shift >= bits && cont {
-            return Err(too_large);
-        }
-        input = &input[1..];
-    }
-    Ok((input, res))
-}
-
-fn wasm_u32(input: &[u8]) -> IResult<&[u8], u32> {
-    wasm_unsigned(input, 32).map(|(i, x)| (i, x as u32))
-}
-
-fn wasm_u64(input: &[u8]) -> IResult<&[u8], u64> {
-    wasm_unsigned(input, 64)
-}
-
-fn wasm_s32(input: &[u8]) -> IResult<&[u8], i32> {
-    wasm_signed(input, 32).map(|(i, x)| (i, x as i32))
-}
-
 fn wasm_s33(input: &[u8]) -> IResult<&[u8], i64> {
-    wasm_signed(input, 33)
-}
-
-fn wasm_s64(input: &[u8]) -> IResult<&[u8], i64> {
-    wasm_signed(input, 64).map(|(i, x)| (i, x))
+    let i64res = leb128_i64(input);
+    if let Ok((_, num)) = i64res {
+        if num < -(1<<32) || num >= (1 << 32) {
+            return Err(Err::Error(Error::new(input, ErrorKind::TooLarge)));
+        }
+    }
+    i64res
 }
 
 fn wasm_bool(input: &[u8]) -> IResult<&[u8], bool> {
@@ -179,7 +107,7 @@ fn wasm_vec<'a: 'b, 'b: 'a, T>(
     mut parser: impl FnMut(&'a [u8]) -> IResult<&'a [u8], T>,
 ) -> impl FnMut(&'b [u8]) -> IResult<&'b [u8], Vec<T>> {
     move |input| {
-        let (input, len) = wasm_u32(input)?;
+        let (input, len) = leb128_u32(input)?;
         count(&mut parser, len as usize)(input)
     }
 }
@@ -247,41 +175,41 @@ fn inst_with_idx(opcode: Opcode) -> impl Fn(u32) -> HirInstruction {
 
 fn branch_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
-        preceded(tag(&[0x0C]), map(wasm_u32, HirInstruction::Branch)),
-        preceded(tag(&[0x0D]), map(wasm_u32, HirInstruction::BranchIf)),
+        preceded(tag(&[0x0C]), map(leb128_u32, HirInstruction::Branch)),
+        preceded(tag(&[0x0D]), map(leb128_u32, HirInstruction::BranchIf)),
     ))(input)
 }
 
 fn call_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
-    preceded(tag(&[0x10]), map(wasm_u32, inst_with_idx(Opcode::Call)))(input)
+    preceded(tag(&[0x10]), map(leb128_u32, inst_with_idx(Opcode::Call)))(input)
 }
 
 fn variables_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
-        preceded(tag(&[0x20]), map(wasm_u32, inst_with_idx(Opcode::LocalGet))),
-        preceded(tag(&[0x21]), map(wasm_u32, inst_with_idx(Opcode::LocalSet))),
+        preceded(tag(&[0x20]), map(leb128_u32, inst_with_idx(Opcode::LocalGet))),
+        preceded(tag(&[0x21]), map(leb128_u32, inst_with_idx(Opcode::LocalSet))),
         preceded(
             tag(&[0x23]),
-            map(wasm_u32, inst_with_idx(Opcode::GlobalGet)),
+            map(leb128_u32, inst_with_idx(Opcode::GlobalGet)),
         ),
         preceded(
             tag(&[0x24]),
-            map(wasm_u32, inst_with_idx(Opcode::GlobalSet)),
+            map(leb128_u32, inst_with_idx(Opcode::GlobalSet)),
         ),
     ))(input)
 }
 
 fn const_instruction(input: &[u8]) -> IResult<&[u8], HirInstruction> {
     alt((
-        preceded(tag(&[0x41]), map(wasm_s32, HirInstruction::I32Const)),
-        preceded(tag(&[0x42]), map(wasm_s64, HirInstruction::I64Const)),
+        preceded(tag(&[0x41]), map(leb128_i32, HirInstruction::I32Const)),
+        preceded(tag(&[0x42]), map(leb128_i64, HirInstruction::I64Const)),
         preceded(
             tag(&[0x43]),
-            map(map(wasm_u32, f32::from_bits), HirInstruction::F32Const),
+            map(map(leb128_u32, f32::from_bits), HirInstruction::F32Const),
         ),
         preceded(
             tag(&[0x44]),
-            map(map(wasm_u64, f64::from_bits), HirInstruction::F64Const),
+            map(map(leb128_u64, f64::from_bits), HirInstruction::F64Const),
         ),
     ))(input)
 }
@@ -334,7 +262,7 @@ fn global(input: &[u8]) -> IResult<&[u8], Global> {
 }
 
 fn locals(input: &[u8]) -> IResult<&[u8], Vec<ValueType>> {
-    map(wasm_vec(tuple((wasm_u32, value_type))), |v| {
+    map(wasm_vec(tuple((leb128_u32, value_type))), |v| {
         v.into_iter()
             .flat_map(|(c, t)| std::iter::repeat(t).take(c as usize))
             .collect::<Vec<_>>()
@@ -346,7 +274,7 @@ fn types_section(input: &[u8]) -> IResult<&[u8], Vec<FunctionType>> {
 }
 
 fn functions_section(input: &[u8]) -> IResult<&[u8], Vec<u32>> {
-    wasm_vec(wasm_u32)(input)
+    wasm_vec(leb128_u32)(input)
 }
 
 fn globals_section(input: &[u8]) -> IResult<&[u8], Vec<Global>> {
@@ -354,7 +282,7 @@ fn globals_section(input: &[u8]) -> IResult<&[u8], Vec<Global>> {
 }
 
 fn code_func(input: &[u8]) -> IResult<&[u8], Code> {
-    let (remaining, input) = length_data(wasm_u32)(input)?;
+    let (remaining, input) = length_data(leb128_u32)(input)?;
     let (extra, code) = map(tuple((locals, instructions)), |(l, i)| Code {
         locals: l,
         expr: i,
@@ -375,13 +303,13 @@ fn section(mut input: &[u8]) -> IResult<&[u8], WasmSection> {
     }
     let section_type = input[0];
     input = &input[1..];
-    let (remaining, data) = length_data(wasm_u32)(input)?;
+    let (remaining, data) = length_data(leb128_u32)(input)?;
     let (extra, sect) = match section_type {
         0 => Ok((input, WasmSection::Custom(data.into()))),
         1 => map(types_section, WasmSection::Types)(data),
         3 => map(functions_section, WasmSection::Functions)(data),
         6 => map(globals_section, WasmSection::Globals)(data),
-        8 => map(wasm_u32, WasmSection::Start)(data),
+        8 => map(leb128_u32, WasmSection::Start)(data),
         10 => map(code_section, WasmSection::Code)(data),
         _ => Err(Err::Error(Error::new(input, ErrorKind::Tag))),
     }?;
