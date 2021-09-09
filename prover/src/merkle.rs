@@ -10,8 +10,8 @@ pub struct Merkle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MerkleType {
-	Value,
-	Function,
+    Value,
+    Function,
 }
 
 impl Merkle {
@@ -19,10 +19,10 @@ impl Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
-		let prefix = match ty {
-			MerkleType::Value => "Value merkle tree:",
-			MerkleType::Function => "Function merkle tree:",
-		};
+        let prefix = match ty {
+            MerkleType::Value => "Value merkle tree:",
+            MerkleType::Function => "Function merkle tree:",
+        };
         let mut layers = Vec::new();
         layers.push(hashes);
         while layers.last().unwrap().len() > 1 {

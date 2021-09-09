@@ -416,7 +416,8 @@ impl Machine {
             }
             Opcode::IsStackBoundary => {
                 let val = self.value_stack.pop().unwrap();
-                self.value_stack.push(Value::I32((val == Value::StackBoundary) as u32));
+                self.value_stack
+                    .push(Value::I32((val == Value::StackBoundary) as u32));
             }
         }
     }
