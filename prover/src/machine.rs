@@ -293,6 +293,13 @@ impl Machine {
         h.finalize().into()
     }
 
+    pub fn get_next_instruction(&self) -> Option<Instruction> {
+        if self.halted {
+            return None;
+        }
+        self.funcs[self.pc.0].code.get(self.pc.1).cloned()
+    }
+
     pub fn step(&mut self) {
         if self.halted {
             return;
@@ -300,13 +307,7 @@ impl Machine {
 
         let func = &self.funcs[self.pc.0];
         let code = &func.code;
-        if code.len() <= self.pc.1 {
-            eprintln!("Warning: ran off end of function");
-            self.halted = true;
-            return;
-        }
         let inst = code[self.pc.1];
-        dbg!(inst.opcode);
         self.pc.1 += 1;
         match inst.opcode {
             Opcode::Unreachable => {
@@ -579,7 +580,8 @@ impl Machine {
                 next_inst.opcode,
                 Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. }
             ) {
-                let stack_idx_offset = if matches!(next_inst.opcode, Opcode::MemoryStore { .. }) {
+                let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
+                let stack_idx_offset = if is_store {
                     // The index is one item below the top stack item for a memory store
                     1
                 } else {
@@ -603,7 +605,14 @@ impl Machine {
                     // Now check if the next leaf is a valid index into the memory, and if so, prove it too.
                     if let Some(next_leaf_idx) = idx.checked_add(Memory::LEAF_SIZE) {
                         data.extend(self.memory.get_leaf_data(next_leaf_idx));
-                        data.extend(mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                        let second_mem_merkle = if is_store {
+                            let mut copy = self.clone();
+                            copy.step();
+                            copy.memory.merkelize()
+                        } else {
+                            mem_merkle
+                        };
+                        data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
                     }
                 }
             }

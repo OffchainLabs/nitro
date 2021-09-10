@@ -57,6 +57,7 @@ fn main() -> Result<()> {
             break;
         }
         println!("Machine stack: {:?}", mach.get_data_stack());
+        println!("Generating proof #{} of opcode {:?}", proofs.len(), mach.get_next_instruction().unwrap().opcode);
         let proof = mach.serialize_proof();
         mach.step();
         let after = mach.hash();

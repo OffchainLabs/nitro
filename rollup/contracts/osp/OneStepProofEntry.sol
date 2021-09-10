@@ -24,23 +24,16 @@ contract OneStepProofEntry {
         (mach, offset) = Deserialize.machine(proof, offset);
         require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
 
+        uint16 opcode = Instructions.peek(mach.instructions).opcode;
         if (
-            mach.instructions.proved.length == 0 &&
-            mach.instructions.remainingHash == 0
+            (opcode >= Instructions.I32_LOAD &&
+                opcode <= Instructions.I64_LOAD32_U) ||
+            (opcode >= Instructions.I32_STORE &&
+                opcode <= Instructions.I64_STORE32)
         ) {
-            mach.halted = true;
+            mach = proverMem.executeOneStep(mach, proof[offset:]);
         } else {
-            uint16 opcode = Instructions.peek(mach.instructions).opcode;
-            if (
-                (opcode >= Instructions.I32_LOAD &&
-                    opcode <= Instructions.I64_LOAD32_U) ||
-                (opcode >= Instructions.I32_STORE &&
-                    opcode <= Instructions.I64_STORE32)
-            ) {
-                mach = proverMem.executeOneStep(mach, proof[offset:]);
-            } else {
-                mach = prover0.executeOneStep(mach, proof[offset:]);
-            }
+            mach = prover0.executeOneStep(mach, proof[offset:]);
         }
 
         return Machines.hash(mach);
