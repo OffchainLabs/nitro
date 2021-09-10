@@ -12,6 +12,7 @@ pub struct Merkle {
 pub enum MerkleType {
     Value,
     Function,
+    Memory,
 }
 
 impl Merkle {
@@ -22,6 +23,7 @@ impl Merkle {
         let prefix = match ty {
             MerkleType::Value => "Value merkle tree:",
             MerkleType::Function => "Function merkle tree:",
+            MerkleType::Memory => "Memory merkle tree:",
         };
         let mut layers = Vec::new();
         layers.push(hashes);
