@@ -1,6 +1,7 @@
 mod binary;
 mod lir;
 mod machine;
+mod memory;
 mod merkle;
 mod utils;
 mod value;
@@ -35,7 +36,10 @@ fn main() -> Result<()> {
     let bin = match binary::parse(&buf) {
         Ok(bin) => bin,
         Err(err) => {
-            eprintln!("parsing error: {:?}", err);
+            eprintln!("Parsing error:");
+            for (input, kind) in err.errors {
+                eprintln!("Got {:?} while parsing {}", kind, hex::encode(input));
+            }
             process::exit(1);
         }
     };

@@ -2,6 +2,7 @@ use crate::{
     binary::{WasmBinary, WasmSection},
     lir::Instruction,
     lir::Opcode,
+    memory::Memory,
     merkle::{Merkle, MerkleType},
     utils::{usize_to_u256_bytes, Bytes32},
     value::{Value, ValueType},
@@ -9,6 +10,7 @@ use crate::{
 use digest::Digest;
 use eyre::Result;
 use sha3::Keccak256;
+use std::convert::TryInto;
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -97,6 +99,7 @@ pub struct Machine {
     block_stack: Vec<(usize, Bytes32)>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
+    memory: Memory,
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
     pc: (usize, usize),
@@ -157,6 +160,7 @@ impl Machine {
         let mut types = Vec::new();
         let mut func_types = Vec::new();
         let mut start = 0;
+        let mut memory = Memory::default();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -219,6 +223,14 @@ impl Machine {
                     assert!(start == 0, "Duplicate start section");
                     start = s as usize;
                 }
+                WasmSection::Memories(m) => {
+                    assert!(memory.size() == 0, "Duplicate memories section");
+                    assert!(m.len() <= 1, "Multiple memories are not supported");
+                    if let Some(limits) = m.get(0) {
+                        // We ignore the maximum size
+                        memory = Memory::new(limits.minimum_size.try_into().unwrap());
+                    }
+                }
                 WasmSection::Globals(g) => {
                     assert!(globals.is_empty(), "Duplicate globals section");
                     globals = g
@@ -242,6 +254,7 @@ impl Machine {
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
+            memory,
             globals,
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
@@ -264,6 +277,7 @@ impl Machine {
         h.update(&hash_block_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
+        h.update(self.memory.hash());
         h.update(
             Merkle::new(
                 MerkleType::Value,
@@ -365,6 +379,51 @@ impl Machine {
             Opcode::GlobalSet => {
                 let val = self.value_stack.pop().unwrap();
                 self.globals[inst.argument_data as usize] = val;
+            }
+            Opcode::MemoryLoad { ty, bytes, signed } => {
+                let base = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x,
+                    x => panic!(
+                        "WASM validation failed: top of stack before memory load is {:?}",
+                        x,
+                    ),
+                };
+                if let Some(idx) = inst.argument_data.checked_add(base.into()) {
+                    let val = self.memory.get_value(idx, ty, bytes, signed);
+                    if let Some(val) = val {
+                        self.value_stack.push(val);
+                    } else {
+                        self.halted = true;
+                    }
+                } else {
+                    self.halted = true;
+                }
+            }
+            Opcode::MemoryStore { ty: _, bytes} => {
+                let val = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x.into(),
+                    Some(Value::I64(x)) => x,
+                    Some(Value::F32(x)) => x.to_bits().into(),
+                    Some(Value::F64(x)) => x.to_bits(),
+                    x => panic!(
+                        "WASM validation failed: attempted to memory store type {:?}",
+                        x,
+                    ),
+                };
+                let base = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x,
+                    x => panic!(
+                        "WASM validation failed: attempted to memory store with index type {:?}",
+                        x,
+                    ),
+                };
+                if let Some(idx) = inst.argument_data.checked_add(base.into()) {
+                    if !self.memory.store_value(idx, val, bytes) {
+                        self.halted = true;
+                    }
+                } else {
+                    self.halted = true;
+                }
             }
             Opcode::I32Const => {
                 self.value_stack.push(Value::I32(inst.argument_data as u32));
