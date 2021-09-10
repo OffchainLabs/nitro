@@ -1,10 +1,18 @@
 use crate::{
     binary::{BlockType, HirInstruction},
     utils::Bytes32,
-    value::ValueType,
+    value::{ValueType, IntegerValType},
 };
 use digest::Digest;
 use sha3::Keccak256;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum IBinOpType {
+    Add=0,
+    Sub,
+    Mul
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
@@ -47,12 +55,8 @@ pub enum Opcode {
     F64Const,
 
     I32Eqz,
-    I32Add,
-    I32Sub,
-    I32Mul,
 
-    I64Add,
-
+    IBinOp(IntegerValType, IBinOpType),
     // Custom opcodes:
     /// Custom opcode not in wasm.
     /// Branch is partially split up into these.
@@ -130,9 +134,10 @@ impl Opcode {
             Opcode::F32Const => 0x43,
             Opcode::F64Const => 0x44,
             Opcode::I32Eqz => 0x45,
-            Opcode::I32Add => 0x6A,
-            Opcode::I64Add => 0x7C,
-
+            Opcode::IBinOp(w, op) => match w {
+                IntegerValType::I32 => 0x6a + (op as u16),
+                IntegerValType::I64 => 0x7c + (op as u16),
+            }
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
             Opcode::EndBlockIf => 0x8001,

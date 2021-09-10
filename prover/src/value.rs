@@ -4,6 +4,12 @@ use sha3::Keccak256;
 use crate::utils::Bytes32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IntegerValType {
+    I32,
+    I64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ValueType {
     I32,
     I64,
