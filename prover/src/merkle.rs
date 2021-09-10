@@ -50,14 +50,18 @@ impl Merkle {
         }
     }
 
+    pub fn leaves(&self) -> &[Bytes32] {
+        if self.layers.is_empty() {
+            &[]
+        } else {
+            &self.layers[0]
+        }
+    }
+
     #[must_use]
-    pub fn prove(&self, mut idx: usize) -> Vec<u8> {
-        if self.layers.is_empty() || idx >= self.layers[0].len() {
-            panic!(
-                "Attempted out of bounds merkle proof for index {} into length {}",
-                idx,
-                self.layers.get(0).map(Vec::len).unwrap_or_default(),
-            );
+    pub fn prove(&self, mut idx: usize) -> Option<Vec<u8>> {
+        if idx >= self.leaves().len() {
+            return None;
         }
         let mut proof = Vec::new();
         proof.push(u8::try_from(self.layers.len() - 1).unwrap());
@@ -69,6 +73,6 @@ impl Merkle {
             proof.extend(layer.get(counterpart).cloned().unwrap_or_default());
             idx >>= 1;
         }
-        proof
+        Some(proof)
     }
 }

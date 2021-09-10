@@ -8,6 +8,7 @@ import "./Machines.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
 import "./MerkleProofs.sol";
+import "./MachineMemories.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -153,6 +154,18 @@ library Deserialize {
 		});
 	}
 
+	function machineMemory(bytes calldata proof, uint256 startOffset) internal pure returns (MachineMemory memory mem, uint256 offset) {
+		offset = startOffset;
+		uint64 size;
+		bytes32 root;
+		(size, offset) = u64(proof, offset);
+		(root, offset) = b32(proof, offset);
+		mem = MachineMemory({
+			size: size,
+			merkleRoot: root
+		});
+	}
+
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
 		ValueStack memory values;
@@ -161,6 +174,7 @@ library Deserialize {
 		InstructionWindow memory instructions;
 		StackFrameWindow memory frameStack;
 		bytes32 globalsMerkleRoot;
+		MachineMemory memory mem;
 		bytes32 functionsMerkleRoot;
 		(values, offset) = valueStack(proof, offset);
 		(internalStack, offset) = valueStack(proof, offset);
@@ -168,6 +182,7 @@ library Deserialize {
 		(frameStack, offset) = stackFrameWindow(proof, offset);
 		(instructions, offset) = instructionWindow(proof, offset);
 		(globalsMerkleRoot, offset) = b32(proof, offset);
+		(mem, offset) = machineMemory(proof, offset);
 		(functionsMerkleRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
@@ -176,6 +191,7 @@ library Deserialize {
 			frameStack: frameStack,
 			instructions: instructions,
 			globalsMerkleRoot: globalsMerkleRoot,
+			machineMemory: mem,
 			functionsMerkleRoot: functionsMerkleRoot,
 			halted: false
 		});

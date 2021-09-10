@@ -7,7 +7,6 @@ use digest::Digest;
 use sha3::Keccak256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u16)]
 pub enum Opcode {
     Unreachable,
     Nop,

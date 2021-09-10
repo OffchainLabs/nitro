@@ -19,6 +19,11 @@ library MerkleProofs {
 		return computeRootUnsafe(proof, index, Instructions.hash(leaf), "Function merkle tree:");
 	}
 
+	function computeRootForMemory(MerkleProof memory proof, uint256 index, bytes32 contents) internal pure returns (bytes32) {
+		bytes32 h = keccak256(abi.encodePacked("Memory leaf:", contents));
+		return computeRootUnsafe(proof, index, h, "Memory merkle tree:");
+	}
+
 	// WARNING: leafHash must be computed in such a way that it cannot be a non-leaf hash.
 	function computeRootUnsafe(MerkleProof memory proof, uint256 index, bytes32 leafHash, string memory prefix) internal pure returns (bytes32 h) {
 		h = leafHash;

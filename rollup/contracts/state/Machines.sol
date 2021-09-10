@@ -5,6 +5,7 @@ import "./ValueStacks.sol";
 import "./Bytes32Stacks.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
+import "./MachineMemories.sol";
 
 struct Machine {
 	ValueStack valueStack;
@@ -13,6 +14,7 @@ struct Machine {
 	StackFrameWindow frameStack;
 	InstructionWindow instructions;
 	bytes32 globalsMerkleRoot;
+	MachineMemory machineMemory;
 	bytes32 functionsMerkleRoot;
 	bool halted;
 }
@@ -30,6 +32,7 @@ library Machines {
 			StackFrames.hash(mach.frameStack),
 			Instructions.hash(mach.instructions),
 			mach.globalsMerkleRoot,
+			MachineMemories.hash(mach.machineMemory),
 			mach.functionsMerkleRoot
 		));
 	}

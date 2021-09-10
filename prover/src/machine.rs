@@ -1,16 +1,16 @@
 use crate::{
-    binary::{WasmBinary, WasmSection},
+    binary::{FunctionType, WasmBinary, WasmSection},
     lir::Instruction,
     lir::Opcode,
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    utils::{usize_to_u256_bytes, Bytes32},
+    utils::Bytes32,
     value::{Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
 use sha3::Keccak256;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -249,6 +249,10 @@ impl Machine {
             }
         }
         assert!(!code.is_empty());
+        assert!(
+            func_types[start] == FunctionType::default(),
+            "Start function takes inputs or outputs",
+        );
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -277,7 +281,6 @@ impl Machine {
         h.update(&hash_block_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
-        h.update(self.memory.hash());
         h.update(
             Merkle::new(
                 MerkleType::Value,
@@ -285,6 +288,7 @@ impl Machine {
             )
             .root(),
         );
+        h.update(self.memory.hash());
         h.update(self.funcs_merkle.root());
         h.finalize().into()
     }
@@ -399,7 +403,7 @@ impl Machine {
                     self.halted = true;
                 }
             }
-            Opcode::MemoryStore { ty: _, bytes} => {
+            Opcode::MemoryStore { ty: _, bytes } => {
                 let val = match self.value_stack.pop() {
                     Some(Value::I32(x)) => x.into(),
                     Some(Value::I64(x)) => x,
@@ -492,9 +496,7 @@ impl Machine {
         let mut data = Vec::new();
         let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);
         data.extend(hash_value_stack(&self.value_stack[..unproven_stack_depth]));
-        data.extend(usize_to_u256_bytes(
-            self.value_stack.len() - unproven_stack_depth,
-        ));
+        data.extend(Bytes32::from(self.value_stack.len() - unproven_stack_depth));
         for val in &self.value_stack[unproven_stack_depth..] {
             data.extend(val.serialize_for_proof());
         }
@@ -503,7 +505,7 @@ impl Machine {
         data.extend(hash_value_stack(
             &self.internal_stack[..unproven_internal_stack_depth],
         ));
-        data.extend(usize_to_u256_bytes(
+        data.extend(Bytes32::from(
             self.internal_stack.len() - unproven_internal_stack_depth,
         ));
         for val in &self.internal_stack[unproven_internal_stack_depth..] {
@@ -534,6 +536,10 @@ impl Machine {
             .root(),
         );
 
+        let mem_merkle = self.memory.merkelize();
+        data.extend((self.memory.size() as u64).to_be_bytes());
+        data.extend(mem_merkle.root());
+
         data.extend(self.funcs_merkle.root());
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
@@ -543,7 +549,11 @@ impl Machine {
                 data.extend(locals[idx].serialize_for_proof());
                 let locals_merkle =
                     Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
-                data.extend(locals_merkle.prove(idx));
+                data.extend(
+                    locals_merkle
+                        .prove(idx)
+                        .expect("Out of bounds local access"),
+                );
             } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
                 let idx = next_inst.argument_data as usize;
                 data.extend(self.globals[idx].serialize_for_proof());
@@ -551,12 +561,51 @@ impl Machine {
                     MerkleType::Value,
                     self.globals.iter().map(|v| v.hash()).collect(),
                 );
-                data.extend(locals_merkle.prove(idx));
+                data.extend(
+                    locals_merkle
+                        .prove(idx)
+                        .expect("Out of bounds global access"),
+                );
             } else if next_inst.opcode == Opcode::Call {
                 let idx = next_inst.argument_data as usize;
                 data.extend(self.funcs[idx].code_hashes[1]);
                 data.extend(self.funcs[idx].code[0].serialize_for_proof());
-                data.extend(self.funcs_merkle.prove(idx));
+                data.extend(
+                    self.funcs_merkle
+                        .prove(idx)
+                        .expect("Out of bounds function access"),
+                );
+            } else if matches!(
+                next_inst.opcode,
+                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. }
+            ) {
+                let stack_idx_offset = if matches!(next_inst.opcode, Opcode::MemoryStore { .. }) {
+                    // The index is one item below the top stack item for a memory store
+                    1
+                } else {
+                    0
+                };
+                let base = match self
+                    .value_stack
+                    .get(self.value_stack.len() - 1 - stack_idx_offset)
+                {
+                    Some(Value::I32(x)) => *x,
+                    x => panic!("WASM validation failed: memory index type is {:?}", x),
+                };
+                if let Some(mut idx) = u64::from(base)
+                    .checked_add(next_inst.argument_data)
+                    .and_then(|x| usize::try_from(x).ok())
+                {
+                    // Prove the leaf this index is in, and the next one, if they are within the memory's size.
+                    idx /= Memory::LEAF_SIZE;
+                    data.extend(self.memory.get_leaf_data(idx));
+                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                    // Now check if the next leaf is a valid index into the memory, and if so, prove it too.
+                    if let Some(next_leaf_idx) = idx.checked_add(Memory::LEAF_SIZE) {
+                        data.extend(self.memory.get_leaf_data(next_leaf_idx));
+                        data.extend(mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                    }
+                }
             }
         }
 

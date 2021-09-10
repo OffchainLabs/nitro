@@ -45,6 +45,14 @@ impl From<u64> for Bytes32 {
     }
 }
 
+impl From<usize> for Bytes32 {
+    fn from(x: usize) -> Self {
+        let mut b = [0u8; 32];
+        b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
+        Self(b)
+    }
+}
+
 impl IntoIterator for Bytes32 {
     type Item = u8;
     type IntoIter = std::array::IntoIter<u8, 32>;
@@ -72,10 +80,4 @@ impl fmt::Debug for Bytes32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(self))
     }
-}
-
-pub fn usize_to_u256_bytes(x: usize) -> [u8; 32] {
-    let mut bytes = [0u8; 32];
-    bytes[24..].copy_from_slice(&(x as u64).to_be_bytes());
-    bytes
 }
