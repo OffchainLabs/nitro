@@ -251,6 +251,7 @@ dependencies = [
  "hex",
  "nom",
  "nom-leb128",
+ "num-traits",
  "serde",
  "serde_json",
  "sha3",
