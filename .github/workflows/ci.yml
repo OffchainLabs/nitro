@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+
+env:
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  rustfmt:
+    name: Rust formatting check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt
+
+      - name: Rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  test:
+    name: Run tests
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install Ubuntu dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential cmake nodejs
+
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Install latest wabt
+        run: |
+          cd "$(mktemp -d)"
+          git clone --recursive -b 1.0.24 https://github.com/WebAssembly/wabt .
+          mkdir build
+          cd build
+          cmake ..
+          make -j
+          sudo make install
+
+      - name: Run rust tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all
+
+      - name: Make proofs from test cases
+        run: make -j
+
+      - name: Run hardhat tests including proof validation
+        run: |
+          npm install --global yarn
+          cd rollup
+          yarn install
+          yarn hardhat test

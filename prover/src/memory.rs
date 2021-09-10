@@ -67,10 +67,10 @@ impl Memory {
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
         let mut buf = [0u8; Self::LEAF_SIZE];
-		let idx = match leaf_idx.checked_mul(Self::LEAF_SIZE) {
-			Some(x) if x < self.buffer.len() => x,
-			_ => return buf,
-		};
+        let idx = match leaf_idx.checked_mul(Self::LEAF_SIZE) {
+            Some(x) if x < self.buffer.len() => x,
+            _ => return buf,
+        };
         let size = std::cmp::min(Self::LEAF_SIZE, self.buffer.len() - idx);
         buf[..size].copy_from_slice(&self.buffer[idx..(idx + size)]);
         buf

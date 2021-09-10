@@ -1,6 +1,6 @@
 use crate::{
-    lir::{Opcode, IBinOpType},
-    value::{Value as LirValue, ValueType, IntegerValType},
+    lir::{IBinOpType, Opcode},
+    value::{IntegerValType, Value as LirValue, ValueType},
 };
 use nom::{
     branch::alt,
@@ -147,12 +147,30 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         value(Opcode::Nop, tag(&[0x01])),
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
-        value(Opcode::IBinOp(IntegerValType::I32, IBinOpType::Add), tag(&[0x6A])),
-        value(Opcode::IBinOp(IntegerValType::I32, IBinOpType::Sub), tag(&[0x6B])),
-        value(Opcode::IBinOp(IntegerValType::I32, IBinOpType::Mul), tag(&[0x6C])),
-        value(Opcode::IBinOp(IntegerValType::I64, IBinOpType::Add), tag(&[0x7C])),
-        value(Opcode::IBinOp(IntegerValType::I64, IBinOpType::Sub), tag(&[0x7D])),
-        value(Opcode::IBinOp(IntegerValType::I64, IBinOpType::Mul), tag(&[0x7E])),
+        value(
+            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Add),
+            tag(&[0x6A]),
+        ),
+        value(
+            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Sub),
+            tag(&[0x6B]),
+        ),
+        value(
+            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Mul),
+            tag(&[0x6C]),
+        ),
+        value(
+            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Add),
+            tag(&[0x7C]),
+        ),
+        value(
+            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Sub),
+            tag(&[0x7D]),
+        ),
+        value(
+            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Mul),
+            tag(&[0x7E]),
+        ),
     ))(input)
 }
 

@@ -1,7 +1,7 @@
 use crate::{
     binary::{BlockType, HirInstruction},
     utils::Bytes32,
-    value::{ValueType, IntegerValType},
+    value::{IntegerValType, ValueType},
 };
 use digest::Digest;
 use sha3::Keccak256;
@@ -9,9 +9,9 @@ use sha3::Keccak256;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IBinOpType {
-    Add=0,
+    Add = 0,
     Sub,
-    Mul
+    Mul,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +136,7 @@ impl Opcode {
             Opcode::IBinOp(w, op) => match w {
                 IntegerValType::I32 => 0x6a + (op as u16),
                 IntegerValType::I64 => 0x7c + (op as u16),
-            }
+            },
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
             Opcode::EndBlockIf => 0x8001,
