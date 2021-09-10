@@ -7,9 +7,9 @@ contract ValueArrayTester {
     function test() external pure {
         ValueArray memory arr = ValueArray(new Value[](2));
         require(ValueArrays.length(arr) == 2, "START_LEN");
-        ValueArrays.set(arr, 0, Values.newInt32(1));
-        ValueArrays.set(arr, 1, Values.newInt32(2));
-        ValueArrays.push(arr, Values.newInt32(3));
+        ValueArrays.set(arr, 0, Values.newI32(1));
+        ValueArrays.set(arr, 1, Values.newI32(2));
+        ValueArrays.push(arr, Values.newI32(3));
         require(ValueArrays.length(arr) == 3, "PUSH_LEN");
         for (uint256 i = 0; i < ValueArrays.length(arr); i++) {
             Value memory val = ValueArrays.get(arr, i);

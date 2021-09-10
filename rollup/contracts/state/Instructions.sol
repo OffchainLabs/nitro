@@ -56,7 +56,11 @@ library Instructions {
 	uint16 constant F64_CONST = 0x44;
 	uint16 constant I32_EQZ = 0x45;
 	uint16 constant I32_ADD = 0x6A;
+	uint16 constant I32_SUB = 0x6B;
+	uint16 constant I32_MUL = 0x6C;
 	uint16 constant I64_ADD = 0x7C;
+	uint16 constant I64_SUB = 0x7D;
+	uint16 constant I64_MUL = 0x7E;
 
 	uint16 constant END_BLOCK = 0x8000;
 	uint16 constant END_BLOCK_IF = 0x8001;
