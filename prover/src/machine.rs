@@ -199,7 +199,7 @@ fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_trait
 }
 
 impl Machine {
-    pub fn from_binary(bin: WasmBinary) -> Result<Machine> {
+    pub fn from_binary(bin: WasmBinary, always_merkelize_memory: bool) -> Result<Machine> {
         let mut code = Vec::new();
         let mut globals = Vec::new();
         let mut types = Vec::new();
@@ -266,8 +266,37 @@ impl Machine {
                         }
                     }
                 }
-                WasmSection::Custom(_) => {}
+                WasmSection::Datas(datas) => {
+                    for data in datas {
+                        if let Some(loc) = data.active_location {
+                            assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
+                            let mut offset = None;
+                            if let [insn] = loc.offset.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset =
+                                offset.expect("Non-constant data offset expression") as usize;
+                            if !matches!(
+                                offset.checked_add(data.data.len()),
+                                Some(x) if (x as u64) < memory.size(),
+                            ) {
+                                panic!(
+                                    "Out-of-bounds data memory init with offset {} and size {}",
+                                    offset,
+                                    data.data.len(),
+                                );
+                            }
+                            memory.set_range(offset, &data.data);
+                        }
+                    }
+                }
+                WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
             }
+        }
+        if always_merkelize_memory {
+            memory.cache_merkle_tree();
         }
         let mut entrypoint = Vec::new();
         if let Some(s) = start {
@@ -649,7 +678,6 @@ impl Machine {
                     // Prove the leaf this index is in, and the next one, if they are within the memory's size.
                     idx /= Memory::LEAF_SIZE;
                     data.extend(self.memory.get_leaf_data(idx));
-                    println!("{:?}", mem_merkle.prove(idx));
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     // Now prove the next leaf too, in case it's accessed.
                     let next_leaf_idx = idx.saturating_add(1);

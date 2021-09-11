@@ -8,8 +8,6 @@ use crate::{
 use digest::Digest;
 use sha3::Keccak256;
 
-const ALWAYS_MERKELIZE: bool = true;
-
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Memory {
     buffer: Vec<u8>,
@@ -48,14 +46,10 @@ impl Memory {
     pub const PAGE_SIZE: usize = 65536;
 
     pub fn new(size: usize) -> Memory {
-        let mut m = Memory {
+        Memory {
             buffer: vec![0u8; size],
             merkle: None,
-        };
-        if ALWAYS_MERKELIZE {
-            m.merkle = Some(m.merkelize().into_owned());
         }
-        m
     }
 
     pub fn size(&self) -> u64 {
@@ -195,6 +189,18 @@ impl Memory {
         }
 
         true
+    }
+
+    pub fn set_range(&mut self, offset: usize, data: &[u8]) {
+        self.merkle = None;
+        let end = offset
+            .checked_add(data.len())
+            .expect("Overflow in offset+data.len() in Memory::set_range");
+        self.buffer[offset..end].copy_from_slice(data);
+    }
+
+    pub fn cache_merkle_tree(&mut self) {
+        self.merkle = Some(self.merkelize().into_owned());
     }
 }
 

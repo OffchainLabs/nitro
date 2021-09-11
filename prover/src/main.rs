@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     let out = opts.output.map(File::create).transpose()?;
 
     let mut proofs = Vec::new();
-    let mut mach = Machine::from_binary(bin)?;
+    let mut mach = Machine::from_binary(bin, true)?;
     println!("Starting machine hash: {}", mach.hash());
 
     let mut seen_states = HashSet::new();

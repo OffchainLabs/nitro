@@ -97,6 +97,18 @@ pub struct Export {
 }
 
 #[derive(Clone, Debug)]
+pub struct DataMemoryLocation {
+    pub memory: u32,
+    pub offset: Vec<HirInstruction>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Data {
+    pub data: Vec<u8>,
+    pub active_location: Option<DataMemoryLocation>,
+}
+
+#[derive(Clone, Debug)]
 pub enum WasmSection {
     /// Ignored (usually debugging info)
     Custom(Vec<u8>),
@@ -108,6 +120,8 @@ pub enum WasmSection {
     Exports(Vec<Export>),
     Start(u32),
     Code(Vec<Code>),
+    Datas(Vec<Data>),
+    DataCount(u32),
 }
 
 #[derive(Clone, Debug)]
@@ -435,6 +449,52 @@ fn export(input: &[u8]) -> IResult<Export> {
     })(input)
 }
 
+fn code_func(input: &[u8]) -> IResult<Code> {
+    let (remaining, input) = length_data(leb128_u32)(input)?;
+    let (extra, code) = map(tuple((locals, instructions)), |(l, i)| Code {
+        locals: l,
+        expr: i,
+    })(input)?;
+    if !extra.is_empty() {
+        return Err(Err::Error(VerboseError::from_error_kind(
+            extra,
+            ErrorKind::Eof,
+        )));
+    }
+    Ok((remaining, code))
+}
+
+fn data_segment(input: &[u8]) -> IResult<Data> {
+    alt((
+        map(
+            tuple((tag(&[0x00]), instructions, length_data(leb128_u32))),
+            |(_, offset, data)| Data {
+                data: data.into(),
+                active_location: Some(DataMemoryLocation { memory: 0, offset }),
+            },
+        ),
+        map(
+            tuple((tag(&[0x01]), length_data(leb128_u32))),
+            |(_, data): (_, &[u8])| Data {
+                data: data.into(),
+                active_location: None,
+            },
+        ),
+        map(
+            tuple((
+                tag(&[0x02]),
+                leb128_u32,
+                instructions,
+                length_data(leb128_u32),
+            )),
+            |(_, memory, offset, data)| Data {
+                data: data.into(),
+                active_location: Some(DataMemoryLocation { memory, offset }),
+            },
+        ),
+    ))(input)
+}
+
 fn types_section(input: &[u8]) -> IResult<Vec<FunctionType>> {
     wasm_vec(function_type)(input)
 }
@@ -455,23 +515,12 @@ fn globals_section(input: &[u8]) -> IResult<Vec<Global>> {
     wasm_vec(global)(input)
 }
 
-fn code_func(input: &[u8]) -> IResult<Code> {
-    let (remaining, input) = length_data(leb128_u32)(input)?;
-    let (extra, code) = map(tuple((locals, instructions)), |(l, i)| Code {
-        locals: l,
-        expr: i,
-    })(input)?;
-    if !extra.is_empty() {
-        return Err(Err::Error(VerboseError::from_error_kind(
-            extra,
-            ErrorKind::Eof,
-        )));
-    }
-    Ok((remaining, code))
-}
-
 fn code_section(input: &[u8]) -> IResult<Vec<Code>> {
     wasm_vec(code_func)(input)
+}
+
+fn datas_section(input: &[u8]) -> IResult<Vec<Data>> {
+    wasm_vec(data_segment)(input)
 }
 
 fn section(mut input: &[u8]) -> IResult<WasmSection> {
@@ -502,6 +551,11 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
         )(data),
         8 => context("start section", map(leb128_u32, WasmSection::Start))(data),
         10 => context("code section", map(code_section, WasmSection::Code))(data),
+        11 => context("data section", map(datas_section, WasmSection::Datas))(data),
+        12 => context(
+            "data count section",
+            map(leb128_u32, WasmSection::DataCount),
+        )(data),
         _ => Err(Err::Error(VerboseError::from_error_kind(
             input,
             ErrorKind::Tag,
