@@ -5,6 +5,7 @@ use crate::{
 };
 use digest::Digest;
 use sha3::Keccak256;
+use std::convert::TryFrom;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -76,6 +77,8 @@ pub enum Opcode {
     MoveFromInternalToStack,
     /// Pop a value from the value stack, then push an I32 1 if it's a stack boundary, I32 0 otherwise.
     IsStackBoundary,
+    /// Duplicate the top value on the stack
+    Dup,
 }
 
 impl Opcode {
@@ -146,6 +149,7 @@ impl Opcode {
             Opcode::MoveFromStackToInternal => 0x8005,
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
+            Opcode::Dup => 0x8008,
         }
     }
 }
@@ -255,7 +259,44 @@ impl Instruction {
                 }
                 ops.push(Instruction::simple(Opcode::BranchIf));
             }
+            HirInstruction::BranchTable(options, default) => {
+                // Build an equivalent HirInstruction sequence without BranchTable
+                let mut equiv = Vec::new();
+                for (i, option) in options.iter().enumerate() {
+                    let i = match u32::try_from(i) {
+                        Ok(x) => x,
+                        _ => break,
+                    };
+                    // Evaluate this branch
+                    equiv.push(HirInstruction::Simple(Opcode::Dup));
+                    equiv.push(HirInstruction::I32Const(i as i32));
+                    equiv.push(HirInstruction::Simple(Opcode::IBinOp(
+                        IntegerValType::I32,
+                        IBinOpType::Sub,
+                    )));
+                    // Jump if the subtraction resulted in 0, i.e. it matched the index
+                    equiv.push(HirInstruction::Simple(Opcode::I32Eqz));
+                    equiv.push(HirInstruction::BranchIf(*option));
+                }
+                // Nothing matched. Drop the index and jump to the default.
+                equiv.push(HirInstruction::Simple(Opcode::Drop));
+                equiv.push(HirInstruction::BranchIf(default));
+                for inst in equiv {
+                    Self::extend_from_hir(ops, return_values, inst);
+                }
+            }
             HirInstruction::WithIdx(op, x) => {
+                assert!(
+                    matches!(
+                        op,
+                        Opcode::LocalGet
+                            | Opcode::LocalSet
+                            | Opcode::GlobalGet
+                            | Opcode::GlobalSet
+                            | Opcode::Call
+                    ),
+                    "WithIdx HirInstruction has bad WithIdx opcode",
+                );
                 ops.push(Instruction {
                     opcode: op,
                     argument_data: x.into(),
