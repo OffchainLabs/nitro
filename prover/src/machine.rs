@@ -1,5 +1,5 @@
 use crate::{
-    binary::{FunctionType, WasmBinary, WasmSection},
+    binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
     lir::{IBinOpType, Opcode},
     memory::Memory,
@@ -11,7 +11,7 @@ use digest::Digest;
 use eyre::Result;
 use num_traits;
 use sha3::Keccak256;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -28,7 +28,7 @@ fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
         if inst.opcode == Opcode::Block || inst.opcode == Opcode::ArbitraryJumpIf {
             let end_pc = inst.argument_data as usize;
             if code_len - end_pc < hashes.len() {
-                inst.proving_argument_data = Some(dbg!(hashes[code_len - end_pc]));
+                inst.proving_argument_data = Some(hashes[code_len - end_pc]);
             } else if code_len - end_pc == hashes.len() {
                 inst.proving_argument_data = Some(Bytes32::default());
             } else {
@@ -48,12 +48,43 @@ fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
 }
 
 impl Function {
-    fn new(mut code: Vec<Instruction>, local_types: Vec<ValueType>) -> Function {
-        let code_hashes = compute_hashes(&mut code);
+    fn new(code: Code, func_ty: &FunctionType) -> Function {
+        let locals_with_params: Vec<ValueType> =
+            func_ty.inputs.iter().cloned().chain(code.locals).collect();
+        let mut insts = Vec::new();
+        let empty_local_hashes = locals_with_params
+            .iter()
+            .cloned()
+            .map(Value::default_of_type)
+            .map(Value::hash)
+            .collect::<Vec<_>>();
+        insts.push(Instruction {
+            opcode: Opcode::InitFrame,
+            argument_data: 0,
+            proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
+        });
+        // Fill in parameters
+        for i in (0..func_ty.inputs.len()).rev() {
+            insts.push(Instruction {
+                opcode: Opcode::LocalSet,
+                argument_data: i as u64,
+                proving_argument_data: None,
+            });
+        }
+        insts.push(Instruction::simple(Opcode::PushStackBoundary));
+        for hir_inst in code.expr {
+            Instruction::extend_from_hir(&mut insts, func_ty.outputs.len(), hir_inst);
+        }
+        Instruction::extend_from_hir(
+            &mut insts,
+            func_ty.outputs.len(),
+            crate::binary::HirInstruction::Simple(Opcode::Return),
+        );
+        let code_hashes = compute_hashes(&mut insts);
         Function {
-            code,
+            code: insts,
             code_hashes,
-            local_types,
+            local_types: locals_with_params,
         }
     }
 }
@@ -173,8 +204,9 @@ impl Machine {
         let mut globals = Vec::new();
         let mut types = Vec::new();
         let mut func_types = Vec::new();
-        let mut start = 0;
+        let mut start = None;
         let mut memory = Memory::default();
+        let mut main = None;
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -190,59 +222,23 @@ impl Machine {
                     code = sect_code
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, c)| {
-                            let func_ty = &func_types[idx];
-                            let locals_with_params: Vec<ValueType> =
-                                func_ty.inputs.iter().cloned().chain(c.locals).collect();
-                            let mut insts = Vec::new();
-                            let empty_local_hashes = locals_with_params
-                                .iter()
-                                .cloned()
-                                .map(Value::default_of_type)
-                                .map(Value::hash)
-                                .collect::<Vec<_>>();
-                            insts.push(Instruction {
-                                opcode: Opcode::InitFrame,
-                                argument_data: 0,
-                                proving_argument_data: Some(
-                                    Merkle::new(MerkleType::Value, empty_local_hashes).root(),
-                                ),
-                            });
-                            // Fill in parameters
-                            for i in (0..func_ty.inputs.len()).rev() {
-                                insts.push(Instruction {
-                                    opcode: Opcode::LocalSet,
-                                    argument_data: i as u64,
-                                    proving_argument_data: None,
-                                });
-                            }
-                            insts.push(Instruction::simple(Opcode::PushStackBoundary));
-                            for hir_inst in c.expr {
-                                Instruction::extend_from_hir(
-                                    &mut insts,
-                                    func_ty.outputs.len(),
-                                    hir_inst,
-                                );
-                            }
-                            Instruction::extend_from_hir(
-                                &mut insts,
-                                func_ty.outputs.len(),
-                                crate::binary::HirInstruction::Simple(Opcode::Return),
-                            );
-                            Function::new(insts, locals_with_params)
-                        })
+                        .map(|(idx, c)| Function::new(c, &func_types[idx]))
                         .collect();
                 }
                 WasmSection::Start(s) => {
-                    assert!(start == 0, "Duplicate start section");
-                    start = s as usize;
+                    assert!(start.is_none(), "Duplicate start section");
+                    start = Some(s);
                 }
                 WasmSection::Memories(m) => {
                     assert!(memory.size() == 0, "Duplicate memories section");
                     assert!(m.len() <= 1, "Multiple memories are not supported");
                     if let Some(limits) = m.get(0) {
                         // We ignore the maximum size
-                        memory = Memory::new(limits.minimum_size.try_into().unwrap());
+                        let size = usize::try_from(limits.minimum_size)
+                            .ok()
+                            .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
+                            .expect("Memory size is too large");
+                        memory = Memory::new(size);
                     }
                 }
                 WasmSection::Globals(g) => {
@@ -259,14 +255,50 @@ impl Machine {
                         })
                         .collect();
                 }
+                WasmSection::Exports(exports) => {
+                    for export in exports {
+                        if export.name == "main" {
+                            if let ExportKind::Function(idx) = export.kind {
+                                main = Some(idx);
+                            } else {
+                                panic!("Got non-function export {:?} for main", export.kind);
+                            }
+                        }
+                    }
+                }
                 WasmSection::Custom(_) => {}
             }
         }
-        assert!(!code.is_empty());
-        assert!(
-            func_types[start] == FunctionType::default(),
-            "Start function takes inputs or outputs",
-        );
+        let mut entrypoint = Vec::new();
+        if let Some(s) = start {
+            assert!(
+                func_types[s as usize] == FunctionType::default(),
+                "Start function takes inputs or outputs",
+            );
+            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, s));
+        }
+        if let Some(m) = main {
+            let mut expected_type = FunctionType::default();
+            expected_type.inputs.push(ValueType::I32); // argc
+            expected_type.inputs.push(ValueType::I32); // argv
+            expected_type.outputs.push(ValueType::I32); // ret
+            assert!(
+                func_types[m as usize] == expected_type,
+                "Main function doesn't match expected signature of [argc, argv] -> [ret]",
+            );
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, m));
+            entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+        }
+        let entrypoint_idx = code.len();
+        code.push(Function::new(
+            Code {
+                locals: Vec::new(),
+                expr: entrypoint,
+            },
+            &FunctionType::default(),
+        ));
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -279,7 +311,7 @@ impl Machine {
                 code.iter().map(|f| f.code_hashes[0]).collect(),
             ),
             funcs: code,
-            pc: (start, 0),
+            pc: (entrypoint_idx, 0),
             halted: false,
         })
     }

@@ -39,6 +39,8 @@ fn div_round_up(num: usize, denom: usize) -> usize {
 
 impl Memory {
     pub const LEAF_SIZE: usize = 32;
+    /// Only used when initializing a memory to determine its size
+    pub const PAGE_SIZE: usize = 65536;
 
     pub fn new(size: usize) -> Memory {
         Memory {

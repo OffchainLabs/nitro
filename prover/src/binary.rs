@@ -7,7 +7,7 @@ use nom::{
     bytes::streaming::tag,
     combinator::{eof, map, map_res, value},
     error::{context, ParseError, VerboseError},
-    error::{Error, ErrorKind},
+    error::{Error, ErrorKind, FromExternalError},
     multi::{count, length_data, many_till},
     sequence::{preceded, tuple},
     Err, Finish, Needed,
@@ -83,6 +83,20 @@ pub struct Code {
 }
 
 #[derive(Clone, Debug)]
+pub enum ExportKind {
+    Function(u32),
+    Table(u32),
+    Memory(u32),
+    Global(u32),
+}
+
+#[derive(Clone, Debug)]
+pub struct Export {
+    pub name: String,
+    pub kind: ExportKind,
+}
+
+#[derive(Clone, Debug)]
 pub enum WasmSection {
     /// Ignored (usually debugging info)
     Custom(Vec<u8>),
@@ -91,6 +105,7 @@ pub enum WasmSection {
     Functions(Vec<u32>),
     Memories(Vec<Limits>),
     Globals(Vec<Global>),
+    Exports(Vec<Export>),
     Start(u32),
     Code(Vec<Code>),
 }
@@ -124,6 +139,13 @@ fn wasm_vec<'a: 'b, 'b: 'a, T>(
         let (input, len) = leb128_u32(input)?;
         count(&mut parser, len as usize)(input)
     }
+}
+
+fn name(input: &[u8]) -> IResult<&str> {
+    let (input, data) = length_data(leb128_u32)(input)?;
+    let s = std::str::from_utf8(data)
+        .map_err(|e| Err::Error(VerboseError::from_external_error(input, ErrorKind::Char, e)))?;
+    Ok((input, s))
 }
 
 fn value_type(input: &[u8]) -> IResult<ValueType> {
@@ -397,6 +419,22 @@ fn limits(input: &[u8]) -> IResult<Limits> {
     ))(input)
 }
 
+fn export_kind(input: &[u8]) -> IResult<ExportKind> {
+    alt((
+        map(preceded(tag(&[0x00]), leb128_u32), ExportKind::Function),
+        map(preceded(tag(&[0x01]), leb128_u32), ExportKind::Table),
+        map(preceded(tag(&[0x02]), leb128_u32), ExportKind::Memory),
+        map(preceded(tag(&[0x03]), leb128_u32), ExportKind::Global),
+    ))(input)
+}
+
+fn export(input: &[u8]) -> IResult<Export> {
+    map(tuple((name, export_kind)), |(n, k)| Export {
+        name: n.into(),
+        kind: k,
+    })(input)
+}
+
 fn types_section(input: &[u8]) -> IResult<Vec<FunctionType>> {
     wasm_vec(function_type)(input)
 }
@@ -407,6 +445,10 @@ fn functions_section(input: &[u8]) -> IResult<Vec<u32>> {
 
 fn memories_section(input: &[u8]) -> IResult<Vec<Limits>> {
     wasm_vec(limits)(input)
+}
+
+fn exports_section(input: &[u8]) -> IResult<Vec<Export>> {
+    wasm_vec(export)(input)
 }
 
 fn globals_section(input: &[u8]) -> IResult<Vec<Global>> {
@@ -440,7 +482,7 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
     input = &input[1..];
     let (remaining, data) = length_data(leb128_u32)(input)?;
     let (extra, sect) = match section_type {
-        0 => Ok((input, WasmSection::Custom(data.into()))),
+        0 => Ok((&[] as &[u8], WasmSection::Custom(data.into()))),
         1 => context("types section", map(types_section, WasmSection::Types))(data),
         3 => context(
             "functions section",
@@ -453,6 +495,10 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
         6 => context(
             "globals section",
             map(globals_section, WasmSection::Globals),
+        )(data),
+        7 => context(
+            "exports section",
+            map(exports_section, WasmSection::Exports),
         )(data),
         8 => context("start section", map(leb128_u32, WasmSection::Start))(data),
         10 => context("code section", map(code_section, WasmSection::Code))(data),
