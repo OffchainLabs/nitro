@@ -5,10 +5,13 @@ module.exports = async (hre) => {
 
   await deploy("OneStepProofEntry", {
     from: deployer,
-    args: [(await deployments.get("OneStepProver0")).address],
+    args: [
+      (await deployments.get("OneStepProver0")).address,
+      (await deployments.get("OneStepProverMemory")).address,
+    ],
   });
 };
 
 module.exports.tags = ["OneStepProofEntry", "live", "test"];
-module.exports.dependencies = ["Machines", "OneStepProver0"];
+module.exports.dependencies = ["Machines", "OneStepProver0", "OneStepProverMemory"];
 

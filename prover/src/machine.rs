@@ -1,17 +1,17 @@
 use crate::{
-    binary::{WasmBinary, WasmSection},
+    binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{Opcode, IBinOpType},
+    lir::{IBinOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
-    utils::{usize_to_u256_bytes, Bytes32},
-    value::{Value, ValueType, IntegerValType},
+    utils::Bytes32,
+    value::{IntegerValType, Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
-use sha3::Keccak256;
-use std::convert::TryInto;
 use num_traits;
+use sha3::Keccak256;
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -28,7 +28,7 @@ fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
         if inst.opcode == Opcode::Block || inst.opcode == Opcode::ArbitraryJumpIf {
             let end_pc = inst.argument_data as usize;
             if code_len - end_pc < hashes.len() {
-                inst.proving_argument_data = Some(dbg!(hashes[code_len - end_pc]));
+                inst.proving_argument_data = Some(hashes[code_len - end_pc]);
             } else if code_len - end_pc == hashes.len() {
                 inst.proving_argument_data = Some(Bytes32::default());
             } else {
@@ -48,12 +48,43 @@ fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
 }
 
 impl Function {
-    fn new(mut code: Vec<Instruction>, local_types: Vec<ValueType>) -> Function {
-        let code_hashes = compute_hashes(&mut code);
+    fn new(code: Code, func_ty: &FunctionType) -> Function {
+        let locals_with_params: Vec<ValueType> =
+            func_ty.inputs.iter().cloned().chain(code.locals).collect();
+        let mut insts = Vec::new();
+        let empty_local_hashes = locals_with_params
+            .iter()
+            .cloned()
+            .map(Value::default_of_type)
+            .map(Value::hash)
+            .collect::<Vec<_>>();
+        insts.push(Instruction {
+            opcode: Opcode::InitFrame,
+            argument_data: 0,
+            proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
+        });
+        // Fill in parameters
+        for i in (0..func_ty.inputs.len()).rev() {
+            insts.push(Instruction {
+                opcode: Opcode::LocalSet,
+                argument_data: i as u64,
+                proving_argument_data: None,
+            });
+        }
+        insts.push(Instruction::simple(Opcode::PushStackBoundary));
+        for hir_inst in code.expr {
+            Instruction::extend_from_hir(&mut insts, func_ty.outputs.len(), hir_inst);
+        }
+        Instruction::extend_from_hir(
+            &mut insts,
+            func_ty.outputs.len(),
+            crate::binary::HirInstruction::Simple(Opcode::Return),
+        );
+        let code_hashes = compute_hashes(&mut insts);
         Function {
-            code,
+            code: insts,
             code_hashes,
-            local_types,
+            local_types: locals_with_params,
         }
     }
 }
@@ -155,7 +186,11 @@ where
 }
 
 #[must_use]
-fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_traits::WrappingSub>(a: &T, b: &T, op: &IBinOpType) -> T {
+fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_traits::WrappingSub>(
+    a: &T,
+    b: &T,
+    op: &IBinOpType,
+) -> T {
     match op {
         IBinOpType::Add => return a.wrapping_add(b),
         IBinOpType::Sub => return a.wrapping_sub(b),
@@ -164,13 +199,14 @@ fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_trait
 }
 
 impl Machine {
-    pub fn from_binary(bin: WasmBinary) -> Result<Machine> {
+    pub fn from_binary(bin: WasmBinary, always_merkelize_memory: bool) -> Result<Machine> {
         let mut code = Vec::new();
         let mut globals = Vec::new();
         let mut types = Vec::new();
         let mut func_types = Vec::new();
-        let mut start = 0;
+        let mut start = None;
         let mut memory = Memory::default();
+        let mut main = None;
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -186,59 +222,23 @@ impl Machine {
                     code = sect_code
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, c)| {
-                            let func_ty = &func_types[idx];
-                            let locals_with_params: Vec<ValueType> =
-                                func_ty.inputs.iter().cloned().chain(c.locals).collect();
-                            let mut insts = Vec::new();
-                            let empty_local_hashes = locals_with_params
-                                .iter()
-                                .cloned()
-                                .map(Value::default_of_type)
-                                .map(Value::hash)
-                                .collect::<Vec<_>>();
-                            insts.push(Instruction {
-                                opcode: Opcode::InitFrame,
-                                argument_data: 0,
-                                proving_argument_data: Some(
-                                    Merkle::new(MerkleType::Value, empty_local_hashes).root(),
-                                ),
-                            });
-                            // Fill in parameters
-                            for i in (0..func_ty.inputs.len()).rev() {
-                                insts.push(Instruction {
-                                    opcode: Opcode::LocalSet,
-                                    argument_data: i as u64,
-                                    proving_argument_data: None,
-                                });
-                            }
-                            insts.push(Instruction::simple(Opcode::PushStackBoundary));
-                            for hir_inst in c.expr {
-                                Instruction::extend_from_hir(
-                                    &mut insts,
-                                    func_ty.outputs.len(),
-                                    hir_inst,
-                                );
-                            }
-                            Instruction::extend_from_hir(
-                                &mut insts,
-                                func_ty.outputs.len(),
-                                crate::binary::HirInstruction::Simple(Opcode::Return),
-                            );
-                            Function::new(insts, locals_with_params)
-                        })
+                        .map(|(idx, c)| Function::new(c, &func_types[idx]))
                         .collect();
                 }
                 WasmSection::Start(s) => {
-                    assert!(start == 0, "Duplicate start section");
-                    start = s as usize;
+                    assert!(start.is_none(), "Duplicate start section");
+                    start = Some(s);
                 }
                 WasmSection::Memories(m) => {
                     assert!(memory.size() == 0, "Duplicate memories section");
                     assert!(m.len() <= 1, "Multiple memories are not supported");
                     if let Some(limits) = m.get(0) {
                         // We ignore the maximum size
-                        memory = Memory::new(limits.minimum_size.try_into().unwrap());
+                        let size = usize::try_from(limits.minimum_size)
+                            .ok()
+                            .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
+                            .expect("Memory size is too large");
+                        memory = Memory::new(size);
                     }
                 }
                 WasmSection::Globals(g) => {
@@ -255,10 +255,79 @@ impl Machine {
                         })
                         .collect();
                 }
-                WasmSection::Custom(_) => {}
+                WasmSection::Exports(exports) => {
+                    for export in exports {
+                        if export.name == "main" {
+                            if let ExportKind::Function(idx) = export.kind {
+                                main = Some(idx);
+                            } else {
+                                panic!("Got non-function export {:?} for main", export.kind);
+                            }
+                        }
+                    }
+                }
+                WasmSection::Datas(datas) => {
+                    for data in datas {
+                        if let Some(loc) = data.active_location {
+                            assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
+                            let mut offset = None;
+                            if let [insn] = loc.offset.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset =
+                                offset.expect("Non-constant data offset expression") as usize;
+                            if !matches!(
+                                offset.checked_add(data.data.len()),
+                                Some(x) if (x as u64) < memory.size(),
+                            ) {
+                                panic!(
+                                    "Out-of-bounds data memory init with offset {} and size {}",
+                                    offset,
+                                    data.data.len(),
+                                );
+                            }
+                            memory.set_range(offset, &data.data);
+                        }
+                    }
+                }
+                WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
             }
         }
-        assert!(!code.is_empty());
+        if always_merkelize_memory {
+            memory.cache_merkle_tree();
+        }
+        let mut entrypoint = Vec::new();
+        if let Some(s) = start {
+            assert!(
+                func_types[s as usize] == FunctionType::default(),
+                "Start function takes inputs or outputs",
+            );
+            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, s));
+        }
+        if let Some(m) = main {
+            let mut expected_type = FunctionType::default();
+            expected_type.inputs.push(ValueType::I32); // argc
+            expected_type.inputs.push(ValueType::I32); // argv
+            expected_type.outputs.push(ValueType::I32); // ret
+            assert!(
+                func_types[m as usize] == expected_type,
+                "Main function doesn't match expected signature of [argc, argv] -> [ret]",
+            );
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, m));
+            entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+        }
+        let entrypoint_idx = code.len();
+        code.push(Function::new(
+            Code {
+                locals: Vec::new(),
+                expr: entrypoint,
+            },
+            &FunctionType::default(),
+        ));
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -271,7 +340,7 @@ impl Machine {
                 code.iter().map(|f| f.code_hashes[0]).collect(),
             ),
             funcs: code,
-            pc: (start, 0),
+            pc: (entrypoint_idx, 0),
             halted: false,
         })
     }
@@ -287,7 +356,6 @@ impl Machine {
         h.update(&hash_block_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
-        h.update(self.memory.hash());
         h.update(
             Merkle::new(
                 MerkleType::Value,
@@ -295,8 +363,16 @@ impl Machine {
             )
             .root(),
         );
+        h.update(self.memory.hash());
         h.update(self.funcs_merkle.root());
         h.finalize().into()
+    }
+
+    pub fn get_next_instruction(&self) -> Option<Instruction> {
+        if self.halted {
+            return None;
+        }
+        self.funcs[self.pc.0].code.get(self.pc.1).cloned()
     }
 
     pub fn step(&mut self) {
@@ -306,13 +382,7 @@ impl Machine {
 
         let func = &self.funcs[self.pc.0];
         let code = &func.code;
-        if code.len() <= self.pc.1 {
-            eprintln!("Warning: ran off end of function");
-            self.halted = true;
-            return;
-        }
         let inst = code[self.pc.1];
-        dbg!(inst.opcode);
         self.pc.1 += 1;
         match inst.opcode {
             Opcode::Unreachable => {
@@ -409,7 +479,7 @@ impl Machine {
                     self.halted = true;
                 }
             }
-            Opcode::MemoryStore { ty: _, bytes} => {
+            Opcode::MemoryStore { ty: _, bytes } => {
                 let val = match self.value_stack.pop() {
                     Some(Value::I32(x)) => x.into(),
                     Some(Value::I64(x)) => x,
@@ -460,18 +530,20 @@ impl Machine {
                 let vb = self.value_stack.pop();
                 let va = self.value_stack.pop();
                 match w {
-                    IntegerValType::I32 =>
+                    IntegerValType::I32 => {
                         if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
                             self.value_stack.push(Value::I32(exec_ibin_op(&a, &b, &op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i32binop");
-                        },
-                    IntegerValType::I64 =>
+                        }
+                    }
+                    IntegerValType::I64 => {
                         if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
                             self.value_stack.push(Value::I64(exec_ibin_op(&a, &b, &op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i64binop");
-                        },
+                        }
+                    }
                 }
             }
             Opcode::PushStackBoundary => {
@@ -502,9 +574,7 @@ impl Machine {
         let mut data = Vec::new();
         let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);
         data.extend(hash_value_stack(&self.value_stack[..unproven_stack_depth]));
-        data.extend(usize_to_u256_bytes(
-            self.value_stack.len() - unproven_stack_depth,
-        ));
+        data.extend(Bytes32::from(self.value_stack.len() - unproven_stack_depth));
         for val in &self.value_stack[unproven_stack_depth..] {
             data.extend(val.serialize_for_proof());
         }
@@ -513,7 +583,7 @@ impl Machine {
         data.extend(hash_value_stack(
             &self.internal_stack[..unproven_internal_stack_depth],
         ));
-        data.extend(usize_to_u256_bytes(
+        data.extend(Bytes32::from(
             self.internal_stack.len() - unproven_internal_stack_depth,
         ));
         for val in &self.internal_stack[unproven_internal_stack_depth..] {
@@ -544,6 +614,10 @@ impl Machine {
             .root(),
         );
 
+        let mem_merkle = self.memory.merkelize();
+        data.extend((self.memory.size() as u64).to_be_bytes());
+        data.extend(mem_merkle.root());
+
         data.extend(self.funcs_merkle.root());
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
@@ -553,7 +627,11 @@ impl Machine {
                 data.extend(locals[idx].serialize_for_proof());
                 let locals_merkle =
                     Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
-                data.extend(locals_merkle.prove(idx));
+                data.extend(
+                    locals_merkle
+                        .prove(idx)
+                        .expect("Out of bounds local access"),
+                );
             } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
                 let idx = next_inst.argument_data as usize;
                 data.extend(self.globals[idx].serialize_for_proof());
@@ -561,12 +639,60 @@ impl Machine {
                     MerkleType::Value,
                     self.globals.iter().map(|v| v.hash()).collect(),
                 );
-                data.extend(locals_merkle.prove(idx));
+                data.extend(
+                    locals_merkle
+                        .prove(idx)
+                        .expect("Out of bounds global access"),
+                );
             } else if next_inst.opcode == Opcode::Call {
                 let idx = next_inst.argument_data as usize;
                 data.extend(self.funcs[idx].code_hashes[1]);
                 data.extend(self.funcs[idx].code[0].serialize_for_proof());
-                data.extend(self.funcs_merkle.prove(idx));
+                data.extend(
+                    self.funcs_merkle
+                        .prove(idx)
+                        .expect("Out of bounds function access"),
+                );
+            } else if matches!(
+                next_inst.opcode,
+                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. }
+            ) {
+                let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
+                let stack_idx_offset = if is_store {
+                    // The index is one item below the top stack item for a memory store
+                    1
+                } else {
+                    0
+                };
+                let base = match self
+                    .value_stack
+                    .get(self.value_stack.len() - 1 - stack_idx_offset)
+                {
+                    Some(Value::I32(x)) => *x,
+                    x => panic!("WASM validation failed: memory index type is {:?}", x),
+                };
+                if let Some(mut idx) = u64::from(base)
+                    .checked_add(next_inst.argument_data)
+                    .and_then(|x| usize::try_from(x).ok())
+                {
+                    // Prove the leaf this index is in, and the next one, if they are within the memory's size.
+                    idx /= Memory::LEAF_SIZE;
+                    data.extend(self.memory.get_leaf_data(idx));
+                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                    // Now prove the next leaf too, in case it's accessed.
+                    let next_leaf_idx = idx.saturating_add(1);
+                    data.extend(self.memory.get_leaf_data(next_leaf_idx));
+                    let second_mem_merkle = if is_store {
+                        // For stores, prove the second merkle against a state after the first leaf is set.
+                        // This state also happens to have the second leaf set, but that's irrelevant.
+                        let mut copy = self.clone();
+                        copy.step();
+                        copy.memory.merkelize().into_owned()
+                    } else {
+                        mem_merkle.into_owned()
+                    };
+                    data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                }
             }
         }
 

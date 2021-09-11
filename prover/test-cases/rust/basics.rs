@@ -11,7 +11,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 #[start]
 fn main(argc: isize, _: *const *const u8) -> isize {
 	let mut x: isize = 100;
-	if argc > 0 {
+	if argc == 0 {
 		x = x.wrapping_add(1);
 	}
 	x

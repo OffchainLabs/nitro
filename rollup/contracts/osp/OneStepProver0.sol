@@ -309,7 +309,7 @@ contract OneStepProver0 is IOneStepProver {
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
 			impl = executeIsStackBoundary;
 		} else {
-			revert("Invalid instruction");
+			revert("INVALID_OPCODE");
 		}
 
 		impl(mach, inst, proof);

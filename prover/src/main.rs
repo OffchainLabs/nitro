@@ -47,7 +47,7 @@ fn main() -> Result<()> {
     let out = opts.output.map(File::create).transpose()?;
 
     let mut proofs = Vec::new();
-    let mut mach = Machine::from_binary(bin)?;
+    let mut mach = Machine::from_binary(bin, true)?;
     println!("Starting machine hash: {}", mach.hash());
 
     let mut seen_states = HashSet::new();
@@ -57,6 +57,11 @@ fn main() -> Result<()> {
             break;
         }
         println!("Machine stack: {:?}", mach.get_data_stack());
+        println!(
+            "Generating proof #{} of opcode {:?}",
+            proofs.len(),
+            mach.get_next_instruction().unwrap().opcode
+        );
         let proof = mach.serialize_proof();
         mach.step();
         let after = mach.hash();

@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use crate::{
     merkle::{Merkle, MerkleType},
-    utils::{usize_to_u256_bytes, Bytes32},
+    utils::Bytes32,
     value::{Value, ValueType},
 };
 use digest::Digest;
@@ -9,21 +11,44 @@ use sha3::Keccak256;
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Memory {
     buffer: Vec<u8>,
+    merkle: Option<Merkle>,
 }
 
-fn hash_leaf(bytes: &[u8]) -> Bytes32 {
-    let mut padded_bytes = [0u8; 32];
-    padded_bytes[..bytes.len()].copy_from_slice(bytes);
+fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
     let mut h = Keccak256::new();
     h.update("Memory leaf:");
-    h.update(padded_bytes);
+    h.update(bytes);
     h.finalize().into()
 }
 
+fn round_up_to_power_of_two(mut input: usize) -> usize {
+    if input == 0 {
+        return 1;
+    }
+    input -= 1;
+    1usize
+        .checked_shl(usize::BITS - input.leading_zeros())
+        .expect("Can't round buffer up to power of two and fit in memory")
+}
+
+/// Overflow safe divide and round up
+fn div_round_up(num: usize, denom: usize) -> usize {
+    let mut res = num / denom;
+    if num % denom > 0 {
+        res += 1;
+    }
+    res
+}
+
 impl Memory {
+    pub const LEAF_SIZE: usize = 32;
+    /// Only used when initializing a memory to determine its size
+    pub const PAGE_SIZE: usize = 65536;
+
     pub fn new(size: usize) -> Memory {
         Memory {
             buffer: vec![0u8; size],
+            merkle: None,
         }
     }
 
@@ -31,15 +56,39 @@ impl Memory {
         self.buffer.len() as u64
     }
 
-    pub fn merkelize(&self) -> Merkle {
-        let leafs = self.buffer.chunks(32).map(hash_leaf).collect();
-        Merkle::new(MerkleType::Memory, leafs)
+    pub fn merkelize(&self) -> Cow<'_, Merkle> {
+        if let Some(m) = &self.merkle {
+            return Cow::Borrowed(m);
+        }
+        // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
+        let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
+        let mut leaf_hashes = Vec::with_capacity(leaves);
+        let mut remaining_buf = self.buffer.as_slice();
+        for _ in 0..leaves {
+            let mut leaf = [0u8; Self::LEAF_SIZE];
+            let taking_len = std::cmp::min(Self::LEAF_SIZE, remaining_buf.len());
+            leaf[..taking_len].copy_from_slice(&remaining_buf[..taking_len]);
+            leaf_hashes.push(hash_leaf(leaf));
+            remaining_buf = &remaining_buf[taking_len..];
+        }
+        Cow::Owned(Merkle::new(MerkleType::Memory, leaf_hashes))
+    }
+
+    pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
+        let mut buf = [0u8; Self::LEAF_SIZE];
+        let idx = match leaf_idx.checked_mul(Self::LEAF_SIZE) {
+            Some(x) if x < self.buffer.len() => x,
+            _ => return buf,
+        };
+        let size = std::cmp::min(Self::LEAF_SIZE, self.buffer.len() - idx);
+        buf[..size].copy_from_slice(&self.buffer[idx..(idx + size)]);
+        buf
     }
 
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Memory:");
-        h.update(usize_to_u256_bytes(self.buffer.len()));
+        h.update((self.buffer.len() as u64).to_be_bytes());
         h.update(self.merkelize().root());
         h.finalize().into()
     }
@@ -115,17 +164,60 @@ impl Memory {
         })
     }
 
-	#[must_use]
+    #[must_use]
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
         let end_idx = match idx.checked_add(bytes.into()) {
-			Some(x) => x,
-			None => return false,
-		};
-		if end_idx > self.buffer.len() as u64 {
-			return false;
-		}
-		let buf = value.to_le_bytes();
-		self.buffer[(idx as usize)..(end_idx as usize)].copy_from_slice(&buf[..bytes.into()]);
-		true
-	}
+            Some(x) => x,
+            None => return false,
+        };
+        if end_idx > self.buffer.len() as u64 {
+            return false;
+        }
+        let idx = idx as usize;
+        let end_idx = end_idx as usize;
+        let buf = value.to_le_bytes();
+        self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
+
+        if let Some(mut merkle) = self.merkle.take() {
+            let start_leaf = idx / Self::LEAF_SIZE;
+            merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+            let end_leaf = end_idx / Self::LEAF_SIZE;
+            if end_leaf != start_leaf {
+                merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+            }
+            self.merkle = Some(merkle);
+        }
+
+        true
+    }
+
+    pub fn set_range(&mut self, offset: usize, data: &[u8]) {
+        self.merkle = None;
+        let end = offset
+            .checked_add(data.len())
+            .expect("Overflow in offset+data.len() in Memory::set_range");
+        self.buffer[offset..end].copy_from_slice(data);
+    }
+
+    pub fn cache_merkle_tree(&mut self) {
+        self.merkle = Some(self.merkelize().into_owned());
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::memory::round_up_to_power_of_two;
+
+    #[test]
+    pub fn test_round_up_power_of_two() {
+        assert_eq!(round_up_to_power_of_two(0), 1);
+        assert_eq!(round_up_to_power_of_two(1), 1);
+        assert_eq!(round_up_to_power_of_two(2), 2);
+        assert_eq!(round_up_to_power_of_two(3), 4);
+        assert_eq!(round_up_to_power_of_two(4), 4);
+        assert_eq!(round_up_to_power_of_two(5), 8);
+        assert_eq!(round_up_to_power_of_two(6), 8);
+        assert_eq!(round_up_to_power_of_two(7), 8);
+        assert_eq!(round_up_to_power_of_two(8), 8);
+    }
 }

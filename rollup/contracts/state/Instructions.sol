@@ -23,6 +23,32 @@ library Instructions {
 	uint16 constant LOCAL_SET = 0x21;
 	uint16 constant GLOBAL_GET = 0x23;
 	uint16 constant GLOBAL_SET = 0x24;
+
+	uint16 constant I32_LOAD = 0x28;
+	uint16 constant I64_LOAD = 0x29;
+	uint16 constant F32_LOAD = 0x2A;
+	uint16 constant F64_LOAD = 0x2B;
+	uint16 constant I32_LOAD8_S = 0x2C;
+	uint16 constant I32_LOAD8_U = 0x2D;
+	uint16 constant I32_LOAD16_S = 0x2E;
+	uint16 constant I32_LOAD16_U = 0x2F;
+	uint16 constant I64_LOAD8_S = 0x30;
+	uint16 constant I64_LOAD8_U = 0x31;
+	uint16 constant I64_LOAD16_S = 0x32;
+	uint16 constant I64_LOAD16_U = 0x33;
+	uint16 constant I64_LOAD32_S = 0x34;
+	uint16 constant I64_LOAD32_U = 0x35;
+
+	uint16 constant I32_STORE = 0x36;
+	uint16 constant I64_STORE = 0x37;
+	uint16 constant F32_STORE = 0x38;
+	uint16 constant F64_STORE = 0x39;
+	uint16 constant I32_STORE8 = 0x3A;
+	uint16 constant I32_STORE16 = 0x3B;
+	uint16 constant I64_STORE8 = 0x3C;
+	uint16 constant I64_STORE16 = 0x3D;
+	uint16 constant I64_STORE32 = 0x3E;
+
 	uint16 constant DROP = 0x1A;
 	uint16 constant I32_CONST = 0x41;
 	uint16 constant I64_CONST = 0x42;
