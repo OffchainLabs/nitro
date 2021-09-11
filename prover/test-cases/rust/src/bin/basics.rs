@@ -1,12 +1,7 @@
 #![feature(start)]
 #![no_std]
 
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-	unsafe {
-		core::arch::wasm32::unreachable();
-	}
-}
+extern crate test_cases;
 
 #[start]
 fn main(argc: isize, _: *const *const u8) -> isize {
