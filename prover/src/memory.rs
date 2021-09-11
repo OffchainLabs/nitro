@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     merkle::{Merkle, MerkleType},
     utils::Bytes32,
@@ -6,9 +8,12 @@ use crate::{
 use digest::Digest;
 use sha3::Keccak256;
 
+const ALWAYS_MERKELIZE: bool = true;
+
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Memory {
     buffer: Vec<u8>,
+    merkle: Option<Merkle>,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -43,16 +48,24 @@ impl Memory {
     pub const PAGE_SIZE: usize = 65536;
 
     pub fn new(size: usize) -> Memory {
-        Memory {
+        let mut m = Memory {
             buffer: vec![0u8; size],
+            merkle: None,
+        };
+        if ALWAYS_MERKELIZE {
+            m.merkle = Some(m.merkelize().into_owned());
         }
+        m
     }
 
     pub fn size(&self) -> u64 {
         self.buffer.len() as u64
     }
 
-    pub fn merkelize(&self) -> Merkle {
+    pub fn merkelize(&self) -> Cow<'_, Merkle> {
+        if let Some(m) = &self.merkle {
+            return Cow::Borrowed(m);
+        }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
         let mut leaf_hashes = Vec::with_capacity(leaves);
@@ -64,7 +77,7 @@ impl Memory {
             leaf_hashes.push(hash_leaf(leaf));
             remaining_buf = &remaining_buf[taking_len..];
         }
-        Merkle::new(MerkleType::Memory, leaf_hashes)
+        Cow::Owned(Merkle::new(MerkleType::Memory, leaf_hashes))
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
@@ -166,8 +179,21 @@ impl Memory {
         if end_idx > self.buffer.len() as u64 {
             return false;
         }
+        let idx = idx as usize;
+        let end_idx = end_idx as usize;
         let buf = value.to_le_bytes();
-        self.buffer[(idx as usize)..(end_idx as usize)].copy_from_slice(&buf[..bytes.into()]);
+        self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
+
+        if let Some(mut merkle) = self.merkle.take() {
+            let start_leaf = idx / Self::LEAF_SIZE;
+            merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+            let end_leaf = end_idx / Self::LEAF_SIZE;
+            if end_leaf != start_leaf {
+                merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+            }
+            self.merkle = Some(merkle);
+        }
+
         true
     }
 }

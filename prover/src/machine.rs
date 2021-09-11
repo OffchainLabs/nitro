@@ -649,19 +649,21 @@ impl Machine {
                     // Prove the leaf this index is in, and the next one, if they are within the memory's size.
                     idx /= Memory::LEAF_SIZE;
                     data.extend(self.memory.get_leaf_data(idx));
+                    println!("{:?}", mem_merkle.prove(idx));
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
-                    // Now check if the next leaf is a valid index into the memory, and if so, prove it too.
-                    if let Some(next_leaf_idx) = idx.checked_add(Memory::LEAF_SIZE) {
-                        data.extend(self.memory.get_leaf_data(next_leaf_idx));
-                        let second_mem_merkle = if is_store {
-                            let mut copy = self.clone();
-                            copy.step();
-                            copy.memory.merkelize()
-                        } else {
-                            mem_merkle
-                        };
-                        data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
-                    }
+                    // Now prove the next leaf too, in case it's accessed.
+                    let next_leaf_idx = idx.saturating_add(1);
+                    data.extend(self.memory.get_leaf_data(next_leaf_idx));
+                    let second_mem_merkle = if is_store {
+                        // For stores, prove the second merkle against a state after the first leaf is set.
+                        // This state also happens to have the second leaf set, but that's irrelevant.
+                        let mut copy = self.clone();
+                        copy.step();
+                        copy.memory.merkelize().into_owned()
+                    } else {
+                        mem_merkle.into_owned()
+                    };
+                    data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
                 }
             }
         }
