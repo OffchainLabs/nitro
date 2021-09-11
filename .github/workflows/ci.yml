@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Install stable
+      - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -45,12 +45,20 @@ jobs:
           sudo apt-get update && sudo apt-get install -y \
             build-essential cmake nodejs
 
-      - name: Install rust
+      - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+
+      - name: Install rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          target: wasm32-unknown-unknown
+          override: false
 
       - name: Install latest wabt
         run: |
