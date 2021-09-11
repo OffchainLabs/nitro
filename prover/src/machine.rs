@@ -1,7 +1,7 @@
 use crate::{
     binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -210,6 +210,21 @@ where
         IBinOpType::Rotr => a.rotr(b.cast_usize()),
     };
     res.0
+}
+
+fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
+where
+    T: Ord,
+{
+    let res = match op {
+        IRelOpType::Eq => a == b,
+        IRelOpType::Ne => a != b,
+        IRelOpType::Lt => a < b,
+        IRelOpType::Gt => a > b,
+        IRelOpType::Le => a <= b,
+        IRelOpType::Ge => a >= b,
+    };
+    Value::I32(res as u32)
 }
 
 impl Machine {
@@ -543,6 +558,38 @@ impl Machine {
                 let val = self.value_stack.pop().unwrap();
                 self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
             }
+            Opcode::I64Eqz => {
+                let val = self.value_stack.pop().unwrap();
+                self.value_stack.push(Value::I32(val.is_i64_zero() as u32));
+            }
+            Opcode::IRelOp(t, op, signed) => {
+                let vb = self.value_stack.pop();
+                let va = self.value_stack.pop();
+                match t {
+                    IntegerValType::I32 => {
+                        if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
+                            if signed {
+                                self.value_stack.push(exec_irel_op(a as i32, b as i32, op));
+                            } else {
+                                self.value_stack.push(exec_irel_op(a, b, op));
+                            }
+                        } else {
+                            panic!("WASM validation failed: wrong types for i32relop");
+                        }
+                    }
+                    IntegerValType::I64 => {
+                        if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
+                            if signed {
+                                self.value_stack.push(exec_irel_op(a as i64, b as i64, op));
+                            } else {
+                                self.value_stack.push(exec_irel_op(a, b, op));
+                            }
+                        } else {
+                            panic!("WASM validation failed: wrong types for i64relop");
+                        }
+                    }
+                }
+            }
             Opcode::Drop => {
                 self.value_stack.pop().unwrap();
             }
@@ -565,6 +612,16 @@ impl Machine {
                         }
                     }
                 }
+            }
+            Opcode::I32WrapI64 => {
+                let x = match self.value_stack.pop() {
+                    Some(Value::I64(x)) => x,
+                    v => panic!(
+                        "WASM validation failed: wrong type for i32.wrapi64: {:?}",
+                        v,
+                    ),
+                };
+                self.value_stack.push(Value::I32(x as u32));
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);

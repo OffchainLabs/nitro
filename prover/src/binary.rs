@@ -1,5 +1,5 @@
 use crate::{
-    lir::{IBinOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, Opcode},
     value::{IntegerValType, Value as LirValue, ValueType},
 };
 use nom::{
@@ -266,14 +266,56 @@ fn ibinop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Op
     }
 }
 
+fn irelop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Opcode> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let (op, signed) = match byte - opcode_offset {
+            0 => (IRelOpType::Eq, false),
+            1 => (IRelOpType::Ne, false),
+            2 => (IRelOpType::Lt, true),
+            3 => (IRelOpType::Lt, false),
+            4 => (IRelOpType::Gt, true),
+            5 => (IRelOpType::Gt, false),
+            6 => (IRelOpType::Le, true),
+            7 => (IRelOpType::Le, false),
+            8 => (IRelOpType::Ge, true),
+            9 => (IRelOpType::Ge, false),
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        let opcode = Opcode::IRelOp(ty, op, signed);
+        assert_eq!(opcode.repr(), u16::from(byte));
+        Ok((input, opcode))
+    }
+}
+
 fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
     alt((
         value(Opcode::Unreachable, tag(&[0x00])),
         value(Opcode::Nop, tag(&[0x01])),
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
+        value(Opcode::I32Eqz, tag(&[0x45])),
+        irelop(IntegerValType::I32, 0x46),
+        value(Opcode::I64Eqz, tag(&[0x50])),
+        irelop(IntegerValType::I64, 0x51),
         ibinop(IntegerValType::I32, 0x6A),
         ibinop(IntegerValType::I64, 0x7C),
+        value(Opcode::I32WrapI64, tag(&[0xA7])),
     ))(input)
 }
 
@@ -450,7 +492,10 @@ fn instruction(input: &[u8]) -> IResult<HirInstruction> {
 }
 
 fn instructions(input: &[u8]) -> IResult<Vec<HirInstruction>> {
-    map(many_till(instruction, tag(&[0x0B])), |(x, _)| x)(input)
+    map(
+        many_till(context("instruction", instruction), tag(&[0x0B])),
+        |(x, _)| x,
+    )(input)
 }
 
 fn instructions_with_else(input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
