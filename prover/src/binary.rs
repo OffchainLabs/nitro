@@ -39,6 +39,7 @@ pub enum HirInstruction {
     IfElse(BlockType, Vec<HirInstruction>, Vec<HirInstruction>),
     Branch(u32),
     BranchIf(u32),
+    BranchTable(Vec<u32>, u32),
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
@@ -249,6 +250,12 @@ fn branch_instruction(input: &[u8]) -> IResult<HirInstruction> {
     alt((
         preceded(tag(&[0x0C]), map(leb128_u32, HirInstruction::Branch)),
         preceded(tag(&[0x0D]), map(leb128_u32, HirInstruction::BranchIf)),
+        preceded(
+            tag(&[0x0E]),
+            map(tuple((wasm_vec(leb128_u32), leb128_u32)), |(l, d)| {
+                HirInstruction::BranchTable(l, d)
+            }),
+        ),
     ))(input)
 }
 

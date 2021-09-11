@@ -255,6 +255,11 @@ contract OneStepProver0 is IOneStepProver {
 		}));
 	}
 
+	function executeDup(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		Value memory val = ValueStacks.peek(mach.valueStack);
+		ValueStacks.push(mach.valueStack, val);
+	}
+
 	function handleTrap(Machine memory mach) internal pure {
 		mach.halted = true;
 	}
@@ -308,6 +313,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
 			impl = executeIsStackBoundary;
+		} else if (opcode == Instructions.DUP) {
+			impl = executeDup;
 		} else {
 			revert("INVALID_OPCODE");
 		}

@@ -560,6 +560,10 @@ impl Machine {
                 self.value_stack
                     .push(Value::I32((val == Value::StackBoundary) as u32));
             }
+            Opcode::Dup => {
+                let val = self.value_stack.last().cloned().unwrap();
+                self.value_stack.push(val);
+            }
         }
     }
 
