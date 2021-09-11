@@ -292,6 +292,8 @@ impl Machine {
                         }
                     }
                 }
+                // TODO: tables
+                WasmSection::Tables(_) | WasmSection::Elements(_) => {}
                 WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
             }
         }
@@ -435,13 +437,13 @@ impl Machine {
                     Value::RefNull => {
                         self.halted = true;
                     }
-                    Value::Ref(pc, _) => self.pc = pc,
+                    Value::InternalRef(pc, _) => self.pc = pc,
                     v => panic!("Attempted to return into an invalid reference: {:?}", v),
                 }
             }
             Opcode::Call => {
                 self.value_stack
-                    .push(Value::Ref(self.pc, func.code_hashes[self.pc.1]));
+                    .push(Value::InternalRef(self.pc, func.code_hashes[self.pc.1]));
                 self.pc = (inst.argument_data as usize, 0);
             }
             Opcode::LocalGet => {
@@ -518,6 +520,10 @@ impl Machine {
             Opcode::F64Const => {
                 self.value_stack
                     .push(Value::F64(f64::from_bits(inst.argument_data)));
+            }
+            Opcode::FuncRefConst => {
+                self.value_stack
+                    .push(Value::FuncRef(inst.argument_data as u32));
             }
             Opcode::I32Eqz => {
                 let val = self.value_stack.pop().unwrap();

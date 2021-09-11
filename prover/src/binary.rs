@@ -44,6 +44,7 @@ pub enum HirInstruction {
     I64Const(i64),
     F32Const(f32),
     F64Const(f64),
+    FuncRefConst(u32),
 }
 
 impl HirInstruction {
@@ -53,6 +54,7 @@ impl HirInstruction {
             HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
             HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
             HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
+            HirInstruction::FuncRefConst(x) => Some(LirValue::FuncRef(x)),
             _ => None,
         }
     }
@@ -110,16 +112,53 @@ pub struct Data {
 }
 
 #[derive(Clone, Debug)]
+pub enum RefType {
+    FuncRef,
+    ExternRef,
+}
+
+impl Into<ValueType> for RefType {
+    fn into(self) -> ValueType {
+        match self {
+            RefType::FuncRef => ValueType::FuncRef,
+            RefType::ExternRef => ValueType::ExternRef,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Table {
+    pub ty: RefType,
+    pub limits: Limits,
+}
+
+#[derive(Clone, Debug)]
+pub enum ElementMode {
+    Passive,
+    Declarative,
+    Active(u32, Vec<HirInstruction>),
+}
+
+#[derive(Clone, Debug)]
+pub struct ElementSegment {
+    pub ty: RefType,
+    pub init: Vec<Vec<HirInstruction>>,
+    pub mode: ElementMode,
+}
+
+#[derive(Clone, Debug)]
 pub enum WasmSection {
     /// Ignored (usually debugging info)
     Custom(Vec<u8>),
     /// A function type, denoted as (parameters, return values)
     Types(Vec<FunctionType>),
     Functions(Vec<u32>),
+    Tables(Vec<Table>),
     Memories(Vec<Limits>),
     Globals(Vec<Global>),
     Exports(Vec<Export>),
     Start(u32),
+    Elements(Vec<ElementSegment>),
     Code(Vec<Code>),
     Datas(Vec<Data>),
     DataCount(u32),
@@ -163,14 +202,20 @@ fn name(input: &[u8]) -> IResult<&str> {
     Ok((input, s))
 }
 
+fn ref_type(input: &[u8]) -> IResult<RefType> {
+    alt((
+        value(RefType::FuncRef, tag(&[0x70])),
+        value(RefType::ExternRef, tag(&[0x6F])),
+    ))(input)
+}
+
 fn value_type(input: &[u8]) -> IResult<ValueType> {
     alt((
         value(ValueType::I32, tag(&[0x7F])),
         value(ValueType::I64, tag(&[0x7E])),
         value(ValueType::F32, tag(&[0x7D])),
         value(ValueType::F64, tag(&[0x7C])),
-        value(ValueType::FuncRef, tag(&[0x70])),
-        value(ValueType::ExternRef, tag(&[0x6F])),
+        map(ref_type, Into::into),
     ))(input)
 }
 
@@ -471,6 +516,44 @@ fn code_func(input: &[u8]) -> IResult<Code> {
     Ok((remaining, code))
 }
 
+fn element_segment(mut input: &[u8]) -> IResult<ElementSegment> {
+    let format = match input.get(0) {
+        Some(x) if *x < 8 => *x,
+        _ => {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )))
+        }
+    };
+    input = &input[1..];
+    let (input, mode) = match format & 3 {
+        0 => map(instructions, |o| ElementMode::Active(0, o))(input),
+        1 => Ok((input, ElementMode::Passive)),
+        2 => map(tuple((leb128_u32, instructions)), |(t, o)| {
+            ElementMode::Active(t, o)
+        })(input),
+        3 => Ok((input, ElementMode::Declarative)),
+        _ => unreachable!(),
+    }?;
+    let ref_general = format & 4 != 0;
+    let (input, ty) = if format & 3 == 0 {
+        Ok((input, RefType::FuncRef))
+    } else if ref_general {
+        ref_type(input)
+    } else {
+        value(RefType::FuncRef, tag(&[0x00]))(input)
+    }?;
+    let (input, init) = wasm_vec(|input| {
+        if ref_general {
+            instructions(input)
+        } else {
+            map(leb128_u32, |i| vec![HirInstruction::FuncRefConst(i)])(input)
+        }
+    })(input)?;
+    Ok((input, ElementSegment { ty, mode, init }))
+}
+
 fn data_segment(input: &[u8]) -> IResult<Data> {
     alt((
         map(
@@ -510,6 +593,13 @@ fn functions_section(input: &[u8]) -> IResult<Vec<u32>> {
     wasm_vec(leb128_u32)(input)
 }
 
+fn tables_section(input: &[u8]) -> IResult<Vec<Table>> {
+    wasm_vec(map(tuple((ref_type, limits)), |(t, l)| Table {
+        ty: t,
+        limits: l,
+    }))(input)
+}
+
 fn memories_section(input: &[u8]) -> IResult<Vec<Limits>> {
     wasm_vec(limits)(input)
 }
@@ -520,6 +610,10 @@ fn exports_section(input: &[u8]) -> IResult<Vec<Export>> {
 
 fn globals_section(input: &[u8]) -> IResult<Vec<Global>> {
     wasm_vec(global)(input)
+}
+
+fn elements_section(input: &[u8]) -> IResult<Vec<ElementSegment>> {
+    wasm_vec(element_segment)(input)
 }
 
 fn code_section(input: &[u8]) -> IResult<Vec<Code>> {
@@ -544,6 +638,7 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
             "functions section",
             map(functions_section, WasmSection::Functions),
         )(data),
+        4 => context("tables section", map(tables_section, WasmSection::Tables))(data),
         5 => context(
             "memories section",
             map(memories_section, WasmSection::Memories),
@@ -557,6 +652,10 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
             map(exports_section, WasmSection::Exports),
         )(data),
         8 => context("start section", map(leb128_u32, WasmSection::Start))(data),
+        9 => context(
+            "elements section",
+            map(elements_section, WasmSection::Elements),
+        )(data),
         10 => context("code section", map(code_section, WasmSection::Code))(data),
         11 => context("data section", map(datas_section, WasmSection::Datas))(data),
         12 => context(

@@ -129,7 +129,7 @@ contract OneStepProver0 is IOneStepProver {
 		if (frame.returnPc.valueType == ValueType.REF_NULL) {
 			mach.halted = true;
 			return;
-		} else if (frame.returnPc.valueType != ValueType.REF) {
+		} else if (frame.returnPc.valueType != ValueType.INTERNAL_REF) {
 			revert("INVALID_RETURN_PC_TYPE");
 		}
 		mach.instructions = InstructionWindow({
@@ -148,7 +148,7 @@ contract OneStepProver0 is IOneStepProver {
 		require(recomputedRoot == mach.functionsMerkleRoot, "WRONG_FUNC_MERKLE_ROOT");
 
 		Value memory retPc = Value({
-			valueType: ValueType.REF,
+			valueType: ValueType.INTERNAL_REF,
 			contents: uint256(Instructions.hash(mach.instructions))
 		});
 		ValueStacks.push(mach.valueStack, retPc);

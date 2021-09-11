@@ -7,8 +7,9 @@ enum ValueType {
 	F32,
 	F64,
 	REF_NULL,
-	REF,
+	FUNC_REF,
 	REF_EXTERN,
+	INTERNAL_REF,
 	STACK_BOUNDARY
 }
 

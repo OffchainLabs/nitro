@@ -56,6 +56,8 @@ pub enum Opcode {
 
     I32Eqz,
 
+    FuncRefConst,
+
     IBinOp(IntegerValType, IBinOpType),
     // Custom opcodes:
     /// Custom opcode not in wasm.
@@ -140,6 +142,7 @@ impl Opcode {
                 IntegerValType::I32 => 0x6a + (op as u16),
                 IntegerValType::I64 => 0x7c + (op as u16),
             },
+            Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
             Opcode::EndBlockIf => 0x8001,
@@ -326,6 +329,11 @@ impl Instruction {
             HirInstruction::F64Const(x) => ops.push(Instruction {
                 opcode: Opcode::F64Const,
                 argument_data: x.to_bits(),
+                proving_argument_data: None,
+            }),
+            HirInstruction::FuncRefConst(x) => ops.push(Instruction {
+                opcode: Opcode::FuncRefConst,
+                argument_data: x.into(),
                 proving_argument_data: None,
             }),
             HirInstruction::Simple(Opcode::Return) => {
