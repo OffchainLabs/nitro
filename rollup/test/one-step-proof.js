@@ -16,10 +16,12 @@ describe("OneStepProof", function () {
       const osp = await ethers.getContract("OneStepProofEntry");
 
       for (let i = 0; i < proofs.length; i++) {
+        process.stdout.write("\rTesting " + file + " proof " + i + "/" + proofs.length + " ");
         const proof = proofs[i];
         const after = await osp.proveOneStep([...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")]);
         assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i);
       }
+      process.stdout.write("\r");
     });
   }
 });

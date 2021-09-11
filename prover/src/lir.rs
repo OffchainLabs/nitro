@@ -13,6 +13,18 @@ pub enum IBinOpType {
     Add = 0,
     Sub,
     Mul,
+    DivS,
+    DivU,
+    RemS,
+    RemU,
+    And,
+    Or,
+    Xor,
+    Shl,
+    ShrS,
+    ShrU,
+    Rotl,
+    Rotr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -313,7 +325,7 @@ impl Instruction {
             }),
             HirInstruction::I32Const(x) => ops.push(Instruction {
                 opcode: Opcode::I32Const,
-                argument_data: x as u64,
+                argument_data: x as u32 as u64,
                 proving_argument_data: None,
             }),
             HirInstruction::I64Const(x) => ops.push(Instruction {

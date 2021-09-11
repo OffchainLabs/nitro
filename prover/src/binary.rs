@@ -223,36 +223,57 @@ fn result_type(input: &[u8]) -> IResult<Vec<ValueType>> {
     wasm_vec(value_type)(input)
 }
 
+fn ibinop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Opcode> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let op = match byte - opcode_offset {
+            0 => IBinOpType::Add,
+            1 => IBinOpType::Sub,
+            2 => IBinOpType::Mul,
+            3 => IBinOpType::DivS,
+            4 => IBinOpType::DivU,
+            5 => IBinOpType::RemS,
+            6 => IBinOpType::RemU,
+            7 => IBinOpType::And,
+            8 => IBinOpType::Or,
+            9 => IBinOpType::Xor,
+            10 => IBinOpType::Shl,
+            11 => IBinOpType::ShrS,
+            12 => IBinOpType::ShrU,
+            13 => IBinOpType::Rotl,
+            14 => IBinOpType::Rotr,
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        assert_eq!(op as u8, byte - opcode_offset);
+        let opcode = Opcode::IBinOp(ty, op);
+        assert_eq!(opcode.repr(), u16::from(byte));
+        Ok((input, opcode))
+    }
+}
+
 fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
     alt((
         value(Opcode::Unreachable, tag(&[0x00])),
         value(Opcode::Nop, tag(&[0x01])),
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
-        value(
-            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Add),
-            tag(&[0x6A]),
-        ),
-        value(
-            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Sub),
-            tag(&[0x6B]),
-        ),
-        value(
-            Opcode::IBinOp(IntegerValType::I32, IBinOpType::Mul),
-            tag(&[0x6C]),
-        ),
-        value(
-            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Add),
-            tag(&[0x7C]),
-        ),
-        value(
-            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Sub),
-            tag(&[0x7D]),
-        ),
-        value(
-            Opcode::IBinOp(IntegerValType::I64, IBinOpType::Mul),
-            tag(&[0x7E]),
-        ),
+        ibinop(IntegerValType::I32, 0x6A),
+        ibinop(IntegerValType::I64, 0x7C),
     ))(input)
 }
 
@@ -520,10 +541,7 @@ fn element_segment(mut input: &[u8]) -> IResult<ElementSegment> {
     let format = match input.get(0) {
         Some(x) if *x < 8 => *x,
         _ => {
-            return Err(Err::Error(VerboseError::from_error_kind(
-                input,
-                ErrorKind::Tag,
-            )))
+            return Err(Err::Incomplete(Needed::Unknown));
         }
     };
     input = &input[1..];

@@ -4,14 +4,14 @@ use crate::{
     lir::{IBinOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{IntegerValType, Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
-use num_traits;
 use sha3::Keccak256;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, num::Wrapping};
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -186,16 +186,30 @@ where
 }
 
 #[must_use]
-fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_traits::WrappingSub>(
-    a: &T,
-    b: &T,
-    op: &IBinOpType,
-) -> T {
-    match op {
-        IBinOpType::Add => return a.wrapping_add(b),
-        IBinOpType::Sub => return a.wrapping_sub(b),
-        IBinOpType::Mul => return a.wrapping_mul(b),
-    }
+fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> T
+where
+    Wrapping<T>: ReinterpretAsSigned,
+{
+    let a = Wrapping(a);
+    let b = Wrapping(b);
+    let res = match op {
+        IBinOpType::Add => a + b,
+        IBinOpType::Sub => a - b,
+        IBinOpType::Mul => a * b,
+        IBinOpType::DivS => (a.cast_signed() / b.cast_signed()).cast_unsigned(),
+        IBinOpType::DivU => a / b,
+        IBinOpType::RemS => (a.cast_signed() % b.cast_signed()).cast_unsigned(),
+        IBinOpType::RemU => a % b,
+        IBinOpType::And => a & b,
+        IBinOpType::Or => a | b,
+        IBinOpType::Xor => a ^ b,
+        IBinOpType::Shl => a << b.cast_usize(),
+        IBinOpType::ShrS => (a.cast_signed() >> b.cast_usize()).cast_unsigned(),
+        IBinOpType::ShrU => a >> b.cast_usize(),
+        IBinOpType::Rotl => a.rotl(b.cast_usize()),
+        IBinOpType::Rotr => a.rotr(b.cast_usize()),
+    };
+    res.0
 }
 
 impl Machine {
@@ -538,14 +552,14 @@ impl Machine {
                 match w {
                     IntegerValType::I32 => {
                         if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                            self.value_stack.push(Value::I32(exec_ibin_op(&a, &b, &op)));
+                            self.value_stack.push(Value::I32(exec_ibin_op(a, b, op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i32binop");
                         }
                     }
                     IntegerValType::I64 => {
                         if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                            self.value_stack.push(Value::I64(exec_ibin_op(&a, &b, &op)));
+                            self.value_stack.push(Value::I64(exec_ibin_op(a, b, op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i64binop");
                         }
