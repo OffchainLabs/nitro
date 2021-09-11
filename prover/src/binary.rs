@@ -33,6 +33,9 @@ pub struct MemoryArg {
 pub enum HirInstruction {
     Simple(Opcode),
     WithIdx(Opcode, u32),
+    /// Separate from LocalGet and LocalSet (which are in WithIdx),
+    /// as this is translated out of existence.
+    LocalTee(u32),
     LoadOrStore(Opcode, MemoryArg),
     Block(BlockType, Vec<HirInstruction>),
     Loop(BlockType, Vec<HirInstruction>),
@@ -309,6 +312,7 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         value(Opcode::Nop, tag(&[0x01])),
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
+        value(Opcode::Select, tag(&[0x1B])),
         value(Opcode::I32Eqz, tag(&[0x45])),
         irelop(IntegerValType::I32, 0x46),
         value(Opcode::I64Eqz, tag(&[0x50])),
@@ -380,6 +384,10 @@ fn variables_instruction(input: &[u8]) -> IResult<HirInstruction> {
         preceded(
             tag(&[0x21]),
             map(leb128_u32, inst_with_idx(Opcode::LocalSet)),
+        ),
+        preceded(
+            tag(&[0x22]),
+            map(leb128_u32, |x| HirInstruction::LocalTee(x)),
         ),
         preceded(
             tag(&[0x23]),

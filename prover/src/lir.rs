@@ -65,6 +65,7 @@ pub enum Opcode {
     Call,
 
     Drop,
+    Select,
 
     LocalGet,
     LocalSet,
@@ -135,6 +136,7 @@ impl Opcode {
             Opcode::Return => 0x0F,
             Opcode::Call => 0x10,
             Opcode::Drop => 0x1A,
+            Opcode::Select => 0x1B,
             Opcode::LocalGet => 0x20,
             Opcode::LocalSet => 0x21,
             Opcode::GlobalGet => 0x23,
@@ -334,6 +336,11 @@ impl Instruction {
                 for inst in equiv {
                     Self::extend_from_hir(ops, return_values, inst);
                 }
+            }
+            HirInstruction::LocalTee(x) => {
+                // Translate into a dup then local.set
+                Self::extend_from_hir(ops, return_values, HirInstruction::Simple(Opcode::Dup));
+                Self::extend_from_hir(ops, return_values, HirInstruction::WithIdx(Opcode::LocalSet, x));
             }
             HirInstruction::WithIdx(op, x) => {
                 assert!(

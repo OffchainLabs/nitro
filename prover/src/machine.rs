@@ -593,6 +593,16 @@ impl Machine {
             Opcode::Drop => {
                 self.value_stack.pop().unwrap();
             }
+            Opcode::Select => {
+                let selector_zero = self.value_stack.pop().unwrap().is_i32_zero();
+                let val2 = self.value_stack.pop().unwrap();
+                let val1 = self.value_stack.pop().unwrap();
+                if selector_zero {
+                    self.value_stack.push(val2);
+                } else {
+                    self.value_stack.push(val1);
+                }
+            }
             Opcode::IBinOp(w, op) => {
                 let vb = self.value_stack.pop();
                 let va = self.value_stack.pop();
@@ -650,7 +660,7 @@ impl Machine {
 
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
-        const STACK_PROVING_DEPTH: usize = 2;
+        const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = Vec::new();
         let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);
