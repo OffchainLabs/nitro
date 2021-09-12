@@ -50,11 +50,34 @@ library Instructions {
 	uint16 constant I64_STORE32 = 0x3E;
 
 	uint16 constant DROP = 0x1A;
+	uint16 constant SELECT = 0x1B;
 	uint16 constant I32_CONST = 0x41;
 	uint16 constant I64_CONST = 0x42;
 	uint16 constant F32_CONST = 0x43;
 	uint16 constant F64_CONST = 0x44;
 	uint16 constant I32_EQZ = 0x45;
+	uint16 constant I32_RELOP_BASE = 0x46;
+	uint16 constant IRELOP_EQ = 0;
+	uint16 constant IRELOP_NE = 1;
+	uint16 constant IRELOP_LT_S = 2;
+	uint16 constant IRELOP_LT_U = 3;
+	uint16 constant IRELOP_GT_S = 4;
+	uint16 constant IRELOP_GT_U = 5;
+	uint16 constant IRELOP_LE_S = 6;
+	uint16 constant IRELOP_LE_U = 7;
+	uint16 constant IRELOP_GE_S = 8;
+	uint16 constant IRELOP_GE_U = 9;
+	uint16 constant IRELOP_LAST = IRELOP_GE_U;
+
+	uint16 constant I64_EQZ = 0x50;
+	uint16 constant I64_RELOP_BASE = 0x51;
+
+	uint16 constant I32_UNOP_BASE = 0x67;
+	uint16 constant IUNOP_CLZ = 0;
+	uint16 constant IUNOP_CTZ = 1;
+	uint16 constant IUNOP_POPCNT = 2;
+	uint16 constant IUNOP_LAST = IUNOP_POPCNT;
+
 	uint16 constant I32_ADD = 0x6A;
 	uint16 constant I32_SUB = 0x6B;
 	uint16 constant I32_MUL = 0x6C;
@@ -71,6 +94,8 @@ library Instructions {
 	uint16 constant I32_ROTL = 0x77;
 	uint16 constant I32_ROTR = 0x78;
 
+	uint16 constant I64_UNOP_BASE = 0x79;
+
 	uint16 constant I64_ADD = 0x7C;
 	uint16 constant I64_SUB = 0x7D;
 	uint16 constant I64_MUL = 0x7E;
@@ -86,6 +111,10 @@ library Instructions {
 	uint16 constant I64_SHR_U = 0x88;
 	uint16 constant I64_ROTL = 0x89;
 	uint16 constant I64_ROTR = 0x8A;
+
+	uint16 constant I32_WRAP_I64 = 0xA7;
+	uint16 constant I64_EXTEND_I32_S = 0xAC;
+	uint16 constant I64_EXTEND_I32_U = 0xAD;
 
 	uint16 constant END_BLOCK = 0x8000;
 	uint16 constant END_BLOCK_IF = 0x8001;
