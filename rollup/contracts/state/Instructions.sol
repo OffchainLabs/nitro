@@ -112,6 +112,10 @@ library Instructions {
 	uint16 constant I64_ROTL = 0x89;
 	uint16 constant I64_ROTR = 0x8A;
 
+	uint16 constant I32_WRAP_I64 = 0xA7;
+	uint16 constant I64_EXTEND_I32_S = 0xAC;
+	uint16 constant I64_EXTEND_I32_U = 0xAD;
+
 	uint16 constant END_BLOCK = 0x8000;
 	uint16 constant END_BLOCK_IF = 0x8001;
 	uint16 constant INIT_FRAME = 0x8002;

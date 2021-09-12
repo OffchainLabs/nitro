@@ -298,6 +298,28 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI64(res));
 	}
 
+	function executeI32WrapI64(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+
+		uint32 a32 = uint32(a);
+
+		ValueStacks.push(mach.valueStack, Values.newI32(a32));
+	}
+
+	function executeI64ExtendI32(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+		uint64 a64;
+
+		if (inst.opcode == Instructions.I64_EXTEND_I32_S) {
+			a64 = signExtend(a);
+		} else {
+			a64 = uint64(a);
+		}
+
+		ValueStacks.push(mach.valueStack, Values.newI64(a64));
+	}
+
 	function executeBlock(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
 		bytes32 target = bytes32(inst.argumentData);
 		if (target == 0) {
@@ -527,6 +549,10 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeI64UnOp;
 		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_ROTR) {
 			impl = executeI64BinOp;
+		} else if (opcode == Instructions.I32_WRAP_I64) {
+			impl = executeI32WrapI64;
+		} else if (opcode == Instructions.I64_EXTEND_I32_S || opcode == Instructions.I64_EXTEND_I32_U) {
+			impl = executeI64ExtendI32;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
