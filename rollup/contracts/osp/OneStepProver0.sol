@@ -140,7 +140,7 @@ contract OneStepProver0 is IOneStepProver {
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 res;
 
-		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
+		uint16 opcodeOffset = inst.opcode - Instructions.I64_ADD;
 
 		if (opcodeOffset == 3) {
 			// div_s
