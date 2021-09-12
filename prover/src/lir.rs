@@ -340,7 +340,11 @@ impl Instruction {
             HirInstruction::LocalTee(x) => {
                 // Translate into a dup then local.set
                 Self::extend_from_hir(ops, return_values, HirInstruction::Simple(Opcode::Dup));
-                Self::extend_from_hir(ops, return_values, HirInstruction::WithIdx(Opcode::LocalSet, x));
+                Self::extend_from_hir(
+                    ops,
+                    return_values,
+                    HirInstruction::WithIdx(Opcode::LocalSet, x),
+                );
             }
             HirInstruction::WithIdx(op, x) => {
                 assert!(
