@@ -1,5 +1,5 @@
 use crate::{
-    lir::{IBinOpType, IUnOpType, IRelOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
     value::{IntegerValType, Value as LirValue, ValueType},
 };
 use nom::{

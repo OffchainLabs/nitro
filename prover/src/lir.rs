@@ -33,7 +33,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr (u8)]
+#[repr(u8)]
 pub enum IUnOpType {
     Clz = 0,
     Ctz,
@@ -208,7 +208,7 @@ impl Opcode {
             Opcode::I64ExtendI32(signed) => match signed {
                 true => 0xac,
                 false => 0xad,
-            }
+            },
             Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,

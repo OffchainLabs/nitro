@@ -1,7 +1,7 @@
 use crate::{
     binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, IUnOpType, IRelOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -10,9 +10,9 @@ use crate::{
 };
 use digest::Digest;
 use eyre::Result;
+use num::traits::PrimInt;
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
-use num::{traits::PrimInt};
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -218,7 +218,7 @@ fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
 where
     T: PrimInt,
 {
-    match op{
+    match op {
         IUnOpType::Clz => a.leading_zeros(),
         IUnOpType::Ctz => a.trailing_zeros(),
         IUnOpType::Popcnt => a.count_ones(),
