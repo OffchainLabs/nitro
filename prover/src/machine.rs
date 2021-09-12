@@ -1,12 +1,12 @@
 use crate::{
-    binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
+    binary::{Code, ElementMode, ExportKind, HirInstruction, TableType, WasmBinary, WasmSection},
     lir::Instruction,
     lir::{IBinOpType, IRelOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
-    value::{IntegerValType, Value, ValueType},
+    value::{FunctionType, IntegerValType, Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
@@ -125,13 +125,63 @@ impl StackFrame {
 }
 
 #[derive(Clone, Debug)]
+struct TableElement {
+    func_ty: FunctionType,
+    val: Value,
+}
+
+impl Default for TableElement {
+    fn default() -> Self {
+        TableElement {
+            func_ty: FunctionType::default(),
+            val: Value::RefNull,
+        }
+    }
+}
+
+impl TableElement {
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Table element:");
+        h.update(self.func_ty.hash());
+        h.update(self.val.hash());
+        h.finalize().into()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Table {
+    ty: TableType,
+    elems: Vec<TableElement>,
+}
+
+fn hash_table(ty: TableType, elements_root: Bytes32) -> Bytes32 {
+    let mut h = Keccak256::new();
+    h.update("Table:");
+    h.update(&[Into::<ValueType>::into(ty.ty).serialize()]);
+    h.update(ty.limits.minimum_size.to_be_bytes());
+    h.update(ty.limits.maximum_size.unwrap_or(u32::MAX).to_be_bytes());
+    h.update(elements_root);
+    h.finalize().into()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockStackItem {
+    Block(usize, Bytes32),
+    StackBoundary,
+}
+
+#[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
-    block_stack: Vec<(usize, Bytes32)>,
+    block_stack: Vec<BlockStackItem>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     memory: Memory,
+    tables: Vec<Table>,
+    tables_merkle: Merkle,
+    tables_elements_merkles: Vec<Merkle>,
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
     pc: (usize, usize),
@@ -157,8 +207,15 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_block_stack(pcs: &[(usize, Bytes32)]) -> Bytes32 {
-    hash_stack(pcs.iter().map(|(_, h)| *h), "Bytes32 stack:")
+fn hash_block_stack_item(item: &BlockStackItem) -> Bytes32 {
+    match item {
+        BlockStackItem::Block(_, h) => *h,
+        BlockStackItem::StackBoundary => Bytes32::default(),
+    }
+}
+
+fn hash_block_stack(pcs: &[BlockStackItem]) -> Bytes32 {
+    hash_stack(pcs.iter().map(hash_block_stack_item), "Bytes32 stack:")
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -236,6 +293,7 @@ impl Machine {
         let mut start = None;
         let mut memory = Memory::default();
         let mut main = None;
+        let mut tables = Vec::new();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -305,8 +363,10 @@ impl Machine {
                                     offset = Some(x);
                                 }
                             }
-                            let offset =
-                                offset.expect("Non-constant data offset expression") as usize;
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
                             if !matches!(
                                 offset.checked_add(data.data.len()),
                                 Some(x) if (x as u64) < memory.size(),
@@ -321,8 +381,63 @@ impl Machine {
                         }
                     }
                 }
-                // TODO: tables
-                WasmSection::Tables(_) | WasmSection::Elements(_) => {}
+                WasmSection::Tables(t) => {
+                    assert!(tables.is_empty(), "Duplicate tables section");
+                    for table in t {
+                        tables.push(Table {
+                            elems: vec![
+                                TableElement::default();
+                                usize::try_from(table.limits.minimum_size).unwrap()
+                            ],
+                            ty: table,
+                        });
+                    }
+                }
+                WasmSection::Elements(elems) => {
+                    for elem in elems {
+                        if let ElementMode::Active(t, o) = elem.mode {
+                            let mut offset = None;
+                            if let [insn] = o.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
+                            let t = usize::try_from(t).unwrap();
+                            assert_eq!(tables[t].ty.ty, elem.ty);
+                            let contents: Vec<_> = elem
+                                .init
+                                .into_iter()
+                                .map(|i| {
+                                    let insn = match i.as_slice() {
+                                        [x] => x,
+                                        _ => panic!(
+                                            "Element initializer isn't one instruction: {:?}",
+                                            o
+                                        ),
+                                    };
+                                    match insn.get_const_output() {
+                                        Some(v @ Value::RefNull) => TableElement {
+                                            func_ty: FunctionType::default(),
+                                            val: v,
+                                        },
+                                        Some(Value::FuncRef(x)) => TableElement {
+                                            func_ty: func_types[usize::try_from(x).unwrap()]
+                                                .clone(),
+                                            val: Value::FuncRef(x),
+                                        },
+                                        _ => panic!("Invalid element initializer {:?}", insn),
+                                    }
+                                })
+                                .collect();
+                            let len = contents.len();
+                            tables[t].elems[offset..][..len].clone_from_slice(&contents);
+                        }
+                    }
+                }
                 WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
             }
         }
@@ -359,6 +474,15 @@ impl Machine {
             },
             &FunctionType::default(),
         ));
+        let tables_elements_merkles: Vec<_> = tables
+            .iter()
+            .map(|t| {
+                Merkle::new(
+                    MerkleType::TableElement,
+                    t.elems.iter().map(|e| e.hash()).collect(),
+                )
+            })
+            .collect();
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -366,6 +490,16 @@ impl Machine {
             frame_stack: Vec::new(),
             memory,
             globals,
+            tables_merkle: Merkle::new(
+                MerkleType::Table,
+                tables
+                    .iter()
+                    .zip(tables_elements_merkles.iter())
+                    .map(|(t, m)| hash_table(t.ty, m.root()))
+                    .collect(),
+            ),
+            tables_elements_merkles,
+            tables,
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
                 code.iter().map(|f| f.code_hashes[0]).collect(),
@@ -422,7 +556,8 @@ impl Machine {
             Opcode::Nop => {}
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
-                self.block_stack.push((idx, func.code_hashes[idx]));
+                self.block_stack
+                    .push(BlockStackItem::Block(idx, func.code_hashes[idx]));
             }
             Opcode::EndBlock => {
                 self.block_stack.pop();
@@ -451,13 +586,17 @@ impl Machine {
                     self.pc.1 = inst.argument_data as usize;
                 }
             }
-            Opcode::Branch => {
-                self.pc.1 = self.block_stack.pop().unwrap().0;
-            }
+            Opcode::Branch => match self.block_stack.pop().unwrap() {
+                BlockStackItem::Block(x, _) => self.pc.1 = x,
+                BlockStackItem::StackBoundary => panic!("Overran block stack"),
+            },
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    self.pc.1 = self.block_stack.pop().unwrap().0;
+                    match self.block_stack.pop().unwrap() {
+                        BlockStackItem::Block(x, _) => self.pc.1 = x,
+                        BlockStackItem::StackBoundary => panic!("Overran block stack"),
+                    }
                 }
             }
             Opcode::Return => {
@@ -635,6 +774,7 @@ impl Machine {
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);
+                self.block_stack.push(BlockStackItem::StackBoundary);
             }
             Opcode::MoveFromStackToInternal => {
                 self.internal_stack.push(self.value_stack.pop().unwrap());
@@ -646,6 +786,11 @@ impl Machine {
                 let val = self.value_stack.pop().unwrap();
                 self.value_stack
                     .push(Value::I32((val == Value::StackBoundary) as u32));
+            }
+            Opcode::IsBlockAboveStackBoundary => {
+                let val = self.block_stack.remove(self.block_stack.len() - 2);
+                self.value_stack
+                    .push(Value::I32((val == BlockStackItem::StackBoundary) as u32));
             }
             Opcode::Dup => {
                 let val = self.value_stack.last().cloned().unwrap();
@@ -682,10 +827,11 @@ impl Machine {
         }
 
         let func = &self.funcs[self.pc.0];
+        // TODO with IsBlockAboveStackBoundary we actually need to prove 2 deep
         data.extend(prove_window(
             &self.block_stack,
             |s| hash_block_stack(s),
-            |(_, h)| *h,
+            hash_block_stack_item,
         ));
 
         data.extend(prove_window(

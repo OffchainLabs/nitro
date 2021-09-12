@@ -10,6 +10,7 @@ pub enum IntegerValType {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
 pub enum ValueType {
     I32,
     I64,
@@ -145,3 +146,25 @@ impl PartialEq for Value {
 }
 
 impl Eq for Value {}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FunctionType {
+    pub inputs: Vec<ValueType>,
+    pub outputs: Vec<ValueType>,
+}
+
+impl FunctionType {
+    pub fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update(b"Function type:");
+        h.update(Bytes32::from(self.inputs.len()));
+        for input in &self.inputs {
+            h.update(&[*input as u8]);
+        }
+        h.update(Bytes32::from(self.outputs.len()));
+        for output in &self.outputs {
+            h.update(&[*output as u8]);
+        }
+        h.finalize().into()
+    }
+}

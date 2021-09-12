@@ -123,6 +123,8 @@ pub enum Opcode {
     IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
+    /// Pop a value from the block stack, then push an I32 1 if it's a block stack boundary, I32 0 otherwise.
+    IsBlockAboveStackBoundary,
 }
 
 impl Opcode {
@@ -202,6 +204,7 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
+            Opcode::IsBlockAboveStackBoundary => 0x8009,
         }
     }
 }
@@ -364,6 +367,10 @@ impl Instruction {
                     proving_argument_data: None,
                 });
             }
+            HirInstruction::CallIndirect(_, _) => {
+                // TODO
+                ops.push(Instruction::simple(Opcode::Unreachable));
+            }
             HirInstruction::LoadOrStore(op, mem_arg) => ops.push(Instruction {
                 opcode: op,
                 argument_data: mem_arg.offset.into(), // we ignore the alignment
@@ -400,18 +407,23 @@ impl Instruction {
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromStackToInternal))
                         .take(return_values),
                 );
-                // Keep dropping values until we drop the stack boundary, then exit the loop
-                Self::extend_from_hir(
-                    ops,
-                    return_values,
+                let make_until_loop = |check| {
                     HirInstruction::Loop(
                         BlockType::Empty,
                         vec![
-                            HirInstruction::Simple(Opcode::IsStackBoundary),
+                            HirInstruction::Simple(check),
                             HirInstruction::Simple(Opcode::I32Eqz),
                             HirInstruction::Simple(Opcode::BranchIf),
                         ],
-                    ),
+                    )
+                };
+                // Keep dropping values until we drop the stack boundary, then exit the loop
+                Self::extend_from_hir(ops, return_values, make_until_loop(Opcode::IsStackBoundary));
+                // Do the same for the block stack, dropping blocks up to and including the stack boundary
+                Self::extend_from_hir(
+                    ops,
+                    return_values,
+                    make_until_loop(Opcode::IsBlockAboveStackBoundary),
                 );
                 // Move the return values back from the internal stack to the value stack
                 ops.extend(

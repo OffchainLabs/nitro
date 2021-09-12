@@ -64,7 +64,10 @@ fn main() -> Result<()> {
             mach.get_next_instruction().unwrap().opcode
         );
         let proof = mach.serialize_proof();
-        mach.step();
+        let count = if proofs.len() < 859 { 1000 } else { 1 };
+        for _ in 0..count {
+            mach.step();
+        }
         let after = mach.hash();
         proofs.push(ProofInfo {
             before: before.to_string(),
