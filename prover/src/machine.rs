@@ -1,7 +1,7 @@
 use crate::{
     binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, IRelOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -10,6 +10,7 @@ use crate::{
 };
 use digest::Digest;
 use eyre::Result;
+use num::traits::PrimInt;
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
 
@@ -210,6 +211,18 @@ where
         IBinOpType::Rotr => a.rotr(b.cast_usize()),
     };
     res.0
+}
+
+#[must_use]
+fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
+where
+    T: PrimInt,
+{
+    match op {
+        IUnOpType::Clz => a.leading_zeros(),
+        IUnOpType::Ctz => a.trailing_zeros(),
+        IUnOpType::Popcnt => a.count_ones(),
+    }
 }
 
 fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
@@ -603,6 +616,25 @@ impl Machine {
                     self.value_stack.push(val1);
                 }
             }
+            Opcode::IUnOp(w, op) => {
+                let va = self.value_stack.pop();
+                match w {
+                    IntegerValType::I32 => {
+                        if let Some(Value::I32(a)) = va {
+                            self.value_stack.push(Value::I32(exec_iun_op(a, op)));
+                        } else {
+                            panic!("WASM validation failed: wrong types for i32unop");
+                        }
+                    }
+                    IntegerValType::I64 => {
+                        if let Some(Value::I64(a)) = va {
+                            self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
+                        } else {
+                            panic!("WASM validation failed: wrong types for i64unop");
+                        }
+                    }
+                }
+            }
             Opcode::IBinOp(w, op) => {
                 let vb = self.value_stack.pop();
                 let va = self.value_stack.pop();
@@ -632,6 +664,20 @@ impl Machine {
                     ),
                 };
                 self.value_stack.push(Value::I32(x as u32));
+            }
+            Opcode::I64ExtendI32(signed) => {
+                let x = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x,
+                    v => panic!(
+                        "WASM validation failed: wrong type for i64.extendi32: {:?}",
+                        v,
+                    ),
+                };
+                let x64 = match signed {
+                    true => x as i32 as i64 as u64,
+                    false => x as u32 as u64,
+                };
+                self.value_stack.push(Value::I64(x64));
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);

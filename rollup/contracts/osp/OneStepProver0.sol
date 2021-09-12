@@ -50,6 +50,134 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.pop(mach.valueStack);
 	}
 
+	function executeSelect(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		uint32 selector = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		Value memory b = ValueStacks.pop(mach.valueStack);
+		Value memory a = ValueStacks.pop(mach.valueStack);
+
+		if (selector != 0) {
+			ValueStacks.push(mach.valueStack, a);
+		} else {
+			ValueStacks.push(mach.valueStack, b);
+		}
+	}
+
+	function signExtend(uint32 a) internal pure returns (uint64) {
+		if (a & (1<<31) != 0) {
+			return uint64(a) | uint64(0xffffffff00000000);
+		}
+		return uint64(a);
+	}
+
+	function I64RelOp(uint64 a, uint64 b, uint16 relop) internal pure returns (bool) {
+		if (relop == Instructions.IRELOP_EQ) {
+			return (a == b);
+		} else if (relop == Instructions.IRELOP_NE) {
+			return (a != b);
+		} else if (relop == Instructions.IRELOP_LT_S) {
+			return (int64(a) < int64(b));
+		} else if (relop == Instructions.IRELOP_LT_U) {
+			return (a < b);
+		} else if (relop == Instructions.IRELOP_GT_S) {
+			return (int64(a) > int64(b));
+		} else if (relop == Instructions.IRELOP_GT_U) {
+			return (a > b);
+		} else if (relop == Instructions.IRELOP_LE_S) {
+			return (int64(a) <= int64(b));
+		} else if (relop == Instructions.IRELOP_LE_U) {
+			return (a <= b);
+		} else if (relop == Instructions.IRELOP_GE_S) {
+			return (int64(a) >= int64(b));
+		} else if (relop == Instructions.IRELOP_GE_U) {
+			return (a >= b);
+		} else {
+			revert ("BAD IRELOP");
+		}
+	}
+
+	function executeI32RelOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+		uint16 relop = inst.opcode - Instructions.I32_RELOP_BASE;
+		uint64 a64;
+		uint64 b64;
+
+		if (relop == Instructions.IRELOP_LT_S || relop == Instructions.IRELOP_GT_S ||
+			relop == Instructions.IRELOP_LE_S || relop == Instructions.IRELOP_GE_S) {
+			a64 = signExtend(a);
+			b64 = signExtend(b);
+		} else {
+			a64 = uint64(a);
+			b64 = uint64(b);
+		}
+
+		bool res = I64RelOp(a64, b64, relop);
+
+		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+	}
+
+	function executeI64RelOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+
+		uint16 relop = inst.opcode - Instructions.I64_RELOP_BASE;
+
+		bool res = I64RelOp(a, b, relop);
+
+		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+	}
+
+
+	function genericIUnOp(uint64 a, uint16 unop, uint16 bits) internal pure returns (uint32) {
+		require(bits == 32 || bits == 64, "WRONG USE OF genericUnOp");
+		if (unop == Instructions.IUNOP_CLZ) {
+			/* curbits is one-based to keep with unsigned mathematics */
+			uint32 curbit = bits;
+			while (curbit > 0 && (a & (1 << (curbit - 1)) == 0)) {
+				curbit -= 1;
+			}
+			return (bits - curbit);
+		} else if (unop == Instructions.IUNOP_CTZ) {
+			uint32 curbit = 0;
+			while (curbit < bits && ((a & (1 << curbit)) == 0)) {
+				curbit += 1;
+			}
+			return curbit;
+		} else if (unop == Instructions.IUNOP_POPCNT) {
+			uint32 curbit = 0;
+			uint32 res = 0;
+			while (curbit < bits) {
+				if ((a & (1 << curbit)) != 0) {
+					res += 1;
+				}
+				curbit++;
+			}
+			return res;
+		}
+		revert("BAD IUnOp");
+	}
+
+	function executeI32UnOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+		uint16 unop = inst.opcode - Instructions.I32_UNOP_BASE;
+
+		uint32 res = genericIUnOp(a, unop, 32);
+
+		ValueStacks.push(mach.valueStack, Values.newI32(res));
+	}
+
+	function executeI64UnOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+
+		uint16 unop = inst.opcode - Instructions.I64_UNOP_BASE;
+
+		uint64 res = uint64(genericIUnOp(a, unop, 64));
+
+		ValueStacks.push(mach.valueStack, Values.newI64(res));
+	}
+
 	function rotl32(uint32 a, uint32 b) internal pure returns (uint32) {
 		b %= 32;
 		return (a << b) | (a >> (32 - b));
@@ -140,7 +268,7 @@ contract OneStepProver0 is IOneStepProver {
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 res;
 
-		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
+		uint16 opcodeOffset = inst.opcode - Instructions.I64_ADD;
 
 		if (opcodeOffset == 3) {
 			// div_s
@@ -168,6 +296,28 @@ contract OneStepProver0 is IOneStepProver {
 		}
 
 		ValueStacks.push(mach.valueStack, Values.newI64(res));
+	}
+
+	function executeI32WrapI64(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+
+		uint32 a32 = uint32(a);
+
+		ValueStacks.push(mach.valueStack, Values.newI32(a32));
+	}
+
+	function executeI64ExtendI32(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+		uint64 a64;
+
+		if (inst.opcode == Instructions.I64_EXTEND_I32_S) {
+			a64 = signExtend(a);
+		} else {
+			a64 = uint64(a);
+		}
+
+		ValueStacks.push(mach.valueStack, Values.newI64(a64));
 	}
 
 	function executeBlock(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
@@ -381,14 +531,28 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeInitFrame;
 		} else if (opcode == Instructions.DROP) {
 			impl = executeDrop;
+		} else if (opcode == Instructions.SELECT) {
+			impl = executeSelect;
 		} else if (opcode == Instructions.I32_EQZ) {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;
+		} else if (opcode >= Instructions.I32_RELOP_BASE && opcode <= Instructions.I32_RELOP_BASE + Instructions.IRELOP_LAST) {
+			impl = executeI32RelOp;
+		} else if (opcode >= Instructions.I32_UNOP_BASE && opcode <= Instructions.I32_UNOP_BASE + Instructions.IUNOP_LAST) {
+			impl = executeI32UnOp;
 		} else if (opcode >= Instructions.I32_ADD && opcode <= Instructions.I32_ROTR) {
 			impl = executeI32BinOp;
+		} else if (opcode >= Instructions.I64_RELOP_BASE && opcode <= Instructions.I64_RELOP_BASE + Instructions.IRELOP_LAST) {
+			impl = executeI64RelOp;
+		} else if (opcode >= Instructions.I64_UNOP_BASE && opcode <= Instructions.I64_UNOP_BASE + Instructions.IUNOP_LAST) {
+			impl = executeI64UnOp;
 		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_ROTR) {
 			impl = executeI64BinOp;
+		} else if (opcode == Instructions.I32_WRAP_I64) {
+			impl = executeI32WrapI64;
+		} else if (opcode == Instructions.I64_EXTEND_I32_S || opcode == Instructions.I64_EXTEND_I32_U) {
+			impl = executeI64ExtendI32;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {
