@@ -1,5 +1,5 @@
 use crate::{
-    lir::{IBinOpType, IRelOpType, Opcode},
+    lir::{IBinOpType, IUnOpType, IRelOpType, Opcode},
     value::{IntegerValType, Value as LirValue, ValueType},
 };
 use nom::{
@@ -269,6 +269,36 @@ fn ibinop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Op
     }
 }
 
+fn iunop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Opcode> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let op = match byte - opcode_offset {
+            0 => IUnOpType::Clz,
+            1 => IUnOpType::Ctz,
+            2 => IUnOpType::Popcnt,
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        let opcode = Opcode::IUnOp(ty, op);
+        assert_eq!(opcode.repr(), u16::from(byte));
+        Ok((input, opcode))
+    }
+}
+
 fn irelop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Opcode> {
     move |mut input| {
         if input.is_empty() {
@@ -317,7 +347,9 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         irelop(IntegerValType::I32, 0x46),
         value(Opcode::I64Eqz, tag(&[0x50])),
         irelop(IntegerValType::I64, 0x51),
+        iunop(IntegerValType::I32, 0x67),
         ibinop(IntegerValType::I32, 0x6A),
+        iunop(IntegerValType::I32, 0x79),
         ibinop(IntegerValType::I64, 0x7C),
         value(Opcode::I32WrapI64, tag(&[0xA7])),
     ))(input)

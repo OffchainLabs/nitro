@@ -33,6 +33,14 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr (u8)]
+pub enum IUnOpType {
+    Clz = 0,
+    Ctz,
+    Popcnt,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
@@ -100,6 +108,7 @@ pub enum Opcode {
 
     FuncRefConst,
 
+    IUnOp(IntegerValType, IUnOpType),
     IBinOp(IntegerValType, IBinOpType),
     // Custom opcodes:
     /// Custom opcode not in wasm.
@@ -185,6 +194,10 @@ impl Opcode {
             Opcode::IRelOp(w, op, signed) => match w {
                 IntegerValType::I32 => 0x46 + irelop_type(op, signed),
                 IntegerValType::I64 => 0x51 + irelop_type(op, signed),
+            },
+            Opcode::IUnOp(w, op) => match w {
+                IntegerValType::I32 => 0x67 + (op as u16),
+                IntegerValType::I64 => 0x79 + (op as u16),
             },
             Opcode::IBinOp(w, op) => match w {
                 IntegerValType::I32 => 0x6a + (op as u16),

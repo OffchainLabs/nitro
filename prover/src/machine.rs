@@ -1,7 +1,7 @@
 use crate::{
     binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, IRelOpType, Opcode},
+    lir::{IBinOpType, IUnOpType, IRelOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -12,6 +12,7 @@ use digest::Digest;
 use eyre::Result;
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
+use num::{traits::PrimInt};
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -210,6 +211,18 @@ where
         IBinOpType::Rotr => a.rotr(b.cast_usize()),
     };
     res.0
+}
+
+#[must_use]
+fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
+where
+    T: PrimInt,
+{
+    match op{
+        IUnOpType::Clz => a.leading_zeros(),
+        IUnOpType::Ctz => a.trailing_zeros(),
+        IUnOpType::Popcnt => a.count_ones(),
+    }
 }
 
 fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
@@ -601,6 +614,25 @@ impl Machine {
                     self.value_stack.push(val2);
                 } else {
                     self.value_stack.push(val1);
+                }
+            }
+            Opcode::IUnOp(w, op) => {
+                let va = self.value_stack.pop();
+                match w {
+                    IntegerValType::I32 => {
+                        if let Some(Value::I32(a)) = va {
+                            self.value_stack.push(Value::I32(exec_iun_op(a, op)));
+                        } else {
+                            panic!("WASM validation failed: wrong types for i32unop");
+                        }
+                    }
+                    IntegerValType::I64 => {
+                        if let Some(Value::I64(a)) = va {
+                            self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
+                        } else {
+                            panic!("WASM validation failed: wrong types for i64unop");
+                        }
+                    }
                 }
             }
             Opcode::IBinOp(w, op) => {
