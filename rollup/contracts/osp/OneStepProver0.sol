@@ -50,6 +50,72 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.pop(mach.valueStack);
 	}
 
+	function signExtend(uint32 a) internal pure returns (uint64) {
+		if (a & (1<<31) != 0) {
+			return uint64(a) | uint64(0xffffffff00000000);
+		}
+		return uint64(a);
+	}
+
+	function I64RelOp(uint64 a, uint64 b, uint16 relop) internal pure returns (bool) {
+		if (relop == Instructions.IRELOP_EQ) {
+			return (a == b);
+		} else if (relop == Instructions.IRELOP_NE) {
+			return (a != b);
+		} else if (relop == Instructions.IRELOP_LT_S) {
+			return (int64(a) < int64(b));
+		} else if (relop == Instructions.IRELOP_LT_U) {
+			return (a < b);
+		} else if (relop == Instructions.IRELOP_GT_S) {
+			return (int64(a) > int64(b));
+		} else if (relop == Instructions.IRELOP_GT_U) {
+			return (a > b);
+		} else if (relop == Instructions.IRELOP_LE_S) {
+			return (int64(a) <= int64(b));
+		} else if (relop == Instructions.IRELOP_LE_U) {
+			return (a <= b);
+		} else if (relop == Instructions.IRELOP_GE_S) {
+			return (int64(a) >= int64(b));
+		} else if (relop == Instructions.IRELOP_GE_U) {
+			return (a >= b);
+		} else {
+			revert ("BAD IRELOP");
+		}
+	}
+
+	function executeI32RelOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+		uint16 relop = inst.opcode - Instructions.I32_RELOP_BASE;
+		uint64 a64;
+		uint64 b64;
+
+		if (relop == Instructions.IRELOP_LT_S || relop == Instructions.IRELOP_GT_S ||
+			relop == Instructions.IRELOP_LE_S || relop == Instructions.IRELOP_GE_S) {
+			a64 = signExtend(a);
+			b64 = signExtend(b);
+		} else {
+			a64 = uint64(a);
+			b64 = uint64(b);
+		}
+
+		bool res = I64RelOp(a64, b64, relop);
+
+		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+	}
+
+	function executeI64RelOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+
+		uint16 relop = inst.opcode - Instructions.I64_RELOP_BASE;
+
+		bool res = I64RelOp(a, b, relop);
+
+		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+	}
+
 	function rotl32(uint32 a, uint32 b) internal pure returns (uint32) {
 		b %= 32;
 		return (a << b) | (a >> (32 - b));
@@ -385,8 +451,12 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;
+		} else if (opcode >= Instructions.I32_RELOP_BASE && opcode <= Instructions.I32_RELOP_BASE + Instructions.IRELOP_LAST) {
+			impl = executeI32RelOp;
 		} else if (opcode >= Instructions.I32_ADD && opcode <= Instructions.I32_ROTR) {
 			impl = executeI32BinOp;
+		} else if (opcode >= Instructions.I64_RELOP_BASE && opcode <= Instructions.I64_RELOP_BASE + Instructions.IRELOP_LAST) {
+			impl = executeI64RelOp;
 		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_ROTR) {
 			impl = executeI64BinOp;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {

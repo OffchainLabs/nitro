@@ -55,6 +55,22 @@ library Instructions {
 	uint16 constant F32_CONST = 0x43;
 	uint16 constant F64_CONST = 0x44;
 	uint16 constant I32_EQZ = 0x45;
+	uint16 constant I32_RELOP_BASE = 0x46;
+	uint16 constant IRELOP_EQ = 0;
+	uint16 constant IRELOP_NE = 1;
+	uint16 constant IRELOP_LT_S = 2;
+	uint16 constant IRELOP_LT_U = 3;
+	uint16 constant IRELOP_GT_S = 4;
+	uint16 constant IRELOP_GT_U = 5;
+	uint16 constant IRELOP_LE_S = 6;
+	uint16 constant IRELOP_LE_U = 7;
+	uint16 constant IRELOP_GE_S = 8;
+	uint16 constant IRELOP_GE_U = 9;
+	uint16 constant IRELOP_LAST = IRELOP_GE_U;
+
+	uint64 constant I64_EQZ = 0x50;
+	uint16 constant I64_RELOP_BASE = 0x51;
+
 	uint16 constant I32_ADD = 0x6A;
 	uint16 constant I32_SUB = 0x6B;
 	uint16 constant I32_MUL = 0x6C;
