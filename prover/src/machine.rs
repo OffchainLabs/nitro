@@ -665,6 +665,20 @@ impl Machine {
                 };
                 self.value_stack.push(Value::I32(x as u32));
             }
+            Opcode::I64ExtendI32(signed) => {
+                let x = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x,
+                    v => panic!(
+                        "WASM validation failed: wrong type for i64.extendi32: {:?}",
+                        v,
+                    ),
+                };
+                let x64 = match signed {
+                    true => x as i32 as i64 as u64,
+                    false => x as u32 as u64,
+                };
+                self.value_stack.push(Value::I64(x64));
+            }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);
             }

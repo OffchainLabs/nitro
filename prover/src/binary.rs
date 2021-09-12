@@ -352,6 +352,8 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         iunop(IntegerValType::I64, 0x79),
         ibinop(IntegerValType::I64, 0x7C),
         value(Opcode::I32WrapI64, tag(&[0xA7])),
+        value(Opcode::I64ExtendI32(true), tag(&[0xAC])),
+        value(Opcode::I64ExtendI32(false), tag(&[0xAD])),
     ))(input)
 }
 

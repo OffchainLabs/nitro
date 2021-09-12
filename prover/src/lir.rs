@@ -105,6 +105,7 @@ pub enum Opcode {
     IRelOp(IntegerValType, IRelOpType, bool),
 
     I32WrapI64,
+    I64ExtendI32(bool),
 
     FuncRefConst,
 
@@ -204,6 +205,10 @@ impl Opcode {
                 IntegerValType::I64 => 0x7c + (op as u16),
             },
             Opcode::I32WrapI64 => 0xA7,
+            Opcode::I64ExtendI32(signed) => match signed {
+                true => 0xac,
+                false => 0xad,
+            }
             Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
