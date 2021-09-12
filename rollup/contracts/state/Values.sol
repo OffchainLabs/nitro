@@ -63,4 +63,12 @@ library Values {
 		});
 	}
 
+	function newBoolean(bool x) internal pure returns (Value memory) {
+		if (x) {
+			return newI32(uint32(1));
+		} else {
+			return newI32(uint32(0));
+		}
+	}
+
 }
