@@ -68,7 +68,7 @@ library Instructions {
 	uint16 constant IRELOP_GE_U = 9;
 	uint16 constant IRELOP_LAST = IRELOP_GE_U;
 
-	uint64 constant I64_EQZ = 0x50;
+	uint16 constant I64_EQZ = 0x50;
 	uint16 constant I64_RELOP_BASE = 0x51;
 
 	uint16 constant I32_ADD = 0x6A;

@@ -349,7 +349,7 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         irelop(IntegerValType::I64, 0x51),
         iunop(IntegerValType::I32, 0x67),
         ibinop(IntegerValType::I32, 0x6A),
-        iunop(IntegerValType::I32, 0x79),
+        iunop(IntegerValType::I64, 0x79),
         ibinop(IntegerValType::I64, 0x7C),
         value(Opcode::I32WrapI64, tag(&[0xA7])),
     ))(input)
