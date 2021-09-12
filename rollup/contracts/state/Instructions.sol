@@ -50,6 +50,7 @@ library Instructions {
 	uint16 constant I64_STORE32 = 0x3E;
 
 	uint16 constant DROP = 0x1A;
+	uint16 constant SELECT = 0x1B;
 	uint16 constant I32_CONST = 0x41;
 	uint16 constant I64_CONST = 0x42;
 	uint16 constant F32_CONST = 0x43;

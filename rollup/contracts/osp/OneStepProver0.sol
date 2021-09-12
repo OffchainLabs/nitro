@@ -50,6 +50,18 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.pop(mach.valueStack);
 	}
 
+	function executeSelect(Machine memory mach, Instruction memory, bytes calldata) internal pure {
+		uint32 selector = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		Value memory b = ValueStacks.pop(mach.valueStack);
+		Value memory a = ValueStacks.pop(mach.valueStack);
+
+		if (selector != 0) {
+			ValueStacks.push(mach.valueStack, a);
+		} else {
+			ValueStacks.push(mach.valueStack, b);
+		}
+	}
+
 	function signExtend(uint32 a) internal pure returns (uint64) {
 		if (a & (1<<31) != 0) {
 			return uint64(a) | uint64(0xffffffff00000000);
@@ -497,6 +509,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeInitFrame;
 		} else if (opcode == Instructions.DROP) {
 			impl = executeDrop;
+		} else if (opcode == Instructions.SELECT) {
+			impl = executeSelect;
 		} else if (opcode == Instructions.I32_EQZ) {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
