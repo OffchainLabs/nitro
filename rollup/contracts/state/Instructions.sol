@@ -71,6 +71,12 @@ library Instructions {
 	uint16 constant I64_EQZ = 0x50;
 	uint16 constant I64_RELOP_BASE = 0x51;
 
+	uint16 constant I32_UNOP_BASE = 0x67;
+	uint16 constant IUNOP_CLZ = 0;
+	uint16 constant IUNOP_CTZ = 1;
+	uint16 constant IUNOP_POPCNT = 2;
+	uint16 constant IUNOP_LAST = IUNOP_POPCNT;
+
 	uint16 constant I32_ADD = 0x6A;
 	uint16 constant I32_SUB = 0x6B;
 	uint16 constant I32_MUL = 0x6C;
@@ -86,6 +92,8 @@ library Instructions {
 	uint16 constant I32_SHR_U = 0x76;
 	uint16 constant I32_ROTL = 0x77;
 	uint16 constant I32_ROTR = 0x78;
+
+	uint16 constant I64_UNOP_BASE = 0x79;
 
 	uint16 constant I64_ADD = 0x7C;
 	uint16 constant I64_SUB = 0x7D;
