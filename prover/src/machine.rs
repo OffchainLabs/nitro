@@ -1,17 +1,17 @@
 use crate::{
     binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, Opcode},
+    lir::{IBinOpType, IRelOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{IntegerValType, Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
-use num_traits;
 use sha3::Keccak256;
-use std::convert::TryFrom;
+use std::{convert::TryFrom, num::Wrapping};
 
 #[derive(Clone, Debug)]
 struct Function {
@@ -186,16 +186,45 @@ where
 }
 
 #[must_use]
-fn exec_ibin_op<T: num_traits::WrappingAdd + num_traits::WrappingMul + num_traits::WrappingSub>(
-    a: &T,
-    b: &T,
-    op: &IBinOpType,
-) -> T {
-    match op {
-        IBinOpType::Add => return a.wrapping_add(b),
-        IBinOpType::Sub => return a.wrapping_sub(b),
-        IBinOpType::Mul => return a.wrapping_mul(b),
-    }
+fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> T
+where
+    Wrapping<T>: ReinterpretAsSigned,
+{
+    let a = Wrapping(a);
+    let b = Wrapping(b);
+    let res = match op {
+        IBinOpType::Add => a + b,
+        IBinOpType::Sub => a - b,
+        IBinOpType::Mul => a * b,
+        IBinOpType::DivS => (a.cast_signed() / b.cast_signed()).cast_unsigned(),
+        IBinOpType::DivU => a / b,
+        IBinOpType::RemS => (a.cast_signed() % b.cast_signed()).cast_unsigned(),
+        IBinOpType::RemU => a % b,
+        IBinOpType::And => a & b,
+        IBinOpType::Or => a | b,
+        IBinOpType::Xor => a ^ b,
+        IBinOpType::Shl => a << b.cast_usize(),
+        IBinOpType::ShrS => (a.cast_signed() >> b.cast_usize()).cast_unsigned(),
+        IBinOpType::ShrU => a >> b.cast_usize(),
+        IBinOpType::Rotl => a.rotl(b.cast_usize()),
+        IBinOpType::Rotr => a.rotr(b.cast_usize()),
+    };
+    res.0
+}
+
+fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
+where
+    T: Ord,
+{
+    let res = match op {
+        IRelOpType::Eq => a == b,
+        IRelOpType::Ne => a != b,
+        IRelOpType::Lt => a < b,
+        IRelOpType::Gt => a > b,
+        IRelOpType::Le => a <= b,
+        IRelOpType::Ge => a >= b,
+    };
+    Value::I32(res as u32)
 }
 
 impl Machine {
@@ -529,8 +558,50 @@ impl Machine {
                 let val = self.value_stack.pop().unwrap();
                 self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
             }
+            Opcode::I64Eqz => {
+                let val = self.value_stack.pop().unwrap();
+                self.value_stack.push(Value::I32(val.is_i64_zero() as u32));
+            }
+            Opcode::IRelOp(t, op, signed) => {
+                let vb = self.value_stack.pop();
+                let va = self.value_stack.pop();
+                match t {
+                    IntegerValType::I32 => {
+                        if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
+                            if signed {
+                                self.value_stack.push(exec_irel_op(a as i32, b as i32, op));
+                            } else {
+                                self.value_stack.push(exec_irel_op(a, b, op));
+                            }
+                        } else {
+                            panic!("WASM validation failed: wrong types for i32relop");
+                        }
+                    }
+                    IntegerValType::I64 => {
+                        if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
+                            if signed {
+                                self.value_stack.push(exec_irel_op(a as i64, b as i64, op));
+                            } else {
+                                self.value_stack.push(exec_irel_op(a, b, op));
+                            }
+                        } else {
+                            panic!("WASM validation failed: wrong types for i64relop");
+                        }
+                    }
+                }
+            }
             Opcode::Drop => {
                 self.value_stack.pop().unwrap();
+            }
+            Opcode::Select => {
+                let selector_zero = self.value_stack.pop().unwrap().is_i32_zero();
+                let val2 = self.value_stack.pop().unwrap();
+                let val1 = self.value_stack.pop().unwrap();
+                if selector_zero {
+                    self.value_stack.push(val2);
+                } else {
+                    self.value_stack.push(val1);
+                }
             }
             Opcode::IBinOp(w, op) => {
                 let vb = self.value_stack.pop();
@@ -538,19 +609,29 @@ impl Machine {
                 match w {
                     IntegerValType::I32 => {
                         if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                            self.value_stack.push(Value::I32(exec_ibin_op(&a, &b, &op)));
+                            self.value_stack.push(Value::I32(exec_ibin_op(a, b, op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i32binop");
                         }
                     }
                     IntegerValType::I64 => {
                         if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                            self.value_stack.push(Value::I64(exec_ibin_op(&a, &b, &op)));
+                            self.value_stack.push(Value::I64(exec_ibin_op(a, b, op)));
                         } else {
                             panic!("WASM validation failed: wrong types for i64binop");
                         }
                     }
                 }
+            }
+            Opcode::I32WrapI64 => {
+                let x = match self.value_stack.pop() {
+                    Some(Value::I64(x)) => x,
+                    v => panic!(
+                        "WASM validation failed: wrong type for i32.wrapi64: {:?}",
+                        v,
+                    ),
+                };
+                self.value_stack.push(Value::I32(x as u32));
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);
@@ -579,7 +660,7 @@ impl Machine {
 
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
-        const STACK_PROVING_DEPTH: usize = 2;
+        const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = Vec::new();
         let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);

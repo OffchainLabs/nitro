@@ -3,6 +3,7 @@ mod lir;
 mod machine;
 mod memory;
 mod merkle;
+mod reinterpret;
 mod utils;
 mod value;
 

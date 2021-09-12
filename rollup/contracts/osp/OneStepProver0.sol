@@ -50,41 +50,121 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.pop(mach.valueStack);
 	}
 
-	function executeI32Arith(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+	function rotl32(uint32 a, uint32 b) internal pure returns (uint32) {
+		b %= 32;
+		return (a << b) | (a >> (32 - b));
+	}
+
+	function rotl64(uint64 a, uint64 b) internal pure returns (uint64) {
+		b %= 64;
+		return (a << b) | (a >> (64 - b));
+	}
+
+	function rotr32(uint32 a, uint32 b) internal pure returns (uint32) {
+		b %= 32;
+		return (a >> b) | (a << (32 - b));
+	}
+
+	function rotr64(uint64 a, uint64 b) internal pure returns (uint64) {
+		b %= 64;
+		return (a >> b) | (a << (64 - b));
+	}
+
+	function genericBinOp(uint64 a, uint64 b, uint16 opcodeOffset) internal pure returns (uint64) {
+		if (opcodeOffset == 0) {
+			// add
+			return a + b;
+		} else if (opcodeOffset == 1) {
+			// sub
+			return a - b;
+		} else if (opcodeOffset == 2) {
+			// mul
+			return a * b;
+		} else if (opcodeOffset == 4) {
+			// div_u
+			return a / b;
+		} else if (opcodeOffset == 6) {
+			// rem_u
+			return a % b;
+		} else if (opcodeOffset == 7) {
+			// and
+			return a & b;
+		} else if (opcodeOffset == 8) {
+			// or
+			return a | b;
+		} else if (opcodeOffset == 9) {
+			// xor
+			return a ^ b;
+		} else {
+			revert("INVALID_GENERIC_BIN_OP");
+		}
+	}
+
+	function executeI32BinOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
 		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		uint32 res;
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
 
-		if (opcodeOffset == 0) {
-			res = a + b;
-		} else if (opcodeOffset == 1) {
-			res = a - b;
-		} else if (opcodeOffset == 2) {
-			res = a * b;
+		if (opcodeOffset == 3) {
+			// div_s
+			res = uint32(int32(a) / int32(b));
+		} else if (opcodeOffset == 5) {
+			// rem_s
+			res = uint32(int32(a) % int32(b));
+		} else if (opcodeOffset == 10) {
+			// shl
+			res = a << (b % 32);
+		} else if (opcodeOffset == 12) {
+			// shr_u
+			res = a >> (b % 32);
+		} else if (opcodeOffset == 11) {
+			// shr_s
+			res = uint32(int32(a) >> b);
+		} else if (opcodeOffset == 13) {
+			// rotl
+			res = rotl32(a, b);
+		} else if (opcodeOffset == 14) {
+			// rotr
+			res = rotr32(a, b);
 		} else {
-			revert("TODO: more operations");
+			res = uint32(genericBinOp(a, b, opcodeOffset));
 		}
 
 		ValueStacks.push(mach.valueStack, Values.newI32(res));
 	}
 
-	function executeI64Arith(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
+	function executeI64BinOp(Machine memory mach, Instruction memory inst, bytes calldata) internal pure {
 		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 res;
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
 
-		if (opcodeOffset == 0) {
-			res = a + b;
-		} else if (opcodeOffset == 1) {
-			res = a - b;
-		} else if (opcodeOffset == 2) {
-			res = a * b;
+		if (opcodeOffset == 3) {
+			// div_s
+			res = uint64(int64(a) / int64(b));
+		} else if (opcodeOffset == 5) {
+			// rem_s
+			res = uint64(int64(a) % int64(b));
+		} else if (opcodeOffset == 10) {
+			// shl
+			res = a << (b % 64);
+		} else if (opcodeOffset == 12) {
+			// shr_u
+			res = a >> (b % 64);
+		} else if (opcodeOffset == 11) {
+			// shr_s
+			res = uint64(int64(a) >> b);
+		} else if (opcodeOffset == 13) {
+			// rotl
+			res = rotl64(a, b);
+		} else if (opcodeOffset == 14) {
+			// rotr
+			res = rotr64(a, b);
 		} else {
-			revert("TODO: more operations");
+			res = genericBinOp(a, b, opcodeOffset);
 		}
 
 		ValueStacks.push(mach.valueStack, Values.newI64(res));
@@ -305,10 +385,10 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;
-		} else if (opcode >= Instructions.I32_ADD && opcode <= Instructions.I32_MUL) {
-			impl = executeI32Arith;
-		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_MUL) {
-			impl = executeI64Arith;
+		} else if (opcode >= Instructions.I32_ADD && opcode <= Instructions.I32_ROTR) {
+			impl = executeI32BinOp;
+		} else if (opcode >= Instructions.I64_ADD && opcode <= Instructions.I64_ROTR) {
+			impl = executeI64BinOp;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {

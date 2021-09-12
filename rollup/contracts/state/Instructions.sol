@@ -58,9 +58,34 @@ library Instructions {
 	uint16 constant I32_ADD = 0x6A;
 	uint16 constant I32_SUB = 0x6B;
 	uint16 constant I32_MUL = 0x6C;
+	uint16 constant I32_DIV_S = 0x6D;
+	uint16 constant I32_DIV_U = 0x6E;
+	uint16 constant I32_REM_S = 0x6F;
+	uint16 constant I32_REM_U = 0x70;
+	uint16 constant I32_AND = 0x71;
+	uint16 constant I32_OR = 0x72;
+	uint16 constant I32_XOR = 0x73;
+	uint16 constant I32_SHL = 0x74;
+	uint16 constant I32_SHR_S = 0x75;
+	uint16 constant I32_SHR_U = 0x76;
+	uint16 constant I32_ROTL = 0x77;
+	uint16 constant I32_ROTR = 0x78;
+
 	uint16 constant I64_ADD = 0x7C;
 	uint16 constant I64_SUB = 0x7D;
 	uint16 constant I64_MUL = 0x7E;
+	uint16 constant I64_DIV_S = 0x7F;
+	uint16 constant I64_DIV_U = 0x80;
+	uint16 constant I64_REM_S = 0x81;
+	uint16 constant I64_REM_U = 0x82;
+	uint16 constant I64_AND = 0x83;
+	uint16 constant I64_OR = 0x84;
+	uint16 constant I64_XOR = 0x85;
+	uint16 constant I64_SHL = 0x86;
+	uint16 constant I64_SHR_S = 0x87;
+	uint16 constant I64_SHR_U = 0x88;
+	uint16 constant I64_ROTL = 0x89;
+	uint16 constant I64_ROTR = 0x8A;
 
 	uint16 constant END_BLOCK = 0x8000;
 	uint16 constant END_BLOCK_IF = 0x8001;

@@ -8,11 +8,48 @@ use sha3::Keccak256;
 use std::convert::TryFrom;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IRelOpType {
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+}
+
+fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
+    match (t, signed) {
+        (IRelOpType::Eq, _) => 0,
+        (IRelOpType::Ne, _) => 1,
+        (IRelOpType::Lt, true) => 2,
+        (IRelOpType::Lt, false) => 3,
+        (IRelOpType::Gt, true) => 4,
+        (IRelOpType::Gt, false) => 5,
+        (IRelOpType::Le, true) => 6,
+        (IRelOpType::Le, false) => 7,
+        (IRelOpType::Ge, true) => 8,
+        (IRelOpType::Ge, false) => 9,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
     Sub,
     Mul,
+    DivS,
+    DivU,
+    RemS,
+    RemU,
+    And,
+    Or,
+    Xor,
+    Shl,
+    ShrS,
+    ShrU,
+    Rotl,
+    Rotr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +65,7 @@ pub enum Opcode {
     Call,
 
     Drop,
+    Select,
 
     LocalGet,
     LocalSet,
@@ -55,6 +93,10 @@ pub enum Opcode {
     F64Const,
 
     I32Eqz,
+    I64Eqz,
+    IRelOp(IntegerValType, IRelOpType, bool),
+
+    I32WrapI64,
 
     FuncRefConst,
 
@@ -94,6 +136,7 @@ impl Opcode {
             Opcode::Return => 0x0F,
             Opcode::Call => 0x10,
             Opcode::Drop => 0x1A,
+            Opcode::Select => 0x1B,
             Opcode::LocalGet => 0x20,
             Opcode::LocalSet => 0x21,
             Opcode::GlobalGet => 0x23,
@@ -138,10 +181,16 @@ impl Opcode {
             Opcode::F32Const => 0x43,
             Opcode::F64Const => 0x44,
             Opcode::I32Eqz => 0x45,
+            Opcode::I64Eqz => 0x50,
+            Opcode::IRelOp(w, op, signed) => match w {
+                IntegerValType::I32 => 0x46 + irelop_type(op, signed),
+                IntegerValType::I64 => 0x51 + irelop_type(op, signed),
+            },
             Opcode::IBinOp(w, op) => match w {
                 IntegerValType::I32 => 0x6a + (op as u16),
                 IntegerValType::I64 => 0x7c + (op as u16),
             },
+            Opcode::I32WrapI64 => 0xA7,
             Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
@@ -288,6 +337,15 @@ impl Instruction {
                     Self::extend_from_hir(ops, return_values, inst);
                 }
             }
+            HirInstruction::LocalTee(x) => {
+                // Translate into a dup then local.set
+                Self::extend_from_hir(ops, return_values, HirInstruction::Simple(Opcode::Dup));
+                Self::extend_from_hir(
+                    ops,
+                    return_values,
+                    HirInstruction::WithIdx(Opcode::LocalSet, x),
+                );
+            }
             HirInstruction::WithIdx(op, x) => {
                 assert!(
                     matches!(
@@ -313,7 +371,7 @@ impl Instruction {
             }),
             HirInstruction::I32Const(x) => ops.push(Instruction {
                 opcode: Opcode::I32Const,
-                argument_data: x as u64,
+                argument_data: x as u32 as u64,
                 proving_argument_data: None,
             }),
             HirInstruction::I64Const(x) => ops.push(Instruction {
