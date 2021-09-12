@@ -64,8 +64,12 @@ fn main() -> Result<()> {
             mach.get_next_instruction().unwrap().opcode
         );
         let proof = mach.serialize_proof();
-        let count = if proofs.len() < 859 { 1000 } else { 1 };
-        for _ in 0..count {
+        let step_count = if proofs.len() > 1000 {
+            10usize.pow((proofs.len() / 1000) as u32)
+        } else {
+            1
+        };
+        for _ in 0..step_count {
             mach.step();
         }
         let after = mach.hash();
