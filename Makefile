@@ -20,6 +20,6 @@ rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
 	cargo run -p prover -- $< -o $@
 
 rollup/test/proofs/rust-%.json: prover/test-cases/rust/target/wasm32-unknown-unknown/debug/%.wasm prover/src/**
-	cargo run -p prover -- $< -o $@
+	cargo run --release -p prover -- $< -o $@
 
 .DELETE_ON_ERROR: # causes a failure to delete its target

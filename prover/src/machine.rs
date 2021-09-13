@@ -1,7 +1,7 @@
 use crate::{
     binary::{Code, ElementMode, ExportKind, HirInstruction, TableType, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
+    lir::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -73,12 +73,13 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
+        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len());
         for hir_inst in code.expr {
-            Instruction::extend_from_hir(&mut insts, func_ty.outputs.len(), hir_inst);
+            Instruction::extend_from_hir(&mut insts, codegen_state, hir_inst);
         }
         Instruction::extend_from_hir(
             &mut insts,
-            func_ty.outputs.len(),
+            codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         );
         let code_hashes = compute_hashes(&mut insts);
@@ -166,17 +167,11 @@ fn hash_table(ty: TableType, elements_root: Bytes32) -> Bytes32 {
     h.finalize().into()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BlockStackItem {
-    Block(usize, Bytes32),
-    StackBoundary,
-}
-
 #[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
-    block_stack: Vec<BlockStackItem>,
+    block_stack: Vec<(usize, Bytes32)>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     memory: Memory,
@@ -208,15 +203,8 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_block_stack_item(item: &BlockStackItem) -> Bytes32 {
-    match item {
-        BlockStackItem::Block(_, h) => *h,
-        BlockStackItem::StackBoundary => Bytes32::default(),
-    }
-}
-
-fn hash_block_stack(pcs: &[BlockStackItem]) -> Bytes32 {
-    hash_stack(pcs.iter().map(hash_block_stack_item), "Bytes32 stack:")
+fn hash_block_stack(pcs: &[(usize, Bytes32)]) -> Bytes32 {
+    hash_stack(pcs.iter().map(|(_, h)| *h), "Bytes32 stack:")
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -599,8 +587,7 @@ impl Machine {
             Opcode::Nop => {}
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
-                self.block_stack
-                    .push(BlockStackItem::Block(idx, func.code_hashes[idx]));
+                self.block_stack.push((idx, func.code_hashes[idx]));
             }
             Opcode::EndBlock => {
                 self.block_stack.pop();
@@ -629,17 +616,13 @@ impl Machine {
                     self.pc.1 = inst.argument_data as usize;
                 }
             }
-            Opcode::Branch => match self.block_stack.pop().unwrap() {
-                BlockStackItem::Block(x, _) => self.pc.1 = x,
-                BlockStackItem::StackBoundary => panic!("Overran block stack"),
-            },
+            Opcode::Branch => {
+                self.pc.1 = self.block_stack.pop().unwrap().0;
+            }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    match self.block_stack.pop().unwrap() {
-                        BlockStackItem::Block(x, _) => self.pc.1 = x,
-                        BlockStackItem::StackBoundary => panic!("Overran block stack"),
-                    }
+                    self.pc.1 = self.block_stack.pop().unwrap().0;
                 }
             }
             Opcode::Return => {
@@ -850,7 +833,6 @@ impl Machine {
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);
-                self.block_stack.push(BlockStackItem::StackBoundary);
             }
             Opcode::MoveFromStackToInternal => {
                 self.internal_stack.push(self.value_stack.pop().unwrap());
@@ -862,11 +844,6 @@ impl Machine {
                 let val = self.value_stack.pop().unwrap();
                 self.value_stack
                     .push(Value::I32((val == Value::StackBoundary) as u32));
-            }
-            Opcode::IsBlockAboveStackBoundary => {
-                let val = self.block_stack.remove(self.block_stack.len() - 2);
-                self.value_stack
-                    .push(Value::I32((val == BlockStackItem::StackBoundary) as u32));
             }
             Opcode::Dup => {
                 let val = self.value_stack.last().cloned().unwrap();
@@ -896,12 +873,7 @@ impl Machine {
             v.serialize_for_proof()
         });
 
-        prove_stack(
-            &self.block_stack,
-            2,
-            hash_block_stack,
-            hash_block_stack_item,
-        );
+        prove_stack(&self.block_stack, 1, hash_block_stack, |(_, h)| *h);
 
         data.extend(prove_window(
             &self.frame_stack,

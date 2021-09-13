@@ -133,8 +133,6 @@ pub enum Opcode {
     IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
-    /// Pop a value from the block stack, then push an I32 1 if it's a block stack boundary, I32 0 otherwise.
-    IsBlockAboveStackBoundary,
 }
 
 impl Opcode {
@@ -222,7 +220,21 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
-            Opcode::IsBlockAboveStackBoundary => 0x8009,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FunctionCodegenState {
+    return_values: usize,
+    block_depth: usize,
+}
+
+impl FunctionCodegenState {
+    pub fn new(return_values: usize) -> Self {
+        FunctionCodegenState {
+            return_values,
+            block_depth: 0,
         }
     }
 }
@@ -272,13 +284,18 @@ impl Instruction {
         h.finalize().into()
     }
 
-    pub fn extend_from_hir(ops: &mut Vec<Instruction>, return_values: usize, inst: HirInstruction) {
+    pub fn extend_from_hir(
+        ops: &mut Vec<Instruction>,
+        mut state: FunctionCodegenState,
+        inst: HirInstruction,
+    ) {
         match inst {
             HirInstruction::Block(_, insts) => {
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
+                state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -289,8 +306,9 @@ impl Instruction {
                     argument_data: ops.len() as u64,
                     proving_argument_data: None,
                 });
+                state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
             }
@@ -304,18 +322,19 @@ impl Instruction {
 
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
+                state.block_depth += 1;
                 ops.push(Instruction::simple(Opcode::I32Eqz));
                 let jump_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
 
                 for inst in if_insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::Branch));
 
                 ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -355,17 +374,13 @@ impl Instruction {
                 equiv.push(HirInstruction::Simple(Opcode::Drop));
                 equiv.push(HirInstruction::BranchIf(default));
                 for inst in equiv {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
             }
             HirInstruction::LocalTee(x) => {
                 // Translate into a dup then local.set
-                Self::extend_from_hir(ops, return_values, HirInstruction::Simple(Opcode::Dup));
-                Self::extend_from_hir(
-                    ops,
-                    return_values,
-                    HirInstruction::WithIdx(Opcode::LocalSet, x),
-                );
+                Self::extend_from_hir(ops, state, HirInstruction::Simple(Opcode::Dup));
+                Self::extend_from_hir(ops, state, HirInstruction::WithIdx(Opcode::LocalSet, x));
             }
             HirInstruction::WithIdx(op, x) => {
                 assert!(
@@ -423,30 +438,28 @@ impl Instruction {
                 // Hold the return values on the internal stack while we drop extraneous stack values
                 ops.extend(
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromStackToInternal))
-                        .take(return_values),
+                        .take(state.return_values),
                 );
-                let make_until_loop = |check| {
+                // Keep dropping values until we drop the stack boundary, then exit the loop
+                Self::extend_from_hir(
+                    ops,
+                    state,
                     HirInstruction::Loop(
                         BlockType::Empty,
                         vec![
-                            HirInstruction::Simple(check),
+                            HirInstruction::Simple(Opcode::IsStackBoundary),
                             HirInstruction::Simple(Opcode::I32Eqz),
                             HirInstruction::Simple(Opcode::BranchIf),
                         ],
-                    )
-                };
-                // Keep dropping values until we drop the stack boundary, then exit the loop
-                Self::extend_from_hir(ops, return_values, make_until_loop(Opcode::IsStackBoundary));
-                // Do the same for the block stack, dropping blocks up to and including the stack boundary
-                Self::extend_from_hir(
-                    ops,
-                    return_values,
-                    make_until_loop(Opcode::IsBlockAboveStackBoundary),
+                    ),
                 );
+                for _ in 0..state.block_depth {
+                    ops.push(Instruction::simple(Opcode::EndBlock));
+                }
                 // Move the return values back from the internal stack to the value stack
                 ops.extend(
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromInternalToStack))
-                        .take(return_values),
+                        .take(state.return_values),
                 );
                 ops.push(Instruction::simple(Opcode::Return));
             }
