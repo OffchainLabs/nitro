@@ -243,6 +243,27 @@ where
     data
 }
 
+fn prove_stack<T, F, D, G>(
+    items: &[T],
+    proving_depth: usize,
+    stack_hasher: F,
+    encoder: G,
+) -> Vec<u8>
+where
+    F: Fn(&[T]) -> Bytes32,
+    D: AsRef<[u8]>,
+    G: Fn(&T) -> D,
+{
+    let mut data = Vec::with_capacity(33);
+    let unproven_stack_depth = items.len().saturating_sub(proving_depth);
+    data.extend(stack_hasher(&items[..unproven_stack_depth]));
+    data.extend(Bytes32::from(items.len() - unproven_stack_depth));
+    for val in &items[unproven_stack_depth..] {
+        data.extend(encoder(val).as_ref());
+    }
+    data
+}
+
 #[must_use]
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> T
 where
@@ -863,31 +884,24 @@ impl Machine {
         const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = Vec::new();
-        let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);
-        data.extend(hash_value_stack(&self.value_stack[..unproven_stack_depth]));
-        data.extend(Bytes32::from(self.value_stack.len() - unproven_stack_depth));
-        for val in &self.value_stack[unproven_stack_depth..] {
-            data.extend(val.serialize_for_proof());
-        }
 
-        let unproven_internal_stack_depth = self.internal_stack.len().saturating_sub(1);
-        data.extend(hash_value_stack(
-            &self.internal_stack[..unproven_internal_stack_depth],
-        ));
-        data.extend(Bytes32::from(
-            self.internal_stack.len() - unproven_internal_stack_depth,
-        ));
-        for val in &self.internal_stack[unproven_internal_stack_depth..] {
-            data.extend(val.serialize_for_proof());
-        }
+        prove_stack(
+            &self.value_stack,
+            STACK_PROVING_DEPTH,
+            hash_value_stack,
+            |v| v.serialize_for_proof(),
+        );
 
-        let func = &self.funcs[self.pc.0];
-        // TODO with IsBlockAboveStackBoundary we actually need to prove 2 deep
-        data.extend(prove_window(
+        prove_stack(&self.internal_stack, 1, hash_value_stack, |v| {
+            v.serialize_for_proof()
+        });
+
+        prove_stack(
             &self.block_stack,
-            |s| hash_block_stack(s),
+            2,
+            hash_block_stack,
             hash_block_stack_item,
-        ));
+        );
 
         data.extend(prove_window(
             &self.frame_stack,
@@ -895,6 +909,7 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
+        let func = &self.funcs[self.pc.0];
         data.extend(func.code_hashes[self.pc.1 + 1]);
         data.extend(func.code[self.pc.1].serialize_for_proof());
 
