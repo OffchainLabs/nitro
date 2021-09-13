@@ -231,6 +231,7 @@ where
     data
 }
 
+#[must_use]
 fn prove_stack<T, F, D, G>(
     items: &[T],
     proving_depth: usize,
@@ -862,18 +863,26 @@ impl Machine {
 
         let mut data = Vec::new();
 
-        prove_stack(
+        data.extend(prove_stack(
             &self.value_stack,
             STACK_PROVING_DEPTH,
             hash_value_stack,
             |v| v.serialize_for_proof(),
-        );
+        ));
 
-        prove_stack(&self.internal_stack, 1, hash_value_stack, |v| {
-            v.serialize_for_proof()
-        });
+        data.extend(prove_stack(
+            &self.internal_stack,
+            1,
+            hash_value_stack,
+            |v| v.serialize_for_proof(),
+        ));
 
-        prove_stack(&self.block_stack, 1, hash_block_stack, |(_, h)| *h);
+        data.extend(prove_stack(
+            &self.block_stack,
+            1,
+            hash_block_stack,
+            |(_, h)| *h,
+        ));
 
         data.extend(prove_window(
             &self.frame_stack,

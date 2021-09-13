@@ -7,10 +7,16 @@ mod reinterpret;
 mod utils;
 mod value;
 
-use crate::machine::Machine;
+use crate::{lir::Opcode, machine::Machine};
 use eyre::Result;
 use serde::Serialize;
-use std::{collections::HashSet, fs::File, io::Read, path::PathBuf, process};
+use std::{
+    collections::{HashMap, HashSet},
+    fs::File,
+    io::Read,
+    path::PathBuf,
+    process,
+};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -19,6 +25,8 @@ struct Opts {
     binary: PathBuf,
     #[structopt(short, long)]
     output: Option<PathBuf>,
+    #[structopt(short = "b", long)]
+    proving_backoff: bool,
 }
 
 #[derive(Serialize)]
@@ -52,7 +60,22 @@ fn main() -> Result<()> {
     println!("Starting machine hash: {}", mach.hash());
 
     let mut seen_states = HashSet::new();
+    let mut opcode_counts: HashMap<Opcode, usize> = HashMap::new();
     while !mach.is_halted() {
+        let next_opcode = mach.get_next_instruction().unwrap().opcode;
+        if opts.proving_backoff {
+            let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
+            *count_entry += 1;
+            let count = *count_entry;
+            // Apply an exponential backoff to how often to prove an instruction;
+            let prove = count < 10
+                || (count < 100 && count % 10 == 0)
+                || (count < 1000 && count % 100 == 0);
+            if !prove {
+                mach.step();
+                continue;
+            }
+        }
         let before = mach.hash();
         if !seen_states.insert(before) {
             break;
@@ -61,17 +84,10 @@ fn main() -> Result<()> {
         println!(
             "Generating proof #{} of opcode {:?}",
             proofs.len(),
-            mach.get_next_instruction().unwrap().opcode
+            next_opcode,
         );
         let proof = mach.serialize_proof();
-        let step_count = if proofs.len() > 1000 {
-            10usize.pow((proofs.len() / 1000) as u32)
-        } else {
-            1
-        };
-        for _ in 0..step_count {
-            mach.step();
-        }
+        mach.step();
         let after = mach.hash();
         proofs.push(ProofInfo {
             before: before.to_string(),

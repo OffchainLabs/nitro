@@ -2,8 +2,6 @@
 
 #[panic_handler]
 pub fn panic(_: &core::panic::PanicInfo) -> ! {
-	unsafe {
-		core::arch::wasm32::unreachable();
-	}
+	core::arch::wasm32::unreachable();
 }
 

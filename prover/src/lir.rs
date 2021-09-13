@@ -7,7 +7,7 @@ use digest::Digest;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IRelOpType {
     Eq,
     Ne,
@@ -32,7 +32,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum IUnOpType {
     Clz = 0,
@@ -40,7 +40,7 @@ pub enum IUnOpType {
     Popcnt,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
@@ -60,7 +60,7 @@ pub enum IBinOpType {
     Rotr,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Opcode {
     Unreachable,
     Nop,
