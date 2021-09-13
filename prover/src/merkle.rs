@@ -3,14 +3,9 @@ use digest::Digest;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Merkle {
-    prefix: &'static str,
-    layers: Vec<Vec<Bytes32>>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MerkleType {
+    Empty,
     Value,
     Function,
     Instruction,
@@ -19,9 +14,36 @@ pub enum MerkleType {
     TableElement,
 }
 
-fn hash_node(prefix: &str, a: Bytes32, b: Bytes32) -> Bytes32 {
+impl Default for MerkleType {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl MerkleType {
+    pub fn get_prefix(self) -> &'static str {
+        match self {
+            MerkleType::Empty => panic!("Attempted to get prefix of empty merkle type"),
+            MerkleType::Value => "Value merkle tree:",
+            MerkleType::Function => "Function merkle tree:",
+            MerkleType::Instruction => "Instruction merkle tree:",
+            MerkleType::Memory => "Memory merkle tree:",
+            MerkleType::Table => "Table merkle tree:",
+            MerkleType::TableElement => "Table element merkle tree:",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Merkle {
+    ty: MerkleType,
+    layers: Vec<Vec<Bytes32>>,
+    empty_layers: Vec<Bytes32>,
+}
+
+fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
     let mut h = Keccak256::new();
-    h.update(prefix);
+    h.update(ty.get_prefix());
     h.update(a);
     h.update(b);
     h.finalize().into()
@@ -29,31 +51,40 @@ fn hash_node(prefix: &str, a: Bytes32, b: Bytes32) -> Bytes32 {
 
 impl Merkle {
     pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
+        Self::new_advanced(ty, hashes, Bytes32::default(), 0)
+    }
+
+    pub fn new_advanced(
+        ty: MerkleType,
+        hashes: Vec<Bytes32>,
+        empty_hash: Bytes32,
+        min_depth: usize,
+    ) -> Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
-        let prefix = match ty {
-            MerkleType::Value => "Value merkle tree:",
-            MerkleType::Function => "Function merkle tree:",
-            MerkleType::Instruction => "Instruction merkle tree:",
-            MerkleType::Memory => "Memory merkle tree:",
-            MerkleType::Table => "Table merkle tree:",
-            MerkleType::TableElement => "Table element merkle tree:",
-        };
         let mut layers = Vec::new();
         layers.push(hashes);
-        while layers.last().unwrap().len() > 1 {
+        let mut empty_layers = Vec::new();
+        empty_layers.push(empty_hash);
+        while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
+            let empty_layer = *empty_layers.last().unwrap();
             let mut new_layer = Vec::new();
             for window in layers.last().unwrap().chunks(2) {
                 new_layer.push(hash_node(
-                    prefix,
+                    ty,
                     window[0],
-                    window.get(1).cloned().unwrap_or_default(),
+                    window.get(1).cloned().unwrap_or(empty_layer),
                 ));
             }
+            empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             layers.push(new_layer);
         }
-        Merkle { prefix, layers }
+        Merkle {
+            ty,
+            layers,
+            empty_layers,
+        }
     }
 
     pub fn root(&self) -> Bytes32 {
@@ -80,12 +111,17 @@ impl Merkle {
         }
         let mut proof = Vec::new();
         proof.push(u8::try_from(self.layers.len() - 1).unwrap());
-        for layer in &self.layers {
-            if layer.len() <= 1 {
+        for (layer_i, layer) in self.layers.iter().enumerate() {
+            if layer_i == self.layers.len() - 1 {
                 break;
             }
             let counterpart = idx ^ 1;
-            proof.extend(layer.get(counterpart).cloned().unwrap_or_default());
+            proof.extend(
+                layer
+                    .get(counterpart)
+                    .cloned()
+                    .unwrap_or_else(|| self.empty_layers[layer_i]),
+            );
             idx >>= 1;
         }
         Some(proof)
@@ -93,17 +129,22 @@ impl Merkle {
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
         let mut next_hash = hash;
-        for layer in &mut self.layers {
+        let empty_layers = &self.empty_layers;
+        let layers_len = self.layers.len();
+        for (layer_i, layer) in self.layers.iter_mut().enumerate() {
             layer[idx] = next_hash;
-            if layer.len() == 1 {
+            if layer_i == layers_len - 1 {
                 // next_hash isn't needed
                 break;
             }
-            let counterpart = layer.get(idx ^ 1).cloned().unwrap_or_default();
+            let counterpart = layer
+                .get(idx ^ 1)
+                .cloned()
+                .unwrap_or_else(|| empty_layers[layer_i]);
             if idx % 2 == 0 {
-                next_hash = hash_node(self.prefix, next_hash, counterpart);
+                next_hash = hash_node(self.ty, next_hash, counterpart);
             } else {
-                next_hash = hash_node(self.prefix, counterpart, next_hash);
+                next_hash = hash_node(self.ty, counterpart, next_hash);
             }
             idx >>= 1;
         }
