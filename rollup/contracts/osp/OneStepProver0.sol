@@ -199,32 +199,40 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function genericBinOp(uint64 a, uint64 b, uint16 opcodeOffset) internal pure returns (uint64) {
-		if (opcodeOffset == 0) {
-			// add
-			return a + b;
-		} else if (opcodeOffset == 1) {
-			// sub
-			return a - b;
-		} else if (opcodeOffset == 2) {
-			// mul
-			return a * b;
-		} else if (opcodeOffset == 4) {
-			// div_u
-			return a / b;
-		} else if (opcodeOffset == 6) {
-			// rem_u
-			return a % b;
-		} else if (opcodeOffset == 7) {
-			// and
-			return a & b;
-		} else if (opcodeOffset == 8) {
-			// or
-			return a | b;
-		} else if (opcodeOffset == 9) {
-			// xor
-			return a ^ b;
-		} else {
-			revert("INVALID_GENERIC_BIN_OP");
+		unchecked {
+			if (opcodeOffset == 0) {
+				// add
+				return a + b;
+			} else if (opcodeOffset == 1) {
+				// sub
+				return a - b;
+			} else if (opcodeOffset == 2) {
+				// mul
+				return a * b;
+			} else if (opcodeOffset == 4) {
+				// div_u
+				if (b == 0) {
+					return 0;
+				}
+				return a / b;
+			} else if (opcodeOffset == 6) {
+				// rem_u
+				if (b == 0) {
+					return 0;
+				}
+				return a % b;
+			} else if (opcodeOffset == 7) {
+				// and
+				return a & b;
+			} else if (opcodeOffset == 8) {
+				// or
+				return a | b;
+			} else if (opcodeOffset == 9) {
+				// xor
+				return a ^ b;
+			} else {
+				revert("INVALID_GENERIC_BIN_OP");
+			}
 		}
 	}
 
@@ -235,29 +243,39 @@ contract OneStepProver0 is IOneStepProver {
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
 
-		if (opcodeOffset == 3) {
-			// div_s
-			res = uint32(int32(a) / int32(b));
-		} else if (opcodeOffset == 5) {
-			// rem_s
-			res = uint32(int32(a) % int32(b));
-		} else if (opcodeOffset == 10) {
-			// shl
-			res = a << (b % 32);
-		} else if (opcodeOffset == 12) {
-			// shr_u
-			res = a >> (b % 32);
-		} else if (opcodeOffset == 11) {
-			// shr_s
-			res = uint32(int32(a) >> b);
-		} else if (opcodeOffset == 13) {
-			// rotl
-			res = rotl32(a, b);
-		} else if (opcodeOffset == 14) {
-			// rotr
-			res = rotr32(a, b);
-		} else {
-			res = uint32(genericBinOp(a, b, opcodeOffset));
+		unchecked {
+			if (opcodeOffset == 3) {
+				// div_s
+				if (b == 0) {
+					res = 0;
+				} else {
+					res = uint32(int32(a) / int32(b));
+				}
+			} else if (opcodeOffset == 5) {
+				// rem_s
+				if (b == 0) {
+					res = 0;
+				} else {
+					res = uint32(int32(a) % int32(b));
+				}
+			} else if (opcodeOffset == 10) {
+				// shl
+				res = a << (b % 32);
+			} else if (opcodeOffset == 12) {
+				// shr_u
+				res = a >> (b % 32);
+			} else if (opcodeOffset == 11) {
+				// shr_s
+				res = uint32(int32(a) >> b);
+			} else if (opcodeOffset == 13) {
+				// rotl
+				res = rotl32(a, b);
+			} else if (opcodeOffset == 14) {
+				// rotr
+				res = rotr32(a, b);
+			} else {
+				res = uint32(genericBinOp(a, b, opcodeOffset));
+			}
 		}
 
 		ValueStacks.push(mach.valueStack, Values.newI32(res));
@@ -270,29 +288,39 @@ contract OneStepProver0 is IOneStepProver {
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I64_ADD;
 
-		if (opcodeOffset == 3) {
-			// div_s
-			res = uint64(int64(a) / int64(b));
-		} else if (opcodeOffset == 5) {
-			// rem_s
-			res = uint64(int64(a) % int64(b));
-		} else if (opcodeOffset == 10) {
-			// shl
-			res = a << (b % 64);
-		} else if (opcodeOffset == 12) {
-			// shr_u
-			res = a >> (b % 64);
-		} else if (opcodeOffset == 11) {
-			// shr_s
-			res = uint64(int64(a) >> b);
-		} else if (opcodeOffset == 13) {
-			// rotl
-			res = rotl64(a, b);
-		} else if (opcodeOffset == 14) {
-			// rotr
-			res = rotr64(a, b);
-		} else {
-			res = genericBinOp(a, b, opcodeOffset);
+		unchecked {
+			if (opcodeOffset == 3) {
+				// div_s
+				if (b == 0) {
+					res = 0;
+				} else {
+					res = uint64(int64(a) / int64(b));
+				}
+			} else if (opcodeOffset == 5) {
+				// rem_s
+				if (b == 0) {
+					res = 0;
+				} else {
+					res = uint64(int64(a) % int64(b));
+				}
+			} else if (opcodeOffset == 10) {
+				// shl
+				res = a << (b % 64);
+			} else if (opcodeOffset == 12) {
+				// shr_u
+				res = a >> (b % 64);
+			} else if (opcodeOffset == 11) {
+				// shr_s
+				res = uint64(int64(a) >> b);
+			} else if (opcodeOffset == 13) {
+				// rotl
+				res = rotl64(a, b);
+			} else if (opcodeOffset == 14) {
+				// rotr
+				res = rotr64(a, b);
+			} else {
+				res = genericBinOp(a, b, opcodeOffset);
+			}
 		}
 
 		ValueStacks.push(mach.valueStack, Values.newI64(res));
