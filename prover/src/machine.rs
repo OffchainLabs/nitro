@@ -69,7 +69,6 @@ impl Function {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Function:");
-        println!("root: {}", self.code_merkle.root());
         h.update(self.code_merkle.root());
         h.finalize().into()
     }
