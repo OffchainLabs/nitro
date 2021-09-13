@@ -2,7 +2,7 @@ const { ethers, run } = require("hardhat");
 const fs = require("fs");
 const assert = require("assert");
 
-const PARALLEL = 128;
+const PARALLEL = 1;
 
 describe("OneStepProof", function () {
   const deployment = run("deploy", { "tags": "OneStepProofEntry" });
@@ -23,7 +23,10 @@ describe("OneStepProof", function () {
         process.stdout.write("\rTesting " + file + " proof " + i + "/" + proofs.length + " ");
         const proof = proofs[i];
         const promise = osp.proveOneStep([...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
-          .catch(err => { throw new Error("Error evaluating proof " + i + ": " + err); })
+          .catch(err => {
+            console.error("Error executing proof " + i);
+            throw err;
+          })
           .then(after => assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i));
         if (promises.length < PARALLEL) {
           promises.push(promise);

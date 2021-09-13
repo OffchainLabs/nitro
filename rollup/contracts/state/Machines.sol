@@ -16,6 +16,7 @@ struct Machine {
 	uint64 functionPc;
 	bytes32 globalsMerkleRoot;
 	MachineMemory machineMemory;
+	bytes32 tablesMerkleRoot;
 	bytes32 functionsMerkleRoot;
 	bool halted;
 }
@@ -35,6 +36,7 @@ library Machines {
 			mach.functionPc,
 			mach.globalsMerkleRoot,
 			MachineMemories.hash(mach.machineMemory),
+			mach.tablesMerkleRoot,
 			mach.functionsMerkleRoot
 		));
 	}

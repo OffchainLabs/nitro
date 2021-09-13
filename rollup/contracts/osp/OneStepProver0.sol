@@ -399,6 +399,81 @@ contract OneStepProver0 is IOneStepProver {
 		mach.functionPc = 0;
 	}
 
+	function executeCallIndirect(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
+		uint64 funcIdx;
+		{
+			uint32 elementIdx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+			// Prove metadata about the instruction and tables
+			bytes32 elemsRoot;
+			bytes32 wantedFuncTypeHash;
+			uint256 offset = 0;
+			{
+				uint64 tableIdx;
+				uint8 tableType;
+				uint64 tableSize;
+				MerkleProof memory tableMerkleProof;
+				(tableIdx, offset) = Deserialize.u64(proof, offset);
+				(wantedFuncTypeHash, offset) = Deserialize.b32(proof, offset);
+				(tableType, offset) = Deserialize.u8(proof, offset);
+				(tableSize, offset) = Deserialize.u64(proof, offset);
+				(elemsRoot, offset) = Deserialize.b32(proof, offset);
+				(tableMerkleProof, offset) = Deserialize.merkleProof(proof, offset);
+
+				// Validate the information by recomputing known hashes
+				bytes32 recomputed = keccak256(abi.encodePacked("Call indirect:", tableIdx, wantedFuncTypeHash));
+				require(recomputed == bytes32(inst.argumentData), "BAD_CALL_INDIRECT_DATA");
+				recomputed = MerkleProofs.computeRootFromTable(tableMerkleProof, tableIdx, tableType, tableSize, elemsRoot);
+				require(recomputed == mach.tablesMerkleRoot, "BAD_TABLES_ROOT");
+
+				// Check if the table access is out of bounds
+				if (elementIdx >= tableSize) {
+					mach.halted = true;
+					return;
+				}
+			}
+
+			bytes32 elemFuncTypeHash;
+			Value memory functionPointer;
+			MerkleProof memory elementMerkleProof;
+			(elemFuncTypeHash, offset) = Deserialize.b32(proof, offset);
+			(functionPointer, offset) = Deserialize.value(proof, offset);
+			(elementMerkleProof, offset) = Deserialize.merkleProof(proof, offset);
+			bytes32 recomputedElemRoot = MerkleProofs.computeRootFromElement(elementMerkleProof, elementIdx, elemFuncTypeHash, functionPointer);
+			require(recomputedElemRoot == elemsRoot, "BAD_ELEMENTS_ROOT");
+
+			if (elemFuncTypeHash != wantedFuncTypeHash) {
+				mach.halted = true;
+				return;
+			}
+
+			if (functionPointer.valueType == ValueType.REF_NULL) {
+				mach.halted = true;
+				return;
+			} else if (functionPointer.valueType == ValueType.FUNC_REF) {
+				funcIdx = uint64(functionPointer.contents);
+				require(funcIdx == functionPointer.contents, "BAD_FUNC_REF_CONTENTS");
+			} else if (functionPointer.valueType == ValueType.REF_EXTERN) {
+				revert("TODO: external call_indirect");
+			} else {
+				revert("BAD_ELEM_TYPE");
+			}
+		}
+
+		// Push the return pc to the stack
+		uint256 returnData = 0;
+		returnData |= mach.functionIdx;
+		returnData |= uint256(mach.functionPc) << 64;
+		ValueStacks.push(mach.valueStack, Value({
+			valueType: ValueType.INTERNAL_REF,
+			contents: returnData
+		}));
+
+		// Jump to the target
+		mach.functionIdx = funcIdx;
+		mach.functionPc = 0;
+	}
+
 	function executeArbitraryJumpIf(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
 		Value memory cond = ValueStacks.pop(mach.valueStack);
 		if (cond.contents != 0) {
@@ -525,6 +600,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeReturn;
 		} else if (opcode == Instructions.CALL) {
 			impl = executeCall;
+		} else if (opcode == Instructions.CALL_INDIRECT) {
+			impl = executeCallIndirect;
 		} else if (opcode == Instructions.END_BLOCK) {
 			impl = executeEndBlock;
 		} else if (opcode == Instructions.END_BLOCK_IF) {

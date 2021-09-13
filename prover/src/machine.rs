@@ -549,30 +549,6 @@ impl Machine {
         })
     }
 
-    pub fn hash(&self) -> Bytes32 {
-        if self.halted {
-            return Bytes32::default();
-        }
-        let mut h = Keccak256::new();
-        h.update(b"Machine:");
-        h.update(&hash_value_stack(&self.value_stack));
-        h.update(&hash_value_stack(&self.internal_stack));
-        h.update(&hash_pc_stack(&self.block_stack));
-        h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(&(self.pc.0 as u64).to_be_bytes());
-        h.update(&(self.pc.1 as u64).to_be_bytes());
-        h.update(
-            Merkle::new(
-                MerkleType::Value,
-                self.globals.iter().map(|v| v.hash()).collect(),
-            )
-            .root(),
-        );
-        h.update(self.memory.hash());
-        h.update(self.funcs_merkle.root());
-        h.finalize().into()
-    }
-
     pub fn get_next_instruction(&self) -> Option<Instruction> {
         if self.halted {
             return None;
@@ -893,6 +869,31 @@ impl Machine {
         self.halted
     }
 
+    pub fn hash(&self) -> Bytes32 {
+        if self.halted {
+            return Bytes32::default();
+        }
+        let mut h = Keccak256::new();
+        h.update(b"Machine:");
+        h.update(&hash_value_stack(&self.value_stack));
+        h.update(&hash_value_stack(&self.internal_stack));
+        h.update(&hash_pc_stack(&self.block_stack));
+        h.update(hash_stack_frame_stack(&self.frame_stack));
+        h.update(&(self.pc.0 as u64).to_be_bytes());
+        h.update(&(self.pc.1 as u64).to_be_bytes());
+        h.update(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
+        h.update(self.memory.hash());
+        h.update(self.tables_merkle.root());
+        h.update(self.funcs_merkle.root());
+        h.finalize().into()
+    }
+
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
@@ -938,6 +939,7 @@ impl Machine {
         data.extend((self.memory.size() as u64).to_be_bytes());
         data.extend(mem_merkle.root());
 
+        data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
 
         // End machine serialization, begin proof serialization
@@ -1029,13 +1031,26 @@ impl Machine {
                     ),
                 };
                 let ty = &self.types[usize::try_from(ty).unwrap()];
-                data.extend(&(idx as u64).to_be_bytes());
+                data.extend(&(table as u64).to_be_bytes());
                 data.extend(ty.hash());
-                let table = &self.tables[usize::try_from(table).unwrap()];
+                let table_usize = usize::try_from(table).unwrap();
+                let table = &self.tables[table_usize];
                 data.extend(table.serialize_for_proof());
-                if let Some(elem) = table.elems.get(usize::try_from(idx).unwrap()) {
+                data.extend(
+                    self.tables_merkle
+                        .prove(table_usize)
+                        .expect("Failed to prove tables merkle"),
+                );
+                let idx_usize = usize::try_from(idx).unwrap();
+                if let Some(elem) = table.elems.get(idx_usize) {
                     data.extend(elem.func_ty.hash());
                     data.extend(elem.val.serialize_for_proof());
+                    data.extend(
+                        table
+                            .elems_merkle
+                            .prove(idx_usize)
+                            .expect("Failed to prove elements merkle"),
+                    );
                 }
             }
         }

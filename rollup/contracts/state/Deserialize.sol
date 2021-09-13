@@ -161,6 +161,7 @@ library Deserialize {
 		StackFrameWindow memory frameStack;
 		bytes32 globalsMerkleRoot;
 		MachineMemory memory mem;
+		bytes32 tablesMerkleRoot;
 		bytes32 functionsMerkleRoot;
 		(values, offset) = valueStack(proof, offset);
 		(internalStack, offset) = valueStack(proof, offset);
@@ -170,6 +171,7 @@ library Deserialize {
 		(functionPc, offset) = u64(proof, offset);
 		(globalsMerkleRoot, offset) = b32(proof, offset);
 		(mem, offset) = machineMemory(proof, offset);
+		(tablesMerkleRoot, offset) = b32(proof, offset);
 		(functionsMerkleRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
@@ -180,6 +182,7 @@ library Deserialize {
 			functionPc: functionPc,
 			globalsMerkleRoot: globalsMerkleRoot,
 			machineMemory: mem,
+			tablesMerkleRoot: tablesMerkleRoot,
 			functionsMerkleRoot: functionsMerkleRoot,
 			halted: false
 		});

@@ -14,6 +14,7 @@ library Instructions {
 	uint16 constant BRANCH_IF = 0x0D;
 	uint16 constant RETURN = 0x0F;
 	uint16 constant CALL = 0x10;
+	uint16 constant CALL_INDIRECT = 0x11;
 	uint16 constant LOCAL_GET = 0x20;
 	uint16 constant LOCAL_SET = 0x21;
 	uint16 constant GLOBAL_GET = 0x23;
