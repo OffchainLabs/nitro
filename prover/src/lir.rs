@@ -71,6 +71,7 @@ pub enum Opcode {
 
     Return,
     Call,
+    CallIndirect,
 
     Drop,
     Select,
@@ -145,6 +146,7 @@ impl Opcode {
             Opcode::BranchIf => 0x0D,
             Opcode::Return => 0x0F,
             Opcode::Call => 0x10,
+            Opcode::CallIndirect => 0x11,
             Opcode::Drop => 0x1A,
             Opcode::Select => 0x1B,
             Opcode::LocalGet => 0x20,
@@ -244,6 +246,14 @@ pub struct Instruction {
     pub opcode: Opcode,
     pub argument_data: u64,
     pub proving_argument_data: Option<Bytes32>,
+}
+
+fn pack_call_indirect(table: u32, ty: u32) -> u64 {
+    u64::from(table) | (u64::from(ty) << 32)
+}
+
+pub fn unpack_call_indirect(data: u64) -> (u32, u32) {
+    (data as u32, (data >> 32) as u32)
 }
 
 impl Instruction {
@@ -400,9 +410,12 @@ impl Instruction {
                     proving_argument_data: None,
                 });
             }
-            HirInstruction::CallIndirect(_, _) => {
-                // TODO
-                ops.push(Instruction::simple(Opcode::Unreachable));
+            HirInstruction::CallIndirect(table, ty) => {
+                ops.push(Instruction {
+                    opcode: Opcode::CallIndirect,
+                    argument_data: pack_call_indirect(table, ty),
+                    proving_argument_data: None,
+                });
             }
             HirInstruction::LoadOrStore(op, mem_arg) => ops.push(Instruction {
                 opcode: op,

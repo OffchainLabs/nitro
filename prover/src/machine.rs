@@ -14,6 +14,14 @@ use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
 
+fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
+    let mut h = Keccak256::new();
+    h.update("Call indirect:");
+    h.update(&(table as u64).to_be_bytes());
+    h.update(ty.hash());
+    h.finalize().into()
+}
+
 #[derive(Clone, Debug)]
 struct Function {
     code: Vec<Instruction>,
@@ -22,7 +30,7 @@ struct Function {
 }
 
 impl Function {
-    fn new(code: Code, func_ty: &FunctionType) -> Function {
+    fn new(code: Code, func_ty: &FunctionType, module_types: &[FunctionType]) -> Function {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -55,6 +63,16 @@ impl Function {
             codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         );
+
+        // Insert missing proving argument data
+        for inst in insts.iter_mut() {
+            if inst.opcode == Opcode::CallIndirect {
+                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let ty = &module_types[usize::try_from(ty).unwrap()];
+                inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
+            }
+        }
+
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
             insts.iter().map(|i| i.hash()).collect(),
@@ -138,16 +156,26 @@ impl TableElement {
 struct Table {
     ty: TableType,
     elems: Vec<TableElement>,
+    elems_merkle: Merkle,
 }
 
-fn hash_table(ty: TableType, elements_root: Bytes32) -> Bytes32 {
-    let mut h = Keccak256::new();
-    h.update("Table:");
-    h.update(&[Into::<ValueType>::into(ty.ty).serialize()]);
-    h.update(ty.limits.minimum_size.to_be_bytes());
-    h.update(ty.limits.maximum_size.unwrap_or(u32::MAX).to_be_bytes());
-    h.update(elements_root);
-    h.finalize().into()
+impl Table {
+    fn serialize_for_proof(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.push(Into::<ValueType>::into(self.ty.ty).serialize());
+        data.extend(&(self.elems.len() as u64).to_be_bytes());
+        data.extend(self.elems_merkle.root());
+        data
+    }
+
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Table:");
+        h.update(&[Into::<ValueType>::into(self.ty.ty).serialize()]);
+        h.update(&(self.elems.len() as u64).to_be_bytes());
+        h.update(self.elems_merkle.root());
+        h.finalize().into()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -160,9 +188,9 @@ pub struct Machine {
     memory: Memory,
     tables: Vec<Table>,
     tables_merkle: Merkle,
-    tables_elements_merkles: Vec<Merkle>,
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
+    types: Vec<FunctionType>,
     pc: (usize, usize),
     halted: bool,
 }
@@ -328,7 +356,7 @@ impl Machine {
                     code = sect_code
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, c)| Function::new(c, &func_types[idx]))
+                        .map(|(idx, c)| Function::new(c, &func_types[idx], &types))
                         .collect();
                 }
                 WasmSection::Start(s) => {
@@ -409,6 +437,7 @@ impl Machine {
                                 usize::try_from(table.limits.minimum_size).unwrap()
                             ],
                             ty: table,
+                            elems_merkle: Merkle::default(),
                         });
                     }
                 }
@@ -492,16 +521,14 @@ impl Machine {
                 expr: entrypoint,
             },
             &FunctionType::default(),
+            &types,
         ));
-        let tables_elements_merkles: Vec<_> = tables
-            .iter()
-            .map(|t| {
-                Merkle::new(
-                    MerkleType::TableElement,
-                    t.elems.iter().map(|e| e.hash()).collect(),
-                )
-            })
-            .collect();
+        for table in tables.iter_mut() {
+            table.elems_merkle = Merkle::new(
+                MerkleType::TableElement,
+                table.elems.iter().map(|e| e.hash()).collect(),
+            );
+        }
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -509,21 +536,14 @@ impl Machine {
             frame_stack: Vec::new(),
             memory,
             globals,
-            tables_merkle: Merkle::new(
-                MerkleType::Table,
-                tables
-                    .iter()
-                    .zip(tables_elements_merkles.iter())
-                    .map(|(t, m)| hash_table(t.ty, m.root()))
-                    .collect(),
-            ),
-            tables_elements_merkles,
+            tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
             tables,
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
                 code.iter().map(|f| f.hash()).collect(),
             ),
             funcs: code,
+            types,
             pc: (entrypoint_idx, 0),
             halted: false,
         })
@@ -627,6 +647,35 @@ impl Machine {
             Opcode::Call => {
                 self.value_stack.push(Value::InternalRef(self.pc));
                 self.pc = (inst.argument_data as usize, 0);
+            }
+            Opcode::CallIndirect => {
+                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let idx = match self.value_stack.pop() {
+                    Some(Value::I32(i)) => usize::try_from(i).unwrap(),
+                    x => panic!(
+                        "WASM validation failed: top of stack before call_indirect is {:?}",
+                        x,
+                    ),
+                };
+                let ty = &self.types[usize::try_from(ty).unwrap()];
+                let elems = &self.tables[usize::try_from(table).unwrap()].elems;
+                if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
+                    match elem.val {
+                        Value::FuncRef(func) => {
+                            self.value_stack.push(Value::InternalRef(self.pc));
+                            self.pc = (func as usize, 0);
+                        }
+                        Value::ExternRef(_) => {
+                            panic!("Extern functions aren't supported yet");
+                        }
+                        Value::RefNull => {
+                            self.halted = true;
+                        }
+                        v => panic!("Invalid table element value {:?}", v),
+                    }
+                } else {
+                    self.halted = true;
+                }
             }
             Opcode::LocalGet => {
                 let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
@@ -969,6 +1018,24 @@ impl Machine {
                         mem_merkle.into_owned()
                     };
                     data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                }
+            } else if next_inst.opcode == Opcode::CallIndirect {
+                let (table, ty) = crate::lir::unpack_call_indirect(next_inst.argument_data);
+                let idx = match self.value_stack.last() {
+                    Some(Value::I32(i)) => *i,
+                    x => panic!(
+                        "WASM validation failed: top of stack before call_indirect is {:?}",
+                        x,
+                    ),
+                };
+                let ty = &self.types[usize::try_from(ty).unwrap()];
+                data.extend(&(idx as u64).to_be_bytes());
+                data.extend(ty.hash());
+                let table = &self.tables[usize::try_from(table).unwrap()];
+                data.extend(table.serialize_for_proof());
+                if let Some(elem) = table.elems.get(usize::try_from(idx).unwrap()) {
+                    data.extend(elem.func_ty.hash());
+                    data.extend(elem.val.serialize_for_proof());
                 }
             }
         }

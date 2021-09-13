@@ -38,7 +38,7 @@ pub enum Value {
     RefNull,
     FuncRef(u32),
     #[allow(dead_code)]
-    RefExtern(u32),
+    ExternRef(u32),
     InternalRef((usize, usize)),
     StackBoundary,
 }
@@ -73,7 +73,7 @@ impl Value {
             Value::F64(_) => ValueType::F64,
             Value::RefNull => ValueType::RefNull,
             Value::FuncRef(_) => ValueType::FuncRef,
-            Value::RefExtern(_) => ValueType::ExternRef,
+            Value::ExternRef(_) => ValueType::ExternRef,
             Value::InternalRef(_) => ValueType::InternalRef,
             Value::StackBoundary => ValueType::StackBoundary,
         }
@@ -88,7 +88,7 @@ impl Value {
             Value::F64(x) => x.to_bits().into(),
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
-            Value::RefExtern(x) => x.into(),
+            Value::ExternRef(x) => x.into(),
             Value::InternalRef(pc) => serialize_pc(pc),
             Value::StackBoundary => Bytes32::default(),
         }
