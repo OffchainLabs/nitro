@@ -10,7 +10,7 @@ use crate::{
 };
 use digest::Digest;
 use eyre::Result;
-use num::traits::PrimInt;
+use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
 
@@ -247,9 +247,18 @@ where
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> T
 where
     Wrapping<T>: ReinterpretAsSigned,
+    T: Zero,
 {
     let a = Wrapping(a);
     let b = Wrapping(b);
+    if matches!(
+        op,
+        IBinOpType::DivS | IBinOpType::DivU | IBinOpType::RemS | IBinOpType::RemU,
+    ) {
+        if b.is_zero() {
+            return T::zero();
+        }
+    }
     let res = match op {
         IBinOpType::Add => a + b,
         IBinOpType::Sub => a - b,

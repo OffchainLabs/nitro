@@ -1,3 +1,4 @@
+use num::Zero;
 use std::{
     num::Wrapping,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
@@ -15,6 +16,7 @@ pub trait ReinterpretAsSigned:
     + BitAnd<Output = Self>
     + BitOr<Output = Self>
     + BitXor<Output = Self>
+    + Zero
 {
     type Signed: ReinterpretAsUnsigned<Unsigned = Self>;
     fn cast_signed(self) -> Self::Signed;
@@ -36,6 +38,7 @@ pub trait ReinterpretAsUnsigned:
     + BitAnd<Output = Self>
     + BitOr<Output = Self>
     + BitXor<Output = Self>
+    + Zero
 {
     type Unsigned: ReinterpretAsSigned<Signed = Self>;
     fn cast_unsigned(self) -> Self::Unsigned;
