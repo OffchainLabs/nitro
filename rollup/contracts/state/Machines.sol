@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "./ValueStacks.sol";
-import "./Bytes32Stacks.sol";
+import "./PcStacks.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
 import "./MachineMemories.sol";
@@ -10,9 +10,10 @@ import "./MachineMemories.sol";
 struct Machine {
 	ValueStack valueStack;
 	ValueStack internalStack;
-	Bytes32Stack blockStack;
+	PcStack blockStack;
 	StackFrameWindow frameStack;
-	InstructionWindow instructions;
+	uint64 functionIdx;
+	uint64 functionPc;
 	bytes32 globalsMerkleRoot;
 	MachineMemory machineMemory;
 	bytes32 functionsMerkleRoot;
@@ -28,9 +29,10 @@ library Machines {
 			"Machine:",
 			ValueStacks.hash(mach.valueStack),
 			ValueStacks.hash(mach.internalStack),
-			Bytes32Stacks.hash(mach.blockStack),
+			PcStacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
-			Instructions.hash(mach.instructions),
+			mach.functionIdx,
+			mach.functionPc,
 			mach.globalsMerkleRoot,
 			MachineMemories.hash(mach.machineMemory),
 			mach.functionsMerkleRoot

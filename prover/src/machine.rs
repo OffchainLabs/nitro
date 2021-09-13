@@ -17,35 +17,8 @@ use std::{convert::TryFrom, num::Wrapping};
 #[derive(Clone, Debug)]
 struct Function {
     code: Vec<Instruction>,
-    code_hashes: Vec<Bytes32>,
+    code_merkle: Merkle,
     local_types: Vec<ValueType>,
-}
-
-fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
-    let mut prev_hash = Bytes32::default();
-    let mut hashes = vec![prev_hash];
-    let code_len = code.len();
-    for inst in code.iter_mut().rev() {
-        if inst.opcode == Opcode::Block || inst.opcode == Opcode::ArbitraryJumpIf {
-            let end_pc = inst.argument_data as usize;
-            if code_len - end_pc < hashes.len() {
-                inst.proving_argument_data = Some(hashes[code_len - end_pc]);
-            } else if code_len - end_pc == hashes.len() {
-                inst.proving_argument_data = Some(Bytes32::default());
-            } else {
-                panic!("Block has backwards exit");
-            }
-        }
-        let mut h = Keccak256::new();
-        h.update("Instruction stack:");
-        h.update(&inst.hash());
-        h.update(&prev_hash);
-        let hash = h.finalize().into();
-        hashes.push(hash);
-        prev_hash = hash;
-    }
-    hashes.reverse();
-    hashes
 }
 
 impl Function {
@@ -82,12 +55,23 @@ impl Function {
             codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         );
-        let code_hashes = compute_hashes(&mut insts);
+        let code_merkle = Merkle::new(
+            MerkleType::Instruction,
+            insts.iter().map(|i| i.hash()).collect(),
+        );
         Function {
             code: insts,
-            code_hashes,
+            code_merkle,
             local_types: locals_with_params,
         }
+    }
+
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Function:");
+        println!("root: {}", self.code_merkle.root());
+        h.update(self.code_merkle.root());
+        h.finalize().into()
     }
 }
 
@@ -171,7 +155,7 @@ fn hash_table(ty: TableType, elements_root: Bytes32) -> Bytes32 {
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
-    block_stack: Vec<(usize, Bytes32)>,
+    block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     memory: Memory,
@@ -184,15 +168,16 @@ pub struct Machine {
     halted: bool,
 }
 
-fn hash_stack<I>(stack: I, prefix: &str) -> Bytes32
+fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
-    I: IntoIterator<Item = Bytes32>,
+    I: IntoIterator<Item = D>,
+    D: AsRef<[u8]>,
 {
     let mut hash = Bytes32::default();
-    for item_hash in stack.into_iter() {
+    for item in stack.into_iter() {
         let mut h = Keccak256::new();
         h.update(prefix);
-        h.update(item_hash);
+        h.update(item.as_ref());
         h.update(&hash);
         hash = h.finalize().into();
     }
@@ -203,8 +188,11 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_block_stack(pcs: &[(usize, Bytes32)]) -> Bytes32 {
-    hash_stack(pcs.iter().map(|(_, h)| *h), "Bytes32 stack:")
+fn hash_pc_stack(pcs: &[usize]) -> Bytes32 {
+    hash_stack(
+        pcs.iter().map(|pc| (*pc as u64).to_be_bytes()),
+        "Program counter stack:",
+    )
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -534,7 +522,7 @@ impl Machine {
             tables,
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
-                code.iter().map(|f| f.code_hashes[0]).collect(),
+                code.iter().map(|f| f.hash()).collect(),
             ),
             funcs: code,
             pc: (entrypoint_idx, 0),
@@ -550,9 +538,10 @@ impl Machine {
         h.update(b"Machine:");
         h.update(&hash_value_stack(&self.value_stack));
         h.update(&hash_value_stack(&self.internal_stack));
-        h.update(&hash_block_stack(&self.block_stack));
+        h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
+        h.update(&(self.pc.0 as u64).to_be_bytes());
+        h.update(&(self.pc.1 as u64).to_be_bytes());
         h.update(
             Merkle::new(
                 MerkleType::Value,
@@ -588,7 +577,7 @@ impl Machine {
             Opcode::Nop => {}
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
-                self.block_stack.push((idx, func.code_hashes[idx]));
+                self.block_stack.push(idx);
             }
             Opcode::EndBlock => {
                 self.block_stack.pop();
@@ -618,12 +607,12 @@ impl Machine {
                 }
             }
             Opcode::Branch => {
-                self.pc.1 = self.block_stack.pop().unwrap().0;
+                self.pc.1 = self.block_stack.pop().unwrap();
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    self.pc.1 = self.block_stack.pop().unwrap().0;
+                    self.pc.1 = self.block_stack.pop().unwrap();
                 }
             }
             Opcode::Return => {
@@ -632,13 +621,12 @@ impl Machine {
                     Value::RefNull => {
                         self.halted = true;
                     }
-                    Value::InternalRef(pc, _) => self.pc = pc,
+                    Value::InternalRef(pc) => self.pc = pc,
                     v => panic!("Attempted to return into an invalid reference: {:?}", v),
                 }
             }
             Opcode::Call => {
-                self.value_stack
-                    .push(Value::InternalRef(self.pc, func.code_hashes[self.pc.1]));
+                self.value_stack.push(Value::InternalRef(self.pc));
                 self.pc = (inst.argument_data as usize, 0);
             }
             Opcode::LocalGet => {
@@ -877,12 +865,9 @@ impl Machine {
             |v| v.serialize_for_proof(),
         ));
 
-        data.extend(prove_stack(
-            &self.block_stack,
-            1,
-            hash_block_stack,
-            |(_, h)| *h,
-        ));
+        data.extend(prove_stack(&self.block_stack, 1, hash_pc_stack, |pc| {
+            (*pc as u64).to_be_bytes()
+        }));
 
         data.extend(prove_window(
             &self.frame_stack,
@@ -890,9 +875,8 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        let func = &self.funcs[self.pc.0];
-        data.extend(func.code_hashes[self.pc.1 + 1]);
-        data.extend(func.code[self.pc.1].serialize_for_proof());
+        data.extend(&(self.pc.0 as u64).to_be_bytes());
+        data.extend(&(self.pc.1 as u64).to_be_bytes());
 
         data.extend(
             Merkle::new(
@@ -907,6 +891,21 @@ impl Machine {
         data.extend(mem_merkle.root());
 
         data.extend(self.funcs_merkle.root());
+
+        // End machine serialization, begin proof serialization
+
+        let func = &self.funcs[self.pc.0];
+        data.extend(func.code[self.pc.1].serialize_for_proof());
+        data.extend(
+            func.code_merkle
+                .prove(self.pc.1)
+                .expect("Failed to prove against code merkle"),
+        );
+        data.extend(
+            self.funcs_merkle
+                .prove(self.pc.0)
+                .expect("Failed to prove against function merkle"),
+        );
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
             if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
@@ -931,15 +930,6 @@ impl Machine {
                     locals_merkle
                         .prove(idx)
                         .expect("Out of bounds global access"),
-                );
-            } else if next_inst.opcode == Opcode::Call {
-                let idx = next_inst.argument_data as usize;
-                data.extend(self.funcs[idx].code_hashes[1]);
-                data.extend(self.funcs[idx].code[0].serialize_for_proof());
-                data.extend(
-                    self.funcs_merkle
-                        .prove(idx)
-                        .expect("Out of bounds function access"),
                 );
             } else if matches!(
                 next_inst.opcode,

@@ -9,17 +9,20 @@ struct MerkleProof {
 }
 
 library MerkleProofs {
-	function computeRoot(MerkleProof memory proof, uint256 index, Value memory leaf) internal pure returns (bytes32) {
+	function computeRootFromValue(MerkleProof memory proof, uint256 index, Value memory leaf) internal pure returns (bytes32) {
 		return computeRootUnsafe(proof, index, Values.hash(leaf), "Value merkle tree:");
 	}
 
-	function computeRoot(MerkleProof memory proof, uint256 index, InstructionWindow memory leaf) internal pure returns (bytes32) {
-		// Ensure that this is actually an instruction hash
-		require(leaf.proved.length > 0, "MUST_PROVE_WINDOW");
-		return computeRootUnsafe(proof, index, Instructions.hash(leaf), "Function merkle tree:");
+	function computeRootFromInstruction(MerkleProof memory proof, uint256 index, Instruction memory inst) internal pure returns (bytes32) {
+		return computeRootUnsafe(proof, index, Instructions.hash(inst), "Instruction merkle tree:");
 	}
 
-	function computeRootForMemory(MerkleProof memory proof, uint256 index, bytes32 contents) internal pure returns (bytes32) {
+	function computeRootFromFunction(MerkleProof memory proof, uint256 index, bytes32 codeRoot) internal pure returns (bytes32) {
+		bytes32 h = keccak256(abi.encodePacked("Function:", codeRoot));
+		return computeRootUnsafe(proof, index, h, "Function merkle tree:");
+	}
+
+	function computeRootFromMemory(MerkleProof memory proof, uint256 index, bytes32 contents) internal pure returns (bytes32) {
 		bytes32 h = keccak256(abi.encodePacked("Memory leaf:", contents));
 		return computeRootUnsafe(proof, index, h, "Memory merkle tree:");
 	}

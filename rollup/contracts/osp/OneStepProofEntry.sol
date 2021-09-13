@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../state/Deserialize.sol";
 import "../state/Machines.sol";
+import "../state/MerkleProofs.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProofEntry {
@@ -24,16 +25,38 @@ contract OneStepProofEntry {
         (mach, offset) = Deserialize.machine(proof, offset);
         require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
 
-        uint16 opcode = Instructions.peek(mach.instructions).opcode;
+        Instruction memory inst;
+        MerkleProof memory instProof;
+        MerkleProof memory funcProof;
+        (inst, offset) = Deserialize.instruction(proof, offset);
+        (instProof, offset) = Deserialize.merkleProof(proof, offset);
+        (funcProof, offset) = Deserialize.merkleProof(proof, offset);
+        bytes32 codeHash = MerkleProofs.computeRootFromInstruction(
+            instProof,
+            mach.functionPc,
+            inst
+        );
+        bytes32 recomputedRoot = MerkleProofs.computeRootFromFunction(
+            funcProof,
+            mach.functionIdx,
+            codeHash
+        );
+        require(
+            recomputedRoot == mach.functionsMerkleRoot,
+            "BAD_FUNCTIONS_ROOT"
+        );
+
+        mach.functionPc += 1;
+        uint16 opcode = inst.opcode;
         if (
             (opcode >= Instructions.I32_LOAD &&
                 opcode <= Instructions.I64_LOAD32_U) ||
             (opcode >= Instructions.I32_STORE &&
                 opcode <= Instructions.I64_STORE32)
         ) {
-            mach = proverMem.executeOneStep(mach, proof[offset:]);
+            mach = proverMem.executeOneStep(mach, inst, proof[offset:]);
         } else {
-            mach = prover0.executeOneStep(mach, proof[offset:]);
+            mach = prover0.executeOneStep(mach, inst, proof[offset:]);
         }
 
         return Machines.hash(mach);

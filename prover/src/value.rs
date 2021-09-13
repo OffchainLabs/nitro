@@ -39,8 +39,15 @@ pub enum Value {
     FuncRef(u32),
     #[allow(dead_code)]
     RefExtern(u32),
-    InternalRef((usize, usize), Bytes32),
+    InternalRef((usize, usize)),
     StackBoundary,
+}
+
+fn serialize_pc(pc: (usize, usize)) -> Bytes32 {
+    let mut b = [0u8; 32];
+    b[24..].copy_from_slice(&(pc.0 as u64).to_be_bytes());
+    b[16..24].copy_from_slice(&(pc.1 as u64).to_be_bytes());
+    Bytes32(b)
 }
 
 impl Value {
@@ -67,7 +74,7 @@ impl Value {
             Value::RefNull => ValueType::RefNull,
             Value::FuncRef(_) => ValueType::FuncRef,
             Value::RefExtern(_) => ValueType::ExternRef,
-            Value::InternalRef(_, _) => ValueType::InternalRef,
+            Value::InternalRef(_) => ValueType::InternalRef,
             Value::StackBoundary => ValueType::StackBoundary,
         }
     }
@@ -82,7 +89,7 @@ impl Value {
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
             Value::RefExtern(x) => x.into(),
-            Value::InternalRef(_, x) => x,
+            Value::InternalRef(pc) => serialize_pc(pc),
             Value::StackBoundary => Bytes32::default(),
         }
     }

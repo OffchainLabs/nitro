@@ -260,8 +260,8 @@ impl Instruction {
             data
         } else {
             assert!(
-                self.opcode != Opcode::Block,
-                "Block missing proving argument data",
+                self.opcode != Opcode::InitFrame,
+                "InitFrame missing proving argument data",
             );
             let mut b = [0u8; 32];
             b[24..].copy_from_slice(&self.argument_data.to_be_bytes());
