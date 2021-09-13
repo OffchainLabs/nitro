@@ -1,12 +1,12 @@
 use crate::{
-    binary::{Code, ExportKind, FunctionType, HirInstruction, WasmBinary, WasmSection},
+    binary::{Code, ElementMode, ExportKind, HirInstruction, TableType, WasmBinary, WasmSection},
     lir::Instruction,
-    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
+    lir::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
-    value::{IntegerValType, Value, ValueType},
+    value::{FunctionType, IntegerValType, Value, ValueType},
 };
 use digest::Digest;
 use eyre::Result;
@@ -14,42 +14,23 @@ use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{convert::TryFrom, num::Wrapping};
 
+fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
+    let mut h = Keccak256::new();
+    h.update("Call indirect:");
+    h.update(&(table as u64).to_be_bytes());
+    h.update(ty.hash());
+    h.finalize().into()
+}
+
 #[derive(Clone, Debug)]
 struct Function {
     code: Vec<Instruction>,
-    code_hashes: Vec<Bytes32>,
+    code_merkle: Merkle,
     local_types: Vec<ValueType>,
 }
 
-fn compute_hashes(code: &mut Vec<Instruction>) -> Vec<Bytes32> {
-    let mut prev_hash = Bytes32::default();
-    let mut hashes = vec![prev_hash];
-    let code_len = code.len();
-    for inst in code.iter_mut().rev() {
-        if inst.opcode == Opcode::Block || inst.opcode == Opcode::ArbitraryJumpIf {
-            let end_pc = inst.argument_data as usize;
-            if code_len - end_pc < hashes.len() {
-                inst.proving_argument_data = Some(hashes[code_len - end_pc]);
-            } else if code_len - end_pc == hashes.len() {
-                inst.proving_argument_data = Some(Bytes32::default());
-            } else {
-                panic!("Block has backwards exit");
-            }
-        }
-        let mut h = Keccak256::new();
-        h.update("Instruction stack:");
-        h.update(&inst.hash());
-        h.update(&prev_hash);
-        let hash = h.finalize().into();
-        hashes.push(hash);
-        prev_hash = hash;
-    }
-    hashes.reverse();
-    hashes
-}
-
 impl Function {
-    fn new(code: Code, func_ty: &FunctionType) -> Function {
+    fn new(code: Code, func_ty: &FunctionType, module_types: &[FunctionType]) -> Function {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -73,20 +54,41 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
+        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len());
         for hir_inst in code.expr {
-            Instruction::extend_from_hir(&mut insts, func_ty.outputs.len(), hir_inst);
+            Instruction::extend_from_hir(&mut insts, codegen_state, hir_inst);
         }
         Instruction::extend_from_hir(
             &mut insts,
-            func_ty.outputs.len(),
+            codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         );
-        let code_hashes = compute_hashes(&mut insts);
+
+        // Insert missing proving argument data
+        for inst in insts.iter_mut() {
+            if inst.opcode == Opcode::CallIndirect {
+                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let ty = &module_types[usize::try_from(ty).unwrap()];
+                inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
+            }
+        }
+
+        let code_merkle = Merkle::new(
+            MerkleType::Instruction,
+            insts.iter().map(|i| i.hash()).collect(),
+        );
         Function {
             code: insts,
-            code_hashes,
+            code_merkle,
             local_types: locals_with_params,
         }
+    }
+
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Function:");
+        h.update(self.code_merkle.root());
+        h.finalize().into()
     }
 }
 
@@ -126,28 +128,83 @@ impl StackFrame {
 }
 
 #[derive(Clone, Debug)]
+struct TableElement {
+    func_ty: FunctionType,
+    val: Value,
+}
+
+impl Default for TableElement {
+    fn default() -> Self {
+        TableElement {
+            func_ty: FunctionType::default(),
+            val: Value::RefNull,
+        }
+    }
+}
+
+impl TableElement {
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Table element:");
+        h.update(self.func_ty.hash());
+        h.update(self.val.hash());
+        h.finalize().into()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Table {
+    ty: TableType,
+    elems: Vec<TableElement>,
+    elems_merkle: Merkle,
+}
+
+impl Table {
+    fn serialize_for_proof(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.push(Into::<ValueType>::into(self.ty.ty).serialize());
+        data.extend(&(self.elems.len() as u64).to_be_bytes());
+        data.extend(self.elems_merkle.root());
+        data
+    }
+
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Table:");
+        h.update(&[Into::<ValueType>::into(self.ty.ty).serialize()]);
+        h.update(&(self.elems.len() as u64).to_be_bytes());
+        h.update(self.elems_merkle.root());
+        h.finalize().into()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
-    block_stack: Vec<(usize, Bytes32)>,
+    block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
     globals: Vec<Value>,
     memory: Memory,
+    tables: Vec<Table>,
+    tables_merkle: Merkle,
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
+    types: Vec<FunctionType>,
     pc: (usize, usize),
     halted: bool,
 }
 
-fn hash_stack<I>(stack: I, prefix: &str) -> Bytes32
+fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
-    I: IntoIterator<Item = Bytes32>,
+    I: IntoIterator<Item = D>,
+    D: AsRef<[u8]>,
 {
     let mut hash = Bytes32::default();
-    for item_hash in stack.into_iter() {
+    for item in stack.into_iter() {
         let mut h = Keccak256::new();
         h.update(prefix);
-        h.update(item_hash);
+        h.update(item.as_ref());
         h.update(&hash);
         hash = h.finalize().into();
     }
@@ -158,8 +215,11 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_block_stack(pcs: &[(usize, Bytes32)]) -> Bytes32 {
-    hash_stack(pcs.iter().map(|(_, h)| *h), "Bytes32 stack:")
+fn hash_pc_stack(pcs: &[usize]) -> Bytes32 {
+    hash_stack(
+        pcs.iter().map(|pc| (*pc as u64).to_be_bytes()),
+        "Program counter stack:",
+    )
 }
 
 fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
@@ -182,6 +242,28 @@ where
         data.extend(stack_hasher(&items[..last_idx]));
         data.push(1);
         data.extend(encoder(&items[last_idx]).as_ref());
+    }
+    data
+}
+
+#[must_use]
+fn prove_stack<T, F, D, G>(
+    items: &[T],
+    proving_depth: usize,
+    stack_hasher: F,
+    encoder: G,
+) -> Vec<u8>
+where
+    F: Fn(&[T]) -> Bytes32,
+    D: AsRef<[u8]>,
+    G: Fn(&T) -> D,
+{
+    let mut data = Vec::with_capacity(33);
+    let unproven_stack_depth = items.len().saturating_sub(proving_depth);
+    data.extend(stack_hasher(&items[..unproven_stack_depth]));
+    data.extend(Bytes32::from(items.len() - unproven_stack_depth));
+    for val in &items[unproven_stack_depth..] {
+        data.extend(encoder(val).as_ref());
     }
     data
 }
@@ -258,6 +340,7 @@ impl Machine {
         let mut start = None;
         let mut memory = Memory::default();
         let mut main = None;
+        let mut tables = Vec::new();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -273,7 +356,7 @@ impl Machine {
                     code = sect_code
                         .into_iter()
                         .enumerate()
-                        .map(|(idx, c)| Function::new(c, &func_types[idx]))
+                        .map(|(idx, c)| Function::new(c, &func_types[idx], &types))
                         .collect();
                 }
                 WasmSection::Start(s) => {
@@ -327,8 +410,10 @@ impl Machine {
                                     offset = Some(x);
                                 }
                             }
-                            let offset =
-                                offset.expect("Non-constant data offset expression") as usize;
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
                             if !matches!(
                                 offset.checked_add(data.data.len()),
                                 Some(x) if (x as u64) < memory.size(),
@@ -343,8 +428,64 @@ impl Machine {
                         }
                     }
                 }
-                // TODO: tables
-                WasmSection::Tables(_) | WasmSection::Elements(_) => {}
+                WasmSection::Tables(t) => {
+                    assert!(tables.is_empty(), "Duplicate tables section");
+                    for table in t {
+                        tables.push(Table {
+                            elems: vec![
+                                TableElement::default();
+                                usize::try_from(table.limits.minimum_size).unwrap()
+                            ],
+                            ty: table,
+                            elems_merkle: Merkle::default(),
+                        });
+                    }
+                }
+                WasmSection::Elements(elems) => {
+                    for elem in elems {
+                        if let ElementMode::Active(t, o) = elem.mode {
+                            let mut offset = None;
+                            if let [insn] = o.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
+                            let t = usize::try_from(t).unwrap();
+                            assert_eq!(tables[t].ty.ty, elem.ty);
+                            let contents: Vec<_> = elem
+                                .init
+                                .into_iter()
+                                .map(|i| {
+                                    let insn = match i.as_slice() {
+                                        [x] => x,
+                                        _ => panic!(
+                                            "Element initializer isn't one instruction: {:?}",
+                                            o
+                                        ),
+                                    };
+                                    match insn.get_const_output() {
+                                        Some(v @ Value::RefNull) => TableElement {
+                                            func_ty: FunctionType::default(),
+                                            val: v,
+                                        },
+                                        Some(Value::FuncRef(x)) => TableElement {
+                                            func_ty: func_types[usize::try_from(x).unwrap()]
+                                                .clone(),
+                                            val: Value::FuncRef(x),
+                                        },
+                                        _ => panic!("Invalid element initializer {:?}", insn),
+                                    }
+                                })
+                                .collect();
+                            let len = contents.len();
+                            tables[t].elems[offset..][..len].clone_from_slice(&contents);
+                        }
+                    }
+                }
                 WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
             }
         }
@@ -380,7 +521,14 @@ impl Machine {
                 expr: entrypoint,
             },
             &FunctionType::default(),
+            &types,
         ));
+        for table in tables.iter_mut() {
+            table.elems_merkle = Merkle::new(
+                MerkleType::TableElement,
+                table.elems.iter().map(|e| e.hash()).collect(),
+            );
+        }
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -388,37 +536,17 @@ impl Machine {
             frame_stack: Vec::new(),
             memory,
             globals,
+            tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
+            tables,
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
-                code.iter().map(|f| f.code_hashes[0]).collect(),
+                code.iter().map(|f| f.hash()).collect(),
             ),
             funcs: code,
+            types,
             pc: (entrypoint_idx, 0),
             halted: false,
         })
-    }
-
-    pub fn hash(&self) -> Bytes32 {
-        if self.halted {
-            return Bytes32::default();
-        }
-        let mut h = Keccak256::new();
-        h.update(b"Machine:");
-        h.update(&hash_value_stack(&self.value_stack));
-        h.update(&hash_value_stack(&self.internal_stack));
-        h.update(&hash_block_stack(&self.block_stack));
-        h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(&self.funcs[self.pc.0].code_hashes[self.pc.1]);
-        h.update(
-            Merkle::new(
-                MerkleType::Value,
-                self.globals.iter().map(|v| v.hash()).collect(),
-            )
-            .root(),
-        );
-        h.update(self.memory.hash());
-        h.update(self.funcs_merkle.root());
-        h.finalize().into()
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -444,7 +572,7 @@ impl Machine {
             Opcode::Nop => {}
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
-                self.block_stack.push((idx, func.code_hashes[idx]));
+                self.block_stack.push(idx);
             }
             Opcode::EndBlock => {
                 self.block_stack.pop();
@@ -474,12 +602,12 @@ impl Machine {
                 }
             }
             Opcode::Branch => {
-                self.pc.1 = self.block_stack.pop().unwrap().0;
+                self.pc.1 = self.block_stack.pop().unwrap();
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    self.pc.1 = self.block_stack.pop().unwrap().0;
+                    self.pc.1 = self.block_stack.pop().unwrap();
                 }
             }
             Opcode::Return => {
@@ -488,14 +616,42 @@ impl Machine {
                     Value::RefNull => {
                         self.halted = true;
                     }
-                    Value::InternalRef(pc, _) => self.pc = pc,
+                    Value::InternalRef(pc) => self.pc = pc,
                     v => panic!("Attempted to return into an invalid reference: {:?}", v),
                 }
             }
             Opcode::Call => {
-                self.value_stack
-                    .push(Value::InternalRef(self.pc, func.code_hashes[self.pc.1]));
+                self.value_stack.push(Value::InternalRef(self.pc));
                 self.pc = (inst.argument_data as usize, 0);
+            }
+            Opcode::CallIndirect => {
+                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let idx = match self.value_stack.pop() {
+                    Some(Value::I32(i)) => usize::try_from(i).unwrap(),
+                    x => panic!(
+                        "WASM validation failed: top of stack before call_indirect is {:?}",
+                        x,
+                    ),
+                };
+                let ty = &self.types[usize::try_from(ty).unwrap()];
+                let elems = &self.tables[usize::try_from(table).unwrap()].elems;
+                if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
+                    match elem.val {
+                        Value::FuncRef(func) => {
+                            self.value_stack.push(Value::InternalRef(self.pc));
+                            self.pc = (func as usize, 0);
+                        }
+                        Value::ExternRef(_) => {
+                            panic!("Extern functions aren't supported yet");
+                        }
+                        Value::RefNull => {
+                            self.halted = true;
+                        }
+                        v => panic!("Invalid table element value {:?}", v),
+                    }
+                } else {
+                    self.halted = true;
+                }
             }
             Opcode::LocalGet => {
                 let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
@@ -713,35 +869,54 @@ impl Machine {
         self.halted
     }
 
+    pub fn hash(&self) -> Bytes32 {
+        if self.halted {
+            return Bytes32::default();
+        }
+        let mut h = Keccak256::new();
+        h.update(b"Machine:");
+        h.update(&hash_value_stack(&self.value_stack));
+        h.update(&hash_value_stack(&self.internal_stack));
+        h.update(&hash_pc_stack(&self.block_stack));
+        h.update(hash_stack_frame_stack(&self.frame_stack));
+        h.update(&(self.pc.0 as u64).to_be_bytes());
+        h.update(&(self.pc.1 as u64).to_be_bytes());
+        h.update(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
+        h.update(self.memory.hash());
+        h.update(self.tables_merkle.root());
+        h.update(self.funcs_merkle.root());
+        h.finalize().into()
+    }
+
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = Vec::new();
-        let unproven_stack_depth = self.value_stack.len().saturating_sub(STACK_PROVING_DEPTH);
-        data.extend(hash_value_stack(&self.value_stack[..unproven_stack_depth]));
-        data.extend(Bytes32::from(self.value_stack.len() - unproven_stack_depth));
-        for val in &self.value_stack[unproven_stack_depth..] {
-            data.extend(val.serialize_for_proof());
-        }
 
-        let unproven_internal_stack_depth = self.internal_stack.len().saturating_sub(1);
-        data.extend(hash_value_stack(
-            &self.internal_stack[..unproven_internal_stack_depth],
+        data.extend(prove_stack(
+            &self.value_stack,
+            STACK_PROVING_DEPTH,
+            hash_value_stack,
+            |v| v.serialize_for_proof(),
         ));
-        data.extend(Bytes32::from(
-            self.internal_stack.len() - unproven_internal_stack_depth,
-        ));
-        for val in &self.internal_stack[unproven_internal_stack_depth..] {
-            data.extend(val.serialize_for_proof());
-        }
 
-        let func = &self.funcs[self.pc.0];
-        data.extend(prove_window(
-            &self.block_stack,
-            |s| hash_block_stack(s),
-            |(_, h)| *h,
+        data.extend(prove_stack(
+            &self.internal_stack,
+            1,
+            hash_value_stack,
+            |v| v.serialize_for_proof(),
         ));
+
+        data.extend(prove_stack(&self.block_stack, 1, hash_pc_stack, |pc| {
+            (*pc as u64).to_be_bytes()
+        }));
 
         data.extend(prove_window(
             &self.frame_stack,
@@ -749,8 +924,8 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        data.extend(func.code_hashes[self.pc.1 + 1]);
-        data.extend(func.code[self.pc.1].serialize_for_proof());
+        data.extend(&(self.pc.0 as u64).to_be_bytes());
+        data.extend(&(self.pc.1 as u64).to_be_bytes());
 
         data.extend(
             Merkle::new(
@@ -764,7 +939,23 @@ impl Machine {
         data.extend((self.memory.size() as u64).to_be_bytes());
         data.extend(mem_merkle.root());
 
+        data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
+
+        // End machine serialization, begin proof serialization
+
+        let func = &self.funcs[self.pc.0];
+        data.extend(func.code[self.pc.1].serialize_for_proof());
+        data.extend(
+            func.code_merkle
+                .prove(self.pc.1)
+                .expect("Failed to prove against code merkle"),
+        );
+        data.extend(
+            self.funcs_merkle
+                .prove(self.pc.0)
+                .expect("Failed to prove against function merkle"),
+        );
 
         if let Some(next_inst) = func.code.get(self.pc.1) {
             if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
@@ -789,15 +980,6 @@ impl Machine {
                     locals_merkle
                         .prove(idx)
                         .expect("Out of bounds global access"),
-                );
-            } else if next_inst.opcode == Opcode::Call {
-                let idx = next_inst.argument_data as usize;
-                data.extend(self.funcs[idx].code_hashes[1]);
-                data.extend(self.funcs[idx].code[0].serialize_for_proof());
-                data.extend(
-                    self.funcs_merkle
-                        .prove(idx)
-                        .expect("Out of bounds function access"),
                 );
             } else if matches!(
                 next_inst.opcode,
@@ -838,6 +1020,37 @@ impl Machine {
                         mem_merkle.into_owned()
                     };
                     data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                }
+            } else if next_inst.opcode == Opcode::CallIndirect {
+                let (table, ty) = crate::lir::unpack_call_indirect(next_inst.argument_data);
+                let idx = match self.value_stack.last() {
+                    Some(Value::I32(i)) => *i,
+                    x => panic!(
+                        "WASM validation failed: top of stack before call_indirect is {:?}",
+                        x,
+                    ),
+                };
+                let ty = &self.types[usize::try_from(ty).unwrap()];
+                data.extend(&(table as u64).to_be_bytes());
+                data.extend(ty.hash());
+                let table_usize = usize::try_from(table).unwrap();
+                let table = &self.tables[table_usize];
+                data.extend(table.serialize_for_proof());
+                data.extend(
+                    self.tables_merkle
+                        .prove(table_usize)
+                        .expect("Failed to prove tables merkle"),
+                );
+                let idx_usize = usize::try_from(idx).unwrap();
+                if let Some(elem) = table.elems.get(idx_usize) {
+                    data.extend(elem.func_ty.hash());
+                    data.extend(elem.val.serialize_for_proof());
+                    data.extend(
+                        table
+                            .elems_merkle
+                            .prove(idx_usize)
+                            .expect("Failed to prove elements merkle"),
+                    );
                 }
             }
         }

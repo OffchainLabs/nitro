@@ -3,13 +3,14 @@ use sha3::Keccak256;
 
 use crate::utils::Bytes32;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum IntegerValType {
     I32,
     I64,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[repr(u8)]
 pub enum ValueType {
     I32,
     I64,
@@ -37,9 +38,16 @@ pub enum Value {
     RefNull,
     FuncRef(u32),
     #[allow(dead_code)]
-    RefExtern(u32),
-    InternalRef((usize, usize), Bytes32),
+    ExternRef(u32),
+    InternalRef((usize, usize)),
     StackBoundary,
+}
+
+fn serialize_pc(pc: (usize, usize)) -> Bytes32 {
+    let mut b = [0u8; 32];
+    b[24..].copy_from_slice(&(pc.0 as u64).to_be_bytes());
+    b[16..24].copy_from_slice(&(pc.1 as u64).to_be_bytes());
+    Bytes32(b)
 }
 
 impl Value {
@@ -65,8 +73,8 @@ impl Value {
             Value::F64(_) => ValueType::F64,
             Value::RefNull => ValueType::RefNull,
             Value::FuncRef(_) => ValueType::FuncRef,
-            Value::RefExtern(_) => ValueType::ExternRef,
-            Value::InternalRef(_, _) => ValueType::InternalRef,
+            Value::ExternRef(_) => ValueType::ExternRef,
+            Value::InternalRef(_) => ValueType::InternalRef,
             Value::StackBoundary => ValueType::StackBoundary,
         }
     }
@@ -80,8 +88,8 @@ impl Value {
             Value::F64(x) => x.to_bits().into(),
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
-            Value::RefExtern(x) => x.into(),
-            Value::InternalRef(_, x) => x,
+            Value::ExternRef(x) => x.into(),
+            Value::InternalRef(pc) => serialize_pc(pc),
             Value::StackBoundary => Bytes32::default(),
         }
     }
@@ -145,3 +153,25 @@ impl PartialEq for Value {
 }
 
 impl Eq for Value {}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FunctionType {
+    pub inputs: Vec<ValueType>,
+    pub outputs: Vec<ValueType>,
+}
+
+impl FunctionType {
+    pub fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update(b"Function type:");
+        h.update(Bytes32::from(self.inputs.len()));
+        for input in &self.inputs {
+            h.update(&[*input as u8]);
+        }
+        h.update(Bytes32::from(self.outputs.len()));
+        for output in &self.outputs {
+            h.update(&[*output as u8]);
+        }
+        h.finalize().into()
+    }
+}

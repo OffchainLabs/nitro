@@ -18,7 +18,7 @@ library MachineMemories {
 		offset = startOffset;
 		(contents, offset) = Deserialize.b32(proof, offset);
 		(merkle, offset) = Deserialize.merkleProof(proof, offset);
-		bytes32 recomputedRoot = MerkleProofs.computeRootForMemory(merkle, leafIdx, contents);
+		bytes32 recomputedRoot = MerkleProofs.computeRootFromMemory(merkle, leafIdx, contents);
 		require(recomputedRoot == mem.merkleRoot, "WRONG_MEM_ROOT");
 	}
 }

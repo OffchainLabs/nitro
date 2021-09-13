@@ -7,7 +7,7 @@ use digest::Digest;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IRelOpType {
     Eq,
     Ne,
@@ -32,7 +32,7 @@ fn irelop_type(t: IRelOpType, signed: bool) -> u16 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum IUnOpType {
     Clz = 0,
@@ -40,7 +40,7 @@ pub enum IUnOpType {
     Popcnt,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum IBinOpType {
     Add = 0,
@@ -60,7 +60,7 @@ pub enum IBinOpType {
     Rotr,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Opcode {
     Unreachable,
     Nop,
@@ -71,6 +71,7 @@ pub enum Opcode {
 
     Return,
     Call,
+    CallIndirect,
 
     Drop,
     Select,
@@ -145,6 +146,7 @@ impl Opcode {
             Opcode::BranchIf => 0x0D,
             Opcode::Return => 0x0F,
             Opcode::Call => 0x10,
+            Opcode::CallIndirect => 0x11,
             Opcode::Drop => 0x1A,
             Opcode::Select => 0x1B,
             Opcode::LocalGet => 0x20,
@@ -224,11 +226,34 @@ impl Opcode {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct FunctionCodegenState {
+    return_values: usize,
+    block_depth: usize,
+}
+
+impl FunctionCodegenState {
+    pub fn new(return_values: usize) -> Self {
+        FunctionCodegenState {
+            return_values,
+            block_depth: 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Instruction {
     pub opcode: Opcode,
     pub argument_data: u64,
     pub proving_argument_data: Option<Bytes32>,
+}
+
+fn pack_call_indirect(table: u32, ty: u32) -> u64 {
+    u64::from(table) | (u64::from(ty) << 32)
+}
+
+pub fn unpack_call_indirect(data: u64) -> (u32, u32) {
+    (data as u32, (data >> 32) as u32)
 }
 
 impl Instruction {
@@ -245,8 +270,8 @@ impl Instruction {
             data
         } else {
             assert!(
-                self.opcode != Opcode::Block,
-                "Block missing proving argument data",
+                self.opcode != Opcode::InitFrame,
+                "InitFrame missing proving argument data",
             );
             let mut b = [0u8; 32];
             b[24..].copy_from_slice(&self.argument_data.to_be_bytes());
@@ -269,13 +294,18 @@ impl Instruction {
         h.finalize().into()
     }
 
-    pub fn extend_from_hir(ops: &mut Vec<Instruction>, return_values: usize, inst: HirInstruction) {
+    pub fn extend_from_hir(
+        ops: &mut Vec<Instruction>,
+        mut state: FunctionCodegenState,
+        inst: HirInstruction,
+    ) {
         match inst {
             HirInstruction::Block(_, insts) => {
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
+                state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -286,8 +316,9 @@ impl Instruction {
                     argument_data: ops.len() as u64,
                     proving_argument_data: None,
                 });
+                state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
             }
@@ -301,18 +332,19 @@ impl Instruction {
 
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
+                state.block_depth += 1;
                 ops.push(Instruction::simple(Opcode::I32Eqz));
                 let jump_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
 
                 for inst in if_insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::Branch));
 
                 ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -352,17 +384,13 @@ impl Instruction {
                 equiv.push(HirInstruction::Simple(Opcode::Drop));
                 equiv.push(HirInstruction::BranchIf(default));
                 for inst in equiv {
-                    Self::extend_from_hir(ops, return_values, inst);
+                    Self::extend_from_hir(ops, state, inst);
                 }
             }
             HirInstruction::LocalTee(x) => {
                 // Translate into a dup then local.set
-                Self::extend_from_hir(ops, return_values, HirInstruction::Simple(Opcode::Dup));
-                Self::extend_from_hir(
-                    ops,
-                    return_values,
-                    HirInstruction::WithIdx(Opcode::LocalSet, x),
-                );
+                Self::extend_from_hir(ops, state, HirInstruction::Simple(Opcode::Dup));
+                Self::extend_from_hir(ops, state, HirInstruction::WithIdx(Opcode::LocalSet, x));
             }
             HirInstruction::WithIdx(op, x) => {
                 assert!(
@@ -379,6 +407,13 @@ impl Instruction {
                 ops.push(Instruction {
                     opcode: op,
                     argument_data: x.into(),
+                    proving_argument_data: None,
+                });
+            }
+            HirInstruction::CallIndirect(table, ty) => {
+                ops.push(Instruction {
+                    opcode: Opcode::CallIndirect,
+                    argument_data: pack_call_indirect(table, ty),
                     proving_argument_data: None,
                 });
             }
@@ -416,12 +451,12 @@ impl Instruction {
                 // Hold the return values on the internal stack while we drop extraneous stack values
                 ops.extend(
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromStackToInternal))
-                        .take(return_values),
+                        .take(state.return_values),
                 );
                 // Keep dropping values until we drop the stack boundary, then exit the loop
                 Self::extend_from_hir(
                     ops,
-                    return_values,
+                    state,
                     HirInstruction::Loop(
                         BlockType::Empty,
                         vec![
@@ -431,10 +466,13 @@ impl Instruction {
                         ],
                     ),
                 );
+                for _ in 0..state.block_depth {
+                    ops.push(Instruction::simple(Opcode::EndBlock));
+                }
                 // Move the return values back from the internal stack to the value stack
                 ops.extend(
                     std::iter::repeat(Instruction::simple(Opcode::MoveFromInternalToStack))
-                        .take(return_values),
+                        .take(state.return_values),
                 );
                 ops.push(Instruction::simple(Opcode::Return));
             }

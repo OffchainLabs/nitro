@@ -6,11 +6,6 @@ struct Instruction {
 	uint256 argumentData;
 }
 
-struct InstructionWindow {
-	Instruction[] proved;
-	bytes32 remainingHash;
-}
-
 library Instructions {
 	uint16 constant UNREACHABLE = 0x00;
 	uint16 constant NOP = 0x01;
@@ -19,6 +14,7 @@ library Instructions {
 	uint16 constant BRANCH_IF = 0x0D;
 	uint16 constant RETURN = 0x0F;
 	uint16 constant CALL = 0x10;
+	uint16 constant CALL_INDIRECT = 0x11;
 	uint16 constant LOCAL_GET = 0x20;
 	uint16 constant LOCAL_SET = 0x21;
 	uint16 constant GLOBAL_GET = 0x23;
@@ -128,24 +124,6 @@ library Instructions {
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
-	}
-
-	function hash(InstructionWindow memory window) internal pure returns (bytes32 h) {
-		h = window.remainingHash;
-		for (uint256 i = 0; i < window.proved.length; i++) {
-			h = keccak256(abi.encodePacked("Instruction stack:", hash(window.proved[i]), h));
-		}
-	}
-
-	function peek(InstructionWindow memory window) internal pure returns (Instruction memory) {
-		require(window.proved.length == 1, "BAD_WINDOW_LENGTH");
-		return window.proved[0];
-	}
-
-	function pop(InstructionWindow memory window) internal pure returns (Instruction memory inst) {
-		require(window.proved.length == 1, "BAD_WINDOW_LENGTH");
-		inst = window.proved[0];
-		window.proved = new Instruction[](0);
 	}
 
 	function newNop() internal pure returns (Instruction memory) {

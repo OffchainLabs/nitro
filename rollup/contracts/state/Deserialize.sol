@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "./Values.sol";
 import "./ValueStacks.sol";
-import "./Bytes32Stacks.sol";
+import "./PcStacks.sol";
 import "./Machines.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
@@ -80,21 +80,18 @@ library Deserialize {
 		});
 	}
 
-	function bytes32Window(bytes calldata proof, uint256 startOffset) internal pure returns (Bytes32Stack memory stack, uint256 offset) {
+	function pcStack(bytes calldata proof, uint256 startOffset) internal pure returns (PcStack memory stack, uint256 offset) {
 		offset = startOffset;
 		bytes32 remainingHash;
 		(remainingHash, offset) = b32(proof, offset);
-		bytes32[] memory proved;
-		if (proof[offset] != 0) {
-			offset++;
-			proved = new bytes32[](1);
-			(proved[0], offset) = b32(proof, offset);
-		} else {
-			offset++;
-			proved = new bytes32[](0);
+		uint256 provedLength;
+		(provedLength, offset) = u256(proof, offset);
+		uint64[] memory proved = new uint64[](provedLength);
+		for (uint256 i = 0; i < proved.length; i++) {
+			(proved[i], offset) = u64(proof, offset);
 		}
-		stack = Bytes32Stack({
-			proved: Bytes32Array(proved),
+		stack = PcStack({
+			proved: PcArray(proved),
 			remainingHash: remainingHash
 		});
 	}
@@ -108,18 +105,6 @@ library Deserialize {
 		inst = Instruction({
 			opcode: opcode,
 			argumentData: data
-		});
-	}
-
-	function instructionWindow(bytes calldata proof, uint256 startOffset) internal pure returns (InstructionWindow memory window, uint256 offset) {
-		offset = startOffset;
-		bytes32 remainingHash;
-		Instruction[] memory proved = new Instruction[](1);
-		(remainingHash, offset) = b32(proof, offset);
-		(proved[0], offset) = instruction(proof, offset);
-		window = InstructionWindow({
-			proved: proved,
-			remainingHash: remainingHash
 		});
 	}
 
@@ -170,28 +155,34 @@ library Deserialize {
 		offset = startOffset;
 		ValueStack memory values;
 		ValueStack memory internalStack;
-		Bytes32Stack memory blocks;
-		InstructionWindow memory instructions;
+		PcStack memory blocks;
+		uint64 functionIdx;
+		uint64 functionPc;
 		StackFrameWindow memory frameStack;
 		bytes32 globalsMerkleRoot;
 		MachineMemory memory mem;
+		bytes32 tablesMerkleRoot;
 		bytes32 functionsMerkleRoot;
 		(values, offset) = valueStack(proof, offset);
 		(internalStack, offset) = valueStack(proof, offset);
-		(blocks, offset) = bytes32Window(proof, offset);
+		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
-		(instructions, offset) = instructionWindow(proof, offset);
+		(functionIdx, offset) = u64(proof, offset);
+		(functionPc, offset) = u64(proof, offset);
 		(globalsMerkleRoot, offset) = b32(proof, offset);
 		(mem, offset) = machineMemory(proof, offset);
+		(tablesMerkleRoot, offset) = b32(proof, offset);
 		(functionsMerkleRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
 			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
-			instructions: instructions,
+			functionIdx: functionIdx,
+			functionPc: functionPc,
 			globalsMerkleRoot: globalsMerkleRoot,
 			machineMemory: mem,
+			tablesMerkleRoot: tablesMerkleRoot,
 			functionsMerkleRoot: functionsMerkleRoot,
 			halted: false
 		});

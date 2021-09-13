@@ -36,7 +36,7 @@ contract OneStepProverMemory is IOneStepProver {
 
     function executeMemoryLoad(
         Machine memory mach,
-        Instruction memory inst,
+        Instruction calldata inst,
         bytes calldata proof
     ) internal pure {
         ValueType ty;
@@ -153,7 +153,7 @@ contract OneStepProverMemory is IOneStepProver {
 
     function executeMemoryStore(
         Machine memory mach,
-        Instruction memory inst,
+        Instruction calldata inst,
         bytes calldata proof
     ) internal pure {
         uint64 writeBytes;
@@ -218,7 +218,7 @@ contract OneStepProverMemory is IOneStepProver {
                 if (lastProvedLeafIdx != ~uint256(0)) {
                     // Apply the last leaf update
                     mach.machineMemory.merkleRoot = MerkleProofs
-                        .computeRootForMemory(
+                        .computeRootFromMemory(
                             lastProvedMerkle,
                             lastProvedLeafIdx,
                             lastProvedLeafContents
@@ -244,14 +244,14 @@ contract OneStepProverMemory is IOneStepProver {
             );
             toWrite >>= 8;
         }
-        mach.machineMemory.merkleRoot = MerkleProofs.computeRootForMemory(
+        mach.machineMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
             lastProvedMerkle,
             lastProvedLeafIdx,
             lastProvedLeafContents
         );
     }
 
-    function executeOneStep(Machine calldata startMach, bytes calldata proof)
+    function executeOneStep(Machine calldata startMach, Instruction calldata inst, bytes calldata proof)
         external
         view
         override
@@ -259,10 +259,9 @@ contract OneStepProverMemory is IOneStepProver {
     {
         mach = startMach;
 
-        Instruction memory inst = Instructions.pop(mach.instructions);
         uint16 opcode = inst.opcode;
 
-        function(Machine memory, Instruction memory, bytes calldata)
+        function(Machine memory, Instruction calldata, bytes calldata)
             internal
             view impl;
         if (

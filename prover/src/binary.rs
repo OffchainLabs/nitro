@@ -1,6 +1,6 @@
 use crate::{
     lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
-    value::{IntegerValType, Value as LirValue, ValueType},
+    value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
 };
 use nom::{
     branch::alt,
@@ -48,6 +48,7 @@ pub enum HirInstruction {
     F32Const(f32),
     F64Const(f64),
     FuncRefConst(u32),
+    CallIndirect(u32, u32),
 }
 
 impl HirInstruction {
@@ -61,12 +62,6 @@ impl HirInstruction {
             _ => None,
         }
     }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FunctionType {
-    pub inputs: Vec<ValueType>,
-    pub outputs: Vec<ValueType>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,7 +109,7 @@ pub struct Data {
     pub active_location: Option<DataMemoryLocation>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefType {
     FuncRef,
     ExternRef,
@@ -129,8 +124,8 @@ impl Into<ValueType> for RefType {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Table {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TableType {
     pub ty: RefType,
     pub limits: Limits,
 }
@@ -156,7 +151,7 @@ pub enum WasmSection {
     /// A function type, denoted as (parameters, return values)
     Types(Vec<FunctionType>),
     Functions(Vec<u32>),
-    Tables(Vec<Table>),
+    Tables(Vec<TableType>),
     Memories(Vec<Limits>),
     Globals(Vec<Global>),
     Exports(Vec<Export>),
@@ -406,7 +401,15 @@ fn branch_instruction(input: &[u8]) -> IResult<HirInstruction> {
 }
 
 fn call_instruction(input: &[u8]) -> IResult<HirInstruction> {
-    preceded(tag(&[0x10]), map(leb128_u32, inst_with_idx(Opcode::Call)))(input)
+    alt((
+        preceded(tag(&[0x10]), map(leb128_u32, inst_with_idx(Opcode::Call))),
+        preceded(
+            tag(&[0x11]),
+            map(tuple((leb128_u32, leb128_u32)), |(y, x)| {
+                HirInstruction::CallIndirect(x, y)
+            }),
+        ),
+    ))(input)
 }
 
 fn variables_instruction(input: &[u8]) -> IResult<HirInstruction> {
@@ -698,8 +701,8 @@ fn functions_section(input: &[u8]) -> IResult<Vec<u32>> {
     wasm_vec(leb128_u32)(input)
 }
 
-fn tables_section(input: &[u8]) -> IResult<Vec<Table>> {
-    wasm_vec(map(tuple((ref_type, limits)), |(t, l)| Table {
+fn tables_section(input: &[u8]) -> IResult<Vec<TableType>> {
+    wasm_vec(map(tuple((ref_type, limits)), |(t, l)| TableType {
         ty: t,
         limits: l,
     }))(input)
