@@ -52,7 +52,9 @@ contract OneStepProofEntry {
             (opcode >= Instructions.I32_LOAD &&
                 opcode <= Instructions.I64_LOAD32_U) ||
             (opcode >= Instructions.I32_STORE &&
-                opcode <= Instructions.I64_STORE32)
+                opcode <= Instructions.I64_STORE32) ||
+            opcode == Instructions.MEMORY_SIZE ||
+            opcode == Instructions.MEMORY_GROW
         ) {
             mach = proverMem.executeOneStep(mach, inst, proof[offset:]);
         } else {
