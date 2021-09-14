@@ -209,6 +209,15 @@ impl Memory {
     pub fn cache_merkle_tree(&mut self) {
         self.merkle = Some(self.merkelize().into_owned());
     }
+
+    pub fn resize(&mut self, new_size: usize) {
+        let had_merkle_tree = self.merkle.is_some();
+        self.merkle = None;
+        self.buffer.resize(new_size, 0);
+        if had_merkle_tree {
+            self.cache_merkle_tree();
+        }
+    }
 }
 
 #[cfg(test)]

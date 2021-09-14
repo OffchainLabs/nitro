@@ -416,7 +416,7 @@ impl Machine {
                             .unwrap();
                             if !matches!(
                                 offset.checked_add(data.data.len()),
-                                Some(x) if (x as u64) < memory.size(),
+                                Some(x) if (x as u64) < memory.size() as u64,
                             ) {
                                 panic!(
                                     "Out-of-bounds data memory init with offset {} and size {}",
@@ -781,6 +781,32 @@ impl Machine {
                     self.value_stack.push(val1);
                 }
             }
+            Opcode::MemorySize => {
+                let pages = u32::try_from(self.memory.size() / Memory::PAGE_SIZE as u64)
+                    .expect("Memory pages grew past a u32");
+                self.value_stack.push(Value::I32(pages));
+            }
+            Opcode::MemoryGrow => {
+                let old_size = self.memory.size();
+                let adding_pages = match self.value_stack.pop() {
+                    Some(Value::I32(x)) => x,
+                    v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
+                };
+                let new_size = (|| {
+                    let old_size = u32::try_from(old_size).ok()?;
+                    let adding_size = adding_pages.checked_mul(Memory::PAGE_SIZE as u32)?;
+                    Some(old_size.checked_add(adding_size)?)
+                })();
+                if let Some(new_size) = new_size {
+                    self.memory.resize(usize::try_from(new_size).unwrap());
+                    // Push the old number of pages
+                    let old_pages = u32::try_from(old_size / Memory::PAGE_SIZE as u64).unwrap();
+                    self.value_stack.push(Value::I32(old_pages));
+                } else {
+                    // Push -1
+                    self.value_stack.push(Value::I32(u32::MAX));
+                }
+            }
             Opcode::IUnOp(w, op) => {
                 let va = self.value_stack.pop();
                 match w {
@@ -936,7 +962,7 @@ impl Machine {
         );
 
         let mem_merkle = self.memory.merkelize();
-        data.extend((self.memory.size() as u64).to_be_bytes());
+        data.extend(self.memory.size().to_be_bytes());
         data.extend(mem_merkle.root());
 
         data.extend(self.tables_merkle.root());
