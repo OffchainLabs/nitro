@@ -16,7 +16,7 @@ use digest::Digest;
 use eyre::Result;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
-use std::{collections::HashMap, convert::TryFrom, num::Wrapping};
+use std::{convert::TryFrom, num::Wrapping};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -200,7 +200,7 @@ pub struct Machine {
     pc: (usize, usize),
     halted: bool,
     names: NameCustomSection,
-    host_call_hooks: HashMap<(usize, usize), (String, String)>,
+    host_call_hooks: Vec<Option<(String, String)>>,
     stdio_output: Vec<u8>,
 }
 
@@ -351,7 +351,7 @@ impl Machine {
         let mut main = None;
         let mut tables = Vec::new();
         let mut names = NameCustomSection::default();
-        let mut host_call_hooks = HashMap::new();
+        let mut host_call_hooks = Vec::new();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -366,9 +366,9 @@ impl Machine {
                                 func.ty, types[ty as usize],
                                 "Import has different function signature than host function",
                             );
-                            host_call_hooks.insert((code.len(), 1), (import.module, import.name));
                             func_types.push(func.ty.clone());
                             code.push(func);
+                            host_call_hooks.push(Some((import.module, import.name)));
                         } else {
                             panic!("Unsupport import kind {:?}", import);
                         }
@@ -381,6 +381,7 @@ impl Machine {
                     for c in sect_code {
                         let idx = code.len();
                         code.push(Function::new(c, func_types[idx].clone(), &types));
+                        host_call_hooks.push(None);
                     }
                 }
                 WasmSection::Start(s) => {
@@ -599,12 +600,14 @@ impl Machine {
             return;
         }
 
-        if let Some(hook) = self.host_call_hooks.get(&self.pc).cloned() {
-            if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
-                eprintln!(
-                    "Failed to process host call hook for host call {:?} {:?}: {}",
-                    hook.0, hook.1, err,
-                );
+        if self.pc.1 == 1 {
+            if let Some(hook) = self.host_call_hooks.get(self.pc.0).cloned().and_then(|x| x) {
+                if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
+                    eprintln!(
+                        "Failed to process host call hook for host call {:?} {:?}: {}",
+                        hook.0, hook.1, err,
+                    );
+                }
             }
         }
 
