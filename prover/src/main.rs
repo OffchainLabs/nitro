@@ -28,6 +28,10 @@ struct Opts {
     output: Option<PathBuf>,
     #[structopt(short = "b", long)]
     proving_backoff: bool,
+    #[structopt(short, long)]
+    lazy_merkleization: bool,
+    #[structopt(short = "i", long, default_value = "1")]
+    proving_interval: usize,
 }
 
 #[derive(Serialize)]
@@ -56,8 +60,8 @@ fn main() -> Result<()> {
 
     let out = opts.output.map(File::create).transpose()?;
 
-    let mut proofs = Vec::new();
-    let mut mach = Machine::from_binary(bin, true)?;
+    let mut proofs: Vec<ProofInfo> = Vec::new();
+    let mut mach = Machine::from_binary(bin, !opts.lazy_merkleization)?;
     println!("Starting machine hash: {}", mach.hash());
 
     let mut seen_states = HashSet::new();
@@ -78,25 +82,30 @@ fn main() -> Result<()> {
                 continue;
             }
         }
-        let before = mach.hash();
-        if !seen_states.insert(before) {
-            break;
-        }
         println!("Machine stack: {:?}", mach.get_data_stack());
-        println!(
+        print!(
             "Generating proof \x1b[36m#{}\x1b[0m of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
             proofs.len(),
             next_opcode,
             next_inst.argument_data,
         );
+        std::io::stdout().flush().unwrap();
+        let before = mach.hash();
+        if !seen_states.insert(before) {
+            break;
+        }
         let proof = mach.serialize_proof();
         mach.step();
         let after = mach.hash();
+        println!(" - done");
         proofs.push(ProofInfo {
             before: before.to_string(),
             proof: hex::encode(proof),
             after: after.to_string(),
         });
+        for _ in 1..opts.proving_interval {
+            mach.step();
+        }
     }
 
     println!("End machine hash: {}", mach.hash());
