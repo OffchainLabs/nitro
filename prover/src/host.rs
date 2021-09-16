@@ -84,7 +84,7 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
                                 IBinOpType::Mul,
                             )),
                             // Lookup the corresponding data segment's length
-                            HirInstruction::WithIdx(Opcode::LocalGet, 2),
+                            HirInstruction::WithIdx(Opcode::LocalGet, 1),
                             HirInstruction::Simple(Opcode::IBinOp(
                                 IntegerValType::I32,
                                 IBinOpType::Add,
