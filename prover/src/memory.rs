@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::{
     merkle::{Merkle, MerkleType},
     utils::Bytes32,
@@ -7,6 +5,7 @@ use crate::{
 };
 use digest::Digest;
 use sha3::Keccak256;
+use std::borrow::Cow;
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Memory {
@@ -44,6 +43,9 @@ impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
     pub const PAGE_SIZE: usize = 65536;
+    /// The number of layers in the memory merkle tree
+    /// 1 + log2(2^32 / LEAF_SIZE) = 1 + log2(2^(32 - log2(LEAF_SIZE))) = 1 + 32 - 5
+    const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
     pub fn new(size: usize) -> Memory {
         Memory {
@@ -71,7 +73,12 @@ impl Memory {
             leaf_hashes.push(hash_leaf(leaf));
             remaining_buf = &remaining_buf[taking_len..];
         }
-        Cow::Owned(Merkle::new(MerkleType::Memory, leaf_hashes))
+        Cow::Owned(Merkle::new_advanced(
+            MerkleType::Memory,
+            leaf_hashes,
+            hash_leaf([0u8; 32]),
+            Self::MEMORY_LAYERS,
+        ))
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
@@ -201,6 +208,15 @@ impl Memory {
 
     pub fn cache_merkle_tree(&mut self) {
         self.merkle = Some(self.merkelize().into_owned());
+    }
+
+    pub fn resize(&mut self, new_size: usize) {
+        let had_merkle_tree = self.merkle.is_some();
+        self.merkle = None;
+        self.buffer.resize(new_size, 0);
+        if had_merkle_tree {
+            self.cache_merkle_tree();
+        }
     }
 }
 

@@ -338,6 +338,8 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         value(Opcode::Return, tag(&[0x0F])),
         value(Opcode::Drop, tag(&[0x1A])),
         value(Opcode::Select, tag(&[0x1B])),
+        value(Opcode::MemorySize, tag(&[0x3F, 0x00])),
+        value(Opcode::MemoryGrow, tag(&[0x40, 0x00])),
         value(Opcode::I32Eqz, tag(&[0x45])),
         irelop(IntegerValType::I32, 0x46),
         value(Opcode::I64Eqz, tag(&[0x50])),

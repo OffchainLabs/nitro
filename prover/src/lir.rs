@@ -96,6 +96,9 @@ pub enum Opcode {
         bytes: u8,
     },
 
+    MemorySize,
+    MemoryGrow,
+
     I32Const,
     I64Const,
     F32Const,
@@ -188,6 +191,8 @@ impl Opcode {
                     ty, bytes,
                 ),
             },
+            Opcode::MemorySize => 0x3F,
+            Opcode::MemoryGrow => 0x40,
             Opcode::I32Const => 0x41,
             Opcode::I64Const => 0x42,
             Opcode::F32Const => 0x43,

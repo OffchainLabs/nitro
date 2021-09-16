@@ -45,6 +45,9 @@ library Instructions {
 	uint16 constant I64_STORE16 = 0x3D;
 	uint16 constant I64_STORE32 = 0x3E;
 
+	uint16 constant MEMORY_SIZE = 0x3F;
+	uint16 constant MEMORY_GROW = 0x40;
+
 	uint16 constant DROP = 0x1A;
 	uint16 constant SELECT = 0x1B;
 	uint16 constant I32_CONST = 0x41;

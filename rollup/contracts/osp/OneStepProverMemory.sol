@@ -8,6 +8,7 @@ import "./IOneStepProver.sol";
 
 contract OneStepProverMemory is IOneStepProver {
     uint256 constant LEAF_SIZE = 32;
+    uint64 constant PAGE_SIZE = 65536;
 
     function pullLeafByte(bytes32 leaf, uint256 idx)
         internal
@@ -251,6 +252,25 @@ contract OneStepProverMemory is IOneStepProver {
         );
     }
 
+    function executeMemorySize(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+        uint32 pages = uint32(mach.machineMemory.size / PAGE_SIZE);
+        ValueStacks.push(mach.valueStack, Values.newI32(pages));
+    }
+
+    function executeMemoryGrow(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+        uint32 oldPages = uint32(mach.machineMemory.size / PAGE_SIZE);
+        uint32 growingPages = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+        // Safe as the input integers are too small to overflow a uint256
+        uint256 newSize = (uint256(oldPages) + uint256(growingPages)) * PAGE_SIZE;
+        // Note: we require the size remain *below* 2^32, meaning the actual limit is 2^32-PAGE_SIZE
+        if (newSize < (1 << 32)) {
+            mach.machineMemory.size = uint64(newSize);
+            ValueStacks.push(mach.valueStack, Values.newI32(oldPages));
+        } else {
+            ValueStacks.push(mach.valueStack, Values.newI32(~uint32(0)));
+        }
+    }
+
     function executeOneStep(Machine calldata startMach, Instruction calldata inst, bytes calldata proof)
         external
         view
@@ -274,6 +294,10 @@ contract OneStepProverMemory is IOneStepProver {
             opcode <= Instructions.I64_STORE32
         ) {
             impl = executeMemoryStore;
+        } else if (opcode == Instructions.MEMORY_SIZE) {
+            impl = executeMemorySize;
+        } else if (opcode == Instructions.MEMORY_GROW) {
+            impl = executeMemoryGrow;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
