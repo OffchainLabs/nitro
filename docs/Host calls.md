@@ -4,13 +4,19 @@ Describes the implementation of various functions WASM programs can import which
 
 ## Overview
 
-| Module                 | Name              | Function signature |
-|------------------------|-------------------|--------------------|
-| wasi_snapshot_preview1 | environ_sizes_get | (i32, i32) -> i32
-| wasi_snapshot_preview1 | environ_get       | (i32, i32) -> i32
-| wasi_snapshot_preview1 | proc_exit         | (i32)
-| env                    | exit              | (i32)
-| wasi_snapshot_preview1 | fd_write          | (i32, i32, i32, i32) -> i32
+| Module                 | Name                | Function signature |
+|------------------------|---------------------|--------------------|
+| wasi_snapshot_preview1 | environ_sizes_get   | (i32, i32) -> i32
+| wasi_snapshot_preview1 | environ_get         | (i32, i32) -> i32
+| wasi_snapshot_preview1 | proc_exit           | (i32)
+| env                    | exit                | (i32)
+| wasi_snapshot_preview1 | fd_write            | (i32, i32, i32, i32) -> i32
+| wasi_snapshot_preview1 | fd_close            | (i32) -> i32
+| wasi_snapshot_preview1 | fd_read             | (i32) -> i32
+| wasi_snapshot_preview1 | path_open           | (i32, i32, i32, i32, i32, i64, i64, i32, i32) -> i32
+| wasi_snapshot_preview1 | random_get          | (i32, i32) -> i32
+| wasi_snapshot_preview1 | fd_prestat_get      | (i32, i32) -> i32
+| wasi_snapshot_preview1 | fd_prestat_dir_name | (i32, i32, i32) -> i32
 
 ## Implementations
 
@@ -18,10 +24,28 @@ Describes the implementation of various functions WASM programs can import which
 Sets the values of both argument pointers to 0, indicating no environment variables are present, then returns 0, indicating no error.
 
 ### environ_get
-Pops both arguments, then returns errno 28 "Invalid argument", as no environment variables are present.
+Returns errno 28 "Invalid argument", as no environment variables are present.
 
 ### proc_exit
-Pops its argument, then halts the machine.
+Halts the machine.
 
 ### fd_write
-Pops 4 arguments. As per the WASI spec, totals the size of the input "ciovec"s and writes it to the last pointer, then returns 0.
+As per the WASI spec, totals the size of the input "ciovec"s and writes it to the last pointer, then returns 0.
+
+### fd_close
+Returns errno 8: BADFD
+
+### fd_read
+Returns errno 8: BADFD
+
+### path_open
+Halts the machine
+
+### random_get
+Returns 0, indicating success, but fills in no data (TODO: should probably still fill in something)
+
+### fd_prestat_get
+Returns errno 8: BADFD
+
+### fd_prestat_dir_name
+Returns errno 8: BADFD

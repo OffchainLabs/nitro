@@ -22,6 +22,8 @@ fn write_const(local: u32, val: i32) -> Vec<HirInstruction> {
     ]
 }
 
+const WASI_BAD_FD: i32 = 8;
+
 pub fn get_host_impl(module: &str, name: &str) -> Function {
     let mut insts = Vec::new();
     let mut locals = Vec::new();
@@ -130,14 +132,14 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
                 inputs: vec![ValueType::I32],
                 outputs: vec![ValueType::I32],
             };
-            insts.push(HirInstruction::Simple(Opcode::Unreachable));
+            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
         }
         ("wasi_snapshot_preview1", "fd_read") => {
             ty = FunctionType {
                 inputs: vec![ValueType::I32; 4],
                 outputs: vec![ValueType::I32],
             };
-            insts.push(HirInstruction::Simple(Opcode::Unreachable));
+            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
         }
         ("wasi_snapshot_preview1", "path_open") => {
             ty = FunctionType {
@@ -168,14 +170,14 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
                 inputs: vec![ValueType::I32; 2],
                 outputs: vec![ValueType::I32],
             };
-            insts.push(HirInstruction::I32Const(8));
+            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
         }
         ("wasi_snapshot_preview1", "fd_prestat_dir_name") => {
             ty = FunctionType {
                 inputs: vec![ValueType::I32; 3],
                 outputs: vec![ValueType::I32],
             };
-            insts.push(HirInstruction::I32Const(8));
+            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
         }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
