@@ -115,6 +115,7 @@ pub enum Opcode {
 
     IUnOp(IntegerValType, IUnOpType),
     IBinOp(IntegerValType, IBinOpType),
+
     // Custom opcodes:
     /// Custom opcode not in wasm.
     /// Branch is partially split up into these.
@@ -137,6 +138,8 @@ pub enum Opcode {
     IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
+    /// Handle a call to a "host" function. Semantics vary depending on argument data.
+    HostCallHook,
 }
 
 impl Opcode {
@@ -227,6 +230,7 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
+            Opcode::HostCallHook => 0x8009,
         }
     }
 }
@@ -367,29 +371,38 @@ impl Instruction {
                 ops.push(Instruction::simple(Opcode::BranchIf));
             }
             HirInstruction::BranchTable(options, default) => {
+                let mut option_jumps = Vec::new();
                 // Build an equivalent HirInstruction sequence without BranchTable
-                let mut equiv = Vec::new();
                 for (i, option) in options.iter().enumerate() {
                     let i = match u32::try_from(i) {
                         Ok(x) => x,
                         _ => break,
                     };
                     // Evaluate this branch
-                    equiv.push(HirInstruction::Simple(Opcode::Dup));
-                    equiv.push(HirInstruction::I32Const(i as i32));
-                    equiv.push(HirInstruction::Simple(Opcode::IBinOp(
+                    ops.push(Instruction::simple(Opcode::Dup));
+                    ops.push(Instruction {
+                        opcode: Opcode::I32Const,
+                        argument_data: i.into(),
+                        proving_argument_data: None,
+                    });
+                    ops.push(Instruction::simple(Opcode::IBinOp(
                         IntegerValType::I32,
                         IBinOpType::Sub,
                     )));
                     // Jump if the subtraction resulted in 0, i.e. it matched the index
-                    equiv.push(HirInstruction::Simple(Opcode::I32Eqz));
-                    equiv.push(HirInstruction::BranchIf(*option));
+                    ops.push(Instruction::simple(Opcode::I32Eqz));
+                    option_jumps.push((ops.len(), *option));
+                    ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
                 }
                 // Nothing matched. Drop the index and jump to the default.
-                equiv.push(HirInstruction::Simple(Opcode::Drop));
-                equiv.push(HirInstruction::BranchIf(default));
-                for inst in equiv {
-                    Self::extend_from_hir(ops, state, inst);
+                ops.push(Instruction::simple(Opcode::Drop));
+                Instruction::extend_from_hir(ops, state, HirInstruction::Branch(default));
+                // Make a jump table of branches
+                for (source, branch) in option_jumps {
+                    ops[source].argument_data = ops.len() as u64;
+                    // Drop the index and branch the target depth
+                    ops.push(Instruction::simple(Opcode::Drop));
+                    Instruction::extend_from_hir(ops, state, HirInstruction::Branch(branch));
                 }
             }
             HirInstruction::LocalTee(x) => {
@@ -406,6 +419,8 @@ impl Instruction {
                             | Opcode::GlobalGet
                             | Opcode::GlobalSet
                             | Opcode::Call
+                            | Opcode::FuncRefConst
+                            | Opcode::HostCallHook
                     ),
                     "WithIdx HirInstruction has bad WithIdx opcode",
                 );
@@ -445,11 +460,6 @@ impl Instruction {
             HirInstruction::F64Const(x) => ops.push(Instruction {
                 opcode: Opcode::F64Const,
                 argument_data: x.to_bits(),
-                proving_argument_data: None,
-            }),
-            HirInstruction::FuncRefConst(x) => ops.push(Instruction {
-                opcode: Opcode::FuncRefConst,
-                argument_data: x.into(),
                 proving_argument_data: None,
             }),
             HirInstruction::Simple(Opcode::Return) => {

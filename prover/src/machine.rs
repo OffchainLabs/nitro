@@ -1,5 +1,9 @@
 use crate::{
-    binary::{Code, ElementMode, ExportKind, HirInstruction, TableType, WasmBinary, WasmSection},
+    binary::{
+        Code, ElementMode, ExportKind, HirInstruction, ImportKind, TableType, WasmBinary,
+        WasmSection,
+    },
+    host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -23,14 +27,24 @@ fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
 }
 
 #[derive(Clone, Debug)]
-struct Function {
+pub struct Function {
     code: Vec<Instruction>,
+    ty: FunctionType,
     code_merkle: Merkle,
     local_types: Vec<ValueType>,
 }
 
 impl Function {
-    fn new(code: Code, func_ty: &FunctionType, module_types: &[FunctionType]) -> Function {
+    pub fn new(code: Code, func_ty: FunctionType, module_types: &[FunctionType]) -> Function {
+        Self::new_advanced(code, func_ty, module_types, None)
+    }
+
+    pub fn new_advanced(
+        code: Code,
+        func_ty: FunctionType,
+        module_types: &[FunctionType],
+        host_hook_id: Option<u64>,
+    ) -> Function {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -45,6 +59,13 @@ impl Function {
             argument_data: 0,
             proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
         });
+        if let Some(id) = host_hook_id {
+            insts.push(Instruction {
+                opcode: Opcode::HostCallHook,
+                argument_data: id,
+                proving_argument_data: None,
+            });
+        }
         // Fill in parameters
         for i in (0..func_ty.inputs.len()).rev() {
             insts.push(Instruction {
@@ -79,6 +100,7 @@ impl Function {
         );
         Function {
             code: insts,
+            ty: func_ty,
             code_merkle,
             local_types: locals_with_params,
         }
@@ -336,7 +358,7 @@ impl Machine {
         let mut code = Vec::new();
         let mut globals = Vec::new();
         let mut types = Vec::new();
-        let mut func_types = Vec::new();
+        let mut func_types: Vec<FunctionType> = Vec::new();
         let mut start = None;
         let mut memory = Memory::default();
         let mut main = None;
@@ -347,17 +369,29 @@ impl Machine {
                     assert!(types.is_empty(), "Duplicate types section");
                     types = t;
                 }
+                WasmSection::Imports(imports) => {
+                    for import in imports {
+                        if let ImportKind::Function(ty) = import.kind {
+                            let func = get_host_impl(&import.module, &import.name);
+                            assert_eq!(
+                                func.ty, types[ty as usize],
+                                "Import has different function signature than host function",
+                            );
+                            func_types.push(func.ty.clone());
+                            code.push(func);
+                        } else {
+                            panic!("Unsupport import kind {:?}", import);
+                        }
+                    }
+                }
                 WasmSection::Functions(f) => {
-                    assert!(func_types.is_empty(), "Duplicate types section");
-                    func_types = f.into_iter().map(|x| types[x as usize].clone()).collect();
+                    func_types.extend(f.into_iter().map(|x| types[x as usize].clone()));
                 }
                 WasmSection::Code(sect_code) => {
-                    assert!(code.is_empty(), "Duplicate code section");
-                    code = sect_code
-                        .into_iter()
-                        .enumerate()
-                        .map(|(idx, c)| Function::new(c, &func_types[idx], &types))
-                        .collect();
+                    for c in sect_code {
+                        let idx = code.len();
+                        code.push(Function::new(c, func_types[idx].clone(), &types));
+                    }
                 }
                 WasmSection::Start(s) => {
                     assert!(start.is_none(), "Duplicate start section");
@@ -520,7 +554,7 @@ impl Machine {
                 locals: Vec::new(),
                 expr: entrypoint,
             },
-            &FunctionType::default(),
+            FunctionType::default(),
             &types,
         ));
         for table in tables.iter_mut() {
@@ -564,6 +598,7 @@ impl Machine {
         let func = &self.funcs[self.pc.0];
         let code = &func.code;
         let inst = code[self.pc.1];
+        println!("{:?}", self.pc);
         self.pc.1 += 1;
         match inst.opcode {
             Opcode::Unreachable => {
@@ -895,6 +930,26 @@ impl Machine {
                 let val = self.value_stack.last().cloned().unwrap();
                 self.value_stack.push(val);
             }
+            Opcode::HostCallHook => {
+                self.host_call_hook(inst.argument_data);
+            }
+        }
+    }
+
+    fn host_call_hook(&mut self, id: u64) {
+        match id {
+            2 => {
+                let exit_code = self.value_stack.last().and_then(|v| match v {
+                    Value::I32(x) => Some(*x),
+                    _ => None,
+                });
+                if let Some(x) = exit_code {
+                    println!("WASM exiting with exit code {}", x);
+                } else {
+                    println!("WASM exiting with unknown exit code");
+                }
+            }
+            _ => {}
         }
     }
 

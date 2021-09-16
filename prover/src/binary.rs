@@ -47,7 +47,6 @@ pub enum HirInstruction {
     I64Const(i64),
     F32Const(f32),
     F64Const(f64),
-    FuncRefConst(u32),
     CallIndirect(u32, u32),
 }
 
@@ -58,10 +57,25 @@ impl HirInstruction {
             HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
             HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
             HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
-            HirInstruction::FuncRefConst(x) => Some(LirValue::FuncRef(x)),
+            HirInstruction::WithIdx(Opcode::FuncRefConst, x) => Some(LirValue::FuncRef(x)),
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum ImportKind {
+    Function(u32),
+    Table(u32),
+    Memory(u32),
+    Global(u32),
+}
+
+#[derive(Clone, Debug)]
+pub struct Import {
+    pub module: String,
+    pub name: String,
+    pub kind: ImportKind,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,6 +164,7 @@ pub enum WasmSection {
     Custom(Vec<u8>),
     /// A function type, denoted as (parameters, return values)
     Types(Vec<FunctionType>),
+    Imports(Vec<Import>),
     Functions(Vec<u32>),
     Tables(Vec<TableType>),
     Memories(Vec<Limits>),
@@ -658,7 +673,9 @@ fn element_segment(mut input: &[u8]) -> IResult<ElementSegment> {
         if ref_general {
             instructions(input)
         } else {
-            map(leb128_u32, |i| vec![HirInstruction::FuncRefConst(i)])(input)
+            map(leb128_u32, |i| {
+                vec![HirInstruction::WithIdx(Opcode::FuncRefConst, i)]
+            })(input)
         }
     })(input)?;
     Ok((input, ElementSegment { ty, mode, init }))
@@ -695,12 +712,13 @@ fn data_segment(input: &[u8]) -> IResult<Data> {
     ))(input)
 }
 
-fn types_section(input: &[u8]) -> IResult<Vec<FunctionType>> {
-    wasm_vec(function_type)(input)
-}
-
-fn functions_section(input: &[u8]) -> IResult<Vec<u32>> {
-    wasm_vec(leb128_u32)(input)
+fn import_kind(input: &[u8]) -> IResult<ImportKind> {
+    alt((
+        preceded(tag(&[0x00]), map(leb128_u32, ImportKind::Function)),
+        preceded(tag(&[0x01]), map(leb128_u32, ImportKind::Table)),
+        preceded(tag(&[0x02]), map(leb128_u32, ImportKind::Memory)),
+        preceded(tag(&[0x03]), map(leb128_u32, ImportKind::Global)),
+    ))(input)
 }
 
 fn tables_section(input: &[u8]) -> IResult<Vec<TableType>> {
@@ -710,28 +728,12 @@ fn tables_section(input: &[u8]) -> IResult<Vec<TableType>> {
     }))(input)
 }
 
-fn memories_section(input: &[u8]) -> IResult<Vec<Limits>> {
-    wasm_vec(limits)(input)
-}
-
-fn exports_section(input: &[u8]) -> IResult<Vec<Export>> {
-    wasm_vec(export)(input)
-}
-
-fn globals_section(input: &[u8]) -> IResult<Vec<Global>> {
-    wasm_vec(global)(input)
-}
-
-fn elements_section(input: &[u8]) -> IResult<Vec<ElementSegment>> {
-    wasm_vec(element_segment)(input)
-}
-
-fn code_section(input: &[u8]) -> IResult<Vec<Code>> {
-    wasm_vec(code_func)(input)
-}
-
-fn datas_section(input: &[u8]) -> IResult<Vec<Data>> {
-    wasm_vec(data_segment)(input)
+fn import(input: &[u8]) -> IResult<Import> {
+    map(tuple((name, name, import_kind)), |(m, n, kind)| Import {
+        module: m.to_string(),
+        name: n.to_string(),
+        kind,
+    })(input)
 }
 
 fn section(mut input: &[u8]) -> IResult<WasmSection> {
@@ -743,31 +745,41 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
     let (remaining, data) = length_data(leb128_u32)(input)?;
     let (extra, sect) = match section_type {
         0 => Ok((&[] as &[u8], WasmSection::Custom(data.into()))),
-        1 => context("types section", map(types_section, WasmSection::Types))(data),
+        1 => context(
+            "types section",
+            map(wasm_vec(function_type), WasmSection::Types),
+        )(data),
+        2 => context(
+            "imports section",
+            map(wasm_vec(import), WasmSection::Imports),
+        )(data),
         3 => context(
             "functions section",
-            map(functions_section, WasmSection::Functions),
+            map(wasm_vec(leb128_u32), WasmSection::Functions),
         )(data),
         4 => context("tables section", map(tables_section, WasmSection::Tables))(data),
         5 => context(
             "memories section",
-            map(memories_section, WasmSection::Memories),
+            map(wasm_vec(limits), WasmSection::Memories),
         )(data),
         6 => context(
             "globals section",
-            map(globals_section, WasmSection::Globals),
+            map(wasm_vec(global), WasmSection::Globals),
         )(data),
         7 => context(
             "exports section",
-            map(exports_section, WasmSection::Exports),
+            map(wasm_vec(export), WasmSection::Exports),
         )(data),
         8 => context("start section", map(leb128_u32, WasmSection::Start))(data),
         9 => context(
             "elements section",
-            map(elements_section, WasmSection::Elements),
+            map(wasm_vec(element_segment), WasmSection::Elements),
         )(data),
-        10 => context("code section", map(code_section, WasmSection::Code))(data),
-        11 => context("data section", map(datas_section, WasmSection::Datas))(data),
+        10 => context("code section", map(wasm_vec(code_func), WasmSection::Code))(data),
+        11 => context(
+            "data section",
+            map(wasm_vec(data_segment), WasmSection::Datas),
+        )(data),
         12 => context(
             "data count section",
             map(leb128_u32, WasmSection::DataCount),

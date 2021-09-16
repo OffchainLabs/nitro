@@ -1,4 +1,5 @@
 mod binary;
+mod host;
 mod machine;
 mod memory;
 mod merkle;
@@ -62,7 +63,8 @@ fn main() -> Result<()> {
     let mut seen_states = HashSet::new();
     let mut opcode_counts: HashMap<Opcode, usize> = HashMap::new();
     while !mach.is_halted() {
-        let next_opcode = mach.get_next_instruction().unwrap().opcode;
+        let next_inst = mach.get_next_instruction().unwrap();
+        let next_opcode = next_inst.opcode;
         if opts.proving_backoff {
             let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
             *count_entry += 1;
@@ -82,9 +84,10 @@ fn main() -> Result<()> {
         }
         println!("Machine stack: {:?}", mach.get_data_stack());
         println!(
-            "Generating proof #{} of opcode {:?}",
+            "Generating proof \x1b[36m#{}\x1b[0m of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
             proofs.len(),
             next_opcode,
+            next_inst.argument_data,
         );
         let proof = mach.serialize_proof();
         mach.step();

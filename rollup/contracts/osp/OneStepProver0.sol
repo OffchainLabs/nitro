@@ -11,6 +11,10 @@ contract OneStepProver0 is IOneStepProver {
 		mach.halted = true;
 	}
 
+	function executeNop(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+		// :)
+	}
+
 	function executeConstPush(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
 		uint16 opcode = inst.opcode;
 		ValueType ty;
@@ -590,6 +594,8 @@ contract OneStepProver0 is IOneStepProver {
 		function(Machine memory, Instruction calldata, bytes calldata) internal view impl;
 		if (opcode == Instructions.UNREACHABLE) {
 			impl = executeUnreachable;
+		} else if (opcode == Instructions.NOP || opcode == Instructions.HOST_CALL_HOOK) {
+			impl = executeNop;
 		} else if (opcode == Instructions.BLOCK) {
 			impl = executeBlock;
 		} else if (opcode == Instructions.BRANCH) {
