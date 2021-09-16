@@ -1,3 +1,5 @@
+use std::{collections::HashMap, hash::Hash};
+
 use crate::{
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
@@ -5,10 +7,10 @@ use crate::{
 use nom::{
     branch::alt,
     bytes::streaming::tag,
-    combinator::{eof, map, map_res, value},
+    combinator::{all_consuming, eof, map, map_res, value},
     error::{context, ParseError, VerboseError},
     error::{Error, ErrorKind, FromExternalError},
-    multi::{count, length_data, many_till},
+    multi::{count, length_data, many0, many_till},
     sequence::{preceded, tuple},
     Err, Finish, Needed,
 };
@@ -158,10 +160,22 @@ pub struct ElementSegment {
     pub mode: ElementMode,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NameCustomSection {
+    pub module: String,
+    pub functions: HashMap<u32, String>,
+    pub locals: HashMap<u32, HashMap<u32, String>>,
+}
+
+#[derive(Clone, Debug)]
+pub enum CustomSection {
+    Name(NameCustomSection),
+    Unknown(String, Vec<u8>),
+}
+
 #[derive(Clone, Debug)]
 pub enum WasmSection {
-    /// Ignored (usually debugging info)
-    Custom(Vec<u8>),
+    Custom(CustomSection),
     /// A function type, denoted as (parameters, return values)
     Types(Vec<FunctionType>),
     Imports(Vec<Import>),
@@ -208,11 +222,24 @@ fn wasm_vec<'a: 'b, 'b: 'a, T>(
     }
 }
 
+fn wasm_map<'a: 'b, 'b: 'a, K: Hash + Eq, V>(
+    key_parser: impl FnMut(&'a [u8]) -> IResult<'a, K>,
+    value_parser: impl FnMut(&'a [u8]) -> IResult<'a, V>,
+) -> impl FnMut(&'b [u8]) -> IResult<'b, HashMap<K, V>> {
+    map(wasm_vec(tuple((key_parser, value_parser))), |v| {
+        v.into_iter().collect()
+    })
+}
+
 fn name(input: &[u8]) -> IResult<&str> {
     let (input, data) = length_data(leb128_u32)(input)?;
     let s = std::str::from_utf8(data)
         .map_err(|e| Err::Error(VerboseError::from_external_error(input, ErrorKind::Char, e)))?;
     Ok((input, s))
+}
+
+fn owned_name(input: &[u8]) -> IResult<String> {
+    map(name, Into::into)(input)
 }
 
 fn ref_type(input: &[u8]) -> IResult<RefType> {
@@ -729,11 +756,54 @@ fn tables_section(input: &[u8]) -> IResult<Vec<TableType>> {
 }
 
 fn import(input: &[u8]) -> IResult<Import> {
-    map(tuple((name, name, import_kind)), |(m, n, kind)| Import {
-        module: m.to_string(),
-        name: n.to_string(),
-        kind,
-    })(input)
+    map(
+        tuple((owned_name, owned_name, import_kind)),
+        |(module, name, kind)| Import { module, name, kind },
+    )(input)
+}
+
+fn name_custom_section(input: &[u8]) -> IResult<NameCustomSection> {
+    let (extra, sections) = many0(tuple((
+        nom::bytes::complete::take(1usize),
+        length_data(leb128_u32),
+    )))(input)?;
+    let mut names = NameCustomSection::default();
+    let mut last_sect_id = None;
+    for (id, sect) in sections {
+        let id = id[0];
+        if matches!(last_sect_id, Some(x) if x >= id) {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Verify,
+            )));
+        }
+        last_sect_id = Some(id);
+        match id {
+            0 => {
+                let (_, module) = all_consuming(owned_name)(sect)?;
+                names.module = module;
+            }
+            1 => {
+                let (_, functions) = all_consuming(wasm_map(leb128_u32, owned_name))(sect)?;
+                names.functions = functions;
+            }
+            2 => {
+                let (_, locals) =
+                    all_consuming(wasm_map(leb128_u32, wasm_map(leb128_u32, owned_name)))(sect)?;
+                names.locals = locals;
+            }
+            _ => {}
+        }
+    }
+    Ok((extra, names))
+}
+
+fn custom_section(input: &[u8]) -> IResult<CustomSection> {
+    let (input, sect_name) = name(input)?;
+    match sect_name {
+        "name" => map(name_custom_section, CustomSection::Name)(input),
+        _ => Ok((&[], CustomSection::Unknown(sect_name.into(), input.into()))),
+    }
 }
 
 fn section(mut input: &[u8]) -> IResult<WasmSection> {
@@ -744,7 +814,7 @@ fn section(mut input: &[u8]) -> IResult<WasmSection> {
     input = &input[1..];
     let (remaining, data) = length_data(leb128_u32)(input)?;
     let (extra, sect) = match section_type {
-        0 => Ok((&[] as &[u8], WasmSection::Custom(data.into()))),
+        0 => context("custom section", map(custom_section, WasmSection::Custom))(data),
         1 => context(
             "types section",
             map(wasm_vec(function_type), WasmSection::Types),

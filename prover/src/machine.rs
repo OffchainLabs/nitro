@@ -1,7 +1,7 @@
 use crate::{
     binary::{
-        Code, ElementMode, ExportKind, HirInstruction, ImportKind, TableType, WasmBinary,
-        WasmSection,
+        Code, CustomSection, ElementMode, ExportKind, HirInstruction, ImportKind,
+        NameCustomSection, TableType, WasmBinary, WasmSection,
     },
     host::get_host_impl,
     memory::Memory,
@@ -215,6 +215,7 @@ pub struct Machine {
     types: Vec<FunctionType>,
     pc: (usize, usize),
     halted: bool,
+    names: NameCustomSection,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -363,6 +364,7 @@ impl Machine {
         let mut memory = Memory::default();
         let mut main = None;
         let mut tables = Vec::new();
+        let mut names = NameCustomSection::default();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -520,7 +522,15 @@ impl Machine {
                         }
                     }
                 }
-                WasmSection::Custom(_) | WasmSection::DataCount(_) => {}
+                WasmSection::Custom(CustomSection::Name(n)) => {
+                    assert!(
+                        names == NameCustomSection::default(),
+                        "Duplicate names custom section"
+                    );
+                    names = n;
+                }
+                WasmSection::Custom(CustomSection::Unknown(_, _)) => {}
+                WasmSection::DataCount(_) => {}
             }
         }
         if always_merkelize_memory {
@@ -563,6 +573,9 @@ impl Machine {
                 table.elems.iter().map(|e| e.hash()).collect(),
             );
         }
+        names
+            .functions
+            .insert(entrypoint_idx as u32, "__wavm_entrypoint".into());
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -580,6 +593,7 @@ impl Machine {
             types,
             pc: (entrypoint_idx, 0),
             halted: false,
+            names,
         })
     }
 
@@ -598,7 +612,6 @@ impl Machine {
         let func = &self.funcs[self.pc.0];
         let code = &func.code;
         let inst = code[self.pc.1];
-        println!("{:?}", self.pc);
         self.pc.1 += 1;
         match inst.opcode {
             Opcode::Unreachable => {
@@ -1148,5 +1161,28 @@ impl Machine {
 
     pub fn get_data_stack(&self) -> &[Value] {
         &self.value_stack
+    }
+
+    pub fn get_backtrace(&self) -> Vec<(String, usize)> {
+        let mut res = Vec::new();
+        let names = &self.names;
+        let mut push_pc = |(func, pc)| {
+            let name = names
+                .functions
+                .get(&(func as u32))
+                .cloned()
+                .unwrap_or_else(|| format!("{}", func));
+            res.push((name, pc));
+        };
+        push_pc(self.pc);
+        for frame in self.frame_stack.iter().rev() {
+            match frame.return_ref {
+                Value::InternalRef(pc) => {
+                    push_pc(pc);
+                }
+                _ => {}
+            }
+        }
+        res
     }
 }

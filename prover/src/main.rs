@@ -100,6 +100,12 @@ fn main() -> Result<()> {
     }
 
     println!("End machine hash: {}", mach.hash());
+    println!("End machine stack: {:?}", mach.get_data_stack());
+    println!("End machine backtrace:");
+    for (func, pc) in mach.get_backtrace() {
+        println!("  \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m", func, pc);
+    }
+
     if let Some(out) = out {
         serde_json::to_writer_pretty(out, &proofs)?;
     }
