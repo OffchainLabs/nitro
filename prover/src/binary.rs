@@ -1,6 +1,6 @@
 use crate::{
-    lir::{IBinOpType, IRelOpType, IUnOpType, Opcode},
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
+    wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use nom::{
     branch::alt,

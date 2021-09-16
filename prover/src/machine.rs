@@ -1,12 +1,12 @@
 use crate::{
     binary::{Code, ElementMode, ExportKind, HirInstruction, TableType, WasmBinary, WasmSection},
-    lir::Instruction,
-    lir::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{FunctionType, IntegerValType, Value, ValueType},
+    wavm::Instruction,
+    wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
 use eyre::Result;
@@ -67,7 +67,7 @@ impl Function {
         // Insert missing proving argument data
         for inst in insts.iter_mut() {
             if inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
                 let ty = &module_types[usize::try_from(ty).unwrap()];
                 inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
             }
@@ -625,7 +625,7 @@ impl Machine {
                 self.pc = (inst.argument_data as usize, 0);
             }
             Opcode::CallIndirect => {
-                let (table, ty) = crate::lir::unpack_call_indirect(inst.argument_data);
+                let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
                 let idx = match self.value_stack.pop() {
                     Some(Value::I32(i)) => usize::try_from(i).unwrap(),
                     x => panic!(
@@ -1055,7 +1055,7 @@ impl Machine {
                     data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
                 }
             } else if next_inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::lir::unpack_call_indirect(next_inst.argument_data);
+                let (table, ty) = crate::wavm::unpack_call_indirect(next_inst.argument_data);
                 let idx = match self.value_stack.last() {
                     Some(Value::I32(i)) => *i,
                     x => panic!(

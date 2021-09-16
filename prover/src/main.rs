@@ -1,13 +1,13 @@
 mod binary;
-mod lir;
 mod machine;
 mod memory;
 mod merkle;
 mod reinterpret;
 mod utils;
 mod value;
+mod wavm;
 
-use crate::{lir::Opcode, machine::Machine};
+use crate::{machine::Machine, wavm::Opcode};
 use eyre::Result;
 use serde::Serialize;
 use std::{
