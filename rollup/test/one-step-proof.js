@@ -2,7 +2,7 @@ const { ethers, run } = require("hardhat");
 const fs = require("fs");
 const assert = require("assert");
 
-const PARALLEL = 1;
+const PARALLEL = 128;
 
 describe("OneStepProof", function () {
   const deployment = run("deploy", { "tags": "OneStepProofEntry" });
