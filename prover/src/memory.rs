@@ -199,8 +199,7 @@ impl Memory {
     }
 
     pub fn get_range(&self, offset: usize, len: usize) -> Option<&[u8]> {
-        let end = offset
-            .checked_add(len)?;
+        let end = offset.checked_add(len)?;
         if end > self.buffer.len() {
             return None;
         }
