@@ -594,7 +594,7 @@ contract OneStepProver0 is IOneStepProver {
 		function(Machine memory, Instruction calldata, bytes calldata) internal view impl;
 		if (opcode == Instructions.UNREACHABLE) {
 			impl = executeUnreachable;
-		} else if (opcode == Instructions.NOP || opcode == Instructions.HOST_CALL_HOOK) {
+		} else if (opcode == Instructions.NOP) {
 			impl = executeNop;
 		} else if (opcode == Instructions.BLOCK) {
 			impl = executeBlock;

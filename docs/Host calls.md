@@ -1,17 +1,16 @@
 # Host calls
 
 Describes the implementation of various functions WASM programs can import which are implemented by the host environment.
-Each is given a unique ID for the HostCallHook opcode.
 
 ## Overview
 
-| ID | Module                 | Name              | Function signature |
-|----|------------------------|-------------------|--------------------|
-|  0 | wasi_snapshot_preview1 | environ_sizes_get | (i32, i32) -> i32
-|  1 | wasi_snapshot_preview1 | environ_get       | (i32, i32) -> i32
-|  2 | wasi_snapshot_preview1 | proc_exit         | (i32)
-|  2 | env                    | exit              | (i32)
-|  3 | wasi_snapshot_preview1 | fd_write          | (i32, i32, i32, i32) -> i32
+| Module                 | Name              | Function signature |
+|------------------------|-------------------|--------------------|
+| wasi_snapshot_preview1 | environ_sizes_get | (i32, i32) -> i32
+| wasi_snapshot_preview1 | environ_get       | (i32, i32) -> i32
+| wasi_snapshot_preview1 | proc_exit         | (i32)
+| env                    | exit              | (i32)
+| wasi_snapshot_preview1 | fd_write          | (i32, i32, i32, i32) -> i32
 
 ## Implementations
 

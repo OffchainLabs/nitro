@@ -1,6 +1,6 @@
 fn main() {
 	let mut x = Vec::new();
-	for i in 0..10 {
+	for i in 1..10 {
 		x.push(i);
 	}
 	let sum: usize = x.iter().cloned().sum();

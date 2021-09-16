@@ -138,8 +138,6 @@ pub enum Opcode {
     IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
-    /// Handle a call to a "host" function. Semantics vary depending on argument data.
-    HostCallHook,
 }
 
 impl Opcode {
@@ -230,7 +228,6 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
-            Opcode::HostCallHook => 0x8009,
         }
     }
 }
@@ -420,7 +417,6 @@ impl Instruction {
                             | Opcode::GlobalSet
                             | Opcode::Call
                             | Opcode::FuncRefConst
-                            | Opcode::HostCallHook
                     ),
                     "WithIdx HirInstruction has bad WithIdx opcode",
                 );

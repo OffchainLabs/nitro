@@ -26,10 +26,8 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
     let mut insts = Vec::new();
     let mut locals = Vec::new();
     let ty;
-    let id;
     match (module, name) {
         ("wasi_snapshot_preview1", "environ_sizes_get") => {
-            id = 0;
             ty = FunctionType {
                 inputs: vec![ValueType::I32; 2],
                 outputs: vec![ValueType::I32],
@@ -39,7 +37,6 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
             insts.push(HirInstruction::I32Const(0));
         }
         ("wasi_snapshot_preview1", "environ_get") => {
-            id = 1;
             ty = FunctionType {
                 inputs: vec![ValueType::I32, ValueType::I32],
                 outputs: vec![ValueType::I32],
@@ -47,7 +44,6 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
             insts.push(HirInstruction::I32Const(28));
         }
         ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
-            id = 2;
             ty = FunctionType {
                 inputs: vec![ValueType::I32],
                 outputs: Vec::new(),
@@ -55,7 +51,6 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
             insts.push(HirInstruction::Simple(Opcode::Unreachable));
         }
         ("wasi_snapshot_preview1", "fd_write") => {
-            id = 3;
             ty = FunctionType {
                 inputs: vec![ValueType::I32; 4],
                 outputs: vec![ValueType::I32],
@@ -136,5 +131,5 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
         locals,
         expr: insts,
     };
-    Function::new_advanced(code, ty, &[], Some(id))
+    Function::new(code, ty, &[])
 }

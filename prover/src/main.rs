@@ -14,7 +14,7 @@ use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-    io::Read,
+    io::{Read, Write},
     path::PathBuf,
     process,
 };
@@ -106,6 +106,13 @@ fn main() -> Result<()> {
         let func = rustc_demangle::demangle(&func);
         println!("  \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m", func, pc);
     }
+    let output = mach.get_stdio_output();
+    println!("End machine output:");
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    stdout
+        .write_all(output)
+        .expect("Failed to write machine output to stdout");
 
     if let Some(out) = out {
         serde_json::to_writer_pretty(out, &proofs)?;

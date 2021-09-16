@@ -16,7 +16,7 @@ use digest::Digest;
 use eyre::Result;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
-use std::{convert::TryFrom, num::Wrapping};
+use std::{collections::HashMap, convert::TryFrom, num::Wrapping};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -36,15 +36,6 @@ pub struct Function {
 
 impl Function {
     pub fn new(code: Code, func_ty: FunctionType, module_types: &[FunctionType]) -> Function {
-        Self::new_advanced(code, func_ty, module_types, None)
-    }
-
-    pub fn new_advanced(
-        code: Code,
-        func_ty: FunctionType,
-        module_types: &[FunctionType],
-        host_hook_id: Option<u64>,
-    ) -> Function {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -59,13 +50,6 @@ impl Function {
             argument_data: 0,
             proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
         });
-        if let Some(id) = host_hook_id {
-            insts.push(Instruction {
-                opcode: Opcode::HostCallHook,
-                argument_data: id,
-                proving_argument_data: None,
-            });
-        }
         // Fill in parameters
         for i in (0..func_ty.inputs.len()).rev() {
             insts.push(Instruction {
@@ -216,6 +200,8 @@ pub struct Machine {
     pc: (usize, usize),
     halted: bool,
     names: NameCustomSection,
+    host_call_hooks: HashMap<(usize, usize), (String, String)>,
+    stdio_output: Vec<u8>,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -365,6 +351,7 @@ impl Machine {
         let mut main = None;
         let mut tables = Vec::new();
         let mut names = NameCustomSection::default();
+        let mut host_call_hooks = HashMap::new();
         for sect in bin.sections {
             match sect {
                 WasmSection::Types(t) => {
@@ -379,6 +366,7 @@ impl Machine {
                                 func.ty, types[ty as usize],
                                 "Import has different function signature than host function",
                             );
+                            host_call_hooks.insert((code.len(), 1), (import.module, import.name));
                             func_types.push(func.ty.clone());
                             code.push(func);
                         } else {
@@ -594,6 +582,8 @@ impl Machine {
             pc: (entrypoint_idx, 0),
             halted: false,
             names,
+            host_call_hooks,
+            stdio_output: Vec::new(),
         })
     }
 
@@ -607,6 +597,15 @@ impl Machine {
     pub fn step(&mut self) {
         if self.halted {
             return;
+        }
+
+        if let Some(hook) = self.host_call_hooks.get(&self.pc).cloned() {
+            if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
+                eprintln!(
+                    "Failed to process host call hook for host call {:?} {:?}: {}",
+                    hook.0, hook.1, err,
+                );
+            }
         }
 
         let func = &self.funcs[self.pc.0];
@@ -943,26 +942,67 @@ impl Machine {
                 let val = self.value_stack.last().cloned().unwrap();
                 self.value_stack.push(val);
             }
-            Opcode::HostCallHook => {
-                self.host_call_hook(inst.argument_data);
-            }
         }
     }
 
-    fn host_call_hook(&mut self, id: u64) {
-        match id {
-            2 => {
-                let exit_code = self.value_stack.last().and_then(|v| match v {
-                    Value::I32(x) => Some(*x),
-                    _ => None,
-                });
-                if let Some(x) = exit_code {
-                    println!("WASM exiting with exit code {}", x);
-                } else {
-                    println!("WASM exiting with unknown exit code");
-                }
+    fn host_call_hook(&mut self, module: &str, name: &str) -> eyre::Result<()> {
+        macro_rules! pull_arg {
+            ($offset:expr, $t:ident) => {
+                self.value_stack
+                    .get(self.value_stack.len().wrapping_sub($offset + 1))
+                    .and_then(|v| match v {
+                        Value::$t(x) => Some(*x),
+                        _ => None,
+                    })
+                    .ok_or_else(|| eyre::eyre!("Exit code not on top of stack"))?
+            };
+        }
+        macro_rules! read_u32_ptr {
+            ($ptr:expr) => {
+                self.memory
+                    .get_u32($ptr.into())
+                    .ok_or_else(|| eyre::eyre!("Pointer out of bounds"))?
+            };
+        }
+        macro_rules! read_bytes_segment {
+            ($ptr:expr, $size:expr) => {
+                self.memory
+                    .get_range($ptr as usize, $size as usize)
+                    .ok_or_else(|| eyre::eyre!("Bytes segment out of bounds"))?
+            };
+        }
+        match (module, name) {
+            ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
+                let exit_code = pull_arg!(0, I32);
+                println!(
+                    "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
+                    exit_code,
+                );
+                Ok(())
             }
-            _ => {}
+            ("wasi_snapshot_preview1", "fd_write") => {
+                let fd = pull_arg!(3, I32);
+                if fd != 1 && fd != 2 {
+                    // Not stdout or stderr, ignore
+                    return Ok(());
+                }
+                let mut data = Vec::new();
+                let iovecs_ptr = pull_arg!(2, I32);
+                let iovecs_len = pull_arg!(1, I32);
+                for offset in 0..iovecs_len {
+                    let offset = offset.wrapping_mul(8);
+                    let data_ptr_ptr = iovecs_ptr.wrapping_add(offset);
+                    let data_size_ptr = data_ptr_ptr.wrapping_add(4);
+
+                    let data_ptr = read_u32_ptr!(data_ptr_ptr);
+                    let data_size = read_u32_ptr!(data_size_ptr);
+                    data.extend_from_slice(read_bytes_segment!(data_ptr, data_size));
+                }
+                println!("WASM says: {:?}", String::from_utf8_lossy(&data));
+                self.stdio_output.extend(data);
+                Ok(())
+            }
+            _ => Ok(()),
         }
     }
 
@@ -1184,5 +1224,9 @@ impl Machine {
             }
         }
         res
+    }
+
+    pub fn get_stdio_output(&self) -> &[u8] {
+        &self.stdio_output
     }
 }

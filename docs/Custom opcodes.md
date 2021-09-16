@@ -11,4 +11,3 @@
 | 0x8006 | MoveFromInternalToStack | Pops an item from the internal stack and pushes it to the stack.
 | 0x8007 | IsStackBoundary         | Pops an item from the stack. If a stack boundary, pushes an i32 with value 1. Otherwise, pushes an i32 with value 0.
 | 0x8008 | Dup                     | Peeks an item from the stack and pushes another copy to the stack.
-| 0x8009 | HostCallHook            | A no-op, which is used by the emulator to introspect host calls
