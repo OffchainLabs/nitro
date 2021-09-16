@@ -125,6 +125,58 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
             // Return 0, indicating no error
             insts.push(HirInstruction::I32Const(0));
         }
+        ("wasi_snapshot_preview1", "fd_close") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::Simple(Opcode::Unreachable));
+        }
+        ("wasi_snapshot_preview1", "fd_read") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 4],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::Simple(Opcode::Unreachable));
+        }
+        ("wasi_snapshot_preview1", "path_open") => {
+            ty = FunctionType {
+                inputs: vec![
+                    ValueType::I32,
+                    ValueType::I32,
+                    ValueType::I32,
+                    ValueType::I32,
+                    ValueType::I32,
+                    ValueType::I64,
+                    ValueType::I64,
+                    ValueType::I32,
+                    ValueType::I32,
+                ],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::Simple(Opcode::Unreachable));
+        }
+        ("wasi_snapshot_preview1", "random_get") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::I32Const(0));
+        }
+        ("wasi_snapshot_preview1", "fd_prestat_get") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::I32Const(8));
+        }
+        ("wasi_snapshot_preview1", "fd_prestat_dir_name") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 3],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::I32Const(8));
+        }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {
