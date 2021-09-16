@@ -14,7 +14,7 @@ use nom::{
     sequence::{preceded, tuple},
     Err, Finish, Needed,
 };
-use nom_leb128::{leb128_i32, leb128_i64, leb128_u32, leb128_u64};
+use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
 
 type IResult<'a, O> = nom::IResult<&'a [u8], O, VerboseError<&'a [u8]>>;
 
@@ -558,11 +558,17 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
         preceded(tag(&[0x42]), map(leb128_i64, HirInstruction::I64Const)),
         preceded(
             tag(&[0x43]),
-            map(map(leb128_u32, f32::from_bits), HirInstruction::F32Const),
+            map(
+                map(nom::number::streaming::le_u32, f32::from_bits),
+                HirInstruction::F32Const,
+            ),
         ),
         preceded(
             tag(&[0x44]),
-            map(map(leb128_u64, f64::from_bits), HirInstruction::F64Const),
+            map(
+                map(nom::number::streaming::le_u64, f64::from_bits),
+                HirInstruction::F64Const,
+            ),
         ),
     ))(input)
 }
