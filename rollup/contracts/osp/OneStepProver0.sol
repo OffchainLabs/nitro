@@ -465,8 +465,6 @@ contract OneStepProver0 is IOneStepProver {
 			} else if (functionPointer.valueType == ValueType.FUNC_REF) {
 				funcIdx = uint64(functionPointer.contents);
 				require(funcIdx == functionPointer.contents, "BAD_FUNC_REF_CONTENTS");
-			} else if (functionPointer.valueType == ValueType.REF_EXTERN) {
-				revert("TODO: external call_indirect");
 			} else {
 				revert("BAD_ELEM_TYPE");
 			}

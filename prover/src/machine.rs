@@ -770,9 +770,6 @@ impl Machine {
                             self.pc.func = func as usize;
                             self.pc.inst = 0;
                         }
-                        Value::ExternRef(_) => {
-                            panic!("Extern functions aren't supported yet");
-                        }
                         Value::RefNull => {
                             self.halted = true;
                         }

@@ -8,7 +8,6 @@ enum ValueType {
 	F64,
 	REF_NULL,
 	FUNC_REF,
-	REF_EXTERN,
 	INTERNAL_REF,
 	STACK_BOUNDARY
 }
@@ -70,5 +69,4 @@ library Values {
 			return newI32(uint32(0));
 		}
 	}
-
 }

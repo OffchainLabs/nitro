@@ -18,7 +18,6 @@ pub enum ValueType {
     F64,
     RefNull,
     FuncRef,
-    ExternRef,
     InternalRef,
     StackBoundary,
 }
@@ -58,8 +57,6 @@ pub enum Value {
     F64(f64),
     RefNull,
     FuncRef(u32),
-    #[allow(dead_code)]
-    ExternRef(u32),
     InternalRef(ProgramCounter),
     StackBoundary,
 }
@@ -87,7 +84,6 @@ impl Value {
             Value::F64(_) => ValueType::F64,
             Value::RefNull => ValueType::RefNull,
             Value::FuncRef(_) => ValueType::FuncRef,
-            Value::ExternRef(_) => ValueType::ExternRef,
             Value::InternalRef(_) => ValueType::InternalRef,
             Value::StackBoundary => ValueType::StackBoundary,
         }
@@ -102,7 +98,6 @@ impl Value {
             Value::F64(x) => x.to_bits().into(),
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
-            Value::ExternRef(x) => x.into(),
             Value::InternalRef(pc) => pc.serialize(),
             Value::StackBoundary => Bytes32::default(),
         }
@@ -153,7 +148,6 @@ impl Value {
             ValueType::F64 => Value::F64(0.),
             ValueType::RefNull
             | ValueType::FuncRef
-            | ValueType::ExternRef
             | ValueType::InternalRef => Value::RefNull,
             ValueType::StackBoundary => panic!("Attempted to make default of StackBoundary type"),
         }

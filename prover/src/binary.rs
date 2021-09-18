@@ -135,7 +135,7 @@ impl Into<ValueType> for RefType {
     fn into(self) -> ValueType {
         match self {
             RefType::FuncRef => ValueType::FuncRef,
-            RefType::ExternRef => ValueType::ExternRef,
+            RefType::ExternRef => panic!("Extern refs not supported"),
         }
     }
 }
