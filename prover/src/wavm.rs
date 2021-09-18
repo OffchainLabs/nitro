@@ -286,10 +286,6 @@ impl Instruction {
         if let Some(data) = self.proving_argument_data {
             data
         } else {
-            assert!(
-                self.opcode != Opcode::InitFrame,
-                "InitFrame missing proving argument data",
-            );
             let mut b = [0u8; 32];
             b[24..].copy_from_slice(&self.argument_data.to_be_bytes());
             Bytes32(b)

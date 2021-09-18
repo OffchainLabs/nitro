@@ -14,13 +14,16 @@ clean:
 prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/src/bin/%.rs prover/test-cases/rust/src/lib.rs
 	cd prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
 
+prover/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: prover/wasm-libraries/wasi-stub/src/**
+	cd prover/wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
+
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
 	cargo run -p prover -- $< -o $@ --always-merkleize
 
-rollup/test/proofs/rust-%.json: prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm prover/src/**
-	cargo run --release -p prover -- $< -o $@ -b --always-merkleize
+rollup/test/proofs/rust-%.json: prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm prover/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm prover/src/**
+	cargo run --release -p prover -- $< -l prover/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -o $@ -b --always-merkleize
 
 .DELETE_ON_ERROR: # causes a failure to delete its target

@@ -83,20 +83,28 @@ impl Function {
             }
         }
 
+        Function::new_from_wavm(insts, func_ty, locals_with_params)
+    }
+
+    fn new_from_wavm(
+        code: Vec<Instruction>,
+        ty: FunctionType,
+        local_types: Vec<ValueType>,
+    ) -> Function {
         assert!(
-            u32::try_from(insts.len()).is_ok(),
+            u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
-
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
-            insts.iter().map(|i| i.hash()).collect(),
+            code.iter().map(|i| i.hash()).collect(),
         );
+
         Function {
-            code: insts,
-            ty: func_ty,
+            code,
+            ty,
             code_merkle,
-            local_types: locals_with_params,
+            local_types,
         }
     }
 
@@ -241,24 +249,24 @@ impl Module {
                 WasmSection::Imports(imports) => {
                     for import in imports {
                         if let ImportKind::Function(ty) = import.kind {
+                            let qualified_name = format!("{}__{}", import.module, import.name);
                             let func;
-                            if let Some(import) = available_imports.get(&import.name) {
+                            if let Some(import) = available_imports.get(&qualified_name) {
                                 assert_eq!(
                                     import.ty, types[ty as usize],
                                     "Import has different function signature than host function",
                                 );
-                                let trampoline = vec![HirInstruction::CrossModuleCall(
-                                    import.module,
-                                    import.func,
-                                )];
-                                func = Function::new(
-                                    Code {
-                                        locals: Vec::new(),
-                                        expr: trampoline,
-                                    },
-                                    import.ty.clone(),
-                                    &[],
-                                );
+                                let trampoline = vec![
+                                    HirInstruction::Simple(Opcode::InitFrame),
+                                    HirInstruction::CrossModuleCall(import.module, import.func),
+                                    HirInstruction::Simple(Opcode::Return),
+                                ];
+                                let mut wavm = Vec::new();
+                                let codegen_state = FunctionCodegenState::new(0);
+                                for inst in trampoline {
+                                    Instruction::extend_from_hir(&mut wavm, codegen_state, inst);
+                                }
+                                func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                             } else {
                                 func = get_host_impl(&import.module, &import.name);
                                 assert_eq!(

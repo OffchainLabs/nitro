@@ -38,20 +38,6 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
             insts.extend(write_const(1, 0));
             insts.push(HirInstruction::I32Const(0));
         }
-        ("wasi_snapshot_preview1", "environ_get") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I32, ValueType::I32],
-                outputs: vec![ValueType::I32],
-            };
-            insts.push(HirInstruction::I32Const(28));
-        }
-        ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I32],
-                outputs: Vec::new(),
-            };
-            insts.push(HirInstruction::Simple(Opcode::Unreachable));
-        }
         ("wasi_snapshot_preview1", "fd_write") => {
             ty = FunctionType {
                 inputs: vec![ValueType::I32; 4],
@@ -125,44 +111,6 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
                 },
             ));
             // Return 0, indicating no error
-            insts.push(HirInstruction::I32Const(0));
-        }
-        ("wasi_snapshot_preview1", "fd_close") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I32],
-                outputs: vec![ValueType::I32],
-            };
-            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
-        }
-        ("wasi_snapshot_preview1", "fd_read") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I32; 4],
-                outputs: vec![ValueType::I32],
-            };
-            insts.push(HirInstruction::I32Const(WASI_BAD_FD));
-        }
-        ("wasi_snapshot_preview1", "path_open") => {
-            ty = FunctionType {
-                inputs: vec![
-                    ValueType::I32,
-                    ValueType::I32,
-                    ValueType::I32,
-                    ValueType::I32,
-                    ValueType::I32,
-                    ValueType::I64,
-                    ValueType::I64,
-                    ValueType::I32,
-                    ValueType::I32,
-                ],
-                outputs: vec![ValueType::I32],
-            };
-            insts.push(HirInstruction::Simple(Opcode::Unreachable));
-        }
-        ("wasi_snapshot_preview1", "random_get") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
-                outputs: vec![ValueType::I32],
-            };
             insts.push(HirInstruction::I32Const(0));
         }
         ("wasi_snapshot_preview1", "fd_prestat_get") => {
