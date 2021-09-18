@@ -53,8 +53,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Install rust wasi target
-        run: rustup target add wasm32-wasi
+      - name: Install rust wasm targets
+        run: rustup target add wasm32-wasi wasm32-unknown-unknown
 
       - name: Install latest wabt
         run: |
