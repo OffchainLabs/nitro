@@ -18,9 +18,9 @@ prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
-	cargo run -p prover -- $< -o $@
+	cargo run -p prover -- $< -o $@ --always-merkleize
 
 rollup/test/proofs/rust-%.json: prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm prover/src/**
-	cargo run --release -p prover -- $< -o $@ -b
+	cargo run --release -p prover -- $< -o $@ -b --always-merkleize
 
 .DELETE_ON_ERROR: # causes a failure to delete its target

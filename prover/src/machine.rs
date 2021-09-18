@@ -13,7 +13,6 @@ use crate::{
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
-use eyre::Result;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
@@ -196,7 +195,14 @@ impl Table {
 }
 
 #[derive(Clone, Debug)]
-pub struct Module {
+struct AvailableImport {
+    ty: FunctionType,
+    module: u32,
+    func: u32,
+}
+
+#[derive(Clone, Debug)]
+struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
@@ -212,7 +218,10 @@ pub struct Module {
 }
 
 impl Module {
-    fn from_binary(bin: WasmBinary) -> Module {
+    fn from_binary(
+        bin: WasmBinary,
+        available_imports: &HashMap<String, AvailableImport>,
+    ) -> Module {
         let mut code = Vec::new();
         let mut globals = Vec::new();
         let mut types = Vec::new();
@@ -232,11 +241,31 @@ impl Module {
                 WasmSection::Imports(imports) => {
                     for import in imports {
                         if let ImportKind::Function(ty) = import.kind {
-                            let func = get_host_impl(&import.module, &import.name);
-                            assert_eq!(
-                                func.ty, types[ty as usize],
-                                "Import has different function signature than host function",
-                            );
+                            let func;
+                            if let Some(import) = available_imports.get(&import.name) {
+                                assert_eq!(
+                                    import.ty, types[ty as usize],
+                                    "Import has different function signature than host function",
+                                );
+                                let trampoline = vec![HirInstruction::CrossModuleCall(
+                                    import.module,
+                                    import.func,
+                                )];
+                                func = Function::new(
+                                    Code {
+                                        locals: Vec::new(),
+                                        expr: trampoline,
+                                    },
+                                    import.ty.clone(),
+                                    &[],
+                                );
+                            } else {
+                                func = get_host_impl(&import.module, &import.name);
+                                assert_eq!(
+                                    func.ty, types[ty as usize],
+                                    "Import has different function signature than host function",
+                                );
+                            }
                             func_types.push(func.ty.clone());
                             code.push(func);
                             host_call_hooks.push(Some((import.module, import.name)));
@@ -604,8 +633,28 @@ where
 }
 
 impl Machine {
-    pub fn from_binary(bin: WasmBinary, always_merkleize: bool) -> Result<Machine> {
-        let mut modules = vec![Module::from_binary(bin)];
+    pub fn from_binary(
+        libraries: Vec<WasmBinary>,
+        bin: WasmBinary,
+        always_merkleize: bool,
+    ) -> Machine {
+        let mut modules = Vec::new();
+        let mut available_imports = HashMap::new();
+        for lib in libraries {
+            let module = Module::from_binary(lib, &available_imports);
+            for (name, &func) in &module.exports {
+                available_imports.insert(
+                    name.clone(),
+                    AvailableImport {
+                        module: modules.len() as u32,
+                        func: func,
+                        ty: module.func_types[func as usize].clone(),
+                    },
+                );
+            }
+            modules.push(module);
+        }
+        modules.push(Module::from_binary(bin, &available_imports));
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
@@ -702,7 +751,7 @@ impl Machine {
             ));
         }
 
-        Ok(Machine {
+        Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -712,7 +761,7 @@ impl Machine {
             pc: ProgramCounter::new(entrypoint_idx, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
-        })
+        }
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {

@@ -8,14 +8,14 @@ mod utils;
 mod value;
 mod wavm;
 
-use crate::{machine::Machine, wavm::Opcode};
+use crate::{machine::Machine, wavm::Opcode, binary::WasmBinary};
 use eyre::Result;
 use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process,
 };
 use structopt::StructOpt;
@@ -25,11 +25,13 @@ use structopt::StructOpt;
 struct Opts {
     binary: PathBuf,
     #[structopt(short, long)]
+    libraries: Vec<PathBuf>,
+    #[structopt(short, long)]
     output: Option<PathBuf>,
     #[structopt(short = "b", long)]
     proving_backoff: bool,
-    #[structopt(short, long)]
-    lazy_merkleization: bool,
+    #[structopt(long)]
+    always_merkleize: bool,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: usize,
 }
@@ -41,9 +43,8 @@ struct ProofInfo {
     after: String,
 }
 
-fn main() -> Result<()> {
-    let opts = Opts::from_args();
-    let mut f = File::open(opts.binary)?;
+fn parse_binary(path: &Path) -> Result<WasmBinary> {
+    let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
 
@@ -52,16 +53,28 @@ fn main() -> Result<()> {
         Err(err) => {
             eprintln!("Parsing error:");
             for (input, kind) in err.errors {
-                eprintln!("Got {:?} while parsing {}", kind, hex::encode(input));
+                eprintln!("Got {:?} while parsing {}", kind, hex::encode(&input[..64]));
             }
             process::exit(1);
         }
     };
 
+    Ok(bin)
+}
+
+fn main() -> Result<()> {
+    let opts = Opts::from_args();
+
+    let mut libraries = Vec::new();
+    for lib in &opts.libraries {
+        libraries.push(parse_binary(lib)?);
+    }
+    let main_mod = parse_binary(&opts.binary)?;
+
     let out = opts.output.map(File::create).transpose()?;
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
-    let mut mach = Machine::from_binary(bin, !opts.lazy_merkleization)?;
+    let mut mach = Machine::from_binary(libraries, main_mod, opts.always_merkleize);
     println!("Starting machine hash: {}", mach.hash());
 
     let mut seen_states = HashSet::new();
