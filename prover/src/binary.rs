@@ -50,6 +50,8 @@ pub enum HirInstruction {
     F32Const(f32),
     F64Const(f64),
     CallIndirect(u32, u32),
+    /// Warning: internal and should not be parseable
+    CrossModuleCall(u32, u32),
 }
 
 impl HirInstruction {

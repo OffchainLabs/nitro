@@ -27,6 +27,15 @@ library Deserialize {
 		}
 	}
 
+	function u32(bytes calldata proof, uint256 startOffset) internal pure returns (uint32 ret, uint256 offset) {
+		offset = startOffset;
+		for (uint256 i = 0; i < 32/8; i++) {
+			ret <<= 8;
+			ret |= uint8(proof[offset]);
+			offset++;
+		}
+	}
+
 	function u64(bytes calldata proof, uint256 startOffset) internal pure returns (uint64 ret, uint256 offset) {
 		offset = startOffset;
 		for (uint256 i = 0; i < 64/8; i++) {
@@ -87,9 +96,9 @@ library Deserialize {
 		(remainingHash, offset) = b32(proof, offset);
 		uint256 provedLength;
 		(provedLength, offset) = u256(proof, offset);
-		uint64[] memory proved = new uint64[](provedLength);
+		uint32[] memory proved = new uint32[](provedLength);
 		for (uint256 i = 0; i < proved.length; i++) {
-			(proved[i], offset) = u64(proof, offset);
+			(proved[i], offset) = u32(proof, offset);
 		}
 		stack = PcStack({
 			proved: PcArray(proved),
@@ -175,18 +184,18 @@ library Deserialize {
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
-		uint64 moduleIdx;
-		uint64 functionIdx;
-		uint64 functionPc;
+		uint32 moduleIdx;
+		uint32 functionIdx;
+		uint32 functionPc;
 		StackFrameWindow memory frameStack;
 		bytes32 modulesRoot;
 		(values, offset) = valueStack(proof, offset);
 		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
-		(moduleIdx, offset) = u64(proof, offset);
-		(functionIdx, offset) = u64(proof, offset);
-		(functionPc, offset) = u64(proof, offset);
+		(moduleIdx, offset) = u32(proof, offset);
+		(functionIdx, offset) = u32(proof, offset);
+		(functionPc, offset) = u32(proof, offset);
 		(modulesRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,

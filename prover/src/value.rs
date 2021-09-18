@@ -42,9 +42,9 @@ impl ProgramCounter {
 
     pub fn serialize(self) -> Bytes32 {
         let mut b = [0u8; 32];
-        b[24..].copy_from_slice(&(self.inst as u64).to_be_bytes());
-        b[16..24].copy_from_slice(&(self.func as u64).to_be_bytes());
-        b[8..16].copy_from_slice(&(self.module as u64).to_be_bytes());
+        b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());
+        b[24..28].copy_from_slice(&(self.func as u32).to_be_bytes());
+        b[20..24].copy_from_slice(&(self.module as u32).to_be_bytes());
         Bytes32(b)
     }
 }
@@ -146,9 +146,7 @@ impl Value {
             ValueType::I64 => Value::I64(0),
             ValueType::F32 => Value::F32(0.),
             ValueType::F64 => Value::F64(0.),
-            ValueType::RefNull
-            | ValueType::FuncRef
-            | ValueType::InternalRef => Value::RefNull,
+            ValueType::RefNull | ValueType::FuncRef | ValueType::InternalRef => Value::RefNull,
             ValueType::StackBoundary => panic!("Attempted to make default of StackBoundary type"),
         }
     }

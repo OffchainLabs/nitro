@@ -11,9 +11,9 @@ struct Machine {
 	ValueStack internalStack;
 	PcStack blockStack;
 	StackFrameWindow frameStack;
-	uint64 moduleIdx;
-	uint64 functionIdx;
-	uint64 functionPc;
+	uint32 moduleIdx;
+	uint32 functionIdx;
+	uint32 functionPc;
 	bytes32 modulesRoot;
 	bool halted;
 }

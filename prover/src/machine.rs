@@ -9,7 +9,7 @@ use crate::{
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
-    wavm::Instruction,
+    wavm::{unpack_cross_module_call, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
@@ -17,6 +17,8 @@ use eyre::Result;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
+    borrow::Cow,
+    collections::HashMap,
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
@@ -81,6 +83,11 @@ impl Function {
                 inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
             }
         }
+
+        assert!(
+            u32::try_from(insts.len()).is_ok(),
+            "Function instruction count doesn't fit in a u32",
+        );
 
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
@@ -199,9 +206,213 @@ pub struct Module {
     types: Vec<FunctionType>,
     names: NameCustomSection,
     host_call_hooks: Vec<Option<(String, String)>>,
+    start_function: Option<u32>,
+    func_types: Vec<FunctionType>,
+    exports: HashMap<String, u32>,
 }
 
 impl Module {
+    fn from_binary(bin: WasmBinary) -> Module {
+        let mut code = Vec::new();
+        let mut globals = Vec::new();
+        let mut types = Vec::new();
+        let mut func_types: Vec<FunctionType> = Vec::new();
+        let mut start = None;
+        let mut memory = Memory::default();
+        let mut exports = HashMap::new();
+        let mut tables = Vec::new();
+        let mut names = NameCustomSection::default();
+        let mut host_call_hooks = Vec::new();
+        for sect in bin.sections {
+            match sect {
+                WasmSection::Types(t) => {
+                    assert!(types.is_empty(), "Duplicate types section");
+                    types = t;
+                }
+                WasmSection::Imports(imports) => {
+                    for import in imports {
+                        if let ImportKind::Function(ty) = import.kind {
+                            let func = get_host_impl(&import.module, &import.name);
+                            assert_eq!(
+                                func.ty, types[ty as usize],
+                                "Import has different function signature than host function",
+                            );
+                            func_types.push(func.ty.clone());
+                            code.push(func);
+                            host_call_hooks.push(Some((import.module, import.name)));
+                        } else {
+                            panic!("Unsupport import kind {:?}", import);
+                        }
+                    }
+                }
+                WasmSection::Functions(f) => {
+                    func_types.extend(f.into_iter().map(|x| types[x as usize].clone()));
+                }
+                WasmSection::Code(sect_code) => {
+                    for c in sect_code {
+                        let idx = code.len();
+                        code.push(Function::new(c, func_types[idx].clone(), &types));
+                        host_call_hooks.push(None);
+                    }
+                }
+                WasmSection::Start(s) => {
+                    assert!(start.is_none(), "Duplicate start section");
+                    start = Some(s);
+                }
+                WasmSection::Memories(m) => {
+                    assert!(memory.size() == 0, "Duplicate memories section");
+                    assert!(m.len() <= 1, "Multiple memories are not supported");
+                    if let Some(limits) = m.get(0) {
+                        // We ignore the maximum size
+                        let size = usize::try_from(limits.minimum_size)
+                            .ok()
+                            .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
+                            .expect("Memory size is too large");
+                        memory = Memory::new(size);
+                    }
+                }
+                WasmSection::Globals(g) => {
+                    assert!(globals.is_empty(), "Duplicate globals section");
+                    globals = g
+                        .into_iter()
+                        .map(|g| {
+                            if let [insn] = g.initializer.as_slice() {
+                                if let Some(val) = insn.get_const_output() {
+                                    return val;
+                                }
+                            }
+                            panic!("Global initializer isn't a constant");
+                        })
+                        .collect();
+                }
+                WasmSection::Exports(e) => {
+                    assert!(exports.is_empty(), "Duplicate exports section");
+                    for export in e {
+                        if let ExportKind::Function(idx) = export.kind {
+                            exports.insert(export.name, idx);
+                        }
+                    }
+                }
+                WasmSection::Datas(datas) => {
+                    for data in datas {
+                        if let Some(loc) = data.active_location {
+                            assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
+                            let mut offset = None;
+                            if let [insn] = loc.offset.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
+                            if !matches!(
+                                offset.checked_add(data.data.len()),
+                                Some(x) if (x as u64) < memory.size() as u64,
+                            ) {
+                                panic!(
+                                    "Out-of-bounds data memory init with offset {} and size {}",
+                                    offset,
+                                    data.data.len(),
+                                );
+                            }
+                            memory.set_range(offset, &data.data);
+                        }
+                    }
+                }
+                WasmSection::Tables(t) => {
+                    assert!(tables.is_empty(), "Duplicate tables section");
+                    for table in t {
+                        tables.push(Table {
+                            elems: vec![
+                                TableElement::default();
+                                usize::try_from(table.limits.minimum_size).unwrap()
+                            ],
+                            ty: table,
+                            elems_merkle: Merkle::default(),
+                        });
+                    }
+                }
+                WasmSection::Elements(elems) => {
+                    for elem in elems {
+                        if let ElementMode::Active(t, o) = elem.mode {
+                            let mut offset = None;
+                            if let [insn] = o.as_slice() {
+                                if let Some(Value::I32(x)) = insn.get_const_output() {
+                                    offset = Some(x);
+                                }
+                            }
+                            let offset = usize::try_from(
+                                offset.expect("Non-constant data offset expression"),
+                            )
+                            .unwrap();
+                            let t = usize::try_from(t).unwrap();
+                            assert_eq!(tables[t].ty.ty, elem.ty);
+                            let contents: Vec<_> = elem
+                                .init
+                                .into_iter()
+                                .map(|i| {
+                                    let insn = match i.as_slice() {
+                                        [x] => x,
+                                        _ => panic!(
+                                            "Element initializer isn't one instruction: {:?}",
+                                            o
+                                        ),
+                                    };
+                                    match insn.get_const_output() {
+                                        Some(v @ Value::RefNull) => TableElement {
+                                            func_ty: FunctionType::default(),
+                                            val: v,
+                                        },
+                                        Some(Value::FuncRef(x)) => TableElement {
+                                            func_ty: func_types[usize::try_from(x).unwrap()]
+                                                .clone(),
+                                            val: Value::FuncRef(x),
+                                        },
+                                        _ => panic!("Invalid element initializer {:?}", insn),
+                                    }
+                                })
+                                .collect();
+                            let len = contents.len();
+                            tables[t].elems[offset..][..len].clone_from_slice(&contents);
+                        }
+                    }
+                }
+                WasmSection::Custom(CustomSection::Name(n)) => {
+                    assert!(
+                        names == NameCustomSection::default(),
+                        "Duplicate names custom section"
+                    );
+                    names = n;
+                }
+                WasmSection::Custom(CustomSection::Unknown(_, _)) => {}
+                WasmSection::DataCount(_) => {}
+            }
+        }
+        assert!(
+            code.len() < (1usize << 31),
+            "Module function count must be under 2^31",
+        );
+        Module {
+            memory,
+            globals,
+            tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
+            tables,
+            funcs_merkle: Merkle::new(
+                MerkleType::Function,
+                code.iter().map(|f| f.hash()).collect(),
+            ),
+            funcs: code,
+            types,
+            names,
+            host_call_hooks,
+            start_function: start,
+            func_types,
+            exports,
+        }
+    }
+
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Module:");
@@ -278,7 +489,7 @@ fn hash_value_stack(stack: &[Value]) -> Bytes32 {
 
 fn hash_pc_stack(pcs: &[usize]) -> Bytes32 {
     hash_stack(
-        pcs.iter().map(|pc| (*pc as u64).to_be_bytes()),
+        pcs.iter().map(|pc| (*pc as u32).to_be_bytes()),
         "Program counter stack:",
     )
 }
@@ -394,243 +605,95 @@ where
 
 impl Machine {
     pub fn from_binary(bin: WasmBinary, always_merkleize: bool) -> Result<Machine> {
-        let mut code = Vec::new();
-        let mut globals = Vec::new();
-        let mut types = Vec::new();
-        let mut func_types: Vec<FunctionType> = Vec::new();
-        let mut start = None;
-        let mut memory = Memory::default();
-        let mut main = None;
-        let mut tables = Vec::new();
-        let mut names = NameCustomSection::default();
-        let mut host_call_hooks = Vec::new();
-        for sect in bin.sections {
-            match sect {
-                WasmSection::Types(t) => {
-                    assert!(types.is_empty(), "Duplicate types section");
-                    types = t;
-                }
-                WasmSection::Imports(imports) => {
-                    for import in imports {
-                        if let ImportKind::Function(ty) = import.kind {
-                            let func = get_host_impl(&import.module, &import.name);
-                            assert_eq!(
-                                func.ty, types[ty as usize],
-                                "Import has different function signature than host function",
-                            );
-                            func_types.push(func.ty.clone());
-                            code.push(func);
-                            host_call_hooks.push(Some((import.module, import.name)));
-                        } else {
-                            panic!("Unsupport import kind {:?}", import);
-                        }
-                    }
-                }
-                WasmSection::Functions(f) => {
-                    func_types.extend(f.into_iter().map(|x| types[x as usize].clone()));
-                }
-                WasmSection::Code(sect_code) => {
-                    for c in sect_code {
-                        let idx = code.len();
-                        code.push(Function::new(c, func_types[idx].clone(), &types));
-                        host_call_hooks.push(None);
-                    }
-                }
-                WasmSection::Start(s) => {
-                    assert!(start.is_none(), "Duplicate start section");
-                    start = Some(s);
-                }
-                WasmSection::Memories(m) => {
-                    assert!(memory.size() == 0, "Duplicate memories section");
-                    assert!(m.len() <= 1, "Multiple memories are not supported");
-                    if let Some(limits) = m.get(0) {
-                        // We ignore the maximum size
-                        let size = usize::try_from(limits.minimum_size)
-                            .ok()
-                            .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
-                            .expect("Memory size is too large");
-                        memory = Memory::new(size);
-                    }
-                }
-                WasmSection::Globals(g) => {
-                    assert!(globals.is_empty(), "Duplicate globals section");
-                    globals = g
-                        .into_iter()
-                        .map(|g| {
-                            if let [insn] = g.initializer.as_slice() {
-                                if let Some(val) = insn.get_const_output() {
-                                    return val;
-                                }
-                            }
-                            panic!("Global initializer isn't a constant");
-                        })
-                        .collect();
-                }
-                WasmSection::Exports(exports) => {
-                    for export in exports {
-                        if export.name == "main" {
-                            if let ExportKind::Function(idx) = export.kind {
-                                main = Some(idx);
-                            } else {
-                                panic!("Got non-function export {:?} for main", export.kind);
-                            }
-                        }
-                    }
-                }
-                WasmSection::Datas(datas) => {
-                    for data in datas {
-                        if let Some(loc) = data.active_location {
-                            assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
-                            let mut offset = None;
-                            if let [insn] = loc.offset.as_slice() {
-                                if let Some(Value::I32(x)) = insn.get_const_output() {
-                                    offset = Some(x);
-                                }
-                            }
-                            let offset = usize::try_from(
-                                offset.expect("Non-constant data offset expression"),
-                            )
-                            .unwrap();
-                            if !matches!(
-                                offset.checked_add(data.data.len()),
-                                Some(x) if (x as u64) < memory.size() as u64,
-                            ) {
-                                panic!(
-                                    "Out-of-bounds data memory init with offset {} and size {}",
-                                    offset,
-                                    data.data.len(),
-                                );
-                            }
-                            memory.set_range(offset, &data.data);
-                        }
-                    }
-                }
-                WasmSection::Tables(t) => {
-                    assert!(tables.is_empty(), "Duplicate tables section");
-                    for table in t {
-                        tables.push(Table {
-                            elems: vec![
-                                TableElement::default();
-                                usize::try_from(table.limits.minimum_size).unwrap()
-                            ],
-                            ty: table,
-                            elems_merkle: Merkle::default(),
-                        });
-                    }
-                }
-                WasmSection::Elements(elems) => {
-                    for elem in elems {
-                        if let ElementMode::Active(t, o) = elem.mode {
-                            let mut offset = None;
-                            if let [insn] = o.as_slice() {
-                                if let Some(Value::I32(x)) = insn.get_const_output() {
-                                    offset = Some(x);
-                                }
-                            }
-                            let offset = usize::try_from(
-                                offset.expect("Non-constant data offset expression"),
-                            )
-                            .unwrap();
-                            let t = usize::try_from(t).unwrap();
-                            assert_eq!(tables[t].ty.ty, elem.ty);
-                            let contents: Vec<_> = elem
-                                .init
-                                .into_iter()
-                                .map(|i| {
-                                    let insn = match i.as_slice() {
-                                        [x] => x,
-                                        _ => panic!(
-                                            "Element initializer isn't one instruction: {:?}",
-                                            o
-                                        ),
-                                    };
-                                    match insn.get_const_output() {
-                                        Some(v @ Value::RefNull) => TableElement {
-                                            func_ty: FunctionType::default(),
-                                            val: v,
-                                        },
-                                        Some(Value::FuncRef(x)) => TableElement {
-                                            func_ty: func_types[usize::try_from(x).unwrap()]
-                                                .clone(),
-                                            val: Value::FuncRef(x),
-                                        },
-                                        _ => panic!("Invalid element initializer {:?}", insn),
-                                    }
-                                })
-                                .collect();
-                            let len = contents.len();
-                            tables[t].elems[offset..][..len].clone_from_slice(&contents);
-                        }
-                    }
-                }
-                WasmSection::Custom(CustomSection::Name(n)) => {
-                    assert!(
-                        names == NameCustomSection::default(),
-                        "Duplicate names custom section"
-                    );
-                    names = n;
-                }
-                WasmSection::Custom(CustomSection::Unknown(_, _)) => {}
-                WasmSection::DataCount(_) => {}
+        let mut modules = vec![Module::from_binary(bin)];
+
+        // Build the entrypoint module
+        let mut entrypoint = Vec::new();
+        for (i, module) in modules.iter().enumerate() {
+            if let Some(s) = module.start_function {
+                assert!(
+                    module.func_types[s as usize] == FunctionType::default(),
+                    "Start function takes inputs or outputs",
+                );
+                entrypoint.push(HirInstruction::CrossModuleCall(
+                    u32::try_from(i).unwrap(),
+                    s,
+                ));
             }
         }
-        if always_merkleize {
-            memory.cache_merkle_tree();
-        }
-        let mut entrypoint = Vec::new();
-        if let Some(s) = start {
-            assert!(
-                func_types[s as usize] == FunctionType::default(),
-                "Start function takes inputs or outputs",
-            );
-            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, s));
-        }
-        if let Some(m) = main {
+        let main_module_idx = modules.len() - 1;
+        let main_module = &modules[main_module_idx];
+        if let Some(&m) = main_module.exports.get("main") {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ValueType::I32); // argc
             expected_type.inputs.push(ValueType::I32); // argv
             expected_type.outputs.push(ValueType::I32); // ret
             assert!(
-                func_types[m as usize] == expected_type,
+                main_module.func_types[m as usize] == expected_type,
                 "Main function doesn't match expected signature of [argc, argv] -> [ret]",
             );
             entrypoint.push(HirInstruction::I32Const(0));
             entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(HirInstruction::WithIdx(Opcode::Call, m));
+            entrypoint.push(HirInstruction::CrossModuleCall(
+                u32::try_from(main_module_idx).unwrap(),
+                m,
+            ));
             entrypoint.push(HirInstruction::Simple(Opcode::Drop));
         }
-        let entrypoint_idx = code.len();
-        code.push(Function::new(
+        let entrypoint_types = vec![FunctionType::default()];
+        let mut entrypoint_names = NameCustomSection {
+            module: "entry".into(),
+            functions: HashMap::new(),
+            locals: HashMap::new(),
+        };
+        entrypoint_names
+            .functions
+            .insert(0, "wavm_entrypoint".into());
+        let entrypoint_funcs = vec![Function::new(
             Code {
                 locals: Vec::new(),
                 expr: entrypoint,
             },
             FunctionType::default(),
-            &types,
-        ));
-        for table in tables.iter_mut() {
-            table.elems_merkle = Merkle::new(
-                MerkleType::TableElement,
-                table.elems.iter().map(|e| e.hash()).collect(),
-            );
-        }
-        names
-            .functions
-            .insert(entrypoint_idx as u32, "__wavm_entrypoint".into());
-        let modules = vec![Module {
-            memory,
-            globals,
-            tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
-            tables,
+            &entrypoint_types,
+        )];
+        let entrypoint = Module {
+            globals: Vec::new(),
+            memory: Memory::default(),
+            tables: Vec::new(),
+            tables_merkle: Merkle::default(),
             funcs_merkle: Merkle::new(
                 MerkleType::Function,
-                code.iter().map(|f| f.hash()).collect(),
+                entrypoint_funcs.iter().map(Function::hash).collect(),
             ),
-            funcs: code,
-            types,
-            names,
-            host_call_hooks,
-        }];
+            funcs: entrypoint_funcs,
+            types: entrypoint_types,
+            names: entrypoint_names,
+            host_call_hooks: vec![None],
+            start_function: None,
+            func_types: vec![FunctionType::default()],
+            exports: HashMap::new(),
+        };
+        let entrypoint_idx = modules.len();
+        modules.push(entrypoint);
+
+        // Merkleize things if requested
+        for module in &mut modules {
+            for table in module.tables.iter_mut() {
+                table.elems_merkle = Merkle::new(
+                    MerkleType::TableElement,
+                    table.elems.iter().map(TableElement::hash).collect(),
+                );
+            }
+            module.tables_merkle = Merkle::new(
+                MerkleType::Table,
+                module.tables.iter().map(Table::hash).collect(),
+            );
+
+            if always_merkleize {
+                module.memory.cache_merkle_tree();
+            }
+        }
         let mut modules_merkle = None;
         if always_merkleize {
             modules_merkle = Some(Merkle::new(
@@ -638,6 +701,7 @@ impl Machine {
                 modules.iter().map(Module::hash).collect(),
             ));
         }
+
         Ok(Machine {
             value_stack: vec![Value::RefNull],
             internal_stack: Vec::new(),
@@ -645,7 +709,7 @@ impl Machine {
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
-            pc: ProgramCounter::new(0, entrypoint_idx, 0),
+            pc: ProgramCounter::new(entrypoint_idx, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
         })
@@ -750,6 +814,13 @@ impl Machine {
             Opcode::Call => {
                 self.value_stack.push(Value::InternalRef(self.pc));
                 self.pc.func = inst.argument_data as usize;
+                self.pc.inst = 0;
+            }
+            Opcode::CrossModuleCall => {
+                self.value_stack.push(Value::InternalRef(self.pc));
+                let (func, module) = unpack_cross_module_call(inst.argument_data as u64);
+                self.pc.module = module as usize;
+                self.pc.func = func as usize;
                 self.pc.inst = 0;
             }
             Opcode::CallIndirect => {
@@ -1092,15 +1163,14 @@ impl Machine {
         self.halted
     }
 
-    fn get_modules_root(&self) -> Bytes32 {
+    fn get_modules_merkle(&self) -> Cow<Merkle> {
         if let Some(merkle) = &self.modules_merkle {
-            merkle.root()
+            Cow::Borrowed(merkle)
         } else {
-            Merkle::new(
+            Cow::Owned(Merkle::new(
                 MerkleType::Module,
                 self.modules.iter().map(Module::hash).collect(),
-            )
-            .root()
+            ))
         }
     }
 
@@ -1114,10 +1184,10 @@ impl Machine {
         h.update(&hash_value_stack(&self.internal_stack));
         h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(&(self.pc.module as u64).to_be_bytes());
-        h.update(&(self.pc.func as u64).to_be_bytes());
-        h.update(&(self.pc.inst as u64).to_be_bytes());
-        h.update(self.get_modules_root());
+        h.update(&(self.pc.module as u32).to_be_bytes());
+        h.update(&(self.pc.func as u32).to_be_bytes());
+        h.update(&(self.pc.inst as u32).to_be_bytes());
+        h.update(self.get_modules_merkle().root());
         h.finalize().into()
     }
 
@@ -1142,7 +1212,7 @@ impl Machine {
         ));
 
         data.extend(prove_stack(&self.block_stack, 1, hash_pc_stack, |pc| {
-            (*pc as u64).to_be_bytes()
+            (*pc as u32).to_be_bytes()
         }));
 
         data.extend(prove_window(
@@ -1151,11 +1221,14 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        data.extend(&(self.pc.module as u64).to_be_bytes());
-        data.extend(&(self.pc.func as u64).to_be_bytes());
-        data.extend(&(self.pc.inst as u64).to_be_bytes());
+        data.extend(&(self.pc.module as u32).to_be_bytes());
+        data.extend(&(self.pc.func as u32).to_be_bytes());
+        data.extend(&(self.pc.inst as u32).to_be_bytes());
+        let mod_merkle = self.get_modules_merkle();
+        data.extend(mod_merkle.root());
 
-        data.extend(self.get_modules_root());
+        // End machine serialization, begin module serialization
+
         let module = &self.modules[self.pc.module];
         data.extend(
             Merkle::new(
@@ -1172,7 +1245,15 @@ impl Machine {
         data.extend(module.tables_merkle.root());
         data.extend(module.funcs_merkle.root());
 
-        // End machine serialization, begin proof serialization
+        // End module serialization, prove module is in modules merkle tree
+
+        data.extend(
+            mod_merkle
+                .prove(self.pc.module)
+                .expect("Failed to prove module"),
+        );
+
+        // End module merkle tree proof, begin next instruction proof
 
         let func = &module.funcs[self.pc.func];
         data.extend(func.code[self.pc.inst].serialize_for_proof());
@@ -1187,6 +1268,8 @@ impl Machine {
                 .prove(self.pc.func)
                 .expect("Failed to prove against function merkle"),
         );
+
+        // End next instruction proof, begin instruction specific serialization
 
         if let Some(next_inst) = func.code.get(self.pc.inst) {
             if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {

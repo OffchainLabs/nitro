@@ -2,15 +2,15 @@
 pragma solidity ^0.8.0;
 
 struct PcArray {
-	uint64[] inner;
+	uint32[] inner;
 }
 
 library PcArrays {
-	function get(PcArray memory arr, uint256 index) internal pure returns (uint64) {
+	function get(PcArray memory arr, uint256 index) internal pure returns (uint32) {
 		return arr.inner[index];
 	}
 
-	function set(PcArray memory arr, uint256 index, uint64 val) internal pure {
+	function set(PcArray memory arr, uint256 index, uint32 val) internal pure {
 		arr.inner[index] = val;
 	}
 
@@ -18,8 +18,8 @@ library PcArrays {
 		return arr.inner.length;
 	}
 
-	function push(PcArray memory arr, uint64 val) internal pure {
-		uint64[] memory newInner = new uint64[](arr.inner.length + 1);
+	function push(PcArray memory arr, uint32 val) internal pure {
+		uint32[] memory newInner = new uint32[](arr.inner.length + 1);
 		for (uint256 i = 0; i < arr.inner.length; i++) {
 			newInner[i] = arr.inner[i];
 		}
@@ -27,9 +27,9 @@ library PcArrays {
 		arr.inner = newInner;
 	}
 
-	function pop(PcArray memory arr) internal pure returns (uint64 popped) {
+	function pop(PcArray memory arr) internal pure returns (uint32 popped) {
 		popped = arr.inner[arr.inner.length - 1];
-		uint64[] memory newInner = new uint64[](arr.inner.length - 1);
+		uint32[] memory newInner = new uint32[](arr.inner.length - 1);
 		for (uint256 i = 0; i < newInner.length; i++) {
 			newInner[i] = arr.inner[i];
 		}

@@ -354,7 +354,7 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeBlock(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint64 targetPc = uint64(inst.argumentData);
+		uint32 targetPc = uint32(inst.argumentData);
 		require(targetPc == inst.argumentData, "BAD_BLOCK_PC");
 		PcStacks.push(mach.blockStack, targetPc);
 	}
@@ -380,10 +380,10 @@ contract OneStepProver0 is IOneStepProver {
 			revert("INVALID_RETURN_PC_TYPE");
 		}
 		uint256 data = frame.returnPc.contents;
-		uint64 pc = uint64(data);
-		uint64 func = uint64(data >> 64);
-		uint64 mod = uint64(data >> 128);
-		require(data >> 192 == 0, "INVALID_RETURN_PC_DATA");
+		uint32 pc = uint32(data);
+		uint32 func = uint32(data >> 32);
+		uint32 mod = uint32(data >> 64);
+		require(data >> 96 == 0, "INVALID_RETURN_PC_DATA");
 		mach.functionPc = pc;
 		mach.functionIdx = func;
 		mach.moduleIdx = mod;
@@ -392,8 +392,8 @@ contract OneStepProver0 is IOneStepProver {
 	function createReturnValue(Machine memory mach) internal pure returns (Value memory) {
 		uint256 returnData = 0;
 		returnData |= mach.functionPc;
-		returnData |= uint256(mach.functionIdx) << 64;
-		returnData |= uint256(mach.moduleIdx) << 128;
+		returnData |= uint256(mach.functionIdx) << 32;
+		returnData |= uint256(mach.moduleIdx) << 64;
 		return Value({
 			valueType: ValueType.INTERNAL_REF,
 			contents: returnData
@@ -405,14 +405,27 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, createReturnValue(mach));
 
 		// Jump to the target
-		uint64 idx = uint64(inst.argumentData);
+		uint32 idx = uint32(inst.argumentData);
 		require(idx == inst.argumentData, "BAD_CALL_DATA");
 		mach.functionIdx = idx;
 		mach.functionPc = 0;
 	}
 
+	function executeCrossModuleCall(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		// Push the return pc to the stack
+		ValueStacks.push(mach.valueStack, createReturnValue(mach));
+
+		// Jump to the target
+		uint32 func = uint32(inst.argumentData);
+		uint32 module = uint32(inst.argumentData >> 32);
+		require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
+		mach.moduleIdx = module;
+		mach.functionIdx = func;
+		mach.functionPc = 0;
+	}
+
 	function executeCallIndirect(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata proof) internal pure {
-		uint64 funcIdx;
+		uint32 funcIdx;
 		{
 			uint32 elementIdx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
@@ -463,7 +476,7 @@ contract OneStepProver0 is IOneStepProver {
 				mach.halted = true;
 				return;
 			} else if (functionPointer.valueType == ValueType.FUNC_REF) {
-				funcIdx = uint64(functionPointer.contents);
+				funcIdx = uint32(functionPointer.contents);
 				require(funcIdx == functionPointer.contents, "BAD_FUNC_REF_CONTENTS");
 			} else {
 				revert("BAD_ELEM_TYPE");
@@ -482,7 +495,7 @@ contract OneStepProver0 is IOneStepProver {
 		Value memory cond = ValueStacks.pop(mach.valueStack);
 		if (cond.contents != 0) {
 			// Jump to target
-			uint64 pc = uint64(inst.argumentData);
+			uint32 pc = uint32(inst.argumentData);
 			require(pc == inst.argumentData, "BAD_CALL_DATA");
 			mach.functionPc = pc;
 		}
@@ -607,6 +620,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeReturn;
 		} else if (opcode == Instructions.CALL) {
 			impl = executeCall;
+		} else if (opcode == Instructions.CROSS_MODULE_CALL) {
+			impl = executeCrossModuleCall;
 		} else if (opcode == Instructions.CALL_INDIRECT) {
 			impl = executeCallIndirect;
 		} else if (opcode == Instructions.END_BLOCK) {

@@ -28,6 +28,7 @@ contract OneStepProofEntry {
         Module memory mod;
         MerkleProof memory modProof;
         (mod, offset) = Deserialize.module(proof, offset);
+        (modProof, offset) = Deserialize.merkleProof(proof, offset);
         require(
             MerkleProofs.computeRootFromModule(modProof, mach.moduleIdx, mod) ==
                 mach.modulesRoot,

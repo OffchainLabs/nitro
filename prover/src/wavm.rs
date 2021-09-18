@@ -138,6 +138,8 @@ pub enum Opcode {
     IsStackBoundary,
     /// Duplicate the top value on the stack
     Dup,
+    /// Call a function in a different module
+    CrossModuleCall,
 }
 
 impl Opcode {
@@ -228,6 +230,7 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::IsStackBoundary => 0x8007,
             Opcode::Dup => 0x8008,
+            Opcode::CrossModuleCall => 0x8009,
         }
     }
 }
@@ -259,6 +262,14 @@ fn pack_call_indirect(table: u32, ty: u32) -> u64 {
 }
 
 pub fn unpack_call_indirect(data: u64) -> (u32, u32) {
+    (data as u32, (data >> 32) as u32)
+}
+
+fn pack_cross_module_call(func: u32, module: u32) -> u64 {
+    u64::from(func) | (u64::from(module) << 32)
+}
+
+pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
     (data as u32, (data >> 32) as u32)
 }
 
@@ -430,6 +441,13 @@ impl Instruction {
                 ops.push(Instruction {
                     opcode: Opcode::CallIndirect,
                     argument_data: pack_call_indirect(table, ty),
+                    proving_argument_data: None,
+                });
+            }
+            HirInstruction::CrossModuleCall(module, func) => {
+                ops.push(Instruction {
+                    opcode: Opcode::CrossModuleCall,
+                    argument_data: pack_cross_module_call(func, module),
                     proving_argument_data: None,
                 });
             }
