@@ -111,9 +111,12 @@ fn main() -> Result<()> {
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
     println!("End machine backtrace:");
-    for (func, pc) in mach.get_backtrace() {
+    for (module, func, pc) in mach.get_backtrace() {
         let func = rustc_demangle::demangle(&func);
-        println!("  \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m", func, pc);
+        println!(
+            "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
+            module, func, pc
+        );
     }
     let output = mach.get_stdio_output();
     println!("End machine output:");

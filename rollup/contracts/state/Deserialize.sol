@@ -8,7 +8,8 @@ import "./Machines.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
 import "./MerkleProofs.sol";
-import "./MachineMemories.sol";
+import "./ModuleMemories.sol";
+import "./Modules.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -139,15 +140,33 @@ library Deserialize {
 		});
 	}
 
-	function machineMemory(bytes calldata proof, uint256 startOffset) internal pure returns (MachineMemory memory mem, uint256 offset) {
+	function moduleMemory(bytes calldata proof, uint256 startOffset) internal pure returns (ModuleMemory memory mem, uint256 offset) {
 		offset = startOffset;
 		uint64 size;
 		bytes32 root;
 		(size, offset) = u64(proof, offset);
 		(root, offset) = b32(proof, offset);
-		mem = MachineMemory({
+		mem = ModuleMemory({
 			size: size,
 			merkleRoot: root
+		});
+	}
+
+	function module(bytes calldata proof, uint256 startOffset) internal pure returns (Module memory mod, uint256 offset) {
+		offset = startOffset;
+		bytes32 globalsMerkleRoot;
+		ModuleMemory memory mem;
+		bytes32 tablesMerkleRoot;
+		bytes32 functionsMerkleRoot;
+		(globalsMerkleRoot, offset) = b32(proof, offset);
+		(mem, offset) = moduleMemory(proof, offset);
+		(tablesMerkleRoot, offset) = b32(proof, offset);
+		(functionsMerkleRoot, offset) = b32(proof, offset);
+		mod = Module({
+			globalsMerkleRoot: globalsMerkleRoot,
+			moduleMemory: mem,
+			tablesMerkleRoot: tablesMerkleRoot,
+			functionsMerkleRoot: functionsMerkleRoot
 		});
 	}
 
@@ -156,34 +175,28 @@ library Deserialize {
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
+		uint64 moduleIdx;
 		uint64 functionIdx;
 		uint64 functionPc;
 		StackFrameWindow memory frameStack;
-		bytes32 globalsMerkleRoot;
-		MachineMemory memory mem;
-		bytes32 tablesMerkleRoot;
-		bytes32 functionsMerkleRoot;
+		bytes32 modulesRoot;
 		(values, offset) = valueStack(proof, offset);
 		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
+		(moduleIdx, offset) = u64(proof, offset);
 		(functionIdx, offset) = u64(proof, offset);
 		(functionPc, offset) = u64(proof, offset);
-		(globalsMerkleRoot, offset) = b32(proof, offset);
-		(mem, offset) = machineMemory(proof, offset);
-		(tablesMerkleRoot, offset) = b32(proof, offset);
-		(functionsMerkleRoot, offset) = b32(proof, offset);
+		(modulesRoot, offset) = b32(proof, offset);
 		mach = Machine({
 			valueStack: values,
 			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
+			moduleIdx: moduleIdx,
 			functionIdx: functionIdx,
 			functionPc: functionPc,
-			globalsMerkleRoot: globalsMerkleRoot,
-			machineMemory: mem,
-			tablesMerkleRoot: tablesMerkleRoot,
-			functionsMerkleRoot: functionsMerkleRoot,
+			modulesRoot: modulesRoot,
 			halted: false
 		});
 	}

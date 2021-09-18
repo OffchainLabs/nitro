@@ -29,6 +29,27 @@ impl ValueType {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProgramCounter {
+    pub module: usize,
+    pub func: usize,
+    pub inst: usize,
+}
+
+impl ProgramCounter {
+    pub fn new(module: usize, func: usize, inst: usize) -> ProgramCounter {
+        ProgramCounter { module, func, inst }
+    }
+
+    pub fn serialize(self) -> Bytes32 {
+        let mut b = [0u8; 32];
+        b[24..].copy_from_slice(&(self.inst as u64).to_be_bytes());
+        b[16..24].copy_from_slice(&(self.func as u64).to_be_bytes());
+        b[8..16].copy_from_slice(&(self.module as u64).to_be_bytes());
+        Bytes32(b)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Value {
     I32(u32),
@@ -39,15 +60,8 @@ pub enum Value {
     FuncRef(u32),
     #[allow(dead_code)]
     ExternRef(u32),
-    InternalRef((usize, usize)),
+    InternalRef(ProgramCounter),
     StackBoundary,
-}
-
-fn serialize_pc(pc: (usize, usize)) -> Bytes32 {
-    let mut b = [0u8; 32];
-    b[24..].copy_from_slice(&(pc.0 as u64).to_be_bytes());
-    b[16..24].copy_from_slice(&(pc.1 as u64).to_be_bytes());
-    Bytes32(b)
 }
 
 impl Value {
@@ -89,7 +103,7 @@ impl Value {
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
             Value::ExternRef(x) => x.into(),
-            Value::InternalRef(pc) => serialize_pc(pc),
+            Value::InternalRef(pc) => pc.serialize(),
             Value::StackBoundary => Bytes32::default(),
         }
     }

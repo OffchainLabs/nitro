@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "./Values.sol";
 import "./Instructions.sol";
+import "./Modules.sol";
 
 struct MerkleProof {
 	bytes32[] counterparts;
@@ -35,6 +36,10 @@ library MerkleProofs {
 	function computeRootFromTable(MerkleProof memory proof, uint256 index, uint8 tableType, uint64 tableSize, bytes32 elementsRoot) internal pure returns (bytes32) {
 		bytes32 h = keccak256(abi.encodePacked("Table:", tableType, tableSize, elementsRoot));
 		return computeRootUnsafe(proof, index, h, "Table merkle tree:");
+	}
+
+	function computeRootFromModule(MerkleProof memory proof, uint256 index, Module memory mod) internal pure returns (bytes32) {
+		return computeRootUnsafe(proof, index, Modules.hash(mod), "Module merkle tree:");
 	}
 
 	// WARNING: leafHash must be computed in such a way that it cannot be a non-leaf hash.

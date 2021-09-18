@@ -8,7 +8,7 @@ use crate::{
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
-    value::{FunctionType, IntegerValType, Value, ValueType},
+    value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
     wavm::Instruction,
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
@@ -16,7 +16,11 @@ use digest::Digest;
 use eyre::Result;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
-use std::{convert::TryFrom, num::Wrapping};
+use std::{
+    convert::TryFrom,
+    num::Wrapping,
+    ops::{Deref, DerefMut},
+};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -185,11 +189,7 @@ impl Table {
 }
 
 #[derive(Clone, Debug)]
-pub struct Machine {
-    value_stack: Vec<Value>,
-    internal_stack: Vec<Value>,
-    block_stack: Vec<usize>,
-    frame_stack: Vec<StackFrame>,
+pub struct Module {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
@@ -197,10 +197,62 @@ pub struct Machine {
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
     types: Vec<FunctionType>,
-    pc: (usize, usize),
-    halted: bool,
     names: NameCustomSection,
     host_call_hooks: Vec<Option<(String, String)>>,
+}
+
+impl Module {
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Module:");
+        h.update(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
+        h.update(self.memory.hash());
+        h.update(self.tables_merkle.root());
+        h.update(self.funcs_merkle.root());
+        h.finalize().into()
+    }
+}
+
+struct LazyModuleMerkle<'a>(&'a mut Module, Option<&'a mut Merkle>, usize);
+
+impl Deref for LazyModuleMerkle<'_> {
+    type Target = Module;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LazyModuleMerkle<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for LazyModuleMerkle<'_> {
+    fn drop(&mut self) {
+        if let Some(merkle) = &mut self.1 {
+            merkle.set(self.2, self.0.hash());
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Machine {
+    value_stack: Vec<Value>,
+    internal_stack: Vec<Value>,
+    block_stack: Vec<usize>,
+    frame_stack: Vec<StackFrame>,
+    modules: Vec<Module>,
+    modules_merkle: Option<Merkle>,
+    pc: ProgramCounter,
+    halted: bool,
     stdio_output: Vec<u8>,
 }
 
@@ -341,7 +393,7 @@ where
 }
 
 impl Machine {
-    pub fn from_binary(bin: WasmBinary, always_merkelize_memory: bool) -> Result<Machine> {
+    pub fn from_binary(bin: WasmBinary, always_merkleize: bool) -> Result<Machine> {
         let mut code = Vec::new();
         let mut globals = Vec::new();
         let mut types = Vec::new();
@@ -522,7 +574,7 @@ impl Machine {
                 WasmSection::DataCount(_) => {}
             }
         }
-        if always_merkelize_memory {
+        if always_merkleize {
             memory.cache_merkle_tree();
         }
         let mut entrypoint = Vec::new();
@@ -565,11 +617,7 @@ impl Machine {
         names
             .functions
             .insert(entrypoint_idx as u32, "__wavm_entrypoint".into());
-        Ok(Machine {
-            value_stack: vec![Value::RefNull],
-            internal_stack: Vec::new(),
-            block_stack: Vec::new(),
-            frame_stack: Vec::new(),
+        let modules = vec![Module {
             memory,
             globals,
             tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
@@ -580,10 +628,25 @@ impl Machine {
             ),
             funcs: code,
             types,
-            pc: (entrypoint_idx, 0),
-            halted: false,
             names,
             host_call_hooks,
+        }];
+        let mut modules_merkle = None;
+        if always_merkleize {
+            modules_merkle = Some(Merkle::new(
+                MerkleType::Module,
+                modules.iter().map(Module::hash).collect(),
+            ));
+        }
+        Ok(Machine {
+            value_stack: vec![Value::RefNull],
+            internal_stack: Vec::new(),
+            block_stack: Vec::new(),
+            frame_stack: Vec::new(),
+            modules,
+            modules_merkle,
+            pc: ProgramCounter::new(0, entrypoint_idx, 0),
+            halted: false,
             stdio_output: Vec::new(),
         })
     }
@@ -592,7 +655,10 @@ impl Machine {
         if self.halted {
             return None;
         }
-        self.funcs[self.pc.0].code.get(self.pc.1).cloned()
+        self.modules[self.pc.module].funcs[self.pc.func]
+            .code
+            .get(self.pc.inst)
+            .cloned()
     }
 
     pub fn step(&mut self) {
@@ -600,8 +666,13 @@ impl Machine {
             return;
         }
 
-        if self.pc.1 == 1 {
-            if let Some(hook) = self.host_call_hooks.get(self.pc.0).cloned().and_then(|x| x) {
+        if self.pc.inst == 1 {
+            if let Some(hook) = self.modules[self.pc.module]
+                .host_call_hooks
+                .get(self.pc.func)
+                .cloned()
+                .and_then(|x| x)
+            {
                 if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
                     eprintln!(
                         "Failed to process host call hook for host call {:?} {:?}: {}",
@@ -611,10 +682,16 @@ impl Machine {
             }
         }
 
-        let func = &self.funcs[self.pc.0];
+        // Updates the modules_merkle on drop
+        let mut module = LazyModuleMerkle(
+            &mut self.modules[self.pc.module],
+            self.modules_merkle.as_mut(),
+            self.pc.module,
+        );
+        let func = &module.funcs[self.pc.func];
         let code = &func.code;
-        let inst = code[self.pc.1];
-        self.pc.1 += 1;
+        let inst = code[self.pc.inst];
+        self.pc.inst += 1;
         match inst.opcode {
             Opcode::Unreachable => {
                 self.halted = true;
@@ -648,16 +725,16 @@ impl Machine {
             Opcode::ArbitraryJumpIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    self.pc.1 = inst.argument_data as usize;
+                    self.pc.inst = inst.argument_data as usize;
                 }
             }
             Opcode::Branch => {
-                self.pc.1 = self.block_stack.pop().unwrap();
+                self.pc.inst = self.block_stack.pop().unwrap();
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    self.pc.1 = self.block_stack.pop().unwrap();
+                    self.pc.inst = self.block_stack.pop().unwrap();
                 }
             }
             Opcode::Return => {
@@ -672,7 +749,8 @@ impl Machine {
             }
             Opcode::Call => {
                 self.value_stack.push(Value::InternalRef(self.pc));
-                self.pc = (inst.argument_data as usize, 0);
+                self.pc.func = inst.argument_data as usize;
+                self.pc.inst = 0;
             }
             Opcode::CallIndirect => {
                 let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
@@ -683,13 +761,14 @@ impl Machine {
                         x,
                     ),
                 };
-                let ty = &self.types[usize::try_from(ty).unwrap()];
-                let elems = &self.tables[usize::try_from(table).unwrap()].elems;
+                let ty = &module.types[usize::try_from(ty).unwrap()];
+                let elems = &module.tables[usize::try_from(table).unwrap()].elems;
                 if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
                     match elem.val {
                         Value::FuncRef(func) => {
                             self.value_stack.push(Value::InternalRef(self.pc));
-                            self.pc = (func as usize, 0);
+                            self.pc.func = func as usize;
+                            self.pc.inst = 0;
                         }
                         Value::ExternRef(_) => {
                             panic!("Extern functions aren't supported yet");
@@ -713,11 +792,11 @@ impl Machine {
             }
             Opcode::GlobalGet => {
                 self.value_stack
-                    .push(self.globals[inst.argument_data as usize]);
+                    .push(module.globals[inst.argument_data as usize]);
             }
             Opcode::GlobalSet => {
                 let val = self.value_stack.pop().unwrap();
-                self.globals[inst.argument_data as usize] = val;
+                module.globals[inst.argument_data as usize] = val;
             }
             Opcode::MemoryLoad { ty, bytes, signed } => {
                 let base = match self.value_stack.pop() {
@@ -728,7 +807,7 @@ impl Machine {
                     ),
                 };
                 if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                    let val = self.memory.get_value(idx, ty, bytes, signed);
+                    let val = module.memory.get_value(idx, ty, bytes, signed);
                     if let Some(val) = val {
                         self.value_stack.push(val);
                     } else {
@@ -757,7 +836,7 @@ impl Machine {
                     ),
                 };
                 if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                    if !self.memory.store_value(idx, val, bytes) {
+                    if !module.memory.store_value(idx, val, bytes) {
                         self.halted = true;
                     }
                 } else {
@@ -832,12 +911,12 @@ impl Machine {
                 }
             }
             Opcode::MemorySize => {
-                let pages = u32::try_from(self.memory.size() / Memory::PAGE_SIZE as u64)
+                let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE as u64)
                     .expect("Memory pages grew past a u32");
                 self.value_stack.push(Value::I32(pages));
             }
             Opcode::MemoryGrow => {
-                let old_size = self.memory.size();
+                let old_size = module.memory.size();
                 let adding_pages = match self.value_stack.pop() {
                     Some(Value::I32(x)) => x,
                     v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
@@ -855,7 +934,7 @@ impl Machine {
                     }
                 })();
                 if let Some(new_size) = new_size {
-                    self.memory.resize(usize::try_from(new_size).unwrap());
+                    module.memory.resize(usize::try_from(new_size).unwrap());
                     // Push the old number of pages
                     let old_pages = u32::try_from(old_size / Memory::PAGE_SIZE as u64).unwrap();
                     self.value_stack.push(Value::I32(old_pages));
@@ -948,7 +1027,8 @@ impl Machine {
         }
     }
 
-    fn host_call_hook(&mut self, module: &str, name: &str) -> eyre::Result<()> {
+    fn host_call_hook(&mut self, module_name: &str, name: &str) -> eyre::Result<()> {
+        let module = &mut self.modules[self.pc.module];
         macro_rules! pull_arg {
             ($offset:expr, $t:ident) => {
                 self.value_stack
@@ -962,19 +1042,21 @@ impl Machine {
         }
         macro_rules! read_u32_ptr {
             ($ptr:expr) => {
-                self.memory
+                module
+                    .memory
                     .get_u32($ptr.into())
                     .ok_or_else(|| eyre::eyre!("Pointer out of bounds"))?
             };
         }
         macro_rules! read_bytes_segment {
             ($ptr:expr, $size:expr) => {
-                self.memory
+                module
+                    .memory
                     .get_range($ptr as usize, $size as usize)
                     .ok_or_else(|| eyre::eyre!("Bytes segment out of bounds"))?
             };
         }
-        match (module, name) {
+        match (module_name, name) {
             ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
                 let exit_code = pull_arg!(0, I32);
                 println!(
@@ -1013,6 +1095,18 @@ impl Machine {
         self.halted
     }
 
+    fn get_modules_root(&self) -> Bytes32 {
+        if let Some(merkle) = &self.modules_merkle {
+            merkle.root()
+        } else {
+            Merkle::new(
+                MerkleType::Module,
+                self.modules.iter().map(Module::hash).collect(),
+            )
+            .root()
+        }
+    }
+
     pub fn hash(&self) -> Bytes32 {
         if self.halted {
             return Bytes32::default();
@@ -1023,18 +1117,10 @@ impl Machine {
         h.update(&hash_value_stack(&self.internal_stack));
         h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(&(self.pc.0 as u64).to_be_bytes());
-        h.update(&(self.pc.1 as u64).to_be_bytes());
-        h.update(
-            Merkle::new(
-                MerkleType::Value,
-                self.globals.iter().map(|v| v.hash()).collect(),
-            )
-            .root(),
-        );
-        h.update(self.memory.hash());
-        h.update(self.tables_merkle.root());
-        h.update(self.funcs_merkle.root());
+        h.update(&(self.pc.module as u64).to_be_bytes());
+        h.update(&(self.pc.func as u64).to_be_bytes());
+        h.update(&(self.pc.inst as u64).to_be_bytes());
+        h.update(self.get_modules_root());
         h.finalize().into()
     }
 
@@ -1068,40 +1154,44 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        data.extend(&(self.pc.0 as u64).to_be_bytes());
-        data.extend(&(self.pc.1 as u64).to_be_bytes());
+        data.extend(&(self.pc.module as u64).to_be_bytes());
+        data.extend(&(self.pc.func as u64).to_be_bytes());
+        data.extend(&(self.pc.inst as u64).to_be_bytes());
 
+        data.extend(self.get_modules_root());
+        let module = &self.modules[self.pc.module];
         data.extend(
             Merkle::new(
                 MerkleType::Value,
-                self.globals.iter().map(|v| v.hash()).collect(),
+                module.globals.iter().map(|v| v.hash()).collect(),
             )
             .root(),
         );
 
-        let mem_merkle = self.memory.merkelize();
-        data.extend(self.memory.size().to_be_bytes());
+        let mem_merkle = module.memory.merkelize();
+        data.extend(module.memory.size().to_be_bytes());
         data.extend(mem_merkle.root());
 
-        data.extend(self.tables_merkle.root());
-        data.extend(self.funcs_merkle.root());
+        data.extend(module.tables_merkle.root());
+        data.extend(module.funcs_merkle.root());
 
         // End machine serialization, begin proof serialization
 
-        let func = &self.funcs[self.pc.0];
-        data.extend(func.code[self.pc.1].serialize_for_proof());
+        let func = &module.funcs[self.pc.func];
+        data.extend(func.code[self.pc.inst].serialize_for_proof());
         data.extend(
             func.code_merkle
-                .prove(self.pc.1)
+                .prove(self.pc.inst)
                 .expect("Failed to prove against code merkle"),
         );
         data.extend(
-            self.funcs_merkle
-                .prove(self.pc.0)
+            module
+                .funcs_merkle
+                .prove(self.pc.func)
                 .expect("Failed to prove against function merkle"),
         );
 
-        if let Some(next_inst) = func.code.get(self.pc.1) {
+        if let Some(next_inst) = func.code.get(self.pc.inst) {
             if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
                 let locals = &self.frame_stack.last().unwrap().locals;
                 let idx = next_inst.argument_data as usize;
@@ -1115,10 +1205,10 @@ impl Machine {
                 );
             } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
                 let idx = next_inst.argument_data as usize;
-                data.extend(self.globals[idx].serialize_for_proof());
+                data.extend(module.globals[idx].serialize_for_proof());
                 let locals_merkle = Merkle::new(
                     MerkleType::Value,
-                    self.globals.iter().map(|v| v.hash()).collect(),
+                    module.globals.iter().map(|v| v.hash()).collect(),
                 );
                 data.extend(
                     locals_merkle
@@ -1149,17 +1239,17 @@ impl Machine {
                 {
                     // Prove the leaf this index is in, and the next one, if they are within the memory's size.
                     idx /= Memory::LEAF_SIZE;
-                    data.extend(self.memory.get_leaf_data(idx));
+                    data.extend(module.memory.get_leaf_data(idx));
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
                     // Now prove the next leaf too, in case it's accessed.
                     let next_leaf_idx = idx.saturating_add(1);
-                    data.extend(self.memory.get_leaf_data(next_leaf_idx));
+                    data.extend(module.memory.get_leaf_data(next_leaf_idx));
                     let second_mem_merkle = if is_store {
                         // For stores, prove the second merkle against a state after the first leaf is set.
                         // This state also happens to have the second leaf set, but that's irrelevant.
                         let mut copy = self.clone();
                         copy.step();
-                        copy.memory.merkelize().into_owned()
+                        copy.modules[self.pc.module].memory.merkelize().into_owned()
                     } else {
                         mem_merkle.into_owned()
                     };
@@ -1174,14 +1264,15 @@ impl Machine {
                         x,
                     ),
                 };
-                let ty = &self.types[usize::try_from(ty).unwrap()];
+                let ty = &module.types[usize::try_from(ty).unwrap()];
                 data.extend(&(table as u64).to_be_bytes());
                 data.extend(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
-                let table = &self.tables[table_usize];
+                let table = &module.tables[table_usize];
                 data.extend(table.serialize_for_proof());
                 data.extend(
-                    self.tables_merkle
+                    module
+                        .tables_merkle
                         .prove(table_usize)
                         .expect("Failed to prove tables merkle"),
                 );
@@ -1206,16 +1297,20 @@ impl Machine {
         &self.value_stack
     }
 
-    pub fn get_backtrace(&self) -> Vec<(String, usize)> {
+    pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
         let mut res = Vec::new();
-        let names = &self.names;
-        let mut push_pc = |(func, pc)| {
-            let name = names
+        let mut push_pc = |pc: ProgramCounter| {
+            let names = &self.modules[pc.module].names;
+            let func = names
                 .functions
-                .get(&(func as u32))
+                .get(&(pc.func as u32))
                 .cloned()
-                .unwrap_or_else(|| format!("{}", func));
-            res.push((name, pc));
+                .unwrap_or_else(|| format!("{}", pc.func));
+            let mut module = names.module.clone();
+            if module.is_empty() {
+                module = format!("{}", pc.module);
+            }
+            res.push((module, func, pc.inst));
         };
         push_pc(self.pc);
         for frame in self.frame_stack.iter().rev() {

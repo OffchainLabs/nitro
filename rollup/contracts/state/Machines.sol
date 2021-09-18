@@ -5,19 +5,16 @@ import "./ValueStacks.sol";
 import "./PcStacks.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
-import "./MachineMemories.sol";
 
 struct Machine {
 	ValueStack valueStack;
 	ValueStack internalStack;
 	PcStack blockStack;
 	StackFrameWindow frameStack;
+	uint64 moduleIdx;
 	uint64 functionIdx;
 	uint64 functionPc;
-	bytes32 globalsMerkleRoot;
-	MachineMemory machineMemory;
-	bytes32 tablesMerkleRoot;
-	bytes32 functionsMerkleRoot;
+	bytes32 modulesRoot;
 	bool halted;
 }
 
@@ -32,12 +29,10 @@ library Machines {
 			ValueStacks.hash(mach.internalStack),
 			PcStacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
+			mach.moduleIdx,
 			mach.functionIdx,
 			mach.functionPc,
-			mach.globalsMerkleRoot,
-			MachineMemories.hash(mach.machineMemory),
-			mach.tablesMerkleRoot,
-			mach.functionsMerkleRoot
+			mach.modulesRoot
 		));
 	}
 }

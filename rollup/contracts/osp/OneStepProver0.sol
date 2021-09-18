@@ -3,19 +3,20 @@ pragma solidity ^0.8.0;
 
 import "../state/Values.sol";
 import "../state/Machines.sol";
+import "../state/Modules.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
-	function executeUnreachable(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeUnreachable(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		mach.halted = true;
 	}
 
-	function executeNop(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeNop(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		// :)
 	}
 
-	function executeConstPush(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeConstPush(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint16 opcode = inst.opcode;
 		ValueType ty;
 		if (opcode == Instructions.I32_CONST) {
@@ -38,7 +39,7 @@ contract OneStepProver0 is IOneStepProver {
 		}));
 	}
 
-	function executeEqz(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeEqz(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory v = ValueStacks.pop(mach.valueStack);
 
 		if (v.contents == 0) {
@@ -50,11 +51,11 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, v);
 	}
 
-	function executeDrop(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeDrop(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		ValueStacks.pop(mach.valueStack);
 	}
 
-	function executeSelect(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeSelect(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		uint32 selector = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		Value memory b = ValueStacks.pop(mach.valueStack);
 		Value memory a = ValueStacks.pop(mach.valueStack);
@@ -99,7 +100,7 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
-	function executeI32RelOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI32RelOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
@@ -121,7 +122,7 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
 	}
 
-	function executeI64RelOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI64RelOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 
@@ -162,7 +163,7 @@ contract OneStepProver0 is IOneStepProver {
 		revert("BAD IUnOp");
 	}
 
-	function executeI32UnOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI32UnOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
 		uint16 unop = inst.opcode - Instructions.I32_UNOP_BASE;
@@ -172,7 +173,7 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI32(res));
 	}
 
-	function executeI64UnOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI64UnOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 
 		uint16 unop = inst.opcode - Instructions.I64_UNOP_BASE;
@@ -240,7 +241,7 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
-	function executeI32BinOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI32BinOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 		uint32 res;
@@ -285,7 +286,7 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI32(res));
 	}
 
-	function executeI64BinOp(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI64BinOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 		uint64 res;
@@ -330,7 +331,7 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI64(res));
 	}
 
-	function executeI32WrapI64(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeI32WrapI64(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
 
 		uint32 a32 = uint32(a);
@@ -338,7 +339,7 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI32(a32));
 	}
 
-	function executeI64ExtendI32(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeI64ExtendI32(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
 		uint64 a64;
@@ -352,17 +353,17 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI64(a64));
 	}
 
-	function executeBlock(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeBlock(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint64 targetPc = uint64(inst.argumentData);
 		require(targetPc == inst.argumentData, "BAD_BLOCK_PC");
 		PcStacks.push(mach.blockStack, targetPc);
 	}
 
-	function executeBranch(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeBranch(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		mach.functionPc = PcStacks.pop(mach.blockStack);
 	}
 
-	function executeBranchIf(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeBranchIf(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory cond = ValueStacks.pop(mach.valueStack);
 		if (cond.contents != 0) {
 			// Jump to target
@@ -370,7 +371,7 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
-	function executeReturn(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeReturn(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		StackFrame memory frame = StackFrames.pop(mach.frameStack);
 		if (frame.returnPc.valueType == ValueType.REF_NULL) {
 			mach.halted = true;
@@ -379,22 +380,29 @@ contract OneStepProver0 is IOneStepProver {
 			revert("INVALID_RETURN_PC_TYPE");
 		}
 		uint256 data = frame.returnPc.contents;
-		uint64 idx = uint64(data);
-		uint64 pc = uint64(data >> 64);
-		require(data >> 128 == 0, "INVALID_RETURN_PC_DATA");
-		mach.functionIdx = idx;
+		uint64 pc = uint64(data);
+		uint64 func = uint64(data >> 64);
+		uint64 mod = uint64(data >> 128);
+		require(data >> 192 == 0, "INVALID_RETURN_PC_DATA");
 		mach.functionPc = pc;
+		mach.functionIdx = func;
+		mach.moduleIdx = mod;
 	}
 
-	function executeCall(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
-		// Push the return pc to the stack
+	function createReturnValue(Machine memory mach) internal pure returns (Value memory) {
 		uint256 returnData = 0;
-		returnData |= mach.functionIdx;
-		returnData |= uint256(mach.functionPc) << 64;
-		ValueStacks.push(mach.valueStack, Value({
+		returnData |= mach.functionPc;
+		returnData |= uint256(mach.functionIdx) << 64;
+		returnData |= uint256(mach.moduleIdx) << 128;
+		return Value({
 			valueType: ValueType.INTERNAL_REF,
 			contents: returnData
-		}));
+		});
+	}
+
+	function executeCall(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		// Push the return pc to the stack
+		ValueStacks.push(mach.valueStack, createReturnValue(mach));
 
 		// Jump to the target
 		uint64 idx = uint64(inst.argumentData);
@@ -403,7 +411,7 @@ contract OneStepProver0 is IOneStepProver {
 		mach.functionPc = 0;
 	}
 
-	function executeCallIndirect(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
+	function executeCallIndirect(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata proof) internal pure {
 		uint64 funcIdx;
 		{
 			uint32 elementIdx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
@@ -428,7 +436,7 @@ contract OneStepProver0 is IOneStepProver {
 				bytes32 recomputed = keccak256(abi.encodePacked("Call indirect:", tableIdx, wantedFuncTypeHash));
 				require(recomputed == bytes32(inst.argumentData), "BAD_CALL_INDIRECT_DATA");
 				recomputed = MerkleProofs.computeRootFromTable(tableMerkleProof, tableIdx, tableType, tableSize, elemsRoot);
-				require(recomputed == mach.tablesMerkleRoot, "BAD_TABLES_ROOT");
+				require(recomputed == mod.tablesMerkleRoot, "BAD_TABLES_ROOT");
 
 				// Check if the table access is out of bounds
 				if (elementIdx >= tableSize) {
@@ -465,20 +473,14 @@ contract OneStepProver0 is IOneStepProver {
 		}
 
 		// Push the return pc to the stack
-		uint256 returnData = 0;
-		returnData |= mach.functionIdx;
-		returnData |= uint256(mach.functionPc) << 64;
-		ValueStacks.push(mach.valueStack, Value({
-			valueType: ValueType.INTERNAL_REF,
-			contents: returnData
-		}));
+		ValueStacks.push(mach.valueStack, createReturnValue(mach));
 
 		// Jump to the target
 		mach.functionIdx = funcIdx;
 		mach.functionPc = 0;
 	}
 
-	function executeArbitraryJumpIf(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeArbitraryJumpIf(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		Value memory cond = ValueStacks.pop(mach.valueStack);
 		if (cond.contents != 0) {
 			// Jump to target
@@ -510,40 +512,40 @@ contract OneStepProver0 is IOneStepProver {
 		return MerkleProofs.computeRootFromValue(merkle, index, newVal);
 	}
 
-	function executeLocalGet(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
+	function executeLocalGet(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata proof) internal pure {
 		StackFrame memory frame = StackFrames.peek(mach.frameStack);
 		Value memory val = merkleProveGetValue(frame.localsMerkleRoot, inst.argumentData, proof);
 		ValueStacks.push(mach.valueStack, val);
 	}
 
-	function executeLocalSet(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
+	function executeLocalSet(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata proof) internal pure {
 		Value memory newVal = ValueStacks.pop(mach.valueStack);
 		StackFrame memory frame = StackFrames.peek(mach.frameStack);
 		frame.localsMerkleRoot = merkleProveSetValue(frame.localsMerkleRoot, inst.argumentData, newVal, proof);
 	}
 
-	function executeGlobalGet(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
-		Value memory val = merkleProveGetValue(mach.globalsMerkleRoot, inst.argumentData, proof);
+	function executeGlobalGet(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata proof) internal pure {
+		Value memory val = merkleProveGetValue(mod.globalsMerkleRoot, inst.argumentData, proof);
 		ValueStacks.push(mach.valueStack, val);
 	}
 
-	function executeGlobalSet(Machine memory mach, Instruction calldata inst, bytes calldata proof) internal pure {
+	function executeGlobalSet(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata proof) internal pure {
 		Value memory newVal = ValueStacks.pop(mach.valueStack);
-		mach.globalsMerkleRoot = merkleProveSetValue(mach.globalsMerkleRoot, inst.argumentData, newVal, proof);
+		mod.globalsMerkleRoot = merkleProveSetValue(mod.globalsMerkleRoot, inst.argumentData, newVal, proof);
 	}
 
-	function executeEndBlock(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeEndBlock(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		PcStacks.pop(mach.blockStack);
 	}
 
-	function executeEndBlockIf(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeEndBlockIf(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory cond = ValueStacks.peek(mach.valueStack);
 		if (cond.contents != 0) {
 			PcStacks.pop(mach.blockStack);
 		}
 	}
 
-	function executeInitFrame(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeInitFrame(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		Value memory returnPc = ValueStacks.pop(mach.valueStack);
 		StackFrame memory newFrame = StackFrame({
 			returnPc: returnPc,
@@ -552,7 +554,7 @@ contract OneStepProver0 is IOneStepProver {
 		StackFrames.push(mach.frameStack, newFrame);
 	}
 
-	function executeMoveInternal(Machine memory mach, Instruction calldata inst, bytes calldata) internal pure {
+	function executeMoveInternal(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		Value memory val;
 		if (inst.opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL) {
 			val = ValueStacks.pop(mach.valueStack);
@@ -565,7 +567,7 @@ contract OneStepProver0 is IOneStepProver {
 		}
 	}
 
-	function executeIsStackBoundary(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeIsStackBoundary(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory val = ValueStacks.pop(mach.valueStack);
 		uint256 newContents = 0;
 		if (val.valueType == ValueType.STACK_BOUNDARY) {
@@ -577,7 +579,7 @@ contract OneStepProver0 is IOneStepProver {
 		}));
 	}
 
-	function executeDup(Machine memory mach, Instruction calldata, bytes calldata) internal pure {
+	function executeDup(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory val = ValueStacks.peek(mach.valueStack);
 		ValueStacks.push(mach.valueStack, val);
 	}
@@ -586,12 +588,13 @@ contract OneStepProver0 is IOneStepProver {
 		mach.halted = true;
 	}
 
-	function executeOneStep(Machine calldata startMach, Instruction calldata inst, bytes calldata proof) override view external returns (Machine memory mach) {
+	function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override view external returns (Machine memory mach, Module memory mod) {
 		mach = startMach;
+		mod = startMod;
 
 		uint16 opcode = inst.opcode;
 
-		function(Machine memory, Instruction calldata, bytes calldata) internal view impl;
+		function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal view impl;
 		if (opcode == Instructions.UNREACHABLE) {
 			impl = executeUnreachable;
 		} else if (opcode == Instructions.NOP) {
@@ -658,6 +661,6 @@ contract OneStepProver0 is IOneStepProver {
 			revert("INVALID_OPCODE");
 		}
 
-		impl(mach, inst, proof);
+		impl(mach, mod, inst, proof);
 	}
 }
