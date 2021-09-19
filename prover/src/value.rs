@@ -132,10 +132,17 @@ impl Value {
         }
     }
 
-    pub fn unwrap_u32(self) -> u32 {
+    pub fn assume_u32(self) -> u32 {
         match self {
             Value::I32(x) => x,
-            _ => panic!("WASM validation failed: unwrap_i32 called on {:?}", self),
+            _ => panic!("WASM validation failed: assume_u32 called on {:?}", self),
+        }
+    }
+
+    pub fn assume_u64(self) -> u64 {
+        match self {
+            Value::I64(x) => x,
+            _ => panic!("WASM validation failed: assume_u64 called on {:?}", self),
         }
     }
 

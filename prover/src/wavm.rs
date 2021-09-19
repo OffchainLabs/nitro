@@ -111,6 +111,14 @@ pub enum Opcode {
     I32WrapI64,
     I64ExtendI32(bool),
 
+    /// Parameterized by destination type, then source type
+    Reinterpret(ValueType, ValueType),
+
+    /// Parameterized by the number of source bits
+    I32ExtendS(u8),
+    /// Parameterized by the number of source bits
+    I64ExtendS(u8),
+
     FuncRefConst,
 
     IUnOp(IntegerValType, IUnOpType),
@@ -221,6 +229,15 @@ impl Opcode {
                 true => 0xac,
                 false => 0xad,
             },
+            Opcode::Reinterpret(dest, source) => match (dest, source) {
+                (ValueType::I32, ValueType::F32) => 0xBC,
+                (ValueType::I64, ValueType::F64) => 0xBD,
+                (ValueType::F32, ValueType::I32) => 0xBE,
+                (ValueType::F64, ValueType::I64) => 0xBF,
+                _ => panic!("Unsupported reinterpret to {:?} from {:?}", dest, source),
+            },
+            Opcode::I32ExtendS(x) => 0xC0 + (u16::from(x) / 8) - 1,
+            Opcode::I64ExtendS(x) => 0xC2 + (u16::from(x) / 8) - 1,
             Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,

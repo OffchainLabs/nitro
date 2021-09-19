@@ -920,8 +920,8 @@ impl Machine {
                 }
             }
             Opcode::InitFrame => {
-                let caller_module_internals = self.value_stack.pop().unwrap().unwrap_u32();
-                let caller_module = self.value_stack.pop().unwrap().unwrap_u32();
+                let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
+                let caller_module = self.value_stack.pop().unwrap().assume_u32();
                 let return_ref = self.value_stack.pop().unwrap();
                 self.frame_stack.push(StackFrame {
                     return_ref,
@@ -1241,18 +1241,52 @@ impl Machine {
                 self.value_stack.push(Value::I32(x as u32));
             }
             Opcode::I64ExtendI32(signed) => {
-                let x = match self.value_stack.pop() {
-                    Some(Value::I32(x)) => x,
-                    v => panic!(
-                        "WASM validation failed: wrong type for i64.extendi32: {:?}",
-                        v,
-                    ),
-                };
+                let x = self.value_stack.pop().unwrap().assume_u32();
                 let x64 = match signed {
                     true => x as i32 as i64 as u64,
                     false => x as u32 as u64,
                 };
                 self.value_stack.push(Value::I64(x64));
+            }
+            Opcode::Reinterpret(dest, source) => {
+                let val = match self.value_stack.pop() {
+                    Some(Value::I32(x)) if source == ValueType::I32 => {
+                        assert_eq!(dest, ValueType::F32, "Unsupported reinterpret");
+                        Value::F32(f32::from_bits(x))
+                    }
+                    Some(Value::I64(x)) if source == ValueType::I64 => {
+                        assert_eq!(dest, ValueType::F64, "Unsupported reinterpret");
+                        Value::F64(f64::from_bits(x))
+                    }
+                    Some(Value::F32(x)) if source == ValueType::F32 => {
+                        assert_eq!(dest, ValueType::I32, "Unsupported reinterpret");
+                        Value::I32(x.to_bits())
+                    }
+                    Some(Value::F64(x)) if source == ValueType::F64 => {
+                        assert_eq!(dest, ValueType::I64, "Unsupported reinterpret");
+                        Value::I64(x.to_bits())
+                    }
+                    v => panic!("Bad reinterpret: val {:?} source {:?}", v, source),
+                };
+                self.value_stack.push(val);
+            }
+            Opcode::I32ExtendS(b) => {
+                let mut x = self.value_stack.pop().unwrap().assume_u32();
+                let mask = (1u32 << b) - 1;
+                x &= mask;
+                if x & (1 << (b - 1)) != 0 {
+                    x |= !mask;
+                }
+                self.value_stack.push(Value::I32(x));
+            }
+            Opcode::I64ExtendS(b) => {
+                let mut x = self.value_stack.pop().unwrap().assume_u64();
+                let mask = (1u64 << b) - 1;
+                x &= mask;
+                if x & (1 << (b - 1)) != 0 {
+                    x |= !mask;
+                }
+                self.value_stack.push(Value::I64(x));
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);

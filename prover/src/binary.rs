@@ -375,6 +375,54 @@ fn irelop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Op
     }
 }
 
+fn integer_resizing_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(Opcode::I32WrapI64, tag(&[0xA7])),
+        value(Opcode::I64ExtendI32(true), tag(&[0xAC])),
+        value(Opcode::I64ExtendI32(false), tag(&[0xAD])),
+        value(Opcode::I32ExtendS(8), tag(&[0xC0])),
+        value(Opcode::I32ExtendS(16), tag(&[0xC1])),
+        value(Opcode::I64ExtendS(8), tag(&[0xC2])),
+        value(Opcode::I64ExtendS(16), tag(&[0xC3])),
+        value(Opcode::I64ExtendS(32), tag(&[0xC4])),
+    ))(input)
+}
+
+fn integer_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(Opcode::I32Eqz, tag(&[0x45])),
+        irelop(IntegerValType::I32, 0x46),
+        value(Opcode::I64Eqz, tag(&[0x50])),
+        irelop(IntegerValType::I64, 0x51),
+        iunop(IntegerValType::I32, 0x67),
+        ibinop(IntegerValType::I32, 0x6A),
+        iunop(IntegerValType::I64, 0x79),
+        ibinop(IntegerValType::I64, 0x7C),
+        integer_resizing_opcode,
+    ))(input)
+}
+
+fn reinterpret_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(
+            Opcode::Reinterpret(ValueType::I32, ValueType::F32),
+            tag(&[0xBC]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::I64, ValueType::F64),
+            tag(&[0xBD]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::F32, ValueType::I32),
+            tag(&[0xBE]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::F64, ValueType::I64),
+            tag(&[0xBF]),
+        ),
+    ))(input)
+}
+
 fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
     alt((
         value(Opcode::Unreachable, tag(&[0x00])),
@@ -384,17 +432,8 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         value(Opcode::Select, tag(&[0x1B])),
         value(Opcode::MemorySize, tag(&[0x3F, 0x00])),
         value(Opcode::MemoryGrow, tag(&[0x40, 0x00])),
-        value(Opcode::I32Eqz, tag(&[0x45])),
-        irelop(IntegerValType::I32, 0x46),
-        value(Opcode::I64Eqz, tag(&[0x50])),
-        irelop(IntegerValType::I64, 0x51),
-        iunop(IntegerValType::I32, 0x67),
-        ibinop(IntegerValType::I32, 0x6A),
-        iunop(IntegerValType::I64, 0x79),
-        ibinop(IntegerValType::I64, 0x7C),
-        value(Opcode::I32WrapI64, tag(&[0xA7])),
-        value(Opcode::I64ExtendI32(true), tag(&[0xAC])),
-        value(Opcode::I64ExtendI32(false), tag(&[0xAD])),
+        integer_opcode,
+        reinterpret_opcode,
     ))(input)
 }
 
