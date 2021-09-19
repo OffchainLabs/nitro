@@ -36,6 +36,25 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__environ_sizes_get(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn wasi_snapshot_preview1__fd_write(
+    fd: usize,
+    iovecs_ptr: usize,
+    iovecs_len: usize,
+    ret_ptr: usize,
+) -> u16 {
+    if fd != 0 && fd != 1 {
+        return ERRNO_BADF;
+    }
+    let mut size = 0;
+    for i in 0..iovecs_len {
+        let ptr = iovecs_ptr + i * 8;
+        size += wavm_caller_module_memory_load32(ptr + 4);
+    }
+    wavm_caller_module_memory_store32(ret_ptr, size);
+    0
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn wasi_snapshot_preview1__environ_get(_: usize, _: usize) -> u16 {
     ERRNO_INTVAL
 }

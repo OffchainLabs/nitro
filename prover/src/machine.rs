@@ -281,10 +281,15 @@ impl Module {
                                 wavm.push(Instruction::simple(Opcode::Return));
                                 func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                             } else {
-                                func = get_host_impl(&import.module, &import.name, is_library);
+                                func = get_host_impl(&import.module, &import.name);
                                 assert_eq!(
                                     func.ty, types[ty as usize],
                                     "Import has different function signature than host function",
+                                );
+                                assert!(
+                                    is_library,
+                                    "Only libraries are allowed to use host function {}",
+                                    import.name,
                                 );
                             }
                             func_types.push(func.ty.clone());
