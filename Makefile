@@ -48,7 +48,17 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__f32_abs \
 		--export wavm__f32_neg \
 		--export wavm__f32_ceil \
-		--export wavm__f32_floor
+		--export wavm__f32_floor \
+		--export wavm__f32_trunc \
+		--export wavm__f32_nearest \
+		--export wavm__f32_sqrt \
+		--export wavm__f32_add \
+		--export wavm__f32_sub \
+		--export wavm__f32_mul \
+		--export wavm__f32_div \
+		--export wavm__f32_min \
+		--export wavm__f32_max \
+		--export wavm__f32_copysign
 
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
@@ -63,3 +73,4 @@ rollup/test/proofs/rust-%.json: \
 	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
+.PHONY: all clean
