@@ -10,8 +10,13 @@ all: $(wasms) $(outputs)
 
 clean:
 	rm -rf prover/test-cases/rust/target
-	rm -f prover/test-cases/**/*.wasm
+	rm -f prover/test-cases/*.wasm
 	rm -f rollup/test/proofs/*.json
+	rm -rf wasm-libraries/target
+	rm -f wasm-libraries/soft-float/soft-float.wasm
+	rm -f wasm-libraries/soft-float/*.o
+	rm -f wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
+	rm -f wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
 
 prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/src/bin/%.rs prover/test-cases/rust/src/lib.rs
 	cd prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
