@@ -58,7 +58,13 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__f32_div \
 		--export wavm__f32_min \
 		--export wavm__f32_max \
-		--export wavm__f32_copysign
+		--export wavm__f32_copysign \
+		--export wavm__f32_eq \
+		--export wavm__f32_ne \
+		--export wavm__f32_lt \
+		--export wavm__f32_le \
+		--export wavm__f32_gt \
+		--export wavm__f32_ge
 
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@

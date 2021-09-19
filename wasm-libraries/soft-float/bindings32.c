@@ -158,3 +158,42 @@ uint32_t wavm__f32_copysign(uint32_t va, uint32_t vb) {
 	va |= (vb & SIGN_BIT);
 	return va;
 }
+
+uint8_t wavm__f32_eq(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	return f32_eq(a, b);
+}
+
+uint8_t wavm__f32_ne(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	if (f32_isNaN(a) || f32_isNaN(b)) return false;
+	return !f32_eq(a, b);
+}
+
+uint8_t wavm__f32_lt(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	return f32_lt(a, b);
+}
+
+uint8_t wavm__f32_le(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	return f32_le(a, b);
+}
+
+uint8_t wavm__f32_gt(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	if (f32_isNaN(a) || f32_isNaN(b)) return false;
+	return !f32_le(a, b);
+}
+
+uint8_t wavm__f32_ge(uint8_t va, uint8_t vb) {
+	float32_t a = {va};
+	float32_t b = {vb};
+	if (f32_isNaN(a) || f32_isNaN(b)) return false;
+	return !f32_lt(a, b);
+}
