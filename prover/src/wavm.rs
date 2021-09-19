@@ -236,8 +236,17 @@ impl Opcode {
                 (ValueType::F64, ValueType::I64) => 0xBF,
                 _ => panic!("Unsupported reinterpret to {:?} from {:?}", dest, source),
             },
-            Opcode::I32ExtendS(x) => 0xC0 + (u16::from(x) / 8) - 1,
-            Opcode::I64ExtendS(x) => 0xC2 + (u16::from(x) / 8) - 1,
+            Opcode::I32ExtendS(x) => match x {
+                8 => 0xC0,
+                16 => 0xC1,
+                _ => panic!("Unsupported {:?}", self),
+            },
+            Opcode::I64ExtendS(x) => match x {
+                8 => 0xC2,
+                16 => 0xC3,
+                32 => 0xC4,
+                _ => panic!("Unsupported {:?}", self),
+            },
             Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,

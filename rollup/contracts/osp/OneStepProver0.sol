@@ -353,6 +353,68 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, Values.newI64(a64));
 	}
 
+	function executeExtendSameType(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		ValueType ty;
+		uint8 sourceBits;
+		if (inst.opcode == Instructions.I32_EXTEND_8S) {
+			ty = ValueType.I32;
+			sourceBits = 8;
+		} else if (inst.opcode == Instructions.I32_EXTEND_16S) {
+			ty = ValueType.I32;
+			sourceBits = 16;
+		} else if (inst.opcode == Instructions.I64_EXTEND_8S) {
+			ty = ValueType.I64;
+			sourceBits = 8;
+		} else if (inst.opcode == Instructions.I64_EXTEND_16S) {
+			ty = ValueType.I64;
+			sourceBits = 16;
+		} else if (inst.opcode == Instructions.I64_EXTEND_32S) {
+			ty = ValueType.I64;
+			sourceBits = 32;
+		} else {
+			revert("INVALID_EXTEND_SAME_TYPE");
+		}
+		uint256 resultMask;
+		if (ty == ValueType.I32) {
+			resultMask = (1 << 32) - 1;
+		} else {
+			resultMask = (1 << 64) - 1;
+		}
+		Value memory val = ValueStacks.pop(mach.valueStack);
+		require(val.valueType == ty, "BAD_EXTEND_SAME_TYPE_TYPE");
+		uint256 sourceMask = (1 << sourceBits) - 1;
+		val.contents &= sourceMask;
+		if (val.contents & (1 << (sourceBits - 1)) != 0) {
+			// Extend sign flag
+			val.contents |= resultMask & ~sourceMask;
+		}
+		ValueStacks.push(mach.valueStack, val);
+	}
+
+	function executeReinterpret(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		ValueType destTy;
+		ValueType sourceTy;
+		if (inst.opcode == Instructions.I32_REINTERPRET_F32) {
+			destTy = ValueType.I32;
+			sourceTy = ValueType.F32;
+		} else if (inst.opcode == Instructions.I64_REINTERPRET_F64) {
+			destTy = ValueType.I64;
+			sourceTy = ValueType.F64;
+		} else if (inst.opcode == Instructions.F32_REINTERPRET_I32) {
+			destTy = ValueType.F32;
+			sourceTy = ValueType.I32;
+		} else if (inst.opcode == Instructions.F64_REINTERPRET_I64) {
+			destTy = ValueType.F64;
+			sourceTy = ValueType.I64;
+		} else {
+			revert("INVALID_REINTERPRET");
+		}
+		Value memory val = ValueStacks.pop(mach.valueStack);
+		require(val.valueType == sourceTy, "INVALID_REINTERPRET_TYPE");
+		val.valueType = destTy;
+		ValueStacks.push(mach.valueStack, val);
+	}
+
 	function executeBlock(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		uint32 targetPc = uint32(inst.argumentData);
 		require(targetPc == inst.argumentData, "BAD_BLOCK_PC");
@@ -707,6 +769,10 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeI32WrapI64;
 		} else if (opcode == Instructions.I64_EXTEND_I32_S || opcode == Instructions.I64_EXTEND_I32_U) {
 			impl = executeI64ExtendI32;
+		} else if (opcode >= Instructions.I32_EXTEND_8S && opcode <= Instructions.I64_EXTEND_32S) {
+			impl = executeExtendSameType;
+		} else if (opcode >= Instructions.I32_REINTERPRET_F32 && opcode <= Instructions.F64_REINTERPRET_I64) {
+			impl = executeReinterpret;
 		} else if (opcode == Instructions.MOVE_FROM_STACK_TO_INTERNAL || opcode == Instructions.MOVE_FROM_INTERNAL_TO_STACK) {
 			impl = executeMoveInternal;
 		} else if (opcode == Instructions.IS_STACK_BOUNDARY) {

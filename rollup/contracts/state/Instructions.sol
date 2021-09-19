@@ -115,6 +115,17 @@ library Instructions {
 	uint16 constant I64_EXTEND_I32_S = 0xAC;
 	uint16 constant I64_EXTEND_I32_U = 0xAD;
 
+	uint16 constant I32_REINTERPRET_F32 = 0xBC;
+	uint16 constant I64_REINTERPRET_F64 = 0xBD;
+	uint16 constant F32_REINTERPRET_I32 = 0xBE;
+	uint16 constant F64_REINTERPRET_I64 = 0xBF;
+
+	uint16 constant I32_EXTEND_8S = 0xC0;
+	uint16 constant I32_EXTEND_16S = 0xC1;
+	uint16 constant I64_EXTEND_8S = 0xC2;
+	uint16 constant I64_EXTEND_16S = 0xC3;
+	uint16 constant I64_EXTEND_32S = 0xC4;
+
 	uint16 constant END_BLOCK = 0x8000;
 	uint16 constant END_BLOCK_IF = 0x8001;
 	uint16 constant INIT_FRAME = 0x8002;
