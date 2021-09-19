@@ -124,6 +124,8 @@ library Instructions {
 	uint16 constant MOVE_FROM_INTERNAL_TO_STACK = 0x8006;
 	uint16 constant IS_STACK_BOUNDARY = 0x8007;
 	uint16 constant DUP = 0x8008;
+	uint16 constant CROSS_MODULE_CALL = 0x8009;
+	uint16 constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));

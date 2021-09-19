@@ -17,11 +17,11 @@ library PcStacks {
 		}
 	}
 
-	function pop(PcStack memory stack) internal pure returns (uint64) {
+	function pop(PcStack memory stack) internal pure returns (uint32) {
 		return PcArrays.pop(stack.proved);
 	}
 
-	function push(PcStack memory stack, uint64 val) internal pure {
+	function push(PcStack memory stack, uint32 val) internal pure {
 		return PcArrays.push(stack.proved, val);
 	}
 

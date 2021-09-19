@@ -18,7 +18,6 @@ pub enum ValueType {
     F64,
     RefNull,
     FuncRef,
-    ExternRef,
     InternalRef,
     StackBoundary,
 }
@@ -26,6 +25,27 @@ pub enum ValueType {
 impl ValueType {
     pub fn serialize(self) -> u8 {
         self as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProgramCounter {
+    pub module: usize,
+    pub func: usize,
+    pub inst: usize,
+}
+
+impl ProgramCounter {
+    pub fn new(module: usize, func: usize, inst: usize) -> ProgramCounter {
+        ProgramCounter { module, func, inst }
+    }
+
+    pub fn serialize(self) -> Bytes32 {
+        let mut b = [0u8; 32];
+        b[28..].copy_from_slice(&(self.inst as u32).to_be_bytes());
+        b[24..28].copy_from_slice(&(self.func as u32).to_be_bytes());
+        b[20..24].copy_from_slice(&(self.module as u32).to_be_bytes());
+        Bytes32(b)
     }
 }
 
@@ -37,17 +57,8 @@ pub enum Value {
     F64(f64),
     RefNull,
     FuncRef(u32),
-    #[allow(dead_code)]
-    ExternRef(u32),
-    InternalRef((usize, usize)),
+    InternalRef(ProgramCounter),
     StackBoundary,
-}
-
-fn serialize_pc(pc: (usize, usize)) -> Bytes32 {
-    let mut b = [0u8; 32];
-    b[24..].copy_from_slice(&(pc.0 as u64).to_be_bytes());
-    b[16..24].copy_from_slice(&(pc.1 as u64).to_be_bytes());
-    Bytes32(b)
 }
 
 impl Value {
@@ -73,7 +84,6 @@ impl Value {
             Value::F64(_) => ValueType::F64,
             Value::RefNull => ValueType::RefNull,
             Value::FuncRef(_) => ValueType::FuncRef,
-            Value::ExternRef(_) => ValueType::ExternRef,
             Value::InternalRef(_) => ValueType::InternalRef,
             Value::StackBoundary => ValueType::StackBoundary,
         }
@@ -88,8 +98,7 @@ impl Value {
             Value::F64(x) => x.to_bits().into(),
             Value::RefNull => Bytes32::default(),
             Value::FuncRef(x) => x.into(),
-            Value::ExternRef(x) => x.into(),
-            Value::InternalRef(pc) => serialize_pc(pc),
+            Value::InternalRef(pc) => pc.serialize(),
             Value::StackBoundary => Bytes32::default(),
         }
     }
@@ -123,6 +132,13 @@ impl Value {
         }
     }
 
+    pub fn unwrap_u32(self) -> u32 {
+        match self {
+            Value::I32(x) => x,
+            _ => panic!("WASM validation failed: unwrap_i32 called on {:?}", self),
+        }
+    }
+
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Value:");
@@ -137,10 +153,7 @@ impl Value {
             ValueType::I64 => Value::I64(0),
             ValueType::F32 => Value::F32(0.),
             ValueType::F64 => Value::F64(0.),
-            ValueType::RefNull
-            | ValueType::FuncRef
-            | ValueType::ExternRef
-            | ValueType::InternalRef => Value::RefNull,
+            ValueType::RefNull | ValueType::FuncRef | ValueType::InternalRef => Value::RefNull,
             ValueType::StackBoundary => panic!("Attempted to make default of StackBoundary type"),
         }
     }

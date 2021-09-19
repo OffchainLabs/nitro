@@ -12,6 +12,7 @@ pub enum MerkleType {
     Memory,
     Table,
     TableElement,
+    Module,
 }
 
 impl Default for MerkleType {
@@ -30,6 +31,7 @@ impl MerkleType {
             MerkleType::Memory => "Memory merkle tree:",
             MerkleType::Table => "Table merkle tree:",
             MerkleType::TableElement => "Table element merkle tree:",
+            MerkleType::Module => "Module merkle tree:",
         }
     }
 }
@@ -128,6 +130,9 @@ impl Merkle {
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
+        if self.layers[0][idx] == hash {
+            return;
+        }
         let mut next_hash = hash;
         let empty_layers = &self.empty_layers;
         let layers_len = self.layers.len();

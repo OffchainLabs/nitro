@@ -1,9 +1,10 @@
-use std::process::exit;
-
 fn main() {
 	let mut x = Vec::new();
-	for i in 0..5 {
+	for i in 1..10 {
 		x.push(i);
 	}
-	exit(x.into_iter().sum());
+	let sum: usize = x.iter().cloned().sum();
+	let product = x.into_iter().fold(1, |p, x| p * x);
+	println!("Sum: {}", sum);
+	eprintln!("Product: {}", product);
 }

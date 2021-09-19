@@ -25,27 +25,40 @@ contract OneStepProofEntry {
         (mach, offset) = Deserialize.machine(proof, offset);
         require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
 
-        Instruction memory inst;
-        MerkleProof memory instProof;
-        MerkleProof memory funcProof;
-        (inst, offset) = Deserialize.instruction(proof, offset);
-        (instProof, offset) = Deserialize.merkleProof(proof, offset);
-        (funcProof, offset) = Deserialize.merkleProof(proof, offset);
-        bytes32 codeHash = MerkleProofs.computeRootFromInstruction(
-            instProof,
-            mach.functionPc,
-            inst
-        );
-        bytes32 recomputedRoot = MerkleProofs.computeRootFromFunction(
-            funcProof,
-            mach.functionIdx,
-            codeHash
-        );
+        Module memory mod;
+        MerkleProof memory modProof;
+        (mod, offset) = Deserialize.module(proof, offset);
+        (modProof, offset) = Deserialize.merkleProof(proof, offset);
         require(
-            recomputedRoot == mach.functionsMerkleRoot,
-            "BAD_FUNCTIONS_ROOT"
+            MerkleProofs.computeRootFromModule(modProof, mach.moduleIdx, mod) ==
+                mach.modulesRoot,
+            "MODULES_ROOT"
         );
 
+        Instruction memory inst;
+        {
+            MerkleProof memory instProof;
+            MerkleProof memory funcProof;
+            (inst, offset) = Deserialize.instruction(proof, offset);
+            (instProof, offset) = Deserialize.merkleProof(proof, offset);
+            (funcProof, offset) = Deserialize.merkleProof(proof, offset);
+            bytes32 codeHash = MerkleProofs.computeRootFromInstruction(
+                instProof,
+                mach.functionPc,
+                inst
+            );
+            bytes32 recomputedRoot = MerkleProofs.computeRootFromFunction(
+                funcProof,
+                mach.functionIdx,
+                codeHash
+            );
+            require(
+                recomputedRoot == mod.functionsMerkleRoot,
+                "BAD_FUNCTIONS_ROOT"
+            );
+        }
+
+        uint256 oldModIdx = mach.moduleIdx;
         mach.functionPc += 1;
         uint16 opcode = inst.opcode;
         if (
@@ -56,10 +69,12 @@ contract OneStepProofEntry {
             opcode == Instructions.MEMORY_SIZE ||
             opcode == Instructions.MEMORY_GROW
         ) {
-            mach = proverMem.executeOneStep(mach, inst, proof[offset:]);
+            (mach, mod) = proverMem.executeOneStep(mach, mod, inst, proof[offset:]);
         } else {
-            mach = prover0.executeOneStep(mach, inst, proof[offset:]);
+            (mach, mod) = prover0.executeOneStep(mach, mod, inst, proof[offset:]);
         }
+
+        mach.modulesRoot = MerkleProofs.computeRootFromModule(modProof, oldModIdx, mod);
 
         return Machines.hash(mach);
     }

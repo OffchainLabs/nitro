@@ -198,6 +198,14 @@ impl Memory {
         true
     }
 
+    pub fn get_range(&self, offset: usize, len: usize) -> Option<&[u8]> {
+        let end = offset.checked_add(len)?;
+        if end > self.buffer.len() {
+            return None;
+        }
+        Some(&self.buffer[offset..end])
+    }
+
     pub fn set_range(&mut self, offset: usize, data: &[u8]) {
         self.merkle = None;
         let end = offset
