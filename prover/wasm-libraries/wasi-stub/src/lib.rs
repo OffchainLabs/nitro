@@ -3,6 +3,7 @@
 const ERRNO_BADF: u16 = 8;
 const ERRNO_INTVAL: u16 = 28;
 
+#[allow(dead_code)]
 extern "C" {
     fn wavm_caller_module_memory_load8(ptr: usize) -> u8;
     fn wavm_caller_module_memory_load32(ptr: usize) -> u32;
@@ -42,7 +43,7 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__fd_write(
     iovecs_len: usize,
     ret_ptr: usize,
 ) -> u16 {
-    if fd != 0 && fd != 1 {
+    if fd != 1 && fd != 2 {
         return ERRNO_BADF;
     }
     let mut size = 0;

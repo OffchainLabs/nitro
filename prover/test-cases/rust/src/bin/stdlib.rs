@@ -6,5 +6,5 @@ fn main() {
 	let sum: usize = x.iter().cloned().sum();
 	let product = x.into_iter().fold(1, |p, x| p * x);
 	println!("Sum: {}", sum);
-	println!("Product: {}", product);
+	eprintln!("Product: {}", product);
 }
