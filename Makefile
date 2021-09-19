@@ -3,6 +3,8 @@ rust_bin_sources=$(wildcard prover/test-cases/rust/src/bin/*.rs)
 outputs=$(patsubst prover/test-cases/%.wat,rollup/test/proofs/%.json, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,rollup/test/proofs/rust-%.json, $(rust_bin_sources))
 wasms=$(patsubst %.wat,%.wasm, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(rust_bin_sources))
 
+WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
+
 all: $(wasms) $(outputs)
 	@printf "\e[38;5;161;1mdone building %s\e[0;0m\n" $$(expr $$(echo $? | wc -w) - 1)
 
@@ -17,13 +19,47 @@ prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/s
 wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: wasm-libraries/wasi-stub/src/**
 	cd wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
 
+wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
+		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
+		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/platform.h \
+		wasm-libraries/soft-float/SoftFloat-3e/source/*.c \
+		wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
+		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
+		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
+	cd wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
+
+wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
+	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -c -o $@
+
+	cd wasm-libraries/soft-float && make $(MAKEFLAGS)
+
+wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
+	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -c -o $@
+
+wasm-libraries/soft-float/soft-float.wasm: \
+		wasm-libraries/soft-float/bindings32.o \
+		wasm-libraries/soft-float/bindings64.o \
+		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
+	wasm-ld \
+		wasm-libraries/soft-float/bindings32.o \
+		wasm-libraries/soft-float/bindings64.o \
+		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o \
+		--no-entry -o wasm-libraries/soft-float/soft-float.wasm \
+		--export wavm__f32_abs \
+		--export wavm__f32_neg \
+		--export wavm__f32_ceil \
+		--export wavm__f32_floor
+
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
 	cargo run -p prover -- $< -o $@ --always-merkleize
 
-rollup/test/proofs/rust-%.json: prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -o $@ -b --always-merkleize
+rollup/test/proofs/rust-%.json: \
+		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
+		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
+		wasm-libraries/soft-float/soft-float.wasm prover/src/**
+	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
