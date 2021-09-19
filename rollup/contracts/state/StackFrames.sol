@@ -7,7 +7,7 @@ struct StackFrame {
     Value returnPc;
     bytes32 localsMerkleRoot;
     uint32 callerModule;
-    uint32 callerModuleInternalsOffset;
+    uint32 callerModuleInternals;
 }
 
 struct StackFrameWindow {
@@ -24,7 +24,7 @@ library StackFrames {
                     Values.hash(frame.returnPc),
                     frame.localsMerkleRoot,
                     frame.callerModule,
-                    frame.callerModuleInternalsOffset
+                    frame.callerModuleInternals
                 )
             );
     }

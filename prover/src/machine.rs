@@ -9,7 +9,7 @@ use crate::{
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
-    wavm::{unpack_cross_module_call, Instruction},
+    wavm::{pack_cross_module_call, unpack_cross_module_call, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
@@ -208,6 +208,14 @@ impl Table {
     }
 }
 
+fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
+    let mut wavm = Vec::new();
+    wavm.push(Instruction::simple(Opcode::InitFrame));
+    wavm.push(Instruction::simple(opcode));
+    wavm.push(Instruction::simple(Opcode::Return));
+    Function::new_from_wavm(wavm, ty, Vec::new())
+}
+
 #[derive(Clone, Debug)]
 struct AvailableImport {
     ty: FunctionType,
@@ -236,6 +244,7 @@ impl Module {
     fn from_binary(
         bin: WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
+        is_library: bool,
     ) -> Module {
         let mut code = Vec::new();
         let mut globals = Vec::new();
@@ -263,19 +272,16 @@ impl Module {
                                     import.ty, types[ty as usize],
                                     "Import has different function signature than host function",
                                 );
-                                let trampoline = vec![
-                                    HirInstruction::Simple(Opcode::InitFrame),
-                                    HirInstruction::CrossModuleCall(import.module, import.func),
-                                    HirInstruction::Simple(Opcode::Return),
-                                ];
                                 let mut wavm = Vec::new();
-                                let codegen_state = FunctionCodegenState::new(0);
-                                for inst in trampoline {
-                                    Instruction::extend_from_hir(&mut wavm, codegen_state, inst);
-                                }
+                                wavm.push(Instruction::simple(Opcode::InitFrame));
+                                wavm.push(Instruction::with_data(
+                                    Opcode::CrossModuleCall,
+                                    pack_cross_module_call(import.func, import.module),
+                                ));
+                                wavm.push(Instruction::simple(Opcode::Return));
                                 func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                             } else {
-                                func = get_host_impl(&import.module, &import.name);
+                                func = get_host_impl(&import.module, &import.name, is_library);
                                 assert_eq!(
                                     func.ty, types[ty as usize],
                                     "Import has different function signature than host function",
@@ -439,8 +445,50 @@ impl Module {
             "Module function count must be under 2^31",
         );
         assert!(!code.is_empty(), "Module has no code");
+
+        // Make internal functions
         let internals_offset = code.len() as u32;
-        // TODO add internals
+        let mut memory_load_internal_type = FunctionType::default();
+        memory_load_internal_type.inputs.push(ValueType::I32);
+        memory_load_internal_type.outputs.push(ValueType::I32);
+        func_types.push(memory_load_internal_type.clone());
+        code.push(make_internal_func(
+            Opcode::MemoryLoad {
+                ty: ValueType::I32,
+                bytes: 1,
+                signed: false,
+            },
+            memory_load_internal_type.clone(),
+        ));
+        func_types.push(memory_load_internal_type.clone());
+        code.push(make_internal_func(
+            Opcode::MemoryLoad {
+                ty: ValueType::I32,
+                bytes: 4,
+                signed: false,
+            },
+            memory_load_internal_type,
+        ));
+        let mut memory_store_internal_type = FunctionType::default();
+        memory_store_internal_type.inputs.push(ValueType::I32);
+        memory_store_internal_type.inputs.push(ValueType::I32);
+        func_types.push(memory_store_internal_type.clone());
+        code.push(make_internal_func(
+            Opcode::MemoryStore {
+                ty: ValueType::I32,
+                bytes: 1,
+            },
+            memory_store_internal_type.clone(),
+        ));
+        func_types.push(memory_store_internal_type.clone());
+        code.push(make_internal_func(
+            Opcode::MemoryStore {
+                ty: ValueType::I32,
+                bytes: 4,
+            },
+            memory_store_internal_type,
+        ));
+
         Module {
             memory,
             globals,
@@ -683,7 +731,7 @@ impl Machine {
         let mut modules = Vec::new();
         let mut available_imports = HashMap::new();
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports);
+            let module = Module::from_binary(lib, &available_imports, true);
             for (name, &func) in &module.exports {
                 available_imports.insert(
                     name.clone(),
@@ -696,7 +744,7 @@ impl Machine {
             }
             modules.push(module);
         }
-        modules.push(Module::from_binary(bin, &available_imports));
+        modules.push(Module::from_binary(bin, &available_imports, false));
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
@@ -925,6 +973,25 @@ impl Machine {
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
                 self.pc.inst = 0;
+            }
+            Opcode::CallerModuleInternalCall => {
+                self.value_stack.push(Value::InternalRef(self.pc));
+                self.value_stack.push(Value::I32(self.pc.module as u32));
+                self.value_stack.push(Value::I32(module.internals_offset));
+
+                let current_frame = self.frame_stack.last().unwrap();
+                if current_frame.caller_module_internals > 0 {
+                    let func_idx = u32::try_from(inst.argument_data)
+                        .ok()
+                        .and_then(|o| current_frame.caller_module_internals.checked_add(o))
+                        .expect("Internal call function index overflow");
+                    self.pc.module = current_frame.caller_module as usize;
+                    self.pc.func = func_idx as usize;
+                    self.pc.inst = 0;
+                } else {
+                    // The caller module has no internals
+                    self.halted = true;
+                }
             }
             Opcode::CallIndirect => {
                 let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);

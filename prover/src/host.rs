@@ -5,38 +5,50 @@ use crate::{
     wavm::{IBinOpType, Opcode},
 };
 
-fn write_const(local: u32, val: i32) -> Vec<HirInstruction> {
-    vec![
-        HirInstruction::WithIdx(Opcode::LocalGet, local),
-        HirInstruction::I32Const(val),
-        HirInstruction::LoadOrStore(
-            Opcode::MemoryStore {
-                ty: ValueType::I32,
-                bytes: 4,
-            },
-            MemoryArg {
-                alignment: 0,
-                offset: 0,
-            },
-        ),
-    ]
-}
-
 const WASI_BAD_FD: i32 = 8;
 
-pub fn get_host_impl(module: &str, name: &str) -> Function {
+pub fn get_host_impl(module: &str, name: &str, is_library: bool) -> Function {
     let mut insts = Vec::new();
     let mut locals = Vec::new();
     let ty;
     match (module, name) {
-        ("wasi_snapshot_preview1", "environ_sizes_get") => {
+        ("env", "wavm_caller_module_memory_load8") => {
+            assert!(is_library, "Only libraries are allowed to use {}", name);
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ValueType::I32],
                 outputs: vec![ValueType::I32],
             };
-            insts.extend(write_const(0, 0));
-            insts.extend(write_const(1, 0));
-            insts.push(HirInstruction::I32Const(0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 0));
+        }
+        ("env", "wavm_caller_module_memory_load32") => {
+            assert!(is_library, "Only libraries are allowed to use {}", name);
+            ty = FunctionType {
+                inputs: vec![ValueType::I32],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 1));
+        }
+        ("env", "wavm_caller_module_memory_store8") => {
+            assert!(is_library, "Only libraries are allowed to use {}", name);
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 2));
+        }
+        ("env", "wavm_caller_module_memory_store32") => {
+            assert!(is_library, "Only libraries are allowed to use {}", name);
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 3));
         }
         ("wasi_snapshot_preview1", "fd_write") => {
             ty = FunctionType {

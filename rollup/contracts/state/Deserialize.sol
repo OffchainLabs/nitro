@@ -123,16 +123,16 @@ library Deserialize {
 		Value memory returnPc;
 		bytes32 localsMerkleRoot;
 		uint32 callerModule;
-		uint32 callerModuleInternalsOffset;
+		uint32 callerModuleInternals;
 		(returnPc, offset) = value(proof, offset);
 		(localsMerkleRoot, offset) = b32(proof, offset);
 		(callerModule, offset) = u32(proof, offset);
-		(callerModuleInternalsOffset, offset) = u32(proof, offset);
+		(callerModuleInternals, offset) = u32(proof, offset);
 		window = StackFrame({
 			returnPc: returnPc,
 			localsMerkleRoot: localsMerkleRoot,
 			callerModule: callerModule,
-			callerModuleInternalsOffset: callerModuleInternalsOffset
+			callerModuleInternals: callerModuleInternals
 		});
 	}
 

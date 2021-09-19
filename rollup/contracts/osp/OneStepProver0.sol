@@ -407,7 +407,7 @@ contract OneStepProver0 is IOneStepProver {
 		// Push caller module info to the stack
 		StackFrame memory frame = StackFrames.peek(mach.frameStack);
 		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModule));
-		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternalsOffset));
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternals));
 
 		// Jump to the target
 		uint32 idx = uint32(inst.argumentData);
@@ -430,6 +430,29 @@ contract OneStepProver0 is IOneStepProver {
 		require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
 		mach.moduleIdx = module;
 		mach.functionIdx = func;
+		mach.functionPc = 0;
+	}
+
+	function executeCallerModuleInternalCall(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata) internal pure {
+		// Push the return pc to the stack
+		ValueStacks.push(mach.valueStack, createReturnValue(mach));
+
+		// Push caller module info to the stack
+		ValueStacks.push(mach.valueStack, Values.newI32(mach.moduleIdx));
+		ValueStacks.push(mach.valueStack, Values.newI32(mod.internalsOffset));
+
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		if (frame.callerModuleInternals == 0) {
+			// The caller module has no internals
+			mach.halted = true;
+			return;
+		}
+
+		// Jump to the target
+		uint32 offset = uint32(inst.argumentData);
+		require(offset == inst.argumentData, "BAD_CALLER_INTERNAL_CALL_DATA");
+		mach.moduleIdx = frame.callerModule;
+		mach.functionIdx = frame.callerModuleInternals + offset;
 		mach.functionPc = 0;
 	}
 
@@ -498,7 +521,7 @@ contract OneStepProver0 is IOneStepProver {
 		// Push caller module info to the stack
 		StackFrame memory frame = StackFrames.peek(mach.frameStack);
 		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModule));
-		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternalsOffset));
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternals));
 
 		// Jump to the target
 		mach.functionIdx = funcIdx;
@@ -571,14 +594,14 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeInitFrame(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		Value memory callerModuleInternalsOffset = ValueStacks.pop(mach.valueStack);
+		Value memory callerModuleInternals = ValueStacks.pop(mach.valueStack);
 		Value memory callerModule = ValueStacks.pop(mach.valueStack);
 		Value memory returnPc = ValueStacks.pop(mach.valueStack);
 		StackFrame memory newFrame = StackFrame({
 			returnPc: returnPc,
 			localsMerkleRoot: bytes32(inst.argumentData),
 			callerModule: Values.assumeI32(callerModule),
-			callerModuleInternalsOffset: Values.assumeI32(callerModuleInternalsOffset)
+			callerModuleInternals: Values.assumeI32(callerModuleInternals)
 		});
 		StackFrames.push(mach.frameStack, newFrame);
 	}
@@ -640,6 +663,8 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeCall;
 		} else if (opcode == Instructions.CROSS_MODULE_CALL) {
 			impl = executeCrossModuleCall;
+		} else if (opcode == Instructions.CALLER_MODULE_INTERNAL_CALL) {
+			impl = executeCallerModuleInternalCall;
 		} else if (opcode == Instructions.CALL_INDIRECT) {
 			impl = executeCallIndirect;
 		} else if (opcode == Instructions.END_BLOCK) {
