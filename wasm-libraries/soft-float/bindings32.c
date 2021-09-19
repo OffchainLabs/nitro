@@ -17,14 +17,14 @@ bool f32_isInfinity(float32_t f) {
 	return fraction == 0;
 }
 
-const uint32_t SIGN_BIT = 1 << 31;
+const uint32_t F32_SIGN_BIT = 1u << 31;
 
 bool f32_isNegative(float32_t f) {
-	return f.v & SIGN_BIT;
+	return f.v & F32_SIGN_BIT;
 }
 
 bool f32_isZero(float32_t f) {
-	return (f.v & ~SIGN_BIT) == 0;
+	return (f.v & ~F32_SIGN_BIT) == 0;
 }
 
 float32_t f32_positiveZero() {
@@ -33,17 +33,17 @@ float32_t f32_positiveZero() {
 }
 
 float32_t f32_negativeZero() {
-	float32_t f = {SIGN_BIT};
+	float32_t f = {F32_SIGN_BIT};
 	return f;
 }
 
 uint32_t wavm__f32_abs(uint32_t v) {
-	v &= ~SIGN_BIT;
+	v &= ~F32_SIGN_BIT;
 	return v;
 }
 
 uint32_t wavm__f32_neg(uint32_t v) {
-	v ^= SIGN_BIT;
+	v ^= F32_SIGN_BIT;
 	return v;
 }
 
@@ -154,46 +154,82 @@ uint32_t wavm__f32_max(uint32_t va, uint32_t vb) {
 }
 
 uint32_t wavm__f32_copysign(uint32_t va, uint32_t vb) {
-	va &= ~SIGN_BIT;
-	va |= (vb & SIGN_BIT);
+	va &= ~F32_SIGN_BIT;
+	va |= (vb & F32_SIGN_BIT);
 	return va;
 }
 
-uint8_t wavm__f32_eq(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_eq(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	return f32_eq(a, b);
 }
 
-uint8_t wavm__f32_ne(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_ne(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	if (f32_isNaN(a) || f32_isNaN(b)) return false;
 	return !f32_eq(a, b);
 }
 
-uint8_t wavm__f32_lt(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_lt(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	return f32_lt(a, b);
 }
 
-uint8_t wavm__f32_le(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_le(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	return f32_le(a, b);
 }
 
-uint8_t wavm__f32_gt(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_gt(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	if (f32_isNaN(a) || f32_isNaN(b)) return false;
 	return !f32_le(a, b);
 }
 
-uint8_t wavm__f32_ge(uint8_t va, uint8_t vb) {
+uint8_t wavm__f32_ge(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
 	if (f32_isNaN(a) || f32_isNaN(b)) return false;
 	return !f32_lt(a, b);
+}
+
+int32_t wavm__i32_trunc_f32_s(uint32_t v) {
+	float32_t f = {v};
+	return f32_to_i32(f, softfloat_round_minMag, true);
+}
+
+uint32_t wavm__i32_trunc_f32_u(uint32_t v) {
+	float32_t f = {v};
+	return f32_to_ui32(f, softfloat_round_minMag, true);
+}
+
+int64_t wavm__i64_trunc_f32_s(uint32_t v) {
+	float32_t f = {v};
+	return f32_to_i64(f, softfloat_round_minMag, true);
+}
+
+uint64_t wavm__i64_trunc_f32_u(uint32_t v) {
+	float32_t f = {v};
+	return f32_to_ui32(f, softfloat_round_minMag, true);
+}
+
+uint32_t wavm__f32_convert_i32_s(int32_t x) {
+	return i32_to_f32(x).v;
+}
+
+uint32_t wavm__f32_convert_i32_u(uint32_t x) {
+	return ui32_to_f32(x).v;
+}
+
+uint32_t wavm__f32_convert_i64_s(int64_t x) {
+	return i64_to_f32(x).v;
+}
+
+uint32_t wavm__f32_convert_i64_u(uint64_t x) {
+	return ui64_to_f32(x).v;
 }

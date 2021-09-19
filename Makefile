@@ -34,12 +34,12 @@ wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
 	cd wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
 
 wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -c -o $@
+	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
 
 	cd wasm-libraries/soft-float && make $(MAKEFLAGS)
 
 wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -c -o $@
+	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
 
 wasm-libraries/soft-float/soft-float.wasm: \
 		wasm-libraries/soft-float/bindings32.o \
@@ -69,7 +69,45 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__f32_lt \
 		--export wavm__f32_le \
 		--export wavm__f32_gt \
-		--export wavm__f32_ge
+		--export wavm__f32_ge \
+		--export wavm__i32_trunc_f32_s \
+		--export wavm__i32_trunc_f32_u \
+		--export wavm__i64_trunc_f32_s \
+		--export wavm__i64_trunc_f32_s \
+		--export wavm__f32_convert_i32_s \
+		--export wavm__f32_convert_i32_u \
+		--export wavm__f32_convert_i64_s \
+		--export wavm__f32_convert_i64_u \
+		--export wavm__f64_abs \
+		--export wavm__f64_neg \
+		--export wavm__f64_ceil \
+		--export wavm__f64_floor \
+		--export wavm__f64_trunc \
+		--export wavm__f64_nearest \
+		--export wavm__f64_sqrt \
+		--export wavm__f64_add \
+		--export wavm__f64_sub \
+		--export wavm__f64_mul \
+		--export wavm__f64_div \
+		--export wavm__f64_min \
+		--export wavm__f64_max \
+		--export wavm__f64_copysign \
+		--export wavm__f64_eq \
+		--export wavm__f64_ne \
+		--export wavm__f64_lt \
+		--export wavm__f64_le \
+		--export wavm__f64_gt \
+		--export wavm__f64_ge \
+		--export wavm__i32_trunc_f64_s \
+		--export wavm__i32_trunc_f64_u \
+		--export wavm__i64_trunc_f64_s \
+		--export wavm__i64_trunc_f64_s \
+		--export wavm__f64_convert_i32_s \
+		--export wavm__f64_convert_i32_u \
+		--export wavm__f64_convert_i64_s \
+		--export wavm__f64_convert_i64_u \
+		--export wavm__f32_demote_f64 \
+		--export wavm__f64_promote_f32
 
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
