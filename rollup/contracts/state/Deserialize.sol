@@ -122,11 +122,17 @@ library Deserialize {
 		offset = startOffset;
 		Value memory returnPc;
 		bytes32 localsMerkleRoot;
+		uint32 callerModule;
+		uint32 callerModuleInternalsOffset;
 		(returnPc, offset) = value(proof, offset);
 		(localsMerkleRoot, offset) = b32(proof, offset);
+		(callerModule, offset) = u32(proof, offset);
+		(callerModuleInternalsOffset, offset) = u32(proof, offset);
 		window = StackFrame({
 			returnPc: returnPc,
-			localsMerkleRoot: localsMerkleRoot
+			localsMerkleRoot: localsMerkleRoot,
+			callerModule: callerModule,
+			callerModuleInternalsOffset: callerModuleInternalsOffset
 		});
 	}
 
@@ -167,15 +173,18 @@ library Deserialize {
 		ModuleMemory memory mem;
 		bytes32 tablesMerkleRoot;
 		bytes32 functionsMerkleRoot;
+		uint32 internalsOffset;
 		(globalsMerkleRoot, offset) = b32(proof, offset);
 		(mem, offset) = moduleMemory(proof, offset);
 		(tablesMerkleRoot, offset) = b32(proof, offset);
 		(functionsMerkleRoot, offset) = b32(proof, offset);
+		(internalsOffset, offset) = u32(proof, offset);
 		mod = Module({
 			globalsMerkleRoot: globalsMerkleRoot,
 			moduleMemory: mem,
 			tablesMerkleRoot: tablesMerkleRoot,
-			functionsMerkleRoot: functionsMerkleRoot
+			functionsMerkleRoot: functionsMerkleRoot,
+			internalsOffset: internalsOffset
 		});
 	}
 

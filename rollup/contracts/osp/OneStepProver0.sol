@@ -404,6 +404,11 @@ contract OneStepProver0 is IOneStepProver {
 		// Push the return pc to the stack
 		ValueStacks.push(mach.valueStack, createReturnValue(mach));
 
+		// Push caller module info to the stack
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModule));
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternalsOffset));
+
 		// Jump to the target
 		uint32 idx = uint32(inst.argumentData);
 		require(idx == inst.argumentData, "BAD_CALL_DATA");
@@ -411,9 +416,13 @@ contract OneStepProver0 is IOneStepProver {
 		mach.functionPc = 0;
 	}
 
-	function executeCrossModuleCall(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+	function executeCrossModuleCall(Machine memory mach, Module memory mod, Instruction calldata inst, bytes calldata) internal pure {
 		// Push the return pc to the stack
 		ValueStacks.push(mach.valueStack, createReturnValue(mach));
+
+		// Push caller module info to the stack
+		ValueStacks.push(mach.valueStack, Values.newI32(mach.moduleIdx));
+		ValueStacks.push(mach.valueStack, Values.newI32(mod.internalsOffset));
 
 		// Jump to the target
 		uint32 func = uint32(inst.argumentData);
@@ -486,6 +495,11 @@ contract OneStepProver0 is IOneStepProver {
 		// Push the return pc to the stack
 		ValueStacks.push(mach.valueStack, createReturnValue(mach));
 
+		// Push caller module info to the stack
+		StackFrame memory frame = StackFrames.peek(mach.frameStack);
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModule));
+		ValueStacks.push(mach.valueStack, Values.newI32(frame.callerModuleInternalsOffset));
+
 		// Jump to the target
 		mach.functionIdx = funcIdx;
 		mach.functionPc = 0;
@@ -557,10 +571,14 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeInitFrame(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		Value memory callerModuleInternalsOffset = ValueStacks.pop(mach.valueStack);
+		Value memory callerModule = ValueStacks.pop(mach.valueStack);
 		Value memory returnPc = ValueStacks.pop(mach.valueStack);
 		StackFrame memory newFrame = StackFrame({
 			returnPc: returnPc,
-			localsMerkleRoot: bytes32(inst.argumentData)
+			localsMerkleRoot: bytes32(inst.argumentData),
+			callerModule: Values.assumeI32(callerModule),
+			callerModuleInternalsOffset: Values.assumeI32(callerModuleInternalsOffset)
 		});
 		StackFrames.push(mach.frameStack, newFrame);
 	}

@@ -120,6 +120,8 @@ impl Function {
 struct StackFrame {
     return_ref: Value,
     locals: Vec<Value>,
+    caller_module: u32,
+    caller_module_internals: u32,
 }
 
 impl StackFrame {
@@ -134,6 +136,8 @@ impl StackFrame {
             )
             .root(),
         );
+        h.update(self.caller_module.to_be_bytes());
+        h.update(self.caller_module_internals.to_be_bytes());
         h.finalize().into()
     }
 
@@ -147,6 +151,8 @@ impl StackFrame {
             )
             .root(),
         );
+        data.extend(self.caller_module.to_be_bytes());
+        data.extend(self.caller_module_internals.to_be_bytes());
         data
     }
 }
@@ -218,6 +224,7 @@ struct Module {
     funcs: Vec<Function>,
     funcs_merkle: Merkle,
     types: Vec<FunctionType>,
+    internals_offset: u32,
     names: NameCustomSection,
     host_call_hooks: Vec<Option<(String, String)>>,
     start_function: Option<u32>,
@@ -431,6 +438,9 @@ impl Module {
             code.len() < (1usize << 31),
             "Module function count must be under 2^31",
         );
+        assert!(!code.is_empty(), "Module has no code");
+        let internals_offset = code.len() as u32;
+        // TODO add internals
         Module {
             memory,
             globals,
@@ -442,6 +452,7 @@ impl Module {
             ),
             funcs: code,
             types,
+            internals_offset,
             names,
             host_call_hooks,
             start_function: start,
@@ -463,7 +474,30 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
+        h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
+    }
+
+    fn serialize_for_proof(&self, mem_merkle: &Merkle) -> Vec<u8> {
+        let mut data = Vec::new();
+
+        data.extend(
+            Merkle::new(
+                MerkleType::Value,
+                self.globals.iter().map(|v| v.hash()).collect(),
+            )
+            .root(),
+        );
+
+        data.extend(self.memory.size().to_be_bytes());
+        data.extend(mem_merkle.root());
+
+        data.extend(self.tables_merkle.root());
+        data.extend(self.funcs_merkle.root());
+
+        data.extend(self.internals_offset.to_be_bytes());
+
+        data
     }
 }
 
@@ -726,6 +760,7 @@ impl Machine {
             funcs: entrypoint_funcs,
             types: entrypoint_types,
             names: entrypoint_names,
+            internals_offset: 0,
             host_call_hooks: vec![None],
             start_function: None,
             func_types: vec![FunctionType::default()],
@@ -760,7 +795,7 @@ impl Machine {
         }
 
         Machine {
-            value_stack: vec![Value::RefNull],
+            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
             frame_stack: Vec::new(),
@@ -832,6 +867,8 @@ impl Machine {
                 }
             }
             Opcode::InitFrame => {
+                let caller_module_internals = self.value_stack.pop().unwrap().unwrap_u32();
+                let caller_module = self.value_stack.pop().unwrap().unwrap_u32();
                 let return_ref = self.value_stack.pop().unwrap();
                 self.frame_stack.push(StackFrame {
                     return_ref,
@@ -841,6 +878,8 @@ impl Machine {
                         .cloned()
                         .map(Value::default_of_type)
                         .collect(),
+                    caller_module,
+                    caller_module_internals,
                 });
             }
             Opcode::ArbitraryJumpIf => {
@@ -869,12 +908,19 @@ impl Machine {
                 }
             }
             Opcode::Call => {
+                let current_frame = self.frame_stack.last().unwrap();
                 self.value_stack.push(Value::InternalRef(self.pc));
+                self.value_stack
+                    .push(Value::I32(current_frame.caller_module));
+                self.value_stack
+                    .push(Value::I32(current_frame.caller_module_internals));
                 self.pc.func = inst.argument_data as usize;
                 self.pc.inst = 0;
             }
             Opcode::CrossModuleCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
+                self.value_stack.push(Value::I32(self.pc.module as u32));
+                self.value_stack.push(Value::I32(module.internals_offset));
                 let (func, module) = unpack_cross_module_call(inst.argument_data as u64);
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
@@ -894,7 +940,12 @@ impl Machine {
                 if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
                     match elem.val {
                         Value::FuncRef(func) => {
+                            let current_frame = self.frame_stack.last().unwrap();
                             self.value_stack.push(Value::InternalRef(self.pc));
+                            self.value_stack
+                                .push(Value::I32(current_frame.caller_module));
+                            self.value_stack
+                                .push(Value::I32(current_frame.caller_module_internals));
                             self.pc.func = func as usize;
                             self.pc.inst = 0;
                         }
@@ -1284,25 +1335,13 @@ impl Machine {
         let mod_merkle = self.get_modules_merkle();
         data.extend(mod_merkle.root());
 
-        // End machine serialization, begin module serialization
+        // End machine serialization, serialize module
 
         let module = &self.modules[self.pc.module];
-        data.extend(
-            Merkle::new(
-                MerkleType::Value,
-                module.globals.iter().map(|v| v.hash()).collect(),
-            )
-            .root(),
-        );
-
         let mem_merkle = module.memory.merkelize();
-        data.extend(module.memory.size().to_be_bytes());
-        data.extend(mem_merkle.root());
+        data.extend(module.serialize_for_proof(&mem_merkle));
 
-        data.extend(module.tables_merkle.root());
-        data.extend(module.funcs_merkle.root());
-
-        // End module serialization, prove module is in modules merkle tree
+        // Prove module is in modules merkle tree
 
         data.extend(
             mod_merkle
@@ -1310,7 +1349,7 @@ impl Machine {
                 .expect("Failed to prove module"),
         );
 
-        // End module merkle tree proof, begin next instruction proof
+        // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func];
         data.extend(func.code[self.pc.inst].serialize_for_proof());

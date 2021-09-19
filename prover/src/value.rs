@@ -132,6 +132,13 @@ impl Value {
         }
     }
 
+    pub fn unwrap_u32(self) -> u32 {
+        match self {
+            Value::I32(x) => x,
+            _ => panic!("WASM validation failed: unwrap_i32 called on {:?}", self),
+        }
+    }
+
     pub fn hash(self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Value:");

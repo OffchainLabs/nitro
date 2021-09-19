@@ -8,6 +8,7 @@ struct Module {
     ModuleMemory moduleMemory;
     bytes32 tablesMerkleRoot;
     bytes32 functionsMerkleRoot;
+    uint32 internalsOffset;
 }
 
 library Modules {
@@ -19,7 +20,8 @@ library Modules {
                     mod.globalsMerkleRoot,
                     ModuleMemories.hash(mod.moduleMemory),
                     mod.tablesMerkleRoot,
-                    mod.functionsMerkleRoot
+                    mod.functionsMerkleRoot,
+                    mod.internalsOffset
                 )
             );
     }
