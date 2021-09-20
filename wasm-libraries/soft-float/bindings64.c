@@ -200,21 +200,37 @@ uint8_t wavm__f64_ge(uint64_t va, uint64_t vb) {
 
 int32_t wavm__i32_trunc_f64_s(uint64_t v) {
 	float64_t f = {v};
+	// An exact floating point version of 1 << 32
+	float64_t max = {0x41f0000000000000};
+	if (f64_le(max, f)) {
+		return (1u << 31) - 1;
+	}
 	return f64_to_i32(f, softfloat_round_minMag, true);
 }
 
 uint32_t wavm__i32_trunc_f64_u(uint64_t v) {
 	float64_t f = {v};
+	if (f64_isNegative(f)) {
+		return 0;
+	}
 	return f64_to_ui32(f, softfloat_round_minMag, true);
 }
 
 int64_t wavm__i64_trunc_f64_s(uint64_t v) {
 	float64_t f = {v};
+	// A rounded up floating point version of 1 << 32
+	float64_t max = {0x43f0000000000000};
+	if (f64_le(max, f)) {
+		return (1ull << 63) - 1;
+	}
 	return f64_to_i64(f, softfloat_round_minMag, true);
 }
 
 uint64_t wavm__i64_trunc_f64_u(uint64_t v) {
 	float64_t f = {v};
+	if (f64_isNegative(f)) {
+		return 0;
+	}
 	return f64_to_ui64(f, softfloat_round_minMag, true);
 }
 

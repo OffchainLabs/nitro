@@ -42,13 +42,14 @@ contract OneStepProver0 is IOneStepProver {
 	function executeEqz(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory v = ValueStacks.pop(mach.valueStack);
 
+		uint32 output;
 		if (v.contents == 0) {
-			v.contents = 1;
+			output = 1;
 		} else {
-			v.contents = 0;
+			output = 0;
 		}
 
-		ValueStacks.push(mach.valueStack, v);
+		ValueStacks.push(mach.valueStack, Values.newI32(output));
 	}
 
 	function executeDrop(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
@@ -749,7 +750,7 @@ contract OneStepProver0 is IOneStepProver {
 			impl = executeDrop;
 		} else if (opcode == Instructions.SELECT) {
 			impl = executeSelect;
-		} else if (opcode == Instructions.I32_EQZ) {
+		} else if (opcode == Instructions.I32_EQZ || opcode == Instructions.I64_EQZ) {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_CONST && opcode <= Instructions.F64_CONST || opcode == Instructions.PUSH_STACK_BOUNDARY) {
 			impl = executeConstPush;

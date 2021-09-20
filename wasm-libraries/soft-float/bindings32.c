@@ -200,22 +200,38 @@ uint8_t wavm__f32_ge(uint32_t va, uint32_t vb) {
 
 int32_t wavm__i32_trunc_f32_s(uint32_t v) {
 	float32_t f = {v};
+	// A rounded up floating point version of 1 << 32
+	float32_t max = {0x4f800000};
+	if (f32_le(max, f)) {
+		return (1u << 31) - 1;
+	}
 	return f32_to_i32(f, softfloat_round_minMag, true);
 }
 
 uint32_t wavm__i32_trunc_f32_u(uint32_t v) {
 	float32_t f = {v};
+	if (f32_isNegative(f)) {
+		return 0;
+	}
 	return f32_to_ui32(f, softfloat_round_minMag, true);
 }
 
 int64_t wavm__i64_trunc_f32_s(uint32_t v) {
 	float32_t f = {v};
+	// A rounded down floating point version of 1 << 64
+	float32_t max = {0x5f800000};
+	if (f32_lt(max, f)) {
+		return (1ull << 63) - 1;
+	}
 	return f32_to_i64(f, softfloat_round_minMag, true);
 }
 
 uint64_t wavm__i64_trunc_f32_u(uint32_t v) {
 	float32_t f = {v};
-	return f32_to_ui32(f, softfloat_round_minMag, true);
+	if (f32_isNegative(f)) {
+		return 0;
+	}
+	return f32_to_ui64(f, softfloat_round_minMag, true);
 }
 
 uint32_t wavm__f32_convert_i32_s(int32_t x) {

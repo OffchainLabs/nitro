@@ -36,11 +36,6 @@ wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
 wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
 	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-	cd wasm-libraries/soft-float && make $(MAKEFLAGS)
-
-wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
-
 wasm-libraries/soft-float/soft-float.wasm: \
 		wasm-libraries/soft-float/bindings32.o \
 		wasm-libraries/soft-float/bindings64.o \
@@ -73,7 +68,7 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__i32_trunc_f32_s \
 		--export wavm__i32_trunc_f32_u \
 		--export wavm__i64_trunc_f32_s \
-		--export wavm__i64_trunc_f32_s \
+		--export wavm__i64_trunc_f32_u \
 		--export wavm__f32_convert_i32_s \
 		--export wavm__f32_convert_i32_u \
 		--export wavm__f32_convert_i64_s \
@@ -101,7 +96,7 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__i32_trunc_f64_s \
 		--export wavm__i32_trunc_f64_u \
 		--export wavm__i64_trunc_f64_s \
-		--export wavm__i64_trunc_f64_s \
+		--export wavm__i64_trunc_f64_u \
 		--export wavm__f64_convert_i32_s \
 		--export wavm__f64_convert_i32_u \
 		--export wavm__f64_convert_i64_s \
@@ -114,6 +109,9 @@ prover/test-cases/%.wasm: prover/test-cases/%.wat
 
 rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
 	cargo run -p prover -- $< -o $@ --always-merkleize
+
+rollup/test/proofs/float%.json: prover/test-cases/float%.wasm wasm-libraries/soft-float/soft-float.wasm prover/src/**
+	cargo run --release -p prover -- $< -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
 
 rollup/test/proofs/rust-%.json: \
 		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \

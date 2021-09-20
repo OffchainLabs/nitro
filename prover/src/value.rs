@@ -4,12 +4,6 @@ use sha3::Keccak256;
 use crate::utils::Bytes32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum IntegerValType {
-    I32,
-    I64,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
 pub enum ValueType {
     I32,
@@ -25,6 +19,21 @@ pub enum ValueType {
 impl ValueType {
     pub fn serialize(self) -> u8 {
         self as u8
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum IntegerValType {
+    I32,
+    I64,
+}
+
+impl Into<ValueType> for IntegerValType {
+    fn into(self) -> ValueType {
+        match self {
+            IntegerValType::I32 => ValueType::I32,
+            IntegerValType::I64 => ValueType::I64,
+        }
     }
 }
 
@@ -181,6 +190,10 @@ pub struct FunctionType {
 }
 
 impl FunctionType {
+    pub fn new(inputs: Vec<ValueType>, outputs: Vec<ValueType>) -> FunctionType {
+        FunctionType { inputs, outputs }
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Function type:");

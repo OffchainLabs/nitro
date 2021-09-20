@@ -1,9 +1,10 @@
 use crate::{
-    binary::{BlockType, HirInstruction},
+    binary::{BlockType, FloatInstruction, HirInstruction},
     utils::Bytes32,
     value::{IntegerValType, ValueType},
 };
 use digest::Digest;
+use fnv::FnvHashMap as HashMap;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
@@ -264,17 +265,21 @@ impl Opcode {
     }
 }
 
+pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
+
 #[derive(Clone, Copy, Debug)]
-pub struct FunctionCodegenState {
+pub struct FunctionCodegenState<'a> {
     return_values: usize,
     block_depth: usize,
+    floating_point_impls: &'a FloatingPointImpls,
 }
 
-impl FunctionCodegenState {
-    pub fn new(return_values: usize) -> Self {
+impl<'a> FunctionCodegenState<'a> {
+    pub fn new(return_values: usize, floating_point_impls: &'a FloatingPointImpls) -> Self {
         FunctionCodegenState {
             return_values,
             block_depth: 0,
+            floating_point_impls,
         }
     }
 }
@@ -501,6 +506,53 @@ impl Instruction {
                 argument_data: x.to_bits(),
                 proving_argument_data: None,
             }),
+            HirInstruction::FloatingPointOp(inst) => {
+                if let Some(&(module, func)) = state.floating_point_impls.get(&inst) {
+                    let sig = inst.signature();
+                    // Reinterpret float args into ints
+                    for &arg in sig.inputs.iter().rev() {
+                        if arg == ValueType::F32 {
+                            ops.push(Instruction::simple(Opcode::Reinterpret(
+                                ValueType::I32,
+                                ValueType::F32,
+                            )));
+                        } else if arg == ValueType::F64 {
+                            ops.push(Instruction::simple(Opcode::Reinterpret(
+                                ValueType::I64,
+                                ValueType::F64,
+                            )));
+                        }
+                        ops.push(Instruction::simple(Opcode::MoveFromStackToInternal));
+                    }
+                    for _ in sig.inputs.iter() {
+                        ops.push(Instruction::simple(Opcode::MoveFromInternalToStack));
+                    }
+                    Self::extend_from_hir(
+                        ops,
+                        state,
+                        HirInstruction::CrossModuleCall(module, func),
+                    );
+                    // Reinterpret returned ints that should be floats into floats
+                    assert!(
+                        sig.outputs.len() <= 1,
+                        "Floating point inst has multiple outputs"
+                    );
+                    let output = sig.outputs.get(0).cloned();
+                    if output == Some(ValueType::F32) {
+                        ops.push(Instruction::simple(Opcode::Reinterpret(
+                            ValueType::F32,
+                            ValueType::I32,
+                        )));
+                    } else if output == Some(ValueType::F64) {
+                        ops.push(Instruction::simple(Opcode::Reinterpret(
+                            ValueType::F64,
+                            ValueType::I64,
+                        )));
+                    }
+                } else {
+                    panic!("No implementation for floating point operation {:?}", inst);
+                }
+            }
             HirInstruction::Simple(Opcode::Return) => {
                 // Hold the return values on the internal stack while we drop extraneous stack values
                 ops.extend(
