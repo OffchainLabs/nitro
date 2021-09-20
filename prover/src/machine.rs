@@ -1,7 +1,7 @@
 use crate::{
     binary::{
-        Code, CustomSection, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
-        NameCustomSection, TableType, WasmBinary, WasmSection,
+        BlockType, Code, CustomSection, ElementMode, ExportKind, FloatInstruction, HirInstruction,
+        ImportKind, NameCustomSection, TableType, WasmBinary, WasmSection,
     },
     host::get_host_impl,
     memory::Memory,
@@ -271,7 +271,8 @@ impl Module {
                 WasmSection::Imports(imports) => {
                     for import in imports {
                         if let ImportKind::Function(ty) = import.kind {
-                            let qualified_name = format!("{}__{}", import.module, import.name);
+                            let mut qualified_name = format!("{}__{}", import.module, import.name);
+                            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
                             let func;
                             if let Some(import) = available_imports.get(&qualified_name) {
                                 assert_eq!(
@@ -798,22 +799,52 @@ impl Machine {
         }
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
-        if let Some(&m) = main_module.exports.get("main") {
+        // Rust support
+        if let Some(&f) = main_module.exports.get("main") {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ValueType::I32); // argc
             expected_type.inputs.push(ValueType::I32); // argv
             expected_type.outputs.push(ValueType::I32); // ret
             assert!(
-                main_module.func_types[m as usize] == expected_type,
+                main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [argc, argv] -> [ret]",
             );
             entrypoint.push(HirInstruction::I32Const(0));
             entrypoint.push(HirInstruction::I32Const(0));
             entrypoint.push(HirInstruction::CrossModuleCall(
                 u32::try_from(main_module_idx).unwrap(),
-                m,
+                f,
             ));
             entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+        }
+        // Go support
+        if let Some(&f) = main_module.exports.get("run") {
+            let mut expected_type = FunctionType::default();
+            expected_type.inputs.push(ValueType::I32); // argc
+            expected_type.inputs.push(ValueType::I32); // argv
+            assert!(
+                main_module.func_types[f as usize] == expected_type,
+                "Run function doesn't match expected signature of [argc, argv]",
+            );
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(HirInstruction::CrossModuleCall(
+                u32::try_from(main_module_idx).unwrap(),
+                f,
+            ));
+            if let Some(&f) = main_module.exports.get("resume") {
+                assert!(
+                    main_module.func_types[f as usize] == FunctionType::default(),
+                    "Resume function has non-empty function signature",
+                );
+                entrypoint.push(HirInstruction::Loop(
+                    BlockType::Empty,
+                    vec![HirInstruction::CrossModuleCall(
+                        u32::try_from(main_module_idx).unwrap(),
+                        f,
+                    )],
+                ));
+            }
         }
         let entrypoint_types = vec![FunctionType::default()];
         let mut entrypoint_names = NameCustomSection {
