@@ -71,20 +71,6 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn canonicalize(&mut self) {
-        match self {
-            Value::F32(x) if x.is_nan() => {
-                *x = f32::from_bits(0b01111111110000000000000000000000_u32);
-            }
-            Value::F64(x) if x.is_nan() => {
-                *x = f64::from_bits(
-                    0b0111111111111000000000000000000000000000000000000000000000000000_u64,
-                );
-            }
-            _ => {}
-        }
-    }
-
     pub fn ty(self) -> ValueType {
         match self {
             Value::I32(_) => ValueType::I32,
@@ -98,8 +84,7 @@ impl Value {
         }
     }
 
-    pub fn contents_for_proof(mut self) -> Bytes32 {
-        self.canonicalize();
+    pub fn contents_for_proof(self) -> Bytes32 {
         match self {
             Value::I32(x) => x.into(),
             Value::I64(x) => x.into(),

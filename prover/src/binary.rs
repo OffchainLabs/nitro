@@ -2,6 +2,7 @@ use crate::{
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
+use fnv::FnvHashMap as HashMap;
 use nom::{
     branch::alt,
     bytes::streaming::tag,
@@ -14,7 +15,6 @@ use nom::{
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
 use std::{hash::Hash, str::FromStr};
-use fnv::FnvHashMap as HashMap;
 
 type IResult<'a, O> = nom::IResult<&'a [u8], O, VerboseError<&'a [u8]>>;
 

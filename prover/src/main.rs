@@ -10,6 +10,7 @@ mod wavm;
 
 use crate::{binary::WasmBinary, machine::Machine, wavm::Opcode};
 use eyre::Result;
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use serde::Serialize;
 use std::{
     fs::File,
@@ -18,7 +19,6 @@ use std::{
     process,
 };
 use structopt::StructOpt;
-use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 
 #[derive(StructOpt)]
 #[structopt(name = "arbitrator-prover")]
