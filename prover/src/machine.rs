@@ -837,12 +837,22 @@ impl Machine {
                     main_module.func_types[f as usize] == FunctionType::default(),
                     "Resume function has non-empty function signature",
                 );
+                let prepare;
+                if let Some(f) = available_imports.get("wavm__go_prepare_for_resume") {
+                    assert!(
+                        f.ty == FunctionType::default(),
+                        "Resume function has non-empty function signature",
+                    );
+                    prepare = f;
+                } else {
+                    panic!("Go resume preparation handler not found");
+                }
                 entrypoint.push(HirInstruction::Loop(
                     BlockType::Empty,
-                    vec![HirInstruction::CrossModuleCall(
-                        u32::try_from(main_module_idx).unwrap(),
-                        f,
-                    )],
+                    vec![
+                        HirInstruction::CrossModuleCall(prepare.module, prepare.func),
+                        HirInstruction::CrossModuleCall(u32::try_from(main_module_idx).unwrap(), f),
+                    ],
                 ));
             }
         }

@@ -101,14 +101,6 @@ pub unsafe extern "C" fn go__runtime_walltime1(sp: GoStack) {
     sp.write_u64(1, TIME % 1_000_000_000);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(_: GoStack) {
-    // We continuously execute the go runtime, so there's no need for events
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(_: GoStack) {}
-
 static mut RNG: Option<Pcg32> = None;
 
 #[no_mangle]
@@ -130,6 +122,16 @@ pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
             rem >>= 8;
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(_: GoStack) {
+    todo!()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(_: GoStack) {
+    todo!()
 }
 
 macro_rules! unimpl_js {
@@ -157,11 +159,15 @@ unimpl_js!(
     go__syscall_js_copyBytesToJS,
 );
 
+const NULL_ID: u32 = 2;
+const GLOBAL_ID: u32 = 5;
+
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 enum GoValue {
     Number(f64),
-    Object(u32, bool),
+    Null,
+    Object(u32),
     String(u32),
     Symbol(u32),
     Function(u32),
@@ -177,8 +183,8 @@ impl GoValue {
                 }
                 return f.to_bits();
             }
-            GoValue::Object(x, true) => (0, x),
-            GoValue::Object(x, false) => (1, x),
+            GoValue::Null => (0, NULL_ID),
+            GoValue::Object(x) => (1, x),
             GoValue::String(x) => (2, x),
             GoValue::Symbol(x) => (3, x),
             GoValue::Function(x) => (4, x),
@@ -189,7 +195,6 @@ impl GoValue {
     }
 }
 
-const GLOBAL_ID: u32 = 5;
 const OBJECT_ID: u32 = 100;
 const ARRAY_ID: u32 = 101;
 const PROCESS_ID: u32 = 102;
@@ -205,15 +210,15 @@ fn get_value(source: u32, field: &[u8]) -> GoValue {
         } else if field == b"Array" {
             return GoValue::Function(ARRAY_ID);
         } else if field == b"process" {
-            return GoValue::Object(PROCESS_ID, false);
+            return GoValue::Object(PROCESS_ID);
         } else if field == b"fs" {
-            return GoValue::Object(FS_ID, false);
+            return GoValue::Object(FS_ID);
         } else if field == b"Uint8Array" {
             return GoValue::Function(UINT8_ARRAY_ID);
         }
     } else if source == FS_ID {
         if field == b"constants" {
-            return GoValue::Object(FS_CONSTANTS_ID, false);
+            return GoValue::Object(FS_CONSTANTS_ID);
         }
     } else if source == FS_CONSTANTS_ID {
         if matches!(
@@ -235,4 +240,9 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
     let field = read_slice(field_ptr, field_len);
     let value = get_value(source, &field);
     sp.write_u64(3, value.encode());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wavm__go_prepare_for_resume() {
+    todo!()
 }
