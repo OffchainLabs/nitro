@@ -168,7 +168,6 @@ uint8_t wavm__f64_eq(uint64_t va, uint64_t vb) {
 uint8_t wavm__f64_ne(uint64_t va, uint64_t vb) {
 	float64_t a = {va};
 	float64_t b = {vb};
-	if (f64_isNaN(a) || f64_isNaN(b)) return false;
 	return !f64_eq(a, b);
 }
 
