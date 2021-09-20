@@ -2,7 +2,7 @@ use crate::{
     binary::{Code, HirInstruction},
     machine::Function,
     value::{FunctionType, ValueType},
-    wavm::Opcode,
+    wavm::{FloatingPointImpls, Opcode},
 };
 
 pub fn get_host_impl(module: &str, name: &str) -> Function {
@@ -49,5 +49,5 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
         locals: Vec::new(),
         expr: insts,
     };
-    Function::new(code, ty, &[])
+    Function::new(code, ty, &[], &FloatingPointImpls::default())
 }

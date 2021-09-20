@@ -4,12 +4,6 @@ use sha3::Keccak256;
 use crate::utils::Bytes32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum IntegerValType {
-    I32,
-    I64,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
 pub enum ValueType {
     I32,
@@ -25,6 +19,21 @@ pub enum ValueType {
 impl ValueType {
     pub fn serialize(self) -> u8 {
         self as u8
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum IntegerValType {
+    I32,
+    I64,
+}
+
+impl Into<ValueType> for IntegerValType {
+    fn into(self) -> ValueType {
+        match self {
+            IntegerValType::I32 => ValueType::I32,
+            IntegerValType::I64 => ValueType::I64,
+        }
     }
 }
 
@@ -62,20 +71,6 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn canonicalize(&mut self) {
-        match self {
-            Value::F32(x) if x.is_nan() => {
-                *x = f32::from_bits(0b01111111110000000000000000000000_u32);
-            }
-            Value::F64(x) if x.is_nan() => {
-                *x = f64::from_bits(
-                    0b0111111111111000000000000000000000000000000000000000000000000000_u64,
-                );
-            }
-            _ => {}
-        }
-    }
-
     pub fn ty(self) -> ValueType {
         match self {
             Value::I32(_) => ValueType::I32,
@@ -89,8 +84,7 @@ impl Value {
         }
     }
 
-    pub fn contents_for_proof(mut self) -> Bytes32 {
-        self.canonicalize();
+    pub fn contents_for_proof(self) -> Bytes32 {
         match self {
             Value::I32(x) => x.into(),
             Value::I64(x) => x.into(),
@@ -132,10 +126,17 @@ impl Value {
         }
     }
 
-    pub fn unwrap_u32(self) -> u32 {
+    pub fn assume_u32(self) -> u32 {
         match self {
             Value::I32(x) => x,
-            _ => panic!("WASM validation failed: unwrap_i32 called on {:?}", self),
+            _ => panic!("WASM validation failed: assume_u32 called on {:?}", self),
+        }
+    }
+
+    pub fn assume_u64(self) -> u64 {
+        match self {
+            Value::I64(x) => x,
+            _ => panic!("WASM validation failed: assume_u64 called on {:?}", self),
         }
     }
 
@@ -174,6 +175,10 @@ pub struct FunctionType {
 }
 
 impl FunctionType {
+    pub fn new(inputs: Vec<ValueType>, outputs: Vec<ValueType>) -> FunctionType {
+        FunctionType { inputs, outputs }
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update(b"Function type:");

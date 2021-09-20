@@ -10,9 +10,9 @@ mod wavm;
 
 use crate::{binary::WasmBinary, machine::Machine, wavm::Opcode};
 use eyre::Result;
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use serde::Serialize;
 use std::{
-    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -77,8 +77,8 @@ fn main() -> Result<()> {
     let mut mach = Machine::from_binary(libraries, main_mod, opts.always_merkleize);
     println!("Starting machine hash: {}", mach.hash());
 
-    let mut seen_states = HashSet::new();
-    let mut opcode_counts: HashMap<Opcode, usize> = HashMap::new();
+    let mut seen_states = HashSet::default();
+    let mut opcode_counts: HashMap<Opcode, usize> = HashMap::default();
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;

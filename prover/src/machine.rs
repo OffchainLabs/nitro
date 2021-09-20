@@ -1,6 +1,6 @@
 use crate::{
     binary::{
-        Code, CustomSection, ElementMode, ExportKind, HirInstruction, ImportKind,
+        Code, CustomSection, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
         NameCustomSection, TableType, WasmBinary, WasmSection,
     },
     host::get_host_impl,
@@ -9,15 +9,15 @@ use crate::{
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
     value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
-    wavm::{pack_cross_module_call, unpack_cross_module_call, Instruction},
+    wavm::{pack_cross_module_call, unpack_cross_module_call, FloatingPointImpls, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
+use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
-    collections::HashMap,
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
@@ -40,7 +40,12 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn new(code: Code, func_ty: FunctionType, module_types: &[FunctionType]) -> Function {
+    pub fn new(
+        code: Code,
+        func_ty: FunctionType,
+        module_types: &[FunctionType],
+        fp_impls: &FloatingPointImpls,
+    ) -> Function {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -64,7 +69,7 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
-        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len());
+        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
         for hir_inst in code.expr {
             Instruction::extend_from_hir(&mut insts, codegen_state, hir_inst);
         }
@@ -244,6 +249,7 @@ impl Module {
     fn from_binary(
         bin: WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
+        floating_point_impls: &FloatingPointImpls,
         is_library: bool,
     ) -> Module {
         let mut code = Vec::new();
@@ -252,7 +258,7 @@ impl Module {
         let mut func_types: Vec<FunctionType> = Vec::new();
         let mut start = None;
         let mut memory = Memory::default();
-        let mut exports = HashMap::new();
+        let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut names = NameCustomSection::default();
         let mut host_call_hooks = Vec::new();
@@ -306,7 +312,12 @@ impl Module {
                 WasmSection::Code(sect_code) => {
                     for c in sect_code {
                         let idx = code.len();
-                        code.push(Function::new(c, func_types[idx].clone(), &types));
+                        code.push(Function::new(
+                            c,
+                            func_types[idx].clone(),
+                            &types,
+                            floating_point_impls,
+                        ));
                         host_call_hooks.push(None);
                     }
                 }
@@ -734,22 +745,42 @@ impl Machine {
         always_merkleize: bool,
     ) -> Machine {
         let mut modules = Vec::new();
-        let mut available_imports = HashMap::new();
+        let mut available_imports = HashMap::default();
+        let mut floating_point_impls = HashMap::default();
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, true);
+            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true);
             for (name, &func) in &module.exports {
+                let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
                     name.clone(),
                     AvailableImport {
                         module: modules.len() as u32,
                         func: func,
-                        ty: module.func_types[func as usize].clone(),
+                        ty: ty.clone(),
                     },
                 );
+                if let Ok(op) = name.parse::<FloatInstruction>() {
+                    let mut sig = op.signature();
+                    // wavm codegen takes care of effecting this type change at callsites
+                    for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
+                        if *ty == ValueType::F32 {
+                            *ty = ValueType::I32;
+                        } else if *ty == ValueType::F64 {
+                            *ty = ValueType::I64;
+                        }
+                    }
+                    assert_eq!(ty, sig, "Wrong type for floating point impl {:?}", name);
+                    floating_point_impls.insert(op, (modules.len() as u32, func));
+                }
             }
             modules.push(module);
         }
-        modules.push(Module::from_binary(bin, &available_imports, false));
+        modules.push(Module::from_binary(
+            bin,
+            &available_imports,
+            &floating_point_impls,
+            false,
+        ));
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
@@ -787,8 +818,8 @@ impl Machine {
         let entrypoint_types = vec![FunctionType::default()];
         let mut entrypoint_names = NameCustomSection {
             module: "entry".into(),
-            functions: HashMap::new(),
-            locals: HashMap::new(),
+            functions: HashMap::default(),
+            locals: HashMap::default(),
         };
         entrypoint_names
             .functions
@@ -800,6 +831,7 @@ impl Machine {
             },
             FunctionType::default(),
             &entrypoint_types,
+            &floating_point_impls,
         )];
         let entrypoint = Module {
             globals: Vec::new(),
@@ -817,7 +849,7 @@ impl Machine {
             host_call_hooks: vec![None],
             start_function: None,
             func_types: vec![FunctionType::default()],
-            exports: HashMap::new(),
+            exports: HashMap::default(),
         };
         let entrypoint_idx = modules.len();
         modules.push(entrypoint);
@@ -920,8 +952,8 @@ impl Machine {
                 }
             }
             Opcode::InitFrame => {
-                let caller_module_internals = self.value_stack.pop().unwrap().unwrap_u32();
-                let caller_module = self.value_stack.pop().unwrap().unwrap_u32();
+                let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
+                let caller_module = self.value_stack.pop().unwrap().assume_u32();
                 let return_ref = self.value_stack.pop().unwrap();
                 self.frame_stack.push(StackFrame {
                     return_ref,
@@ -1241,18 +1273,52 @@ impl Machine {
                 self.value_stack.push(Value::I32(x as u32));
             }
             Opcode::I64ExtendI32(signed) => {
-                let x = match self.value_stack.pop() {
-                    Some(Value::I32(x)) => x,
-                    v => panic!(
-                        "WASM validation failed: wrong type for i64.extendi32: {:?}",
-                        v,
-                    ),
-                };
+                let x = self.value_stack.pop().unwrap().assume_u32();
                 let x64 = match signed {
                     true => x as i32 as i64 as u64,
                     false => x as u32 as u64,
                 };
                 self.value_stack.push(Value::I64(x64));
+            }
+            Opcode::Reinterpret(dest, source) => {
+                let val = match self.value_stack.pop() {
+                    Some(Value::I32(x)) if source == ValueType::I32 => {
+                        assert_eq!(dest, ValueType::F32, "Unsupported reinterpret");
+                        Value::F32(f32::from_bits(x))
+                    }
+                    Some(Value::I64(x)) if source == ValueType::I64 => {
+                        assert_eq!(dest, ValueType::F64, "Unsupported reinterpret");
+                        Value::F64(f64::from_bits(x))
+                    }
+                    Some(Value::F32(x)) if source == ValueType::F32 => {
+                        assert_eq!(dest, ValueType::I32, "Unsupported reinterpret");
+                        Value::I32(x.to_bits())
+                    }
+                    Some(Value::F64(x)) if source == ValueType::F64 => {
+                        assert_eq!(dest, ValueType::I64, "Unsupported reinterpret");
+                        Value::I64(x.to_bits())
+                    }
+                    v => panic!("Bad reinterpret: val {:?} source {:?}", v, source),
+                };
+                self.value_stack.push(val);
+            }
+            Opcode::I32ExtendS(b) => {
+                let mut x = self.value_stack.pop().unwrap().assume_u32();
+                let mask = (1u32 << b) - 1;
+                x &= mask;
+                if x & (1 << (b - 1)) != 0 {
+                    x |= !mask;
+                }
+                self.value_stack.push(Value::I32(x));
+            }
+            Opcode::I64ExtendS(b) => {
+                let mut x = self.value_stack.pop().unwrap().assume_u64();
+                let mask = (1u64 << b) - 1;
+                x &= mask;
+                if x & (1 << (b - 1)) != 0 {
+                    x |= !mask;
+                }
+                self.value_stack.push(Value::I64(x));
             }
             Opcode::PushStackBoundary => {
                 self.value_stack.push(Value::StackBoundary);

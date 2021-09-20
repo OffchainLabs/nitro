@@ -1,9 +1,8 @@
-use std::{collections::HashMap, hash::Hash};
-
 use crate::{
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
+use fnv::FnvHashMap as HashMap;
 use nom::{
     branch::alt,
     bytes::streaming::tag,
@@ -15,6 +14,7 @@ use nom::{
     Err, Finish, Needed,
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
+use std::{hash::Hash, str::FromStr};
 
 type IResult<'a, O> = nom::IResult<&'a [u8], O, VerboseError<&'a [u8]>>;
 
@@ -29,6 +29,198 @@ pub enum BlockType {
 pub struct MemoryArg {
     pub alignment: u32,
     pub offset: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatType {
+    F32,
+    F64,
+}
+
+impl Into<ValueType> for FloatType {
+    fn into(self) -> ValueType {
+        match self {
+            FloatType::F32 => ValueType::F32,
+            FloatType::F64 => ValueType::F64,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatUnOp {
+    Abs,
+    Neg,
+    Ceil,
+    Floor,
+    Trunc,
+    Nearest,
+    Sqrt,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatBinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Min,
+    Max,
+    CopySign,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatRelOp {
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FloatInstruction {
+    UnOp(FloatType, FloatUnOp),
+    BinOp(FloatType, FloatBinOp),
+    RelOp(FloatType, FloatRelOp),
+    TruncIntOp(IntegerValType, FloatType, bool),
+    ConvertIntOp(FloatType, IntegerValType, bool),
+    F32DemoteF64,
+    F64PromoteF32,
+}
+
+impl FloatInstruction {
+    pub fn signature(&self) -> FunctionType {
+        match *self {
+            FloatInstruction::UnOp(t, _) => FunctionType::new(vec![t.into()], vec![t.into()]),
+            FloatInstruction::BinOp(t, _) => FunctionType::new(vec![t.into(); 2], vec![t.into()]),
+            FloatInstruction::RelOp(t, _) => {
+                FunctionType::new(vec![t.into(); 2], vec![ValueType::I32])
+            }
+            FloatInstruction::TruncIntOp(i, f, _) => {
+                FunctionType::new(vec![f.into()], vec![i.into()])
+            }
+            FloatInstruction::ConvertIntOp(f, i, _) => {
+                FunctionType::new(vec![i.into()], vec![f.into()])
+            }
+            FloatInstruction::F32DemoteF64 => {
+                FunctionType::new(vec![ValueType::F64], vec![ValueType::F32])
+            }
+            FloatInstruction::F64PromoteF32 => {
+                FunctionType::new(vec![ValueType::F32], vec![ValueType::F64])
+            }
+        }
+    }
+}
+
+impl FromStr for FloatInstruction {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use nom::bytes::complete::tag;
+
+        type IResult<'a, T> = nom::IResult<&'a str, T, nom::error::Error<&'a str>>;
+
+        fn parse_fp_type(s: &str) -> IResult<FloatType> {
+            alt((
+                value(FloatType::F32, tag("f32")),
+                value(FloatType::F64, tag("f64")),
+            ))(s)
+        }
+
+        fn parse_signedness(s: &str) -> IResult<bool> {
+            alt((value(true, tag("s")), value(false, tag("u"))))(s)
+        }
+
+        fn parse_int_type(s: &str) -> IResult<IntegerValType> {
+            alt((
+                value(IntegerValType::I32, tag("i32")),
+                value(IntegerValType::I64, tag("i64")),
+            ))(s)
+        }
+
+        fn parse_un_op(s: &str) -> IResult<FloatUnOp> {
+            alt((
+                value(FloatUnOp::Abs, tag("abs")),
+                value(FloatUnOp::Neg, tag("neg")),
+                value(FloatUnOp::Ceil, tag("ceil")),
+                value(FloatUnOp::Floor, tag("floor")),
+                value(FloatUnOp::Trunc, tag("trunc")),
+                value(FloatUnOp::Nearest, tag("nearest")),
+                value(FloatUnOp::Sqrt, tag("sqrt")),
+            ))(s)
+        }
+
+        fn parse_bin_op(s: &str) -> IResult<FloatBinOp> {
+            alt((
+                value(FloatBinOp::Add, tag("add")),
+                value(FloatBinOp::Sub, tag("sub")),
+                value(FloatBinOp::Mul, tag("mul")),
+                value(FloatBinOp::Div, tag("div")),
+                value(FloatBinOp::Min, tag("min")),
+                value(FloatBinOp::Max, tag("max")),
+                value(FloatBinOp::CopySign, tag("copysign")),
+            ))(s)
+        }
+
+        fn parse_rel_op(s: &str) -> IResult<FloatRelOp> {
+            alt((
+                value(FloatRelOp::Eq, tag("eq")),
+                value(FloatRelOp::Ne, tag("ne")),
+                value(FloatRelOp::Lt, tag("lt")),
+                value(FloatRelOp::Gt, tag("gt")),
+                value(FloatRelOp::Le, tag("le")),
+                value(FloatRelOp::Ge, tag("ge")),
+            ))(s)
+        }
+
+        let inst = alt((
+            map(
+                all_consuming(tuple((parse_fp_type, tag("_"), parse_un_op))),
+                |(t, _, o)| FloatInstruction::UnOp(t, o),
+            ),
+            map(
+                all_consuming(tuple((parse_fp_type, tag("_"), parse_bin_op))),
+                |(t, _, o)| FloatInstruction::BinOp(t, o),
+            ),
+            map(
+                all_consuming(tuple((parse_fp_type, tag("_"), parse_rel_op))),
+                |(t, _, o)| FloatInstruction::RelOp(t, o),
+            ),
+            map(
+                all_consuming(tuple((
+                    parse_int_type,
+                    tag("_trunc_"),
+                    parse_fp_type,
+                    tag("_"),
+                    parse_signedness,
+                ))),
+                |(i, _, f, _, s)| FloatInstruction::TruncIntOp(i, f, s),
+            ),
+            map(
+                all_consuming(tuple((
+                    parse_fp_type,
+                    tag("_convert_"),
+                    parse_int_type,
+                    tag("_"),
+                    parse_signedness,
+                ))),
+                |(f, _, i, _, s)| FloatInstruction::ConvertIntOp(f, i, s),
+            ),
+            value(
+                FloatInstruction::F32DemoteF64,
+                all_consuming(tag("f32_demote_f64")),
+            ),
+            value(
+                FloatInstruction::F64PromoteF32,
+                all_consuming(tag("f64_promote_f32")),
+            ),
+        ));
+
+        let res = preceded(tag("wavm__"), inst)(s);
+
+        res.map(|(_, i)| i).map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,6 +241,7 @@ pub enum HirInstruction {
     I64Const(i64),
     F32Const(f32),
     F64Const(f64),
+    FloatingPointOp(FloatInstruction),
     CallIndirect(u32, u32),
     /// Warning: internal and should not be parseable
     CrossModuleCall(u32, u32),
@@ -375,6 +568,238 @@ fn irelop(ty: IntegerValType, opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<Op
     }
 }
 
+fn integer_resizing_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(Opcode::I32WrapI64, tag(&[0xA7])),
+        value(Opcode::I64ExtendI32(true), tag(&[0xAC])),
+        value(Opcode::I64ExtendI32(false), tag(&[0xAD])),
+        value(Opcode::I32ExtendS(8), tag(&[0xC0])),
+        value(Opcode::I32ExtendS(16), tag(&[0xC1])),
+        value(Opcode::I64ExtendS(8), tag(&[0xC2])),
+        value(Opcode::I64ExtendS(16), tag(&[0xC3])),
+        value(Opcode::I64ExtendS(32), tag(&[0xC4])),
+    ))(input)
+}
+
+fn integer_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(Opcode::I32Eqz, tag(&[0x45])),
+        irelop(IntegerValType::I32, 0x46),
+        value(Opcode::I64Eqz, tag(&[0x50])),
+        irelop(IntegerValType::I64, 0x51),
+        iunop(IntegerValType::I32, 0x67),
+        ibinop(IntegerValType::I32, 0x6A),
+        iunop(IntegerValType::I64, 0x79),
+        ibinop(IntegerValType::I64, 0x7C),
+        integer_resizing_opcode,
+    ))(input)
+}
+
+fn reinterpret_opcode(input: &[u8]) -> IResult<Opcode> {
+    alt((
+        value(
+            Opcode::Reinterpret(ValueType::I32, ValueType::F32),
+            tag(&[0xBC]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::I64, ValueType::F64),
+            tag(&[0xBD]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::F32, ValueType::I32),
+            tag(&[0xBE]),
+        ),
+        value(
+            Opcode::Reinterpret(ValueType::F64, ValueType::I64),
+            tag(&[0xBF]),
+        ),
+    ))(input)
+}
+
+fn funop(opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<FloatUnOp> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let op = match byte - opcode_offset {
+            0 => FloatUnOp::Abs,
+            1 => FloatUnOp::Neg,
+            2 => FloatUnOp::Ceil,
+            3 => FloatUnOp::Floor,
+            4 => FloatUnOp::Trunc,
+            5 => FloatUnOp::Nearest,
+            6 => FloatUnOp::Sqrt,
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        Ok((input, op))
+    }
+}
+
+fn fbinop(opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<FloatBinOp> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let op = match byte - opcode_offset {
+            0 => FloatBinOp::Add,
+            1 => FloatBinOp::Sub,
+            2 => FloatBinOp::Mul,
+            3 => FloatBinOp::Div,
+            4 => FloatBinOp::Min,
+            5 => FloatBinOp::Max,
+            6 => FloatBinOp::CopySign,
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        Ok((input, op))
+    }
+}
+
+fn frelop(opcode_offset: u8) -> impl Fn(&[u8]) -> IResult<FloatRelOp> {
+    move |mut input| {
+        if input.is_empty() {
+            return Err(Err::Incomplete(Needed::Unknown));
+        }
+        let byte = input[0];
+        input = &input[1..];
+        if byte < opcode_offset {
+            return Err(Err::Error(VerboseError::from_error_kind(
+                input,
+                ErrorKind::Tag,
+            )));
+        }
+        let op = match byte - opcode_offset {
+            0 => FloatRelOp::Eq,
+            1 => FloatRelOp::Ne,
+            2 => FloatRelOp::Lt,
+            3 => FloatRelOp::Gt,
+            4 => FloatRelOp::Le,
+            5 => FloatRelOp::Ge,
+            _ => {
+                return Err(Err::Error(VerboseError::from_error_kind(
+                    input,
+                    ErrorKind::Tag,
+                )));
+            }
+        };
+        Ok((input, op))
+    }
+}
+
+fn float_truncate_int(input: &[u8]) -> IResult<FloatInstruction> {
+    alt((
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I32, FloatType::F32, true),
+            tag(&[0xA8]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I32, FloatType::F32, false),
+            tag(&[0xA9]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I32, FloatType::F64, true),
+            tag(&[0xAA]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I32, FloatType::F64, false),
+            tag(&[0xAB]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I64, FloatType::F32, true),
+            tag(&[0xAE]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I64, FloatType::F32, false),
+            tag(&[0xAF]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I64, FloatType::F64, true),
+            tag(&[0xB0]),
+        ),
+        value(
+            FloatInstruction::TruncIntOp(IntegerValType::I64, FloatType::F64, false),
+            tag(&[0xB1]),
+        ),
+    ))(input)
+}
+
+fn float_convert_int(input: &[u8]) -> IResult<FloatInstruction> {
+    alt((
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F32, IntegerValType::I32, true),
+            tag(&[0xB2]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F32, IntegerValType::I32, false),
+            tag(&[0xB3]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F32, IntegerValType::I64, true),
+            tag(&[0xB4]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F32, IntegerValType::I64, false),
+            tag(&[0xB5]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F64, IntegerValType::I32, true),
+            tag(&[0xB7]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F64, IntegerValType::I32, false),
+            tag(&[0xB8]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F64, IntegerValType::I64, true),
+            tag(&[0xB9]),
+        ),
+        value(
+            FloatInstruction::ConvertIntOp(FloatType::F64, IntegerValType::I64, false),
+            tag(&[0xBA]),
+        ),
+    ))(input)
+}
+
+fn float_instruction(input: &[u8]) -> IResult<FloatInstruction> {
+    alt((
+        map(frelop(0x5B), |o| FloatInstruction::RelOp(FloatType::F32, o)),
+        map(frelop(0x61), |o| FloatInstruction::RelOp(FloatType::F64, o)),
+        map(funop(0x8B), |o| FloatInstruction::UnOp(FloatType::F32, o)),
+        map(fbinop(0x92), |o| FloatInstruction::BinOp(FloatType::F32, o)),
+        map(funop(0x99), |o| FloatInstruction::UnOp(FloatType::F64, o)),
+        map(fbinop(0xA0), |o| FloatInstruction::BinOp(FloatType::F64, o)),
+        float_truncate_int,
+        float_convert_int,
+        value(FloatInstruction::F32DemoteF64, tag(&[0xB6])),
+        value(FloatInstruction::F64PromoteF32, tag(&[0xBB])),
+    ))(input)
+}
+
 fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
     alt((
         value(Opcode::Unreachable, tag(&[0x00])),
@@ -384,17 +809,8 @@ fn simple_opcode(input: &[u8]) -> IResult<Opcode> {
         value(Opcode::Select, tag(&[0x1B])),
         value(Opcode::MemorySize, tag(&[0x3F, 0x00])),
         value(Opcode::MemoryGrow, tag(&[0x40, 0x00])),
-        value(Opcode::I32Eqz, tag(&[0x45])),
-        irelop(IntegerValType::I32, 0x46),
-        value(Opcode::I64Eqz, tag(&[0x50])),
-        irelop(IntegerValType::I64, 0x51),
-        iunop(IntegerValType::I32, 0x67),
-        ibinop(IntegerValType::I32, 0x6A),
-        iunop(IntegerValType::I64, 0x79),
-        ibinop(IntegerValType::I64, 0x7C),
-        value(Opcode::I32WrapI64, tag(&[0xA7])),
-        value(Opcode::I64ExtendI32(true), tag(&[0xAC])),
-        value(Opcode::I64ExtendI32(false), tag(&[0xAD])),
+        integer_opcode,
+        reinterpret_opcode,
     ))(input)
 }
 
@@ -578,6 +994,7 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
 fn instruction(input: &[u8]) -> IResult<HirInstruction> {
     alt((
         map(simple_opcode, HirInstruction::Simple),
+        map(float_instruction, HirInstruction::FloatingPointOp),
         block_instruction,
         branch_instruction,
         call_instruction,
