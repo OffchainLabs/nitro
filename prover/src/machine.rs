@@ -701,19 +701,17 @@ impl Machine {
 
         for export in &bin.exports {
             if let ExportKind::Function(f) = export.kind {
-                if export.name == "resume" {
-                    let ty = bin.functions[usize::try_from(f).unwrap()];
-                    let ty = &bin.types[usize::try_from(ty).unwrap()];
-                    let module = u32::try_from(libraries.len()).unwrap();
-                    available_imports.insert(
-                        "wavm_guest_resume".into(),
-                        AvailableImport {
-                            ty: ty.clone(),
-                            module,
-                            func: f,
-                        },
-                    );
-                }
+                let ty = bin.functions[usize::try_from(f).unwrap()];
+                let ty = &bin.types[usize::try_from(ty).unwrap()];
+                let module = u32::try_from(libraries.len()).unwrap();
+                available_imports.insert(
+                    format!("wavm_guest_call__{}", export.name),
+                    AvailableImport {
+                        ty: ty.clone(),
+                        module,
+                        func: f,
+                    },
+                );
             }
         }
 
@@ -745,6 +743,9 @@ impl Machine {
             }
             modules.push(module);
         }
+
+        // Shouldn't be necessary, but to safe, don't allow the binary to import its own guest calls
+        available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             bin,
             &available_imports,

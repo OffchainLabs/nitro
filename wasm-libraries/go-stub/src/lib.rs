@@ -1,3 +1,6 @@
+mod value;
+
+use crate::value::*;
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{convert::TryFrom, io::Write};
@@ -8,7 +11,20 @@ extern "C" {
     fn wavm_caller_module_memory_load32(ptr: usize) -> u32;
     fn wavm_caller_module_memory_store8(ptr: usize, val: u8);
     fn wavm_caller_module_memory_store32(ptr: usize, val: u32);
-    fn wavm_guest_resume();
+
+    fn wavm_guest_call__getsp() -> usize;
+    fn wavm_guest_call__resume();
+}
+
+unsafe fn wavm_caller_module_memory_load64(ptr: usize) -> u64 {
+    let lower = wavm_caller_module_memory_load32(ptr);
+    let upper = wavm_caller_module_memory_load32(ptr + 4);
+    lower as u64 | ((upper as u64) << 32)
+}
+
+unsafe fn wavm_caller_module_memory_store64(ptr: usize, val: u64) {
+    wavm_caller_module_memory_store32(ptr, val as u32);
+    wavm_caller_module_memory_store32(ptr + 4, (val >> 32) as u32);
 }
 
 #[derive(Clone, Copy)]
@@ -25,19 +41,42 @@ impl GoStack {
     }
 
     unsafe fn read_u64(self, offset: usize) -> u64 {
-        let lower = wavm_caller_module_memory_load32(self.0 + (offset + 1) * 8);
-        let upper = wavm_caller_module_memory_load32(self.0 + (offset + 1) * 8 + 4);
-        lower as u64 | ((upper as u64) << 32)
+        wavm_caller_module_memory_load64(self.0 + (offset + 1) * 8)
+    }
+
+    unsafe fn write_u8(self, offset: usize, x: u8) {
+        wavm_caller_module_memory_store8(self.0 + (offset + 1) * 8, x);
     }
 
     unsafe fn write_u64(self, offset: usize, x: u64) {
-        wavm_caller_module_memory_store32(self.0 + (offset + 1) * 8, x as u32);
-        wavm_caller_module_memory_store32(self.0 + (offset + 1) * 8 + 4, (x >> 32) as u32);
+        wavm_caller_module_memory_store64(self.0 + (offset + 1) * 8, x);
     }
 }
 
+fn interpret_value(repr: u64) -> InterpValue {
+    let float = f64::from_bits(repr);
+    if float.is_nan() && repr != f64::NAN.to_bits() {
+        let id = repr as u32;
+        if id == ZERO_ID {
+            return InterpValue::Number(0.);
+        }
+        return InterpValue::Ref(id);
+    }
+    InterpValue::Number(float)
+}
+
+unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
+    let mut values = Vec::new();
+    for _ in 0..len {
+        let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
+        values.push(interpret_value(wavm_caller_module_memory_load64(p)));
+        ptr += 8;
+    }
+    values
+}
+
 unsafe fn read_slice(ptr: u64, mut len: u64) -> Vec<u8> {
-    let mut data = Vec::new();
+    let mut data = Vec::with_capacity(len as usize);
     if len == 0 {
         return data;
     }
@@ -152,101 +191,184 @@ unimpl_js!(
     go__syscall_js_valueSet,
     go__syscall_js_valueIndex,
     go__syscall_js_valueSetIndex,
-    go__syscall_js_valueCall,
-    go__syscall_js_valueNew,
     go__syscall_js_valueLength,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
-    go__syscall_js_copyBytesToJS,
 );
-
-const NULL_ID: u32 = 2;
-const GLOBAL_ID: u32 = 5;
-
-#[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
-enum GoValue {
-    Number(f64),
-    Null,
-    Object(u32),
-    String(u32),
-    Symbol(u32),
-    Function(u32),
-}
-
-impl GoValue {
-    fn encode(self) -> u64 {
-        let (ty, id): (u32, u32) = match self {
-            GoValue::Number(mut f) => {
-                // Canonicalize NaNs so they don't collide with other value types
-                if f.is_nan() {
-                    f = f64::NAN;
-                }
-                return f.to_bits();
-            }
-            GoValue::Null => (0, NULL_ID),
-            GoValue::Object(x) => (1, x),
-            GoValue::String(x) => (2, x),
-            GoValue::Symbol(x) => (3, x),
-            GoValue::Function(x) => (4, x),
-        };
-        // Must not be all zeroes, otherwise it'd collide with a real NaN
-        assert!(ty != 0 || id != 0, "GoValue must not be empty");
-        f64::NAN.to_bits() | (u64::from(ty) << 32) | u64::from(id)
-    }
-}
-
-const OBJECT_ID: u32 = 100;
-const ARRAY_ID: u32 = 101;
-const PROCESS_ID: u32 = 102;
-const FS_ID: u32 = 103;
-const UINT8_ARRAY_ID: u32 = 104;
-
-const FS_CONSTANTS_ID: u32 = 200;
-
-fn get_value(source: u32, field: &[u8]) -> GoValue {
-    if source == GLOBAL_ID {
-        if field == b"Object" {
-            return GoValue::Function(OBJECT_ID);
-        } else if field == b"Array" {
-            return GoValue::Function(ARRAY_ID);
-        } else if field == b"process" {
-            return GoValue::Object(PROCESS_ID);
-        } else if field == b"fs" {
-            return GoValue::Object(FS_ID);
-        } else if field == b"Uint8Array" {
-            return GoValue::Function(UINT8_ARRAY_ID);
-        }
-    } else if source == FS_ID {
-        if field == b"constants" {
-            return GoValue::Object(FS_CONSTANTS_ID);
-        }
-    } else if source == FS_CONSTANTS_ID {
-        if matches!(
-            field,
-            b"O_WRONLY" | b"O_RDWR" | b"O_CREAT" | b"O_TRUNC" | b"O_APPEND" | b"O_EXCL"
-        ) {
-            return GoValue::Number(-1.);
-        }
-    }
-    let s = String::from_utf8_lossy(&field);
-    unimplemented!("Go attempting to access JS value {} field {}", source, s)
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
-    let source = sp.read_u32(0);
+    let source = interpret_value(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
     let field = read_slice(field_ptr, field_len);
-    let value = get_value(source, &field);
+    let value = match source {
+        InterpValue::Ref(id) => get_field(id, &field),
+        InterpValue::Number(n) => {
+            eprintln!(
+                "Go attempting to read field of float: {} . {}",
+                n,
+                String::from_utf8_lossy(&field),
+            );
+            GoValue::Null
+        }
+    };
     sp.write_u64(3, value.encode());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
+    let class = sp.read_u32(0);
+    let args_ptr = sp.read_u64(1);
+    let args_len = sp.read_u64(2);
+    let args = read_value_slice(args_ptr, args_len);
+    if class == UINT8_ARRAY_ID {
+        if let Some(InterpValue::Number(size)) = args.get(0) {
+            let id = DynamicObjectPool::singleton()
+                .insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
+            sp.write_u64(4, GoValue::Object(id).encode());
+            sp.write_u8(5, 1);
+            return;
+        } else {
+            eprintln!(
+                "Go attempted to construct Uint8Array with bad args: {:?}",
+                args,
+            );
+        }
+    } else {
+        eprintln!(
+            "Go attempting to construct unimplemented JS value {}",
+            class,
+        );
+    }
+    sp.write_u64(4, GoValue::Null.encode());
+    sp.write_u8(5, 0);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
+    let dest_val = interpret_value(sp.read_u64(0));
+    if let InterpValue::Ref(dest_id) = dest_val {
+        let src_ptr = sp.read_u64(1);
+        let src_len = sp.read_u64(2);
+        let dest = DynamicObjectPool::singleton().get_mut(dest_id);
+        if let Some(DynamicObject::Uint8Array(buf)) = dest {
+            if buf.len() as u64 != src_len {
+                eprintln!(
+                    "Go copying bytes from source length {} to dest length {}",
+                    src_len,
+                    buf.len(),
+                );
+            }
+            let len = std::cmp::min(src_len, buf.len() as u64) as usize;
+            // Slightly inefficient as this allocates a new temporary buffer
+            buf[..len].copy_from_slice(&read_slice(src_ptr, len as u64));
+            sp.write_u64(4, GoValue::Number(len as f64).encode());
+            sp.write_u8(5, 1);
+            return;
+        } else {
+            eprintln!(
+                "Go attempting to copy bytes into unsupported target {:?}",
+                dest,
+            );
+        }
+    } else {
+        eprintln!("Go attempting to copy bytes into {:?}", dest_val);
+    }
+    sp.write_u64(4, GoValue::Null.encode());
+    sp.write_u8(5, 0);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
+    let object = interpret_value(sp.read_u64(0));
+    let method_name_ptr = sp.read_u64(1);
+    let method_name_len = sp.read_u64(2);
+    let method_name = read_slice(method_name_ptr, method_name_len);
+    let args_ptr = sp.read_u64(3);
+    let args_len = sp.read_u64(4);
+    let args = read_value_slice(args_ptr, args_len);
+
+    if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
+        if let Some(&id) = args.get(0) {
+            let ref_id =
+                DynamicObjectPool::singleton().insert(DynamicObject::FunctionWrapper(id, object));
+            sp.write_u64(6, GoValue::Function(ref_id).encode());
+            sp.write_u8(7, 1);
+            return;
+        } else {
+            eprintln!(
+                "Go attempting to call Go._makeFuncWrapper with bad args {:?}",
+                args,
+            );
+        }
+    } else if object == InterpValue::Ref(FS_ID) && &method_name == b"write" {
+        let args_len = std::cmp::min(6, args.len());
+        if let &[InterpValue::Number(fd), InterpValue::Ref(buf_id), InterpValue::Number(offset), InterpValue::Number(length), InterpValue::Ref(NULL_ID), InterpValue::Ref(callback)] =
+            &args.as_slice()[..args_len]
+        {
+            let object_pool = DynamicObjectPool::singleton();
+            let buf = object_pool.get(buf_id);
+            if let Some(DynamicObject::Uint8Array(buf)) = buf {
+                let mut offset = offset as usize;
+                let mut length = length as usize;
+                if offset > buf.len() {
+                    eprintln!(
+                        "Go attempting to call fs.write with offset {} >= buf.len() {}",
+                        offset,
+                        buf.len(),
+                    );
+                    offset = buf.len();
+                }
+                if offset + length > buf.len() {
+                    eprintln!(
+                        "Go attempting to call fs.write with offset {} + length {} >= buf.len() {}",
+                        offset,
+                        length,
+                        buf.len(),
+                    );
+                    length = buf.len() - offset;
+                }
+
+                if fd == 1. {
+                    let stdout = std::io::stdout();
+                    let mut stdout = stdout.lock();
+                    stdout.write_all(&buf[offset..(offset + length)]).unwrap();
+                } else if fd == 2. {
+                    let stderr = std::io::stderr();
+                    let mut stderr = stderr.lock();
+                    stderr.write_all(&buf[offset..(offset + length)]).unwrap();
+                } else {
+                    eprintln!("Go attempting to write to unknown FD {}", fd);
+                }
+
+                todo!("Invoke callback");
+
+                sp = GoStack(wavm_guest_call__getsp());
+                sp.write_u64(6, GoValue::Number(length as f64).encode());
+                sp.write_u8(7, 1);
+            } else {
+                eprintln!("Go attempting to call fs.write with bad buffer {:?}", buf);
+            }
+        } else {
+            eprintln!("Go attempting to call fs.write with bad args {:?}", args);
+        }
+    } else {
+        eprintln!(
+            "Go attempting to call unknown method {:?} . {}",
+            object,
+            String::from_utf8_lossy(&method_name),
+        );
+    }
+
+    sp.write_u64(6, GoValue::Null.encode());
+    sp.write_u8(7, 0);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn wavm__go_after_run() {
     // TODO
     while let Some(_pending_event) = None::<u32> {
-        wavm_guest_resume();
+        wavm_guest_call__resume();
     }
 }
