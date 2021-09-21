@@ -5,8 +5,8 @@ use crate::{
 use fnv::FnvHashMap as HashMap;
 use nom::{
     branch::alt,
-    bytes::streaming::tag,
-    combinator::{all_consuming, eof, map, map_res, value},
+    bytes::complete::tag,
+    combinator::{all_consuming, map, map_res, value},
     error::{context, ParseError, VerboseError},
     error::{Error, ErrorKind, FromExternalError},
     multi::{count, length_data, many0, many_till},
@@ -117,8 +117,6 @@ impl FromStr for FloatInstruction {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        use nom::bytes::complete::tag;
-
         type IResult<'a, T> = nom::IResult<&'a str, T, nom::error::Error<&'a str>>;
 
         fn parse_fp_type(s: &str) -> IResult<FloatType> {
@@ -369,26 +367,20 @@ pub enum CustomSection {
 }
 
 #[derive(Clone, Debug)]
-pub enum WasmSection {
-    Custom(CustomSection),
-    /// A function type, denoted as (parameters, return values)
-    Types(Vec<FunctionType>),
-    Imports(Vec<Import>),
-    Functions(Vec<u32>),
-    Tables(Vec<TableType>),
-    Memories(Vec<Limits>),
-    Globals(Vec<Global>),
-    Exports(Vec<Export>),
-    Start(u32),
-    Elements(Vec<ElementSegment>),
-    Code(Vec<Code>),
-    Datas(Vec<Data>),
-    DataCount(u32),
-}
-
-#[derive(Clone, Debug)]
 pub struct WasmBinary {
-    pub sections: Vec<WasmSection>,
+    pub unknown_custom_sections: Vec<(String, Vec<u8>)>,
+    pub types: Vec<FunctionType>,
+    pub imports: Vec<Import>,
+    pub functions: Vec<u32>,
+    pub tables: Vec<TableType>,
+    pub memories: Vec<Limits>,
+    pub globals: Vec<Global>,
+    pub exports: Vec<Export>,
+    pub start: Option<u32>,
+    pub elements: Vec<ElementSegment>,
+    pub code: Vec<Code>,
+    pub datas: Vec<Data>,
+    pub names: NameCustomSection,
 }
 
 fn wasm_s33(input: &[u8]) -> IResult<i64> {
@@ -1173,11 +1165,11 @@ fn import_kind(input: &[u8]) -> IResult<ImportKind> {
     ))(input)
 }
 
-fn tables_section(input: &[u8]) -> IResult<Vec<TableType>> {
-    wasm_vec(map(tuple((ref_type, limits)), |(t, l)| TableType {
+fn table(input: &[u8]) -> IResult<TableType> {
+    map(tuple((ref_type, limits)), |(t, l)| TableType {
         ty: t,
         limits: l,
-    }))(input)
+    })(input)
 }
 
 fn import(input: &[u8]) -> IResult<Import> {
@@ -1224,82 +1216,102 @@ fn name_custom_section(input: &[u8]) -> IResult<NameCustomSection> {
 }
 
 fn custom_section(input: &[u8]) -> IResult<CustomSection> {
+    let (rem, input) = length_data(leb128_u32)(input)?;
     let (input, sect_name) = name(input)?;
-    match sect_name {
+    let res = match sect_name {
         "name" => map(name_custom_section, CustomSection::Name)(input),
-        _ => Ok((&[], CustomSection::Unknown(sect_name.into(), input.into()))),
-    }
-}
-
-fn section(mut input: &[u8]) -> IResult<WasmSection> {
-    if input.is_empty() {
-        return Err(Err::Incomplete(Needed::Unknown));
-    }
-    let section_type = input[0];
-    input = &input[1..];
-    let (remaining, data) = length_data(leb128_u32)(input)?;
-    let (extra, sect) = match section_type {
-        0 => context("custom section", map(custom_section, WasmSection::Custom))(data),
-        1 => context(
-            "types section",
-            map(wasm_vec(function_type), WasmSection::Types),
-        )(data),
-        2 => context(
-            "imports section",
-            map(wasm_vec(import), WasmSection::Imports),
-        )(data),
-        3 => context(
-            "functions section",
-            map(wasm_vec(leb128_u32), WasmSection::Functions),
-        )(data),
-        4 => context("tables section", map(tables_section, WasmSection::Tables))(data),
-        5 => context(
-            "memories section",
-            map(wasm_vec(limits), WasmSection::Memories),
-        )(data),
-        6 => context(
-            "globals section",
-            map(wasm_vec(global), WasmSection::Globals),
-        )(data),
-        7 => context(
-            "exports section",
-            map(wasm_vec(export), WasmSection::Exports),
-        )(data),
-        8 => context("start section", map(leb128_u32, WasmSection::Start))(data),
-        9 => context(
-            "elements section",
-            map(wasm_vec(element_segment), WasmSection::Elements),
-        )(data),
-        10 => context("code section", map(wasm_vec(code_func), WasmSection::Code))(data),
-        11 => context(
-            "data section",
-            map(wasm_vec(data_segment), WasmSection::Datas),
-        )(data),
-        12 => context(
-            "data count section",
-            map(leb128_u32, WasmSection::DataCount),
-        )(data),
-        _ => Err(Err::Error(VerboseError::from_error_kind(
-            input,
-            ErrorKind::Tag,
-        ))),
+        _ => Ok((
+            &[] as &[u8],
+            CustomSection::Unknown(sect_name.into(), input.into()),
+        )),
     }?;
-    if !extra.is_empty() {
+    if !res.0.is_empty() {
         return Err(Err::Error(VerboseError::from_error_kind(
-            extra,
+            &[],
             ErrorKind::Eof,
         )));
     }
-    Ok((remaining, sect))
+    Ok((rem, res.1))
 }
 
 const HEADER: &[u8] = b"\0asm\x01\0\0\0";
 
 fn module(mut input: &[u8]) -> IResult<WasmBinary> {
     input = tag(HEADER)(input)?.0;
-    map(many_till(section, eof), |(s, _)| WasmBinary { sections: s })(input)
+    let mut custom_sections = Vec::new();
+
+    macro_rules! section {
+        ($num:expr, $name:expr, $parser:expr) => {{
+            let res = context("custom section", many0(preceded(tag(&[0]), custom_section)))(input)?;
+            input = res.0;
+            custom_sections.extend(res.1);
+            if let Ok((following, _)) = tag::<_, _, Error<&[u8]>>(&[$num])(input) {
+                let (rem, data) = length_data(leb128_u32)(following)?;
+                let (_, section) = context($name, all_consuming($parser))(data)?;
+                input = rem;
+                Some(section)
+            } else {
+                None
+            }
+        }};
+    }
+
+    let types = section!(1, "types section", wasm_vec(function_type));
+    let imports = section!(2, "imports section", wasm_vec(import));
+    let functions = section!(3, "functions section", wasm_vec(leb128_u32));
+    let tables = section!(4, "tables section", wasm_vec(table));
+    let memories = section!(5, "memories section", wasm_vec(limits));
+    let globals = section!(6, "globals section", wasm_vec(global));
+    let exports = section!(7, "exports section", wasm_vec(export));
+    let start = section!(8, "start section", leb128_u32);
+    let elements = section!(9, "elements section", wasm_vec(element_segment));
+    let code = section!(10, "code section", wasm_vec(code_func));
+    let datas = section!(11, "datas section", wasm_vec(data_segment));
+    let _data_count = section!(12, "data count section", leb128_u32);
+
+    // Parse final custom section
+    let res = context("custom section", many0(preceded(tag(&[0]), custom_section)))(input)?;
+    input = res.0;
+    custom_sections.extend(res.1);
+
+    let mut name_custom_section = None;
+    let mut unknown_custom_sections = Vec::new();
+    for custom_section in custom_sections.into_iter() {
+        match custom_section {
+            CustomSection::Name(names) => {
+                if name_custom_section.is_some() {
+                    return Err(Err::Error(VerboseError::from_error_kind(
+                        &[],
+                        ErrorKind::Not,
+                    )));
+                }
+                name_custom_section = Some(names.clone());
+            }
+            CustomSection::Unknown(name, contents) => {
+                unknown_custom_sections.push((name.clone(), contents.clone()))
+            }
+        }
+    }
+
+    let binary = WasmBinary {
+        unknown_custom_sections,
+        types: types.unwrap_or_default(),
+        imports: imports.unwrap_or_default(),
+        functions: functions.unwrap_or_default(),
+        tables: tables.unwrap_or_default(),
+        memories: memories.unwrap_or_default(),
+        globals: globals.unwrap_or_default(),
+        exports: exports.unwrap_or_default(),
+        start: start,
+        elements: elements.unwrap_or_default(),
+        code: code.unwrap_or_default(),
+        datas: datas.unwrap_or_default(),
+        names: name_custom_section.unwrap_or_default(),
+    };
+
+    Ok((input, binary))
 }
 
 pub fn parse(input: &[u8]) -> Result<WasmBinary, nom::error::VerboseError<&[u8]>> {
-    module(input).finish().map(|(_, x)| x)
+    all_consuming(module)(input).finish().map(|(_, x)| x)
 }

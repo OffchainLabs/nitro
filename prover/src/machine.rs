@@ -1,7 +1,7 @@
 use crate::{
     binary::{
-        BlockType, Code, CustomSection, ElementMode, ExportKind, FloatInstruction, HirInstruction,
-        ImportKind, NameCustomSection, TableType, WasmBinary, WasmSection,
+        BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
+        NameCustomSection, TableType, WasmBinary,
     },
     host::get_host_impl,
     memory::Memory,
@@ -253,208 +253,158 @@ impl Module {
         is_library: bool,
     ) -> Module {
         let mut code = Vec::new();
-        let mut globals = Vec::new();
-        let mut types = Vec::new();
         let mut func_types: Vec<FunctionType> = Vec::new();
-        let mut start = None;
         let mut memory = Memory::default();
         let mut exports = HashMap::default();
         let mut tables = Vec::new();
-        let mut names = NameCustomSection::default();
         let mut host_call_hooks = Vec::new();
-        for sect in bin.sections {
-            match sect {
-                WasmSection::Types(t) => {
-                    assert!(types.is_empty(), "Duplicate types section");
-                    types = t;
-                }
-                WasmSection::Imports(imports) => {
-                    for import in imports {
-                        if let ImportKind::Function(ty) = import.kind {
-                            let mut qualified_name = format!("{}__{}", import.module, import.name);
-                            qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
-                            let func;
-                            if let Some(import) = available_imports.get(&qualified_name) {
-                                assert_eq!(
-                                    import.ty, types[ty as usize],
-                                    "Import has different function signature than host function",
-                                );
-                                let mut wavm = Vec::new();
-                                wavm.push(Instruction::simple(Opcode::InitFrame));
-                                wavm.push(Instruction::with_data(
-                                    Opcode::CrossModuleCall,
-                                    pack_cross_module_call(import.func, import.module),
-                                ));
-                                wavm.push(Instruction::simple(Opcode::Return));
-                                func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
-                            } else {
-                                func = get_host_impl(&import.module, &import.name);
-                                assert_eq!(
-                                    func.ty, types[ty as usize],
-                                    "Import has different function signature than host function",
-                                );
-                                assert!(
-                                    is_library,
-                                    "Only libraries are allowed to use host function {}",
-                                    import.name,
-                                );
-                            }
-                            func_types.push(func.ty.clone());
-                            code.push(func);
-                            host_call_hooks.push(Some((import.module, import.name)));
-                        } else {
-                            panic!("Unsupport import kind {:?}", import);
-                        }
-                    }
-                }
-                WasmSection::Functions(f) => {
-                    func_types.extend(f.into_iter().map(|x| types[x as usize].clone()));
-                }
-                WasmSection::Code(sect_code) => {
-                    for c in sect_code {
-                        let idx = code.len();
-                        code.push(Function::new(
-                            c,
-                            func_types[idx].clone(),
-                            &types,
-                            floating_point_impls,
-                        ));
-                        host_call_hooks.push(None);
-                    }
-                }
-                WasmSection::Start(s) => {
-                    assert!(start.is_none(), "Duplicate start section");
-                    start = Some(s);
-                }
-                WasmSection::Memories(m) => {
-                    assert!(memory.size() == 0, "Duplicate memories section");
-                    assert!(m.len() <= 1, "Multiple memories are not supported");
-                    if let Some(limits) = m.get(0) {
-                        // We ignore the maximum size
-                        let size = usize::try_from(limits.minimum_size)
-                            .ok()
-                            .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
-                            .expect("Memory size is too large");
-                        memory = Memory::new(size);
-                    }
-                }
-                WasmSection::Globals(g) => {
-                    assert!(globals.is_empty(), "Duplicate globals section");
-                    globals = g
-                        .into_iter()
-                        .map(|g| {
-                            if let [insn] = g.initializer.as_slice() {
-                                if let Some(val) = insn.get_const_output() {
-                                    return val;
-                                }
-                            }
-                            panic!("Global initializer isn't a constant");
-                        })
-                        .collect();
-                }
-                WasmSection::Exports(e) => {
-                    assert!(exports.is_empty(), "Duplicate exports section");
-                    for export in e {
-                        if let ExportKind::Function(idx) = export.kind {
-                            exports.insert(export.name, idx);
-                        }
-                    }
-                }
-                WasmSection::Datas(datas) => {
-                    for data in datas {
-                        if let Some(loc) = data.active_location {
-                            assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
-                            let mut offset = None;
-                            if let [insn] = loc.offset.as_slice() {
-                                if let Some(Value::I32(x)) = insn.get_const_output() {
-                                    offset = Some(x);
-                                }
-                            }
-                            let offset = usize::try_from(
-                                offset.expect("Non-constant data offset expression"),
-                            )
-                            .unwrap();
-                            if !matches!(
-                                offset.checked_add(data.data.len()),
-                                Some(x) if (x as u64) < memory.size() as u64,
-                            ) {
-                                panic!(
-                                    "Out-of-bounds data memory init with offset {} and size {}",
-                                    offset,
-                                    data.data.len(),
-                                );
-                            }
-                            memory.set_range(offset, &data.data);
-                        }
-                    }
-                }
-                WasmSection::Tables(t) => {
-                    assert!(tables.is_empty(), "Duplicate tables section");
-                    for table in t {
-                        tables.push(Table {
-                            elems: vec![
-                                TableElement::default();
-                                usize::try_from(table.limits.minimum_size).unwrap()
-                            ],
-                            ty: table,
-                            elems_merkle: Merkle::default(),
-                        });
-                    }
-                }
-                WasmSection::Elements(elems) => {
-                    for elem in elems {
-                        if let ElementMode::Active(t, o) = elem.mode {
-                            let mut offset = None;
-                            if let [insn] = o.as_slice() {
-                                if let Some(Value::I32(x)) = insn.get_const_output() {
-                                    offset = Some(x);
-                                }
-                            }
-                            let offset = usize::try_from(
-                                offset.expect("Non-constant data offset expression"),
-                            )
-                            .unwrap();
-                            let t = usize::try_from(t).unwrap();
-                            assert_eq!(tables[t].ty.ty, elem.ty);
-                            let contents: Vec<_> = elem
-                                .init
-                                .into_iter()
-                                .map(|i| {
-                                    let insn = match i.as_slice() {
-                                        [x] => x,
-                                        _ => panic!(
-                                            "Element initializer isn't one instruction: {:?}",
-                                            o
-                                        ),
-                                    };
-                                    match insn.get_const_output() {
-                                        Some(v @ Value::RefNull) => TableElement {
-                                            func_ty: FunctionType::default(),
-                                            val: v,
-                                        },
-                                        Some(Value::FuncRef(x)) => TableElement {
-                                            func_ty: func_types[usize::try_from(x).unwrap()]
-                                                .clone(),
-                                            val: Value::FuncRef(x),
-                                        },
-                                        _ => panic!("Invalid element initializer {:?}", insn),
-                                    }
-                                })
-                                .collect();
-                            let len = contents.len();
-                            tables[t].elems[offset..][..len].clone_from_slice(&contents);
-                        }
-                    }
-                }
-                WasmSection::Custom(CustomSection::Name(n)) => {
-                    assert!(
-                        names == NameCustomSection::default(),
-                        "Duplicate names custom section"
+        let types = &bin.types;
+        for import in bin.imports {
+            if let ImportKind::Function(ty) = import.kind {
+                let mut qualified_name = format!("{}__{}", import.module, import.name);
+                qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+                let func;
+                if let Some(import) = available_imports.get(&qualified_name) {
+                    assert_eq!(
+                        import.ty, bin.types[ty as usize],
+                        "Import has different function signature than host function",
                     );
-                    names = n;
+                    let mut wavm = Vec::new();
+                    wavm.push(Instruction::simple(Opcode::InitFrame));
+                    wavm.push(Instruction::with_data(
+                        Opcode::CrossModuleCall,
+                        pack_cross_module_call(import.func, import.module),
+                    ));
+                    wavm.push(Instruction::simple(Opcode::Return));
+                    func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
+                } else {
+                    func = get_host_impl(&import.module, &import.name);
+                    assert_eq!(
+                        func.ty, bin.types[ty as usize],
+                        "Import has different function signature than host function",
+                    );
+                    assert!(
+                        is_library,
+                        "Only libraries are allowed to use host function {}",
+                        import.name,
+                    );
                 }
-                WasmSection::Custom(CustomSection::Unknown(_, _)) => {}
-                WasmSection::DataCount(_) => {}
+                func_types.push(func.ty.clone());
+                code.push(func);
+                host_call_hooks.push(Some((import.module, import.name)));
+            } else {
+                panic!("Unsupport import kind {:?}", import);
+            }
+        }
+        func_types.extend(bin.functions.into_iter().map(|x| types[x as usize].clone()));
+        for c in bin.code {
+            let idx = code.len();
+            code.push(Function::new(
+                c,
+                func_types[idx].clone(),
+                &bin.types,
+                floating_point_impls,
+            ));
+            host_call_hooks.push(None);
+        }
+        assert!(
+            bin.memories.len() <= 1,
+            "Multiple memories are not supported"
+        );
+        if let Some(limits) = bin.memories.get(0) {
+            // We ignore the maximum size
+            let size = usize::try_from(limits.minimum_size)
+                .ok()
+                .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
+                .expect("Memory size is too large");
+            memory = Memory::new(size);
+        }
+        let globals = bin
+            .globals
+            .into_iter()
+            .map(|g| {
+                if let [insn] = g.initializer.as_slice() {
+                    if let Some(val) = insn.get_const_output() {
+                        return val;
+                    }
+                }
+                panic!("Global initializer isn't a constant");
+            })
+            .collect();
+        for export in bin.exports {
+            if let ExportKind::Function(idx) = export.kind {
+                exports.insert(export.name, idx);
+            }
+        }
+        for data in bin.datas {
+            if let Some(loc) = data.active_location {
+                assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
+                let mut offset = None;
+                if let [insn] = loc.offset.as_slice() {
+                    if let Some(Value::I32(x)) = insn.get_const_output() {
+                        offset = Some(x);
+                    }
+                }
+                let offset =
+                    usize::try_from(offset.expect("Non-constant data offset expression")).unwrap();
+                if !matches!(
+                    offset.checked_add(data.data.len()),
+                    Some(x) if (x as u64) < memory.size() as u64,
+                ) {
+                    panic!(
+                        "Out-of-bounds data memory init with offset {} and size {}",
+                        offset,
+                        data.data.len(),
+                    );
+                }
+                memory.set_range(offset, &data.data);
+            }
+        }
+        for table in bin.tables {
+            tables.push(Table {
+                elems: vec![
+                    TableElement::default();
+                    usize::try_from(table.limits.minimum_size).unwrap()
+                ],
+                ty: table,
+                elems_merkle: Merkle::default(),
+            });
+        }
+        for elem in bin.elements {
+            if let ElementMode::Active(t, o) = elem.mode {
+                let mut offset = None;
+                if let [insn] = o.as_slice() {
+                    if let Some(Value::I32(x)) = insn.get_const_output() {
+                        offset = Some(x);
+                    }
+                }
+                let offset =
+                    usize::try_from(offset.expect("Non-constant data offset expression")).unwrap();
+                let t = usize::try_from(t).unwrap();
+                assert_eq!(tables[t].ty.ty, elem.ty);
+                let contents: Vec<_> = elem
+                    .init
+                    .into_iter()
+                    .map(|i| {
+                        let insn = match i.as_slice() {
+                            [x] => x,
+                            _ => panic!("Element initializer isn't one instruction: {:?}", o),
+                        };
+                        match insn.get_const_output() {
+                            Some(v @ Value::RefNull) => TableElement {
+                                func_ty: FunctionType::default(),
+                                val: v,
+                            },
+                            Some(Value::FuncRef(x)) => TableElement {
+                                func_ty: func_types[usize::try_from(x).unwrap()].clone(),
+                                val: Value::FuncRef(x),
+                            },
+                            _ => panic!("Invalid element initializer {:?}", insn),
+                        }
+                    })
+                    .collect();
+                let len = contents.len();
+                tables[t].elems[offset..][..len].clone_from_slice(&contents);
             }
         }
         assert!(
@@ -516,11 +466,11 @@ impl Module {
                 code.iter().map(|f| f.hash()).collect(),
             ),
             funcs: code,
-            types,
+            types: bin.types,
             internals_offset,
-            names,
+            names: bin.names,
             host_call_hooks,
-            start_function: start,
+            start_function: bin.start,
             func_types,
             exports,
         }
