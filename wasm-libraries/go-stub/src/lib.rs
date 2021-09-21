@@ -8,6 +8,7 @@ extern "C" {
     fn wavm_caller_module_memory_load32(ptr: usize) -> u32;
     fn wavm_caller_module_memory_store8(ptr: usize, val: u8);
     fn wavm_caller_module_memory_store32(ptr: usize, val: u32);
+    fn wavm_guest_resume();
 }
 
 #[derive(Clone, Copy)]
@@ -243,6 +244,9 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wavm__go_prepare_for_resume() {
-    todo!()
+pub unsafe extern "C" fn wavm__go_after_run() {
+    // TODO
+    while let Some(_pending_event) = None::<u32> {
+        wavm_guest_resume();
+    }
 }

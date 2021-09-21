@@ -1,6 +1,6 @@
 use crate::{
     binary::{
-        BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
+        Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
         NameCustomSection, TableType, WasmBinary,
     },
     host::get_host_impl,
@@ -698,6 +698,25 @@ impl Machine {
         let mut modules = Vec::new();
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
+
+        for export in &bin.exports {
+            if let ExportKind::Function(f) = export.kind {
+                if export.name == "resume" {
+                    let ty = bin.functions[usize::try_from(f).unwrap()];
+                    let ty = &bin.types[usize::try_from(ty).unwrap()];
+                    let module = u32::try_from(libraries.len()).unwrap();
+                    available_imports.insert(
+                        "wavm_guest_resume".into(),
+                        AvailableImport {
+                            ty: ty.clone(),
+                            module,
+                            func: f,
+                        },
+                    );
+                }
+            }
+        }
+
         for lib in libraries {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true);
             for (name, &func) in &module.exports {
@@ -782,28 +801,12 @@ impl Machine {
                 u32::try_from(main_module_idx).unwrap(),
                 f,
             ));
-            if let Some(&f) = main_module.exports.get("resume") {
+            if let Some(i) = available_imports.get("wavm__go_after_run") {
                 assert!(
-                    main_module.func_types[f as usize] == FunctionType::default(),
+                    i.ty == FunctionType::default(),
                     "Resume function has non-empty function signature",
                 );
-                let prepare;
-                if let Some(f) = available_imports.get("wavm__go_prepare_for_resume") {
-                    assert!(
-                        f.ty == FunctionType::default(),
-                        "Resume function has non-empty function signature",
-                    );
-                    prepare = f;
-                } else {
-                    panic!("Go resume preparation handler not found");
-                }
-                entrypoint.push(HirInstruction::Loop(
-                    BlockType::Empty,
-                    vec![
-                        HirInstruction::CrossModuleCall(prepare.module, prepare.func),
-                        HirInstruction::CrossModuleCall(u32::try_from(main_module_idx).unwrap(), f),
-                    ],
-                ));
+                entrypoint.push(HirInstruction::CrossModuleCall(i.module, i.func));
             }
         }
         let entrypoint_types = vec![FunctionType::default()];
