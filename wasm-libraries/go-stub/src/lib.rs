@@ -188,7 +188,6 @@ macro_rules! unimpl_js {
 unimpl_js!(
     go__syscall_js_finalizeRef,
     go__syscall_js_stringVal,
-    go__syscall_js_valueSet,
     go__syscall_js_valueIndex,
     go__syscall_js_valueSetIndex,
     go__syscall_js_valueLength,
@@ -278,8 +277,6 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
     sp.write_u64(4, GoValue::Null.encode());
     sp.write_u8(5, 0);
 }
-
-static mut PENDING_EVENT: Option<PendingEvent> = None;
 
 unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let object = interpret_value(sp.read_u64(0));
@@ -391,6 +388,28 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
             sp.write_u64(6, GoValue::Null.encode());
             sp.write_u8(7, 0);
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueSet(sp: GoStack) {
+    let source = interpret_value(sp.read_u64(0));
+    let field_ptr = sp.read_u64(1);
+    let field_len = sp.read_u64(2);
+    let new_value = interpret_value(sp.read_u64(0));
+    let field = read_slice(field_ptr, field_len);
+    if source == InterpValue::Ref(GO_ID)
+        && &field == b"_pendingEvent"
+        && new_value == InterpValue::Ref(NULL_ID)
+    {
+        PENDING_EVENT = None;
+    } else {
+        eprintln!(
+            "Go attempted to set unsupported value {:?} field {} to {:?}",
+            source,
+            String::from_utf8_lossy(&field),
+            new_value,
+        );
     }
 }
 

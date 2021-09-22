@@ -13,14 +13,21 @@ pub const UINT8_ARRAY_ID: u32 = 104;
 
 pub const FS_CONSTANTS_ID: u32 = 200;
 
-pub const PENDING_EVENT_ID: u32 = 300;
-
 const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterpValue {
     Number(f64),
     Ref(u32),
+}
+
+impl InterpValue {
+    fn assume_num_or_object(self) -> GoValue {
+        match self {
+            InterpValue::Number(x) => GoValue::Number(x),
+            InterpValue::Ref(x) => GoValue::Object(x),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,7 +70,7 @@ pub struct PendingEvent {
     pub args: Vec<InterpValue>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DynamicObject {
     Uint8Array(Vec<u8>),
     FunctionWrapper(InterpValue, InterpValue),
@@ -110,7 +117,9 @@ impl DynamicObjectPool {
     }
 }
 
-pub fn get_field(source: u32, field: &[u8]) -> GoValue {
+pub static mut PENDING_EVENT: Option<PendingEvent> = None;
+
+pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
     if source == GLOBAL_ID {
         if field == b"Object" {
             return GoValue::Function(OBJECT_ID);
@@ -134,11 +143,43 @@ pub fn get_field(source: u32, field: &[u8]) -> GoValue {
         ) {
             return GoValue::Number(-1.);
         }
+    } else if source == GO_ID {
+        if field == b"_pendingEvent" {
+            if let Some(event) = &PENDING_EVENT {
+                let id = DynamicObjectPool::singleton()
+                    .insert(DynamicObject::PendingEvent(event.clone()));
+                return GoValue::Object(id);
+            } else {
+                return GoValue::Null;
+            }
+        }
     }
-    eprintln!(
-        "Go attempting to access unimplemented unknown JS value {} field {}",
-        source,
-        String::from_utf8_lossy(field),
-    );
-    GoValue::Null
+
+    if let Some(source) = DynamicObjectPool::singleton().get(source).cloned() {
+        if let DynamicObject::PendingEvent(event) = &source {
+            if field == b"id" {
+                return event.id.assume_num_or_object();
+            } else if field == b"this" {
+                return event.this.assume_num_or_object();
+            } else if field == b"args" {
+                let id = DynamicObjectPool::singleton()
+                    .insert(DynamicObject::ValueArray(event.args.clone()));
+                return GoValue::Object(id);
+            }
+        }
+
+        eprintln!(
+            "Go attempting to access unimplemented unknown JS value {:?} field {}",
+            source,
+            String::from_utf8_lossy(field),
+        );
+        GoValue::Null
+    } else {
+        eprintln!(
+            "Go attempting to access unimplemented unknown JS value {} field {}",
+            source,
+            String::from_utf8_lossy(field),
+        );
+        GoValue::Null
+    }
 }
