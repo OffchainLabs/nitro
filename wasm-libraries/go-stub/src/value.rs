@@ -13,6 +13,8 @@ pub const UINT8_ARRAY_ID: u32 = 104;
 
 pub const FS_CONSTANTS_ID: u32 = 200;
 
+pub const PENDING_EVENT_ID: u32 = 300;
+
 const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -54,10 +56,19 @@ impl GoValue {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PendingEvent {
+    pub id: InterpValue,
+    pub this: InterpValue,
+    pub args: Vec<InterpValue>,
+}
+
 #[derive(Debug)]
 pub enum DynamicObject {
     Uint8Array(Vec<u8>),
     FunctionWrapper(InterpValue, InterpValue),
+    PendingEvent(PendingEvent),
+    ValueArray(Vec<InterpValue>),
 }
 
 #[derive(Default, Debug)]

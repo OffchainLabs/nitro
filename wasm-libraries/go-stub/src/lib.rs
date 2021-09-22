@@ -279,8 +279,9 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
     sp.write_u8(5, 0);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
+static mut PENDING_EVENT: Option<PendingEvent> = None;
+
+unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let object = interpret_value(sp.read_u64(0));
     let method_name_ptr = sp.read_u64(1);
     let method_name_len = sp.read_u64(2);
@@ -288,81 +289,109 @@ pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
     let args_ptr = sp.read_u64(3);
     let args_len = sp.read_u64(4);
     let args = read_value_slice(args_ptr, args_len);
-
     if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
-        if let Some(&id) = args.get(0) {
-            let ref_id =
-                DynamicObjectPool::singleton().insert(DynamicObject::FunctionWrapper(id, object));
-            sp.write_u64(6, GoValue::Function(ref_id).encode());
-            sp.write_u8(7, 1);
-            return;
-        } else {
-            eprintln!(
+        let id = args.get(0).ok_or_else(|| {
+            format!(
                 "Go attempting to call Go._makeFuncWrapper with bad args {:?}",
                 args,
-            );
-        }
+            )
+        })?;
+        let ref_id =
+            DynamicObjectPool::singleton().insert(DynamicObject::FunctionWrapper(*id, object));
+        Ok(GoValue::Function(ref_id))
     } else if object == InterpValue::Ref(FS_ID) && &method_name == b"write" {
         let args_len = std::cmp::min(6, args.len());
-        if let &[InterpValue::Number(fd), InterpValue::Ref(buf_id), InterpValue::Number(offset), InterpValue::Number(length), InterpValue::Ref(NULL_ID), InterpValue::Ref(callback)] =
+        if let &[InterpValue::Number(fd), InterpValue::Ref(buf_id), InterpValue::Number(offset), InterpValue::Number(length), InterpValue::Ref(NULL_ID), InterpValue::Ref(callback_id)] =
             &args.as_slice()[..args_len]
         {
             let object_pool = DynamicObjectPool::singleton();
-            let buf = object_pool.get(buf_id);
-            if let Some(DynamicObject::Uint8Array(buf)) = buf {
-                let mut offset = offset as usize;
-                let mut length = length as usize;
-                if offset > buf.len() {
-                    eprintln!(
-                        "Go attempting to call fs.write with offset {} >= buf.len() {}",
-                        offset,
-                        buf.len(),
-                    );
-                    offset = buf.len();
+            let buf = match object_pool.get(buf_id) {
+                Some(DynamicObject::Uint8Array(x)) => x,
+                x => {
+                    return Err(format!(
+                        "Go attempting to call fs.write with bad buffer {:?}",
+                        x,
+                    ))
                 }
-                if offset + length > buf.len() {
-                    eprintln!(
-                        "Go attempting to call fs.write with offset {} + length {} >= buf.len() {}",
-                        offset,
-                        length,
-                        buf.len(),
-                    );
-                    length = buf.len() - offset;
+            };
+            let (func_id, this) = match object_pool.get(callback_id) {
+                Some(DynamicObject::FunctionWrapper(f, t)) => (f, t),
+                x => {
+                    return Err(format!(
+                        "Go attempting to call fs.write with bad buffer {:?}",
+                        x,
+                    ))
                 }
-
-                if fd == 1. {
-                    let stdout = std::io::stdout();
-                    let mut stdout = stdout.lock();
-                    stdout.write_all(&buf[offset..(offset + length)]).unwrap();
-                } else if fd == 2. {
-                    let stderr = std::io::stderr();
-                    let mut stderr = stderr.lock();
-                    stderr.write_all(&buf[offset..(offset + length)]).unwrap();
-                } else {
-                    eprintln!("Go attempting to write to unknown FD {}", fd);
-                }
-
-                todo!("Invoke callback");
-
-                sp = GoStack(wavm_guest_call__getsp());
-                sp.write_u64(6, GoValue::Number(length as f64).encode());
-                sp.write_u8(7, 1);
-            } else {
-                eprintln!("Go attempting to call fs.write with bad buffer {:?}", buf);
+            };
+            let mut offset = offset as usize;
+            let mut length = length as usize;
+            if offset > buf.len() {
+                eprintln!(
+                    "Go attempting to call fs.write with offset {} >= buf.len() {}",
+                    offset,
+                    buf.len(),
+                );
+                offset = buf.len();
             }
+            if offset + length > buf.len() {
+                eprintln!(
+                    "Go attempting to call fs.write with offset {} + length {} >= buf.len() {}",
+                    offset,
+                    length,
+                    buf.len(),
+                );
+                length = buf.len() - offset;
+            }
+
+            if fd == 1. {
+                let stdout = std::io::stdout();
+                let mut stdout = stdout.lock();
+                stdout.write_all(&buf[offset..(offset + length)]).unwrap();
+            } else if fd == 2. {
+                let stderr = std::io::stderr();
+                let mut stderr = stderr.lock();
+                stderr.write_all(&buf[offset..(offset + length)]).unwrap();
+            } else {
+                eprintln!("Go attempting to write to unknown FD {}", fd);
+            }
+
+            PENDING_EVENT = Some(PendingEvent {
+                id: *func_id,
+                this: *this,
+                args,
+            });
+            wavm_guest_call__resume();
+
+            *sp = GoStack(wavm_guest_call__getsp());
+            Ok(GoValue::Number(length as f64))
         } else {
-            eprintln!("Go attempting to call fs.write with bad args {:?}", args);
+            Err(format!(
+                "Go attempting to call fs.write with bad args {:?}",
+                args
+            ))
         }
     } else {
-        eprintln!(
+        Err(format!(
             "Go attempting to call unknown method {:?} . {}",
             object,
             String::from_utf8_lossy(&method_name),
-        );
+        ))
     }
+}
 
-    sp.write_u64(6, GoValue::Null.encode());
-    sp.write_u8(7, 0);
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueCall(mut sp: GoStack) {
+    match value_call_impl(&mut sp) {
+        Ok(val) => {
+            sp.write_u64(6, val.encode());
+            sp.write_u8(7, 1);
+        }
+        Err(err) => {
+            eprintln!("{}", err);
+            sp.write_u64(6, GoValue::Null.encode());
+            sp.write_u8(7, 0);
+        }
+    }
 }
 
 #[no_mangle]

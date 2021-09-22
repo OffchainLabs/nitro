@@ -709,7 +709,7 @@ impl Machine {
                 let ty = &bin.types[usize::try_from(ty).unwrap()];
                 let module = u32::try_from(libraries.len()).unwrap();
                 available_imports.insert(
-                    format!("wavm_guest_call__{}", export.name),
+                    format!("env__wavm_guest_call__{}", export.name),
                     AvailableImport {
                         ty: ty.clone(),
                         module,
