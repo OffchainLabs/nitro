@@ -13,7 +13,7 @@ pub const UINT8_ARRAY_ID: u32 = 104;
 
 pub const FS_CONSTANTS_ID: u32 = 200;
 
-const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
+pub const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterpValue {

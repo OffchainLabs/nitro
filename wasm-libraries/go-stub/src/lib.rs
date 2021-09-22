@@ -1,9 +1,10 @@
 mod value;
 
 use crate::value::*;
+use fnv::FnvHashSet as HashSet;
 use rand::RngCore;
 use rand_pcg::Pcg32;
-use std::{convert::TryFrom, io::Write};
+use std::{collections::BinaryHeap, convert::TryFrom, io::Write};
 
 #[allow(dead_code)]
 extern "C" {
@@ -46,6 +47,10 @@ impl GoStack {
 
     unsafe fn write_u8(self, offset: usize, x: u8) {
         wavm_caller_module_memory_store8(self.0 + (offset + 1) * 8, x);
+    }
+
+    unsafe fn write_u32(self, offset: usize, x: u32) {
+        wavm_caller_module_memory_store32(self.0 + (offset + 1) * 8, x);
     }
 
     unsafe fn write_u64(self, offset: usize, x: u64) {
@@ -135,6 +140,13 @@ pub unsafe extern "C" fn go__runtime_nanotime1(sp: GoStack) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn go__runtime_walltime(sp: GoStack) {
+    TIME += TIME_INTERVAL;
+    sp.write_u64(0, TIME / 1_000_000_000);
+    sp.write_u32(1, (TIME % 1_000_000_000) as u32);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn go__runtime_walltime1(sp: GoStack) {
     TIME += TIME_INTERVAL;
     sp.write_u64(0, TIME / 1_000_000_000);
@@ -164,14 +176,60 @@ pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TimeoutInfo {
+    time: u64,
+    id: u32,
+}
+
+impl Ord for TimeoutInfo {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other
+            .time
+            .cmp(&self.time)
+            .then_with(|| other.id.cmp(&self.id))
+    }
+}
+
+impl PartialOrd for TimeoutInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
+#[derive(Default, Debug)]
+struct TimeoutState {
+    /// Contains tuples of (time, id)
+    times: BinaryHeap<TimeoutInfo>,
+    pending_ids: HashSet<u32>,
+    next_id: u32,
+}
+
+static mut TIMEOUT_STATE: Option<TimeoutState> = None;
+
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(_: GoStack) {
-    todo!()
+pub unsafe extern "C" fn go__runtime_scheduleTimeoutEvent(sp: GoStack) {
+    let mut time = sp.read_u64(0);
+    time = time.saturating_mul(1_000_000); // milliseconds to nanoseconds
+    time = time.saturating_add(TIME); // add the current time to the delay
+
+    let state = TIMEOUT_STATE.get_or_insert_with(Default::default);
+    let id = state.next_id;
+    state.next_id += 1;
+    state.times.push(TimeoutInfo { time, id });
+    state.pending_ids.insert(id);
+
+    sp.write_u32(1, id);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(_: GoStack) {
-    todo!()
+pub unsafe extern "C" fn go__runtime_clearTimeoutEvent(sp: GoStack) {
+    let id = sp.read_u32(0);
+
+    let state = TIMEOUT_STATE.get_or_insert_with(Default::default);
+    if !state.pending_ids.remove(&id) {
+        eprintln!("Go attempting to clear not pending timeout event {}", id);
+    }
 }
 
 macro_rules! unimpl_js {
@@ -186,7 +244,6 @@ macro_rules! unimpl_js {
 }
 
 unimpl_js!(
-    go__syscall_js_finalizeRef,
     go__syscall_js_stringVal,
     go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
@@ -486,9 +543,28 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: GoStack) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: GoStack) {
+    let val = interpret_value(sp.read_u64(0));
+    match val {
+        InterpValue::Number(x) => eprintln!("Go attempting to finalize number {}", x),
+        InterpValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
+        InterpValue::Ref(x) => {
+            if DynamicObjectPool::singleton().remove(x).is_none() {
+                eprintln!("Go attempting to finalize unknown ref {}", x);
+            }
+        }
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn wavm__go_after_run() {
-    // TODO
-    while let Some(_pending_event) = None::<u32> {
-        wavm_guest_call__resume();
+    let mut state = TIMEOUT_STATE.get_or_insert_with(Default::default);
+    while let Some(info) = state.times.pop() {
+        while state.pending_ids.contains(&info.id) {
+            TIME = std::cmp::max(TIME, info.time);
+            drop(state);
+            wavm_guest_call__resume();
+            state = TIMEOUT_STATE.get_or_insert_with(Default::default);
+        }
     }
 }
