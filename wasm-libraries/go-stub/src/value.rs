@@ -22,7 +22,7 @@ pub enum InterpValue {
 }
 
 impl InterpValue {
-    fn assume_num_or_object(self) -> GoValue {
+    pub fn assume_num_or_object(self) -> GoValue {
         match self {
             InterpValue::Number(x) => GoValue::Number(x),
             InterpValue::Ref(x) => GoValue::Object(x),
@@ -67,7 +67,7 @@ impl GoValue {
 pub struct PendingEvent {
     pub id: InterpValue,
     pub this: InterpValue,
-    pub args: Vec<InterpValue>,
+    pub args: Vec<GoValue>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,7 +75,7 @@ pub enum DynamicObject {
     Uint8Array(Vec<u8>),
     FunctionWrapper(InterpValue, InterpValue),
     PendingEvent(PendingEvent),
-    ValueArray(Vec<InterpValue>),
+    ValueArray(Vec<GoValue>),
 }
 
 #[derive(Default, Debug)]

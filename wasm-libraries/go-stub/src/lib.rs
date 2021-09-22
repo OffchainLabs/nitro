@@ -188,9 +188,7 @@ macro_rules! unimpl_js {
 unimpl_js!(
     go__syscall_js_finalizeRef,
     go__syscall_js_stringVal,
-    go__syscall_js_valueIndex,
     go__syscall_js_valueSetIndex,
-    go__syscall_js_valueLength,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
 );
@@ -355,12 +353,15 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
             PENDING_EVENT = Some(PendingEvent {
                 id: *func_id,
                 this: *this,
-                args,
+                args: vec![
+                    GoValue::Null,                  // no error
+                    GoValue::Number(length as f64), // amount written
+                ],
             });
             wavm_guest_call__resume();
 
             *sp = GoStack(wavm_guest_call__getsp());
-            Ok(GoValue::Number(length as f64))
+            Ok(GoValue::Null)
         } else {
             Err(format!(
                 "Go attempting to call fs.write with bad args {:?}",
@@ -396,20 +397,91 @@ pub unsafe extern "C" fn go__syscall_js_valueSet(sp: GoStack) {
     let source = interpret_value(sp.read_u64(0));
     let field_ptr = sp.read_u64(1);
     let field_len = sp.read_u64(2);
-    let new_value = interpret_value(sp.read_u64(0));
+    let new_value = interpret_value(sp.read_u64(3));
     let field = read_slice(field_ptr, field_len);
     if source == InterpValue::Ref(GO_ID)
         && &field == b"_pendingEvent"
         && new_value == InterpValue::Ref(NULL_ID)
     {
         PENDING_EVENT = None;
+        return;
+    }
+    let pool = DynamicObjectPool::singleton();
+    if let InterpValue::Ref(id) = source {
+        let source = pool.get(id);
+        if let Some(DynamicObject::PendingEvent(_)) = source {
+            if field == b"result" {
+                return;
+            }
+        }
+    }
+    eprintln!(
+        "Go attempted to set unsupported value {:?} field {} to {:?}",
+        source,
+        String::from_utf8_lossy(&field),
+        new_value,
+    );
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueLength(sp: GoStack) {
+    let source = interpret_value(sp.read_u64(0));
+    let pool = DynamicObjectPool::singleton();
+    let source = match source {
+        InterpValue::Ref(x) => pool.get(x),
+        InterpValue::Number(_) => None,
+    };
+    let len = match source {
+        Some(DynamicObject::Uint8Array(x)) => Some(x.len()),
+        Some(DynamicObject::ValueArray(x)) => Some(x.len()),
+        _ => None,
+    };
+    if let Some(len) = len {
+        sp.write_u64(1, len as u64);
     } else {
         eprintln!(
-            "Go attempted to set unsupported value {:?} field {} to {:?}",
+            "Go attempted to get length of unsupported value {:?}",
             source,
-            String::from_utf8_lossy(&field),
-            new_value,
         );
+        sp.write_u64(1, 0);
+    }
+}
+
+unsafe fn value_index_impl(sp: GoStack) -> Result<GoValue, String> {
+    let pool = DynamicObjectPool::singleton();
+    let source = match interpret_value(sp.read_u64(0)) {
+        InterpValue::Ref(x) => pool.get(x),
+        InterpValue::Number(x) => return Err(format!("Go attempted to index into number {}", x)),
+    };
+    let index = usize::try_from(sp.read_u64(1)).map_err(|e| format!("{:?}", e))?;
+    let val = match source {
+        Some(DynamicObject::Uint8Array(x)) => {
+            Some(x.get(index).map(|x| GoValue::Number(*x as f64)))
+        }
+        Some(DynamicObject::ValueArray(x)) => Some(x.get(index).cloned()),
+        _ => None,
+    };
+    match val {
+        Some(Some(val)) => Ok(val),
+        Some(None) => Err(format!(
+            "Go attempted to index out of bounds into value {:?} index {}",
+            source, index,
+        )),
+        None => Err(format!(
+            "Go attempted to index into unsupported value {:?}",
+            source
+        )),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: GoStack) {
+    match value_index_impl(sp) {
+        Ok(v) => sp.write_u64(2, v.encode()),
+        Err(e) => {
+            eprintln!("{}", e);
+            sp.write_u64(2, GoValue::Null.encode());
+        }
     }
 }
 
