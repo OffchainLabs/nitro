@@ -1,6 +1,6 @@
 use crate::{
     binary::{
-        Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
+        BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
         NameCustomSection, TableType, WasmBinary,
     },
     host::get_host_impl,
@@ -43,6 +43,7 @@ impl Function {
     pub fn new(
         code: Code,
         func_ty: FunctionType,
+        func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
     ) -> Function {
@@ -70,9 +71,13 @@ impl Function {
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
         let codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
-        for hir_inst in code.expr {
-            Instruction::extend_from_hir(&mut insts, codegen_state, hir_inst);
-        }
+
+        Instruction::extend_from_hir(
+            &mut insts,
+            codegen_state,
+            crate::binary::HirInstruction::Block(func_block_ty, code.expr)
+        );
+
         Instruction::extend_from_hir(
             &mut insts,
             codegen_state,
@@ -278,7 +283,7 @@ impl Module {
                     wavm.push(Instruction::simple(Opcode::Return));
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(&import.module, &import.name);
+                    func = get_host_impl(&import.module, &import.name, BlockType::TypeIndex(ty as u32));
                     assert_eq!(
                         func.ty, bin.types[ty as usize],
                         "Import has different function signature than host function",
@@ -302,6 +307,7 @@ impl Module {
             code.push(Function::new(
                 c,
                 func_types[idx].clone(),
+                BlockType::TypeIndex(idx as u32),
                 &bin.types,
                 floating_point_impls,
             ));
@@ -829,6 +835,7 @@ impl Machine {
                 expr: entrypoint,
             },
             FunctionType::default(),
+            BlockType::TypeIndex(0),
             &entrypoint_types,
             &floating_point_impls,
         )];
