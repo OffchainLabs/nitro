@@ -75,7 +75,7 @@ impl Function {
         Instruction::extend_from_hir(
             &mut insts,
             codegen_state,
-            crate::binary::HirInstruction::Block(func_block_ty, code.expr)
+            crate::binary::HirInstruction::Block(func_block_ty, code.expr),
         );
 
         Instruction::extend_from_hir(
@@ -258,12 +258,11 @@ impl Module {
         is_library: bool,
     ) -> Module {
         let mut code = Vec::new();
-        let mut func_types: Vec<FunctionType> = Vec::new();
+        let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
         let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
-        let types = &bin.types;
         for import in bin.imports {
             if let ImportKind::Function(ty) = import.kind {
                 let mut qualified_name = format!("{}__{}", import.module, import.name);
@@ -283,7 +282,11 @@ impl Module {
                     wavm.push(Instruction::simple(Opcode::Return));
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(&import.module, &import.name, BlockType::TypeIndex(ty as u32));
+                    func = get_host_impl(
+                        &import.module,
+                        &import.name,
+                        BlockType::TypeIndex(ty as u32),
+                    );
                     assert_eq!(
                         func.ty, bin.types[ty as usize],
                         "Import has different function signature than host function",
@@ -294,20 +297,25 @@ impl Module {
                         import.name,
                     );
                 }
-                func_types.push(func.ty.clone());
+                func_type_idxs.push(ty);
                 code.push(func);
                 host_call_hooks.push(Some((import.module, import.name)));
             } else {
                 panic!("Unsupport import kind {:?}", import);
             }
         }
-        func_types.extend(bin.functions.into_iter().map(|x| types[x as usize].clone()));
+        func_type_idxs.extend(bin.functions.into_iter());
+        let types = &bin.types;
+        let mut func_types: Vec<FunctionType> = func_type_idxs
+            .iter()
+            .map(|i| types[*i as usize].clone())
+            .collect();
         for c in bin.code {
             let idx = code.len();
             code.push(Function::new(
                 c,
                 func_types[idx].clone(),
-                BlockType::TypeIndex(idx as u32),
+                BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
                 floating_point_impls,
             ));

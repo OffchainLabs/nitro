@@ -47,7 +47,12 @@ pub struct ProgramCounter {
 
 impl ProgramCounter {
     pub fn new(module: usize, func: usize, inst: usize, block_depth: usize) -> ProgramCounter {
-        ProgramCounter { module, func, inst, block_depth }
+        ProgramCounter {
+            module,
+            func,
+            inst,
+            block_depth,
+        }
     }
 
     pub fn serialize(self) -> Bytes32 {
