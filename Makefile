@@ -1,7 +1,7 @@
 inputs=$(wildcard prover/test-cases/*.wat)
 rust_bin_sources=$(wildcard prover/test-cases/rust/src/bin/*.rs)
-outputs=$(patsubst prover/test-cases/%.wat,rollup/test/proofs/%.json, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,rollup/test/proofs/rust-%.json, $(rust_bin_sources))
-wasms=$(patsubst %.wat,%.wasm, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(rust_bin_sources))
+outputs=$(patsubst prover/test-cases/%.wat,rollup/test/proofs/%.json, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,rollup/test/proofs/rust-%.json, $(rust_bin_sources)) rollup/test/proofs/go.json
+wasms=$(patsubst %.wat,%.wasm, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(rust_bin_sources)) prover/test-cases/go/main
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
@@ -11,6 +11,7 @@ all: $(wasms) $(outputs)
 clean:
 	rm -rf prover/test-cases/rust/target
 	rm -f prover/test-cases/*.wasm
+	rm -f prover/test-cases/go/main
 	rm -f rollup/test/proofs/*.json
 	rm -rf wasm-libraries/target
 	rm -f wasm-libraries/soft-float/soft-float.wasm
@@ -20,6 +21,9 @@ clean:
 
 prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/src/bin/%.rs prover/test-cases/rust/src/lib.rs
 	cd prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
+
+prover/test-cases/go/main: prover/test-cases/go/main.go prover/test-cases/go/go.mod prover/test-cases/go/go.sum
+	cd prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
 wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: wasm-libraries/wasi-stub/src/**
 	cd wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
@@ -104,6 +108,9 @@ wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
+wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: wasm-libraries/go-stub/src/**
+	cd wasm-libraries && cargo build --target wasm32-wasi --package go-stub
+
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
@@ -118,6 +125,13 @@ rollup/test/proofs/rust-%.json: \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/**
 	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
+
+rollup/test/proofs/go.json: \
+		prover/test-cases/go/main \
+		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
+		wasm-libraries/soft-float/soft-float.wasm prover/src/** \
+		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm
+	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -l wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm -o $@ -i 5000000
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
 .PHONY: all clean

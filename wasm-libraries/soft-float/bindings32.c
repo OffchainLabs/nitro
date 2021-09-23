@@ -168,7 +168,6 @@ uint8_t wavm__f32_eq(uint32_t va, uint32_t vb) {
 uint8_t wavm__f32_ne(uint32_t va, uint32_t vb) {
 	float32_t a = {va};
 	float32_t b = {vb};
-	if (f32_isNaN(a) || f32_isNaN(b)) return false;
 	return !f32_eq(a, b);
 }
 

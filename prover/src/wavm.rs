@@ -405,12 +405,14 @@ impl Instruction {
                 ops[block_idx].argument_data = ops.len() as u64;
             }
             HirInstruction::Branch(x) => {
+                assert!(x < state.block_depth as u32);
                 for _ in 0..x {
                     ops.push(Instruction::simple(Opcode::EndBlock));
                 }
                 ops.push(Instruction::simple(Opcode::Branch));
             }
             HirInstruction::BranchIf(x) => {
+                assert!(x < state.block_depth as u32);
                 for _ in 0..x {
                     ops.push(Instruction::simple(Opcode::EndBlockIf));
                 }

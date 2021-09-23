@@ -1,11 +1,11 @@
 use crate::{
-    binary::{Code, HirInstruction},
+    binary::{BlockType, Code, HirInstruction},
     machine::Function,
     value::{FunctionType, ValueType},
     wavm::{FloatingPointImpls, Opcode},
 };
 
-pub fn get_host_impl(module: &str, name: &str) -> Function {
+pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
     let mut insts = Vec::new();
     let ty;
     match (module, name) {
@@ -49,5 +49,5 @@ pub fn get_host_impl(module: &str, name: &str) -> Function {
         locals: Vec::new(),
         expr: insts,
     };
-    Function::new(code, ty, &[], &FloatingPointImpls::default())
+    Function::new(code, ty, btype, &[], &FloatingPointImpls::default())
 }
