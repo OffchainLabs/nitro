@@ -892,7 +892,7 @@ impl Machine {
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
-            pc: ProgramCounter::new(entrypoint_idx, 0, 0),
+            pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
         }
@@ -906,6 +906,10 @@ impl Machine {
             .code
             .get(self.pc.inst)
             .cloned()
+    }
+
+    fn test_next_instruction(module: &Module, pc: &ProgramCounter) {
+        assert!(module.funcs[pc.func].code.len() > pc.inst);
     }
 
     pub fn step(&mut self) {
@@ -947,13 +951,19 @@ impl Machine {
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
                 self.block_stack.push(idx);
+                self.pc.block_depth += 1;
+                assert!(module.funcs[self.pc.func].code.len() > idx);
             }
             Opcode::EndBlock => {
+                assert!(self.pc.block_depth > 0);
+                self.pc.block_depth -= 1;
                 self.block_stack.pop();
             }
             Opcode::EndBlockIf => {
                 let x = self.value_stack.last().unwrap();
                 if !x.is_i32_zero() {
+                    assert!(self.pc.block_depth > 0);
+                    self.pc.block_depth -= 1;
                     self.block_stack.pop().unwrap();
                 }
             }
@@ -977,15 +987,22 @@ impl Machine {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
                     self.pc.inst = inst.argument_data as usize;
+                    Machine::test_next_instruction(&module, &self.pc);
                 }
             }
             Opcode::Branch => {
+                assert!(self.pc.block_depth > 0);
+                self.pc.block_depth -= 1;
                 self.pc.inst = self.block_stack.pop().unwrap();
+                Machine::test_next_instruction(&module, &self.pc);
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
+                    assert!(self.pc.block_depth > 0);
+                    self.pc.block_depth -= 1;
                     self.pc.inst = self.block_stack.pop().unwrap();
+                    Machine::test_next_instruction(&module, &self.pc);
                 }
             }
             Opcode::Return => {
@@ -1007,6 +1024,7 @@ impl Machine {
                     .push(Value::I32(current_frame.caller_module_internals));
                 self.pc.func = inst.argument_data as usize;
                 self.pc.inst = 0;
+                self.pc.block_depth = 0;
             }
             Opcode::CrossModuleCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1016,6 +1034,7 @@ impl Machine {
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
                 self.pc.inst = 0;
+                self.pc.block_depth = 0;
             }
             Opcode::CallerModuleInternalCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1031,6 +1050,7 @@ impl Machine {
                     self.pc.module = current_frame.caller_module as usize;
                     self.pc.func = func_idx as usize;
                     self.pc.inst = 0;
+                    self.pc.block_depth = 0;
                 } else {
                     // The caller module has no internals
                     self.halted = true;
@@ -1058,6 +1078,7 @@ impl Machine {
                                 .push(Value::I32(current_frame.caller_module_internals));
                             self.pc.func = func as usize;
                             self.pc.inst = 0;
+                            self.pc.block_depth = 0;
                         }
                         Value::RefNull => {
                             self.halted = true;
