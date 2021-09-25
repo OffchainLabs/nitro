@@ -158,9 +158,13 @@ pub unsafe extern "C" fn go__runtime_walltime1(sp: GoStack) {
 
 static mut RNG: Option<Pcg32> = None;
 
+unsafe fn get_rng<'a>() -> &'a mut Pcg32 {
+    RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
-    let rng = RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7));
+    let rng = get_rng();
     let mut ptr =
         usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
     let mut len = sp.read_u64(1);
@@ -429,6 +433,34 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
                 args
             ))
         }
+    } else if object == InterpValue::Ref(CRYPTO_ID) && &method_name == b"getRandomValues" {
+        let id = match args.get(0) {
+            Some(InterpValue::Ref(x)) => *x,
+            _ => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues with bad args {:?}",
+                    args,
+                ));
+            }
+        };
+        match DynamicObjectPool::singleton().get_mut(id) {
+            Some(DynamicObject::Uint8Array(buf)) => {
+                get_rng().fill_bytes(buf.as_mut_slice());
+            }
+            Some(x) => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues on bad object {:?}",
+                    x,
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues on unknown id {}",
+                    id,
+                ));
+            }
+        }
+        Ok(GoValue::Undefined)
     } else {
         Err(format!(
             "Go attempting to call unknown method {:?} . {}",

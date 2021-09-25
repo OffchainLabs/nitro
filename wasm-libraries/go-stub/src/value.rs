@@ -10,6 +10,7 @@ pub const ARRAY_ID: u32 = 101;
 pub const PROCESS_ID: u32 = 102;
 pub const FS_ID: u32 = 103;
 pub const UINT8_ARRAY_ID: u32 = 104;
+pub const CRYPTO_ID: u32 = 105;
 
 pub const FS_CONSTANTS_ID: u32 = 200;
 
@@ -140,6 +141,8 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
             return GoValue::Object(FS_ID);
         } else if field == b"Uint8Array" {
             return GoValue::Function(UINT8_ARRAY_ID);
+        } else if field == b"crypto" {
+            return GoValue::Object(CRYPTO_ID);
         } else if field == b"fetch" {
             // Triggers a code path in Go for a fake network implementation
             return GoValue::Undefined;
