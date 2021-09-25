@@ -59,6 +59,9 @@ impl GoStack {
 }
 
 fn interpret_value(repr: u64) -> InterpValue {
+    if repr == 0 {
+        return InterpValue::Undefined;
+    }
     let float = f64::from_bits(repr);
     if float.is_nan() && repr != f64::NAN.to_bits() {
         let id = repr as u32;
@@ -96,6 +99,24 @@ unsafe fn read_slice(ptr: u64, mut len: u64) -> Vec<u8> {
         ptr += 1;
     }
     data
+}
+
+unsafe fn write_slice(mut src: &[u8], ptr: u64) {
+    if src.len() == 0 {
+        return;
+    }
+    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
+    while src.len() >= 4 {
+        let mut arr = [0u8; 4];
+        arr.copy_from_slice(&src[..4]);
+        wavm_caller_module_memory_store32(ptr, u32::from_le_bytes(arr));
+        ptr += 4;
+        src = &src[4..];
+    }
+    for &byte in src {
+        wavm_caller_module_memory_store8(ptr, byte);
+        ptr += 1;
+    }
 }
 
 #[no_mangle]
@@ -155,9 +176,13 @@ pub unsafe extern "C" fn go__runtime_walltime1(sp: GoStack) {
 
 static mut RNG: Option<Pcg32> = None;
 
+unsafe fn get_rng<'a>() -> &'a mut Pcg32 {
+    RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
-    let rng = RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7));
+    let rng = get_rng();
     let mut ptr =
         usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
     let mut len = sp.read_u64(1);
@@ -258,10 +283,10 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
     let field = read_slice(field_ptr, field_len);
     let value = match source {
         InterpValue::Ref(id) => get_field(id, &field),
-        InterpValue::Number(n) => {
+        val => {
             eprintln!(
-                "Go attempting to read field of float: {} . {}",
-                n,
+                "Go attempting to read field {:?} . {}",
+                val,
                 String::from_utf8_lossy(&field),
             );
             GoValue::Null
@@ -309,7 +334,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
             if buf.len() as u64 != src_len {
                 eprintln!(
-                    "Go copying bytes from source length {} to dest length {}",
+                    "Go copying bytes from Go source length {} to JS dest length {}",
                     src_len,
                     buf.len(),
                 );
@@ -330,6 +355,39 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
         eprintln!("Go attempting to copy bytes into {:?}", dest_val);
     }
     sp.write_u64(4, GoValue::Null.encode());
+    sp.write_u8(5, 0);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
+    let dest_ptr = sp.read_u64(0);
+    let dest_len = sp.read_u64(1);
+    let src_val = interpret_value(sp.read_u64(3));
+    if let InterpValue::Ref(src_id) = src_val {
+        let source = DynamicObjectPool::singleton().get_mut(src_id);
+        if let Some(DynamicObject::Uint8Array(buf)) = source {
+            if buf.len() as u64 != dest_len {
+                eprintln!(
+                    "Go copying bytes from JS source length {} to Go dest length {}",
+                    buf.len(),
+                    dest_len,
+                );
+            }
+            let len = std::cmp::min(buf.len() as u64, dest_len) as usize;
+            write_slice(&buf[..len], dest_ptr);
+
+            sp.write_u64(4, GoValue::Number(len as f64).encode());
+            sp.write_u8(5, 1);
+            return;
+        } else {
+            eprintln!(
+                "Go attempting to copy bytes from unsupported source {:?}",
+                source,
+            );
+        }
+    } else {
+        eprintln!("Go attempting to copy bytes from {:?}", src_val);
+    }
     sp.write_u8(5, 0);
 }
 
@@ -425,6 +483,34 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
                 args
             ))
         }
+    } else if object == InterpValue::Ref(CRYPTO_ID) && &method_name == b"getRandomValues" {
+        let id = match args.get(0) {
+            Some(InterpValue::Ref(x)) => *x,
+            _ => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues with bad args {:?}",
+                    args,
+                ));
+            }
+        };
+        match DynamicObjectPool::singleton().get_mut(id) {
+            Some(DynamicObject::Uint8Array(buf)) => {
+                get_rng().fill_bytes(buf.as_mut_slice());
+            }
+            Some(x) => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues on bad object {:?}",
+                    x,
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "Go attempting to call crypto.getRandomValues on unknown reference {}",
+                    id,
+                ));
+            }
+        }
+        Ok(GoValue::Undefined)
     } else {
         Err(format!(
             "Go attempting to call unknown method {:?} . {}",
@@ -486,7 +572,7 @@ pub unsafe extern "C" fn go__syscall_js_valueLength(sp: GoStack) {
     let pool = DynamicObjectPool::singleton();
     let source = match source {
         InterpValue::Ref(x) => pool.get(x),
-        InterpValue::Number(_) => None,
+        _ => None,
     };
     let len = match source {
         Some(DynamicObject::Uint8Array(x)) => Some(x.len()),
@@ -508,7 +594,7 @@ unsafe fn value_index_impl(sp: GoStack) -> Result<GoValue, String> {
     let pool = DynamicObjectPool::singleton();
     let source = match interpret_value(sp.read_u64(0)) {
         InterpValue::Ref(x) => pool.get(x),
-        InterpValue::Number(x) => return Err(format!("Go attempted to index into number {}", x)),
+        val => return Err(format!("Go attempted to index into {:?}", val)),
     };
     let index = usize::try_from(sp.read_u64(1)).map_err(|e| format!("{:?}", e))?;
     let val = match source {
@@ -546,13 +632,13 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: GoStack) {
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: GoStack) {
     let val = interpret_value(sp.read_u64(0));
     match val {
-        InterpValue::Number(x) => eprintln!("Go attempting to finalize number {}", x),
         InterpValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         InterpValue::Ref(x) => {
             if DynamicObjectPool::singleton().remove(x).is_none() {
                 eprintln!("Go attempting to finalize unknown ref {}", x);
             }
         }
+        val => eprintln!("Go attempting to finalize {:?}", val),
     }
 }
 
