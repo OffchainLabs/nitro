@@ -562,6 +562,7 @@ pub struct Machine {
     frame_stack: Vec<StackFrame>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
+    inbox_position: u64,
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
@@ -900,6 +901,7 @@ impl Machine {
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
+            inbox_position: 0,
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
@@ -1465,6 +1467,7 @@ impl Machine {
         h.update(&hash_value_stack(&self.internal_stack));
         h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
+        h.update(Bytes32::from(self.inbox_position));
         h.update(&(self.pc.module as u32).to_be_bytes());
         h.update(&(self.pc.func as u32).to_be_bytes());
         h.update(&(self.pc.inst as u32).to_be_bytes());
@@ -1501,6 +1504,8 @@ impl Machine {
             hash_stack_frame_stack,
             StackFrame::serialize_for_proof,
         ));
+
+        data.extend(Bytes32::from(self.inbox_position));
 
         data.extend(&(self.pc.module as u32).to_be_bytes());
         data.extend(&(self.pc.func as u32).to_be_bytes());

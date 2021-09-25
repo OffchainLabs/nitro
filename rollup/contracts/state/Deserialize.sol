@@ -193,6 +193,7 @@ library Deserialize {
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
+		uint256 inboxPosition;
 		uint32 moduleIdx;
 		uint32 functionIdx;
 		uint32 functionPc;
@@ -202,6 +203,7 @@ library Deserialize {
 		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
+		(inboxPosition, offset) = u256(proof, offset);
 		(moduleIdx, offset) = u32(proof, offset);
 		(functionIdx, offset) = u32(proof, offset);
 		(functionPc, offset) = u32(proof, offset);
@@ -211,6 +213,7 @@ library Deserialize {
 			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
+			inboxPosition: inboxPosition,
 			moduleIdx: moduleIdx,
 			functionIdx: functionIdx,
 			functionPc: functionPc,
