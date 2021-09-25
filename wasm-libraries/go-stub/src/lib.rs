@@ -2,61 +2,10 @@ mod value;
 
 use crate::value::*;
 use fnv::FnvHashSet as HashSet;
+use go_abi::*;
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{collections::BinaryHeap, convert::TryFrom, io::Write};
-
-#[allow(dead_code)]
-extern "C" {
-    fn wavm_caller_module_memory_load8(ptr: usize) -> u8;
-    fn wavm_caller_module_memory_load32(ptr: usize) -> u32;
-    fn wavm_caller_module_memory_store8(ptr: usize, val: u8);
-    fn wavm_caller_module_memory_store32(ptr: usize, val: u32);
-
-    fn wavm_guest_call__getsp() -> usize;
-    fn wavm_guest_call__resume();
-}
-
-unsafe fn wavm_caller_module_memory_load64(ptr: usize) -> u64 {
-    let lower = wavm_caller_module_memory_load32(ptr);
-    let upper = wavm_caller_module_memory_load32(ptr + 4);
-    lower as u64 | ((upper as u64) << 32)
-}
-
-unsafe fn wavm_caller_module_memory_store64(ptr: usize, val: u64) {
-    wavm_caller_module_memory_store32(ptr, val as u32);
-    wavm_caller_module_memory_store32(ptr + 4, (val >> 32) as u32);
-}
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct GoStack(usize);
-
-impl GoStack {
-    unsafe fn read_u32(self, offset: usize) -> u32 {
-        wavm_caller_module_memory_load32(self.0 + (offset + 1) * 8)
-    }
-
-    unsafe fn read_i32(self, offset: usize) -> i32 {
-        self.read_u32(offset) as i32
-    }
-
-    unsafe fn read_u64(self, offset: usize) -> u64 {
-        wavm_caller_module_memory_load64(self.0 + (offset + 1) * 8)
-    }
-
-    unsafe fn write_u8(self, offset: usize, x: u8) {
-        wavm_caller_module_memory_store8(self.0 + (offset + 1) * 8, x);
-    }
-
-    unsafe fn write_u32(self, offset: usize, x: u32) {
-        wavm_caller_module_memory_store32(self.0 + (offset + 1) * 8, x);
-    }
-
-    unsafe fn write_u64(self, offset: usize, x: u64) {
-        wavm_caller_module_memory_store64(self.0 + (offset + 1) * 8, x);
-    }
-}
 
 fn interpret_value(repr: u64) -> InterpValue {
     if repr == 0 {
@@ -83,42 +32,6 @@ unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
     values
 }
 
-unsafe fn read_slice(ptr: u64, mut len: u64) -> Vec<u8> {
-    let mut data = Vec::with_capacity(len as usize);
-    if len == 0 {
-        return data;
-    }
-    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-    while len >= 4 {
-        data.extend(wavm_caller_module_memory_load32(ptr).to_le_bytes());
-        ptr += 4;
-        len -= 4;
-    }
-    for _ in 0..len {
-        data.push(wavm_caller_module_memory_load8(ptr));
-        ptr += 1;
-    }
-    data
-}
-
-unsafe fn write_slice(mut src: &[u8], ptr: u64) {
-    if src.len() == 0 {
-        return;
-    }
-    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-    while src.len() >= 4 {
-        let mut arr = [0u8; 4];
-        arr.copy_from_slice(&src[..4]);
-        wavm_caller_module_memory_store32(ptr, u32::from_le_bytes(arr));
-        ptr += 4;
-        src = &src[4..];
-    }
-    for &byte in src {
-        wavm_caller_module_memory_store8(ptr, byte);
-        ptr += 1;
-    }
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn go__debug(x: usize) {
     println!("go debug: {}", x);
@@ -129,7 +42,7 @@ pub unsafe extern "C" fn go__runtime_resetMemoryDataView(_: GoStack) {}
 
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_wasmExit(sp: GoStack) {
-    std::process::exit(sp.read_i32(0));
+    std::process::exit(sp.read_u32(0) as i32);
 }
 
 #[no_mangle]
