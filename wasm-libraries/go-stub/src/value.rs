@@ -17,6 +17,7 @@ pub const DYNAMIC_OBJECT_ID_BASE: u32 = 10000;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum InterpValue {
+    Undefined,
     Number(f64),
     Ref(u32),
 }
@@ -24,6 +25,7 @@ pub enum InterpValue {
 impl InterpValue {
     pub fn assume_num_or_object(self) -> GoValue {
         match self {
+            InterpValue::Undefined => GoValue::Undefined,
             InterpValue::Number(x) => GoValue::Number(x),
             InterpValue::Ref(x) => GoValue::Object(x),
         }
@@ -33,6 +35,7 @@ impl InterpValue {
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum GoValue {
+    Undefined,
     Number(f64),
     Null,
     Object(u32),
@@ -44,12 +47,18 @@ pub enum GoValue {
 impl GoValue {
     pub fn encode(self) -> u64 {
         let (ty, id): (u32, u32) = match self {
+            GoValue::Undefined => return 0,
             GoValue::Number(mut f) => {
                 // Canonicalize NaNs so they don't collide with other value types
                 if f.is_nan() {
                     f = f64::NAN;
                 }
-                return f.to_bits();
+                if f == 0. {
+                    // Zeroes are encoded differently for some reason
+                    (0, ZERO_ID)
+                } else {
+                    return f.to_bits();
+                }
             }
             GoValue::Null => (0, NULL_ID),
             GoValue::Object(x) => (1, x),
@@ -131,6 +140,9 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
             return GoValue::Object(FS_ID);
         } else if field == b"Uint8Array" {
             return GoValue::Function(UINT8_ARRAY_ID);
+        } else if field == b"fetch" {
+            // Triggers a code path in Go for a fake network implementation
+            return GoValue::Undefined;
         }
     } else if source == FS_ID {
         if field == b"constants" {
@@ -173,13 +185,13 @@ pub unsafe fn get_field(source: u32, field: &[u8]) -> GoValue {
             source,
             String::from_utf8_lossy(field),
         );
-        GoValue::Null
+        GoValue::Undefined
     } else {
         eprintln!(
             "Go attempting to access unimplemented unknown JS value {} field {}",
             source,
             String::from_utf8_lossy(field),
         );
-        GoValue::Null
+        GoValue::Undefined
     }
 }

@@ -59,6 +59,9 @@ impl GoStack {
 }
 
 fn interpret_value(repr: u64) -> InterpValue {
+    if repr == 0 {
+        return InterpValue::Undefined;
+    }
     let float = f64::from_bits(repr);
     if float.is_nan() && repr != f64::NAN.to_bits() {
         let id = repr as u32;
@@ -248,6 +251,7 @@ unimpl_js!(
     go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
+    go__syscall_js_copyBytesToGo,
 );
 
 #[no_mangle]
@@ -258,10 +262,10 @@ pub unsafe extern "C" fn go__syscall_js_valueGet(sp: GoStack) {
     let field = read_slice(field_ptr, field_len);
     let value = match source {
         InterpValue::Ref(id) => get_field(id, &field),
-        InterpValue::Number(n) => {
+        val => {
             eprintln!(
-                "Go attempting to read field of float: {} . {}",
-                n,
+                "Go attempting to read field {:?} . {}",
+                val,
                 String::from_utf8_lossy(&field),
             );
             GoValue::Null
@@ -486,7 +490,7 @@ pub unsafe extern "C" fn go__syscall_js_valueLength(sp: GoStack) {
     let pool = DynamicObjectPool::singleton();
     let source = match source {
         InterpValue::Ref(x) => pool.get(x),
-        InterpValue::Number(_) => None,
+        _ => None,
     };
     let len = match source {
         Some(DynamicObject::Uint8Array(x)) => Some(x.len()),
@@ -508,7 +512,7 @@ unsafe fn value_index_impl(sp: GoStack) -> Result<GoValue, String> {
     let pool = DynamicObjectPool::singleton();
     let source = match interpret_value(sp.read_u64(0)) {
         InterpValue::Ref(x) => pool.get(x),
-        InterpValue::Number(x) => return Err(format!("Go attempted to index into number {}", x)),
+        val => return Err(format!("Go attempted to index into {:?}", val)),
     };
     let index = usize::try_from(sp.read_u64(1)).map_err(|e| format!("{:?}", e))?;
     let val = match source {
@@ -546,13 +550,13 @@ pub unsafe extern "C" fn go__syscall_js_valueIndex(sp: GoStack) {
 pub unsafe extern "C" fn go__syscall_js_finalizeRef(sp: GoStack) {
     let val = interpret_value(sp.read_u64(0));
     match val {
-        InterpValue::Number(x) => eprintln!("Go attempting to finalize number {}", x),
         InterpValue::Ref(x) if x < DYNAMIC_OBJECT_ID_BASE => {}
         InterpValue::Ref(x) => {
             if DynamicObjectPool::singleton().remove(x).is_none() {
                 eprintln!("Go attempting to finalize unknown ref {}", x);
             }
         }
+        val => eprintln!("Go attempting to finalize {:?}", val),
     }
 }
 
