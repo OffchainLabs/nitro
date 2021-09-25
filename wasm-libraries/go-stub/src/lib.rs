@@ -26,7 +26,7 @@ unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
     let mut values = Vec::new();
     for _ in 0..len {
         let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-        values.push(interpret_value(wavm_caller_module_memory_load64(p)));
+        values.push(interpret_value(wavm_caller_load64(p)));
         ptr += 8;
     }
     values
@@ -100,14 +100,14 @@ pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
         usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
     let mut len = sp.read_u64(1);
     while len >= 4 {
-        wavm_caller_module_memory_store32(ptr, rng.next_u32());
+        wavm_caller_store32(ptr, rng.next_u32());
         ptr += 4;
         len -= 4;
     }
     if len > 0 {
         let mut rem = rng.next_u32();
         for _ in 0..len {
-            wavm_caller_module_memory_store8(ptr, rem as u8);
+            wavm_caller_store8(ptr, rem as u8);
             ptr += 1;
             rem >>= 8;
         }
