@@ -101,6 +101,24 @@ unsafe fn read_slice(ptr: u64, mut len: u64) -> Vec<u8> {
     data
 }
 
+unsafe fn write_slice(mut src: &[u8], ptr: u64) {
+    if src.len() == 0 {
+        return;
+    }
+    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
+    while src.len() >= 4 {
+        let mut arr = [0u8; 4];
+        arr.copy_from_slice(&src[..4]);
+        wavm_caller_module_memory_store32(ptr, u32::from_le_bytes(arr));
+        ptr += 4;
+        src = &src[4..];
+    }
+    for &byte in src {
+        wavm_caller_module_memory_store8(ptr, byte);
+        ptr += 1;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn go__debug(x: usize) {
     println!("go debug: {}", x);
@@ -255,7 +273,6 @@ unimpl_js!(
     go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
-    go__syscall_js_copyBytesToGo,
 );
 
 #[no_mangle]
@@ -317,7 +334,7 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
         if let Some(DynamicObject::Uint8Array(buf)) = dest {
             if buf.len() as u64 != src_len {
                 eprintln!(
-                    "Go copying bytes from source length {} to dest length {}",
+                    "Go copying bytes from Go source length {} to JS dest length {}",
                     src_len,
                     buf.len(),
                 );
@@ -338,6 +355,39 @@ pub unsafe extern "C" fn go__syscall_js_copyBytesToJS(sp: GoStack) {
         eprintln!("Go attempting to copy bytes into {:?}", dest_val);
     }
     sp.write_u64(4, GoValue::Null.encode());
+    sp.write_u8(5, 0);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__syscall_js_copyBytesToGo(sp: GoStack) {
+    let dest_ptr = sp.read_u64(0);
+    let dest_len = sp.read_u64(1);
+    let src_val = interpret_value(sp.read_u64(3));
+    if let InterpValue::Ref(src_id) = src_val {
+        let source = DynamicObjectPool::singleton().get_mut(src_id);
+        if let Some(DynamicObject::Uint8Array(buf)) = source {
+            if buf.len() as u64 != dest_len {
+                eprintln!(
+                    "Go copying bytes from JS source length {} to Go dest length {}",
+                    buf.len(),
+                    dest_len,
+                );
+            }
+            let len = std::cmp::min(buf.len() as u64, dest_len) as usize;
+            write_slice(&buf[..len], dest_ptr);
+
+            sp.write_u64(4, GoValue::Number(len as f64).encode());
+            sp.write_u8(5, 1);
+            return;
+        } else {
+            eprintln!(
+                "Go attempting to copy bytes from unsupported source {:?}",
+                source,
+            );
+        }
+    } else {
+        eprintln!("Go attempting to copy bytes from {:?}", src_val);
+    }
     sp.write_u8(5, 0);
 }
 
@@ -455,7 +505,7 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
             }
             None => {
                 return Err(format!(
-                    "Go attempting to call crypto.getRandomValues on unknown id {}",
+                    "Go attempting to call crypto.getRandomValues on unknown reference {}",
                     id,
                 ));
             }
