@@ -2,26 +2,33 @@ package wavmio
 
 import "github.com/ethereum/go-ethereum/common"
 
-const INITIAL_CAPACITY = 1024
+const INITIAL_CAPACITY = 128
+const QUERY_SIZE = 32
 
-func withSizeRetry(f func([]byte) bool) []byte {
+func readBuffer(f func(uint32, []byte) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
+	offset := 0
 	for {
-		success := f(buf)
-		if success {
+		if len(buf) < offset+QUERY_SIZE {
+			buf = append(buf, make([]byte, offset+QUERY_SIZE-len(buf))...)
+		}
+		read := f(uint32(offset), buf[offset:(offset+QUERY_SIZE)])
+		offset += int(read)
+		if read < QUERY_SIZE {
+			buf = buf[:offset]
 			return buf
 		}
-		buf = make([]byte, 0, cap(buf)*2)
 	}
 }
 
-func GetLastBlockHash() common.Hash {
-	return getLastBlockHash()
+func GetLastBlockHash() (hash common.Hash) {
+	getLastBlockHash(hash[:])
+	return
 }
 
 func ReadInboxMessage() []byte {
-	return withSizeRetry(func(buf []byte) bool {
-		return readInboxMessage(buf)
+	return readBuffer(func(offset uint32, buf []byte) uint32 {
+		return readInboxMessage(offset, buf)
 	})
 }
 
@@ -30,11 +37,11 @@ func AdvanceInboxMessage() {
 }
 
 func ResolvePreImage(hash common.Hash) []byte {
-	return withSizeRetry(func(buf []byte) bool {
-		return resolvePreImage(hash, buf)
+	return readBuffer(func(offset uint32, buf []byte) uint32 {
+		return resolvePreImage(hash[:], offset, buf)
 	})
 }
 
 func SetLastBlockHash(hash [32]byte) {
-	setLastBlockHash(hash)
+	setLastBlockHash(hash[:])
 }
