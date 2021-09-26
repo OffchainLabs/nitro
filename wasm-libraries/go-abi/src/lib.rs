@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 
-#[allow(dead_code)]
 extern "C" {
     pub fn wavm_caller_load8(ptr: usize) -> u8;
     pub fn wavm_caller_load32(ptr: usize) -> u32;
