@@ -563,6 +563,7 @@ pub struct Machine {
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     inbox_position: u64,
+    last_block_hash: Bytes32,
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
@@ -902,6 +903,7 @@ impl Machine {
             modules,
             modules_merkle,
             inbox_position: 0,
+            last_block_hash: Bytes32::default(),
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
@@ -1468,6 +1470,7 @@ impl Machine {
         h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
         h.update(Bytes32::from(self.inbox_position));
+        h.update(self.last_block_hash);
         h.update(&(self.pc.module as u32).to_be_bytes());
         h.update(&(self.pc.func as u32).to_be_bytes());
         h.update(&(self.pc.inst as u32).to_be_bytes());
@@ -1506,6 +1509,7 @@ impl Machine {
         ));
 
         data.extend(Bytes32::from(self.inbox_position));
+        data.extend(self.last_block_hash);
 
         data.extend(&(self.pc.module as u32).to_be_bytes());
         data.extend(&(self.pc.func as u32).to_be_bytes());
