@@ -140,11 +140,7 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("Error creating db record output file: %v\n", err))
 		}
-		for key, value := range readDbEntries {
-			_, err = dbRecordOutput.Write(key.Bytes())
-			if err != nil {
-				panic(fmt.Sprintf("Error writing to db record output: %v\n", err))
-			}
+		for _, value := range readDbEntries {
 			err = binary.Write(dbRecordOutput, binary.LittleEndian, uint64(len(value)))
 			if err != nil {
 				panic(fmt.Sprintf("Error writing to db record output: %v\n", err))
