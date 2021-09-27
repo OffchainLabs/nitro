@@ -1637,7 +1637,7 @@ impl Machine {
                 );
             } else if matches!(
                 next_inst.opcode,
-                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. }
+                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. },
             ) {
                 let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
                 let stack_idx_offset = if is_store {
@@ -1706,6 +1706,41 @@ impl Machine {
                             .prove(idx_usize)
                             .expect("Failed to prove elements merkle"),
                     );
+                }
+            } else if matches!(
+                next_inst.opcode,
+                Opcode::GetLastBlockHash | Opcode::SetLastBlockHash,
+            ) {
+                let ptr = self.value_stack.last().unwrap().assume_u32();
+                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                    // Prove the leaf this index is in
+                    idx /= Memory::LEAF_SIZE;
+                    data.extend(module.memory.get_leaf_data(idx));
+                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                }
+            } else if matches!(
+                next_inst.opcode,
+                Opcode::ReadPreImage | Opcode::ReadInboxMessage,
+            ) {
+                let ptr = self
+                    .value_stack
+                    .get(self.value_stack.len() - 2)
+                    .unwrap()
+                    .assume_u32();
+                if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
+                    // Prove the leaf this index is in
+                    idx /= Memory::LEAF_SIZE;
+                    let prev_data = module.memory.get_leaf_data(idx);
+                    data.extend(prev_data);
+                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                    if next_inst.opcode == Opcode::ReadPreImage {
+                        let hash = Bytes32(prev_data);
+                        let preimage = match self.preimages.get(&hash) {
+                            Some(b) => b,
+                            None => panic!("Missing requested preimage for hash {}", hash),
+                        };
+                        data.extend(preimage);
+                    }
                 }
             }
         }
