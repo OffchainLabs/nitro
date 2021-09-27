@@ -2,9 +2,9 @@ module github.com/offchainlabs/arbstate
 
 go 1.17
 
-replace github.com/VictoriaMetrics/fastcache => /home/lee/programming/go/fastcache
+replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
-replace github.com/ethereum/go-ethereum => /home/lee/programming/go/go-ethereum
+replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
 	github.com/ethereum/go-ethereum v1.10.8
