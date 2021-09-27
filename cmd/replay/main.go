@@ -15,7 +15,7 @@ import (
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	enc := wavmio.ResolvePreImage(hash)
 	header := &types.Header{}
-	err := rlp.DecodeBytes(enc, header)
+	err := rlp.DecodeBytes(enc, &header)
 	if err != nil {
 		panic(fmt.Sprintf("Error parsing resolved block header: %v", err))
 	}
@@ -61,7 +61,7 @@ func main() {
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	var msg arbstate.ArbMessage
-	err := rlp.DecodeBytes(wavmio.ReadInboxMessage(), msg)
+	err := rlp.DecodeBytes(wavmio.ReadInboxMessage(), &msg)
 	wavmio.AdvanceInboxMessage()
 	if err != nil {
 		fmt.Printf("Error decoding ArbMessage: %v\n", err)
