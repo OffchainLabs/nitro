@@ -10,11 +10,18 @@ contract OneStepProofEntry {
     IOneStepProver prover0;
     IOneStepProver proverMem;
     IOneStepProver proverMath;
+    IOneStepProver proverHostIo;
 
-    constructor(IOneStepProver prover0_, IOneStepProver proverMem_, IOneStepProver proverMath_) {
+    constructor(
+        IOneStepProver prover0_,
+        IOneStepProver proverMem_,
+        IOneStepProver proverMath_,
+        IOneStepProver proverHostIo_
+    ) {
         prover0 = prover0_;
         proverMem = proverMem_;
         proverMath = proverMath_;
+        proverHostIo = proverHostIo_;
     }
 
     function proveOneStep(bytes32 beforeHash, bytes calldata proof)
@@ -105,6 +112,19 @@ contract OneStepProofEntry {
                 opcode <= Instructions.F64_REINTERPRET_I64)
         ) {
             (mach, mod) = proverMath.executeOneStep(
+                mach,
+                mod,
+                inst,
+                proof[offset:]
+            );
+        } else if (
+            (opcode == Instructions.GET_LAST_BLOCK_HASH ||
+                opcode == Instructions.SET_LAST_BLOCK_HASH) ||
+            opcode == Instructions.ADVANCE_INBOX_POSITION ||
+            opcode == Instructions.READ_PRE_IMAGE ||
+            opcode == Instructions.READ_INBOX_MESSAGE
+        ) {
+            (mach, mod) = proverHostIo.executeOneStep(
                 mach,
                 mod,
                 inst,

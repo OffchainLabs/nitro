@@ -184,6 +184,19 @@ fn main() -> Result<()> {
             after: after.to_string(),
         });
         for _ in 1..opts.proving_interval {
+            if matches!(
+                mach.get_next_instruction().map(|i| i.opcode),
+                Some(
+                    Opcode::GetLastBlockHash
+                        | Opcode::SetLastBlockHash
+                        | Opcode::AdvanceInboxPosition
+                        | Opcode::ReadPreImage
+                        | Opcode::ReadInboxMessage
+                ),
+            ) {
+                // This is an important and rare opcode, prove it
+                break;
+            }
             mach.step();
         }
     }

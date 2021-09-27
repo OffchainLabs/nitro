@@ -275,7 +275,7 @@ contract OneStepProverMemory is IOneStepProver {
 
     function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof)
         external
-        view
+        pure
         override
         returns (Machine memory mach, Module memory mod)
     {
@@ -286,7 +286,7 @@ contract OneStepProverMemory is IOneStepProver {
 
         function(Machine memory, Module memory, Instruction calldata, bytes calldata)
             internal
-            view impl;
+            pure impl;
         if (
             opcode >= Instructions.I32_LOAD &&
             opcode <= Instructions.I64_LOAD32_U

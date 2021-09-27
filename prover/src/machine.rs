@@ -1426,17 +1426,21 @@ impl Machine {
             Opcode::ReadInboxMessage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
-                let message = match self.inbox.get(&self.inbox_position) {
-                    Some(b) => b,
-                    None => panic!("Missing requested inbox message {}", self.inbox_position),
-                };
-                let offset = usize::try_from(offset).unwrap();
-                let len = std::cmp::min(32, message.len().saturating_sub(offset));
-                let read = message.get(offset..(offset + len)).unwrap_or_default();
-                if !module.memory.store_slice_aligned(ptr.into(), read) {
+                if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    self.value_stack.push(Value::I32(len as u32));
+                    let message = match self.inbox.get(&self.inbox_position) {
+                        Some(b) => b,
+                        None => panic!("Missing requested inbox message {}", self.inbox_position),
+                    };
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, message.len().saturating_sub(offset));
+                    let read = message.get(offset..(offset + len)).unwrap_or_default();
+                    if module.memory.store_slice_aligned(ptr.into(), read) {
+                        self.value_stack.push(Value::I32(len as u32));
+                    } else {
+                        self.halted = true;
+                    }
                 }
             }
         }

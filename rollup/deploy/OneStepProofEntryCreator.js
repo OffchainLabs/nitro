@@ -9,10 +9,11 @@ module.exports = async (hre) => {
       (await deployments.get("OneStepProver0")).address,
       (await deployments.get("OneStepProverMemory")).address,
       (await deployments.get("OneStepProverMath")).address,
+      (await deployments.get("OneStepProverHostIo")).address,
     ],
   });
 };
 
 module.exports.tags = ["OneStepProofEntry", "live", "test"];
-module.exports.dependencies = ["Machines", "OneStepProver0", "OneStepProverMemory", "OneStepProverMath"];
+module.exports.dependencies = ["Machines", "OneStepProver0", "OneStepProverMemory", "OneStepProverMath", "OneStepProverHostIo"];
 

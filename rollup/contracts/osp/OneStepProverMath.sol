@@ -369,13 +369,13 @@ contract OneStepProverMath is IOneStepProver {
 		ValueStacks.push(mach.valueStack, val);
 	}
 
-	function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override view external returns (Machine memory mach, Module memory mod) {
+	function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {
 		mach = startMach;
 		mod = startMod;
 
 		uint16 opcode = inst.opcode;
 
-		function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal view impl;
+		function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal pure impl;
 		if (opcode == Instructions.I32_EQZ || opcode == Instructions.I64_EQZ) {
 			impl = executeEqz;
 		} else if (opcode >= Instructions.I32_RELOP_BASE && opcode <= Instructions.I32_RELOP_BASE + Instructions.IRELOP_LAST) {

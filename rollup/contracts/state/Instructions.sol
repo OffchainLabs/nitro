@@ -137,6 +137,11 @@ library Instructions {
 	uint16 constant DUP = 0x8008;
 	uint16 constant CROSS_MODULE_CALL = 0x8009;
 	uint16 constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
+	uint16 constant GET_LAST_BLOCK_HASH = 0x800B;
+	uint16 constant SET_LAST_BLOCK_HASH = 0x800C;
+	uint16 constant ADVANCE_INBOX_POSITION = 0x800D;
+	uint16 constant READ_PRE_IMAGE = 0x800E;
+	uint16 constant READ_INBOX_MESSAGE = 0x800F;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
