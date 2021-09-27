@@ -86,15 +86,16 @@ func main() {
 	fmt.Printf("Sender balance: %v\n", senderBalance.String())
 
 	newBlockHeader, err := arbstate.Process(statedb, lastBlockHeader, retriever, msg)
-	if err != nil {
+	if err == nil {
+		fmt.Printf("New state root: %v\n", newBlockHeader.Root)
+		newBlockHash := newBlockHeader.Hash()
+		fmt.Printf("New block hash: %v\n", newBlockHash)
+
+		wavmio.SetLastBlockHash(newBlockHash)
+	} else {
 		fmt.Printf("Error processing message: %v\n", err)
 	}
-	fmt.Printf("New state root: %v\n", newBlockHeader.Root)
-	newBlockHash := newBlockHeader.Hash()
-	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	senderBalance = statedb.GetBalance(msg.From)
 	fmt.Printf("New sender balance: %v\n", senderBalance.String())
-
-	wavmio.SetLastBlockHash(newBlockHash)
 }
