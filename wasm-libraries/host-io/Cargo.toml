@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2018"
 publish = false
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
 go-abi = { path = "../go-abi" }

@@ -8,13 +8,15 @@ mod utils;
 mod value;
 mod wavm;
 
-use crate::{binary::WasmBinary, machine::Machine, wavm::Opcode};
-use eyre::Result;
+use crate::{binary::WasmBinary, machine::Machine, utils::Bytes32, wavm::Opcode};
+use digest::Digest;
+use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use serde::Serialize;
+use sha3::Keccak256;
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::{BufReader, ErrorKind, Read, Write},
     path::{Path, PathBuf},
     process,
 };
@@ -34,6 +36,17 @@ struct Opts {
     always_merkleize: bool,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: usize,
+    #[structopt(long, default_value = "0")]
+    inbox_position: u64,
+    #[structopt(
+        long,
+        default_value = "0000000000000000000000000000000000000000000000000000000000000000"
+    )]
+    last_block_hash: String,
+    #[structopt(long)]
+    inbox: Option<PathBuf>,
+    #[structopt(long)]
+    preimages: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +75,24 @@ fn parse_binary(path: &Path) -> Result<WasmBinary> {
     Ok(bin)
 }
 
+fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
+    let mut file = BufReader::new(File::open(path)?);
+    let mut contents = Vec::new();
+    loop {
+        let mut size_buf = [0u8; 8];
+        match file.read_exact(&mut size_buf) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e.into()),
+        }
+        let size = u64::from_le_bytes(size_buf) as usize;
+        let mut buf = vec![0u8; size];
+        file.read_exact(&mut buf)?;
+        contents.push(buf);
+    }
+    Ok(contents)
+}
+
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -71,12 +102,48 @@ fn main() -> Result<()> {
     }
     let main_mod = parse_binary(&opts.binary)?;
 
-    let out = opts.output.map(File::create).transpose()?;
+    let mut inbox = HashMap::default();
+    if let Some(path) = opts.inbox {
+        let inbox_position = opts.inbox_position;
+        inbox = parse_size_delim(&path)?
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| (inbox_position + i as u64, b))
+            .collect();
+    }
 
-    let mut proofs: Vec<ProofInfo> = Vec::new();
-    let mut mach = Machine::from_binary(libraries, main_mod, opts.always_merkleize);
+    let mut preimages = HashMap::default();
+    if let Some(path) = opts.preimages {
+        preimages = parse_size_delim(&path)?
+            .into_iter()
+            .map(|b| {
+                let mut hasher = Keccak256::new();
+                hasher.update(&b);
+                (hasher.finalize().into(), b)
+            })
+            .collect();
+    }
+
+    let mut last_block_hash_string = opts.last_block_hash.as_str();
+    if last_block_hash_string.starts_with("0x") {
+        last_block_hash_string = &last_block_hash_string[2..];
+    }
+    let mut last_block_hash = Bytes32::default();
+    hex::decode_to_slice(last_block_hash_string, &mut last_block_hash.0)
+        .wrap_err("failed to parse --last-block-hash contents")?;
+
+    let mut mach = Machine::from_binary(
+        libraries,
+        main_mod,
+        opts.always_merkleize,
+        opts.inbox_position,
+        last_block_hash,
+        inbox,
+        preimages,
+    );
     println!("Starting machine hash: {}", mach.hash());
 
+    let mut proofs: Vec<ProofInfo> = Vec::new();
     let mut seen_states = HashSet::default();
     let mut opcode_counts: HashMap<Opcode, usize> = HashMap::default();
     while !mach.is_halted() {
@@ -139,7 +206,8 @@ fn main() -> Result<()> {
         .write_all(output)
         .expect("Failed to write machine output to stdout");
 
-    if let Some(out) = out {
+    if let Some(out) = opts.output {
+        let out = File::create(out)?;
         serde_json::to_writer_pretty(out, &proofs)?;
     }
 

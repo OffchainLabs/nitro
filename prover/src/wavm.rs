@@ -125,8 +125,7 @@ pub enum Opcode {
     IUnOp(IntegerValType, IUnOpType),
     IBinOp(IntegerValType, IBinOpType),
 
-    // Custom opcodes:
-    /// Custom opcode not in wasm.
+    // Custom opcodes not in WASM. Documented more in "Custom opcodes.md".
     /// Branch is partially split up into these.
     EndBlock,
     /// Custom opcode not in wasm.
@@ -151,6 +150,16 @@ pub enum Opcode {
     CrossModuleCall,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
+    /// Writes the last block hash to the pointer on the stack
+    GetLastBlockHash,
+    /// Sets the last block hash to the value of pointer on the stack
+    SetLastBlockHash,
+    /// Advances the inbox position
+    AdvanceInboxPosition,
+    /// Reads the preimage of a hash in-place into the pointer on the stack at an offset
+    ReadPreImage,
+    /// Reads the current inbox message into the pointer on the stack at an offset
+    ReadInboxMessage,
 }
 
 impl Opcode {
@@ -261,6 +270,11 @@ impl Opcode {
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
             Opcode::CallerModuleInternalCall => 0x800A,
+            Opcode::GetLastBlockHash => 0x800B,
+            Opcode::SetLastBlockHash => 0x800C,
+            Opcode::AdvanceInboxPosition => 0x800D,
+            Opcode::ReadPreImage => 0x800E,
+            Opcode::ReadInboxMessage => 0x800F,
         }
     }
 }

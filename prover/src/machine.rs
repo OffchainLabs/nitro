@@ -567,6 +567,8 @@ pub struct Machine {
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
+    inbox: HashMap<u64, Vec<u8>>,
+    preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -710,6 +712,10 @@ impl Machine {
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
         always_merkleize: bool,
+        inbox_position: u64,
+        last_block_hash: Bytes32,
+        inbox: HashMap<u64, Vec<u8>>,
+        preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
         let mut available_imports = HashMap::default();
@@ -902,11 +908,13 @@ impl Machine {
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
-            inbox_position: 0,
-            last_block_hash: Bytes32::default(),
+            inbox_position,
+            last_block_hash,
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
+            inbox,
+            preimages,
         }
     }
 
@@ -1376,6 +1384,60 @@ impl Machine {
             Opcode::Dup => {
                 let val = self.value_stack.last().cloned().unwrap();
                 self.value_stack.push(val);
+            }
+            Opcode::GetLastBlockHash => {
+                let ptr = self.value_stack.pop().unwrap().assume_u32();
+                if !module
+                    .memory
+                    .store_slice_aligned(ptr.into(), &*self.last_block_hash)
+                {
+                    self.halted = true;
+                }
+            }
+            Opcode::SetLastBlockHash => {
+                let ptr = self.value_stack.pop().unwrap().assume_u32();
+                if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                    self.last_block_hash = hash;
+                } else {
+                    self.halted = true;
+                }
+            }
+            Opcode::AdvanceInboxPosition => {
+                self.inbox_position += 1;
+            }
+            Opcode::ReadPreImage => {
+                let offset = self.value_stack.pop().unwrap().assume_u32();
+                let ptr = self.value_stack.pop().unwrap().assume_u32();
+                if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                    let preimage = match self.preimages.get(&hash) {
+                        Some(b) => b,
+                        None => panic!("Missing requested preimage for hash {}", hash),
+                    };
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                    let success = module.memory.store_slice_aligned(ptr.into(), read);
+                    assert!(success, "Failed to write to previously read memory");
+                    self.value_stack.push(Value::I32(len as u32));
+                } else {
+                    self.halted = true;
+                }
+            }
+            Opcode::ReadInboxMessage => {
+                let offset = self.value_stack.pop().unwrap().assume_u32();
+                let ptr = self.value_stack.pop().unwrap().assume_u32();
+                let message = match self.inbox.get(&self.inbox_position) {
+                    Some(b) => b,
+                    None => panic!("Missing requested inbox message {}", self.inbox_position),
+                };
+                let offset = usize::try_from(offset).unwrap();
+                let len = std::cmp::min(32, message.len().saturating_sub(offset));
+                let read = message.get(offset..(offset + len)).unwrap_or_default();
+                if !module.memory.store_slice_aligned(ptr.into(), read) {
+                    self.halted = true;
+                } else {
+                    self.value_stack.push(Value::I32(len as u32));
+                }
             }
         }
     }

@@ -43,6 +43,48 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 3));
         }
+
+        ("env", "wavm_get_last_block_hash") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::Simple(Opcode::GetLastBlockHash));
+        }
+        ("env", "wavm_set_last_block_hash") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::Simple(Opcode::SetLastBlockHash));
+        }
+        ("env", "wavm_advance_inbox_position") => {
+            ty = FunctionType {
+                inputs: vec![],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::Simple(Opcode::AdvanceInboxPosition));
+        }
+        ("env", "wavm_read_pre_image") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::Simple(Opcode::ReadPreImage));
+        }
+        ("env", "wavm_read_inbox_message") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32; 2],
+                outputs: vec![ValueType::I32],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::Simple(Opcode::ReadInboxMessage));
+        }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {
