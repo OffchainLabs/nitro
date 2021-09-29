@@ -1,4 +1,4 @@
-package main
+package arbos
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ func hashPlusInt(x common.Hash, y int64) common.Hash {
 func OpenArbosStorage(backingStorage BackingEvmStorage) *ArbosStorage {
 	formatVersion := backingStorage.Get(intToHash(0))
 	nextAlloc := backingStorage.Get(intToHash(1))
-	storage := &ArbosStorage {
+	storage := &ArbosStorage{
 		formatVersion,
 		nextAlloc,
 		backingStorage,
@@ -73,12 +73,12 @@ func (storage *ArbosStorage) tryUpgrade() bool {
 	}
 }
 
-func (storage* ArbosStorage) setFormatVersion(val common.Hash) {
+func (storage*ArbosStorage) setFormatVersion(val common.Hash) {
 	storage.formatVersion = val
 	storage.backingStorage.Set(intToHash(0), storage.formatVersion)
 }
 
-func (storage* ArbosStorage) setNextAlloc(val common.Hash) {
+func (storage*ArbosStorage) setNextAlloc(val common.Hash) {
 	storage.nextAlloc = val
 	storage.backingStorage.Set(intToHash(1), storage.nextAlloc)
 }
@@ -91,7 +91,7 @@ type ArbosStorageSegment struct {
 
 const MaxSegmentSize = 1<<48
 
-func (storage* ArbosStorage) Allocate(size uint64) (*ArbosStorageSegment, error) {
+func (storage*ArbosStorage) Allocate(size uint64) (*ArbosStorageSegment, error) {
 	if size > MaxSegmentSize {
 		return nil, errors.New("requested segment size too large")
 	}
@@ -143,7 +143,7 @@ func (seg *ArbosStorageSegment) Set(offset uint64, value common.Hash) error {
 	return nil
 }
 
-func (storage* ArbosStorage) AllocateForBytes(buf []byte) (*ArbosStorageSegment, error) {
+func (storage*ArbosStorage) AllocateForBytes(buf []byte) (*ArbosStorageSegment, error) {
 	sizeWords := (len(buf)+31) / 32
 	seg, err := storage.Allocate(uint64(1+sizeWords))
 	if err != nil {

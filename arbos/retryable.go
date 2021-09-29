@@ -1,4 +1,4 @@
-package main
+package arbos
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ func Create(
 	callvalue common.Hash,
 	calldata []byte,
 ) (*Retryable, error) {
-	ret := &Retryable {
+	ret := &Retryable{
 		common.Hash{},   // will fill in later
 		id,
 		timeout,
@@ -91,7 +91,7 @@ func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
 		return nil, err
 	}
 
-	return &Retryable {
+	return &Retryable{
 		offset,
 		id,
 		timeout,
