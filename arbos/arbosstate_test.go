@@ -7,7 +7,7 @@ import (
 )
 
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosStorage(NewMemoryBackingEvmStorage())
+	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
 	_ = storage
 }
 
@@ -17,8 +17,8 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 		t.Fail()
 	}
 
-	loc1 := intToHash(99)
-	val1 := intToHash(1351908)
+	loc1 := IntToHash(99)
+	val1 := IntToHash(1351908)
 
 	st.Set(loc1, val1)
 	if st.Get(common.Hash{}) != (common.Hash{}) {
@@ -30,9 +30,9 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageSegmentAllocation(t *testing.T) {
-	storage := OpenArbosStorage(NewMemoryBackingEvmStorage())
+	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
 	size := 37
-	seg, err := storage.Allocate(uint64(size))
+	seg, err := storage.AllocateSegment(uint64(size))
 	if err != nil {
 		t.Error(err)
 	}
@@ -53,7 +53,7 @@ func TestStorageSegmentAllocation(t *testing.T) {
 		t.Fail()
 	}
 
-	val := intToHash(51985380)
+	val := IntToHash(51985380)
 	if err := seg.Set(uint64(size-2), val); err != nil {
 		t.Error(err)
 	}
@@ -67,9 +67,9 @@ func TestStorageSegmentAllocation(t *testing.T) {
 }
 
 func TestStorageSegmentAllocationBytes(t *testing.T) {
-	storage := OpenArbosStorage(NewMemoryBackingEvmStorage())
+	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
-	seg, err := storage.AllocateForBytes(buf)
+	seg, err := storage.AllocateSegmentForBytes(buf)
 	if err != nil {
 		t.Error(err)
 	}

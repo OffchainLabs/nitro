@@ -18,7 +18,7 @@ type Retryable struct {
 }
 
 func Create(
-	storage *ArbosStorage,
+	storage *ArbosState,
 	id common.Hash,
 	timeout common.Hash,
 	from common.Address,
@@ -39,7 +39,7 @@ func Create(
 	if err := ret.serialize(&buf); err != nil {
 		return nil, err
 	}
-	seg, err := storage.AllocateForBytes(buf.Bytes())
+	seg, err := storage.AllocateSegmentForBytes(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +48,8 @@ func Create(
 	return ret, nil
 }
 
-func Open(storage *ArbosStorage, offset common.Hash) (*Retryable, error) {
-	seg, err := storage.Open(offset)
+func Open(storage *ArbosState, offset common.Hash) (*Retryable, error) {
+	seg, err := storage.OpenSegment(offset)
 	if err != nil {
 		return nil, err
 	}
@@ -61,23 +61,23 @@ func Open(storage *ArbosStorage, offset common.Hash) (*Retryable, error) {
 }
 
 func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
-	id, err := hashFromReader(rd)
+	id, err := HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	timeout, err := hashFromReader(rd)
+	timeout, err := HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	from, err := addressFromReader(rd)
+	from, err := AddressFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	to, err := addressFromReader(rd)
+	to, err := AddressFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	callvalue, err := hashFromReader(rd)
+	callvalue, err := HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -100,23 +100,6 @@ func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
 		callvalue,
 		calldata,
 	}, nil
-}
-
-func hashFromReader(rd io.Reader) (common.Hash, error) {
-	buf := make([]byte, 32)
-	if _, err := io.ReadFull(rd, buf); err != nil {
-		return common.Hash{}, err
-	}
-	return common.BytesToHash(buf[:]), nil
-}
-
-
-func addressFromReader(rd io.Reader) (common.Address, error) {
-	buf := make([]byte, 20)
-	if _, err := io.ReadFull(rd, buf); err != nil {
-		return common.Address{}, err
-	}
-	return common.BytesToAddress(buf[:]), nil
 }
 
 func (retryable *Retryable) serialize(wr io.Writer) error {
