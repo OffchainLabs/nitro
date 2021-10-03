@@ -6,6 +6,8 @@ extern "C" {
     pub fn wavm_advance_inbox_position();
     pub fn wavm_read_pre_image(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_get_position_within_message() -> u64;
+    pub fn wavm_set_position_within_message(pos: u64);
 }
 
 #[repr(C, align(256))]
@@ -100,4 +102,18 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_resolvePreI
     assert!(read <= 32);
     write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(7, read as u64);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_getPositionWithinMessage(
+    sp: GoStack,
+) {
+    sp.write_u64(0, wavm_get_position_within_message());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_setPositionWithinMessage(
+    sp: GoStack,
+) {
+    wavm_set_position_within_message(sp.read_u64(0));
 }

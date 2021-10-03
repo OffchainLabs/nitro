@@ -85,6 +85,21 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::Simple(Opcode::ReadInboxMessage));
         }
+        ("env", "wavm_get_position_within_message") => {
+            ty = FunctionType {
+                inputs: vec![],
+                outputs: vec![ValueType::I64],
+            };
+            insts.push(HirInstruction::Simple(Opcode::GetPositionWithinMessage));
+        }
+        ("env", "wavm_set_position_within_message") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I64],
+                outputs: vec![],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::Simple(Opcode::SetPositionWithinMessage));
+        }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {

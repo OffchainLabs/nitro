@@ -122,7 +122,9 @@ contract OneStepProofEntry {
                 opcode == Instructions.SET_LAST_BLOCK_HASH) ||
             opcode == Instructions.ADVANCE_INBOX_POSITION ||
             opcode == Instructions.READ_PRE_IMAGE ||
-            opcode == Instructions.READ_INBOX_MESSAGE
+            opcode == Instructions.READ_INBOX_MESSAGE ||
+            opcode == Instructions.GET_POSITION_WITHIN_MESSAGE ||
+            opcode == Instructions.SET_POSITION_WITHIN_MESSAGE
         ) {
             (mach, mod) = proverHostIo.executeOneStep(
                 mach,

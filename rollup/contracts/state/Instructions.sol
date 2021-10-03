@@ -142,6 +142,8 @@ library Instructions {
 	uint16 constant ADVANCE_INBOX_POSITION = 0x800D;
 	uint16 constant READ_PRE_IMAGE = 0x800E;
 	uint16 constant READ_INBOX_MESSAGE = 0x800F;
+	uint16 constant GET_POSITION_WITHIN_MESSAGE = 0x8010;
+	uint16 constant SET_POSITION_WITHIN_MESSAGE = 0x8011;
 
 	function hash(Instruction memory inst) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));

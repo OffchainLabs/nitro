@@ -160,6 +160,10 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
+    /// Retrieves the "position in message" register (part of global state)
+    GetPositionWithinMessage,
+    /// Sets the "position in message" register (part of global state)
+    SetPositionWithinMessage,
 }
 
 impl Opcode {
@@ -275,6 +279,8 @@ impl Opcode {
             Opcode::AdvanceInboxPosition => 0x800D,
             Opcode::ReadPreImage => 0x800E,
             Opcode::ReadInboxMessage => 0x800F,
+            Opcode::GetPositionWithinMessage => 0x8010,
+            Opcode::SetPositionWithinMessage => 0x8011,
         }
     }
 }

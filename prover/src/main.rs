@@ -204,6 +204,8 @@ fn main() -> Result<()> {
                         | Opcode::AdvanceInboxPosition
                         | Opcode::ReadPreImage
                         | Opcode::ReadInboxMessage
+                        | Opcode::GetPositionWithinMessage
+                        | Opcode::SetPositionWithinMessage
                 ),
             ) {
                 // This is an important and rare opcode, prove it

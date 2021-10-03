@@ -83,15 +83,23 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 leafContents;
         MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories
-            .proveLeaf(mod.moduleMemory, leafIdx, proof, proofOffset);
+        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
+            mod.moduleMemory,
+            leafIdx,
+            proof,
+            proofOffset
+        );
 
         bytes memory preimage = proof[proofOffset:];
         require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
 
         uint32 i = 0;
         for (; i < 32 && preimageOffset + i < preimage.length; i++) {
-            leafContents = setLeafByte(leafContents, i, uint8(preimage[preimageOffset + i]));
+            leafContents = setLeafByte(
+                leafContents,
+                i,
+                uint8(preimage[preimageOffset + i])
+            );
         }
 
         mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
@@ -121,15 +129,24 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 leafContents;
         MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories
-            .proveLeaf(mod.moduleMemory, leafIdx, proof, proofOffset);
+        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
+            mod.moduleMemory,
+            leafIdx,
+            proof,
+            proofOffset
+        );
 
         // TODO
         require(state.inboxPosition == 0, "TODO: proper inbox");
-        bytes memory message = hex"f8859431b98d14007bdee637298086988a0bbd311845238080f86c808504a817c800825208942ed530faddb7349c1efdbf4410db2de835a004e4880de0b6b3a7640000802ba06217a3ed3379e98821117e66536aa59dc9f402eb1c998111e4e087bc5ec9b09ea0092d3bccf7d31fd025ea79560583064a511a02a2001e31d91927e4b80c9ccaa7";
+        bytes
+            memory message = hex"f8859431b98d14007bdee637298086988a0bbd311845238080f86c808504a817c800825208942ed530faddb7349c1efdbf4410db2de835a004e4880de0b6b3a7640000802ba06217a3ed3379e98821117e66536aa59dc9f402eb1c998111e4e087bc5ec9b09ea0092d3bccf7d31fd025ea79560583064a511a02a2001e31d91927e4b80c9ccaa7";
         uint32 i = 0;
         for (; i < 32 && messageOffset + i < message.length; i++) {
-            leafContents = setLeafByte(leafContents, i, uint8(message[messageOffset + i]));
+            leafContents = setLeafByte(
+                leafContents,
+                i,
+                uint8(message[messageOffset + i])
+            );
         }
 
         mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
@@ -138,6 +155,31 @@ contract OneStepProverHostIo is IOneStepProver {
             leafContents
         );
         ValueStacks.push(mach.valueStack, Values.newI32(i));
+    }
+
+    function executeGetPositionWithinMessage(
+        Machine memory mach,
+        Module memory,
+        GlobalState memory state,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        ValueStacks.push(
+            mach.valueStack,
+            Values.newI64(state.positionWithinMessage)
+        );
+    }
+
+    function executeSetPositionWithinMessage(
+        Machine memory mach,
+        Module memory,
+        GlobalState memory state,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        state.positionWithinMessage = Values.assumeI64(
+            ValueStacks.pop(mach.valueStack)
+        );
     }
 
     function executeOneStep(
@@ -171,6 +213,10 @@ contract OneStepProverHostIo is IOneStepProver {
             return (mach, mod);
         } else if (opcode == Instructions.READ_INBOX_MESSAGE) {
             impl = executeReadInboxMessage;
+        } else if (opcode == Instructions.GET_POSITION_WITHIN_MESSAGE) {
+            impl = executeGetPositionWithinMessage;
+        } else if (opcode == Instructions.SET_POSITION_WITHIN_MESSAGE) {
+            impl = executeSetPositionWithinMessage;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
@@ -178,7 +224,10 @@ contract OneStepProverHostIo is IOneStepProver {
         GlobalState memory state;
         uint256 proofOffset = 0;
         (state, proofOffset) = Deserialize.globalState(proof, proofOffset);
-        require(GlobalStates.hash(state) == mach.globalStateHash, "BAD_GLOBAL_STATE");
+        require(
+            GlobalStates.hash(state) == mach.globalStateHash,
+            "BAD_GLOBAL_STATE"
+        );
 
         impl(mach, mod, state, inst, proof[proofOffset:]);
 

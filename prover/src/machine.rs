@@ -1469,6 +1469,14 @@ impl Machine {
                     }
                 }
             }
+            Opcode::GetPositionWithinMessage => {
+                self.value_stack
+                    .push(Value::I64(self.global_state.position_within_message));
+            }
+            Opcode::SetPositionWithinMessage => {
+                self.global_state.position_within_message =
+                    self.value_stack.pop().unwrap().assume_u64();
+            }
         }
     }
 
@@ -1645,7 +1653,9 @@ impl Machine {
                 Opcode::AdvanceInboxPosition
                     | Opcode::ReadInboxMessage
                     | Opcode::SetLastBlockHash
-                    | Opcode::GetLastBlockHash,
+                    | Opcode::GetLastBlockHash
+                    | Opcode::GetPositionWithinMessage
+                    | Opcode::SetPositionWithinMessage
             ) {
                 data.extend(self.global_state.serialize());
             }
