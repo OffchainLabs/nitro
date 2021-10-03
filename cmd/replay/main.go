@@ -60,11 +60,31 @@ func main() {
 	db := state.NewDatabase(rawdb)
 	lastBlockHash := wavmio.GetLastBlockHash()
 
-	var msg arbstate.ArbMessage
-	err := rlp.DecodeBytes(wavmio.ReadInboxMessage(), &msg)
-	wavmio.AdvanceInboxMessage()
+	inboxMessageBytes := wavmio.ReadInboxMessage()
+	inboxMessageSegments, err := arbstate.SplitInboxMessageIntoSegments(inboxMessageBytes)
 	if err != nil {
-		fmt.Printf("Error decoding ArbMessage: %v\n", err)
+		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
+		wavmio.AdvanceInboxMessage()
+		return
+	}
+
+	positionWithinMessage := wavmio.GetPositionWithinMessage()
+	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
+		// This is the last segment in the message
+		wavmio.AdvanceInboxMessage()
+		wavmio.SetPositionWithinMessage(0)
+		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
+			// The message is empty
+			return
+		}
+	} else {
+		// There's remaining segment(s) in this message
+		wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
+	}
+
+	msg, err := arbstate.DecodeMessageSegment(inboxMessageSegments[positionWithinMessage])
+	if err != nil {
+		fmt.Printf("Error decoding message segment: %v\n", err)
 		return
 	}
 

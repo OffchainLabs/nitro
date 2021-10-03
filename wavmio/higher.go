@@ -45,3 +45,11 @@ func ResolvePreImage(hash common.Hash) []byte {
 func SetLastBlockHash(hash [32]byte) {
 	setLastBlockHash(hash[:])
 }
+
+func GetPositionWithinMessage() uint64 {
+	return getPositionWithinMessage()
+}
+
+func SetPositionWithinMessage(pos uint64) {
+	setPositionWithinMessage(pos)
+}

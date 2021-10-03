@@ -19,3 +19,11 @@ TEXT ·resolvePreImage(SB), NOSPLIT, $0
 TEXT ·setLastBlockHash(SB), NOSPLIT, $0
   CallImport
   RET
+
+TEXT ·getPositionWithinMessage(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·setPositionWithinMessage(SB), NOSPLIT, $0
+  CallImport
+  RET
