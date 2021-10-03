@@ -10,6 +10,7 @@ import "./StackFrames.sol";
 import "./MerkleProofs.sol";
 import "./ModuleMemories.sol";
 import "./Modules.sol";
+import "./GlobalStates.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -188,13 +189,27 @@ library Deserialize {
 		});
 	}
 
+	function globalState(bytes calldata proof, uint256 startOffset) internal pure returns (GlobalState memory state, uint256 offset) {
+		offset = startOffset;
+		bytes32 lastBlockHash;
+		uint256 inboxPosition;
+		uint64 positionWithinMessage;
+		(lastBlockHash, offset) = b32(proof, offset);
+		(inboxPosition, offset) = u256(proof, offset);
+		(positionWithinMessage, offset) = u64(proof, offset);
+		state = GlobalState({
+			lastBlockHash: lastBlockHash,
+			inboxPosition: inboxPosition,
+			positionWithinMessage: positionWithinMessage
+		});
+	}
+
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
-		uint256 inboxPosition;
-		bytes32 lastBlockHash;
+		bytes32 globalStateHash;
 		uint32 moduleIdx;
 		uint32 functionIdx;
 		uint32 functionPc;
@@ -204,8 +219,7 @@ library Deserialize {
 		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
-		(inboxPosition, offset) = u256(proof, offset);
-		(lastBlockHash, offset) = b32(proof, offset);
+		(globalStateHash, offset) = b32(proof, offset);
 		(moduleIdx, offset) = u32(proof, offset);
 		(functionIdx, offset) = u32(proof, offset);
 		(functionPc, offset) = u32(proof, offset);
@@ -215,8 +229,7 @@ library Deserialize {
 			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
-			inboxPosition: inboxPosition,
-			lastBlockHash: lastBlockHash,
+			globalStateHash: globalStateHash,
 			moduleIdx: moduleIdx,
 			functionIdx: functionIdx,
 			functionPc: functionPc,

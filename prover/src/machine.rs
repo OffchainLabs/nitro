@@ -530,6 +530,32 @@ impl Module {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct GlobalState {
+    pub last_block_hash: Bytes32,
+    pub inbox_position: u64,
+    pub position_within_message: u64,
+}
+
+impl GlobalState {
+    fn hash(&self) -> Bytes32 {
+        let mut h = Keccak256::new();
+        h.update("Global state:");
+        h.update(self.last_block_hash);
+        h.update(Bytes32::from(self.inbox_position));
+        h.update(self.position_within_message.to_be_bytes());
+        h.finalize().into()
+    }
+
+    fn serialize(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend(self.last_block_hash);
+        data.extend(Bytes32::from(self.inbox_position));
+        data.extend(&self.position_within_message.to_be_bytes());
+        data
+    }
+}
+
 struct LazyModuleMerkle<'a>(&'a mut Module, Option<&'a mut Merkle>, usize);
 
 impl Deref for LazyModuleMerkle<'_> {
@@ -562,8 +588,7 @@ pub struct Machine {
     frame_stack: Vec<StackFrame>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
-    inbox_position: u64,
-    last_block_hash: Bytes32,
+    global_state: GlobalState,
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
@@ -712,8 +737,7 @@ impl Machine {
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
         always_merkleize: bool,
-        inbox_position: u64,
-        last_block_hash: Bytes32,
+        global_state: GlobalState,
         inbox: HashMap<u64, Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
@@ -908,8 +932,7 @@ impl Machine {
             frame_stack: Vec::new(),
             modules,
             modules_merkle,
-            inbox_position,
-            last_block_hash,
+            global_state,
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
@@ -1389,7 +1412,7 @@ impl Machine {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 if !module
                     .memory
-                    .store_slice_aligned(ptr.into(), &*self.last_block_hash)
+                    .store_slice_aligned(ptr.into(), &*self.global_state.last_block_hash)
                 {
                     self.halted = true;
                 }
@@ -1397,13 +1420,13 @@ impl Machine {
             Opcode::SetLastBlockHash => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                    self.last_block_hash = hash;
+                    self.global_state.last_block_hash = hash;
                 } else {
                     self.halted = true;
                 }
             }
             Opcode::AdvanceInboxPosition => {
-                self.inbox_position += 1;
+                self.global_state.inbox_position += 1;
             }
             Opcode::ReadPreImage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
@@ -1429,9 +1452,12 @@ impl Machine {
                 if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    let message = match self.inbox.get(&self.inbox_position) {
+                    let message = match self.inbox.get(&self.global_state.inbox_position) {
                         Some(b) => b,
-                        None => panic!("Missing requested inbox message {}", self.inbox_position),
+                        None => panic!(
+                            "Missing requested inbox message {}",
+                            self.global_state.inbox_position
+                        ),
                     };
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));
@@ -1535,8 +1561,7 @@ impl Machine {
         h.update(&hash_value_stack(&self.internal_stack));
         h.update(&hash_pc_stack(&self.block_stack));
         h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(Bytes32::from(self.inbox_position));
-        h.update(self.last_block_hash);
+        h.update(self.global_state.hash());
         h.update(&(self.pc.module as u32).to_be_bytes());
         h.update(&(self.pc.func as u32).to_be_bytes());
         h.update(&(self.pc.inst as u32).to_be_bytes());
@@ -1574,8 +1599,7 @@ impl Machine {
             StackFrame::serialize_for_proof,
         ));
 
-        data.extend(Bytes32::from(self.inbox_position));
-        data.extend(self.last_block_hash);
+        data.extend(self.global_state.hash());
 
         data.extend(&(self.pc.module as u32).to_be_bytes());
         data.extend(&(self.pc.func as u32).to_be_bytes());
@@ -1616,6 +1640,15 @@ impl Machine {
         // End next instruction proof, begin instruction specific serialization
 
         if let Some(next_inst) = func.code.get(self.pc.inst) {
+            if matches!(
+                next_inst.opcode,
+                Opcode::AdvanceInboxPosition
+                    | Opcode::ReadInboxMessage
+                    | Opcode::SetLastBlockHash
+                    | Opcode::GetLastBlockHash,
+            ) {
+                data.extend(self.global_state.serialize());
+            }
             if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
                 let locals = &self.frame_stack.last().unwrap().locals;
                 let idx = next_inst.argument_data as usize;

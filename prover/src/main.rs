@@ -8,7 +8,12 @@ mod utils;
 mod value;
 mod wavm;
 
-use crate::{binary::WasmBinary, machine::Machine, utils::Bytes32, wavm::Opcode};
+use crate::{
+    binary::WasmBinary,
+    machine::{GlobalState, Machine},
+    utils::Bytes32,
+    wavm::Opcode,
+};
 use digest::Digest;
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
@@ -38,6 +43,8 @@ struct Opts {
     proving_interval: usize,
     #[structopt(long, default_value = "0")]
     inbox_position: u64,
+    #[structopt(long, default_value = "0")]
+    position_within_message: u64,
     #[structopt(
         long,
         default_value = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -132,12 +139,17 @@ fn main() -> Result<()> {
     hex::decode_to_slice(last_block_hash_string, &mut last_block_hash.0)
         .wrap_err("failed to parse --last-block-hash contents")?;
 
+    let global_state = GlobalState {
+        inbox_position: opts.inbox_position,
+        position_within_message: opts.position_within_message,
+        last_block_hash,
+    };
+
     let mut mach = Machine::from_binary(
         libraries,
         main_mod,
         opts.always_merkleize,
-        opts.inbox_position,
-        last_block_hash,
+        global_state,
         inbox,
         preimages,
     );
