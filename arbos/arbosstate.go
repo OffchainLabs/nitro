@@ -3,9 +3,10 @@ package arbos
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"math/big"
 )
-
 
 type BackingEvmStorage interface {
 	Get(offset common.Hash) common.Hash
@@ -13,27 +14,43 @@ type BackingEvmStorage interface {
 	Set(offset common.Hash, value common.Hash)
 }
 
-type MemoryBackingEvmStorage struct {
-	contents map[common.Hash]common.Hash
+// We use an interface since *state.stateObject is private
+type GethStateObject interface {
+	GetState(db state.Database, key common.Hash) common.Hash
+	SetState(db state.Database, key common.Hash, value common.Hash)
 }
 
-func NewMemoryBackingEvmStorage() *MemoryBackingEvmStorage {
-	return &MemoryBackingEvmStorage{
-		make(map[common.Hash]common.Hash),
+type GethEvmStorage struct {
+	state GethStateObject
+	db    state.Database
+}
+
+// Use a Geth database to create an evm key-value store
+func NewGethEvmStorage(statedb *state.StateDB) *GethEvmStorage {
+    state := statedb.GetOrNewStateObject(common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+    return &GethEvmStorage{
+        state: state,
+        db:    statedb.Database(),
+    }
+}
+
+// Use Geth's memory-backed database to create an evm key-value store
+func NewMemoryBackingEvmStorage() *GethEvmStorage {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	statedb, err := state.New(common.Hash{}, db, nil)
+	if err != nil {
+		panic("failed to init empty statedb")
 	}
+	return NewGethEvmStorage(statedb)
 }
 
-func (st *MemoryBackingEvmStorage) Get(offset common.Hash) common.Hash {
-	value, exists := st.contents[offset]
-	if exists {
-		return value
-	} else {
-		return common.Hash{}   // empty slot is treated as zero
-	}
+func (store *GethEvmStorage) Get(key common.Hash) common.Hash {
+    return store.state.GetState(store.db, key)
 }
 
-func (st *MemoryBackingEvmStorage) GetAsInt64(offset common.Hash) (int64, error) {
-	rawValue := st.Get(offset).Big()
+func (store *GethEvmStorage) GetAsInt64(key common.Hash) (int64, error) {
+	rawValue := store.Get(key).Big()
 	if rawValue.IsInt64() {
 		return rawValue.Int64(), nil
 	} else {
@@ -41,8 +58,8 @@ func (st *MemoryBackingEvmStorage) GetAsInt64(offset common.Hash) (int64, error)
 	}
 }
 
-func (st *MemoryBackingEvmStorage) Set(offset common.Hash, value common.Hash) {
-	st.contents[offset] = value
+func (store *GethEvmStorage) Set(key common.Hash, value common.Hash) {
+	store.state.SetState(store.db, key, value)
 }
 
 func IntToHash(val int64) common.Hash {
@@ -312,5 +329,3 @@ func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
 func (seg *ArbosStorageSegment) Equals(other *ArbosStorageSegment) bool {
 	return seg.offset == other.offset
 }
-
-
