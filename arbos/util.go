@@ -27,9 +27,24 @@ func AddressFromReader(rd io.Reader) (common.Address, error) {
 	return common.BytesToAddress(buf[:]), nil
 }
 
+func AddressFrom256FromReader(rd io.Reader) (common.Address, error) {
+	h, err := HashFromReader(rd)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return common.BytesToAddress(h.Bytes()[12:]), nil
+}
+
 func AddressToWriter(val common.Address, wr io.Writer) error {
 	_, err := wr.Write(val.Bytes())
 	return err
+}
+
+func AddressTo256ToWriter(val common.Address, wr io.Writer) error {
+	if _, err := wr.Write(make([]byte, 12)); err != nil {
+		return err
+	}
+	return AddressToWriter(val, wr)
 }
 
 func Uint64FromReader(rd io.Reader) (uint64, error) {
