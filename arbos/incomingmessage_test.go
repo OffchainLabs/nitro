@@ -8,7 +8,7 @@ import (
 )
 
 func TestHeartbeatMessage(t *testing.T) {
-	state := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	state := OpenArbosStateForTest()
 	timestampBefore := state.LastTimestampSeen()
 
 	msgBuf := &bytes.Buffer{}
@@ -41,7 +41,7 @@ func emitHeartbeatMessage(wr *bytes.Buffer, t *testing.T) {
 }
 
 func TestEthDepositMessage(t *testing.T) {
-	state := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	state := OpenArbosStateForTest()
 	timestampBefore := state.LastTimestampSeen()
 
 	msgBuf := &bytes.Buffer{}
@@ -82,7 +82,7 @@ func emitEthDepositMessage(wr *bytes.Buffer, t *testing.T) {
 }
 
 func TestTxNoNonceMessage(t *testing.T) {
-	state := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	state := OpenArbosStateForTest()
 	timestampBefore := state.LastTimestampSeen()
 
 	msgBuf := &bytes.Buffer{}

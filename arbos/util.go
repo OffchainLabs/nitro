@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"math/big"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"io"
@@ -65,4 +66,8 @@ func BytestringToWriter(val []byte, wr io.Writer) error {
 	}
 	_, err := wr.Write(val)
 	return err
+}
+
+func HashToBigInt(hash common.Hash) *big.Int {
+	return new(big.Int).SetBytes(hash.Bytes())
 }

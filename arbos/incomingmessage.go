@@ -2,6 +2,7 @@ package arbos
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"io"
 )
 
@@ -98,7 +99,9 @@ func ParseEthDepositMessage(rd io.Reader) (IncomingMessage, error) {
 
 func (msg *EthDepositMessage) handle(state *ArbosState) {
 	state.AdvanceTimestampToAtLeast(msg.timestamp)
-	//TODO: deposit funds into geth state
+
+	weiToAdd := HashToBigInt(msg.balanceWei)
+	state.statedb.AddBalance(msg.account, weiToAdd)
 }
 
 type TxMessageNoNonce struct {
@@ -147,5 +150,12 @@ func ParseTxMessageNoNonce(rd io.Reader) (IncomingMessage, error) {
 
 func (msg *TxMessageNoNonce) handle(state *ArbosState) {
 	state.AdvanceTimestampToAtLeast(msg.timestamp)
-	//TODO: dispatch to geth to execute the message
+
+	// A Geth gas pool is nonnegative
+	var gasPool core.GasPool = core.GasPool(0)
+	if state.gasPool > 0 {
+		gasPool = core.GasPool(state.gasPool)
+	}
+
+	core.ApplyMessage(evm, , gasPool)
 }

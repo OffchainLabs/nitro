@@ -77,8 +77,8 @@ func Process(statedb *state.StateDB, lastBlockHeader *types.Header, retriever Bl
 			Difficulty:  big.NewInt(0),
 			BaseFee:     big.NewInt(0),
 		}
-		evm := vm.NewEVM(blockContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
-		evm.Reset(core.NewEVMTxContext(ethMsg), statedb)
+		txContext := core.NewEVMTxContext(ethMsg)
+		evm := vm.NewEVM(blockContext, txContext, statedb, chainConfig, vm.Config{})
 
 		_, err = core.ApplyMessage(evm, ethMsg, &gasPool)
 		if err != nil {

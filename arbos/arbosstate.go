@@ -78,11 +78,15 @@ type ArbosState struct {
 	gasPriceWei       common.Hash
 	lastTimestampSeen common.Hash
 	backingStorage    BackingEvmStorage
+	statedb           *state.StateDB
 }
 
-func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *ArbosState {
+func OpenArbosState(statedb *state.StateDB, timestamp common.Hash) *ArbosState {
+	
+	backingStorage := NewGethEvmStorage(statedb)
+	
 	for tryStorageUpgrade(backingStorage, timestamp) {}
-
+	
 	formatVersion := backingStorage.Get(IntToHash(0))
 	nextAlloc := backingStorage.Get(IntToHash(1))
 	gasPool, err := backingStorage.GetAsInt64(IntToHash(2))
@@ -103,6 +107,7 @@ func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *Ar
 		gasPriceWei,
 		lastTimestampSeen,
 		backingStorage,
+		statedb,
 	}
 }
 

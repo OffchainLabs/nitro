@@ -3,11 +3,24 @@ package arbos
 import (
 	"bytes"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"testing"
 )
 
+// Create a memory-backed ArbOS state
+func OpenArbosStateForTest() *ArbosState {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	statedb, err := state.New(common.Hash{}, db, nil)
+	if err != nil {
+		panic("failed to init empty statedb")
+	}
+	return OpenArbosState(statedb, common.Hash{})
+}
+
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	storage := OpenArbosStateForTest()
 	_ = storage
 }
 
@@ -30,7 +43,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageSegmentAllocation(t *testing.T) {
-	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	storage := OpenArbosStateForTest()
 	size := 37
 	seg, err := storage.AllocateSegment(uint64(size))
 	if err != nil {
@@ -67,7 +80,7 @@ func TestStorageSegmentAllocation(t *testing.T) {
 }
 
 func TestStorageSegmentAllocationBytes(t *testing.T) {
-	storage := OpenArbosState(NewMemoryBackingEvmStorage(), common.Hash{})
+	storage := OpenArbosStateForTest()
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
 	seg, err := storage.AllocateSegmentForBytes(buf)
 	if err != nil {
