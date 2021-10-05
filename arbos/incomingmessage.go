@@ -13,8 +13,10 @@ const (
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
-	L1MessageType_BatchForGasEstimation = 10
+	L1MessageType_BatchForGasEstimation = 10   // probably won't use this in practice
 )
+
+const MaxL2MessageSize = 256*1024
 
 type IncomingMessage interface {
 	handle(state *ArbosState)
@@ -131,9 +133,13 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 }
 
 func (msg *L1IncomingMessage) handle(state *ArbosState) {
+	if len(msg.l2msg) > MaxL2MessageSize {
+		// ignore the message if l2msg is too large
+		return
+	}
 	switch msg.header.kind {
 	case L1MessageType_L2Message:
-		parseAndHandleL2Message(bytes.NewReader(msg.l2msg), msg.header)
+		parseAndHandleL2Message(bytes.NewReader(msg.l2msg), msg.header, true)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
@@ -163,7 +169,7 @@ const (
 
 )
 
-func parseAndHandleL2Message(rd io.Reader, header *L1IncomingMessageHeader) {
+func parseAndHandleL2Message(rd io.Reader, header *L1IncomingMessageHeader, isTopLevel bool) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return
@@ -182,7 +188,7 @@ func parseAndHandleL2Message(rd io.Reader, header *L1IncomingMessageHeader) {
 			if err != nil {
 				return
 			}
-			parseAndHandleL2Message(bytes.NewReader(nextMsg), header)
+			parseAndHandleL2Message(bytes.NewReader(nextMsg), header, false)
 		}
 	case L2MessageKind_SignedTx:
 		panic("unimplemented")
@@ -191,7 +197,13 @@ func parseAndHandleL2Message(rd io.Reader, header *L1IncomingMessageHeader) {
 	case L2MessageKind_SignedCompressedTx:
 		panic("unimplemented")
 	case L2MessageKind_BrotliCompressed:
-		parseAndHandleL2Message(brotli.NewReader(rd), header)
+		if isTopLevel {   // ignore compressed messages if not top level
+			decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
+			if err != nil {
+				return
+			}
+			parseAndHandleL2Message(bytes.NewReader(decompressed), header, false)
+		}
 	default:
 		// ignore invalid message kind
 	}
@@ -215,6 +227,7 @@ func handleUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNon
 			return
 		}
 	}
+	//TODO: if nonce isn't supplied, ask geth for the expected nonce and fill it in here?
 
 	destination, err := AddressFrom256FromReader(rd)
 	if err != nil {
