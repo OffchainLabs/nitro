@@ -54,13 +54,14 @@ func hashPlusInt(x common.Hash, y int64) common.Hash {
 }
 
 type ArbosState struct {
-	formatVersion     common.Hash
-	nextAlloc         common.Hash
-	gasPool           int64
-	smallGasPool      int64
-	gasPriceWei       common.Hash
-	lastTimestampSeen common.Hash
-	backingStorage    BackingEvmStorage
+	formatVersion        common.Hash
+	nextAlloc            common.Hash
+	gasPool              int64
+	smallGasPool         int64
+	gasPriceWei          common.Hash
+	lastTimestampSeen    common.Hash
+	retryableQueue	     *QueueInStorage
+	backingStorage       BackingEvmStorage
 }
 
 func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *ArbosState {
@@ -78,15 +79,38 @@ func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *Ar
 	}
 	gasPriceWei := backingStorage.Get(IntToHash(4))
 	lastTimestampSeen := backingStorage.Get(IntToHash(5))
-	return &ArbosState{
+	retryableQueueOffset := backingStorage.Get(IntToHash(6))
+	ret := &ArbosState{
 		formatVersion,
 		nextAlloc,
 		gasPool,
 		smallGasPool,
 		gasPriceWei,
 		lastTimestampSeen,
+		nil,
 		backingStorage,
 	}
+	if retryableQueueOffset.Big().Cmp(big.NewInt(0)) == 0 {
+		// queue hasn't been initialized, so create it
+		retryableQueue, err := NewQueue(ret)
+		if err != nil {
+			panic(err)
+		}
+		backingStorage.Set(IntToHash(6), retryableQueue.headSegment.offset)
+		ret.retryableQueue = retryableQueue
+	} else {
+		// queue already exists, so open it
+		retryableQueueSeg, err := ret.OpenSegment(retryableQueueOffset)
+		if err != nil {
+			panic(err)
+		}
+		retryableQueue, err := OpenQueueInStorage(retryableQueueSeg)
+		if err != nil {
+			panic(err)
+		}
+		ret.retryableQueue = retryableQueue
+	}
+	return ret
 }
 
 func tryStorageUpgrade(backingStorage BackingEvmStorage, timestamp common.Hash) bool {
@@ -206,7 +230,7 @@ func (state *ArbosState) OpenSegment(offset common.Hash) (*ArbosStorageSegment, 
 
 func (seg *ArbosStorageSegment) Get(offset uint64) (common.Hash, error) {
 	if offset >= seg.size {
-		return common.Hash{}, errors.New("out of bounds access to storage segment")
+		return common.Hash{}, errors.New("out of bounds Get to storage segment")
 	}
 	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset))), nil
 }
