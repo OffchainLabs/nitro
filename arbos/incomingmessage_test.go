@@ -46,7 +46,10 @@ func TestBrotli(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	bwr.Flush()
+	err = bwr.Flush()
+	if err != nil {
+		t.Error(err)
+	}
 	compressed := outBuf.Bytes()
 	if len(compressed) >= len(orig) {
 		t.Fatal("compression didn't make it smaller")
