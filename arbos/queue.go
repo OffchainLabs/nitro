@@ -123,6 +123,12 @@ func (q *QueueInStorage) IsEmpty() bool {
 	return q.nextGetSegment.Equals(q.nextPutSegment) && (q.nextGetOffset == q.nextPutOffset)
 }
 
+func (q *QueueInStorage) Peek() (common.Hash, error) {   // get the first item, but leave that item in the queue
+	if q.IsEmpty() {
+		return common.Hash{}, errors.New("tried to Get from empty queue")
+	}
+	return q.nextGetSegment.Get(q.nextGetOffset)
+}
 
 func (q *QueueInStorage) Get() (common.Hash, error) {
 	if q.IsEmpty() {

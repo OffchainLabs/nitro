@@ -333,6 +333,13 @@ func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
 	return buf[:size], nil
 }
 
+func (seg* ArbosStorageSegment) Clear() {
+	for i := uint64(0); i <= seg.size; i++ {   // <= because we want to clear size+1 slots
+		offset := common.BigToHash(new(big.Int).Add(seg.offset.Big(), IntToHash(int64(i)).Big()))
+		seg.storage.backingStorage.Set(offset, common.Hash{})
+	}
+}
+
 func (seg *ArbosStorageSegment) Equals(other *ArbosStorageSegment) bool {
 	return seg.offset == other.offset
 }

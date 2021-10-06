@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"io"
+	"math/big"
 )
 
 type Retryable struct {
@@ -17,8 +18,20 @@ type Retryable struct {
 	calldata      []byte
 }
 
+func (r *Retryable) Timeout() common.Hash {
+	return r.timeout
+}
+
+func (r *Retryable) SetTimeout(t common.Hash) {
+	r.timeout = t
+}
+
+func (r *Retryable) AddToTimeout(delta common.Hash) {
+	r.timeout = common.BigToHash(new(big.Int).Add(r.timeout.Big(), delta.Big()))
+}
+
 func Create(
-	storage *ArbosState,
+	state *ArbosState,
 	id common.Hash,
 	timeout common.Hash,
 	from common.Address,
@@ -39,16 +52,20 @@ func Create(
 	if err := ret.serialize(&buf); err != nil {
 		return nil, err
 	}
-	seg, err := storage.AllocateSegmentForBytes(buf.Bytes())
+	seg, err := state.AllocateSegmentForBytes(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
 	ret.storageOffset = seg.offset
 
+	if err := state.retryableQueue.Put(ret.storageOffset); err != nil {
+		return nil, err
+	}
+
 	return ret, nil
 }
 
-func Open(storage *ArbosState, offset common.Hash) (*Retryable, error) {
+func OpenRetryable(storage *ArbosState, offset common.Hash) (*Retryable, error) {
 	seg, err := storage.OpenSegment(offset)
 	if err != nil {
 		return nil, err
@@ -126,5 +143,39 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	if _, err := wr.Write(retryable.calldata); err != nil {
 		return err
 	}
+	return nil
+}
+
+func TryTrimOneRetryable(state *ArbosState) error {
+	q := state.retryableQueue
+	if ! q.IsEmpty() {
+		headOffset, err := q.Get()
+		if err != nil {
+			return err
+		}
+
+		retryable, err := OpenRetryable(state, headOffset)
+		if err != nil {
+			return err
+		}
+
+		if retryable.timeout.Big().Cmp(state.lastTimestampSeen.Big()) < 0 {
+			// retryable timed out, so delete it
+			if _, err := q.Get(); err != nil {
+				return err
+			}
+			seg, err := state.OpenSegment(retryable.storageOffset)
+			if err != nil {
+				return err
+			}
+			seg.Clear();
+		} else {
+			// retryable is still alive, put it at the end of the queue
+			if err := q.Put(headOffset); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
