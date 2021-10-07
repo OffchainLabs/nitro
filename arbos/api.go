@@ -10,6 +10,10 @@ import (
 )
 
 
+func Initialize() ArbosAPI {
+	return nil   //TODO
+}
+
 type ArbosAPI interface {
 	SplitInboxMessage(bytes []byte) ([]MessageSegment, error)
 
