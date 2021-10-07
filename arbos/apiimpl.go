@@ -20,9 +20,9 @@ type ArbosAPIImpl struct {
 	precompiles  map[common.Address]ArbosPrecompile
 }
 
-func NewArbosAPIImpl(backingStorage BackingEvmStorage) *ArbosAPIImpl {
+func NewArbosAPIImpl(stateDB *state.StateDB) *ArbosAPIImpl {
 	return &ArbosAPIImpl{
-		OpenArbosState(backingStorage),
+		OpenArbosState(stateDB),
 		nil,
 		nil,
 		common.BytesToAddress(crypto.Keccak256Hash([]byte("Arbitrum coinbase address")).Bytes()[:20]),
@@ -50,8 +50,6 @@ func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.Sta
 		}
 	}
 	stateDB.SetBalance(impl.coinbaseAddr, coinbaseWei)
-
-	impl.state.backingStorage.Flush()
 }
 
 func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) {  // uint64 return is extra gas to charge
