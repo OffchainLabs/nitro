@@ -32,7 +32,7 @@ type ArbosAPI interface {
 	GetExtraSegmentToBeNextBlock() *MessageSegment
 
 	// StateDB can be used to read or write storage slots, balances, etc.
-	FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions)
+	FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions)
 
 	Precompiles() map[common.Address]ArbosPrecompile
 }

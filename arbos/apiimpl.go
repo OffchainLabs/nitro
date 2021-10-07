@@ -34,8 +34,23 @@ func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment
 	return ParseIncomingL1Message(bytes.NewReader(inputBytes), impl)
 }
 
-func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions) {
-	//TODO: transfer funds from coinbase addr to aggregators and network fee recipient
+func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions) {
+	// process deposit, if there is one
+	deposit := impl.currentBlock.depositSegmentRemaining
+	if deposit != nil {
+		stateDB.AddBalance(deposit.addr, deposit.balance.Big())
+	}
+
+	// reimburse aggregators from the coinbase address
+	coinbaseWei := stateDB.GetBalance(impl.coinbaseAddr)
+	for agg, amount := range impl.currentBlock.weiOwedToAggregators {
+		if amount.Cmp(coinbaseWei) <= 0 {
+			coinbaseWei = new(big.Int).Sub(coinbaseWei, amount)
+			stateDB.AddBalance(agg, amount)
+		}
+	}
+	stateDB.SetBalance(impl.coinbaseAddr, coinbaseWei)
+
 	impl.state.backingStorage.Flush()
 }
 
@@ -74,6 +89,24 @@ func (impl *ArbosAPIImpl) Precompiles() map[common.Address]ArbosPrecompile {
 	return impl.precompiles
 }
 
+type ethDeposit struct {
+	api     *ArbosAPIImpl
+	addr    common.Address
+	balance common.Hash
+}
+
+func (deposit *ethDeposit) CreateBlockContents(
+	beforeState *state.StateDB,
+) (
+	[]*types.Transaction, // transactions to (try to) put in the block
+	*big.Int,             // timestamp
+	common.Address,       // coinbase address
+	error,
+) {
+	deposit.api.currentBlock = newBlockInProgress(nil, deposit)
+	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen().Big(), deposit.api.coinbaseAddr, nil
+}
+
 type txSegment struct {
 	api         *ArbosAPIImpl
 	tx          *types.Transaction
@@ -87,18 +120,20 @@ func (seg *txSegment) CreateBlockContents(
 	common.Address,       // coinbase address
 	error,
 ) {
-	seg.api.currentBlock = newBlockInProgress(seg)
+	seg.api.currentBlock = newBlockInProgress(seg, nil)
 	return []*types.Transaction{ seg.tx }, seg.api.state.LastTimestampSeen().Big(), seg.api.coinbaseAddr, nil
 }
 
 type blockInProgress struct {
-	segmentsRemaining    []MessageSegment
+	txSegmentRemaining      MessageSegment
+	depositSegmentRemaining *ethDeposit
 	weiOwedToAggregators map[common.Address]*big.Int
 }
 
-func newBlockInProgress(seg MessageSegment) *blockInProgress {
+func newBlockInProgress(seg MessageSegment, deposit *ethDeposit) *blockInProgress {
 	return &blockInProgress{
-		[]MessageSegment{ seg },
+		seg,
+		deposit,
 		make(map[common.Address]*big.Int),
 	}
 }

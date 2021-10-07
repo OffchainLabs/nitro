@@ -18,6 +18,7 @@ const (
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10   // probably won't use this in practice
+	L1MessageType_EthDeposit            = 11
 )
 
 const MaxL2MessageSize = 256*1024
@@ -134,10 +135,10 @@ func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegme
 		},
 		data,
 	}
-	return msg.handle(apiImpl), nil
+	return msg.typeSpecificParse(apiImpl), nil
 }
 
-func (msg *L1IncomingMessage) handle(apiImpl *ArbosAPIImpl) []MessageSegment {
+func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []MessageSegment {
 	if len(msg.l2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return []MessageSegment{}
@@ -155,6 +156,8 @@ func (msg *L1IncomingMessage) handle(apiImpl *ArbosAPIImpl) []MessageSegment {
 		panic("unimplemented")
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
+	case L1MessageType_EthDeposit:
+		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), apiImpl)
 	default:
 		// invalid message, just ignore it
 		return []MessageSegment{}
@@ -289,4 +292,16 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 		apiImpl,
 		types.NewTx(legacyTx),
 	}
+}
+
+func parseEthDepositMessage(rd io.Reader, apiImpl *ArbosAPIImpl) []MessageSegment {
+	addr, err := AddressFromReader(rd)
+	if err != nil {
+		return []MessageSegment{}
+	}
+	balance, err := HashFromReader(rd)
+	if err != nil {
+		return []MessageSegment{}
+	}
+	return []MessageSegment{ &ethDeposit{apiImpl, addr, balance } }
 }
