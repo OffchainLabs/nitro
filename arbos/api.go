@@ -11,28 +11,25 @@ import (
 
 
 func Initialize() ArbosAPI {
-	return nil   //TODO
+	return NewArbosAPIImpl()
 }
 
 type ArbosAPI interface {
 	SplitInboxMessage(bytes []byte) ([]MessageSegment, error)
 
-	// StateDB can be used to read or write storage slots, balances, etc.
-	FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions)
-
-	// Can be used to charge aggregator costs
 	// Should return ErrIntrinsicGas if there isn't enough gas
-	ExtraGasChargingHook(msg core.Message, txGasRemaining *uint64, gasPool *core.GasPool, state vm.StateDB) error
+	StartTxHook(msg core.Message, state vm.StateDB) (uint64, error)  // returns amount of gas to take as extra charge
 
-	// Can be used to give burnt gas fees to the fee recipient
 	// extraGasCharged is any gas remaining subtracted during the ExtraGasChargingHook, which is also included in totalGasUsed
 	EndTxHook(
 		msg core.Message,
 		totalGasUsed uint64,
 		extraGasCharged uint64,
-		gasPool *core.GasPool,
 		state vm.StateDB,
 	) error
+
+	// StateDB can be used to read or write storage slots, balances, etc.
+	FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions)
 
 	Precompiles() map[common.Address]ArbosPrecompile
 }
