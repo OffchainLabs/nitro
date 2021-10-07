@@ -149,7 +149,7 @@ func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []Message
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
-		panic("unimplemented")
+		return []MessageSegment{}
 	case L1MessageType_L2FundedByL1:
 		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:

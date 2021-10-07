@@ -3,11 +3,12 @@ package arbos
 import (
 	"bytes"
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/common"
 	"io"
+	"math/big"
 	"testing"
 )
 
-/*
 func TestSerializeAndParseL1Message(t *testing.T) {
 	header := L1IncomingMessageHeader{
 		L1MessageType_EndOfBlock,
@@ -19,24 +20,20 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	}
 	msg := L1IncomingMessage{
 		&header,
-		[]byte{ 3, 2, 1 },
+		[]byte{3, 2, 1},
 	}
 	serialized, err := msg.Serialize()
 	if err != nil {
 		t.Error(err)
 	}
-	parsedMsg, err := ParseIncomingL1Message(bytes.NewReader(serialized))
+	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized), nil)
 	if err != nil {
 		t.Error(err)
 	}
-	if ! msg.header.Equals(parsedMsg.header) {
-		t.Fatal()
-	}
-	if ! msg.Equals(parsedMsg) {
-		t.Fatal()
+	if len(segments) != 0 {
+		t.Fail()
 	}
 }
- */
 
 func TestBrotli(t *testing.T) {
 	orig := []byte("This is a long and repetitive string. Yadda yadda yadda yadda yadda. The quick brown fox jumped over the lazy dog.")
