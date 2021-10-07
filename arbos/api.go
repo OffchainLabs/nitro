@@ -28,6 +28,9 @@ type ArbosAPI interface {
 		state vm.StateDB,
 	) error
 
+	// return an extra segment (that wasn't directly in the input) that is waiting to be executed,
+	GetExtraSegmentToBeNextBlock() *MessageSegment
+
 	// StateDB can be used to read or write storage slots, balances, etc.
 	FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions)
 

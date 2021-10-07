@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"io"
 	"math/big"
 )
@@ -205,7 +208,11 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 		}
 		return segments
 	case L2MessageKind_SignedTx:
-		panic("unimplemented")
+		newTx := new(types.Transaction)
+		if err := newTx.DecodeRLP(rlp.NewStream(rd, math.MaxUint64)); err != nil {
+			return segments
+		}
+		return append(segments, &txSegment{ apiImpl, newTx })
 	case L2MessageKind_Heartbeat:
 		// do nothing
 		return segments
@@ -227,7 +234,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *unsignedTxSegment {
+func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *txSegment {
 	gasLimit, err := HashFromReader(rd)
 	if err != nil {
 		return nil
@@ -248,9 +255,13 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 	}
 	//TODO: if nonce isn't supplied, ask geth for the expected nonce and fill it in here?
 
-	destination, err := AddressFrom256FromReader(rd)
+	destAddr, err := AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil
+	}
+	var destination *common.Address
+	if destAddr.Hash().Big().Cmp(big.NewInt(0)) != 0 {
+		destination = &destAddr
 	}
 
 	callvalue, err := HashFromReader(rd)
@@ -263,13 +274,19 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 		return nil
 	}
 
-	return &unsignedTxSegment{
-		apiImpl,
-		gasLimit.Big(),
+	legacyTx := &types.LegacyTx{  //BUGBUG: should probably use a special unsigned tx type here
+		nonce.Uint64(),
 		gasPrice.Big(),
-		nonce,
+		gasLimit.Big().Uint64(),
 		destination,
 		callvalue.Big(),
 		calldata,
+		nil,
+		nil,
+		nil,
+	}
+	return &txSegment{
+		apiImpl,
+		types.NewTx(legacyTx),
 	}
 }

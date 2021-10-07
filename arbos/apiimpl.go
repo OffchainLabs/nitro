@@ -36,6 +36,7 @@ func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment
 
 func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, state *state.StateDB, txs types.Transactions) {
 	//TODO: transfer funds from coinbase addr to aggregators and network fee recipient
+	impl.state.backingStorage.Flush()
 }
 
 func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) {  // uint64 return is extra gas to charge
@@ -49,8 +50,9 @@ func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint6
 	} else {
 		extraGasI64 = math.MaxInt64
 	}
+	extraGasChargeWei = new(big.Int).Mul(gasPrice, big.NewInt(extraGasI64))
 	if aggregator != nil {
-		impl.currentBlock.creditAggregator(*aggregator, new(big.Int).Mul(gasPrice, big.NewInt(extraGasI64)))
+		impl.currentBlock.creditAggregator(*aggregator, extraGasChargeWei)
 	}
 	return uint64(extraGasI64), nil
 }
@@ -64,21 +66,20 @@ func (impl *ArbosAPIImpl) EndTxHook(
 	return nil
 }
 
+func (impl *ArbosAPIImpl) GetExtraSegmentToBeNextBlock() *MessageSegment {
+	return nil
+}
+
 func (impl *ArbosAPIImpl) Precompiles() map[common.Address]ArbosPrecompile {
 	return impl.precompiles
 }
 
-type unsignedTxSegment struct {
+type txSegment struct {
 	api         *ArbosAPIImpl
-	gasLimit    *big.Int
-	gasPrice    *big.Int
-	nonce       *big.Int
-	destination common.Address
-	callvalue   *big.Int
-	calldata    []byte
+	tx          *types.Transaction
 }
 
-func (seg *unsignedTxSegment) CreateBlockContents(
+func (seg *txSegment) CreateBlockContents(
 	beforeState *state.StateDB,
 ) (
 	[]*types.Transaction, // transactions to (try to) put in the block
@@ -86,9 +87,8 @@ func (seg *unsignedTxSegment) CreateBlockContents(
 	common.Address,       // coinbase address
 	error,
 ) {
-	//TODO: generate Transaction from seg
 	seg.api.currentBlock = newBlockInProgress(seg)
-	return []*types.Transaction{}, seg.api.state.LastTimestampSeen().Big(), seg.api.coinbaseAddr, nil
+	return []*types.Transaction{ seg.tx }, seg.api.state.LastTimestampSeen().Big(), seg.api.coinbaseAddr, nil
 }
 
 type blockInProgress struct {
@@ -123,3 +123,17 @@ func (tx *txInProgress) getExtraGasChargeWei() (*big.Int, *common.Address) {  //
 	return big.NewInt(0), nil
 }
 
+// Implementation of Transaction for txSegment
+
+func (seg *txSegment) txType() byte                          { return seg.tx.Type() }
+func (seg *txSegment) chainID() *big.Int                     { return seg.tx.ChainId() }
+func (seg *txSegment) accessList() types.AccessList          { return seg.tx.AccessList() }
+func (seg *txSegment) data() []byte                          { return seg.tx.Data() }
+func (seg *txSegment) gas() uint64                           { return seg.tx.Gas() }
+func (seg *txSegment) gasPrice() *big.Int                    { return seg.tx.GasPrice() }
+func (seg *txSegment) gasTipCap() *big.Int                   { return seg.tx.GasTipCap() }
+func (seg *txSegment) gasFeeCap() *big.Int                   { return seg.tx.GasFeeCap() }
+func (seg *txSegment) value() *big.Int                       { return seg.tx.Value() }
+func (seg *txSegment) nonce() uint64                         { return seg.tx.Nonce() }
+func (seg *txSegment) to() *common.Address                   { return seg.tx.To() }
+func (seg txSegment) rawSignatureValues() (v, r, s *big.Int) { return seg.tx.RawSignatureValues() }

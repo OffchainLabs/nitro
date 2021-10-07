@@ -11,6 +11,7 @@ type BackingEvmStorage interface {
 	Get(offset common.Hash) common.Hash
 	GetAsInt64(offset common.Hash) (int64, error)
 	Set(offset common.Hash, value common.Hash)
+	Flush()
 }
 
 type MemoryBackingEvmStorage struct {
@@ -43,6 +44,9 @@ func (st *MemoryBackingEvmStorage) GetAsInt64(offset common.Hash) (int64, error)
 
 func (st *MemoryBackingEvmStorage) Set(offset common.Hash, value common.Hash) {
 	st.contents[offset] = value
+}
+
+func (st *MemoryBackingEvmStorage) Flush() {
 }
 
 func IntToHash(val int64) common.Hash {
