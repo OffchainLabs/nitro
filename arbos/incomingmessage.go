@@ -83,7 +83,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		(header.gasPriceL1.Big().Cmp(other.gasPriceL1.Big()) == 0)
 }
 
-func ParseIncomingL1Message(rd io.Reader, state *ArbosState) ([]MessageSegment, error) {
+func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegment, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
@@ -131,17 +131,17 @@ func ParseIncomingL1Message(rd io.Reader, state *ArbosState) ([]MessageSegment, 
 		},
 		data,
 	}
-	return msg.handle(state), nil
+	return msg.handle(apiImpl), nil
 }
 
-func (msg *L1IncomingMessage) handle(state *ArbosState) []MessageSegment {
+func (msg *L1IncomingMessage) handle(apiImpl *ArbosAPIImpl) []MessageSegment {
 	if len(msg.l2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return []MessageSegment{}
 	}
 	switch msg.header.kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true, state)
+		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true, apiImpl)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
@@ -172,7 +172,7 @@ const (
 
 )
 
-func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool, state *ArbosState) []MessageSegment {
+func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool, apiImpl *ArbosAPIImpl) []MessageSegment {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return segments
@@ -180,14 +180,14 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 
 	switch(l2KindBuf[0]) {
 	case L2MessageKind_UnsignedUserTx:
-		seg := parseUnsignedTx(rd, header, true, state)
+		seg := parseUnsignedTx(rd, header, true, apiImpl)
 		if seg == nil {
 			return segments
 		} else {
 			return append(segments, seg)
 		}
 	case L2MessageKind_ContractTx:
-		seg := parseUnsignedTx(rd, header, false, state)
+		seg := parseUnsignedTx(rd, header, false, apiImpl)
 		if seg == nil {
 			return segments
 		} else {
@@ -201,7 +201,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 			if err != nil {
 				return segments
 			}
-			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false, state)
+			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false, apiImpl)
 		}
 		return segments
 	case L2MessageKind_SignedTx:
@@ -217,7 +217,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 			if err != nil {
 				return segments
 			}
-			return parseL2Message(bytes.NewReader(decompressed), segments, header, false, state)
+			return parseL2Message(bytes.NewReader(decompressed), segments, header, false, apiImpl)
 		} else {
 			return segments
 		}
@@ -227,7 +227,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, state *ArbosState) *unsignedTxSegment {
+func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *unsignedTxSegment {
 	gasLimit, err := HashFromReader(rd)
 	if err != nil {
 		return nil
@@ -264,7 +264,7 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 	}
 
 	return &unsignedTxSegment{
-		state,
+		apiImpl,
 		gasLimit.Big(),
 		gasPrice.Big(),
 		nonce,

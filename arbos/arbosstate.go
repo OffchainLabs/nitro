@@ -63,8 +63,8 @@ type ArbosState struct {
 	backingStorage    BackingEvmStorage
 }
 
-func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *ArbosState {
-	for tryStorageUpgrade(backingStorage, timestamp) {}
+func OpenArbosState(backingStorage BackingEvmStorage) *ArbosState {
+	for tryStorageUpgrade(backingStorage) {}
 
 	formatVersion := backingStorage.Get(IntToHash(0))
 	nextAlloc := backingStorage.Get(IntToHash(1))
@@ -89,7 +89,7 @@ func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *Ar
 	}
 }
 
-func tryStorageUpgrade(backingStorage BackingEvmStorage, timestamp common.Hash) bool {
+func tryStorageUpgrade(backingStorage BackingEvmStorage) bool {
 	formatVersion := backingStorage.Get(IntToHash(0))
 	if formatVersion == IntToHash(0) {
 		// we're in version 0, which is the uninitialized state; upgrade to version 1 (initialized)
@@ -98,7 +98,7 @@ func tryStorageUpgrade(backingStorage BackingEvmStorage, timestamp common.Hash) 
 		backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
 		backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
 		backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
-		backingStorage.Set(IntToHash(5), timestamp)
+		backingStorage.Set(IntToHash(5), IntToHash(0))
 		return true
 	} else {
 		return false

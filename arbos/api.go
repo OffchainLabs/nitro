@@ -10,8 +10,8 @@ import (
 )
 
 
-func Initialize() ArbosAPI {
-	return NewArbosAPIImpl()
+func Initialize(backingStorage BackingEvmStorage) ArbosAPI {
+	return NewArbosAPIImpl(backingStorage)
 }
 
 type ArbosAPI interface {
