@@ -2,10 +2,11 @@ package arbos
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
-)
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
+)
 
 type BackingEvmStorage interface {
 	Get(offset common.Hash) common.Hash
@@ -28,7 +29,7 @@ func (st *MemoryBackingEvmStorage) Get(offset common.Hash) common.Hash {
 	if exists {
 		return value
 	} else {
-		return common.Hash{}   // empty slot is treated as zero
+		return common.Hash{} // empty slot is treated as zero
 	}
 }
 
@@ -50,7 +51,7 @@ func IntToHash(val int64) common.Hash {
 }
 
 func hashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y)))   //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 type ArbosState struct {
@@ -64,7 +65,8 @@ type ArbosState struct {
 }
 
 func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *ArbosState {
-	for tryStorageUpgrade(backingStorage, timestamp) {}
+	for tryStorageUpgrade(backingStorage, timestamp) {
+	}
 
 	formatVersion := backingStorage.Get(IntToHash(0))
 	nextAlloc := backingStorage.Get(IntToHash(1))
@@ -159,14 +161,13 @@ func (state *ArbosState) SetLastTimestampSeen(val common.Hash) {
 	state.backingStorage.Set(IntToHash(5), val)
 }
 
-
 type ArbosStorageSegment struct {
-	offset      common.Hash
-	size        uint64
-	storage     *ArbosState
+	offset  common.Hash
+	size    uint64
+	storage *ArbosState
 }
 
-const MaxSegmentSize = 1<<48
+const MaxSegmentSize = 1 << 48
 
 func (state *ArbosState) AllocateSegment(size uint64) (*ArbosStorageSegment, error) {
 	if size > MaxSegmentSize {
@@ -246,8 +247,8 @@ func (seg *ArbosStorageSegment) Set(offset uint64, value common.Hash) error {
 }
 
 func (state *ArbosState) AllocateSegmentForBytes(buf []byte) (*ArbosStorageSegment, error) {
-	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSegment(uint64(1+sizeWords))
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegment(uint64(1 + sizeWords))
 	if err != nil {
 		return nil, err
 	}
@@ -290,14 +291,14 @@ func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
 		return nil, err
 	}
 
-	if ! rawSize.Big().IsUint64() {
+	if !rawSize.Big().IsUint64() {
 		return nil, errors.New("invalid segment size")
 	}
 	size := rawSize.Big().Uint64()
-	sizeWords := (size+31) / 32
+	sizeWords := (size + 31) / 32
 	buf := make([]byte, 32*sizeWords)
 	for i := uint64(0); i < sizeWords; i++ {
-		x, err := seg.Get(i+1)
+		x, err := seg.Get(i + 1)
 		if err != nil {
 			return nil, err
 		}
@@ -313,4 +314,24 @@ func (seg *ArbosStorageSegment) Equals(other *ArbosStorageSegment) bool {
 	return seg.offset == other.offset
 }
 
+type GethStateObject interface {
+	GetState(db state.Database, key common.Hash) common.Hash
+	SetState(db state.Database, key common.Hash, value common.Hash)
+}
 
+type GethEvmStorage struct {
+	state GethStateObject
+	db    state.Database
+}
+
+func NewGethEvmStorage(statedb *state.StateDB) *GethEvmStorage {
+	state := statedb.GetOrNewStateObject(common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+	return &GethEvmStorage{
+		state: state,
+		db:    statedb.Database(),
+	}
+}
+
+func (s *GethEvmStorage) Get(key common.Hash) common.Hash {
+	return s.state.GetState(s.db, key)
+}

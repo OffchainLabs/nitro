@@ -4,11 +4,13 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate"
+	"github.com/offchainlabs/arbstate/arbos2"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
 
@@ -22,37 +24,18 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-type WavmBlockRetriever struct {
-	earliestResolvedHeader uint64
-	knownBlockHeaders      map[uint64]*types.Header
+type ChainContext struct{}
+
+func (c ChainContext) Engine() consensus.Engine {
+	return arbstate.Engine{}
 }
 
-func NewWavmBlockRetriever(lastBlockHash common.Hash) (*WavmBlockRetriever, *types.Header) {
-	knownBlockHeaders := make(map[uint64]*types.Header)
-	var earliestResolvedHeader uint64
-	var lastBlockHeader *types.Header
-	if lastBlockHash != (common.Hash{}) {
-		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
-		num := lastBlockHeader.Number.Uint64()
-		knownBlockHeaders[num] = lastBlockHeader
-		earliestResolvedHeader = num
+func (c ChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	header := getBlockHeaderByHash(hash)
+	if !header.Number.IsUint64() || header.Number.Uint64() != num {
+		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
 	}
-	return &WavmBlockRetriever{
-		earliestResolvedHeader: earliestResolvedHeader,
-		knownBlockHeaders:      knownBlockHeaders,
-	}, lastBlockHeader
-}
-
-func (r *WavmBlockRetriever) GetBlockHash(num uint64) common.Hash {
-	if num == 0 {
-		return common.Hash{}
-	}
-	for ; r.earliestResolvedHeader > num; r.earliestResolvedHeader-- {
-		lastHeader := r.knownBlockHeaders[r.earliestResolvedHeader]
-		newHeader := getBlockHeaderByHash(lastHeader.ParentHash)
-		r.knownBlockHeaders[newHeader.Number.Uint64()] = newHeader
-	}
-	return r.knownBlockHeaders[num].Hash()
+	return header
 }
 
 func main() {
@@ -61,7 +44,7 @@ func main() {
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	inboxMessageBytes := wavmio.ReadInboxMessage()
-	inboxMessageSegments, err := arbstate.SplitInboxMessageIntoSegments(inboxMessageBytes)
+	inboxMessageSegments, err := arbos2.SplitInboxMessage(inboxMessageBytes)
 	if err != nil {
 		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
 		wavmio.AdvanceInboxMessage()
@@ -82,16 +65,11 @@ func main() {
 		wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
 	}
 
-	msg, err := arbstate.DecodeMessageSegment(inboxMessageSegments[positionWithinMessage])
-	if err != nil {
-		fmt.Printf("Error decoding message segment: %v\n", err)
-		return
-	}
-
 	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
-	retriever, lastBlockHeader := NewWavmBlockRetriever(lastBlockHash)
+	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
-	if lastBlockHeader != nil {
+	if lastBlockHash != (common.Hash{}) {
+		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
 
@@ -101,21 +79,15 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	fmt.Printf("Sender address: %v\n", msg.From.String())
-	senderBalance := statedb.GetBalance(msg.From)
-	fmt.Printf("Sender balance: %v\n", senderBalance.String())
-
-	newBlockHeader, err := arbstate.Process(statedb, lastBlockHeader, retriever, msg)
+	chainContext := ChainContext{}
+	newBlock, err := arbstate.CreateBlock(statedb, lastBlockHeader, chainContext, inboxMessageSegments[positionWithinMessage])
 	if err == nil {
-		fmt.Printf("New state root: %v\n", newBlockHeader.Root)
-		newBlockHash := newBlockHeader.Hash()
+		fmt.Printf("New state root: %v\n", newBlock.Root())
+		newBlockHash := newBlock.Hash()
 		fmt.Printf("New block hash: %v\n", newBlockHash)
 
 		wavmio.SetLastBlockHash(newBlockHash)
 	} else {
 		fmt.Printf("Error processing message: %v\n", err)
 	}
-
-	senderBalance = statedb.GetBalance(msg.From)
-	fmt.Printf("New sender balance: %v\n", senderBalance.String())
 }
