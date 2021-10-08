@@ -25,7 +25,7 @@ func Create(
 	to common.Address,
 	callvalue common.Hash,
 	calldata []byte,
-) (*Retryable, error) {
+) *Retryable {
 	ret := &Retryable{
 		common.Hash{},   // will fill in later
 		id,
@@ -37,27 +37,22 @@ func Create(
 	};
 	buf := bytes.Buffer{}
 	if err := ret.serialize(&buf); err != nil {
-		return nil, err
+		panic(err)
 	}
-	seg, err := storage.AllocateSizedSegmentForBytes(buf.Bytes())
-	if err != nil {
-		return nil, err
-	}
+	seg := storage.AllocateSizedSegmentForBytes(buf.Bytes())
 	ret.storageOffset = seg.offset
 
-	return ret, nil
+	return ret
 }
 
-func Open(storage *ArbosState, offset common.Hash) (*Retryable, error) {
-	seg, err := storage.OpenSizedSegment(offset)
+func Open(storage *ArbosState, offset common.Hash) *Retryable {
+	seg := storage.OpenSizedSegment(offset)
+	contents := seg.GetBytes()
+	ret, err := NewFromReader(bytes.NewReader(contents), offset)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	contents, err := seg.GetBytes()
-	if err != nil {
-		return nil, err
-	}
-	return NewFromReader(bytes.NewReader(contents), offset)
+	return ret
 }
 
 func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {

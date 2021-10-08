@@ -11,35 +11,22 @@ type QueueInStorage struct {
 	nextGetOffset *common.Hash
 }
 
-func AllocateQueueInStorage(state *ArbosState) (*QueueInStorage, error) {
+func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
 	segment, err := state.AllocateSizedSegment(2)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 	contentsOffset := state.AllocateEmptyStorageOffset()
-	if err := segment.Set(0, *contentsOffset); err != nil {
-		return nil, err
-	}
-	if err := segment.Set(1, *contentsOffset); err != nil {
-		return nil, err
-	}
-	return &QueueInStorage{ segment, contentsOffset, contentsOffset }, nil
+	segment.Set(0, *contentsOffset)
+	segment.Set(1, *contentsOffset)
+	return &QueueInStorage{ segment, contentsOffset, contentsOffset }
 }
 
-func OpenQueueInStorage(state *ArbosState, offset common.Hash) (*QueueInStorage, error) {
-	segment, err := state.OpenSizedSegment(offset)
-	if err != nil {
-		return nil, err
-	}
-	npo, err := segment.Get(0)
-	if err != nil {
-		return nil, err
-	}
-	ngo, err := segment.Get(1)
-	if err != nil {
-		return nil, err
-	}
-	return &QueueInStorage{ segment, &npo, &ngo }, nil
+func OpenQueueInStorage(state *ArbosState, offset common.Hash) *QueueInStorage {
+	segment := state.OpenSizedSegment(offset)
+	npo := segment.Get(0)
+	ngo := segment.Get(1)
+	return &QueueInStorage{ segment, &npo, &ngo }
 }
 
 func (q *QueueInStorage) IsEmpty() bool {
@@ -61,9 +48,7 @@ func (q *QueueInStorage) Get() *common.Hash {   // returns nil iff queue is empt
 	res := q.segment.storage.backingStorage.Swap(*q.nextGetOffset, common.Hash{})
 	nextGetOffset := common.BigToHash(new(big.Int).Add(q.nextGetOffset.Big(), big.NewInt(1)))
 	q.nextGetOffset = &nextGetOffset
-	if err := q.segment.Set(1, nextGetOffset); err != nil {
-		panic(err)
-	}
+	q.segment.Set(1, nextGetOffset)
 	return &res
 }
 
@@ -71,7 +56,5 @@ func (q *QueueInStorage) Put(val common.Hash) {
 	q.segment.storage.backingStorage.Set(*q.nextPutOffset, val)
 	nextPutOffset := common.BigToHash(new(big.Int).Add(q.nextPutOffset.Big(), big.NewInt(1)))
 	q.nextPutOffset = &nextPutOffset
-	if err := q.segment.Set(0, nextPutOffset); err != nil {
-		panic(err)
-	}
+	q.segment.Set(0, nextPutOffset)
 }

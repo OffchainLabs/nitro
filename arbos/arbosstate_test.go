@@ -52,28 +52,14 @@ func TestStorageSegmentAllocation(t *testing.T) {
 	if seg.size != 37 {
 		t.Fail()
 	}
-	res, err := seg.Get(19)
-	if err != nil {
-		t.Error(err)
-	}
+	res := seg.Get(19)
 	if res != (common.Hash{}) {
-		t.Fail()
-	}
-	if _, err := seg.Get(uint64(size + 3)); err == nil {
-		t.Fail()
-	}
-	if _, err := seg.Get(uint64(size)); err == nil {
 		t.Fail()
 	}
 
 	val := IntToHash(51985380)
-	if err := seg.Set(uint64(size-2), val); err != nil {
-		t.Error(err)
-	}
-	res, err = seg.Get(uint64(size - 2))
-	if err != nil {
-		t.Error(err)
-	}
+	seg.Set(uint64(size-2), val)
+	res = seg.Get(uint64(size - 2))
 	if res != val {
 		t.Fail()
 	}
@@ -82,18 +68,12 @@ func TestStorageSegmentAllocation(t *testing.T) {
 func TestStorageSegmentAllocationBytes(t *testing.T) {
 	storage := OpenArbosStateForTest()
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
-	seg, err := storage.AllocateSizedSegmentForBytes(buf)
-	if err != nil {
-		t.Error(err)
-	}
+	seg := storage.AllocateSizedSegmentForBytes(buf)
 	if int(seg.size) != 1 + (len(buf)+31) / 32 {
 		t.Fail()
 	}
 
-	reread, err := seg.GetBytes()
-	if err != nil {
-		t.Error(err)
-	}
+	reread := seg.GetBytes()
 	if bytes.Compare(buf, reread) != 0 {
 		t.Fail()
 	}

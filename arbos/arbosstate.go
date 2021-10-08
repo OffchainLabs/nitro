@@ -16,6 +16,13 @@ type GethStateObject interface {
 	SetState(db state.Database, key common.Hash, value common.Hash)
 }
 
+type EvmStorage interface {
+	Get(key common.Hash) common.Hash
+	Set(key common.Hash, value common.Hash)
+	Swap(key common.Hash, value common.Hash) common.Hash
+	GetAsInt64(key common.Hash) int64
+}
+
 type GethEvmStorage struct {
 	state GethStateObject
 	db    state.Database
@@ -45,12 +52,12 @@ func (store *GethEvmStorage) Get(key common.Hash) common.Hash {
 	return store.state.GetState(store.db, key)
 }
 
-func (store *GethEvmStorage) GetAsInt64(key common.Hash) (int64, error) {
+func (store *GethEvmStorage) GetAsInt64(key common.Hash) int64 {
 	rawValue := store.Get(key).Big()
 	if rawValue.IsInt64() {
-		return rawValue.Int64(), nil
+		return rawValue.Int64()
 	} else {
-		return 0, errors.New("expected int64 in backing storage")
+		panic("expected int64 in backing storage")
 	}
 }
 
@@ -79,7 +86,7 @@ type ArbosState struct {
 	smallGasPool      *int64
 	gasPriceWei       *big.Int
 	lastTimestampSeen *big.Int
-	backingStorage    *GethEvmStorage
+	backingStorage    EvmStorage
 }
 
 func OpenArbosState(stateDB *state.StateDB) *ArbosState {
@@ -98,20 +105,25 @@ func OpenArbosState(stateDB *state.StateDB) *ArbosState {
 	}
 }
 
-func tryStorageUpgrade(backingStorage *GethEvmStorage) bool {
+func tryStorageUpgrade(backingStorage EvmStorage) bool {
 	formatVersion := backingStorage.Get(IntToHash(0))
-	if formatVersion == IntToHash(0) {
-		// we're in version 0, which is the uninitialized state; upgrade to version 1 (initialized)
-		backingStorage.Set(IntToHash(0), IntToHash(1))
-		backingStorage.Set(IntToHash(1), crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
-		backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
-		backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
-		backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
-		backingStorage.Set(IntToHash(5), IntToHash(0))
+	switch formatVersion {
+	case IntToHash(0):
+		upgrade_0_to_1(backingStorage)
 		return true
-	} else {
+	default:
 		return false
 	}
+}
+
+
+func upgrade_0_to_1(backingStorage EvmStorage) {
+	backingStorage.Set(IntToHash(0), IntToHash(1))
+	backingStorage.Set(IntToHash(1), crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
+	backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
+	backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
+	backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
+	backingStorage.Set(IntToHash(5), IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -140,10 +152,7 @@ func (state *ArbosState) AllocateEmptyStorageOffset() *common.Hash {
 
 func (state *ArbosState) GasPool() int64 {
 	if state.gasPool == nil {
-		val, err := state.backingStorage.GetAsInt64(IntToHash(2))
-		if err != nil {
-			val = 0
-		}
+		val := state.backingStorage.GetAsInt64(IntToHash(2))
 		state.gasPool = &val
 	}
 	return *state.gasPool
@@ -157,10 +166,7 @@ func (state *ArbosState) SetGasPool(val int64) {   //BUGBUG: handle negative val
 
 func (state *ArbosState) SmallGasPool() int64 {
 	if state.smallGasPool == nil {
-		val, err := state.backingStorage.GetAsInt64(IntToHash(3))
-		if err != nil {
-			val = 0
-		}
+		val := state.backingStorage.GetAsInt64(IntToHash(3))
 		state.smallGasPool = &val
 	}
 	return *state.smallGasPool
@@ -221,81 +227,66 @@ func (state *ArbosState) AllocateSizedSegment(size uint64) (*SizedArbosStorageSe
 	}, nil
 }
 
-func (state *ArbosState) OpenSizedSegment(offset common.Hash) (*SizedArbosStorageSegment, error) {
+func (state *ArbosState) OpenSizedSegment(offset common.Hash) *SizedArbosStorageSegment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
 	if !bigSize.IsUint64() {
-		return nil, errors.New("not a valid state segment")
+		panic("not a valid state segment")
 	}
 	size := bigSize.Uint64()
 	if size == 0 {
-		return nil, errors.New("state segment invalid or was deleted")
+		panic("state segment invalid or was deleted")
 	} else if size > MaxSizedSegmentSize {
-		return nil, errors.New("state segment size invalid")
+		panic("state segment size invalid")
 	}
 	return &SizedArbosStorageSegment{
 		offset,
 		size,
 		state,
-	}, nil
+	}
 }
 
-func (seg *SizedArbosStorageSegment) Get(offset uint64) (common.Hash, error) {
+func (seg *SizedArbosStorageSegment) Get(offset uint64) common.Hash {
 	if offset >= seg.size {
-		return common.Hash{}, errors.New("out of bounds access to storage segment")
+		panic("out of bounds access to storage segment")
 	}
-	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset))), nil
+	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset)))
 }
 
-func (seg *SizedArbosStorageSegment) GetAsInt64(offset uint64) (int64, error) {
-	raw, err := seg.Get(offset)
-	if err != nil {
-		return 0, err
+func (seg *SizedArbosStorageSegment) GetAsInt64(offset uint64) int64 {
+	raw := seg.Get(offset).Big()
+	if ! raw.IsInt64() {
+		panic("out of range")
 	}
-	rawBig := raw.Big()
-	if rawBig.IsInt64() {
-		return rawBig.Int64(), nil
-	} else {
-		return 0, errors.New("out of range")
-	}
+	return raw.Int64()
 }
 
-func (seg *SizedArbosStorageSegment) GetAsUint64(offset uint64) (uint64, error) {
-	raw, err := seg.Get(offset)
-	if err != nil {
-		return 0, err
+func (seg *SizedArbosStorageSegment) GetAsUint64(offset uint64) uint64 {
+	raw := seg.Get(offset).Big()
+	if ! raw.IsUint64() {
+		panic("out of range")
 	}
-	rawBig := raw.Big()
-	if rawBig.IsUint64() {
-		return rawBig.Uint64(), nil
-	} else {
-		return 0, errors.New("out of range")
-	}
+	return raw.Uint64()
 }
 
-func (seg *SizedArbosStorageSegment) Set(offset uint64, value common.Hash) error {
+func (seg *SizedArbosStorageSegment) Set(offset uint64, value common.Hash) {
 	if offset >= seg.size {
-		errors.New("offset too large in SizedArbosStorageSegment::Set")
+		panic("offset too large in SizedArbosStorageSegment::Set")
 	}
 	seg.storage.backingStorage.Set(hashPlusInt(seg.offset, int64(offset+1)), value)
-	return nil
 }
 
-func (state *ArbosState) AllocateSizedSegmentForBytes(buf []byte) (*SizedArbosStorageSegment, error) {
+func (state *ArbosState) AllocateSizedSegmentForBytes(buf []byte) *SizedArbosStorageSegment {
 	sizeWords := (len(buf)+31) / 32
 	seg, err := state.AllocateSizedSegment(uint64(1+sizeWords))
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	if err := seg.Set(0, IntToHash(int64(len(buf)))); err != nil {
-		return nil, err
-	}
+	seg.Set(0, IntToHash(int64(len(buf))))
 
 	offset := uint64(1)
 	for len(buf) >= 32 {
-		if err := seg.Set(offset, common.BytesToHash(buf[:32])); err != nil {
-			return nil, err
-		}
+		seg.Set(offset, common.BytesToHash(buf[:32]))
 		offset += 1
 		buf = buf[32:]
 	}
@@ -304,12 +295,8 @@ func (state *ArbosState) AllocateSizedSegmentForBytes(buf []byte) (*SizedArbosSt
 	for i := 0; i < len(buf); i++ {
 		endBuf[i] = buf[i]
 	}
-	err = seg.Set(offset, common.BytesToHash(endBuf[:]))
-	if err == nil {
-		return seg, nil
-	} else {
-		return nil, err
-	}
+	seg.Set(offset, common.BytesToHash(endBuf[:]))
+	return seg
 }
 
 func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
@@ -319,29 +306,22 @@ func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
 	}
 }
 
-func (seg *SizedArbosStorageSegment) GetBytes() ([]byte, error) {
-	rawSize, err := seg.Get(0)
-	if err != nil {
-		return nil, err
-	}
+func (seg *SizedArbosStorageSegment) GetBytes() []byte {
+	rawSize := seg.Get(0)
 
 	if ! rawSize.Big().IsUint64() {
-		return nil, errors.New("invalid segment size")
+		panic("invalid segment size")
 	}
 	size := rawSize.Big().Uint64()
 	sizeWords := (size+31) / 32
 	buf := make([]byte, 32*sizeWords)
 	for i := uint64(0); i < sizeWords; i++ {
-		x, err := seg.Get(i+1)
-		if err != nil {
-			return nil, err
-		}
-		iterBuf := x.Bytes()
+		iterBuf := seg.Get(i+1).Bytes()
 		for j, b := range iterBuf {
 			buf[32*i+uint64(j)] = b
 		}
 	}
-	return buf[:size], nil
+	return buf[:size]
 }
 
 func (seg *SizedArbosStorageSegment) Equals(other *SizedArbosStorageSegment) bool {
