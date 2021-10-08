@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"io"
+	"math/big"
 )
 
 const (
@@ -13,8 +17,11 @@ const (
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
-	L1MessageType_BatchForGasEstimation = 10
+	L1MessageType_BatchForGasEstimation = 10   // probably won't use this in practice
+	L1MessageType_EthDeposit            = 11
 )
+
+const MaxL2MessageSize = 256*1024
 
 type IncomingMessage interface {
 	handle(state *ArbosState)
@@ -80,7 +87,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		(header.gasPriceL1.Big().Cmp(other.gasPriceL1.Big()) == 0)
 }
 
-func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
+func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegment, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
@@ -117,7 +124,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	return &L1IncomingMessage{
+	msg := &L1IncomingMessage{
 		&L1IncomingMessageHeader{
 			kindBuf[0],
 			sender,
@@ -127,25 +134,33 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			gasPriceL1,
 		},
 		data,
-	}, nil
+	}
+	return msg.typeSpecificParse(apiImpl), nil
 }
 
-func (msg *L1IncomingMessage) handle(state *ArbosState) {
+func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []MessageSegment {
+	if len(msg.l2msg) > MaxL2MessageSize {
+		// ignore the message if l2msg is too large
+		return []MessageSegment{}
+	}
 	switch msg.header.kind {
 	case L1MessageType_L2Message:
-		parseAndHandleL2Message(bytes.NewReader(msg.l2msg), msg.header)
+		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true, apiImpl)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
-		panic("unimplemented")
+		return []MessageSegment{}
 	case L1MessageType_L2FundedByL1:
 		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:
 		panic("unimplemented")
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
+	case L1MessageType_EthDeposit:
+		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header, apiImpl)
 	default:
 		// invalid message, just ignore it
+		return []MessageSegment{}
 	}
 }
 
@@ -163,81 +178,126 @@ const (
 
 )
 
-func parseAndHandleL2Message(rd io.Reader, header *L1IncomingMessageHeader) {
+func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool, apiImpl *ArbosAPIImpl) []MessageSegment {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
-		return
+		return segments
 	}
 
 	switch(l2KindBuf[0]) {
 	case L2MessageKind_UnsignedUserTx:
-		handleUnsignedTx(rd, header, true)
+		seg := parseUnsignedTx(rd, header, true, apiImpl)
+		if seg == nil {
+			return segments
+		} else {
+			return append(segments, seg)
+		}
 	case L2MessageKind_ContractTx:
-		handleUnsignedTx(rd, header, false)
+		seg := parseUnsignedTx(rd, header, false, apiImpl)
+		if seg == nil {
+			return segments
+		} else {
+			return append(segments, seg)
+		}
 	case L2MessageKind_NonmutatingCall:
 		panic("unimplemented")
 	case L2MessageKind_Batch:
 		for {
 			nextMsg, err := BytestringFromReader(rd)
 			if err != nil {
-				return
+				return segments
 			}
-			parseAndHandleL2Message(bytes.NewReader(nextMsg), header)
+			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false, apiImpl)
 		}
+		return segments
 	case L2MessageKind_SignedTx:
-		panic("unimplemented")
+		newTx := new(types.Transaction)
+		if err := newTx.DecodeRLP(rlp.NewStream(rd, math.MaxUint64)); err != nil {
+			return segments
+		}
+		return append(segments, &txSegment{ apiImpl, newTx })
 	case L2MessageKind_Heartbeat:
 		// do nothing
+		return segments
 	case L2MessageKind_SignedCompressedTx:
 		panic("unimplemented")
 	case L2MessageKind_BrotliCompressed:
-		parseAndHandleL2Message(brotli.NewReader(rd), header)
+		if isTopLevel {   // ignore compressed messages if not top level
+			decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
+			if err != nil {
+				return segments
+			}
+			return parseL2Message(bytes.NewReader(decompressed), segments, header, false, apiImpl)
+		} else {
+			return segments
+		}
 	default:
 		// ignore invalid message kind
+		return segments
 	}
 }
 
-func handleUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool) {
+func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *txSegment {
 	gasLimit, err := HashFromReader(rd)
 	if err != nil {
-		return
+		return nil
 	}
 
 	gasPrice, err := HashFromReader(rd)
 	if err != nil {
-		return
+		return nil
 	}
 
-	var nonce common.Hash
+	var nonce *big.Int
 	if includesNonce {
-		nonce, err = HashFromReader(rd)
+		nonceAsHash, err := HashFromReader(rd)
 		if err != nil {
-			return
+			return nil
 		}
+		nonce = nonceAsHash.Big()
 	}
+	//TODO: if nonce isn't supplied, ask geth for the expected nonce and fill it in here?
 
-	destination, err := AddressFrom256FromReader(rd)
+	destAddr, err := AddressFrom256FromReader(rd)
 	if err != nil {
-		return
+		return nil
+	}
+	var destination *common.Address
+	if destAddr.Hash().Big().Cmp(big.NewInt(0)) != 0 {
+		destination = &destAddr
 	}
 
 	callvalue, err := HashFromReader(rd)
 	if err != nil {
-		return
+		return nil
 	}
 
 	calldata, err := io.ReadAll(rd)
 	if err != nil {
-		return
+		return nil
 	}
 
-	// keep the compiler from erroring for unused variables
-	_ = gasLimit
-	_ = gasPrice
-	_ = nonce
-	_ = destination
-	_ = callvalue
-	_ = calldata
+	legacyTx := &types.LegacyTx{  //BUGBUG: should probably use a special unsigned tx type here
+		nonce.Uint64(),
+		gasPrice.Big(),
+		gasLimit.Big().Uint64(),
+		destination,
+		callvalue.Big(),
+		calldata,
+		nil,
+		nil,
+		nil,
+	}
+	return &txSegment{
+		apiImpl,
+		types.NewTx(legacyTx),
+	}
+}
 
-	//TODO: send transaction to Geth for execution
+func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, apiImpl *ArbosAPIImpl) []MessageSegment {
+	balance, err := HashFromReader(rd)
+	if err != nil {
+		return []MessageSegment{}
+	}
+	return []MessageSegment{ &ethDeposit{apiImpl, header.sender, balance } }
 }
