@@ -102,7 +102,7 @@ func (deposit *ethDeposit) CreateBlockContents(
 	error,
 ) {
 	deposit.api.currentBlock = newBlockInProgress(nil, deposit)
-	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen().Big(), deposit.api.coinbaseAddr, nil
+	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen(), deposit.api.coinbaseAddr, nil
 }
 
 type txSegment struct {
@@ -119,7 +119,7 @@ func (seg *txSegment) CreateBlockContents(
 	error,
 ) {
 	seg.api.currentBlock = newBlockInProgress(seg, nil)
-	return []*types.Transaction{ seg.tx }, seg.api.state.LastTimestampSeen().Big(), seg.api.coinbaseAddr, nil
+	return []*types.Transaction{ seg.tx }, seg.api.state.LastTimestampSeen(), seg.api.coinbaseAddr, nil
 }
 
 type blockInProgress struct {

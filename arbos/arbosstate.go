@@ -66,12 +66,12 @@ func hashPlusInt(x common.Hash, y int64) common.Hash {
 }
 
 type ArbosState struct {
-	formatVersion     common.Hash
-	nextAlloc         common.Hash
-	gasPool           int64
-	smallGasPool      int64
-	gasPriceWei       common.Hash
-	lastTimestampSeen common.Hash
+	formatVersion     *big.Int
+	nextAlloc         *common.Hash
+	gasPool           *int64
+	smallGasPool      *int64
+	gasPriceWei       *big.Int
+	lastTimestampSeen *big.Int
 	backingStorage    *GethEvmStorage
 }
 
@@ -80,25 +80,13 @@ func OpenArbosState(stateDB *state.StateDB) *ArbosState {
 
 	for tryStorageUpgrade(backingStorage) {}
 
-	formatVersion := backingStorage.Get(IntToHash(0))
-	nextAlloc := backingStorage.Get(IntToHash(1))
-	gasPool, err := backingStorage.GetAsInt64(IntToHash(2))
-	if err != nil {
-		panic(err)
-	}
-	smallGasPool, err := backingStorage.GetAsInt64(IntToHash(3))
-	if err != nil {
-		panic(err)
-	}
-	gasPriceWei := backingStorage.Get(IntToHash(4))
-	lastTimestampSeen := backingStorage.Get(IntToHash(5))
 	return &ArbosState{
-		formatVersion,
-		nextAlloc,
-		gasPool,
-		smallGasPool,
-		gasPriceWei,
-		lastTimestampSeen,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
 		backingStorage,
 	}
 }
@@ -119,58 +107,87 @@ func tryStorageUpgrade(backingStorage *GethEvmStorage) bool {
 	}
 }
 
-func (state *ArbosState) FormatVersion() common.Hash {
+func (state *ArbosState) FormatVersion() *big.Int {
+	if state.formatVersion == nil {
+		state.formatVersion = state.backingStorage.Get(IntToHash(0)).Big()
+	}
 	return state.formatVersion
 }
 
-func (state *ArbosState) SetFormatVersion(val common.Hash) {
+func (state *ArbosState) SetFormatVersion(val *big.Int) {
 	state.formatVersion = val
-	state.backingStorage.Set(IntToHash(0), state.formatVersion)
+	state.backingStorage.Set(IntToHash(0), common.BigToHash(state.formatVersion))
 }
 
-func (state *ArbosState) NextAlloc() common.Hash {
+func (state *ArbosState) NextAlloc() *common.Hash {
+	if state.nextAlloc == nil {
+		val := state.backingStorage.Get(IntToHash(1))
+		state.nextAlloc = &val
+	}
 	return state.nextAlloc
 }
 
-func (state *ArbosState) SetNextAlloc(val common.Hash) {
+func (state *ArbosState) SetNextAlloc(val *common.Hash) {
 	state.nextAlloc = val
-	state.backingStorage.Set(IntToHash(1), state.nextAlloc)
+	state.backingStorage.Set(IntToHash(1), *state.nextAlloc)
 }
 
 func (state *ArbosState) GasPool() int64 {
-	return state.gasPool
+	if state.gasPool == nil {
+		val, err := state.backingStorage.GetAsInt64(IntToHash(2))
+		if err != nil {
+			val = 0
+		}
+		state.gasPool = &val
+	}
+	return *state.gasPool
 }
 
-func (state *ArbosState) SetGasPool(val int64) {
-	state.gasPool = val
-	state.backingStorage.Set(IntToHash(2), IntToHash(val))
+func (state *ArbosState) SetGasPool(val int64) {   //BUGBUG: handle negative values correctly in storage read/write
+	c := val
+	state.gasPool = &c
+	state.backingStorage.Set(IntToHash(2), IntToHash(c))
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
-	return state.smallGasPool
+	if state.smallGasPool == nil {
+		val, err := state.backingStorage.GetAsInt64(IntToHash(3))
+		if err != nil {
+			val = 0
+		}
+		state.smallGasPool = &val
+	}
+	return *state.smallGasPool
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
-	state.smallGasPool = val
-	state.backingStorage.Set(IntToHash(3), IntToHash(val))
+	c := val
+	state.smallGasPool = &c
+	state.backingStorage.Set(IntToHash(3), IntToHash(c))
 }
 
-func (state *ArbosState) GasPriceWei() common.Hash {
+func (state *ArbosState) GasPriceWei() *big.Int {
+	if state.gasPriceWei == nil {
+		state.gasPriceWei = state.backingStorage.Get(IntToHash(4)).Big()
+	}
 	return state.gasPriceWei
 }
 
-func (state *ArbosState) SetGasPriceWei(val common.Hash) {
+func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
-	state.backingStorage.Set(IntToHash(4), val)
+	state.backingStorage.Set(IntToHash(4), common.BigToHash(val))
 }
 
-func (state *ArbosState) LastTimestampSeen() common.Hash {
+func (state *ArbosState) LastTimestampSeen() *big.Int {
+	if state.lastTimestampSeen == nil {
+		state.lastTimestampSeen = state.backingStorage.Get(IntToHash(5)).Big()
+	}
 	return state.lastTimestampSeen
 }
 
-func (state *ArbosState) SetLastTimestampSeen(val common.Hash) {
+func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 	state.lastTimestampSeen = val
-	state.backingStorage.Set(IntToHash(5), val)
+	state.backingStorage.Set(IntToHash(5), common.BigToHash(val))
 }
 
 
@@ -188,12 +205,13 @@ func (state *ArbosState) AllocateSegment(size uint64) (*ArbosStorageSegment, err
 	}
 
 	offset := state.NextAlloc()
-	state.SetNextAlloc(hashPlusInt(state.nextAlloc, int64(size+1)))
+	newVal := hashPlusInt(*offset, int64(size+1))
+	state.SetNextAlloc(&newVal)
 
-	state.backingStorage.Set(offset, IntToHash(int64(size)))
+	state.backingStorage.Set(*offset, IntToHash(int64(size)))
 
 	return &ArbosStorageSegment{
-		offset,
+		*offset,
 		size,
 		state,
 	}, nil
@@ -290,11 +308,10 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) (*ArbosStorageSegme
 	}
 }
 
-func (state *ArbosState) AdvanceTimestampToAtLeast(timestamp common.Hash) {
-	newTimestampBig := timestamp.Big()
-	currentTimestampBig := state.LastTimestampSeen().Big()
-	if newTimestampBig.Cmp(currentTimestampBig) > 0 {
-		state.SetLastTimestampSeen(timestamp)
+func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
+	currentTimestamp := state.LastTimestampSeen()
+	if newTimestamp.Cmp(currentTimestamp) > 0 {
+		state.SetLastTimestampSeen(newTimestamp)
 	}
 }
 
