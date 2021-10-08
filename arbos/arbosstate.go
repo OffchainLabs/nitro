@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 )
 
@@ -57,6 +58,12 @@ func (store *GethEvmStorage) Set(key common.Hash, value common.Hash) {
 	store.state.SetState(store.db, key, value)
 }
 
+func (store *GethEvmStorage) Swap(key common.Hash, newValue common.Hash) common.Hash {
+	oldValue := store.Get(key)
+	store.Set(key, newValue)
+	return oldValue
+}
+
 func IntToHash(val int64) common.Hash {
 	return common.BigToHash(big.NewInt(val))
 }
@@ -96,7 +103,7 @@ func tryStorageUpgrade(backingStorage *GethEvmStorage) bool {
 	if formatVersion == IntToHash(0) {
 		// we're in version 0, which is the uninitialized state; upgrade to version 1 (initialized)
 		backingStorage.Set(IntToHash(0), IntToHash(1))
-		backingStorage.Set(IntToHash(1), IntToHash(1024))
+		backingStorage.Set(IntToHash(1), crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
 		backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
 		backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
 		backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
@@ -119,17 +126,16 @@ func (state *ArbosState) SetFormatVersion(val *big.Int) {
 	state.backingStorage.Set(IntToHash(0), common.BigToHash(state.formatVersion))
 }
 
-func (state *ArbosState) NextAlloc() *common.Hash {
+func (state *ArbosState) AllocateEmptyStorageOffset() *common.Hash {
 	if state.nextAlloc == nil {
 		val := state.backingStorage.Get(IntToHash(1))
 		state.nextAlloc = &val
 	}
-	return state.nextAlloc
-}
-
-func (state *ArbosState) SetNextAlloc(val *common.Hash) {
-	state.nextAlloc = val
-	state.backingStorage.Set(IntToHash(1), *state.nextAlloc)
+	ret := state.nextAlloc
+	nextAlloc := crypto.Keccak256Hash(state.nextAlloc.Bytes())
+	state.nextAlloc = &nextAlloc
+	state.backingStorage.Set(IntToHash(1), nextAlloc)
+	return ret
 }
 
 func (state *ArbosState) GasPool() int64 {
@@ -191,33 +197,31 @@ func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 }
 
 
-type ArbosStorageSegment struct {
+type SizedArbosStorageSegment struct {
 	offset      common.Hash
 	size        uint64
 	storage     *ArbosState
 }
 
-const MaxSegmentSize = 1<<48
+const MaxSizedSegmentSize = 1<<48
 
-func (state *ArbosState) AllocateSegment(size uint64) (*ArbosStorageSegment, error) {
-	if size > MaxSegmentSize {
+func (state *ArbosState) AllocateSizedSegment(size uint64) (*SizedArbosStorageSegment, error) {
+	if size > MaxSizedSegmentSize {
 		return nil, errors.New("requested segment size too large")
 	}
 
-	offset := state.NextAlloc()
-	newVal := hashPlusInt(*offset, int64(size+1))
-	state.SetNextAlloc(&newVal)
+	offset := state.AllocateEmptyStorageOffset()
 
 	state.backingStorage.Set(*offset, IntToHash(int64(size)))
 
-	return &ArbosStorageSegment{
+	return &SizedArbosStorageSegment{
 		*offset,
 		size,
 		state,
 	}, nil
 }
 
-func (state *ArbosState) OpenSegment(offset common.Hash) (*ArbosStorageSegment, error) {
+func (state *ArbosState) OpenSizedSegment(offset common.Hash) (*SizedArbosStorageSegment, error) {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
 	if !bigSize.IsUint64() {
@@ -226,24 +230,24 @@ func (state *ArbosState) OpenSegment(offset common.Hash) (*ArbosStorageSegment, 
 	size := bigSize.Uint64()
 	if size == 0 {
 		return nil, errors.New("state segment invalid or was deleted")
-	} else if size > MaxSegmentSize {
+	} else if size > MaxSizedSegmentSize {
 		return nil, errors.New("state segment size invalid")
 	}
-	return &ArbosStorageSegment{
+	return &SizedArbosStorageSegment{
 		offset,
 		size,
 		state,
 	}, nil
 }
 
-func (seg *ArbosStorageSegment) Get(offset uint64) (common.Hash, error) {
+func (seg *SizedArbosStorageSegment) Get(offset uint64) (common.Hash, error) {
 	if offset >= seg.size {
 		return common.Hash{}, errors.New("out of bounds access to storage segment")
 	}
 	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset))), nil
 }
 
-func (seg *ArbosStorageSegment) GetAsInt64(offset uint64) (int64, error) {
+func (seg *SizedArbosStorageSegment) GetAsInt64(offset uint64) (int64, error) {
 	raw, err := seg.Get(offset)
 	if err != nil {
 		return 0, err
@@ -256,7 +260,7 @@ func (seg *ArbosStorageSegment) GetAsInt64(offset uint64) (int64, error) {
 	}
 }
 
-func (seg *ArbosStorageSegment) GetAsUint64(offset uint64) (uint64, error) {
+func (seg *SizedArbosStorageSegment) GetAsUint64(offset uint64) (uint64, error) {
 	raw, err := seg.Get(offset)
 	if err != nil {
 		return 0, err
@@ -269,17 +273,17 @@ func (seg *ArbosStorageSegment) GetAsUint64(offset uint64) (uint64, error) {
 	}
 }
 
-func (seg *ArbosStorageSegment) Set(offset uint64, value common.Hash) error {
+func (seg *SizedArbosStorageSegment) Set(offset uint64, value common.Hash) error {
 	if offset >= seg.size {
-		errors.New("offset too large in ArbosStorageSegment::Set")
+		errors.New("offset too large in SizedArbosStorageSegment::Set")
 	}
 	seg.storage.backingStorage.Set(hashPlusInt(seg.offset, int64(offset+1)), value)
 	return nil
 }
 
-func (state *ArbosState) AllocateSegmentForBytes(buf []byte) (*ArbosStorageSegment, error) {
+func (state *ArbosState) AllocateSizedSegmentForBytes(buf []byte) (*SizedArbosStorageSegment, error) {
 	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSegment(uint64(1+sizeWords))
+	seg, err := state.AllocateSizedSegment(uint64(1+sizeWords))
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +319,7 @@ func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
 	}
 }
 
-func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
+func (seg *SizedArbosStorageSegment) GetBytes() ([]byte, error) {
 	rawSize, err := seg.Get(0)
 	if err != nil {
 		return nil, err
@@ -340,7 +344,7 @@ func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
 	return buf[:size], nil
 }
 
-func (seg *ArbosStorageSegment) Equals(other *ArbosStorageSegment) bool {
+func (seg *SizedArbosStorageSegment) Equals(other *SizedArbosStorageSegment) bool {
 	return seg.offset == other.offset
 }
 

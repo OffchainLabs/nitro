@@ -39,7 +39,7 @@ func Create(
 	if err := ret.serialize(&buf); err != nil {
 		return nil, err
 	}
-	seg, err := storage.AllocateSegmentForBytes(buf.Bytes())
+	seg, err := storage.AllocateSizedSegmentForBytes(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func Create(
 }
 
 func Open(storage *ArbosState, offset common.Hash) (*Retryable, error) {
-	seg, err := storage.OpenSegment(offset)
+	seg, err := storage.OpenSizedSegment(offset)
 	if err != nil {
 		return nil, err
 	}
