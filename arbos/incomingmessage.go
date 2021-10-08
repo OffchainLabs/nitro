@@ -157,7 +157,7 @@ func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []Message
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
-		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), apiImpl)
+		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header, apiImpl)
 	default:
 		// invalid message, just ignore it
 		return []MessageSegment{}
@@ -294,14 +294,10 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 	}
 }
 
-func parseEthDepositMessage(rd io.Reader, apiImpl *ArbosAPIImpl) []MessageSegment {
-	addr, err := AddressFromReader(rd)
-	if err != nil {
-		return []MessageSegment{}
-	}
+func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, apiImpl *ArbosAPIImpl) []MessageSegment {
 	balance, err := HashFromReader(rd)
 	if err != nil {
 		return []MessageSegment{}
 	}
-	return []MessageSegment{ &ethDeposit{apiImpl, addr, balance } }
+	return []MessageSegment{ &ethDeposit{apiImpl, header.sender, balance } }
 }

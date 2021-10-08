@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -80,16 +81,13 @@ func TestEthDepositMessage(t *testing.T) {
 
 	header := L1IncomingMessageHeader{
 		L1MessageType_EthDeposit,
-		common.BigToAddress(big.NewInt(4684)),
+		addr,
 		common.BigToHash(big.NewInt(864513)),
 		common.BigToHash(big.NewInt(8794561564)),
 		common.BigToHash(big.NewInt(3)),
 		common.BigToHash(big.NewInt(10000000000000)),
 	}
 	msgBuf := bytes.Buffer{}
-	if err := AddressToWriter(addr, &msgBuf); err != nil {
-		t.Error(err)
-	}
 	if err := HashToWriter(balance, &msgBuf); err != nil {
 		t.Error(err)
 	}
@@ -103,26 +101,39 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	segments, err := api.SplitInboxMessage(serialized)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(segments) != 1 {
-		t.Fatal()
-	}
-
-	txs, _, _, err := segments[0].CreateBlockContents(statedb)
-	if err != nil {
-		t.Error(err)
-	}
-	if len(txs) != 0 {
-		t.Fatal()
-	}
-
-	api.FinalizeBlock(nil, statedb, []*types.Transaction{})
+	RunMessagesThroughAPI([][]byte{ serialized }, api, statedb, t)
 
 	balanceAfter := statedb.GetBalance(addr)
 	if balanceAfter.Cmp(balance.Big()) != 0 {
 		t.Fatal()
+	}
+}
+
+func RunMessagesThroughAPI(msgs [][]byte, api ArbosAPI, statedb *state.StateDB, t *testing.T) {
+	for _, msg := range msgs {
+		segments, err := api.SplitInboxMessage(msg)
+		if err != nil {
+			t.Error(err)
+		}
+		for _, segment := range segments {
+			txs, _, _, err := segment.CreateBlockContents(statedb)
+			if err != nil {
+				t.Error(err)
+			}
+			for _, tx := range txs {
+				_ = tx
+				msg := core.Message(nil)
+				extraGas, err := api.StartTxHook(msg, statedb)
+				if err != nil {
+					t.Error(err)
+				}
+				err = api.EndTxHook(msg, extraGas, extraGas, statedb)
+				if err != nil {
+					t.Error(err)
+				}
+			}
+
+			api.FinalizeBlock(nil, statedb, []*types.Transaction{})
+		}
 	}
 }
