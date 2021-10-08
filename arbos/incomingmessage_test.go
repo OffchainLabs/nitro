@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -74,6 +73,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	addr := common.BigToAddress(big.NewInt(51395080))
 	balance := common.BigToHash(big.NewInt(789789897789798))
+	balance2 := common.BigToHash(big.NewInt(98))
 
 	if statedb.GetBalance(addr).Cmp(big.NewInt(0)) != 0 {
 		t.Fatal()
@@ -101,10 +101,23 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	RunMessagesThroughAPI([][]byte{ serialized }, api, statedb, t)
+	msgBuf2 := bytes.Buffer{}
+	if err := HashToWriter(balance2, &msgBuf2); err != nil {
+		t.Error(err)
+	}
+	msg2 := L1IncomingMessage{
+		&header,
+		msgBuf2.Bytes(),
+	}
+	serialized2, err := msg2.Serialize()
+	if err != nil {
+		t.Error(err)
+	}
+
+	RunMessagesThroughAPI([][]byte{ serialized, serialized2 }, api, statedb, t)
 
 	balanceAfter := statedb.GetBalance(addr)
-	if balanceAfter.Cmp(balance.Big()) != 0 {
+	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		t.Fatal()
 	}
 }
@@ -122,7 +135,10 @@ func RunMessagesThroughAPI(msgs [][]byte, api ArbosAPI, statedb *state.StateDB, 
 			}
 			for _, tx := range txs {
 				_ = tx
-				msg := core.Message(nil)
+				msg, err := tx.AsMessage(nil, big.NewInt(1000000000))
+				if err != nil {
+					t.Error(err)
+				}
 				extraGas, err := api.StartTxHook(msg, statedb)
 				if err != nil {
 					t.Error(err)
