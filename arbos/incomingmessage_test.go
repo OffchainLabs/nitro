@@ -101,6 +101,7 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
+	header.requestId = common.BigToHash(big.NewInt(4))
 	msgBuf2 := bytes.Buffer{}
 	if err := HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
