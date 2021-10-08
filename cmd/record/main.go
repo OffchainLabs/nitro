@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate"
-	"github.com/offchainlabs/arbstate/arbos2"
+	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type RecordingChainContext struct {
@@ -74,7 +74,7 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	var segment arbos2.MessageSegment // TODO
+	var segment arbos.MessageSegment // TODO
 
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
 	newBlockHeader, err := arbstate.CreateBlock(statedb, lastHeader, chainContext, segment)

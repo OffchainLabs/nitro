@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/arbstate/arbos2"
+	"github.com/offchainlabs/arbstate/arbos"
 )
 
 var chainConfig *params.ChainConfig = &params.ChainConfig{
@@ -31,14 +31,38 @@ var chainConfig *params.ChainConfig = &params.ChainConfig{
 	LondonBlock:         big.NewInt(0),
 }
 
-func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, segment arbos2.MessageSegment) (*types.Block, error) {
-	block, err := arbos2.CreateBlockTemplate(statedb.Copy(), lastBlockHeader, segment)
+func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, segment arbos.MessageSegment) (*types.Block, error) {
+	txs, timestamp, coinbase, gasLimit, err := segment.CreateBlockContents(statedb)
 	if err != nil {
 		return nil, err
 	}
 
-	header := block.Header()
-	txs := block.Transactions()
+	var lastBlockHash common.Hash
+	blockNumber := new(big.Int)
+	if lastBlockHeader != nil {
+		lastBlockHash = lastBlockHeader.Hash()
+		blockNumber.Add(lastBlockHeader.Number, big.NewInt(1))
+	}
+
+	header := &types.Header{
+		ParentHash:  lastBlockHash,
+		UncleHash:   [32]byte{},
+		Coinbase:    coinbase,
+		Root:        [32]byte{},  // Filled in later
+		TxHash:      [32]byte{},  // Filled in later
+		ReceiptHash: [32]byte{},  // Filled in later
+		Bloom:       [256]byte{}, // Filled in later
+		Difficulty:  big.NewInt(1),
+		Number:      blockNumber,
+		GasLimit:    gasLimit,
+		GasUsed:     0, // Filled in later
+		Time:        timestamp.Uint64(),
+		Extra:       []byte{},   // Unused
+		MixDigest:   [32]byte{}, // Unused
+		Nonce:       [8]byte{},  // Unused
+		BaseFee:     new(big.Int),
+	}
+
 	var gasPool core.GasPool = core.GasPool(header.GasLimit)
 	var receipts types.Receipts
 	for _, tx := range txs {
@@ -49,10 +73,11 @@ func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCon
 		receipts = append(receipts, receipt)
 	}
 
-	arbos2.Finalize(header, statedb, txs, receipts)
+	//arbos.Finalize(header, statedb, txs, receipts)
+	arbos.Initialize(statedb).FinalizeBlock(header, statedb, txs, receipts)
 
 	header.Root = statedb.IntermediateRoot(true)
 
-	block = types.NewBlock(header, block.Transactions(), nil, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil))
 	return block, nil
 }

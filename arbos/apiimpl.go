@@ -2,6 +2,8 @@ package arbos
 
 import (
 	"bytes"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -9,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
 )
 
 type ArbosAPIImpl struct {
@@ -17,7 +18,6 @@ type ArbosAPIImpl struct {
 	currentBlock *blockInProgress
 	currentTx    *txInProgress
 	coinbaseAddr common.Address
-	precompiles  map[common.Address]ArbosPrecompile
 }
 
 func NewArbosAPIImpl(stateDB *state.StateDB) *ArbosAPIImpl {
@@ -26,7 +26,6 @@ func NewArbosAPIImpl(stateDB *state.StateDB) *ArbosAPIImpl {
 		nil,
 		nil,
 		common.BytesToAddress(crypto.Keccak256Hash([]byte("Arbitrum coinbase address")).Bytes()[:20]),
-		make(map[common.Address]ArbosPrecompile),
 	}
 }
 
@@ -34,7 +33,7 @@ func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment
 	return ParseIncomingL1Message(bytes.NewReader(inputBytes), impl)
 }
 
-func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions) {
+func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions, receipts types.Receipts) {
 	// process deposit, if there is one
 	deposit := impl.currentBlock.depositSegmentRemaining
 	if deposit != nil {
@@ -52,7 +51,7 @@ func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.Sta
 	stateDB.SetBalance(impl.coinbaseAddr, coinbaseWei)
 }
 
-func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) {  // uint64 return is extra gas to charge
+func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) { // uint64 return is extra gas to charge
 	impl.currentTx = newTxInProgress()
 	extraGasChargeWei, aggregator := impl.currentTx.getExtraGasChargeWei()
 	gasPrice := msg.GasPrice()
@@ -83,8 +82,8 @@ func (impl *ArbosAPIImpl) GetExtraSegmentToBeNextBlock() *MessageSegment {
 	return nil
 }
 
-func (impl *ArbosAPIImpl) Precompiles() map[common.Address]ArbosPrecompile {
-	return impl.precompiles
+func Precompiles() map[common.Address]ArbosPrecompile {
+	return nil
 }
 
 type ethDeposit struct {
@@ -97,35 +96,39 @@ func (deposit *ethDeposit) CreateBlockContents(
 	beforeState *state.StateDB,
 ) (
 	[]*types.Transaction, // transactions to (try to) put in the block
-	*big.Int,             // timestamp
-	common.Address,       // coinbase address
+	*big.Int, // timestamp
+	common.Address, // coinbase address
+	uint64, // gas limit
 	error,
 ) {
 	deposit.api.currentBlock = newBlockInProgress(nil, deposit)
-	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen(), deposit.api.coinbaseAddr, nil
+	var gasLimit uint64 = 1e10 // TODO
+	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen(), deposit.api.coinbaseAddr, gasLimit, nil
 }
 
 type txSegment struct {
-	api         *ArbosAPIImpl
-	tx          *types.Transaction
+	api *ArbosAPIImpl
+	tx  *types.Transaction
 }
 
 func (seg *txSegment) CreateBlockContents(
 	beforeState *state.StateDB,
 ) (
 	[]*types.Transaction, // transactions to (try to) put in the block
-	*big.Int,             // timestamp
-	common.Address,       // coinbase address
+	*big.Int, // timestamp
+	common.Address, // coinbase address
+	uint64, // gas limit
 	error,
 ) {
 	seg.api.currentBlock = newBlockInProgress(seg, nil)
-	return []*types.Transaction{ seg.tx }, seg.api.state.LastTimestampSeen(), seg.api.coinbaseAddr, nil
+	var gasLimit uint64 = 1e10 // TODO
+	return []*types.Transaction{seg.tx}, seg.api.state.LastTimestampSeen(), seg.api.coinbaseAddr, gasLimit, nil
 }
 
 type blockInProgress struct {
 	txSegmentRemaining      MessageSegment
 	depositSegmentRemaining *ethDeposit
-	weiOwedToAggregators map[common.Address]*big.Int
+	weiOwedToAggregators    map[common.Address]*big.Int
 }
 
 func newBlockInProgress(seg MessageSegment, deposit *ethDeposit) *blockInProgress {
@@ -151,7 +154,7 @@ func newTxInProgress() *txInProgress {
 	return &txInProgress{}
 }
 
-func (tx *txInProgress) getExtraGasChargeWei() (*big.Int, *common.Address) {  // returns wei to charge, address to give it to
+func (tx *txInProgress) getExtraGasChargeWei() (*big.Int, *common.Address) { // returns wei to charge, address to give it to
 	//TODO
 	return big.NewInt(0), nil
 }

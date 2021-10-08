@@ -2,14 +2,14 @@ package arbos
 
 import (
 	"bytes"
+	"io"
+	"math/big"
+	"testing"
+
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
-	"io"
-	"math/big"
-	"testing"
 )
 
 func TestSerializeAndParseL1Message(t *testing.T) {
@@ -70,7 +70,6 @@ func TestEthDepositMessage(t *testing.T) {
 	}
 	api := NewArbosAPIImpl(statedb)
 
-
 	addr := common.BigToAddress(big.NewInt(51395080))
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))
@@ -115,7 +114,7 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	RunMessagesThroughAPI([][]byte{ serialized, serialized2 }, api, statedb, t)
+	RunMessagesThroughAPI([][]byte{serialized, serialized2}, api, statedb, t)
 
 	balanceAfter := statedb.GetBalance(addr)
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
@@ -130,7 +129,7 @@ func RunMessagesThroughAPI(msgs [][]byte, api ArbosAPI, statedb *state.StateDB, 
 			t.Error(err)
 		}
 		for _, segment := range segments {
-			txs, _, _, err := segment.CreateBlockContents(statedb)
+			txs, _, _, _, err := segment.CreateBlockContents(statedb)
 			if err != nil {
 				t.Error(err)
 			}
@@ -150,7 +149,7 @@ func RunMessagesThroughAPI(msgs [][]byte, api ArbosAPI, statedb *state.StateDB, 
 				}
 			}
 
-			api.FinalizeBlock(nil, statedb, []*types.Transaction{})
+			api.FinalizeBlock(nil, statedb, nil, nil)
 		}
 	}
 }

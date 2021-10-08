@@ -1,14 +1,14 @@
 package arbos
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"math/big"
 )
-
 
 func Initialize(stateDB *state.StateDB) ArbosAPI {
 	return NewArbosAPIImpl(stateDB)
@@ -18,7 +18,7 @@ type ArbosAPI interface {
 	SplitInboxMessage(bytes []byte) ([]MessageSegment, error)
 
 	// Should return ErrIntrinsicGas if there isn't enough gas
-	StartTxHook(msg core.Message, state vm.StateDB) (uint64, error)  // returns amount of gas to take as extra charge
+	StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) // returns amount of gas to take as extra charge
 
 	// extraGasCharged is any gas remaining subtracted during the ExtraGasChargingHook, which is also included in totalGasUsed
 	EndTxHook(
@@ -32,9 +32,7 @@ type ArbosAPI interface {
 	GetExtraSegmentToBeNextBlock() *MessageSegment
 
 	// StateDB can be used to read or write storage slots, balances, etc.
-	FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions)
-
-	Precompiles() map[common.Address]ArbosPrecompile
+	FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions, receipts types.Receipts)
 }
 
 type MessageSegment interface {
@@ -42,9 +40,10 @@ type MessageSegment interface {
 	CreateBlockContents(
 		beforeState *state.StateDB,
 	) (
-		[]*types.Transaction,   // transactions to (try to) put in the block
-		*big.Int, 	            // timestamp
-		common.Address,         // coinbase address
+		[]*types.Transaction, // transactions to (try to) put in the block
+		*big.Int, // timestamp
+		common.Address, // coinbase address
+		uint64, // gas limit
 		error,
 	)
 }
@@ -59,7 +58,7 @@ type ArbosPrecompile interface {
 		precompileAddress common.Address,
 		actingAsAddress common.Address,
 		caller common.Address,
-		value common.Address,
+		value *big.Int,
 		readOnly bool,
 		evm *vm.EVM,
 	) (output []byte, err error)

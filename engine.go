@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/arbstate/arbos2"
+	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type Engine struct{}
@@ -44,7 +44,7 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 }
 
 func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) {
-	arbos2.Finalize(header, state, txs, receipts)
+	arbos.Initialize(state).FinalizeBlock(header, state, txs, receipts)
 	header.Root = state.IntermediateRoot(true)
 }
 
