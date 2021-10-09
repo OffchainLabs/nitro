@@ -2,13 +2,15 @@ package arbos
 
 import (
 	"bytes"
+	"io"
+	"math/big"
+
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"io"
-	"math/big"
 )
 
 const (
@@ -87,7 +89,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		(header.gasPriceL1.Big().Cmp(other.gasPriceL1.Big()) == 0)
 }
 
-func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegment, error) {
+func ParseIncomingL1Message(rd io.Reader) ([]MessageSegment, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
@@ -135,17 +137,17 @@ func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegme
 		},
 		data,
 	}
-	return msg.typeSpecificParse(apiImpl), nil
+	return msg.typeSpecificParse(), nil
 }
 
-func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []MessageSegment {
+func (msg *L1IncomingMessage) typeSpecificParse() []MessageSegment {
 	if len(msg.l2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return []MessageSegment{}
 	}
 	switch msg.header.kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true, apiImpl)
+		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
@@ -157,7 +159,7 @@ func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []Message
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
-		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header, apiImpl)
+		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header)
 	default:
 		// invalid message, just ignore it
 		return []MessageSegment{}
@@ -178,7 +180,7 @@ const (
 
 )
 
-func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool, apiImpl *ArbosAPIImpl) []MessageSegment {
+func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool) []MessageSegment {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return segments
@@ -186,14 +188,14 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 
 	switch(l2KindBuf[0]) {
 	case L2MessageKind_UnsignedUserTx:
-		seg := parseUnsignedTx(rd, header, true, apiImpl)
+		seg := parseUnsignedTx(rd, header, true)
 		if seg == nil {
 			return segments
 		} else {
 			return append(segments, seg)
 		}
 	case L2MessageKind_ContractTx:
-		seg := parseUnsignedTx(rd, header, false, apiImpl)
+		seg := parseUnsignedTx(rd, header, false)
 		if seg == nil {
 			return segments
 		} else {
@@ -207,7 +209,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 			if err != nil {
 				return segments
 			}
-			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false, apiImpl)
+			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false)
 		}
 		return segments
 	case L2MessageKind_SignedTx:
@@ -215,7 +217,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 		if err := newTx.DecodeRLP(rlp.NewStream(rd, math.MaxUint64)); err != nil {
 			return segments
 		}
-		return append(segments, &txSegment{ apiImpl, newTx })
+		return append(segments, &txSegment{ tx: newTx })
 	case L2MessageKind_Heartbeat:
 		// do nothing
 		return segments
@@ -227,7 +229,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 			if err != nil {
 				return segments
 			}
-			return parseL2Message(bytes.NewReader(decompressed), segments, header, false, apiImpl)
+			return parseL2Message(bytes.NewReader(decompressed), segments, header, false)
 		} else {
 			return segments
 		}
@@ -237,7 +239,7 @@ func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingM
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *txSegment {
+func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool) *txSegment {
 	gasLimit, err := HashFromReader(rd)
 	if err != nil {
 		return nil
@@ -289,15 +291,14 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 		nil,
 	}
 	return &txSegment{
-		apiImpl,
-		types.NewTx(legacyTx),
+		tx: types.NewTx(legacyTx),
 	}
 }
 
-func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, apiImpl *ArbosAPIImpl) []MessageSegment {
+func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader) []MessageSegment {
 	balance, err := HashFromReader(rd)
 	if err != nil {
 		return []MessageSegment{}
 	}
-	return []MessageSegment{ &ethDeposit{apiImpl, header.sender, balance } }
+	return []MessageSegment{ &ethDeposit{addr: header.sender, balance: balance } }
 }

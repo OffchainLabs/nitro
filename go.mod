@@ -8,8 +8,7 @@ replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
 	github.com/andybalholm/brotli v1.0.3
-	github.com/ethereum/go-ethereum v1.10.8
-	github.com/pkg/errors v0.9.1
+	github.com/ethereum/go-ethereum v0.0.0-00010101000000-000000000000
 )
 
 require (

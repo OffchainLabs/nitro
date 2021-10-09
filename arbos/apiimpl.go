@@ -30,7 +30,7 @@ func NewArbosAPIImpl(stateDB *state.StateDB) *ArbosAPIImpl {
 }
 
 func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment, error) {
-	return ParseIncomingL1Message(bytes.NewReader(inputBytes), impl)
+	return ParseIncomingL1Message(bytes.NewReader(inputBytes))
 }
 
 func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions, receipts types.Receipts) {
@@ -87,13 +87,13 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 }
 
 type ethDeposit struct {
-	api     *ArbosAPIImpl
 	addr    common.Address
 	balance common.Hash
 }
 
 func (deposit *ethDeposit) CreateBlockContents(
-	beforeState *state.StateDB,
+	_ *state.StateDB,
+	api     *ArbosAPIImpl,
 ) (
 	[]*types.Transaction, // transactions to (try to) put in the block
 	*big.Int, // timestamp
@@ -101,18 +101,18 @@ func (deposit *ethDeposit) CreateBlockContents(
 	uint64, // gas limit
 	error,
 ) {
-	deposit.api.currentBlock = newBlockInProgress(nil, deposit)
+	api.currentBlock = newBlockInProgress(nil, deposit)
 	var gasLimit uint64 = 1e10 // TODO
-	return []*types.Transaction{}, deposit.api.state.LastTimestampSeen(), deposit.api.coinbaseAddr, gasLimit, nil
+	return []*types.Transaction{}, api.state.LastTimestampSeen(), api.coinbaseAddr, gasLimit, nil
 }
 
 type txSegment struct {
-	api *ArbosAPIImpl
 	tx  *types.Transaction
 }
 
 func (seg *txSegment) CreateBlockContents(
-	beforeState *state.StateDB,
+	_ *state.StateDB,
+	api     *ArbosAPIImpl,
 ) (
 	[]*types.Transaction, // transactions to (try to) put in the block
 	*big.Int, // timestamp
@@ -120,9 +120,9 @@ func (seg *txSegment) CreateBlockContents(
 	uint64, // gas limit
 	error,
 ) {
-	seg.api.currentBlock = newBlockInProgress(seg, nil)
+	api.currentBlock = newBlockInProgress(seg, nil)
 	var gasLimit uint64 = 1e10 // TODO
-	return []*types.Transaction{seg.tx}, seg.api.state.LastTimestampSeen(), seg.api.coinbaseAddr, gasLimit, nil
+	return []*types.Transaction{seg.tx}, api.state.LastTimestampSeen(), api.coinbaseAddr, gasLimit, nil
 }
 
 type blockInProgress struct {

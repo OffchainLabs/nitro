@@ -32,7 +32,8 @@ var chainConfig *params.ChainConfig = &params.ChainConfig{
 }
 
 func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, segment arbos.MessageSegment) (*types.Block, error) {
-	txs, timestamp, coinbase, gasLimit, err := segment.CreateBlockContents(statedb)
+	api := arbos.NewArbosAPIImpl(statedb)
+	txs, timestamp, coinbase, gasLimit, err := segment.CreateBlockContents(statedb, api)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +64,8 @@ func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCon
 		BaseFee:     new(big.Int),
 	}
 
-	var gasPool core.GasPool = core.GasPool(header.GasLimit)
-	var receipts types.Receipts
+	gasPool := core.GasPool(header.GasLimit)
+	receipts := make(types.Receipts, 0, len(txs))
 	for _, tx := range txs {
 		receipt, err := core.ApplyTransaction(chainConfig, chainContext, &header.Coinbase, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 		if err != nil {
@@ -73,8 +74,7 @@ func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCon
 		receipts = append(receipts, receipt)
 	}
 
-	//arbos.Finalize(header, statedb, txs, receipts)
-	arbos.Initialize(statedb).FinalizeBlock(header, statedb, txs, receipts)
+	api.FinalizeBlock(header, statedb, txs, receipts)
 
 	header.Root = statedb.IntermediateRoot(true)
 

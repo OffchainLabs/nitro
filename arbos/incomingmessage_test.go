@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -29,7 +30,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized), nil)
+	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized))
 	if err != nil {
 		t.Error(err)
 	}
@@ -122,14 +123,14 @@ func TestEthDepositMessage(t *testing.T) {
 	}
 }
 
-func RunMessagesThroughAPI(msgs [][]byte, api ArbosAPI, statedb *state.StateDB, t *testing.T) {
+func RunMessagesThroughAPI(msgs [][]byte, api *ArbosAPIImpl, statedb *state.StateDB, t *testing.T) {
 	for _, msg := range msgs {
 		segments, err := api.SplitInboxMessage(msg)
 		if err != nil {
 			t.Error(err)
 		}
 		for _, segment := range segments {
-			txs, _, _, _, err := segment.CreateBlockContents(statedb)
+			txs, _, _, _, err := segment.CreateBlockContents(statedb, api)
 			if err != nil {
 				t.Error(err)
 			}

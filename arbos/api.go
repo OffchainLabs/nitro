@@ -39,6 +39,7 @@ type MessageSegment interface {
 	// StateDB can be used to read *but not write* arbitrary storage slots, balances, etc.
 	CreateBlockContents(
 		beforeState *state.StateDB,
+		api     *ArbosAPIImpl,
 	) (
 		[]*types.Transaction, // transactions to (try to) put in the block
 		*big.Int, // timestamp
