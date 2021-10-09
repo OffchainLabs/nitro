@@ -2,11 +2,12 @@ package arbos
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
 )
 
 
@@ -30,9 +31,9 @@ type GethEvmStorage struct {
 
 // Use a Geth database to create an evm key-value store
 func NewGethEvmStorage(statedb *state.StateDB) *GethEvmStorage {
-	state := statedb.GetOrNewStateObject(common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+	stateObj := statedb.GetOrNewStateObject(common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
 	return &GethEvmStorage{
-		state: state,
+		state: stateObj,
 		db:    statedb.Database(),
 	}
 }
@@ -116,43 +117,51 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 	}
 }
 
+var (
+	versionKey       = IntToHash(0)
+	storageOffsetKey = IntToHash(1)
+	gasPoolKey = IntToHash(2)
+	smallGasPoolKey = IntToHash(3)
+	gasPriceKey = IntToHash(4)
+	lastTimestampKey= IntToHash(5)
+)
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
-	backingStorage.Set(IntToHash(0), IntToHash(1))
-	backingStorage.Set(IntToHash(1), crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
-	backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
-	backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
-	backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
-	backingStorage.Set(IntToHash(5), IntToHash(0))
+	backingStorage.Set(versionKey, IntToHash(1))
+	backingStorage.Set(storageOffsetKey, crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
+	backingStorage.Set(gasPoolKey, IntToHash(10000000*10*60))
+	backingStorage.Set(smallGasPoolKey, IntToHash(10000000*60))
+	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
+	backingStorage.Set(lastTimestampKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
 	if state.formatVersion == nil {
-		state.formatVersion = state.backingStorage.Get(IntToHash(0)).Big()
+		state.formatVersion = state.backingStorage.Get(versionKey).Big()
 	}
 	return state.formatVersion
 }
 
 func (state *ArbosState) SetFormatVersion(val *big.Int) {
 	state.formatVersion = val
-	state.backingStorage.Set(IntToHash(0), common.BigToHash(state.formatVersion))
+	state.backingStorage.Set(versionKey, common.BigToHash(state.formatVersion))
 }
 
 func (state *ArbosState) AllocateEmptyStorageOffset() *common.Hash {
 	if state.nextAlloc == nil {
-		val := state.backingStorage.Get(IntToHash(1))
+		val := state.backingStorage.Get(storageOffsetKey)
 		state.nextAlloc = &val
 	}
 	ret := state.nextAlloc
 	nextAlloc := crypto.Keccak256Hash(state.nextAlloc.Bytes())
 	state.nextAlloc = &nextAlloc
-	state.backingStorage.Set(IntToHash(1), nextAlloc)
+	state.backingStorage.Set(storageOffsetKey, nextAlloc)
 	return ret
 }
 
 func (state *ArbosState) GasPool() int64 {
 	if state.gasPool == nil {
-		val := state.backingStorage.GetAsInt64(IntToHash(2))
+		val := state.backingStorage.GetAsInt64(gasPoolKey)
 		state.gasPool = &val
 	}
 	return *state.gasPool
@@ -161,12 +170,12 @@ func (state *ArbosState) GasPool() int64 {
 func (state *ArbosState) SetGasPool(val int64) {   //BUGBUG: handle negative values correctly in storage read/write
 	c := val
 	state.gasPool = &c
-	state.backingStorage.Set(IntToHash(2), IntToHash(c))
+	state.backingStorage.Set(gasPoolKey, IntToHash(c))
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
 	if state.smallGasPool == nil {
-		val := state.backingStorage.GetAsInt64(IntToHash(3))
+		val := state.backingStorage.GetAsInt64(smallGasPoolKey)
 		state.smallGasPool = &val
 	}
 	return *state.smallGasPool
@@ -175,31 +184,31 @@ func (state *ArbosState) SmallGasPool() int64 {
 func (state *ArbosState) SetSmallGasPool(val int64) {
 	c := val
 	state.smallGasPool = &c
-	state.backingStorage.Set(IntToHash(3), IntToHash(c))
+	state.backingStorage.Set(smallGasPoolKey, IntToHash(c))
 }
 
 func (state *ArbosState) GasPriceWei() *big.Int {
 	if state.gasPriceWei == nil {
-		state.gasPriceWei = state.backingStorage.Get(IntToHash(4)).Big()
+		state.gasPriceWei = state.backingStorage.Get(gasPriceKey).Big()
 	}
 	return state.gasPriceWei
 }
 
 func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
-	state.backingStorage.Set(IntToHash(4), common.BigToHash(val))
+	state.backingStorage.Set(gasPriceKey, common.BigToHash(val))
 }
 
 func (state *ArbosState) LastTimestampSeen() *big.Int {
 	if state.lastTimestampSeen == nil {
-		state.lastTimestampSeen = state.backingStorage.Get(IntToHash(5)).Big()
+		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
 	}
 	return state.lastTimestampSeen
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 	state.lastTimestampSeen = val
-	state.backingStorage.Set(IntToHash(5), common.BigToHash(val))
+	state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
 }
 
 
