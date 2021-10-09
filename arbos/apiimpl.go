@@ -14,18 +14,18 @@ import (
 )
 
 type ArbosAPIImpl struct {
+	stateDB vm.StateDB
 	state        *ArbosState
 	currentBlock *blockInProgress
 	currentTx    *txInProgress
 	coinbaseAddr common.Address
 }
 
-func NewArbosAPIImpl(stateDB *state.StateDB) *ArbosAPIImpl {
+func NewArbosAPIImpl(stateDB vm.StateDB) *ArbosAPIImpl {
 	return &ArbosAPIImpl{
-		OpenArbosState(stateDB),
-		nil,
-		nil,
-		common.BytesToAddress(crypto.Keccak256Hash([]byte("Arbitrum coinbase address")).Bytes()[:20]),
+		stateDB:      stateDB,
+		state:        OpenArbosState(stateDB),
+		coinbaseAddr: common.BytesToAddress(crypto.Keccak256Hash([]byte("Arbitrum coinbase address")).Bytes()[:20]),
 	}
 }
 
@@ -33,25 +33,26 @@ func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment
 	return ParseIncomingL1Message(bytes.NewReader(inputBytes))
 }
 
-func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions, receipts types.Receipts) {
+func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts) {
 	// process deposit, if there is one
 	deposit := impl.currentBlock.depositSegmentRemaining
 	if deposit != nil {
-		stateDB.AddBalance(deposit.addr, deposit.balance.Big())
+		impl.stateDB.AddBalance(deposit.addr, deposit.balance.Big())
 	}
 
 	// reimburse aggregators from the coinbase address
-	coinbaseWei := stateDB.GetBalance(impl.coinbaseAddr)
+	origCoinbaseWei := impl.stateDB.GetBalance(impl.coinbaseAddr)
+	newCoinbaseWei := new(big.Int).Set(origCoinbaseWei)
 	for agg, amount := range impl.currentBlock.weiOwedToAggregators {
-		if amount.Cmp(coinbaseWei) <= 0 {
-			coinbaseWei = new(big.Int).Sub(coinbaseWei, amount)
-			stateDB.AddBalance(agg, amount)
+		if amount.Cmp(newCoinbaseWei) <= 0 {
+			newCoinbaseWei = new(big.Int).Sub(newCoinbaseWei, amount)
+			impl.stateDB.AddBalance(agg, amount)
 		}
 	}
-	stateDB.SetBalance(impl.coinbaseAddr, coinbaseWei)
+	impl.stateDB.SubBalance(impl.coinbaseAddr, new(big.Int).Sub(origCoinbaseWei, newCoinbaseWei))
 }
 
-func (impl *ArbosAPIImpl) StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) { // uint64 return is extra gas to charge
+func (impl *ArbosAPIImpl) StartTxHook(msg core.Message) (uint64, error) { // uint64 return is extra gas to charge
 	impl.currentTx = newTxInProgress()
 	extraGasChargeWei, aggregator := impl.currentTx.getExtraGasChargeWei()
 	gasPrice := msg.GasPrice()
@@ -73,7 +74,6 @@ func (impl *ArbosAPIImpl) EndTxHook(
 	msg core.Message,
 	totalGasUsed uint64,
 	extraGasCharged uint64,
-	state vm.StateDB,
 ) error {
 	return nil
 }

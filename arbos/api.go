@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
-func Initialize(stateDB *state.StateDB) ArbosAPI {
+func Initialize(stateDB vm.StateDB) ArbosAPI {
 	return NewArbosAPIImpl(stateDB)
 }
 
@@ -18,21 +18,20 @@ type ArbosAPI interface {
 	SplitInboxMessage(bytes []byte) ([]MessageSegment, error)
 
 	// Should return ErrIntrinsicGas if there isn't enough gas
-	StartTxHook(msg core.Message, state vm.StateDB) (uint64, error) // returns amount of gas to take as extra charge
+	StartTxHook(msg core.Message) (uint64, error) // returns amount of gas to take as extra charge
 
 	// extraGasCharged is any gas remaining subtracted during the ExtraGasChargingHook, which is also included in totalGasUsed
 	EndTxHook(
 		msg core.Message,
 		totalGasUsed uint64,
 		extraGasCharged uint64,
-		state vm.StateDB,
 	) error
 
 	// return an extra segment (that wasn't directly in the input) that is waiting to be executed,
 	GetExtraSegmentToBeNextBlock() *MessageSegment
 
 	// StateDB can be used to read or write storage slots, balances, etc.
-	FinalizeBlock(header *types.Header, stateDB *state.StateDB, txs types.Transactions, receipts types.Receipts)
+	FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts)
 }
 
 type MessageSegment interface {

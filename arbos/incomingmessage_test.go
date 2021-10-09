@@ -140,17 +140,17 @@ func RunMessagesThroughAPI(msgs [][]byte, api *ArbosAPIImpl, statedb *state.Stat
 				if err != nil {
 					t.Error(err)
 				}
-				extraGas, err := api.StartTxHook(msg, statedb)
+				extraGas, err := api.StartTxHook(msg)
 				if err != nil {
 					t.Error(err)
 				}
-				err = api.EndTxHook(msg, extraGas, extraGas, statedb)
+				err = api.EndTxHook(msg, extraGas, extraGas)
 				if err != nil {
 					t.Error(err)
 				}
 			}
 
-			api.FinalizeBlock(nil, statedb, nil, nil)
+			api.FinalizeBlock(nil, nil, nil)
 		}
 	}
 }

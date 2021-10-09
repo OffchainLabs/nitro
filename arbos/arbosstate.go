@@ -7,15 +7,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 )
-
-
-// We use an interface since *state.stateObject is private
-type GethStateObject interface {
-	GetState(db state.Database, key common.Hash) common.Hash
-	SetState(db state.Database, key common.Hash, value common.Hash)
-}
 
 type EvmStorage interface {
 	Get(key common.Hash) common.Hash
@@ -25,16 +19,15 @@ type EvmStorage interface {
 }
 
 type GethEvmStorage struct {
-	state GethStateObject
-	db    state.Database
+	account common.Address
+	db    vm.StateDB
 }
 
 // Use a Geth database to create an evm key-value store
-func NewGethEvmStorage(statedb *state.StateDB) *GethEvmStorage {
-	stateObj := statedb.GetOrNewStateObject(common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"))
+func NewGethEvmStorage(statedb vm.StateDB) *GethEvmStorage {
 	return &GethEvmStorage{
-		state: stateObj,
-		db:    statedb.Database(),
+		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+		db:    statedb,
 	}
 }
 
@@ -50,7 +43,7 @@ func NewMemoryBackingEvmStorage() *GethEvmStorage {
 }
 
 func (store *GethEvmStorage) Get(key common.Hash) common.Hash {
-	return store.state.GetState(store.db, key)
+	return store.db.GetState(store.account, key)
 }
 
 func (store *GethEvmStorage) GetAsInt64(key common.Hash) int64 {
@@ -63,7 +56,7 @@ func (store *GethEvmStorage) GetAsInt64(key common.Hash) int64 {
 }
 
 func (store *GethEvmStorage) Set(key common.Hash, value common.Hash) {
-	store.state.SetState(store.db, key, value)
+	store.db.SetState(store.account, key, value)
 }
 
 func (store *GethEvmStorage) Swap(key common.Hash, newValue common.Hash) common.Hash {
@@ -90,7 +83,7 @@ type ArbosState struct {
 	backingStorage    EvmStorage
 }
 
-func OpenArbosState(stateDB *state.StateDB) *ArbosState {
+func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {}

@@ -29,9 +29,8 @@ func (p ArbosPrecompileWrapper) RunAdvanced(input []byte, suppliedGas uint64, in
 }
 
 func init() {
-	core.ExtraGasChargingHook = func(msg core.Message, gasRemaining *uint64, gasPool *core.GasPool, stateInterface vm.StateDB) error {
-		stateDb := stateInterface.(*state.StateDB)
-		l1Charges, err := arbos.Initialize(stateDb).StartTxHook(msg, stateInterface)
+	core.ExtraGasChargingHook = func(msg core.Message, gasRemaining *uint64, gasPool *core.GasPool, stateDb vm.StateDB) error {
+		l1Charges, err := arbos.Initialize(stateDb).StartTxHook(msg)
 		if err != nil {
 			return err
 		} else if *gasRemaining < l1Charges {
