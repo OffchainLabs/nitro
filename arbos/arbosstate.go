@@ -212,7 +212,7 @@ func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 }
 
 
-type SizedArbosStorageSegment struct {
+type StorageSegment struct {
 	offset      common.Hash
 	size        uint64
 	storage     *ArbosState
@@ -220,7 +220,7 @@ type SizedArbosStorageSegment struct {
 
 const MaxSizedSegmentSize = 1<<48
 
-func (state *ArbosState) AllocateSizedSegment(size uint64) (*SizedArbosStorageSegment, error) {
+func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {
 	if size > MaxSizedSegmentSize {
 		return nil, errors.New("requested segment size too large")
 	}
@@ -229,14 +229,14 @@ func (state *ArbosState) AllocateSizedSegment(size uint64) (*SizedArbosStorageSe
 
 	state.backingStorage.Set(*offset, IntToHash(int64(size)))
 
-	return &SizedArbosStorageSegment{
+	return &StorageSegment{
 		*offset,
 		size,
 		state,
 	}, nil
 }
 
-func (state *ArbosState) OpenSizedSegment(offset common.Hash) *SizedArbosStorageSegment {
+func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
 	if !bigSize.IsUint64() {
@@ -245,24 +245,25 @@ func (state *ArbosState) OpenSizedSegment(offset common.Hash) *SizedArbosStorage
 	size := bigSize.Uint64()
 	if size == 0 {
 		panic("state segment invalid or was deleted")
-	} else if size > MaxSizedSegmentSize {
+	}
+	if size > MaxSizedSegmentSize {
 		panic("state segment size invalid")
 	}
-	return &SizedArbosStorageSegment{
+	return &StorageSegment{
 		offset,
 		size,
 		state,
 	}
 }
 
-func (seg *SizedArbosStorageSegment) Get(offset uint64) common.Hash {
+func (seg *StorageSegment) Get(offset uint64) common.Hash {
 	if offset >= seg.size {
 		panic("out of bounds access to storage segment")
 	}
 	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset)))
 }
 
-func (seg *SizedArbosStorageSegment) GetAsInt64(offset uint64) int64 {
+func (seg *StorageSegment) GetAsInt64(offset uint64) int64 {
 	raw := seg.Get(offset).Big()
 	if ! raw.IsInt64() {
 		panic("out of range")
@@ -270,7 +271,7 @@ func (seg *SizedArbosStorageSegment) GetAsInt64(offset uint64) int64 {
 	return raw.Int64()
 }
 
-func (seg *SizedArbosStorageSegment) GetAsUint64(offset uint64) uint64 {
+func (seg *StorageSegment) GetAsUint64(offset uint64) uint64 {
 	raw := seg.Get(offset).Big()
 	if ! raw.IsUint64() {
 		panic("out of range")
@@ -278,16 +279,16 @@ func (seg *SizedArbosStorageSegment) GetAsUint64(offset uint64) uint64 {
 	return raw.Uint64()
 }
 
-func (seg *SizedArbosStorageSegment) Set(offset uint64, value common.Hash) {
+func (seg *StorageSegment) Set(offset uint64, value common.Hash) {
 	if offset >= seg.size {
-		panic("offset too large in SizedArbosStorageSegment::Set")
+		panic("offset too large in StorageSegment::Set")
 	}
 	seg.storage.backingStorage.Set(hashPlusInt(seg.offset, int64(offset+1)), value)
 }
 
-func (state *ArbosState) AllocateSizedSegmentForBytes(buf []byte) *SizedArbosStorageSegment {
+func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
 	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSizedSegment(uint64(1+sizeWords))
+	seg, err := state.AllocateSegment(uint64(1+sizeWords))
 	if err != nil {
 		panic(err)
 	}
@@ -315,7 +316,7 @@ func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
 	}
 }
 
-func (seg *SizedArbosStorageSegment) GetBytes() []byte {
+func (seg *StorageSegment) GetBytes() []byte {
 	rawSize := seg.Get(0)
 
 	if ! rawSize.Big().IsUint64() {
@@ -333,7 +334,7 @@ func (seg *SizedArbosStorageSegment) GetBytes() []byte {
 	return buf[:size]
 }
 
-func (seg *SizedArbosStorageSegment) Equals(other *SizedArbosStorageSegment) bool {
+func (seg *StorageSegment) Equals(other *StorageSegment) bool {
 	return seg.offset == other.offset
 }
 

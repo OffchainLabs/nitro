@@ -6,13 +6,13 @@ import (
 )
 
 type QueueInStorage struct {
-	segment       *SizedArbosStorageSegment
+	segment       *StorageSegment
 	nextPutOffset *common.Hash
 	nextGetOffset *common.Hash
 }
 
 func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
-	segment, err := state.AllocateSizedSegment(2)
+	segment, err := state.AllocateSegment(2)
 	if err != nil {
 		panic(err)
 	}
@@ -23,7 +23,7 @@ func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
 }
 
 func OpenQueueInStorage(state *ArbosState, offset common.Hash) *QueueInStorage {
-	segment := state.OpenSizedSegment(offset)
+	segment := state.OpenSegment(offset)
 	npo := segment.Get(0)
 	ngo := segment.Get(1)
 	return &QueueInStorage{ segment, &npo, &ngo }

@@ -45,7 +45,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 func TestStorageSegmentAllocation(t *testing.T) {
 	storage := OpenArbosStateForTest()
 	size := 37
-	seg, err := storage.AllocateSizedSegment(uint64(size))
+	seg, err := storage.AllocateSegment(uint64(size))
 	if err != nil {
 		t.Error(err)
 	}
@@ -68,7 +68,7 @@ func TestStorageSegmentAllocation(t *testing.T) {
 func TestStorageSegmentAllocationBytes(t *testing.T) {
 	storage := OpenArbosStateForTest()
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
-	seg := storage.AllocateSizedSegmentForBytes(buf)
+	seg := storage.AllocateSegmentForBytes(buf)
 	if int(seg.size) != 1 + (len(buf)+31) / 32 {
 		t.Fail()
 	}
