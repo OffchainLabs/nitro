@@ -1,13 +1,13 @@
-package arbstate
+package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type ArbosPrecompileWrapper struct {
-	inner arbos.ArbosPrecompile
+	inner ArbosPrecompile
 }
 
 func (p ArbosPrecompileWrapper) RequiredGas(input []byte) uint64 {
@@ -26,10 +26,23 @@ func (p ArbosPrecompileWrapper) RunAdvanced(input []byte, suppliedGas uint64, in
 	output, err := p.inner.Call(input, info.PrecompileAddress, info.ActingAsAddress, info.Caller, info.Value, info.ReadOnly, info.Evm)
 	return output, suppliedGas - gasUsage, err
 }
+var arbAddress = common.HexToAddress("0xabc")
 
 func init() {
+	core.ArbProcessMessage = func(msg core.Message, state vm.StateDB) (*core.ExecutionResult, error) {
+		if msg.From() != arbAddress {
+			return nil, nil
+		}
+		// Message is deposit
+		state.AddBalance(*msg.To(), msg.Value())
+		return &core.ExecutionResult{
+			UsedGas:    0,
+			Err:        nil,
+			ReturnData: nil,
+		}, nil
+	}
 	core.ExtraGasChargingHook = func(msg core.Message, gasRemaining *uint64, gasPool *core.GasPool, stateDb vm.StateDB) error {
-		l1Charges, err := arbos.Initialize(stateDb).StartTxHook(msg)
+		l1Charges, err := Initialize(stateDb).StartTxHook(msg)
 		if err != nil {
 			return err
 		} else if *gasRemaining < l1Charges {
@@ -40,9 +53,9 @@ func init() {
 		return nil
 	}
 	core.EndTxHook = func(msg core.Message, totalGasUsed uint64, extraGasCharged uint64, gasPool *core.GasPool, success bool, stateDb vm.StateDB) error {
-		return arbos.Initialize(stateDb).EndTxHook(msg, totalGasUsed, extraGasCharged)
+		return Initialize(stateDb).EndTxHook(msg, totalGasUsed, extraGasCharged)
 	}
-	for addr, precompile := range arbos.Precompiles() {
+	for addr, precompile := range Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.ExtraPrecompiles[addr] = wrapped
 	}

@@ -9,8 +9,13 @@ import (
 	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestSerializeAndParseL1Message(t *testing.T) {
@@ -123,6 +128,35 @@ func TestEthDepositMessage(t *testing.T) {
 	}
 }
 
+type TestChainContext struct {
+}
+
+func (r *TestChainContext) Engine() consensus.Engine {
+	return Engine{}
+}
+
+func (r *TestChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	return &types.Header{}
+}
+
+var testChainConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(0),
+	HomesteadBlock:      big.NewInt(0),
+	DAOForkBlock:        nil,
+	DAOForkSupport:      true,
+	EIP150Block:         big.NewInt(0),
+	EIP150Hash:          common.Hash{},
+	EIP155Block:         big.NewInt(0),
+	EIP158Block:         big.NewInt(0),
+	ByzantiumBlock:      big.NewInt(0),
+	ConstantinopleBlock: big.NewInt(0),
+	PetersburgBlock:     big.NewInt(0),
+	IstanbulBlock:       big.NewInt(0),
+	MuirGlacierBlock:    big.NewInt(0),
+	BerlinBlock:         big.NewInt(0),
+	LondonBlock:         big.NewInt(0),
+}
+
 func RunMessagesThroughAPI(msgs [][]byte, api *ArbosAPIImpl, statedb *state.StateDB, t *testing.T) {
 	for _, msg := range msgs {
 		segments, err := api.SplitInboxMessage(msg)
@@ -134,19 +168,16 @@ func RunMessagesThroughAPI(msgs [][]byte, api *ArbosAPIImpl, statedb *state.Stat
 			if err != nil {
 				t.Error(err)
 			}
+			chainContext := &TestChainContext{}
+			header := &types.Header{
+				Number: big.NewInt(1000),
+				Difficulty: big.NewInt(1000),
+			}
+			gasPool := core.GasPool(100000)
 			for _, tx := range txs {
-				_ = tx
-				msg, err := tx.AsMessage(nil, big.NewInt(1000000000))
+				_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 				if err != nil {
-					t.Error(err)
-				}
-				extraGas, err := api.StartTxHook(msg)
-				if err != nil {
-					t.Error(err)
-				}
-				err = api.EndTxHook(msg, extraGas, extraGas)
-				if err != nil {
-					t.Error(err)
+					t.Fatal(err)
 				}
 			}
 

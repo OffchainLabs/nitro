@@ -14,6 +14,7 @@ import (
 )
 
 type ArbosAPIImpl struct {
+	chainId *big.Int
 	stateDB vm.StateDB
 	state        *ArbosState
 	currentBlock *blockInProgress
@@ -23,6 +24,7 @@ type ArbosAPIImpl struct {
 
 func NewArbosAPIImpl(stateDB vm.StateDB) *ArbosAPIImpl {
 	return &ArbosAPIImpl{
+		chainId: big.NewInt(5436534),
 		stateDB:      stateDB,
 		state:        OpenArbosState(stateDB),
 		coinbaseAddr: common.BytesToAddress(crypto.Keccak256Hash([]byte("Arbitrum coinbase address")).Bytes()[:20]),
@@ -35,16 +37,15 @@ func (impl *ArbosAPIImpl) SplitInboxMessage(inputBytes []byte) ([]MessageSegment
 
 func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts) {
 	// process deposit, if there is one
-	deposit := impl.currentBlock.depositSegmentRemaining
-	if deposit != nil {
-		impl.stateDB.AddBalance(deposit.addr, deposit.balance.Big())
-	}
 }
 
 func (impl *ArbosAPIImpl) StartTxHook(msg core.Message) (uint64, error) { // uint64 return is extra gas to charge
 	impl.currentTx = newTxInProgress()
 	extraGasChargeWei, _ := impl.currentTx.getExtraGasChargeWei()
 	gasPrice := msg.GasPrice()
+	if gasPrice.Cmp(big.NewInt(0)) == 0 {
+		return 0, nil
+	}
 	extraGas := new(big.Int).Div(extraGasChargeWei, gasPrice)
 	var extraGasI64 int64
 	if extraGas.IsInt64() {
@@ -83,6 +84,7 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 type ethDeposit struct {
 	addr    common.Address
 	balance common.Hash
+	requestId common.Hash
 }
 
 func (deposit *ethDeposit) CreateBlockContents(
@@ -95,9 +97,15 @@ func (deposit *ethDeposit) CreateBlockContents(
 	uint64, // gas limit
 	error,
 ) {
-	api.currentBlock = newBlockInProgress(nil, deposit)
+	api.currentBlock = newBlockInProgress(nil)
 	var gasLimit uint64 = 1e10 // TODO
-	return []*types.Transaction{}, api.state.LastTimestampSeen(), api.coinbaseAddr, gasLimit, nil
+	tx := &types.DepositTx{
+		ChainId:               api.chainId,
+		L1RequestId: deposit.requestId,
+		To:                    deposit.addr,
+		Value:                 deposit.balance.Big(),
+	}
+	return []*types.Transaction{types.NewTx(tx)}, api.state.LastTimestampSeen(), api.coinbaseAddr, gasLimit, nil
 }
 
 type txSegment struct {
@@ -114,20 +122,18 @@ func (seg *txSegment) CreateBlockContents(
 	uint64, // gas limit
 	error,
 ) {
-	api.currentBlock = newBlockInProgress(seg, nil)
+	api.currentBlock = newBlockInProgress(seg)
 	var gasLimit uint64 = 1e10 // TODO
 	return []*types.Transaction{seg.tx}, api.state.LastTimestampSeen(), api.coinbaseAddr, gasLimit, nil
 }
 
 type blockInProgress struct {
 	txSegmentRemaining      MessageSegment
-	depositSegmentRemaining *ethDeposit
 }
 
-func newBlockInProgress(seg MessageSegment, deposit *ethDeposit) *blockInProgress {
+func newBlockInProgress(seg MessageSegment) *blockInProgress {
 	return &blockInProgress{
 		txSegmentRemaining:      seg,
-		depositSegmentRemaining: deposit,
 	}
 }
 

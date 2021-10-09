@@ -74,7 +74,7 @@ func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCon
 		receipts = append(receipts, receipt)
 	}
 
-	api.FinalizeBlock(header, statedb, txs, receipts)
+	api.FinalizeBlock(header, txs, receipts)
 
 	header.Root = statedb.IntermediateRoot(true)
 

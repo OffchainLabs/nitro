@@ -300,5 +300,5 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader) []Mes
 	if err != nil {
 		return []MessageSegment{}
 	}
-	return []MessageSegment{ &ethDeposit{addr: header.sender, balance: balance } }
+	return []MessageSegment{ &ethDeposit{addr: header.sender, balance: balance, requestId: header.requestId } }
 }
