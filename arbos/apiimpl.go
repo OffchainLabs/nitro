@@ -39,22 +39,11 @@ func (impl *ArbosAPIImpl) FinalizeBlock(header *types.Header, txs types.Transact
 	if deposit != nil {
 		impl.stateDB.AddBalance(deposit.addr, deposit.balance.Big())
 	}
-
-	// reimburse aggregators from the coinbase address
-	origCoinbaseWei := impl.stateDB.GetBalance(impl.coinbaseAddr)
-	newCoinbaseWei := new(big.Int).Set(origCoinbaseWei)
-	for agg, amount := range impl.currentBlock.weiOwedToAggregators {
-		if amount.Cmp(newCoinbaseWei) <= 0 {
-			newCoinbaseWei = new(big.Int).Sub(newCoinbaseWei, amount)
-			impl.stateDB.AddBalance(agg, amount)
-		}
-	}
-	impl.stateDB.SubBalance(impl.coinbaseAddr, new(big.Int).Sub(origCoinbaseWei, newCoinbaseWei))
 }
 
 func (impl *ArbosAPIImpl) StartTxHook(msg core.Message) (uint64, error) { // uint64 return is extra gas to charge
 	impl.currentTx = newTxInProgress()
-	extraGasChargeWei, aggregator := impl.currentTx.getExtraGasChargeWei()
+	extraGasChargeWei, _ := impl.currentTx.getExtraGasChargeWei()
 	gasPrice := msg.GasPrice()
 	extraGas := new(big.Int).Div(extraGasChargeWei, gasPrice)
 	var extraGasI64 int64
@@ -62,10 +51,6 @@ func (impl *ArbosAPIImpl) StartTxHook(msg core.Message) (uint64, error) { // uin
 		extraGasI64 = extraGas.Int64()
 	} else {
 		extraGasI64 = math.MaxInt64
-	}
-	extraGasChargeWei = new(big.Int).Mul(gasPrice, big.NewInt(extraGasI64))
-	if aggregator != nil {
-		impl.currentBlock.creditAggregator(*aggregator, extraGasChargeWei)
 	}
 	return uint64(extraGasI64), nil
 }
@@ -75,6 +60,15 @@ func (impl *ArbosAPIImpl) EndTxHook(
 	totalGasUsed uint64,
 	extraGasCharged uint64,
 ) error {
+	_, aggregator := impl.currentTx.getExtraGasChargeWei()
+	if aggregator != nil {
+		extraGasChargeWei := new(big.Int).Mul(msg.GasPrice(), new(big.Int).SetUint64(extraGasCharged))
+		curBal := impl.stateDB.GetBalance(impl.coinbaseAddr)
+		if extraGasChargeWei.Cmp(curBal) <= 0 {
+			impl.stateDB.SubBalance(impl.coinbaseAddr, extraGasChargeWei)
+			impl.stateDB.AddBalance(*aggregator, extraGasChargeWei)
+		}
+	}
 	return nil
 }
 
@@ -128,23 +122,13 @@ func (seg *txSegment) CreateBlockContents(
 type blockInProgress struct {
 	txSegmentRemaining      MessageSegment
 	depositSegmentRemaining *ethDeposit
-	weiOwedToAggregators    map[common.Address]*big.Int
 }
 
 func newBlockInProgress(seg MessageSegment, deposit *ethDeposit) *blockInProgress {
 	return &blockInProgress{
-		seg,
-		deposit,
-		make(map[common.Address]*big.Int),
+		txSegmentRemaining:      seg,
+		depositSegmentRemaining: deposit,
 	}
-}
-
-func (bip *blockInProgress) creditAggregator(agg common.Address, wei *big.Int) {
-	old, exists := bip.weiOwedToAggregators[agg]
-	if !exists {
-		old = big.NewInt(0)
-	}
-	bip.weiOwedToAggregators[agg] = new(big.Int).Add(old, wei)
 }
 
 type txInProgress struct {

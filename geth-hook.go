@@ -2,7 +2,6 @@ package arbstate
 
 import (
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/arbstate/arbos"
 )
@@ -40,9 +39,8 @@ func init() {
 		*gasPool = *gasPool.AddGas(l1Charges)
 		return nil
 	}
-	core.EndTxHook = func(msg core.Message, totalGasUsed uint64, extraGasCharged uint64, gasPool *core.GasPool, success bool, stateInterface vm.StateDB) error {
-		stateDb := stateInterface.(*state.StateDB)
-		return arbos.Initialize(stateDb).EndTxHook(msg, totalGasUsed, extraGasCharged, stateInterface)
+	core.EndTxHook = func(msg core.Message, totalGasUsed uint64, extraGasCharged uint64, gasPool *core.GasPool, success bool, stateDb vm.StateDB) error {
+		return arbos.Initialize(stateDb).EndTxHook(msg, totalGasUsed, extraGasCharged)
 	}
 	for addr, precompile := range arbos.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
