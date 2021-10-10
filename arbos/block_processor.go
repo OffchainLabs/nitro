@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-func GetExtraSegmentToBeNextBlock() *MessageSegment {
+func GetExtraSegmentToBeNextBlock(statedb *state.StateDB) *MessageSegment {
 	return nil
 }
 
@@ -26,10 +26,15 @@ type BlockData struct {
 }
 
 func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header) *BlockBuilder {
-	return &BlockBuilder{
+	builder := &BlockBuilder{
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
 	}
+	segment := GetExtraSegmentToBeNextBlock(statedb)
+	if segment != nil {
+		builder.AddSegment(segment)
+	}
+	return builder
 }
 
 func (b *BlockBuilder) AddSegment(segment *MessageSegment) *BlockData  {
