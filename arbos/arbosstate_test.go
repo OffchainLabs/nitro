@@ -5,6 +5,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"math/big"
 	"testing"
 )
 
@@ -76,5 +77,21 @@ func TestStorageSegmentAllocationBytes(t *testing.T) {
 	reread := seg.GetBytes()
 	if bytes.Compare(buf, reread) != 0 {
 		t.Fail()
+	}
+}
+
+func TestStorageBackedInt64(t *testing.T) {
+	state := OpenArbosStateForTest()
+	storage := state.backingStorage
+	offset := common.BigToHash(big.NewInt(7895463))
+
+	valuesToTry := []int64{ 0, 7, -7, 56487423567, -7586427647 }
+
+	for _, val := range valuesToTry {
+		OpenStorageBackedInt64(storage, offset).Set(val)
+		res := OpenStorageBackedInt64(storage, offset).Get()
+		if val != res {
+			t.Fatal(val, res)
+		}
 	}
 }

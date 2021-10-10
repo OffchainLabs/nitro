@@ -15,7 +15,6 @@ type EvmStorage interface {
 	Get(key common.Hash) common.Hash
 	Set(key common.Hash, value common.Hash)
 	Swap(key common.Hash, value common.Hash) common.Hash
-	GetAsInt64(key common.Hash) int64
 }
 
 type GethEvmStorage struct {
@@ -46,15 +45,6 @@ func (store *GethEvmStorage) Get(key common.Hash) common.Hash {
 	return store.db.GetState(store.account, key)
 }
 
-func (store *GethEvmStorage) GetAsInt64(key common.Hash) int64 {
-	rawValue := store.Get(key).Big()
-	if rawValue.IsInt64() {
-		return rawValue.Int64()
-	} else {
-		panic("expected int64 in backing storage")
-	}
-}
-
 func (store *GethEvmStorage) Set(key common.Hash, value common.Hash) {
 	store.db.SetState(store.account, key, value)
 }
@@ -76,8 +66,8 @@ func hashPlusInt(x common.Hash, y int64) common.Hash {
 type ArbosState struct {
 	formatVersion     *big.Int
 	nextAlloc         *common.Hash
-	gasPool           *int64
-	smallGasPool      *int64
+	gasPool           *StorageBackedInt64
+	smallGasPool      *StorageBackedInt64
 	gasPriceWei       *big.Int
 	lastTimestampSeen *big.Int
 	backingStorage    EvmStorage
@@ -154,30 +144,30 @@ func (state *ArbosState) AllocateEmptyStorageOffset() *common.Hash {
 
 func (state *ArbosState) GasPool() int64 {
 	if state.gasPool == nil {
-		val := state.backingStorage.GetAsInt64(gasPoolKey)
-		state.gasPool = &val
+		state.gasPool = OpenStorageBackedInt64(state.backingStorage, gasPoolKey)
 	}
-	return *state.gasPool
+	return state.gasPool.Get()
 }
 
-func (state *ArbosState) SetGasPool(val int64) {   //BUGBUG: handle negative values correctly in storage read/write
-	c := val
-	state.gasPool = &c
-	state.backingStorage.Set(gasPoolKey, IntToHash(c))
+func (state *ArbosState) SetGasPool(val int64) {
+	if state.gasPool == nil {
+		state.gasPool = OpenStorageBackedInt64(state.backingStorage, gasPoolKey)
+	}
+	state.gasPool.Set(val)
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
 	if state.smallGasPool == nil {
-		val := state.backingStorage.GetAsInt64(smallGasPoolKey)
-		state.smallGasPool = &val
+		state.smallGasPool = OpenStorageBackedInt64(state.backingStorage, smallGasPoolKey)
 	}
-	return *state.smallGasPool
+	return state.smallGasPool.Get()
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
-	c := val
-	state.smallGasPool = &c
-	state.backingStorage.Set(smallGasPoolKey, IntToHash(c))
+	if state.smallGasPool == nil {
+		state.smallGasPool = OpenStorageBackedInt64(state.backingStorage, smallGasPoolKey)
+	}
+	state.smallGasPool.Set(val)
 }
 
 func (state *ArbosState) GasPriceWei() *big.Int {
@@ -270,3 +260,43 @@ func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
 	}
 }
 
+
+// StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
+//     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
+type StorageBackedInt64 struct {
+	storage EvmStorage
+	offset  common.Hash
+	cache   *int64
+}
+
+func OpenStorageBackedInt64(storage EvmStorage, offset common.Hash) *StorageBackedInt64 {
+	return &StorageBackedInt64{ storage, offset, nil }
+}
+
+func (sbi *StorageBackedInt64) Get() int64 {
+	if sbi.cache == nil {
+		raw := sbi.storage.Get(sbi.offset).Big()
+		if raw.Bit(255) != 0 {
+			raw = new(big.Int).SetBit(raw, 255, 0)
+			raw = new(big.Int).Neg(raw)
+		}
+		if !raw.IsInt64() {
+			panic("expected int64 compatible value in storage")
+		}
+		i := raw.Int64()
+		sbi.cache = &i
+	}
+	return *sbi.cache
+}
+
+func (sbi *StorageBackedInt64) Set(value int64) {
+	i := value
+	sbi.cache = &i
+	var bigValue *big.Int
+	if value >= 0 {
+		bigValue = big.NewInt(value)
+	} else {
+		bigValue = new(big.Int).SetBit(big.NewInt(-value), 255, 1)
+	}
+	sbi.storage.Set(sbi.offset, common.BigToHash(bigValue))
+}
