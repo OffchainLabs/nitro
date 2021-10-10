@@ -31,53 +31,28 @@ var chainConfig *params.ChainConfig = &params.ChainConfig{
 	LondonBlock:         big.NewInt(0),
 }
 
-func CreateBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, segment arbos.MessageSegment) (*types.Block, error) {
-	api := arbos.NewArbosAPIImpl(statedb)
-	txs, timestamp, coinbase, gasLimit, err := segment.CreateBlockContents(statedb, api)
-	if err != nil {
-		return nil, err
-	}
-
-	var lastBlockHash common.Hash
-	blockNumber := new(big.Int)
-	if lastBlockHeader != nil {
-		lastBlockHash = lastBlockHeader.Hash()
-		blockNumber.Add(lastBlockHeader.Number, big.NewInt(1))
-	}
-
-	header := &types.Header{
-		ParentHash:  lastBlockHash,
-		UncleHash:   [32]byte{},
-		Coinbase:    coinbase,
-		Root:        [32]byte{},  // Filled in later
-		TxHash:      [32]byte{},  // Filled in later
-		ReceiptHash: [32]byte{},  // Filled in later
-		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(1),
-		Number:      blockNumber,
-		GasLimit:    gasLimit,
-		GasUsed:     0, // Filled in later
-		Time:        timestamp.Uint64(),
-		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Unused
-		Nonce:       [8]byte{},  // Unused
-		BaseFee:     new(big.Int),
-	}
-
-	gasPool := core.GasPool(header.GasLimit)
-	receipts := make(types.Receipts, 0, len(txs))
-	for _, tx := range txs {
-		receipt, err := core.ApplyTransaction(chainConfig, chainContext, &header.Coinbase, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+func BuildBlock(statedb *state.StateDB, blockData *arbos.BlockData, chainContext core.ChainContext) (*types.Block, error) {
+	gasPool := core.GasPool(blockData.Header.GasLimit)
+	receipts := make(types.Receipts, 0, len(blockData.Txes))
+	for _, tx := range blockData.Txes {
+		receipt, err := core.ApplyTransaction(
+			chainConfig,
+			chainContext,
+			&blockData.Header.Coinbase,
+			&gasPool,
+			statedb,
+			blockData.Header,
+			tx,
+			&blockData.Header.GasUsed,
+			vm.Config{},
+			)
 		if err != nil {
 			return nil, err
 		}
 		receipts = append(receipts, receipt)
 	}
+	blockData.Header.Root = statedb.IntermediateRoot(true)
 
-	api.FinalizeBlock(header, txs, receipts)
-
-	header.Root = statedb.IntermediateRoot(true)
-
-	block := types.NewBlock(header, txs, nil, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(blockData.Header, blockData.Txes, nil, receipts, trie.NewStackTrie(nil))
 	return block, nil
 }

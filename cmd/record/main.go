@@ -24,7 +24,7 @@ type RecordingChainContext struct {
 }
 
 func (r *RecordingChainContext) Engine() consensus.Engine {
-	return arbstate.Engine{}
+	return arbos.Engine{}
 }
 
 func (r *RecordingChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
@@ -74,13 +74,16 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	var segment arbos.MessageSegment // TODO
+	var segment *arbos.MessageSegment // TODO
+
+	builder := arbos.NewBlockBuilder(statedb, lastHeader)
+	builder.AddSegment(segment)
 
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
-	newBlockHeader, err := arbstate.CreateBlock(statedb, lastHeader, chainContext, segment)
+	newBlock, err := arbstate.BuildBlock(statedb, builder.BuildBlockData(), chainContext)
 	var newBlockHash common.Hash
 	if err == nil {
-		newBlockHash = newBlockHeader.Hash()
+		newBlockHash = newBlock.Hash()
 	} else {
 		fmt.Printf("Error processing message: %v\n", err)
 	}

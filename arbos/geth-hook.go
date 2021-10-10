@@ -29,31 +29,8 @@ func (p ArbosPrecompileWrapper) RunAdvanced(input []byte, suppliedGas uint64, in
 var arbAddress = common.HexToAddress("0xabc")
 
 func init() {
-	core.ArbProcessMessage = func(msg core.Message, state vm.StateDB) (*core.ExecutionResult, error) {
-		if msg.From() != arbAddress {
-			return nil, nil
-		}
-		// Message is deposit
-		state.AddBalance(*msg.To(), msg.Value())
-		return &core.ExecutionResult{
-			UsedGas:    0,
-			Err:        nil,
-			ReturnData: nil,
-		}, nil
-	}
-	core.ExtraGasChargingHook = func(msg core.Message, gasRemaining *uint64, gasPool *core.GasPool, stateDb vm.StateDB) error {
-		l1Charges, err := Initialize(stateDb).StartTxHook(msg)
-		if err != nil {
-			return err
-		} else if *gasRemaining < l1Charges {
-			return vm.ErrOutOfGas
-		}
-		*gasRemaining -= l1Charges
-		*gasPool = *gasPool.AddGas(l1Charges)
-		return nil
-	}
-	core.EndTxHook = func(msg core.Message, totalGasUsed uint64, extraGasCharged uint64, gasPool *core.GasPool, success bool, stateDb vm.StateDB) error {
-		return Initialize(stateDb).EndTxHook(msg, totalGasUsed, extraGasCharged)
+	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
+		return NewTxProcessor(msg, evm)
 	}
 	for addr, precompile := range Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}

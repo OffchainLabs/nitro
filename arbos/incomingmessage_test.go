@@ -19,6 +19,7 @@ import (
 )
 
 func TestSerializeAndParseL1Message(t *testing.T) {
+	chainId := big.NewInt(6345634)
 	header := L1IncomingMessageHeader{
 		L1MessageType_EndOfBlock,
 		common.BigToAddress(big.NewInt(4684)),
@@ -35,12 +36,16 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized))
+	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized), chainId)
 	if err != nil {
 		t.Error(err)
 	}
-	if len(segments) != 0 {
-		t.Fail()
+	if len(segments) != 1 {
+		t.Fatal("unexpected segment count")
+	}
+	segment := segments[0]
+	if len(segment.txes) != 0 {
+		t.Fatal("unexpected tx count")
 	}
 }
 
@@ -74,7 +79,6 @@ func TestEthDepositMessage(t *testing.T) {
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
-	api := NewArbosAPIImpl(statedb)
 
 	addr := common.BigToAddress(big.NewInt(51395080))
 	balance := common.BigToHash(big.NewInt(789789897789798))
@@ -120,7 +124,7 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	RunMessagesThroughAPI([][]byte{serialized, serialized2}, api, statedb, t)
+	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
 	balanceAfter := statedb.GetBalance(addr)
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
@@ -157,31 +161,28 @@ var testChainConfig = &params.ChainConfig{
 	LondonBlock:         big.NewInt(0),
 }
 
-func RunMessagesThroughAPI(msgs [][]byte, api *ArbosAPIImpl, statedb *state.StateDB, t *testing.T) {
+func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
+	chainId := big.NewInt(6456554)
 	for _, msg := range msgs {
-		segments, err := api.SplitInboxMessage(msg)
+		segments, err := SplitInboxMessage(msg, chainId)
 		if err != nil {
 			t.Error(err)
 		}
 		for _, segment := range segments {
-			txs, _, _, _, err := segment.CreateBlockContents(statedb, api)
-			if err != nil {
-				t.Error(err)
-			}
 			chainContext := &TestChainContext{}
 			header := &types.Header{
 				Number: big.NewInt(1000),
 				Difficulty: big.NewInt(1000),
 			}
 			gasPool := core.GasPool(100000)
-			for _, tx := range txs {
+			for _, tx := range segment.txes {
 				_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			api.FinalizeBlock(nil, nil, nil)
+			FinalizeBlock(nil, nil, nil)
 		}
 	}
 }
