@@ -3,11 +3,8 @@ package arbos
 import "testing"
 
 func TestQueue(t *testing.T) {
-	state := OpenArbosState(NewMemoryBackingEvmStorage(), IntToHash(100))
-	q, err := NewQueue(state)
-	if err != nil {
-		t.Error(err)
-	}
+	state := OpenArbosStateForTest()
+	q := AllocateQueueInStorage(state)
 
 	if ! q.IsEmpty() {
 		t.Fail()
@@ -16,10 +13,7 @@ func TestQueue(t *testing.T) {
 	val0 := int64(853139508)
 	for i := 0; i < 150; i++ {
 		val := IntToHash(val0 + int64(i))
-		err = q.Put(val)
-		if err != nil {
-			t.Error(err)
-		}
+		q.Put(val)
 		if q.IsEmpty() {
 			t.Fail()
 		}
@@ -27,10 +21,7 @@ func TestQueue(t *testing.T) {
 
 	for i := 0; i < 150; i++ {
 		val := IntToHash(val0 + int64(i))
-		res, err := q.Get()
-		if err != nil {
-			t.Fatal(i, err)
-		}
+		res := q.Get()
 		if res.Big().Cmp(val.Big()) != 0 {
 			t.Fail()
 		}
