@@ -6,11 +6,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
@@ -59,8 +59,7 @@ func main() {
 	}
 
 	chainContext := ChainContext{}
-	blockData := buildBlockData(statedb, lastBlockHeader)
-	newBlock, err := arbstate.BuildBlock(statedb, blockData, chainContext)
+	newBlock := buildBlock(statedb, lastBlockHeader, chainContext)
 	if err == nil {
 		fmt.Printf("New state root: %v\n", newBlock.Root())
 		newBlockHash := newBlock.Hash()
@@ -98,15 +97,20 @@ func readSegment() *arbos.MessageSegment {
 	return inboxMessageSegments[positionWithinMessage]
 }
 
-func buildBlockData(statedb *state.StateDB, lastBlockHeader *types.Header) *arbos.BlockData {
-	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader)
+func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *types.Block {
+	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
 	for {
 		segment := readSegment()
 		if segment == nil {
 			continue
 		}
-		if blockData := blockBuilder.AddSegment(segment); blockData != nil {
-			return blockData
+		block, err := blockBuilder.AddSegment(segment)
+		if err != nil {
+			fmt.Printf("Error processing segment: %v\n", err)
+			continue
+		}
+		if block != nil {
+			return block
 		}
 	}
 }
