@@ -12,7 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-type Engine struct{}
+type Engine struct{
+	IsSequencer bool
+}
 
 func (e Engine) Author(header *types.Header) (common.Address, error) {
 	return header.Coinbase, nil
@@ -39,6 +41,7 @@ func (e Engine) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 }
 
 func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+	header.Difficulty = big.NewInt(1)
 	return nil
 }
 
@@ -57,7 +60,14 @@ func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 }
 
 func (e Engine) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-	return errors.New("sealing not supported")
+	if !e.IsSequencer {
+		return errors.New("sealing not supported")
+	}
+	if len(block.Transactions()) == 0 {
+		return nil
+	}
+	results <- block
+	return nil
 }
 
 func (e Engine) SealHash(header *types.Header) common.Hash {

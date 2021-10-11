@@ -15,8 +15,8 @@ import (
 
 var perBlockGasLimit uint64 = 20000000
 
-var chainConfig = &params.ChainConfig{
-	ChainID:             big.NewInt(0),
+var ChainConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(412345),
 	HomesteadBlock:      big.NewInt(0),
 	DAOForkBlock:        nil,
 	DAOForkSupport:      true,
@@ -31,6 +31,11 @@ var chainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
+
+	Clique: &params.CliqueConfig{
+		Period: 0,
+		Epoch:  0,
+	},
 }
 
 type BlockBuilder struct {
@@ -118,7 +123,7 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		}
 		snap := b.statedb.Snapshot()
 		receipt, err := core.ApplyTransaction(
-			chainConfig,
+			ChainConfig,
 			b.chainContext,
 			&b.header.Coinbase,
 			&b.gasPool,
