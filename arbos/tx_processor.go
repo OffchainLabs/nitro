@@ -15,6 +15,7 @@ type TxProcessor struct {
 	msg core.Message
 	blockContext vm.BlockContext
 	stateDB vm.StateDB
+	state *ArbosState
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
@@ -22,6 +23,7 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 		msg: msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
+		state: OpenArbosState(evm.StateDB),
 	}
 }
 
