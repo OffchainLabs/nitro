@@ -164,6 +164,8 @@ pub enum Opcode {
     GetPositionWithinMessage,
     /// Sets the "position in message" register (part of global state)
     SetPositionWithinMessage,
+    /// Reads a given delayed inbox message into the pointer on the stack at an offset
+    ReadDelayedInboxMessage,
 }
 
 impl Opcode {
@@ -281,6 +283,7 @@ impl Opcode {
             Opcode::ReadInboxMessage => 0x800F,
             Opcode::GetPositionWithinMessage => 0x8010,
             Opcode::SetPositionWithinMessage => 0x8011,
+            Opcode::ReadDelayedInboxMessage => 0x8012,
         }
     }
 }

@@ -53,6 +53,8 @@ struct Opts {
     #[structopt(long)]
     inbox: Option<PathBuf>,
     #[structopt(long)]
+    delayed_inbox: Option<PathBuf>,
+    #[structopt(long)]
     preimages: Option<PathBuf>,
 }
 
@@ -119,6 +121,16 @@ fn main() -> Result<()> {
             .collect();
     }
 
+    let mut delayed_inbox = HashMap::default();
+    if let Some(path) = opts.delayed_inbox {
+        let inbox_position = opts.inbox_position;
+        delayed_inbox = parse_size_delim(&path)?
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| (inbox_position + i as u64, b))
+            .collect();
+    }
+
     let mut preimages = HashMap::default();
     if let Some(path) = opts.preimages {
         preimages = parse_size_delim(&path)?
@@ -151,6 +163,7 @@ fn main() -> Result<()> {
         opts.always_merkleize,
         global_state,
         inbox,
+        delayed_inbox,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());

@@ -593,6 +593,7 @@ pub struct Machine {
     halted: bool,
     stdio_output: Vec<u8>,
     inbox: HashMap<u64, Vec<u8>>,
+    delayed_inbox: HashMap<u64, Vec<u8>>,
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -739,6 +740,7 @@ impl Machine {
         always_merkleize: bool,
         global_state: GlobalState,
         inbox: HashMap<u64, Vec<u8>>,
+        delayed_inbox: HashMap<u64, Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
@@ -937,6 +939,7 @@ impl Machine {
             halted: false,
             stdio_output: Vec::new(),
             inbox,
+            delayed_inbox,
             preimages,
         }
     }
@@ -1476,6 +1479,28 @@ impl Machine {
             Opcode::SetPositionWithinMessage => {
                 self.global_state.position_within_message =
                     self.value_stack.pop().unwrap().assume_u64();
+            }
+            Opcode::ReadDelayedInboxMessage => {
+                let offset = self.value_stack.pop().unwrap().assume_u32();
+                let ptr = self.value_stack.pop().unwrap().assume_u32();
+                let seq_num = self.value_stack.pop().unwrap().assume_u64();
+                if ptr as u64 + 32 > module.memory.size() {
+                    self.halted = true;
+                } else {
+                    if let Some(message) = self.delayed_inbox.get(&seq_num) {
+                        let offset = usize::try_from(offset).unwrap();
+                        let len = std::cmp::min(32, message.len().saturating_sub(offset));
+                        let read = message.get(offset..(offset + len)).unwrap_or_default();
+                        if module.memory.store_slice_aligned(ptr.into(), read) {
+                            self.value_stack.push(Value::I32(len as u32));
+                        } else {
+                            self.halted = true;
+                        }
+                    } else {
+                        eprintln!("Missing requested delayed inbox message {}", seq_num);
+                        self.halted = true;
+                    }
+                }
             }
         }
     }

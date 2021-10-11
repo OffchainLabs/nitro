@@ -6,6 +6,7 @@ extern "C" {
     pub fn wavm_advance_inbox_position();
     pub fn wavm_read_pre_image(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_get_position_within_message() -> u64;
     pub fn wavm_set_position_within_message(pos: u64);
 }
@@ -74,6 +75,29 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readInboxMe
     let our_ptr = our_buf.0.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     let read = wavm_read_inbox_message(our_ptr, offset as usize);
+    assert!(read <= 32);
+    write_slice(&our_buf.0[..read], out_ptr);
+    sp.write_u64(4, read as u64);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readDelayedInboxMessage(sp: GoStack) {
+    let seq_num = sp.read_u64(0);
+    let offset = sp.read_u64(1);
+    let out_ptr = sp.read_u64(2);
+    let out_len = sp.read_u64(3);
+    if out_len != 32 {
+        eprintln!(
+            "Go attempting to read inbox message with out len {}",
+            out_len,
+        );
+        sp.write_u64(4, 0);
+        return;
+    }
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let our_ptr = our_buf.0.as_mut_ptr();
+    assert_eq!(our_ptr as usize % 32, 0);
+    let read = wavm_read_delayed_inbox_message(seq_num, our_ptr, offset as usize);
     assert!(read <= 32);
     write_slice(&our_buf.0[..read], out_ptr);
     sp.write_u64(4, read as u64);
