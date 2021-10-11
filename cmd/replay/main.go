@@ -71,43 +71,49 @@ func main() {
 	}
 }
 
-func readSegment() *arbos.MessageSegment {
+func readSegment() (*arbos.MessageSegment, func()) {
 	inboxMessageBytes := wavmio.ReadInboxMessage()
 	var chainId *big.Int // TODO: fill in from state
 	inboxMessageSegments, err := arbos.SplitInboxMessage(inboxMessageBytes, chainId)
 	if err != nil {
 		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
-		wavmio.AdvanceInboxMessage()
-		return nil
+		return nil, func() {
+			wavmio.AdvanceInboxMessage()
+		}
 	}
 
+	var advance func()
 	positionWithinMessage := wavmio.GetPositionWithinMessage()
 	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
 		// This is the last segment in the message
-		wavmio.AdvanceInboxMessage()
-		wavmio.SetPositionWithinMessage(0)
+		advance = func() {
+			wavmio.AdvanceInboxMessage()
+			wavmio.SetPositionWithinMessage(0)
+		}
 		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
 			// The message is empty
-			return nil
+			return nil, advance
 		}
 	} else {
 		// There's remaining segment(s) in this message
-		wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
+		advance = func() {
+			wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
+		}
 	}
-	return inboxMessageSegments[positionWithinMessage]
+	return inboxMessageSegments[positionWithinMessage], advance
 }
 
 func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *types.Block {
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
 	for {
-		segment := readSegment()
+		segment, advance := readSegment()
 		if segment == nil {
+			advance()
 			continue
 		}
-		block, err := blockBuilder.AddSegment(segment)
-		if err != nil {
-			fmt.Printf("Error processing segment: %v\n", err)
-			continue
+		block, readAll := blockBuilder.AddSegment(segment)
+		if readAll {
+			advance()
 		}
 		if block != nil {
 			return block

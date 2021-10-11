@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"encoding/binary"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -11,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
+
+var perBlockGasLimit uint64 = 20000000
 
 var chainConfig = &params.ChainConfig{
 	ChainID:             big.NewInt(0),
@@ -58,7 +61,8 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 }
 
 // AddSegment returns true if block is done
-func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, error)  {
+func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
+	startIndex := uint64(0)
 	if b.blockInfo == nil {
 		b.blockInfo = &segment.L1Info
 		var lastBlockHash common.Hash
@@ -70,9 +74,10 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, error)
 			if timestamp < b.lastBlockHeader.Time {
 				timestamp = b.lastBlockHeader.Time
 			}
+			startIndex = binary.BigEndian.Uint64(b.lastBlockHeader.Nonce[:])
 		}
 
-		gasLimit := uint64(1e10) // TODO
+		gasLimit := perBlockGasLimit // TODO
 
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,
@@ -100,11 +105,18 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, error)
 		// TODO: This would split up all delayed messages
 		// If we distinguish between segments that might be aggregated from ones that definitely aren't
 		// we could handle coinbases differently
-		return b.ConstructBlock(), nil
+		return b.ConstructBlock(0), false
 	}
-	b.txes = append(b.txes, segment.txes...)
 
-	for _, tx := range segment.txes {
+	for i, tx := range segment.txes[startIndex:] {
+		if tx.Gas() > perBlockGasLimit {
+			// Ignore and transactions with higher than the max possible gas
+			continue
+		}
+		if tx.Gas() > b.gasPool.Gas() {
+			return b.ConstructBlock(startIndex + uint64(i)), false
+		}
+		snap := b.statedb.Snapshot()
 		receipt, err := core.ApplyTransaction(
 			chainConfig,
 			b.chainContext,
@@ -117,14 +129,18 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, error)
 			vm.Config{},
 		)
 		if err != nil {
-			return nil, err
+			// Ignore this transaction if it's invalid under our more lenient state transaction function
+			b.statedb.RevertToSnapshot(snap)
+			continue
 		}
+		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
 	}
-	return nil, nil
+	return nil, true
 }
 
-func (b *BlockBuilder) ConstructBlock() *types.Block {
+func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
+	binary.BigEndian.PutUint64(b.header.Nonce[:], nextIndexToRead)
 	b.header.Root = b.statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts

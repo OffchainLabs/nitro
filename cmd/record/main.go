@@ -77,12 +77,9 @@ func main() {
 
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
 	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
-	_, err = builder.AddSegment(segment)
-	if err != nil {
-		panic(fmt.Sprintf("Error adding segment: %v", err))
-	}
+	builder.AddSegment(segment)
 
-	newBlock := builder.ConstructBlock()
+	newBlock := builder.ConstructBlock(0)
 	newBlockHash := newBlock.Hash()
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
