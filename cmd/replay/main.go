@@ -111,6 +111,7 @@ func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 			advance()
 			continue
 		}
+		// readAll will only be false if block is non-nil
 		block, readAll := blockBuilder.AddSegment(segment)
 		if readAll {
 			advance()
