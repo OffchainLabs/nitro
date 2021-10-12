@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/wavmio"
@@ -71,53 +72,30 @@ func main() {
 	}
 }
 
-func readSegment() (*arbos.MessageSegment, func()) {
-	inboxMessageBytes := wavmio.ReadInboxMessage()
-	var chainId *big.Int // TODO: fill in from state
-	inboxMessageSegments, err := arbos.SplitInboxMessage(inboxMessageBytes, chainId)
-	if err != nil {
-		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
-		return nil, func() {
-			wavmio.AdvanceInboxMessage()
-		}
-	}
-
-	var advance func()
-	positionWithinMessage := wavmio.GetPositionWithinMessage()
-	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
-		// This is the last segment in the message
-		advance = func() {
-			wavmio.AdvanceInboxMessage()
-			wavmio.SetPositionWithinMessage(0)
-		}
-		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
-			// The message is empty
-			return nil, advance
-		}
-	} else {
-		// There's remaining segment(s) in this message
-		advance = func() {
-			wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
-		}
-	}
-	return inboxMessageSegments[positionWithinMessage], advance
-}
+var chainId = big.NewInt(0xA4B12) // TODO
 
 func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *types.Block {
+	var delayedMessagesRead uint64
+	if lastBlockHeader != nil {
+		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+	}
+	inboxReader := NewInboxReader(delayedMessagesRead)
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
 	for {
-		segment, advance := readSegment()
-		if segment == nil {
-			advance()
-			continue
+		message, shouldEndBlock, err := inboxReader.Peek()
+		if err != nil {
+			log.Warn("error parsing inbox message: %v", err)
+			break
 		}
-		// readAll will only be false if block is non-nil
-		block, readAll := blockBuilder.AddSegment(segment)
-		if readAll {
-			advance()
+		segments, err := arbos.ExtractL1MessageSegments(message, chainId)
+		if !blockBuilder.ShouldAddMessage(segments) {
+			break
 		}
-		if block != nil {
-			return block
+		inboxReader.Advance()
+		blockBuilder.AddMessage(segments)
+		if shouldEndBlock {
+			break
 		}
 	}
+	return blockBuilder.ConstructBlock(inboxReader.DelayedMessagesRead())
 }

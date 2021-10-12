@@ -36,7 +36,11 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized), chainId)
+	newMsg, err := ParseIncomingL1Message(bytes.NewReader(serialized))
+	if err != nil {
+		t.Error(err)
+	}
+	segments, err := ExtractL1MessageSegments(newMsg, chainId)
 	if err != nil {
 		t.Error(err)
 	}
@@ -110,7 +114,7 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	header.requestId = common.BigToHash(big.NewInt(4))
+	header.RequestId = common.BigToHash(big.NewInt(4))
 	msgBuf2 := bytes.Buffer{}
 	if err := HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
@@ -163,15 +167,19 @@ var testChainConfig = &params.ChainConfig{
 
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
-	for _, msg := range msgs {
-		segments, err := SplitInboxMessage(msg, chainId)
+	for _, data := range msgs {
+		msg, err := ParseIncomingL1Message(bytes.NewReader(data))
+		if err != nil {
+			t.Error(err)
+		}
+		segments, err := ExtractL1MessageSegments(msg, chainId)
 		if err != nil {
 			t.Error(err)
 		}
 		for _, segment := range segments {
 			chainContext := &TestChainContext{}
 			header := &types.Header{
-				Number: big.NewInt(1000),
+				Number:     big.NewInt(1000),
 				Difficulty: big.NewInt(1000),
 			}
 			gasPool := core.GasPool(100000)

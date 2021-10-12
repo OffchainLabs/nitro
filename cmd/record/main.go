@@ -73,11 +73,9 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	var segment *arbos.MessageSegment // TODO
-
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
 	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
-	builder.AddSegment(segment)
+	builder.AddMessage(nil) // TODO
 
 	newBlock := builder.ConstructBlock(0)
 	newBlockHash := newBlock.Hash()
