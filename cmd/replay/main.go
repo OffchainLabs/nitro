@@ -2,16 +2,14 @@ package main
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
@@ -26,18 +24,44 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-type ChainContext struct{}
+type WavmChainContext struct{}
 
-func (c ChainContext) Engine() consensus.Engine {
+func (c WavmChainContext) Engine() consensus.Engine {
 	return arbos.Engine{}
 }
 
-func (c ChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
 	header := getBlockHeaderByHash(hash)
 	if !header.Number.IsUint64() || header.Number.Uint64() != num {
 		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
 	}
 	return header
+}
+
+type WavmInbox struct{}
+
+func (i WavmInbox) PeekSequencerInbox() []byte {
+	return wavmio.ReadInboxMessage()
+}
+
+func (i WavmInbox) GetSequencerInboxPosition() uint64 {
+	return wavmio.GetInboxPosition()
+}
+
+func (i WavmInbox) AdvanceSequencerInbox() {
+	wavmio.AdvanceInboxMessage()
+}
+
+func (i WavmInbox) GetPositionWithinMessage() uint64 {
+	return wavmio.GetPositionWithinMessage()
+}
+
+func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
+	wavmio.SetPositionWithinMessage(pos)
+}
+
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) []byte {
+	return wavmio.ReadDelayedInboxMessage(seqNum)
 }
 
 func main() {
@@ -59,8 +83,8 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	chainContext := ChainContext{}
-	newBlock := buildBlock(statedb, lastBlockHeader, chainContext)
+	chainContext := WavmChainContext{}
+	newBlock := arbstate.BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
 	if err == nil {
 		fmt.Printf("New state root: %v\n", newBlock.Root())
 		newBlockHash := newBlock.Hash()
@@ -70,32 +94,4 @@ func main() {
 	} else {
 		fmt.Printf("Error processing message: %v\n", err)
 	}
-}
-
-var chainId = big.NewInt(0xA4B12) // TODO
-
-func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *types.Block {
-	var delayedMessagesRead uint64
-	if lastBlockHeader != nil {
-		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
-	}
-	inboxReader := NewInboxReader(delayedMessagesRead)
-	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
-	for {
-		message, shouldEndBlock, err := inboxReader.Peek()
-		if err != nil {
-			log.Warn("error parsing inbox message: %v", err)
-			break
-		}
-		segments, err := arbos.ExtractL1MessageSegments(message, chainId)
-		if !blockBuilder.ShouldAddMessage(segments) {
-			break
-		}
-		inboxReader.Advance()
-		blockBuilder.AddMessage(segments)
-		if shouldEndBlock {
-			break
-		}
-	}
-	return blockBuilder.ConstructBlock(inboxReader.DelayedMessagesRead())
 }

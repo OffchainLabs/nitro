@@ -1,4 +1,4 @@
-package main
+package arbstate
 
 import (
 	"bytes"
@@ -11,8 +11,19 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/wavmio"
 )
+
+type InboxBackend interface {
+	PeekSequencerInbox() []byte
+
+	GetSequencerInboxPosition() uint64
+	AdvanceSequencerInbox()
+
+	GetPositionWithinMessage() uint64
+	SetPositionWithinMessage(pos uint64)
+
+	ReadDelayedInbox(seqNum uint64) []byte
+}
 
 type InboxReader interface {
 	// Returns a message and if it must end the block
@@ -68,13 +79,15 @@ const (
 )
 
 type inboxReader struct {
+	backend             InboxBackend
 	delayedMessagesRead uint64
 	advanceAction       AdvanceAction
 	advanceSegmentTo    uint64
 }
 
-func NewInboxReader(delayedMessagesRead uint64) InboxReader {
+func NewInboxReader(backend InboxBackend, delayedMessagesRead uint64) InboxReader {
 	return &inboxReader{
+		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
 		advanceAction:       AdvanceUnknown,
 		advanceSegmentTo:    0,
@@ -84,8 +97,8 @@ func NewInboxReader(delayedMessagesRead uint64) InboxReader {
 var sequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
 
 func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
-	seqMsg := parseSequencerMessage(wavmio.ReadInboxMessage())
-	segmentNum := wavmio.GetPositionWithinMessage()
+	seqMsg := parseSequencerMessage(r.backend.PeekSequencerInbox())
+	segmentNum := r.backend.GetPositionWithinMessage()
 	var timestamp uint64
 	var blockNumber uint64
 	for {
@@ -128,7 +141,7 @@ func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
 	}
 	if segmentNum >= uint64(len(seqMsg.segments)) {
 		if r.delayedMessagesRead < seqMsg.afterDelayedMessages {
-			data := wavmio.ReadDelayedInboxMessage(r.delayedMessagesRead)
+			data := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 			delayed, err := arbos.ParseIncomingL1Message(bytes.NewReader(data))
 			endOfMessage := r.delayedMessagesRead+1 >= seqMsg.afterDelayedMessages
 			if endOfMessage {
@@ -161,7 +174,7 @@ func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		binary.LittleEndian.PutUint64(timestampHash[(32-8):], timestamp)
 		var requestId common.Hash
 		requestId[0] = 1 << 6
-		binary.LittleEndian.PutUint64(requestId[(32-16):(32-8)], wavmio.GetInboxPosition())
+		binary.LittleEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
 		binary.LittleEndian.PutUint64(requestId[(32-8):], segmentNum)
 		msg := &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
@@ -191,7 +204,7 @@ func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		if !endOfSegment {
 			r.advanceAction = AdvanceDelayedMessage
 		}
-		data := wavmio.ReadDelayedInboxMessage(r.delayedMessagesRead)
+		data := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 		delayed, err := arbos.ParseIncomingL1Message(bytes.NewReader(data))
 		return delayed, endOfSegment, err
 	} else {
@@ -209,12 +222,12 @@ func (r *inboxReader) Advance() {
 	if r.advanceAction == AdvanceDelayedMessage {
 		r.delayedMessagesRead += 1
 	} else if r.advanceAction == AdvanceSegment {
-		if r.advanceSegmentTo <= wavmio.GetPositionWithinMessage() {
+		if r.advanceSegmentTo <= r.backend.GetPositionWithinMessage() {
 			panic("Attempted to advance segment but target <= position")
 		}
-		wavmio.SetPositionWithinMessage(r.advanceSegmentTo)
+		r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
 	} else if r.advanceAction == AdvanceMessage {
-		wavmio.AdvanceInboxMessage()
+		r.backend.AdvanceSequencerInbox()
 	} else {
 		panic(fmt.Sprintf("Unknown advance action %v", r.advanceAction))
 	}
