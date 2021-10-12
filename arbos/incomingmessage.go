@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/big"
 
+	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -211,6 +212,7 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
+	L2MessageKind_BrotliCompressed = 9
 )
 
 func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
@@ -266,6 +268,15 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
 		panic("unimplemented")
+	case L2MessageKind_BrotliCompressed:
+		if depth > 0 { // ignore compressed messages if not top level
+			return nil, errors.New("can only compress top level batch")
+		}
+		decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
+		if err != nil {
+			return nil, err
+		}
+		return parseL2Message(bytes.NewReader(decompressed), l1Sender, requestId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, nil
