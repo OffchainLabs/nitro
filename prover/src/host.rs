@@ -110,6 +110,13 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
             insts.push(HirInstruction::Simple(Opcode::ReadDelayedInboxMessage));
         }
+        ("env", "wavm_get_inbox_position") => {
+            ty = FunctionType {
+                inputs: vec![],
+                outputs: vec![ValueType::I64],
+            };
+            insts.push(HirInstruction::Simple(Opcode::GetInboxPosition));
+        }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {

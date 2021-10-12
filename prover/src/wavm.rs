@@ -166,6 +166,8 @@ pub enum Opcode {
     SetPositionWithinMessage,
     /// Reads a given delayed inbox message into the pointer on the stack at an offset
     ReadDelayedInboxMessage,
+    /// Puts the current inbox position on the stack
+    GetInboxPosition,
 }
 
 impl Opcode {
@@ -284,6 +286,7 @@ impl Opcode {
             Opcode::GetPositionWithinMessage => 0x8010,
             Opcode::SetPositionWithinMessage => 0x8011,
             Opcode::ReadDelayedInboxMessage => 0x8012,
+            Opcode::GetInboxPosition => 0x8013,
         }
     }
 }

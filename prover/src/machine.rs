@@ -1502,6 +1502,10 @@ impl Machine {
                     }
                 }
             }
+            Opcode::GetInboxPosition => {
+                self.value_stack
+                    .push(Value::I64(self.global_state.inbox_position));
+            }
         }
     }
 
