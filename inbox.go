@@ -56,7 +56,7 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[40:])), maxDecompressedLen)
 	var segments [][]byte
-	err := rlp.Decode(reader, &segments)
+	err := rlp.NewStream(reader, uint64(maxDecompressedLen)).Decode(&segments)
 	if err != nil {
 		fmt.Printf("Error parsing sequencer message segments: %s\n", err.Error())
 		segments = nil
@@ -129,9 +129,8 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		}
 		segmentKind := segment[0]
 		if segmentKind == segmentKindAdvanceTimestamp || segmentKind == segmentKindAdvanceL1BlockNumber {
-			var advancing uint64
 			rd := bytes.NewReader(segment[1:])
-			err := rlp.Decode(rd, &advancing)
+			advancing, err := rlp.NewStream(rd, 16).Uint()
 			if err != nil {
 				fmt.Printf("Error parsing advancing segment: %s\n", err)
 				continue
@@ -207,9 +206,8 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		return msg, true, nil
 	} else if segmentKind == segmentKindDelayedMessages {
 		// Delayed message reading
-		var reading uint64
 		rd := bytes.NewReader(segment[1:])
-		err := rlp.Decode(rd, &reading)
+		reading, err := rlp.NewStream(rd, 16).Uint()
 		if err != nil {
 			return nil, false, err
 		}
