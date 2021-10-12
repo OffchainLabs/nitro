@@ -66,48 +66,45 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	}
 }
 
-func (b *BlockBuilder) CanAddMessage(segments []*MessageSegment) bool {
-	if b.blockInfo == nil || len(segments) == 0 {
+func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
+	if b.blockInfo == nil {
 		return true
 	}
-	info := segments[0].L1Info
+	info := segment.L1Info
+	// End current block without including segment
+	// TODO: This would split up all delayed messages
+	// If we distinguish between segments that might be aggregated from ones that definitely aren't
+	// we could handle coinbases differently
 	return info.l1Sender == b.blockInfo.l1Sender &&
 		info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) <= 0 &&
 		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
 }
 
-func (b *BlockBuilder) ShouldAddMessage(segments []*MessageSegment) bool {
-	if !b.CanAddMessage(segments) {
+func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
+	if !b.CanAddMessage(segment) {
 		return false
 	}
-	if b.blockInfo == nil || len(segments) == 0 {
+	if b.blockInfo == nil {
 		return true
 	}
 	newGasUsed := b.header.GasUsed
-Segments:
-	for _, segment := range segments {
-		for _, tx := range segment.txes {
-			oldGasUsed := newGasUsed
-			newGasUsed += tx.Gas()
-			if newGasUsed < oldGasUsed {
-				newGasUsed = ^uint64(0)
-				break Segments
-			}
+	for _, tx := range segment.txes {
+		oldGasUsed := newGasUsed
+		newGasUsed += tx.Gas()
+		if newGasUsed < oldGasUsed {
+			newGasUsed = ^uint64(0)
 		}
 	}
 	return newGasUsed <= perBlockGasLimit
 }
 
-func (b *BlockBuilder) AddMessage(segments []*MessageSegment) {
-	if !b.CanAddMessage(segments) {
+func (b *BlockBuilder) AddMessage(segment MessageSegment) {
+	if !b.CanAddMessage(segment) {
 		log.Warn("attempted to add incompatible message to block")
 		return
 	}
-	if len(segments) == 0 {
-		return
-	}
 	if b.blockInfo == nil {
-		l1Info := segments[0].L1Info
+		l1Info := segment.L1Info
 		l1Sender := l1Info.l1Sender
 		timestamp := l1Info.l1Timestamp.Uint64()
 		l1BlockNumber := l1Info.l1BlockNumber.Uint64()
@@ -149,32 +146,30 @@ func (b *BlockBuilder) AddMessage(segments []*MessageSegment) {
 		}
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
-	for _, segment := range segments {
-		for _, tx := range segment.txes {
-			if tx.Gas() > perBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
-				// Ignore and transactions with higher than the max possible gas
-				continue
-			}
-			snap := b.statedb.Snapshot()
-			receipt, err := core.ApplyTransaction(
-				ChainConfig,
-				b.chainContext,
-				&b.header.Coinbase,
-				&b.gasPool,
-				b.statedb,
-				b.header,
-				tx,
-				&b.header.GasUsed,
-				vm.Config{},
-			)
-			if err != nil {
-				// Ignore this transaction if it's invalid under our more lenient state transaction function
-				b.statedb.RevertToSnapshot(snap)
-				continue
-			}
-			b.txes = append(b.txes, tx)
-			b.receipts = append(b.receipts, receipt)
+	for _, tx := range segment.txes {
+		if tx.Gas() > perBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
+			// Ignore and transactions with higher than the max possible gas
+			continue
 		}
+		snap := b.statedb.Snapshot()
+		receipt, err := core.ApplyTransaction(
+			ChainConfig,
+			b.chainContext,
+			&b.header.Coinbase,
+			&b.gasPool,
+			b.statedb,
+			b.header,
+			tx,
+			&b.header.GasUsed,
+			vm.Config{},
+		)
+		if err != nil {
+			// Ignore this transaction if it's invalid under our more lenient state transaction function
+			b.statedb.RevertToSnapshot(snap)
+			continue
+		}
+		b.txes = append(b.txes, tx)
+		b.receipts = append(b.receipts, receipt)
 	}
 }
 

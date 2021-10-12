@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 )
@@ -43,15 +45,15 @@ type sequencerMessage struct {
 
 const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
 
-func parseSequencerMessage(data []byte) sequencerMessage {
+func parseSequencerMessage(data []byte) *sequencerMessage {
 	if len(data) < 32 {
 		panic("sequencer message missing L1 header")
 	}
-	minTimestamp := binary.LittleEndian.Uint64(data[:8])
-	maxTimestamp := binary.LittleEndian.Uint64(data[8:16])
-	minL1Block := binary.LittleEndian.Uint64(data[16:24])
-	maxL1Block := binary.LittleEndian.Uint64(data[24:32])
-	afterDelayedMessages := binary.LittleEndian.Uint64(data[32:40])
+	minTimestamp := binary.BigEndian.Uint64(data[:8])
+	maxTimestamp := binary.BigEndian.Uint64(data[8:16])
+	minL1Block := binary.BigEndian.Uint64(data[16:24])
+	maxL1Block := binary.BigEndian.Uint64(data[24:32])
+	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[40:])), maxDecompressedLen)
 	var segments [][]byte
 	err := rlp.Decode(reader, &segments)
@@ -59,7 +61,7 @@ func parseSequencerMessage(data []byte) sequencerMessage {
 		fmt.Printf("Error parsing sequencer message segments: %s\n", err.Error())
 		segments = nil
 	}
-	return sequencerMessage{
+	return &sequencerMessage{
 		minTimestamp:         minTimestamp,
 		maxTimestamp:         maxTimestamp,
 		minL1Block:           minL1Block,
@@ -79,10 +81,12 @@ const (
 )
 
 type inboxMultiplexer struct {
-	backend             InboxBackend
-	delayedMessagesRead uint64
-	advanceAction       AdvanceAction
-	advanceSegmentTo    uint64
+	backend                       InboxBackend
+	delayedMessagesRead           uint64
+	advanceAction                 AdvanceAction
+	advanceSegmentTo              uint64
+	sequencerMessageCache         *sequencerMessage
+	sequencerMessageCachePosition uint64
 }
 
 func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplixer {
@@ -96,8 +100,21 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) Inbox
 
 var sequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
 
+const segmentKindL2Message uint8 = 0
+const segmentKindDelayedMessages uint8 = 1
+const segmentKindAdvanceTimestamp uint8 = 2
+const segmentKindAdvanceL1BlockNumber uint8 = 3
+
 func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
-	seqMsg := parseSequencerMessage(r.backend.PeekSequencerInbox())
+	seqMsgPosition := r.backend.GetSequencerInboxPosition()
+	var seqMsg *sequencerMessage
+	if r.sequencerMessageCache != nil && r.sequencerMessageCachePosition == seqMsgPosition {
+		seqMsg = r.sequencerMessageCache
+	} else {
+		seqMsg = parseSequencerMessage(r.backend.PeekSequencerInbox())
+		r.sequencerMessageCache = seqMsg
+		r.sequencerMessageCachePosition = seqMsgPosition
+	}
 	segmentNum := r.backend.GetPositionWithinMessage()
 	var timestamp uint64
 	var blockNumber uint64
@@ -111,7 +128,7 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 			continue
 		}
 		segmentKind := segment[0]
-		if segmentKind == 2 || segmentKind == 3 {
+		if segmentKind == segmentKindAdvanceTimestamp || segmentKind == segmentKindAdvanceL1BlockNumber {
 			var advancing uint64
 			rd := bytes.NewReader(segment[1:])
 			err := rlp.Decode(rd, &advancing)
@@ -119,9 +136,9 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 				fmt.Printf("Error parsing advancing segment: %s\n", err)
 				continue
 			}
-			if segmentKind == 2 {
+			if segmentKind == segmentKindAdvanceTimestamp {
 				timestamp += advancing
-			} else if segmentKind == 3 {
+			} else if segmentKind == segmentKindAdvanceL1BlockNumber {
 				blockNumber += advancing
 			}
 			segmentNum++
@@ -166,16 +183,16 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		return nil, false, errors.New("empty sequencer message segment")
 	}
 	segmentKind := segment[0]
-	if segmentKind == 0 {
+	if segmentKind == segmentKindL2Message {
 		// L2 message
 		var blockNumberHash common.Hash
-		binary.LittleEndian.PutUint64(blockNumberHash[(32-8):], blockNumber)
+		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
 		var timestampHash common.Hash
-		binary.LittleEndian.PutUint64(timestampHash[(32-8):], timestamp)
+		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
 		var requestId common.Hash
 		requestId[0] = 1 << 6
-		binary.LittleEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
-		binary.LittleEndian.PutUint64(requestId[(32-8):], segmentNum)
+		binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
+		binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
 		msg := &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind:        arbos.L1MessageType_L2Message,
@@ -188,7 +205,7 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 			L2msg: segment[1:],
 		}
 		return msg, true, nil
-	} else if segmentKind == 1 {
+	} else if segmentKind == segmentKindDelayedMessages {
 		// Delayed message reading
 		var reading uint64
 		rd := bytes.NewReader(segment[1:])
@@ -214,7 +231,7 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 
 func (r *inboxMultiplexer) Advance() {
 	if r.advanceAction == AdvanceUnknown {
-		r.Peek()
+		_, _, _ = r.Peek()
 		if r.advanceAction == AdvanceUnknown {
 			panic("Failed to get advance action")
 		}
@@ -228,6 +245,8 @@ func (r *inboxMultiplexer) Advance() {
 		r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
 	} else if r.advanceAction == AdvanceMessage {
 		r.backend.AdvanceSequencerInbox()
+		r.sequencerMessageCache = nil
+		r.sequencerMessageCachePosition = 0
 	} else {
 		panic(fmt.Sprintf("Unknown advance action %v", r.advanceAction))
 	}

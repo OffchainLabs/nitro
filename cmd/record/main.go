@@ -75,7 +75,7 @@ func main() {
 
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
 	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
-	builder.AddMessage(nil) // TODO
+	// TODO add message(s) to builder
 
 	newBlock := builder.ConstructBlock(0)
 	newBlockHash := newBlock.Hash()

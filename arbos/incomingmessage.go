@@ -155,21 +155,19 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 	}, nil
 }
 
-func ExtractL1MessageSegments(msg *L1IncomingMessage, chainId *big.Int) ([]*MessageSegment, error) {
+func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (MessageSegment, error) {
 	txes, err := msg.typeSpecificParse(chainId)
 	if err != nil {
-		return nil, err
+		return MessageSegment{}, err
 	}
-	return []*MessageSegment{
-		{
-			L1Info: L1Info{
-				l1Sender:      msg.Header.Sender,
-				l1BlockNumber: msg.Header.BlockNumber.Big(),
-				l1Timestamp:   msg.Header.Timestamp.Big(),
-			},
-			l1GasPrice: msg.Header.GasPriceL1.Big(),
-			txes:       txes,
+	return MessageSegment{
+		L1Info: L1Info{
+			l1Sender:      msg.Header.Sender,
+			l1BlockNumber: msg.Header.BlockNumber.Big(),
+			l1Timestamp:   msg.Header.Timestamp.Big(),
 		},
+		l1GasPrice: msg.Header.GasPriceL1.Big(),
+		txes:       txes,
 	}, nil
 }
 
@@ -180,7 +178,7 @@ func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transac
 	}
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Sender, msg.Header.RequestId, true)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Sender, msg.Header.RequestId, 0)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
@@ -215,7 +213,7 @@ const (
 	// 8 is reserved for BLS signed batch
 )
 
-func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, isTopLevel bool) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -237,8 +235,8 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 	case L2MessageKind_NonmutatingCall:
 		panic("unimplemented")
 	case L2MessageKind_Batch:
-		if !isTopLevel {
-			return nil, errors.New("L2 message batches must be top-level")
+		if depth >= 16 {
+			return nil, errors.New("L2 message batches have a max depth of 16")
 		}
 		segments := make(types.Transactions, 0)
 		index := big.NewInt(0)
@@ -250,7 +248,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
 			var nextRequestId common.Hash
 			copy(nextRequestId[:], nestedRequestIdSlice)
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), l1Sender, nextRequestId, false)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), l1Sender, nextRequestId, depth+1)
 			if err != nil {
 				return nil, err
 			}
