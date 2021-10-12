@@ -192,10 +192,10 @@ library Deserialize {
 	function globalState(bytes calldata proof, uint256 startOffset) internal pure returns (GlobalState memory state, uint256 offset) {
 		offset = startOffset;
 		bytes32 lastBlockHash;
-		uint256 inboxPosition;
+		uint64 inboxPosition;
 		uint64 positionWithinMessage;
 		(lastBlockHash, offset) = b32(proof, offset);
-		(inboxPosition, offset) = u256(proof, offset);
+		(inboxPosition, offset) = u64(proof, offset);
 		(positionWithinMessage, offset) = u64(proof, offset);
 		state = GlobalState({
 			lastBlockHash: lastBlockHash,

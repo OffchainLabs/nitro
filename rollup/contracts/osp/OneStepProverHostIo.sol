@@ -57,13 +57,17 @@ contract OneStepProverHostIo is IOneStepProver {
     }
 
     function executeAdvanceInboxPosition(
-        Machine memory,
+        Machine memory mach,
         Module memory,
         GlobalState memory state,
         Instruction calldata,
         bytes calldata
     ) internal pure {
-        state.inboxPosition += 1;
+        if (state.inboxPosition == ~uint64(0)) {
+            mach.halted = true;
+        } else {
+            state.inboxPosition += 1;
+        }
     }
 
     function executeReadPreImage(
@@ -136,10 +140,8 @@ contract OneStepProverHostIo is IOneStepProver {
             proofOffset
         );
 
-        // TODO
-        require(state.inboxPosition == 0, "TODO: proper inbox");
-        bytes
-            memory message = hex"f8859431b98d14007bdee637298086988a0bbd311845238080f86c808504a817c800825208942ed530faddb7349c1efdbf4410db2de835a004e4880de0b6b3a7640000802ba06217a3ed3379e98821117e66536aa59dc9f402eb1c998111e4e087bc5ec9b09ea0092d3bccf7d31fd025ea79560583064a511a02a2001e31d91927e4b80c9ccaa7";
+        revert("TODO: proper inbox API");
+        bytes memory message; // TODO
         uint32 i = 0;
         for (; i < 32 && messageOffset + i < message.length; i++) {
             leafContents = setLeafByte(
@@ -182,6 +184,59 @@ contract OneStepProverHostIo is IOneStepProver {
         );
     }
 
+    function executeReadDelayedInboxMessage(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
+        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
+        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
+            mach.halted = true;
+            return;
+        }
+
+        uint256 leafIdx = ptr / LEAF_SIZE;
+        uint256 proofOffset = 0;
+        bytes32 leafContents;
+        MerkleProof memory merkleProof;
+        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
+            mod.moduleMemory,
+            leafIdx,
+            proof,
+            proofOffset
+        );
+
+        revert("TODO: proper inbox API");
+        bytes memory message; // TODO
+        uint32 i = 0;
+        for (; i < 32 && messageOffset + i < message.length; i++) {
+            leafContents = setLeafByte(
+                leafContents,
+                i,
+                uint8(message[messageOffset + i])
+            );
+        }
+
+        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
+            merkleProof,
+            leafIdx,
+            leafContents
+        );
+        ValueStacks.push(mach.valueStack, Values.newI32(i));
+    }
+
+    function executeGetInboxPosition(
+        Machine memory mach,
+        Module memory,
+        GlobalState memory state,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        ValueStacks.push(mach.valueStack, Values.newI64(state.inboxPosition));
+    }
+
     function executeOneStep(
         Machine calldata startMach,
         Module calldata startMod,
@@ -217,6 +272,12 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeGetPositionWithinMessage;
         } else if (opcode == Instructions.SET_POSITION_WITHIN_MESSAGE) {
             impl = executeSetPositionWithinMessage;
+        } else if (opcode == Instructions.READ_DELAYED_INBOX_MESSAGE) {
+            // Doesn't use global state
+            executeReadDelayedInboxMessage(mach, mod, inst, proof);
+            return (mach, mod);
+        } else if (opcode == Instructions.GET_INBOX_POSITION) {
+            impl = executeGetInboxPosition;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }

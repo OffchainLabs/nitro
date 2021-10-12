@@ -542,7 +542,7 @@ impl GlobalState {
         let mut h = Keccak256::new();
         h.update("Global state:");
         h.update(self.last_block_hash);
-        h.update(Bytes32::from(self.inbox_position));
+        h.update(self.inbox_position.to_be_bytes());
         h.update(self.position_within_message.to_be_bytes());
         h.finalize().into()
     }
@@ -550,7 +550,7 @@ impl GlobalState {
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend(self.last_block_hash);
-        data.extend(Bytes32::from(self.inbox_position));
+        data.extend(self.inbox_position.to_be_bytes());
         data.extend(&self.position_within_message.to_be_bytes());
         data
     }
@@ -1429,7 +1429,11 @@ impl Machine {
                 }
             }
             Opcode::AdvanceInboxPosition => {
-                self.global_state.inbox_position += 1;
+                if let Some(new_pos) = self.global_state.inbox_position.checked_add(1) {
+                    self.global_state.inbox_position = new_pos;
+                } else {
+                    self.halted = true;
+                }
             }
             Opcode::ReadPreImage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();

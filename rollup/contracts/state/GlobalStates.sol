@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 struct GlobalState {
 	bytes32 lastBlockHash;
-	uint256 inboxPosition;
+	uint64 inboxPosition;
 	uint64 positionWithinMessage;
 }
 
