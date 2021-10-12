@@ -272,11 +272,8 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		if depth > 0 { // ignore compressed messages if not top level
 			return nil, errors.New("can only compress top level batch")
 		}
-		decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
-		if err != nil {
-			return nil, err
-		}
-		return parseL2Message(bytes.NewReader(decompressed), l1Sender, requestId, depth+1)
+		reader := io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize)
+		return parseL2Message(reader, l1Sender, requestId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, nil
