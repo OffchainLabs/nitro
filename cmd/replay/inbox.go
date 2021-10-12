@@ -174,7 +174,7 @@ func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
 			},
 			L2msg: segment[1:],
 		}
-		return msg, endOfMessage, nil
+		return msg, true, nil
 	} else if segmentKind == 1 {
 		// Delayed message reading
 		var reading uint64
