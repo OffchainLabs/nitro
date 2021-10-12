@@ -17,10 +17,10 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxReader := NewInboxReader(inbox, delayedMessagesRead)
+	inboxMultiplexer := NewInboxMultiplexer(inbox, delayedMessagesRead)
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
 	for {
-		message, shouldEndBlock, err := inboxReader.Peek()
+		message, shouldEndBlock, err := inboxMultiplexer.Peek()
 		if err != nil {
 			log.Warn("error parsing inbox message: %v", err)
 			break
@@ -29,11 +29,11 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 		if !blockBuilder.ShouldAddMessage(segments) {
 			break
 		}
-		inboxReader.Advance()
+		inboxMultiplexer.Advance()
 		blockBuilder.AddMessage(segments)
 		if shouldEndBlock {
 			break
 		}
 	}
-	return blockBuilder.ConstructBlock(inboxReader.DelayedMessagesRead())
+	return blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
 }

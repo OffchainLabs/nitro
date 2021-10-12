@@ -25,7 +25,7 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) []byte
 }
 
-type InboxReader interface {
+type InboxMultiplixer interface {
 	// Returns a message and if it must end the block
 	Peek() (*arbos.L1IncomingMessage, bool, error)
 	Advance()
@@ -78,15 +78,15 @@ const (
 	AdvanceMessage
 )
 
-type inboxReader struct {
+type inboxMultiplexer struct {
 	backend             InboxBackend
 	delayedMessagesRead uint64
 	advanceAction       AdvanceAction
 	advanceSegmentTo    uint64
 }
 
-func NewInboxReader(backend InboxBackend, delayedMessagesRead uint64) InboxReader {
-	return &inboxReader{
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplixer {
+	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
 		advanceAction:       AdvanceUnknown,
@@ -96,7 +96,7 @@ func NewInboxReader(backend InboxBackend, delayedMessagesRead uint64) InboxReade
 
 var sequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
 
-func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
+func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 	seqMsg := parseSequencerMessage(r.backend.PeekSequencerInbox())
 	segmentNum := r.backend.GetPositionWithinMessage()
 	var timestamp uint64
@@ -212,7 +212,7 @@ func (r *inboxReader) Peek() (*arbos.L1IncomingMessage, bool, error) {
 	}
 }
 
-func (r *inboxReader) Advance() {
+func (r *inboxMultiplexer) Advance() {
 	if r.advanceAction == AdvanceUnknown {
 		r.Peek()
 		if r.advanceAction == AdvanceUnknown {
@@ -235,6 +235,6 @@ func (r *inboxReader) Advance() {
 	r.advanceSegmentTo = 0
 }
 
-func (r *inboxReader) DelayedMessagesRead() uint64 {
+func (r *inboxMultiplexer) DelayedMessagesRead() uint64 {
 	return r.delayedMessagesRead
 }
