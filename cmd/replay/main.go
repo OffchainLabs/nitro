@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
@@ -27,7 +28,7 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 type ChainContext struct{}
 
 func (c ChainContext) Engine() consensus.Engine {
-	return arbstate.Engine{}
+	return arbos.Engine{}
 }
 
 func (c ChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
@@ -39,8 +40,8 @@ func (c ChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
 }
 
 func main() {
-	rawdb := rawdb.NewDatabase(PreimageDb{})
-	db := state.NewDatabase(rawdb)
+	raw := rawdb.NewDatabase(PreimageDb{})
+	db := state.NewDatabase(raw)
 	lastBlockHash := wavmio.GetLastBlockHash()
 
 	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
@@ -57,30 +58,8 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	inboxMessageBytes := wavmio.ReadInboxMessage()
-	inboxMessageSegments, err := arbos.Initialize(statedb).SplitInboxMessage(inboxMessageBytes)
-	if err != nil {
-		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
-		wavmio.AdvanceInboxMessage()
-		return
-	}
-
-	positionWithinMessage := wavmio.GetPositionWithinMessage()
-	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
-		// This is the last segment in the message
-		wavmio.AdvanceInboxMessage()
-		wavmio.SetPositionWithinMessage(0)
-		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
-			// The message is empty
-			return
-		}
-	} else {
-		// There's remaining segment(s) in this message
-		wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
-	}
-
 	chainContext := ChainContext{}
-	newBlock, err := arbstate.CreateBlock(statedb, lastBlockHeader, chainContext, inboxMessageSegments[positionWithinMessage])
+	newBlock := buildBlock(statedb, lastBlockHeader, chainContext)
 	if err == nil {
 		fmt.Printf("New state root: %v\n", newBlock.Root())
 		newBlockHash := newBlock.Hash()
@@ -89,5 +68,56 @@ func main() {
 		wavmio.SetLastBlockHash(newBlockHash)
 	} else {
 		fmt.Printf("Error processing message: %v\n", err)
+	}
+}
+
+func readSegment() (*arbos.MessageSegment, func()) {
+	inboxMessageBytes := wavmio.ReadInboxMessage()
+	var chainId *big.Int // TODO: fill in from state
+	inboxMessageSegments, err := arbos.SplitInboxMessage(inboxMessageBytes, chainId)
+	if err != nil {
+		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
+		return nil, func() {
+			wavmio.AdvanceInboxMessage()
+		}
+	}
+
+	var advance func()
+	positionWithinMessage := wavmio.GetPositionWithinMessage()
+	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
+		// This is the last segment in the message
+		advance = func() {
+			wavmio.AdvanceInboxMessage()
+			wavmio.SetPositionWithinMessage(0)
+		}
+		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
+			// The message is empty
+			return nil, advance
+		}
+	} else {
+		// There's remaining segment(s) in this message
+		advance = func() {
+			wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
+		}
+	}
+	return inboxMessageSegments[positionWithinMessage], advance
+}
+
+func buildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *types.Block {
+	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
+	for {
+		segment, advance := readSegment()
+		if segment == nil {
+			advance()
+			continue
+		}
+		// readAll will only be false if block is non-nil
+		block, readAll := blockBuilder.AddSegment(segment)
+		if readAll {
+			advance()
+		}
+		if block != nil {
+			return block
+		}
 	}
 }

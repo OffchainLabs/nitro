@@ -1,3 +1,6 @@
 record
 replay
 /*.bin
+.idea
+cmd/node/data
+cmd/node/node

@@ -1,4 +1,4 @@
-package arbstate
+package arbos
 
 import (
 	"errors"
@@ -10,10 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
-type Engine struct{}
+type Engine struct{
+	IsSequencer bool
+}
 
 func (e Engine) Author(header *types.Header) (common.Address, error) {
 	return header.Coinbase, nil
@@ -40,11 +41,12 @@ func (e Engine) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 }
 
 func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+	header.Difficulty = big.NewInt(1)
 	return nil
 }
 
 func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) {
-	arbos.Initialize(state).FinalizeBlock(header, state, txs, receipts)
+	FinalizeBlock(header, txs, receipts)
 	header.Root = state.IntermediateRoot(true)
 }
 
@@ -58,7 +60,14 @@ func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 }
 
 func (e Engine) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-	return errors.New("sealing not supported")
+	if !e.IsSequencer {
+		return errors.New("sealing not supported")
+	}
+	if len(block.Transactions()) == 0 {
+		return nil
+	}
+	results <- block
+	return nil
 }
 
 func (e Engine) SealHash(header *types.Header) common.Hash {

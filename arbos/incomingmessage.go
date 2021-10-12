@@ -2,13 +2,18 @@ package arbos
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"math/big"
+
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
-	"io"
-	"math/big"
+
+	solsha3 "github.com/miguelmota/go-solidity-sha3"
 )
 
 const (
@@ -23,8 +28,8 @@ const (
 
 const MaxL2MessageSize = 256*1024
 
-type IncomingMessage interface {
-	handle(state *ArbosState)
+func SplitInboxMessage(inputBytes []byte, chainId *big.Int) ([]*MessageSegment, error) {
+	return ParseIncomingL1Message(bytes.NewReader(inputBytes), chainId)
 }
 
 type L1IncomingMessageHeader struct {
@@ -39,6 +44,25 @@ type L1IncomingMessageHeader struct {
 type L1IncomingMessage struct {
 	header *L1IncomingMessageHeader
 	l2msg  []byte
+}
+
+type L1Info struct {
+	l1Sender common.Address
+	l1BlockNumber *big.Int
+	l1Timestamp *big.Int
+}
+
+func (info *L1Info) Equals(o *L1Info) bool  {
+	return info.l1Sender == o.l1Sender &&
+		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
+		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
+}
+
+type MessageSegment struct {
+	L1Info L1Info
+	// l1GasPrice may be null
+	l1GasPrice  *big.Int
+	txes types.Transactions
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -87,7 +111,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		(header.gasPriceL1.Big().Cmp(other.gasPriceL1.Big()) == 0)
 }
 
-func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegment, error) {
+func ParseIncomingL1Message(rd io.Reader, chainId *big.Int) ([]*MessageSegment, error) {
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
@@ -135,21 +159,35 @@ func ParseIncomingL1Message(rd io.Reader, apiImpl *ArbosAPIImpl) ([]MessageSegme
 		},
 		data,
 	}
-	return msg.typeSpecificParse(apiImpl), nil
+	txes, err := msg.typeSpecificParse(chainId)
+	if err != nil {
+		return nil, err
+	}
+	return []*MessageSegment{
+		{
+			L1Info: L1Info{
+				l1Sender:      sender,
+				l1BlockNumber: blockNumber.Big(),
+				l1Timestamp:   timestamp.Big(),
+			},
+			l1GasPrice:    gasPriceL1.Big(),
+			txes:          txes,
+		},
+	}, nil
 }
 
-func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []MessageSegment {
+func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transactions, error) {
 	if len(msg.l2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
-		return []MessageSegment{}
+		return nil, errors.New("message too large")
 	}
 	switch msg.header.kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.l2msg), []MessageSegment{}, msg.header, true, apiImpl)
+		return parseL2Message(bytes.NewReader(msg.l2msg), msg.header.sender, msg.header.requestId, true)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
-		return []MessageSegment{}
+		return nil, nil
 	case L1MessageType_L2FundedByL1:
 		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:
@@ -157,10 +195,14 @@ func (msg *L1IncomingMessage) typeSpecificParse(apiImpl *ArbosAPIImpl) []Message
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
-		return parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header, apiImpl)
+		tx, err := parseEthDepositMessage(bytes.NewReader(msg.l2msg), msg.header, chainId)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	default:
 		// invalid message, just ignore it
-		return []MessageSegment{}
+		return nil, errors.New("invalid message types")
 	}
 }
 
@@ -178,89 +220,94 @@ const (
 
 )
 
-func parseL2Message(rd io.Reader, segments []MessageSegment, header *L1IncomingMessageHeader, isTopLevel bool, apiImpl *ArbosAPIImpl) []MessageSegment {
+func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, isTopLevel bool) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
-		return segments
+		return nil, err
 	}
 
-	switch(l2KindBuf[0]) {
+	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
-		seg := parseUnsignedTx(rd, header, true, apiImpl)
-		if seg == nil {
-			return segments
-		} else {
-			return append(segments, seg)
+		tx, err := parseUnsignedTx(rd, l1Sender, requestId, true)
+		if err != nil {
+			return nil, err
 		}
+		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
-		seg := parseUnsignedTx(rd, header, false, apiImpl)
-		if seg == nil {
-			return segments
-		} else {
-			return append(segments, seg)
+		tx, err := parseUnsignedTx(rd, l1Sender, requestId, false)
+		if err != nil {
+			return nil, err
 		}
+		return types.Transactions{tx}, nil
 	case L2MessageKind_NonmutatingCall:
 		panic("unimplemented")
 	case L2MessageKind_Batch:
+		segments := make(types.Transactions, 0)
+		index := big.NewInt(0)
 		for {
 			nextMsg, err := BytestringFromReader(rd)
 			if err != nil {
-				return segments
+				return segments, nil
 			}
-			segments = parseL2Message(bytes.NewReader(nextMsg), segments, header, false, apiImpl)
+			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
+			var nextRequestId common.Hash
+			copy(nextRequestId[:], nestedRequestIdSlice)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), l1Sender, nextRequestId, false)
+			if err != nil {
+				return nil, err
+			}
+			segments = append(segments, nestedSegments...)
+			index.Add(index, big.NewInt(1))
 		}
-		return segments
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
 		if err := newTx.DecodeRLP(rlp.NewStream(rd, math.MaxUint64)); err != nil {
-			return segments
+			return nil, err
 		}
-		return append(segments, &txSegment{ apiImpl, newTx })
+		return types.Transactions{newTx}, nil
 	case L2MessageKind_Heartbeat:
 		// do nothing
-		return segments
+		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
 		panic("unimplemented")
 	case L2MessageKind_BrotliCompressed:
-		if isTopLevel {   // ignore compressed messages if not top level
-			decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
-			if err != nil {
-				return segments
-			}
-			return parseL2Message(bytes.NewReader(decompressed), segments, header, false, apiImpl)
-		} else {
-			return segments
+		if !isTopLevel { // ignore compressed messages if not top level
+			return nil, errors.New("can only compress top level batch")
 		}
+		decompressed, err := io.ReadAll(io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize))
+		if err != nil {
+			return nil, err
+		}
+		return parseL2Message(bytes.NewReader(decompressed), l1Sender, requestId, false)
 	default:
 		// ignore invalid message kind
-		return segments
+		return nil, nil
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonce bool, apiImpl *ArbosAPIImpl) *txSegment {
+func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
 	gasLimit, err := HashFromReader(rd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	gasPrice, err := HashFromReader(rd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	var nonce *big.Int
+	var nonce uint64
 	if includesNonce {
 		nonceAsHash, err := HashFromReader(rd)
 		if err != nil {
-			return nil
+			return nil, err
 		}
-		nonce = nonceAsHash.Big()
+		nonce = nonceAsHash.Big().Uint64()
 	}
-	//TODO: if nonce isn't supplied, ask geth for the expected nonce and fill it in here?
 
 	destAddr, err := AddressFrom256FromReader(rd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var destination *common.Address
 	if destAddr.Hash().Big().Cmp(big.NewInt(0)) != 0 {
@@ -269,35 +316,53 @@ func parseUnsignedTx(rd io.Reader, header *L1IncomingMessageHeader, includesNonc
 
 	callvalue, err := HashFromReader(rd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	calldata, err := io.ReadAll(rd)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	legacyTx := &types.LegacyTx{  //BUGBUG: should probably use a special unsigned tx type here
-		nonce.Uint64(),
-		gasPrice.Big(),
-		gasLimit.Big().Uint64(),
-		destination,
-		callvalue.Big(),
-		calldata,
-		nil,
-		nil,
-		nil,
+	var inner types.TxData
+
+	if includesNonce {
+		inner = &types.ArbitrumUnsignedTx{
+			ChainId:   nil,
+			From:      l1Sender,
+			Nonce:     nonce,
+			GasPrice:  gasPrice.Big(),
+			Gas:       gasLimit.Big().Uint64(),
+			To:        destination,
+			Value:     callvalue.Big(),
+			Data:      calldata,
+		}
+	} else {
+		inner = &types.ArbitrumContractTx{
+			ChainId:   nil,
+			RequestId: requestId,
+			From:      l1Sender,
+			GasPrice:  gasPrice.Big(),
+			Gas:       gasLimit.Big().Uint64(),
+			To:        destination,
+			Value:     callvalue.Big(),
+			Data:      calldata,
+		}
 	}
-	return &txSegment{
-		apiImpl,
-		types.NewTx(legacyTx),
-	}
+
+	return types.NewTx(inner), nil
 }
 
-func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, apiImpl *ArbosAPIImpl) []MessageSegment {
+func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
 	balance, err := HashFromReader(rd)
 	if err != nil {
-		return []MessageSegment{}
+		return nil, err
 	}
-	return []MessageSegment{ &ethDeposit{apiImpl, header.sender, balance } }
+	tx := &types.DepositTx{
+		ChainId:               chainId,
+		L1RequestId: header.requestId,
+		To:                    header.sender,
+		Value:                 balance.Big(),
+	}
+	return types.NewTx(tx), nil
 }
