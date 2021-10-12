@@ -70,6 +70,7 @@ type ArbosState struct {
 	smallGasPool      *StorageBackedInt64
 	gasPriceWei       *big.Int
 	lastTimestampSeen *big.Int
+	retryableQueue	  *QueueInStorage
 	backingStorage    EvmStorage
 }
 
@@ -79,6 +80,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	for tryStorageUpgrade(backingStorage) {}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -192,6 +194,14 @@ func (state *ArbosState) LastTimestampSeen() *big.Int {
 func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 	state.lastTimestampSeen = val
 	state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
+}
+
+func (state *ArbosState) RetryableQueue() *QueueInStorage {
+	if state.retryableQueue != nil {
+		queueOffset := state.backingStorage.Get(IntToHash(6))
+		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
+	}
+	return state.retryableQueue
 }
 
 func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {
