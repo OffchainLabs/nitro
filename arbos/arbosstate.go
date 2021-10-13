@@ -108,7 +108,8 @@ var (
 	gasPoolKey = IntToHash(2)
 	smallGasPoolKey = IntToHash(3)
 	gasPriceKey = IntToHash(4)
-	lastTimestampKey= IntToHash(5)
+	lastTimestampKey = IntToHash(5)
+	retryableQueueKey = IntToHash(6)
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
@@ -118,6 +119,7 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(smallGasPoolKey, IntToHash(10000000*60))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
 	backingStorage.Set(lastTimestampKey, IntToHash(0))
+	backingStorage.Set(retryableQueueKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -197,8 +199,13 @@ func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 }
 
 func (state *ArbosState) RetryableQueue() *QueueInStorage {
-	if state.retryableQueue != nil {
-		queueOffset := state.backingStorage.Get(IntToHash(6))
+	if state.retryableQueue == nil {
+		queueOffset := state.backingStorage.Get(retryableQueueKey)
+		if queueOffset == IntToHash(0) {
+			queue := AllocateQueueInStorage(state)
+			queueOffset = queue.segment.offset
+			state.backingStorage.Set(retryableQueueKey, queueOffset)
+		}
 		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
 	}
 	return state.retryableQueue

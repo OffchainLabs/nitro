@@ -158,11 +158,11 @@ func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts) {
-
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
+	OpenArbosState(statedb).ReapRetryableQueue()
 }

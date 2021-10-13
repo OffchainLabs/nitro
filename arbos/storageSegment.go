@@ -1,6 +1,9 @@
 package arbos
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	"math/big"
+)
 
 type StorageSegment struct {
 	offset      common.Hash
@@ -56,6 +59,14 @@ func (seg *StorageSegment) GetBytes() []byte {
 		}
 	}
 	return buf[:size]
+}
+
+func (seg *StorageSegment) Delete() {
+	seg.storage.Set(seg.offset, common.Hash{})
+	for i := uint64(0); i < seg.size; i++ {
+		offset := new(big.Int).Add(seg.offset.Big(), big.NewInt(int64(i)))
+		seg.storage.Set(common.BigToHash(offset), common.Hash{})
+	}
 }
 
 func (seg *StorageSegment) Equals(other *StorageSegment) bool {
