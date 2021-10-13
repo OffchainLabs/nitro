@@ -67,8 +67,8 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 // AddSegment returns true if block is done
 func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
 	startIndex := uint64(0)
-	arbosState := OpenArbosState(b.statedb)
 	if b.blockInfo == nil {
+		arbosState := OpenArbosState(b.statedb)
 		b.blockInfo = &segment.L1Info
 		var lastBlockHash common.Hash
 		timestamp := b.blockInfo.l1Timestamp.Uint64()
@@ -141,7 +141,6 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
-		arbosState.notifyGasUsed(receipt.GasUsed)   //TODO: BUGBUG: Need to report only the L2 gas used
 	}
 	return nil, true
 }
