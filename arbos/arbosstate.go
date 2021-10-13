@@ -71,6 +71,7 @@ type ArbosState struct {
 	gasPriceWei       *big.Int
 	lastTimestampSeen *big.Int
 	retryableQueue	  *QueueInStorage
+	validRetryables   EvmStorage
 	backingStorage    EvmStorage
 }
 
@@ -80,6 +81,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	for tryStorageUpgrade(backingStorage) {}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -110,6 +112,7 @@ var (
 	gasPriceKey = IntToHash(4)
 	lastTimestampKey = IntToHash(5)
 	retryableQueueKey = IntToHash(6)
+	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
@@ -209,6 +212,13 @@ func (state *ArbosState) RetryableQueue() *QueueInStorage {
 		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
 	}
 	return state.retryableQueue
+}
+
+func (state *ArbosState) ValidRetryablesSet() EvmStorage {
+	// This is a virtual storage (KVS) that we use to keep track of which ids are ids of valid retryables.
+	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
+	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
+	return NewVirtualStorage(state.backingStorage, validRetryableSetUniqueKey)
 }
 
 func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {

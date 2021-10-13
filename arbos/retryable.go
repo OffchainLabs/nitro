@@ -48,10 +48,17 @@ func CreateRetryable(
 	// insert the new retryable into the queue so it can be reaped later
 	state.RetryableQueue().Put(id)
 
+	// mark the new retryable as valid
+	state.ValidRetryablesSet().Set(id, common.Hash{ 1 })
+
 	return ret
 }
 
 func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
+	if state.ValidRetryablesSet().Get(id) == (common.Hash{}) {
+		// that is not a valid retryable
+		return nil
+	}
 	seg := state.OpenSegment(id)
 	if seg == nil {
 		// retryable has been deleted
@@ -65,9 +72,21 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if ret.timeout.Cmp(state.LastTimestampSeen()) < 0 {
 		// retryable has expired, so delete it
 		seg.Delete()
+		state.ValidRetryablesSet().Set(id, common.Hash{})
 		return nil
 	}
 	return ret
+}
+
+func DeleteRetryable(state *ArbosState, id common.Hash) {
+	vrs := state.ValidRetryablesSet()
+	if vrs.Get(id) != (common.Hash{}) {
+		vrs.Set(id, common.Hash{})
+		seg := state.OpenSegment(id)
+		if seg != nil {
+			seg.Delete()
+		}
+	}
 }
 
 func NewFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
