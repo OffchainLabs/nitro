@@ -61,6 +61,23 @@ func (seg *StorageSegment) GetBytes() []byte {
 	return buf[:size]
 }
 
+func (seg *StorageSegment) WriteBytes(buf []byte) {
+	seg.Set(0, IntToHash(int64(len(buf))))
+
+	offset := uint64(1)
+	for len(buf) >= 32 {
+		seg.Set(offset, common.BytesToHash(buf[:32]))
+		offset += 1
+		buf = buf[32:]
+	}
+
+	endBuf := [32]byte{}
+	for i := 0; i < len(buf); i++ {
+		endBuf[i] = buf[i]
+	}
+	seg.Set(offset, common.BytesToHash(endBuf[:]))
+}
+
 func (seg *StorageSegment) Delete() {
 	seg.storage.Set(seg.offset, common.Hash{})
 	for i := uint64(0); i < seg.size; i++ {

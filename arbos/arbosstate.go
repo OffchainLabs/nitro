@@ -218,18 +218,30 @@ func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {
 
 	offset := state.AllocateEmptyStorageOffset()
 
-	state.backingStorage.Set(*offset, IntToHash(int64(size)))
+	return state.AllocateSegmentAtOffset(size, *offset)
+}
+
+func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash) (*StorageSegment, error) {
+	state.backingStorage.Set(offset, IntToHash(int64(size)))
 
 	return &StorageSegment{
-		*offset,
+		offset,
 		size,
 		state.backingStorage,
 	}, nil
 }
 
+func (state *ArbosState) SegmentExists(offset common.Hash) bool {
+	return state.backingStorage.Get(offset).Big().Cmp(big.NewInt(0)) == 0
+}
+
 func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
+	if bigSize.Cmp(big.NewInt(0)) == 0 {
+		// segment has been deleted
+		return nil
+	}
 	if !bigSize.IsUint64() {
 		panic("not a valid state segment")
 	}
@@ -248,25 +260,26 @@ func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 }
 
 func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
-	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSegment(uint64(1+sizeWords))
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegment(uint64(1 + sizeWords))
 	if err != nil {
 		panic(err)
 	}
-	seg.Set(0, IntToHash(int64(len(buf))))
 
-	offset := uint64(1)
-	for len(buf) >= 32 {
-		seg.Set(offset, common.BytesToHash(buf[:32]))
-		offset += 1
-		buf = buf[32:]
+	seg.WriteBytes(buf)
+
+	return seg
+}
+
+func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *StorageSegment {
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegmentAtOffset(uint64(1 + sizeWords), offset)
+	if err != nil {
+		panic(err)
 	}
 
-	endBuf := [32]byte{}
-	for i := 0; i < len(buf); i++ {
-		endBuf[i] = buf[i]
-	}
-	seg.Set(offset, common.BytesToHash(endBuf[:]))
+	seg.WriteBytes(buf)
+
 	return seg
 }
 

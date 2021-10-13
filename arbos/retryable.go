@@ -9,8 +9,8 @@ import (
 )
 
 type Retryable struct {
-	storageOffset common.Hash
-	id            common.Hash
+	id            common.Hash    // the retryable's ID is also the offset where its segment lives in storage
+	numTries      *big.Int
 	timeout       *big.Int
 	from          common.Address
 	to            common.Address
@@ -18,7 +18,7 @@ type Retryable struct {
 	calldata      []byte
 }
 
-func Create(
+func CreateRetryable(
 	state *ArbosState,
 	id common.Hash,
 	timeout *big.Int,
@@ -29,8 +29,8 @@ func Create(
 ) *Retryable {
 	state.ReapRetryableQueue()
 	ret := &Retryable{
-		common.Hash{},   // will fill in later
 		id,
+		big.NewInt(0),
 		timeout,
 		from,
 		to,
@@ -41,27 +41,37 @@ func Create(
 	if err := ret.serialize(&buf); err != nil {
 		panic(err)
 	}
-	seg := state.AllocateSegmentForBytes(buf.Bytes())
-	ret.storageOffset = seg.offset
+
+	// set up a segment to hold the retryable
+	_ = state.AllocateSegmentAtOffsetForBytes(buf.Bytes(), id)
+
+	// insert the new retryable into the queue so it can be reaped later
+	state.RetryableQueue().Put(id)
 
 	return ret
 }
 
-func OpenRetryable(storage *ArbosState, offset common.Hash) *Retryable {
-	seg := storage.OpenSegment(offset)
+func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
+	seg := state.OpenSegment(id)
+	if seg == nil {
+		// retryable has been deleted
+		return nil
+	}
 	contents := seg.GetBytes()
-	ret, err := NewFromReader(bytes.NewReader(contents), offset)
+	ret, err := NewFromReader(bytes.NewReader(contents), id)
 	if err != nil {
 		panic(err)
 	}
+	if ret.timeout.Cmp(state.LastTimestampSeen()) < 0 {
+		// retryable has expired, so delete it
+		seg.Delete()
+		return nil
+	}
 	return ret
 }
 
-func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
-	id, err := HashFromReader(rd)
-	if err != nil {
-		return nil, err
-	}
+func NewFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
+	numTries, err := HashFromReader(rd)
 	timeout, err := HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -89,8 +99,8 @@ func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
 	}
 
 	return &Retryable{
-		offset,
 		id,
+		numTries.Big(),
 		timeout.Big(),
 		from,
 		to,
@@ -100,7 +110,7 @@ func NewFromReader(rd io.Reader, offset common.Hash) (*Retryable, error) {
 }
 
 func (retryable *Retryable) serialize(wr io.Writer) error {
-	if _, err := wr.Write(retryable.id[:]); err != nil {
+	if _, err := wr.Write(common.BigToHash(retryable.numTries).Bytes()); err != nil {
 		return err
 	}
 	if _, err := wr.Write(common.BigToHash(retryable.timeout).Bytes()); err != nil {
@@ -129,13 +139,11 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 func (state *ArbosState) ReapRetryableQueue() {
 	queue := state.RetryableQueue()
 	if !queue.IsEmpty() {
-		offset := queue.Get()
-		retryable := OpenRetryable(state, *offset)
-		if retryable.timeout.Cmp(state.LastTimestampSeen()) < 0 {
-			segment := state.OpenSegment(*offset)
-			segment.Delete()
-		} else {
-			queue.Put(*offset)
+		id := queue.Get()
+		retryable := OpenRetryable(state, *id)
+		if retryable != nil {
+			// OpenRetryable returned non-nil, so we know the retryable hasn't expired
+			queue.Put(*id)
 		}
 	}
 }

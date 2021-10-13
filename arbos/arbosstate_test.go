@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Create a memory-backed ArbOS state
+// CreateRetryable a memory-backed ArbOS state
 func OpenArbosStateForTest() *ArbosState {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
