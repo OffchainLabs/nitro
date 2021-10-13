@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-var perBlockGasLimit uint64 = 20000000
 
 var ChainConfig = &params.ChainConfig{
 	ChainID:             big.NewInt(412345),
@@ -68,6 +67,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 // AddSegment returns true if block is done
 func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
 	startIndex := uint64(0)
+	arbosState := OpenArbosState(b.statedb)
 	if b.blockInfo == nil {
 		b.blockInfo = &segment.L1Info
 		var lastBlockHash common.Hash
@@ -78,11 +78,12 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 			blockNumber.Add(b.lastBlockHeader.Number, big.NewInt(1))
 			if timestamp < b.lastBlockHeader.Time {
 				timestamp = b.lastBlockHeader.Time
+				arbosState.SetLastTimestampSeen(new(big.Int).SetUint64(timestamp))
 			}
 			startIndex = binary.BigEndian.Uint64(b.lastBlockHeader.Nonce[:])
 		}
 
-		gasLimit := perBlockGasLimit // TODO
+		gasLimit := arbosState.CurrentPerBlockGasLimit()
 
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,
@@ -114,7 +115,7 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 	}
 
 	for i, tx := range segment.txes[startIndex:] {
-		if tx.Gas() > perBlockGasLimit {
+		if tx.Gas() > MaxPerBlockGasLimit() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
 		}
@@ -140,6 +141,7 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
+		arbosState.notifyGasUsed(receipt.GasUsed)   //TODO: BUGBUG: Need to report only the L2 gas used
 	}
 	return nil, true
 }

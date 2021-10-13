@@ -114,8 +114,8 @@ var (
 func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(versionKey, IntToHash(1))
 	backingStorage.Set(storageOffsetKey, crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
-	backingStorage.Set(gasPoolKey, IntToHash(10000000*10*60))
-	backingStorage.Set(smallGasPoolKey, IntToHash(10000000*60))
+	backingStorage.Set(gasPoolKey, IntToHash(GasPoolMax))
+	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
 	backingStorage.Set(lastTimestampKey, IntToHash(0))
 }
@@ -192,8 +192,14 @@ func (state *ArbosState) LastTimestampSeen() *big.Int {
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
+	if state.lastTimestampSeen == nil {
+		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
+	}
+	secondsElapsed := new(big.Int).Sub(val, state.lastTimestampSeen)
 	state.lastTimestampSeen = val
 	state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
+
+	state.notifyGasPricerThatTimeElapsed(secondsElapsed.Uint64())
 }
 
 func (state *ArbosState) RetryableQueue() *QueueInStorage {
