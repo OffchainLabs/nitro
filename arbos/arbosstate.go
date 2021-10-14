@@ -72,6 +72,7 @@ type ArbosState struct {
 	lastTimestampSeen *big.Int
 	retryableQueue	  *QueueInStorage
 	validRetryables   EvmStorage
+	pendingRedeems    *QueueInStorage
 	backingStorage    EvmStorage
 }
 
@@ -81,6 +82,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	for tryStorageUpgrade(backingStorage) {}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -112,6 +114,7 @@ var (
 	gasPriceKey = IntToHash(4)
 	lastTimestampKey = IntToHash(5)
 	retryableQueueKey = IntToHash(6)
+	pendingRedeemsKey = IntToHash(7)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -123,6 +126,7 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
 	backingStorage.Set(lastTimestampKey, IntToHash(0))
 	backingStorage.Set(retryableQueueKey, IntToHash(0))
+	backingStorage.Set(pendingRedeemsKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -219,6 +223,19 @@ func (state *ArbosState) ValidRetryablesSet() EvmStorage {
 	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
 	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
 	return NewVirtualStorage(state.backingStorage, validRetryableSetUniqueKey)
+}
+
+func (state *ArbosState) PendingRedeemQueue() *QueueInStorage {
+	if state.pendingRedeems == nil {
+		queueOffset := state.backingStorage.Get(pendingRedeemsKey)
+		if queueOffset == IntToHash(0) {
+			queue := AllocateQueueInStorage(state)
+			queueOffset = queue.segment.offset
+			state.backingStorage.Set(pendingRedeemsKey, queueOffset)
+		}
+		state.pendingRedeems = OpenQueueInStorage(state, queueOffset)
+	}
+	return state.pendingRedeems
 }
 
 func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {

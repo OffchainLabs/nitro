@@ -166,3 +166,93 @@ func (state *ArbosState) TryToReapOneRetryable() {
 		}
 	}
 }
+
+type PlannedRedeem struct {
+	segment       *StorageSegment
+	retryableId   common.Hash
+	gasRefundAddr common.Address
+	gas           uint64
+	gasPrice      *big.Int
+}
+
+func NewPlannedRedeem(state *ArbosState, retryableId common.Hash, gasRefundAddr common.Address, gas uint64, gasPrice *big.Int) *PlannedRedeem {
+	ret := &PlannedRedeem{
+		nil,
+		retryableId,
+		gasRefundAddr,
+		gas,
+		gasPrice,
+	}
+	ret.segment = state.AllocateSegmentForBytes(ret.serialize())
+	state.PendingRedeemQueue().Put(ret.segment.offset)
+	return ret
+}
+
+func OpenPlannedRedeem(state *ArbosState, offset common.Hash) *PlannedRedeem {
+	segment := state.OpenSegment(offset)
+	buf := bytes.NewReader(segment.GetBytes())
+	retryableId, err := HashFromReader(buf)
+	if err != nil {
+		return nil
+	}
+	gasRefundAddr, err := AddressFromReader(buf)
+	if err != nil {
+		return nil
+	}
+	gas, err := Uint64FromReader(buf)
+	if err != nil {
+		return nil
+	}
+	gasPrice, err := HashFromReader(buf)
+	if err != nil {
+		return nil
+	}
+
+	return &PlannedRedeem{
+		segment,
+		retryableId,
+		gasRefundAddr,
+		gas,
+		gasPrice.Big(),
+	}
+}
+
+func (pr *PlannedRedeem) serialize() []byte {
+	var buf bytes.Buffer
+	if err := HashToWriter(pr.retryableId, &buf); err != nil {
+		return nil
+	}
+	if err := AddressToWriter(pr.gasRefundAddr, &buf); err != nil {
+		return nil
+	}
+	if err := Uint64ToWriter(pr.gas, &buf); err != nil {
+		return nil
+	}
+	if err := HashToWriter(common.BigToHash(pr.gasPrice), &buf); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+func PeekNextPendingRedeem(state *ArbosState) *PlannedRedeem {  // peek at the next redeem but don't consume it
+	queue := state.PendingRedeemQueue()
+	if queue.IsEmpty() {
+		return nil
+	}
+	return OpenPlannedRedeem(state, *queue.Peek())
+}
+
+func DiscardNextPendingRedeem(state *ArbosState, deleteTheRetryable bool) {
+	queue := state.PendingRedeemQueue()
+	if queue.IsEmpty() {
+		return
+	}
+	redeem := OpenPlannedRedeem(state, *queue.Get())
+	if deleteTheRetryable {
+		DeleteRetryable(state, redeem.retryableId)
+	}
+	redeem.segment.Delete()
+}
+
+
+

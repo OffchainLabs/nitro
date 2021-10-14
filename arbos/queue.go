@@ -59,3 +59,7 @@ func (q *QueueInStorage) Put(val common.Hash) {
 	q.nextPutOffset = &nextPutOffset
 	q.segment.Set(0, nextPutOffset)
 }
+
+func (q *QueueInStorage) Size() *big.Int {
+	return new(big.Int).Sub(q.nextPutOffset.Big(), q.nextGetOffset.Big())
+}
