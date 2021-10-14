@@ -7,12 +7,11 @@ import (
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	arbBackend "github.com/offchainlabs/arbstate/arbbackend"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
@@ -54,22 +53,17 @@ func main() {
 		ParentHash: common.Hash{},
 		BaseFee:    big.NewInt(0),
 	}
-	arbEngine := arbos.Engine{
-		IsSequencer: true,
-	}
-	backend, err := eth.NewAdvanced(stack, &nodeConf, arbEngine)
+
+	_, err = arbBackend.New(stack, &nodeConf)
 	if err != nil {
 		utils.Fatalf("Error creating backend: %v\n", err)
 	}
-	stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
-	backend.SetEtherbase(common.HexToAddress("0xbE8e5197Acd8597c282D29C066c08A03b657ED08"))
+	//stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
+	//backend.SetEtherbase(common.HexToAddress("0xbE8e5197Acd8597c282D29C066c08A03b657ED08"))
 	log.Info("starting stack")
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
 	}
 
-	if err := backend.StartMining(1); err != nil {
-		utils.Fatalf("Error starting mining: %v\n", err)
-	}
 	stack.Wait()
 }
