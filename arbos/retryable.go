@@ -10,8 +10,8 @@ import (
 
 type Retryable struct {
 	id            common.Hash    // the retryable's ID is also the offset where its segment lives in storage
-	numTries      *big.Int
-	timeout       *big.Int
+	numTries      uint64
+	timeout       uint64
 	from          common.Address
 	to            common.Address
 	callvalue     *big.Int
@@ -21,7 +21,7 @@ type Retryable struct {
 func CreateRetryable(
 	state *ArbosState,
 	id common.Hash,
-	timeout *big.Int,
+	timeout uint64,
 	from common.Address,
 	to common.Address,
 	callvalue *big.Int,
@@ -30,7 +30,7 @@ func CreateRetryable(
 	state.TryToReapOneRetryable()
 	ret := &Retryable{
 		id,
-		big.NewInt(0),
+		0,
 		timeout,
 		from,
 		to,
@@ -69,13 +69,34 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if err != nil {
 		panic(err)
 	}
-	if ret.timeout.Cmp(state.LastTimestampSeen()) < 0 {
+	if new(big.Int).SetUint64(ret.timeout).Cmp(state.LastTimestampSeen()) < 0 {
 		// retryable has expired, so delete it
 		seg.Delete()
 		state.ValidRetryablesSet().Set(id, common.Hash{})
 		return nil
 	}
 	return ret
+}
+
+func (retryable *Retryable) Persist(state *ArbosState) {
+	buf := bytes.Buffer{}
+	if err := retryable.serialize(&buf); err != nil {
+		panic("Unexpected error serializing retryable")  // should be impossible
+	}
+	segment := state.OpenSegment(retryable.id)
+	segment.WriteBytes(buf.Bytes())
+}
+
+func (retryable *Retryable) SetTimeout(newTimeout uint64, state *ArbosState) {
+	retryable.timeout = newTimeout
+	retryable.Persist(state)
+}
+
+func (retryable *Retryable) GetAndIncrementTryCount(state *ArbosState) uint64 {
+	tryCount := retryable.numTries
+	retryable.numTries = tryCount + 1
+	retryable.Persist(state)
+	return tryCount
 }
 
 func DeleteRetryable(state *ArbosState, id common.Hash) {
@@ -90,8 +111,8 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 }
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
-	numTries, err := HashFromReader(rd)
-	timeout, err := HashFromReader(rd)
+	numTries, err := Uint64FromReader(rd)
+	timeout, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +140,8 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 
 	return &Retryable{
 		id,
-		numTries.Big(),
-		timeout.Big(),
+		numTries,
+		timeout,
 		from,
 		to,
 		callvalue.Big(),
@@ -129,27 +150,22 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 }
 
 func (retryable *Retryable) serialize(wr io.Writer) error {
-	if _, err := wr.Write(common.BigToHash(retryable.numTries).Bytes()); err != nil {
+	if err := Uint64ToWriter(retryable.numTries, wr); err != nil {
 		return err
 	}
-	if _, err := wr.Write(common.BigToHash(retryable.timeout).Bytes()); err != nil {
+	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
 		return err
 	}
-	if _, err := wr.Write(retryable.from[:]); err != nil {
+	if err := AddressToWriter(retryable.from, wr); err != nil {
 		return err
 	}
-	if _, err := wr.Write(retryable.to[:]); err != nil {
+	if err := AddressToWriter(retryable.to, wr); err != nil {
 		return err
 	}
-	if _, err := wr.Write(common.BigToHash(retryable.callvalue).Bytes()); err != nil {
+	if err := HashToWriter(common.BigToHash(retryable.callvalue), wr); err != nil {
 		return err
 	}
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(len(retryable.calldata)))
-	if _, err := wr.Write(b); err != nil {
-		return err
-	}
-	if _, err := wr.Write(retryable.calldata); err != nil {
+	if err := BytestringToWriter(retryable.calldata, wr); err != nil {
 		return err
 	}
 	return nil
@@ -171,17 +187,15 @@ type PlannedRedeem struct {
 	segment       *StorageSegment
 	retryableId   common.Hash
 	gasRefundAddr common.Address
-	gas           uint64
-	gasPrice      *big.Int
+	gasFundsWei   *big.Int
 }
 
-func NewPlannedRedeem(state *ArbosState, retryableId common.Hash, gasRefundAddr common.Address, gas uint64, gasPrice *big.Int) *PlannedRedeem {
+func NewPlannedRedeem(state *ArbosState, retryableId common.Hash, gasRefundAddr common.Address, gasFundsWei *big.Int) *PlannedRedeem {
 	ret := &PlannedRedeem{
 		nil,
 		retryableId,
 		gasRefundAddr,
-		gas,
-		gasPrice,
+		gasFundsWei,
 	}
 	ret.segment = state.AllocateSegmentForBytes(ret.serialize())
 	state.PendingRedeemQueue().Put(ret.segment.offset)
@@ -199,11 +213,7 @@ func OpenPlannedRedeem(state *ArbosState, offset common.Hash) *PlannedRedeem {
 	if err != nil {
 		return nil
 	}
-	gas, err := Uint64FromReader(buf)
-	if err != nil {
-		return nil
-	}
-	gasPrice, err := HashFromReader(buf)
+	gasFundsWei, err := HashFromReader(buf)
 	if err != nil {
 		return nil
 	}
@@ -212,8 +222,7 @@ func OpenPlannedRedeem(state *ArbosState, offset common.Hash) *PlannedRedeem {
 		segment,
 		retryableId,
 		gasRefundAddr,
-		gas,
-		gasPrice.Big(),
+		gasFundsWei.Big(),
 	}
 }
 
@@ -225,10 +234,7 @@ func (pr *PlannedRedeem) serialize() []byte {
 	if err := AddressToWriter(pr.gasRefundAddr, &buf); err != nil {
 		return nil
 	}
-	if err := Uint64ToWriter(pr.gas, &buf); err != nil {
-		return nil
-	}
-	if err := HashToWriter(common.BigToHash(pr.gasPrice), &buf); err != nil {
+	if err := HashToWriter(common.BigToHash(pr.gasFundsWei), &buf); err != nil {
 		return nil
 	}
 	return buf.Bytes()

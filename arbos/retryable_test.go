@@ -23,7 +23,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 	state.SetLastTimestampSeen(newTimestamp)
 
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := originalTimestamp // in the past
+	timeout := originalTimestamp.Uint64() // in the past
 	from := common.BytesToAddress([]byte{ 3, 4, 5 })
 	to := common.BytesToAddress([]byte{ 6, 7, 8, 9 })
 	callvalue := big.NewInt(0)
@@ -40,7 +40,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 func TestRetryableCreate(t *testing.T) {
 	state := OpenArbosStateForTest()
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := new(big.Int).Add(state.LastTimestampSeen(), big.NewInt(10000000))
+	timeout := state.LastTimestampSeen().Uint64()+10000000
 	from := common.BytesToAddress([]byte{ 3, 4, 5 })
 	to := common.BytesToAddress([]byte{ 6, 7, 8, 9 })
 	callvalue := big.NewInt(0)
@@ -54,7 +54,7 @@ func TestRetryableCreate(t *testing.T) {
 	if reread.id != retryable.id {
 		t.Fatal()
 	}
-	if reread.timeout.Cmp(retryable.timeout) != 0 {
+	if reread.timeout != retryable.timeout {
 		t.Fatal()
 	}
 	if reread.from != retryable.from {
@@ -74,7 +74,7 @@ func TestRetryableCreate(t *testing.T) {
 func TestPlanOneRedeem(t *testing.T) {
 	state := OpenArbosStateForTest()
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := new(big.Int).Add(state.LastTimestampSeen(), big.NewInt(10000000))
+	timeout := state.LastTimestampSeen().Uint64()+10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
@@ -82,9 +82,8 @@ func TestPlanOneRedeem(t *testing.T) {
 	_ = CreateRetryable(state, id, timeout, from, to, callvalue, calldata)
 
 	refundAddr := common.Address{ 3, 4 }
-	gas := uint64(100983)
-	gasPrice := big.NewInt(486687768)
-	redeem := NewPlannedRedeem(state, id, refundAddr, gas, gasPrice)
+	gasFundsWei := big.NewInt(486687768)
+	redeem := NewPlannedRedeem(state, id, refundAddr, gasFundsWei)
 
 	readBack := PeekNextPlannedRedeem(state)
 	if readBack == nil {
@@ -96,10 +95,7 @@ func TestPlanOneRedeem(t *testing.T) {
 	if redeem.gasRefundAddr != readBack.gasRefundAddr {
 		t.Fatal()
 	}
-	if redeem.gas != readBack.gas {
-		t.Fatal()
-	}
-	if redeem.gasPrice.Cmp(readBack.gasPrice) != 0 {
+	if redeem.gasFundsWei.Cmp(readBack.gasFundsWei) != 0 {
 		t.Fatal()
 	}
 
@@ -114,10 +110,7 @@ func TestPlanOneRedeem(t *testing.T) {
 	if redeem.gasRefundAddr != readBack.gasRefundAddr {
 		t.Fatal()
 	}
-	if redeem.gas != readBack.gas {
-		t.Fatal()
-	}
-	if redeem.gasPrice.Cmp(readBack.gasPrice) != 0 {
+	if redeem.gasFundsWei.Cmp(readBack.gasFundsWei) != 0 {
 		t.Fatal()
 	}
 
@@ -128,7 +121,7 @@ func TestPlanOneRedeem(t *testing.T) {
 	}
 
 	// make a new redeem, discard it with delete, then make sure the retryable is gone
-	_ = NewPlannedRedeem(state, id, refundAddr, gas, gasPrice)
+	_ = NewPlannedRedeem(state, id, refundAddr, gasFundsWei)
 	DiscardNextPlannedRedeem(state, true)
 	if OpenRetryable(state, id) != nil {
 		t.Fatal()
