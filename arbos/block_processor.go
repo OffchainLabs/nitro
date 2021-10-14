@@ -164,5 +164,5 @@ func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
-	OpenArbosState(statedb).ReapRetryableQueue()
+	OpenArbosState(statedb).TryToReapOneRetryable()
 }

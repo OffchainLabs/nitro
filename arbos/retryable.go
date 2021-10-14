@@ -27,7 +27,7 @@ func CreateRetryable(
 	callvalue *big.Int,
 	calldata []byte,
 ) *Retryable {
-	state.ReapRetryableQueue()
+	state.TryToReapOneRetryable()
 	ret := &Retryable{
 		id,
 		big.NewInt(0),
@@ -65,7 +65,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 		return nil
 	}
 	contents := seg.GetBytes()
-	ret, err := NewFromReader(bytes.NewReader(contents), id)
+	ret, err := NewRetryableFromReader(bytes.NewReader(contents), id)
 	if err != nil {
 		panic(err)
 	}
@@ -89,7 +89,7 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 	}
 }
 
-func NewFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
+func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	numTries, err := HashFromReader(rd)
 	timeout, err := HashFromReader(rd)
 	if err != nil {
@@ -155,7 +155,7 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	return nil
 }
 
-func (state *ArbosState) ReapRetryableQueue() {
+func (state *ArbosState) TryToReapOneRetryable() {
 	queue := state.RetryableQueue()
 	if !queue.IsEmpty() {
 		id := queue.Get()

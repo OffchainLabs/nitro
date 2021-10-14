@@ -232,6 +232,8 @@ func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {
 }
 
 func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash) (*StorageSegment, error) {
+	// caller is responsible for checking that size is in bounds
+
 	state.backingStorage.Set(offset, IntToHash(int64(size)))
 
 	return &StorageSegment{

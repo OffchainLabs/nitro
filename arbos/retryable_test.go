@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"bytes"
 	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
@@ -65,12 +66,7 @@ func TestRetryableCreate(t *testing.T) {
 	if reread.callvalue.Cmp(retryable.callvalue) != 0 {
 		t.Fatal()
 	}
-	if len(reread.calldata) != len(retryable.calldata) {
+	if !bytes.Equal(reread.calldata, retryable.calldata) {
 		t.Fatal()
-	}
-	for i, b := range reread.calldata {
-		if b != retryable.calldata[i] {
-			t.Fatal(i)
-		}
 	}
 }
