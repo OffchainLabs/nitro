@@ -195,11 +195,12 @@ func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
 	if state.lastTimestampSeen == nil {
 		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
 	}
-	secondsElapsed := new(big.Int).Sub(val, state.lastTimestampSeen)
-	state.lastTimestampSeen = val
-	state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
-
-	state.notifyGasPricerThatTimeElapsed(secondsElapsed.Uint64())
+	if val != state.lastTimestampSeen {
+		state.lastTimestampSeen = val
+		state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
+		secondsElapsed := new(big.Int).Sub(val, state.lastTimestampSeen)
+		state.notifyGasPricerThatTimeElapsed(secondsElapsed.Uint64())
+	}
 }
 
 func (state *ArbosState) RetryableQueue() *QueueInStorage {

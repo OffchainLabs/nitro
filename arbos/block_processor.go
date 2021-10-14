@@ -78,7 +78,6 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 			blockNumber.Add(b.lastBlockHeader.Number, big.NewInt(1))
 			if timestamp < b.lastBlockHeader.Time {
 				timestamp = b.lastBlockHeader.Time
-				arbosState.SetLastTimestampSeen(new(big.Int).SetUint64(timestamp))
 			}
 			startIndex = binary.BigEndian.Uint64(b.lastBlockHeader.Nonce[:])
 		}
@@ -116,7 +115,7 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 
 	for i, tx := range segment.txes[startIndex:] {
 		if tx.Gas() > MaxPerBlockGasLimit() {
-			// Ignore and transactions with higher than the max possible gas
+			// Ignore any transactions with higher than the max possible gas
 			continue
 		}
 		if tx.Gas() > b.gasPool.Gas() {
@@ -159,11 +158,11 @@ func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts) {
-
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
+	OpenArbosState(statedb).SetLastTimestampSeen(new(big.Int).SetUint64(header.Time))
 }
