@@ -23,6 +23,7 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 		message, shouldEndBlock, err := inboxMultiplexer.Peek()
 		if err != nil {
 			log.Warn("error parsing inbox message: %v", err)
+			inboxMultiplexer.Advance()
 			break
 		}
 		segment, err := arbos.IncomingMessageToSegment(message, chainId)
