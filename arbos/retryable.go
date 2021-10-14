@@ -234,7 +234,7 @@ func (pr *PlannedRedeem) serialize() []byte {
 	return buf.Bytes()
 }
 
-func PeekNextPendingRedeem(state *ArbosState) *PlannedRedeem {  // peek at the next redeem but don't consume it
+func PeekNextPlannedRedeem(state *ArbosState) *PlannedRedeem { // peek at the next redeem but don't consume it
 	queue := state.PendingRedeemQueue()
 	if queue.IsEmpty() {
 		return nil
@@ -242,7 +242,7 @@ func PeekNextPendingRedeem(state *ArbosState) *PlannedRedeem {  // peek at the n
 	return OpenPlannedRedeem(state, *queue.Peek())
 }
 
-func DiscardNextPendingRedeem(state *ArbosState, deleteTheRetryable bool) {
+func DiscardNextPlannedRedeem(state *ArbosState, deleteTheRetryable bool) {
 	queue := state.PendingRedeemQueue()
 	if queue.IsEmpty() {
 		return
