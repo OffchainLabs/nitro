@@ -69,7 +69,6 @@ type ArbosState struct {
 	gasPool           *StorageBackedInt64
 	smallGasPool      *StorageBackedInt64
 	gasPriceWei       *big.Int
-	lastTimestampSeen *big.Int
 	retryableQueue	  *QueueInStorage
 	backingStorage    EvmStorage
 }
@@ -80,7 +79,6 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	for tryStorageUpgrade(backingStorage) {}
 
 	return &ArbosState{
-		nil,
 		nil,
 		nil,
 		nil,
@@ -108,7 +106,6 @@ var (
 	gasPoolKey = IntToHash(2)
 	smallGasPoolKey = IntToHash(3)
 	gasPriceKey = IntToHash(4)
-	lastTimestampKey= IntToHash(5)
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
@@ -117,7 +114,6 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(gasPoolKey, IntToHash(GasPoolMax))
 	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
-	backingStorage.Set(lastTimestampKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -182,25 +178,6 @@ func (state *ArbosState) GasPriceWei() *big.Int {
 func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
 	state.backingStorage.Set(gasPriceKey, common.BigToHash(val))
-}
-
-func (state *ArbosState) LastTimestampSeen() *big.Int {
-	if state.lastTimestampSeen == nil {
-		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
-	}
-	return state.lastTimestampSeen
-}
-
-func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
-	if state.lastTimestampSeen == nil {
-		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
-	}
-	if val != state.lastTimestampSeen {
-		state.lastTimestampSeen = val
-		state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
-		secondsElapsed := new(big.Int).Sub(val, state.lastTimestampSeen)
-		state.notifyGasPricerThatTimeElapsed(secondsElapsed.Uint64())
-	}
 }
 
 func (state *ArbosState) RetryableQueue() *QueueInStorage {
@@ -268,13 +245,6 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
 	}
 	seg.Set(offset, common.BytesToHash(endBuf[:]))
 	return seg
-}
-
-func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
-	currentTimestamp := state.LastTimestampSeen()
-	if newTimestamp.Cmp(currentTimestamp) > 0 {
-		state.SetLastTimestampSeen(newTimestamp)
-	}
 }
 
 

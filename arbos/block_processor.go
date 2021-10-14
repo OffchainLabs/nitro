@@ -158,11 +158,24 @@ func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
-	OpenArbosState(statedb).SetLastTimestampSeen(new(big.Int).SetUint64(header.Time))
+func FinalizeBlock(
+	header *types.Header,
+	txs types.Transactions,
+	receipts types.Receipts,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,    // should be nil if there is no previous block
+) {
+	if chainContext != nil {
+		thisTimestamp := header.Time
+		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)
+		prevTimestamp := previousHeader.Time
+		if thisTimestamp > prevTimestamp {
+			OpenArbosState(statedb).notifyGasPricerThatTimeElapsed(thisTimestamp - prevTimestamp)
+		}
+	}
 }
