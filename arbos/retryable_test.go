@@ -99,7 +99,7 @@ func TestPlanOneRedeem(t *testing.T) {
 		t.Fatal()
 	}
 
-	// read back again, verify we got the same thing
+	// read the redeem back, and verify we got the same thing
 	readBack = PeekNextPlannedRedeem(state)
 	if readBack == nil {
 		t.Fatal()
@@ -114,15 +114,21 @@ func TestPlanOneRedeem(t *testing.T) {
 		t.Fatal()
 	}
 
-	// discard the redeem without deleting the retryable, then make sure retryable is still there
+	// discard the redeem without deleting the retryable, then make sure the redeem is gone but the retryable is still there
 	DiscardNextPlannedRedeem(state, false)
+	if PeekNextPlannedRedeem(state) != nil {
+		t.Fatal()
+	}
 	if OpenRetryable(state, id) == nil {
 		t.Fatal()
 	}
 
-	// make a new redeem, discard it with delete, then make sure the retryable is gone
+	// make a new redeem, discard it with delete, then make sure the redeem and the retryable are both gone
 	_ = NewPlannedRedeem(state, id, refundAddr, gasFundsWei)
 	DiscardNextPlannedRedeem(state, true)
+	if PeekNextPlannedRedeem(state) != nil {
+		t.Fatal()
+	}
 	if OpenRetryable(state, id) != nil {
 		t.Fatal()
 	}
