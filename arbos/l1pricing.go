@@ -11,10 +11,9 @@ type L1PricingState struct {
 	segment             *StorageSegment
 	defaultAggregator   common.Address
 	l1GasPriceEstimate  *big.Int
-	compressionEstimate uint64 // estimate compression ratio is this/CompressionEstimateDenominator
+	compressionEstimate uint64 // estimated compression ratio is this/CompressionEstimateDenominator
 }
 
-const L1PricingStateSize = 3
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
@@ -23,16 +22,23 @@ var (
 	aggregatorFixedChargeKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key")).Bytes()
 )
 
+const (
+	defaultAggregatorAddressOffset = 0
+	l1GasPriceEstimateOffset       = 1
+	compressionEstimateOffset      = 2
+)
+const L1PricingStateSize = 3
+
 func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
 	segment, err := state.AllocateSegment(L1PricingStateSize)
 	if err != nil {
 		panic("failed to allocate segment for L1 pricing state")
 	}
-	segment.Set(0, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
 	l1PriceEstimate := big.NewInt(1 * params.GWei)
-	segment.Set(1, common.BigToHash(l1PriceEstimate))
+	segment.Set(l1GasPriceEstimateOffset, common.BigToHash(l1PriceEstimate))
 	compressionEstimate := CompressionEstimateDenominator
-	segment.Set(2, IntToHash(int64(CompressionEstimateDenominator)))
+	segment.Set(compressionEstimateOffset, IntToHash(int64(CompressionEstimateDenominator)))
 	return &L1PricingState{
 		segment,
 		initialDefaultAggregator,
@@ -44,14 +50,19 @@ func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
 func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
 	segment := state.OpenSegment(offset)
 	defaultAggregator := common.BytesToAddress(segment.Get(0).Bytes())
-	l1GasPriceEstimate := segment.Get(1).Big()
-	compressionEstimate := segment.Get(2).Big().Uint64()
+	l1GasPriceEstimate := segment.Get(l1GasPriceEstimateOffset).Big()
+	compressionEstimate := segment.Get(compressionEstimateOffset).Big().Uint64()
 	return &L1PricingState{
 		segment,
 		defaultAggregator,
 		l1GasPriceEstimate,
 		compressionEstimate,
 	}
+}
+
+func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
+	ps.defaultAggregator = aggregator
+	ps.segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() *big.Int {
@@ -68,7 +79,7 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) {
 		),
 		big.NewInt(L1GasPriceEstimateSamplesInAverage),
 	)
-	ps.segment.Set(1, common.BigToHash(ps.l1GasPriceEstimate))
+	ps.segment.Set(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
 }
 
 func (ps *L1PricingState) CompressedSizeEstimate(decompressedSize uint64) uint64 {
@@ -88,15 +99,20 @@ func (ps *L1PricingState) UpdateCompressedSizeEstimate(compressedSize uint64, de
 		compressedSize = MaxSampleForCompressionEstimate * compressedSize / decompressedSize
 		decompressedSize = MaxSampleForCompressionEstimate
 	}
-	ps.compressionEstimate = (compressedSize*CompressionEstimateDenominator +
-		(BytesInCompressionEstimate-decompressedSize)*ps.compressionEstimate) / BytesInCompressionEstimate
-	ps.segment.Set(2, IntToHash(int64(ps.compressionEstimate)))
+	ps.compressionEstimate = compressedSize*CompressionEstimateDenominator + (BytesInCompressionEstimate-decompressedSize)*ps.compressionEstimate
+	ps.segment.Set(compressionEstimateOffset, IntToHash(int64(ps.compressionEstimate)))
+}
+
+func offsetForPreferredAggregator(sender common.Address) common.Hash {
+	return crypto.Keccak256Hash(preferredAggregatorKey, sender.Bytes())
+}
+
+func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) {
+	ps.segment.storage.Set(offsetForPreferredAggregator(sender), common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) PreferredAggregator(sender common.Address) common.Address {
-	fromTable := common.BytesToAddress(
-		ps.segment.storage.Get(crypto.Keccak256Hash(preferredAggregatorKey, sender.Bytes())).Bytes()[:20],
-	)
+	fromTable := common.BytesToAddress(ps.segment.storage.Get(offsetForPreferredAggregator(sender)).Bytes()[:20])
 	if fromTable == (common.Address{}) {
 		return ps.defaultAggregator
 	} else {
@@ -104,6 +120,37 @@ func (ps *L1PricingState) PreferredAggregator(sender common.Address) common.Addr
 	}
 }
 
+func offsetForAggregatorCharge(aggregator common.Address) common.Hash {
+	return crypto.Keccak256Hash(aggregatorFixedChargeKey, aggregator.Bytes())
+}
+
+func (ps *L1PricingState) SetFixedChargeForAggregatorWei(aggregator common.Address, chargeL1Gas *big.Int) {
+	ps.segment.storage.Set(offsetForAggregatorCharge(aggregator), common.BigToHash(chargeL1Gas))
+}
+
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) *big.Int {
-	return ps.segment.storage.Get(crypto.Keccak256Hash(aggregatorFixedChargeKey, aggregator.Bytes())).Big()
+	fixedChargeL1Gas := ps.segment.storage.Get(offsetForAggregatorCharge(aggregator)).Big()
+	return new(big.Int).Mul(fixedChargeL1Gas, ps.L1GasPriceEstimateWei())
+}
+
+func (ps *L1PricingState) GetL1Charges(
+	sender common.Address,
+	aggregator *common.Address,
+	sizeBytes uint64,
+	wasCompressed bool,
+) *big.Int {
+	if aggregator == nil {
+		return big.NewInt(0)
+	}
+	preferredAggregator := ps.PreferredAggregator(sender)
+	if preferredAggregator != *aggregator {
+		return big.NewInt(0)
+	}
+
+	if wasCompressed {
+		sizeBytes = ps.CompressedSizeEstimate(sizeBytes)
+	}
+
+	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(sizeBytes*16)), ps.L1GasPriceEstimateWei())
+	return new(big.Int).Add(ps.FixedChargeForAggregatorWei(preferredAggregator), chargeForBytes)
 }

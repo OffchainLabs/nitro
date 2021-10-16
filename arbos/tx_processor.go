@@ -40,8 +40,12 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
-	//TODO
-	return big.NewInt(0)
+	return p.state.L1PricingState().GetL1Charges(
+		p.msg.From(),
+		p.getAggregator(),
+		uint64(len(p.msg.Data())),   //TODO: need to pass in decompressed L1 data size for this tx
+		false,         //TODO: this should be true iff the message was compressed
+	)
 }
 
 func (p *TxProcessor) getL1GasCharge() uint64 {
