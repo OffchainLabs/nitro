@@ -70,6 +70,7 @@ type ArbosState struct {
 	smallGasPool      *StorageBackedInt64
 	gasPriceWei       *big.Int
 	lastTimestampSeen *big.Int
+	l1PricingState    *L1PricingState
 	backingStorage    EvmStorage
 }
 
@@ -79,6 +80,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	for tryStorageUpgrade(backingStorage) {}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -106,7 +108,8 @@ var (
 	gasPoolKey = IntToHash(2)
 	smallGasPoolKey = IntToHash(3)
 	gasPriceKey = IntToHash(4)
-	lastTimestampKey= IntToHash(5)
+	lastTimestampKey = IntToHash(5)
+	l1PricingKey = IntToHash(6)
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
@@ -116,6 +119,7 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(smallGasPoolKey, IntToHash(10000000*60))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
 	backingStorage.Set(lastTimestampKey, IntToHash(0))
+	backingStorage.Set(l1PricingKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -187,6 +191,20 @@ func (state *ArbosState) LastTimestampSeen() *big.Int {
 		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
 	}
 	return state.lastTimestampSeen
+}
+
+func (state *ArbosState) L1PricingState() *L1PricingState {
+	if state.l1PricingState == nil {
+		offset := state.backingStorage.Get(l1PricingKey)
+		if offset == (common.Hash{}) {
+			l1PricingState, offset := AllocateL1PricingState(state)
+			state.l1PricingState = l1PricingState
+			state.backingStorage.Set(l1PricingKey, offset)
+		} else {
+			state.l1PricingState = OpenL1PricingState(offset, state)
+		}
+	}
+	return state.l1PricingState
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
