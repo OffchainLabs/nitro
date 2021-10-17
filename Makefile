@@ -21,7 +21,7 @@ contracts: .make/solidity
 	@printf $(done)
 
 clean:
-	@rm -rf precompiles/artifacts precompiles/cache
+	@rm -rf precompiles/artifacts precompiles/cache precompiles/go/
 	@rm -f .make/*
 
 
@@ -32,7 +32,8 @@ clean:
 # strategic rules to minimize dependency building
 
 .make/precompiles: precompiles/gen.go .make/solidity
-	go run ./precompiles/gen.go
+	mkdir -p precompiles/go/
+	go run precompiles/gen.go
 	@touch .make/precompiles
 
 .make/solidity: precompiles/src/*.sol | .make

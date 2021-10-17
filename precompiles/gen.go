@@ -5,18 +5,14 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"strings"
-	"path/filepath"
-	"io/ioutil"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"path/filepath"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	
-	//"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	//"github.com/ethereum/go-ethereum/common/compiler"
-	//"github.com/pkg/errors"
 )
 
 type HardHatArtifact struct {
@@ -38,7 +34,7 @@ func main() {
 			continue
 		}
 
-		name := path[strings.LastIndex(path, "/") + 1 : len(path) - 5]
+		name := path[strings.LastIndex(path, "/")+1 : len(path)-5]
 
 		data, err := ioutil.ReadFile(path)
 		if err != nil {
@@ -67,9 +63,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-				
-		ioutil.WriteFile("./precompiles/generated/" + name + ".go", []byte(code), 0777)
+
+		err = ioutil.WriteFile("./precompiles/go/"+name+".go", []byte(code), 0777)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	
-	fmt.Println("successfully generated", len(filePaths) / 2, "precompiles")
+
+	fmt.Println("successfully generated", len(filePaths)/2, "precompiles")
 }

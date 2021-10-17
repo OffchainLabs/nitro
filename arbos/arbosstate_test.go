@@ -74,7 +74,7 @@ func TestStorageSegmentAllocationBytes(t *testing.T) {
 	storage := OpenArbosStateForTest()
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
 	seg := storage.AllocateSegmentForBytes(buf)
-	if int(seg.size) != 1 + (len(buf)+31) / 32 {
+	if int(seg.size) != 1+(len(buf)+31)/32 {
 		t.Fail()
 	}
 
@@ -89,7 +89,7 @@ func TestStorageBackedInt64(t *testing.T) {
 	storage := state.backingStorage
 	offset := common.BigToHash(big.NewInt(7895463))
 
-	valuesToTry := []int64{ 0, 7, -7, 56487423567, -7586427647 }
+	valuesToTry := []int64{0, 7, -7, 56487423567, -7586427647}
 
 	for _, val := range valuesToTry {
 		OpenStorageBackedInt64(storage, offset).Set(val)

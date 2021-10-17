@@ -26,11 +26,11 @@ const (
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
-	L1MessageType_BatchForGasEstimation = 10   // probably won't use this in practice
+	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_EthDeposit            = 11
 )
 
-const MaxL2MessageSize = 256*1024
+const MaxL2MessageSize = 256 * 1024
 
 func SplitInboxMessage(inputBytes []byte, chainId *big.Int) ([]*MessageSegment, error) {
 	return ParseIncomingL1Message(bytes.NewReader(inputBytes), chainId)
@@ -51,12 +51,12 @@ type L1IncomingMessage struct {
 }
 
 type L1Info struct {
-	l1Sender common.Address
+	l1Sender      common.Address
 	l1BlockNumber *big.Int
-	l1Timestamp *big.Int
+	l1Timestamp   *big.Int
 }
 
-func (info *L1Info) Equals(o *L1Info) bool  {
+func (info *L1Info) Equals(o *L1Info) bool {
 	return info.l1Sender == o.l1Sender &&
 		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
 		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
@@ -65,8 +65,8 @@ func (info *L1Info) Equals(o *L1Info) bool  {
 type MessageSegment struct {
 	L1Info L1Info
 	// l1GasPrice may be null
-	l1GasPrice  *big.Int
-	txes types.Transactions
+	l1GasPrice *big.Int
+	txes       types.Transactions
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -174,8 +174,8 @@ func ParseIncomingL1Message(rd io.Reader, chainId *big.Int) ([]*MessageSegment, 
 				l1BlockNumber: blockNumber.Big(),
 				l1Timestamp:   timestamp.Big(),
 			},
-			l1GasPrice:    gasPriceL1.Big(),
-			txes:          txes,
+			l1GasPrice: gasPriceL1.Big(),
+			txes:       txes,
 		},
 	}, nil
 }
@@ -211,17 +211,16 @@ func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transac
 }
 
 const (
-	L2MessageKind_UnsignedUserTx = 0
-	L2MessageKind_ContractTx = 1
+	L2MessageKind_UnsignedUserTx  = 0
+	L2MessageKind_ContractTx      = 1
 	L2MessageKind_NonmutatingCall = 2
-	L2MessageKind_Batch = 3
-	L2MessageKind_SignedTx = 4
+	L2MessageKind_Batch           = 3
+	L2MessageKind_SignedTx        = 4
 	// 5 is reserved
-	L2MessageKind_Heartbeat = 6
+	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
 	L2MessageKind_BrotliCompressed = 8
-
 )
 
 func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, isTopLevel bool) (types.Transactions, error) {
@@ -332,14 +331,14 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 
 	if includesNonce {
 		inner = &types.ArbitrumUnsignedTx{
-			ChainId:   nil,
-			From:      l1Sender,
-			Nonce:     nonce,
-			GasPrice:  gasPrice.Big(),
-			Gas:       gasLimit.Big().Uint64(),
-			To:        destination,
-			Value:     callvalue.Big(),
-			Data:      calldata,
+			ChainId:  nil,
+			From:     l1Sender,
+			Nonce:    nonce,
+			GasPrice: gasPrice.Big(),
+			Gas:      gasLimit.Big().Uint64(),
+			To:       destination,
+			Value:    callvalue.Big(),
+			Data:     calldata,
 		}
 	} else {
 		inner = &types.ArbitrumContractTx{
@@ -363,10 +362,10 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 		return nil, err
 	}
 	tx := &types.DepositTx{
-		ChainId:               chainId,
+		ChainId:     chainId,
 		L1RequestId: header.requestId,
-		To:                    header.sender,
-		Value:                 balance.Big(),
+		To:          header.sender,
+		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil
 }

@@ -24,21 +24,21 @@ func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
 	contentsOffset := state.AllocateEmptyStorageOffset()
 	segment.Set(0, *contentsOffset)
 	segment.Set(1, *contentsOffset)
-	return &QueueInStorage{ segment, contentsOffset, contentsOffset }
+	return &QueueInStorage{segment, contentsOffset, contentsOffset}
 }
 
 func OpenQueueInStorage(state *ArbosState, offset common.Hash) *QueueInStorage {
 	segment := state.OpenSegment(offset)
 	npo := segment.Get(0)
 	ngo := segment.Get(1)
-	return &QueueInStorage{ segment, &npo, &ngo }
+	return &QueueInStorage{segment, &npo, &ngo}
 }
 
 func (q *QueueInStorage) IsEmpty() bool {
 	return q.nextPutOffset.Big().Cmp(q.nextGetOffset.Big()) == 0
 }
 
-func (q *QueueInStorage) Peek() *common.Hash {   // returns nil iff queue is empty
+func (q *QueueInStorage) Peek() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
@@ -46,7 +46,7 @@ func (q *QueueInStorage) Peek() *common.Hash {   // returns nil iff queue is emp
 	return &res
 }
 
-func (q *QueueInStorage) Get() *common.Hash {   // returns nil iff queue is empty
+func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}

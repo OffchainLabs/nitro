@@ -178,7 +178,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		for _, segment := range segments {
 			chainContext := &TestChainContext{}
 			header := &types.Header{
-				Number: big.NewInt(1000),
+				Number:     big.NewInt(1000),
 				Difficulty: big.NewInt(1000),
 			}
 			gasPool := core.GasPool(100000)

@@ -16,18 +16,18 @@ import (
 var networkFeeCollector common.Address
 
 type TxProcessor struct {
-	msg core.Message
+	msg          core.Message
 	blockContext vm.BlockContext
-	stateDB vm.StateDB
-	state *ArbosState
+	stateDB      vm.StateDB
+	state        *ArbosState
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 	return &TxProcessor{
-		msg: msg,
+		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state: OpenArbosState(evm.StateDB),
+		state:        OpenArbosState(evm.StateDB),
 	}
 }
 

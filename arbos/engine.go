@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-type Engine struct{
+type Engine struct {
 	IsSequencer bool
 }
 

@@ -10,7 +10,7 @@ func TestQueue(t *testing.T) {
 	state := OpenArbosStateForTest()
 	q := AllocateQueueInStorage(state)
 
-	if ! q.IsEmpty() {
+	if !q.IsEmpty() {
 		t.Fail()
 	}
 
@@ -31,9 +31,7 @@ func TestQueue(t *testing.T) {
 		}
 	}
 
-	if ! q.IsEmpty() {
+	if !q.IsEmpty() {
 		t.Fail()
 	}
 }
-
-

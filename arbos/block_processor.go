@@ -43,16 +43,16 @@ var ChainConfig = &params.ChainConfig{
 }
 
 type BlockBuilder struct {
-	statedb *state.StateDB
+	statedb         *state.StateDB
 	lastBlockHeader *types.Header
-	chainContext core.ChainContext
+	chainContext    core.ChainContext
 
 	// Setup based on first segment
 	blockInfo *L1Info
-	header *types.Header
-	gasPool core.GasPool
+	header    *types.Header
+	gasPool   core.GasPool
 
-	txes types.Transactions
+	txes     types.Transactions
 	receipts types.Receipts
 }
 
@@ -65,12 +65,12 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	return &BlockBuilder{
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
-		chainContext: chainContext,
+		chainContext:    chainContext,
 	}
 }
 
 // AddSegment returns true if block is done
-func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
+func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) {
 	startIndex := uint64(0)
 	if b.blockInfo == nil {
 		b.blockInfo = &segment.L1Info
@@ -109,7 +109,7 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	} else if segment.L1Info.l1Sender != b.blockInfo.l1Sender ||
 		segment.L1Info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) > 0 ||
-		segment.L1Info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) > 0{
+		segment.L1Info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) > 0 {
 		// End current block without including segment
 		// TODO: This would split up all delayed messages
 		// If we distinguish between segments that might be aggregated from ones that definitely aren't
