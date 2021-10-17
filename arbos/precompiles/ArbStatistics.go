@@ -19,3 +19,7 @@ func (con ArbStatistics) GetStats(
 ) (*big.Int, *big.Int, *big.Int, *big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
+
+func (con ArbStatistics) GetStatsGasCost() *big.Int {
+	return nil
+}

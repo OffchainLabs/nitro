@@ -17,12 +17,24 @@ func (con ArbSys) ArbBlockNumber(caller common.Address, st *state.StateDB) (*big
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbSys) ArbBlockNumberGasCost() *big.Int {
+	return nil
+}
+
 func (con ArbSys) ArbChainID(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbSys) ArbChainIDGasCost() *big.Int {
+	return nil
+}
+
 func (con ArbSys) ArbOSVersion(caller common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbSys) ArbOSVersionGasCost() *big.Int {
+	return nil
 }
 
 func (con ArbSys) GetStorageAt(
@@ -34,8 +46,16 @@ func (con ArbSys) GetStorageAt(
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbSys) GetStorageAtGasCost(address common.Address, index *big.Int) *big.Int {
+	return nil
+}
+
 func (con ArbSys) GetStorageGasAvailable(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbSys) GetStorageGasAvailableGasCost() *big.Int {
+	return nil
 }
 
 func (con ArbSys) GetTransactionCount(
@@ -46,8 +66,16 @@ func (con ArbSys) GetTransactionCount(
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbSys) GetTransactionCountGasCost(account common.Address) *big.Int {
+	return nil
+}
+
 func (con ArbSys) IsTopLevelCall(caller common.Address, st *state.StateDB) (bool, error) {
 	return false, errors.New("unimplemented")
+}
+
+func (con ArbSys) IsTopLevelCallGasCost() *big.Int {
+	return nil
 }
 
 func (con ArbSys) MapL1SenderContractAddressToL2Alias(
@@ -58,8 +86,16 @@ func (con ArbSys) MapL1SenderContractAddressToL2Alias(
 	return common.Address{}, errors.New("unimplemented")
 }
 
+func (con ArbSys) MapL1SenderContractAddressToL2AliasGasCost(sender common.Address, dest common.Address) *big.Int {
+	return nil
+}
+
 func (con ArbSys) MyCallersAddressWithoutAliasing(caller common.Address, st *state.StateDB) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
+}
+
+func (con ArbSys) MyCallersAddressWithoutAliasingGasCost() *big.Int {
+	return nil
 }
 
 func (con ArbSys) SendTxToL1(
@@ -72,8 +108,16 @@ func (con ArbSys) SendTxToL1(
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) *big.Int {
+	return nil
+}
+
 func (con ArbSys) WasMyCallersAddressAliased(caller common.Address, st *state.StateDB) (bool, error) {
 	return false, errors.New("unimplemented")
+}
+
+func (con ArbSys) WasMyCallersAddressAliasedGasCost() *big.Int {
+	return nil
 }
 
 func (con ArbSys) WithdrawEth(
@@ -83,4 +127,8 @@ func (con ArbSys) WithdrawEth(
 	destination common.Address,
 ) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbSys) WithdrawEthGasCost(destination common.Address) *big.Int {
+	return nil
 }

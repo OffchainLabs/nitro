@@ -17,8 +17,16 @@ func (con ArbAddressTable) AddressExists(caller common.Address, st *state.StateD
 	return false, errors.New("unimplemented")
 }
 
+func (con ArbAddressTable) AddressExistsGasCost(addr common.Address) *big.Int {
+	return nil
+}
+
 func (con ArbAddressTable) Compress(caller common.Address, st *state.StateDB, addr common.Address) ([]uint8, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbAddressTable) CompressGasCost(addr common.Address) *big.Int {
+	return nil
 }
 
 func (con ArbAddressTable) Decompress(
@@ -29,8 +37,16 @@ func (con ArbAddressTable) Decompress(
 	return common.Address{}, nil, errors.New("unimplemented")
 }
 
+func (con ArbAddressTable) DecompressGasCost(buf []uint8, offset *big.Int) *big.Int {
+	return nil
+}
+
 func (con ArbAddressTable) Lookup(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbAddressTable) LookupGasCost(addr common.Address) *big.Int {
+	return nil
 }
 
 func (con ArbAddressTable) LookupIndex(
@@ -41,10 +57,22 @@ func (con ArbAddressTable) LookupIndex(
 	return common.Address{}, errors.New("unimplemented")
 }
 
+func (con ArbAddressTable) LookupIndexGasCost(index *big.Int) *big.Int {
+	return nil
+}
+
 func (con ArbAddressTable) Register(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbAddressTable) RegisterGasCost(addr common.Address) *big.Int {
+	return nil
+}
+
 func (con ArbAddressTable) Size(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbAddressTable) SizeGasCost() *big.Int {
+	return nil
 }

@@ -44,6 +44,7 @@ type Precompile struct {
 type PrecompileMethod struct {
 	name    string
 	handler reflect.Method
+	gascost reflect.Method
 }
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
@@ -68,6 +69,8 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			log.Fatal("Method ID isn't 4 bytes")
 		}
 		id := *(*[4]byte)(method.ID)
+
+		// check that the implementer has a supporting implementation for this method
 
 		handler, ok := reflect.TypeOf(implementer).MethodByName(name)
 		if !ok {
@@ -128,9 +131,42 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			}
 		}
 
+		// ensure we have a matching gascost func
+
+		gascost, ok := reflect.TypeOf(implementer).MethodByName(name + "GasCost")
+		if !ok {
+			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
+		}
+
+		needs = []reflect.Type{
+			reflect.TypeOf(implementer), // the contract itself
+		}
+		for _, arg := range method.Inputs {
+			needs = append(needs, arg.Type.GetType())
+		}
+
+		signature = gascost.Type
+		context = "Precompile " + contract + "'s " + name + "GasCost's implementer "
+
+		if signature.NumIn() != len(needs) {
+			log.Fatal(context, "doesn't have the args\n\t", needs)
+		}
+		for i, arg := range needs {
+			if signature.In(i) != arg {
+				log.Fatal(
+					context, "doesn't have the args\n\t", needs, "\n",
+					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
+				)
+			}
+		}
+		if signature.NumOut() != 1 || signature.Out(0) != reflect.TypeOf(&big.Int{}) {
+			log.Fatal(context, "must return a *big.Int")
+		}
+
 		methods[id] = PrecompileMethod{
 			name,
 			handler,
+			gascost,
 		}
 	}
 

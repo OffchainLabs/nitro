@@ -17,6 +17,14 @@ func (con ArbInfo) GetBalance(caller common.Address, st *state.StateDB, account 
 	return nil, errors.New("unimplemented")
 }
 
+func (con ArbInfo) GetBalanceGasCost(account common.Address) *big.Int {
+	return nil
+}
+
 func (con ArbInfo) GetCode(caller common.Address, st *state.StateDB, account common.Address) ([]byte, error) {
 	return nil, errors.New("unimplemented")
+}
+
+func (con ArbInfo) GetCodeGasCost(account common.Address) *big.Int {
+	return nil
 }
