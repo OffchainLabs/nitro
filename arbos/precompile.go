@@ -75,7 +75,8 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		}
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(implementer), // the contract itself
+			reflect.TypeOf(implementer),      // the contract itself
+			reflect.TypeOf(common.Address{}), // the method's caller
 		}
 
 		switch method.StateMutability {

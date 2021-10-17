@@ -13,19 +13,20 @@ import (
 
 type ArbosTest struct{}
 
-func (con ArbosTest) BurnArbGas(st *state.StateDB, gasAmount *big.Int) error {
+func (con ArbosTest) BurnArbGas(caller common.Address, st *state.StateDB, gasAmount *big.Int) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) GetAccountInfo(st *state.StateDB, addr common.Address) error {
+func (con ArbosTest) GetAccountInfo(caller common.Address, st *state.StateDB, addr common.Address) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) GetMarshalledStorage(st *state.StateDB, addr common.Address) error {
+func (con ArbosTest) GetMarshalledStorage(caller common.Address, st *state.StateDB, addr common.Address) error {
 	return errors.New("unimplemented")
 }
 
 func (con ArbosTest) InstallAccount(
+	caller common.Address,
 	st *state.StateDB,
 	addr common.Address,
 	isEOA bool,
@@ -37,6 +38,6 @@ func (con ArbosTest) InstallAccount(
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) SetNonce(st *state.StateDB, addr common.Address, nonce *big.Int) error {
+func (con ArbosTest) SetNonce(caller common.Address, st *state.StateDB, addr common.Address, nonce *big.Int) error {
 	return errors.New("unimplemented")
 }

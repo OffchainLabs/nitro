@@ -13,34 +13,51 @@ import (
 
 type ArbRetryableTx struct{}
 
-func (con ArbRetryableTx) Cancel(st *state.StateDB, ticketId [32]byte) error {
+func (con ArbRetryableTx) Cancel(caller common.Address, st *state.StateDB, ticketId [32]byte) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetBeneficiary(st *state.StateDB, ticketId [32]byte) (common.Address, error) {
+func (con ArbRetryableTx) GetBeneficiary(
+	caller common.Address,
+	st *state.StateDB,
+	ticketId [32]byte,
+) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetKeepalivePrice(st *state.StateDB, ticketId [32]byte) (*big.Int, *big.Int, error) {
+func (con ArbRetryableTx) GetKeepalivePrice(
+	caller common.Address,
+	st *state.StateDB,
+	ticketId [32]byte,
+) (*big.Int, *big.Int, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetLifetime(st *state.StateDB) (*big.Int, error) {
+func (con ArbRetryableTx) GetLifetime(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetSubmissionPrice(st *state.StateDB, calldataSize *big.Int) (*big.Int, *big.Int, error) {
+func (con ArbRetryableTx) GetSubmissionPrice(
+	caller common.Address,
+	st *state.StateDB,
+	calldataSize *big.Int,
+) (*big.Int, *big.Int, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetTimeout(st *state.StateDB, ticketId [32]byte) (*big.Int, error) {
+func (con ArbRetryableTx) GetTimeout(caller common.Address, st *state.StateDB, ticketId [32]byte) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) Keepalive(st *state.StateDB, value *big.Int, ticketId [32]byte) (*big.Int, error) {
+func (con ArbRetryableTx) Keepalive(
+	caller common.Address,
+	st *state.StateDB,
+	value *big.Int,
+	ticketId [32]byte,
+) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) Redeem(st *state.StateDB, txId [32]byte) error {
+func (con ArbRetryableTx) Redeem(caller common.Address, st *state.StateDB, txId [32]byte) error {
 	return errors.New("unimplemented")
 }

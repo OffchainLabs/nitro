@@ -14,6 +14,7 @@ import (
 type ArbFunctionTable struct{}
 
 func (con ArbFunctionTable) Get(
+	caller common.Address,
 	st *state.StateDB,
 	addr common.Address,
 	index *big.Int,
@@ -21,10 +22,10 @@ func (con ArbFunctionTable) Get(
 	return nil, false, nil, errors.New("unimplemented")
 }
 
-func (con ArbFunctionTable) Size(st *state.StateDB, addr common.Address) (*big.Int, error) {
+func (con ArbFunctionTable) Size(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbFunctionTable) Upload(st *state.StateDB, buf []byte) error {
+func (con ArbFunctionTable) Upload(caller common.Address, st *state.StateDB, buf []byte) error {
 	return errors.New("unimplemented")
 }

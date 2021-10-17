@@ -14,12 +14,13 @@ import (
 type ArbBLS struct{}
 
 func (con ArbBLS) GetPublicKey(
+	caller common.Address,
 	st *state.StateDB,
 	addr common.Address,
 ) (*big.Int, *big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbBLS) Register(st *state.StateDB, x0, x1, y0, y1 *big.Int) error {
+func (con ArbBLS) Register(caller common.Address, st *state.StateDB, x0, x1, y0, y1 *big.Int) error {
 	return errors.New("unimplemented")
 }

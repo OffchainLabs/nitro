@@ -13,30 +13,38 @@ import (
 
 type ArbAddressTable struct{}
 
-func (con ArbAddressTable) AddressExists(st *state.StateDB, addr common.Address) (bool, error) {
+func (con ArbAddressTable) AddressExists(caller common.Address, st *state.StateDB, addr common.Address) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) Compress(st *state.StateDB, addr common.Address) ([]uint8, error) {
+func (con ArbAddressTable) Compress(caller common.Address, st *state.StateDB, addr common.Address) ([]uint8, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) Decompress(buf []uint8, offset *big.Int) (common.Address, *big.Int, error) {
+func (con ArbAddressTable) Decompress(
+	caller common.Address,
+	buf []uint8,
+	offset *big.Int,
+) (common.Address, *big.Int, error) {
 	return common.Address{}, nil, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) Lookup(st *state.StateDB, addr common.Address) (*big.Int, error) {
+func (con ArbAddressTable) Lookup(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) LookupIndex(st *state.StateDB, index *big.Int) (common.Address, error) {
+func (con ArbAddressTable) LookupIndex(
+	caller common.Address,
+	st *state.StateDB,
+	index *big.Int,
+) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) Register(st *state.StateDB, addr common.Address) (*big.Int, error) {
+func (con ArbAddressTable) Register(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbAddressTable) Size(st *state.StateDB) (*big.Int, error) {
+func (con ArbAddressTable) Size(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }

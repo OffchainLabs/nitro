@@ -13,15 +13,22 @@ import (
 
 type ArbGasInfo struct{}
 
-func (con ArbGasInfo) GetGasAccountingParams(st *state.StateDB) (*big.Int, *big.Int, *big.Int, error) {
+func (con ArbGasInfo) GetGasAccountingParams(
+	caller common.Address,
+	st *state.StateDB,
+) (*big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetPricesInArbGas(st *state.StateDB) (*big.Int, *big.Int, *big.Int, error) {
+func (con ArbGasInfo) GetPricesInArbGas(
+	caller common.Address,
+	st *state.StateDB,
+) (*big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, errors.New("unimplemented")
 }
 
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(
+	caller common.Address,
 	st *state.StateDB,
 	aggregator common.Address,
 ) (*big.Int, *big.Int, *big.Int, error) {
@@ -29,22 +36,24 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(
 }
 
 func (con ArbGasInfo) GetPricesInWei(
+	caller common.Address,
 	st *state.StateDB,
 ) (*big.Int, *big.Int, *big.Int, *big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
+	caller common.Address,
 	st *state.StateDB,
 	aggregator common.Address,
 ) (*big.Int, *big.Int, *big.Int, *big.Int, *big.Int, *big.Int, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetL1GasPriceEstimate(st *state.StateDB) (*big.Int, error) {
+func (con ArbGasInfo) GetL1GasPriceEstimate(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) SetL1GasPriceEstimate(st *state.StateDB, priceInWei *big.Int) error {
+func (con ArbGasInfo) SetL1GasPriceEstimate(caller common.Address, st *state.StateDB, priceInWei *big.Int) error {
 	return errors.New("unimplemented")
 }

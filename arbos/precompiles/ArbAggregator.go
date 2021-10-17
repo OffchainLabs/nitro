@@ -13,23 +13,36 @@ import (
 
 type ArbAggregator struct{}
 
-func (con ArbAggregator) GetFeeCollector(st *state.StateDB, aggregator common.Address) (common.Address, error) {
+func (con ArbAggregator) GetFeeCollector(
+	caller common.Address,
+	st *state.StateDB,
+	aggregator common.Address,
+) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetDefaultAggregator(st *state.StateDB) (common.Address, error) {
+func (con ArbAggregator) GetDefaultAggregator(caller common.Address, st *state.StateDB) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetPreferredAggregator(st *state.StateDB, addr common.Address) (common.Address, bool, error) {
+func (con ArbAggregator) GetPreferredAggregator(
+	caller common.Address,
+	st *state.StateDB,
+	addr common.Address,
+) (common.Address, bool, error) {
 	return common.Address{}, false, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetTxBaseFee(st *state.StateDB, aggregator common.Address) (*big.Int, error) {
+func (con ArbAggregator) GetTxBaseFee(
+	caller common.Address,
+	st *state.StateDB,
+	aggregator common.Address,
+) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
 func (con ArbAggregator) SetFeeCollector(
+	caller common.Address,
 	st *state.StateDB,
 	aggregator common.Address,
 	newFeeCollector common.Address,
@@ -37,14 +50,27 @@ func (con ArbAggregator) SetFeeCollector(
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetDefaultAggregator(st *state.StateDB, newDefault common.Address) error {
+func (con ArbAggregator) SetDefaultAggregator(
+	caller common.Address,
+	st *state.StateDB,
+	newDefault common.Address,
+) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetPreferredAggregator(st *state.StateDB, prefAgg common.Address) error {
+func (con ArbAggregator) SetPreferredAggregator(
+	caller common.Address,
+	st *state.StateDB,
+	prefAgg common.Address,
+) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetTxBaseFee(st *state.StateDB, aggregator common.Address, feeInL1Gas *big.Int) error {
+func (con ArbAggregator) SetTxBaseFee(
+	caller common.Address,
+	st *state.StateDB,
+	aggregator common.Address,
+	feeInL1Gas *big.Int,
+) error {
 	return errors.New("unimplemented")
 }
