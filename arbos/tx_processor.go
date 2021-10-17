@@ -23,7 +23,7 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 		msg: msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state: OpenArbosState(evm.StateDB),
+		state: OpenArbosState(evm.StateDB, evm.Context.Time.Uint64()),
 	}
 }
 

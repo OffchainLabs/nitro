@@ -18,9 +18,9 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 
 func TestOpenExpiredRetryable(t *testing.T) {
 	state := OpenArbosStateForTest()
-	originalTimestamp := state.LastTimestampSeen()
-	newTimestamp := new(big.Int).Add(originalTimestamp, big.NewInt(42))
-	state.SetLastTimestampSeen(newTimestamp)
+	originalTimestamp := state.timesstamp
+	newTimestamp := originalTimestamp + 42
+	state.timesstamp = newTimestamp
 
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := originalTimestamp // in the past
@@ -40,7 +40,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 func TestRetryableCreate(t *testing.T) {
 	state := OpenArbosStateForTest()
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := new(big.Int).Add(state.LastTimestampSeen(), big.NewInt(10000000))
+	timeout := state.timesstamp + 10000000
 	from := common.BytesToAddress([]byte{ 3, 4, 5 })
 	to := common.BytesToAddress([]byte{ 6, 7, 8, 9 })
 	callvalue := big.NewInt(0)
@@ -54,7 +54,7 @@ func TestRetryableCreate(t *testing.T) {
 	if reread.id != retryable.id {
 		t.Fatal()
 	}
-	if reread.timeout.Cmp(retryable.timeout) != 0 {
+	if reread.timeout != retryable.timeout {
 		t.Fatal()
 	}
 	if reread.from != retryable.from {

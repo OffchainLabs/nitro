@@ -68,7 +68,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
 	startIndex := uint64(0)
 	if b.blockInfo == nil {
-		arbosState := OpenArbosState(b.statedb)
+		arbosState := OpenArbosState(b.statedb, b.lastBlockHeader.Time)
 		b.blockInfo = &segment.L1Info
 		var lastBlockHash common.Hash
 		timestamp := b.blockInfo.l1Timestamp.Uint64()
@@ -170,7 +170,11 @@ func FinalizeBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,    // should be nil if there is no previous block
 ) {
-	arbosState := OpenArbosState(statedb)
+	var headerTimeStamp uint64
+	if header != nil {
+		headerTimeStamp = header.Time
+	}
+	arbosState := OpenArbosState(statedb, headerTimeStamp)
 	if chainContext != nil {
 		thisTimestamp := header.Time
 		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)

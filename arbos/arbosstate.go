@@ -72,9 +72,10 @@ type ArbosState struct {
 	retryableQueue	  *QueueInStorage
 	validRetryables   EvmStorage
 	backingStorage    EvmStorage
+	timesstamp        uint64
 }
 
-func OpenArbosState(stateDB vm.StateDB) *ArbosState {
+func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {}
@@ -87,8 +88,8 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		nil,
 		nil,
 		nil,
-		nil,
 		backingStorage,
+		timestamp,
 	}
 }
 
