@@ -4,3 +4,8 @@ replay
 .idea
 cmd/node/data
 cmd/node/node
+precompiles/artifacts
+precompiles/cache/
+precompiles/generated/
+precompiles/node_modules/
+.make/

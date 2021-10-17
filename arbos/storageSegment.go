@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import "github.com/ethereum/go-ethereum/common"
