@@ -140,17 +140,17 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 func Precompiles() map[common.Address]ArbosPrecompile {
 	return map[common.Address]ArbosPrecompile{
+		addr("0x065"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
 		addr("0x100"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
-		/*addr("0x102"): makePrecompile(pre.ArbAddressTableMetaData, Test{}),
-		addr("0x109"): makePrecompile(pre.ArbAggregatorMetaData, Test{}),
-		addr("0x103"): makePrecompile(pre.ArbBLSMetaData, Test{}),
-		addr("0x104"): makePrecompile(pre.ArbFunctionTableMetaData, Test{}),
-		addr("0x108"): makePrecompile(pre.ArbGasInfoMetaData, Test{}),
-		addr("0x065"): makePrecompile(pre.ArbInfoMetaData, Test{}),
-		addr("0x105"): makePrecompile(pre.ArbosTestMetaData, Test{}),
-		addr("0x107"): makePrecompile(pre.ArbOwnerMetaData, Test{}),
-		addr("0x110"): makePrecompile(pre.ArbRetryableTxMetaData, Test{}),
-		addr("0x111"): makePrecompile(pre.ArbStatisticsMetaData, Test{}),*/
+		addr("0x102"): makePrecompile(templates.ArbAddressTableMetaData, pre.ArbAddressTable{}),
+		addr("0x103"): makePrecompile(templates.ArbBLSMetaData, pre.ArbBLS{}),
+		addr("0x104"): makePrecompile(templates.ArbFunctionTableMetaData, pre.ArbFunctionTable{}),
+		addr("0x105"): makePrecompile(templates.ArbosTestMetaData, pre.ArbosTest{}),
+		addr("0x107"): makePrecompile(templates.ArbOwnerMetaData, pre.ArbOwner{}),
+		addr("0x108"): makePrecompile(templates.ArbGasInfoMetaData, pre.ArbGasInfo{}),
+		addr("0x109"): makePrecompile(templates.ArbAggregatorMetaData, pre.ArbAggregator{}),
+		addr("0x110"): makePrecompile(templates.ArbRetryableTxMetaData, pre.ArbRetryableTx{}),
+		addr("0x111"): makePrecompile(templates.ArbStatisticsMetaData, pre.ArbStatistics{}),
 	}
 }
 
