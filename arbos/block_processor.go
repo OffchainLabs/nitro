@@ -39,17 +39,18 @@ var ChainConfig = &params.ChainConfig{
 }
 
 type BlockBuilder struct {
-	statedb *state.StateDB
+	statedb         *state.StateDB
 	lastBlockHeader *types.Header
-	chainContext core.ChainContext
+	chainContext    core.ChainContext
 
 	// Setup based on first segment
 	blockInfo *L1Info
-	header *types.Header
-	gasPool core.GasPool
+	header    *types.Header
+	gasPool   core.GasPool
 
-	txes types.Transactions
-	receipts types.Receipts
+	txes         types.Transactions
+	receipts     types.Receipts
+	pendingBlock *types.Block
 }
 
 type BlockData struct {
@@ -61,12 +62,16 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	return &BlockBuilder{
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
-		chainContext: chainContext,
+		chainContext:    chainContext,
+		pendingBlock:    nil,
 	}
 }
 
-// AddSegment returns true if block is done
-func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool)  {
+// AddSegment returns true if Segment is done
+func (b *BlockBuilder) AddSegment(segment *MessageSegment) bool {
+	if b.pendingBlock != nil {
+		return false
+	}
 	startIndex := uint64(0)
 	if b.blockInfo == nil {
 		b.blockInfo = &segment.L1Info
@@ -105,12 +110,13 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	} else if segment.L1Info.l1Sender != b.blockInfo.l1Sender ||
 		segment.L1Info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) > 0 ||
-		segment.L1Info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) > 0{
+		segment.L1Info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) > 0 {
 		// End current block without including segment
 		// TODO: This would split up all delayed messages
 		// If we distinguish between segments that might be aggregated from ones that definitely aren't
 		// we could handle coinbases differently
-		return b.ConstructBlock(0), false
+		b.pendingBlock = b.ConstructBlock(0)
+		return false
 	}
 
 	for i, tx := range segment.txes[startIndex:] {
@@ -119,7 +125,8 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 			continue
 		}
 		if tx.Gas() > b.gasPool.Gas() {
-			return b.ConstructBlock(startIndex + uint64(i)), false
+			b.pendingBlock = b.ConstructBlock(startIndex + uint64(i))
+			return false
 		}
 		snap := b.statedb.Snapshot()
 		receipt, err := core.ApplyTransaction(
@@ -141,7 +148,14 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
 	}
-	return nil, true
+	return true
+}
+
+func (b *BlockBuilder) PendingBlock() (*types.Block, *state.StateDB, types.Receipts) {
+	if b.pendingBlock == nil {
+		return nil, nil, types.Receipts{}
+	}
+	return b.pendingBlock, b.statedb, b.receipts
 }
 
 func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {

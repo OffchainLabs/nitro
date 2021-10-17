@@ -18,6 +18,9 @@ type ArbBackend struct {
 	blockChain   *core.BlockChain
 	stack        *node.Node
 	chainId      *big.Int
+
+	chanSegments chan *arbos.MessageSegment
+	chanClose    chan struct{}
 }
 
 func New(stack *node.Node, config *ethconfig.Config) (*ArbBackend, error) {
@@ -57,15 +60,18 @@ func New(stack *node.Node, config *ethconfig.Config) (*ArbBackend, error) {
 		blockChain:   blockChain,
 		stack:        stack,
 		chainId:      big.NewInt(404), //TODO
+		chanSegments: make(chan *arbos.MessageSegment, 100),
+		chanClose:    make(chan struct{}, 1),
 	}
 	stack.RegisterLifecycle(backend)
 	stack.RegisterAPIs(createAPIs(backend))
+	go backend.segmentQueueRutine()
 
 	return backend, nil
 }
 
 func (b *ArbBackend) EnqueueL2Message(tx *types.Transaction) error {
-	l1msgKind_l2Msg := []byte{3}
+	l1msgKind_l2Msg := []byte{arbos.L1MessageType_L2Message}
 	l1msgFields_tmp := make([]byte, 32*5) //TODO: all fields currently zeroed
 	var buf bytes.Buffer
 	err := tx.EncodeRLP(&buf)
@@ -79,11 +85,13 @@ func (b *ArbBackend) EnqueueL2Message(tx *types.Transaction) error {
 	if err != nil {
 		return err
 	}
-	b.segmentQueue = append(b.segmentQueue, newSegments...)
+	for _, seg := range newSegments {
+		b.chanSegments <- seg
+	}
 	return nil
 }
 
-func (b *ArbBackend) BuildABlock() (bool, error) {
+func (b *ArbBackend) buildABlock() (bool, error) {
 	if len(b.segmentQueue) == 0 {
 		return false, nil
 	}
@@ -92,26 +100,43 @@ func (b *ArbBackend) BuildABlock() (bool, error) {
 		return false, err
 	}
 	blockBuilder := arbos.NewBlockBuilder(currentState, b.blockChain.CurrentHeader(), b.blockChain)
-	var nextBlock *types.Block
 	segmentDone := true
 	iSegment := 0
 	// TODO: understand blockbuilder better
-	for (nextBlock == nil) && (iSegment < len(b.segmentQueue)) {
-		if !segmentDone {
-			panic("endless loop detected!")
-		}
-		nextBlock, segmentDone = blockBuilder.AddSegment(b.segmentQueue[iSegment])
-		if segmentDone {
-			iSegment += 1
-		}
+	for segmentDone && (iSegment < len(b.segmentQueue)) {
+		segmentDone = blockBuilder.AddSegment(b.segmentQueue[iSegment])
+		iSegment += 1
 	}
-	if nextBlock == nil {
+	block, state, reciepts := blockBuilder.PendingBlock()
+	if block == nil {
 		return false, nil
 	}
-	blocks := types.Blocks{nextBlock}
-	b.blockChain.InsertChain(blocks)
-	b.segmentQueue = b.segmentQueue[iSegment:]
+	logs := make([]*types.Log, 0)
+	for _, receipt := range reciepts {
+		logs = append(logs, receipt.Logs...)
+	}
+	b.blockChain.WriteBlockWithState(block, reciepts, logs, state, true)
+	b.segmentQueue = b.segmentQueue[iSegment-1:]
 	return true, nil
+}
+
+func (b *ArbBackend) segmentQueueRutine() {
+	for {
+		select {
+		case segment := <-b.chanSegments:
+			b.segmentQueue = append(b.segmentQueue, segment)
+			tryBuilding := true
+			for tryBuilding {
+				var err error
+				tryBuilding, err = b.buildABlock()
+				if err != nil {
+					panic(err)
+				}
+			}
+		case <-b.chanClose:
+			return
+		}
+	}
 }
 
 //TODO: this is used when registering backend as lifecycle in stack
