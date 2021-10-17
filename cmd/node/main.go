@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	arbBackend "github.com/offchainlabs/arbstate/arbbackend"
+	"github.com/offchainlabs/arbstate/arbbackend"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
@@ -54,7 +54,7 @@ func main() {
 		BaseFee:    big.NewInt(0),
 	}
 
-	_, err = arbBackend.New(stack, &nodeConf)
+	_, err = arbbackend.New(stack, &nodeConf)
 	if err != nil {
 		utils.Fatalf("Error creating backend: %v\n", err)
 	}
