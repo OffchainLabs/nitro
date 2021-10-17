@@ -7,18 +7,18 @@ package arbos
 import (
 	"log"
 	"math/big"
-	"strings"
 	"reflect"
+	"strings"
 	"unicode"
 
-	templates "github.com/offchainlabs/arbstate/precompiles/go"
 	pre "github.com/offchainlabs/arbstate/arbos/precompiles"
+	templates "github.com/offchainlabs/arbstate/precompiles/go"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type ArbosPrecompile interface {
@@ -42,11 +42,12 @@ type Precompile struct {
 }
 
 type PrecompileMethod struct {
-	name string
+	name    string
+	handler reflect.Method
 }
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
-// defines each method.
+// supports each method.
 func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPrecompile {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
@@ -61,19 +62,20 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		name := method.RawName
 		capitalize := string(unicode.ToUpper(rune(name[0])))
 		name = capitalize + name[1:]
+		context := "Precompile " + contract + "'s " + name + "'s implementer "
 
 		if len(method.ID) != 4 {
 			log.Fatal("Method ID isn't 4 bytes")
 		}
 		id := *(*[4]byte)(method.ID)
 
-		raw, ok := reflect.TypeOf(implementer).MethodByName(name)
+		handler, ok := reflect.TypeOf(implementer).MethodByName(name)
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name)
 		}
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(implementer),  // the contract itself
+			reflect.TypeOf(implementer), // the contract itself
 		}
 
 		switch method.StateMutability {
@@ -93,29 +95,41 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			needs = append(needs, arg.Type.GetType())
 		}
 
-		signature := raw.Type
-		
-		if len(needs) != signature.NumIn() {
-			log.Fatal("Precompile ", contract, "'s ", name, " doesn't have the args ", needs)
+		signature := handler.Type
+
+		if signature.NumIn() != len(needs) {
+			log.Fatal(context, "doesn't have the args\n\t", needs)
 		}
-		
+		for i, arg := range needs {
+			if signature.In(i) != arg {
+				log.Fatal(
+					context, "doesn't have the args\n\t", needs, "\n",
+					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
+				)
+			}
+		}
 
+		var outputs = []reflect.Type{}
+		for _, out := range method.Outputs {
+			outputs = append(outputs, out.Type.GetType())
+		}
+		outputs = append(outputs, reflect.TypeOf((*error)(nil)).Elem())
 
+		if signature.NumOut() != len(outputs) {
+			log.Fatal("Precompile ", contract, "'s ", name, " implementer doesn't return ", outputs)
+		}
+		for i, out := range outputs {
+			if signature.Out(i) != out {
+				log.Fatal(
+					context, "doesn't have the outputs\n\t", outputs, "\n",
+					"\tReturn value ", i+1, " is ", signature.Out(i), " instead of ", out,
+				)
+			}
+		}
 
-
-		/*signature := raw.Type
-		if len(method.Inputs) != signature.NumIn() {
-			log.Fatal("Precompile ", contract, "'s ", name, " needs ", len(method.Inputs), " args")
-		}*/
-
-		/*for i := 0; i < len(method.Inputs); i++ {
-			need := method.Inputs[i]
-			have := signature.In(i)
-			
-		}*/
-		
 		methods[id] = PrecompileMethod{
 			name,
+			handler,
 		}
 	}
 
@@ -125,7 +139,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 }
 
 func Precompiles() map[common.Address]ArbosPrecompile {
-	return map[common.Address]ArbosPrecompile {
+	return map[common.Address]ArbosPrecompile{
 		addr("0x100"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
 		/*addr("0x102"): makePrecompile(pre.ArbAddressTableMetaData, Test{}),
 		addr("0x109"): makePrecompile(pre.ArbAggregatorMetaData, Test{}),
