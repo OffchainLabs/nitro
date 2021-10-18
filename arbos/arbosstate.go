@@ -73,14 +73,14 @@ type ArbosState struct {
 	gasPool         *StorageBackedInt64
 	smallGasPool    *StorageBackedInt64
 	gasPriceWei     *big.Int
-	l1PricingState   *L1PricingState
+	l1PricingState  *L1PricingState
 	retryableQueue  *QueueInStorage
 	validRetryables EvmStorage
+	timestamp       *uint64
 	backingStorage  EvmStorage
-	timestamp      uint64
 }
 
-func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
+func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {
@@ -95,8 +95,8 @@ func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
 		nil,
 		nil,
 		nil,
+		nil,
 		backingStorage,
-		timestamp,
 	}
 }
 
@@ -119,6 +119,7 @@ var (
 	gasPriceKey      = IntToHash(4)
 	retryableQueueKey = IntToHash(5)
 	l1PricingKey     = IntToHash(6)
+	timestampKey     = IntToHash(7)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -129,6 +130,7 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
 	backingStorage.Set(l1PricingKey, IntToHash(0))
+	backingStorage.Set(timestampKey, IntToHash(0))
 	backingStorage.Set(retryableQueueKey, IntToHash(0))
 }
 
@@ -223,8 +225,27 @@ func (state *ArbosState) L1PricingState() *L1PricingState {
 	return state.l1PricingState
 }
 
+func (state *ArbosState) LastTimestampSeen() uint64 {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	return *state.timestamp
+}
+
 func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	state.timestamp = val
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	if val < *state.timestamp {
+		panic("timestamp decreased")
+	}
+	if val > *state.timestamp {
+		ts := val
+		state.timestamp = &ts
+		state.backingStorage.Set(timestampKey, IntToHash(int64(ts)))
+	}
 }
 
 func (state *ArbosState) ValidRetryablesSet() EvmStorage {

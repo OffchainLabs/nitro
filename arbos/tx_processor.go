@@ -23,11 +23,13 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
+	arbosState := OpenArbosState(evm.StateDB)
+	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state:        OpenArbosState(evm.StateDB, evm.Context.Time.Uint64()),
+		state:        arbosState,
 	}
 }
 

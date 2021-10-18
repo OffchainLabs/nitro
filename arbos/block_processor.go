@@ -231,11 +231,7 @@ func FinalizeBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
-	var headerTimeStamp uint64
-	if header != nil {
-		headerTimeStamp = header.Time
-	}
-	arbosState := OpenArbosState(statedb, headerTimeStamp)
+	arbosState := OpenArbosState(statedb)
 	if chainContext != nil {
 		thisTimestamp := header.Time
 		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)
