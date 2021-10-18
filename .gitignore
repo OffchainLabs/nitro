@@ -1,5 +1,7 @@
-record
-replay
+/record
+/cmd/record/record
+/replay
+/cmd/replay/replay
 /*.bin
 .idea
 cmd/node/data

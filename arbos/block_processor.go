@@ -13,11 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
-
-var perBlockGasLimit uint64 = 20000000
 
 var ChainConfig = &params.ChainConfig{
 	ChainID:             big.NewInt(412345),
@@ -69,13 +68,51 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	}
 }
 
-// AddSegment returns true if block is done
-func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) {
-	startIndex := uint64(0)
+// Must always return true if the block is empty
+func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 	if b.blockInfo == nil {
-		b.blockInfo = &segment.L1Info
+		return true
+	}
+	info := segment.L1Info
+	// End current block without including segment
+	// TODO: This would split up all delayed messages
+	// If we distinguish between segments that might be aggregated from ones that definitely aren't
+	// we could handle coinbases differently
+	return info.l1Sender == b.blockInfo.l1Sender &&
+		info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) <= 0 &&
+		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
+}
+
+// Must always return true if the block is empty
+func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
+	if !b.CanAddMessage(segment) {
+		return false
+	}
+	if b.blockInfo == nil {
+		return true
+	}
+	newGasUsed := b.header.GasUsed
+	for _, tx := range segment.txes {
+		oldGasUsed := newGasUsed
+		newGasUsed += tx.Gas()
+		if newGasUsed < oldGasUsed {
+			newGasUsed = ^uint64(0)
+		}
+	}
+	return newGasUsed <= PerBlockGasLimit
+}
+
+func (b *BlockBuilder) AddMessage(segment MessageSegment) {
+	if !b.CanAddMessage(segment) {
+		log.Warn("attempted to add incompatible message to block")
+		return
+	}
+	if b.blockInfo == nil {
+		l1Info := segment.L1Info
+		l1Sender := l1Info.l1Sender
+		timestamp := l1Info.l1Timestamp.Uint64()
+		l1BlockNumber := l1Info.l1BlockNumber.Uint64()
 		var lastBlockHash common.Hash
-		timestamp := b.blockInfo.l1Timestamp.Uint64()
 		blockNumber := big.NewInt(0)
 		if b.lastBlockHeader != nil {
 			lastBlockHash = b.lastBlockHeader.Hash()
@@ -83,10 +120,15 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 			if timestamp < b.lastBlockHeader.Time {
 				timestamp = b.lastBlockHeader.Time
 			}
-			startIndex = binary.BigEndian.Uint64(b.lastBlockHeader.Nonce[:])
+			// TODO ensure l1BlockNumber is non-decreasing
+		}
+		b.blockInfo = &L1Info{
+			l1Sender:      l1Sender,
+			l1BlockNumber: new(big.Int).SetUint64(l1BlockNumber),
+			l1Timestamp:   new(big.Int).SetUint64(timestamp),
 		}
 
-		gasLimit := perBlockGasLimit // TODO
+		gasLimit := PerBlockGasLimit
 
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,
@@ -103,27 +145,16 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 			Time:        timestamp,
 			Extra:       []byte{},   // Unused
 			MixDigest:   [32]byte{}, // Unused
-			Nonce:       [8]byte{},  // Unused
+			Nonce:       [8]byte{},  // Filled in later
 			BaseFee:     new(big.Int),
 		}
 		b.gasPool = core.GasPool(b.header.GasLimit)
-	} else if segment.L1Info.l1Sender != b.blockInfo.l1Sender ||
-		segment.L1Info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) > 0 ||
-		segment.L1Info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) > 0 {
-		// End current block without including segment
-		// TODO: This would split up all delayed messages
-		// If we distinguish between segments that might be aggregated from ones that definitely aren't
-		// we could handle coinbases differently
-		return b.ConstructBlock(0), false
 	}
 
-	for i, tx := range segment.txes[startIndex:] {
-		if tx.Gas() > perBlockGasLimit {
+	for _, tx := range segment.txes {
+		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
-		}
-		if tx.Gas() > b.gasPool.Gas() {
-			return b.ConstructBlock(startIndex + uint64(i)), false
 		}
 		snap := b.statedb.Snapshot()
 		receipt, err := core.ApplyTransaction(
@@ -145,11 +176,37 @@ func (b *BlockBuilder) AddSegment(segment *MessageSegment) (*types.Block, bool) 
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
 	}
-	return nil, true
 }
 
-func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
-	binary.BigEndian.PutUint64(b.header.Nonce[:], nextIndexToRead)
+func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
+	if b.header == nil {
+		var lastBlockHash common.Hash
+		blockNumber := big.NewInt(0)
+		if b.lastBlockHeader != nil {
+			lastBlockHash = b.lastBlockHeader.Hash()
+			blockNumber.Add(b.lastBlockHeader.Number, big.NewInt(1))
+		}
+		b.header = &types.Header{
+			ParentHash:  lastBlockHash,
+			UncleHash:   [32]byte{},
+			Coinbase:    b.blockInfo.l1Sender,
+			Root:        [32]byte{},  // Filled in later
+			TxHash:      [32]byte{},  // Filled in later
+			ReceiptHash: [32]byte{},  // Filled in later
+			Bloom:       [256]byte{}, // Filled in later
+			Difficulty:  big.NewInt(1),
+			Number:      blockNumber,
+			GasLimit:    PerBlockGasLimit,
+			GasUsed:     0,
+			Time:        b.lastBlockHeader.Time,
+			Extra:       []byte{},   // Unused
+			MixDigest:   [32]byte{}, // Unused
+			Nonce:       [8]byte{},  // Filled in later
+			BaseFee:     new(big.Int),
+		}
+	}
+
+	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
 	b.header.Root = b.statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
@@ -162,11 +219,30 @@ func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts) {
-
+func FinalizeBlock(
+	header *types.Header,
+	txs types.Transactions,
+	receipts types.Receipts,
+	statedb *state.StateDB,
+	chainContext core.ChainContext, // should be nil if there is no previous block
+) {
+	var headerTimeStamp uint64
+	if header != nil {
+		headerTimeStamp = header.Time
+	}
+	arbosState := OpenArbosState(statedb, headerTimeStamp)
+	if chainContext != nil {
+		thisTimestamp := header.Time
+		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)
+		prevTimestamp := previousHeader.Time
+		if thisTimestamp > prevTimestamp {
+			arbosState.notifyGasPricerThatTimeElapsed(thisTimestamp - prevTimestamp)
+		}
+	}
+	arbosState.TryToReapOneRetryable()
 }
