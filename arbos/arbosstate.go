@@ -242,9 +242,11 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 		panic("timestamp decreased")
 	}
 	if val > *state.timestamp {
+		delta := val - *state.timestamp
 		ts := val
 		state.timestamp = &ts
 		state.backingStorage.Set(timestampKey, IntToHash(int64(ts)))
+		state.notifyGasPricerThatTimeElapsed(delta)
 	}
 }
 

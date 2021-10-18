@@ -232,13 +232,5 @@ func FinalizeBlock(
 	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
 	arbosState := OpenArbosState(statedb)
-	if chainContext != nil {
-		thisTimestamp := header.Time
-		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)
-		prevTimestamp := previousHeader.Time
-		if thisTimestamp > prevTimestamp {
-			arbosState.notifyGasPricerThatTimeElapsed(thisTimestamp - prevTimestamp)
-		}
-	}
 	arbosState.TryToReapOneRetryable()
 }
