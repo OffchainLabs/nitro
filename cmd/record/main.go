@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
@@ -24,7 +23,7 @@ type RecordingChainContext struct {
 }
 
 func (r *RecordingChainContext) Engine() consensus.Engine {
-	return arbstate.Engine{}
+	return arbos.Engine{}
 }
 
 func (r *RecordingChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
@@ -74,16 +73,12 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	var segment arbos.MessageSegment // TODO
-
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
-	newBlockHeader, err := arbstate.CreateBlock(statedb, lastHeader, chainContext, segment)
-	var newBlockHash common.Hash
-	if err == nil {
-		newBlockHash = newBlockHeader.Hash()
-	} else {
-		fmt.Printf("Error processing message: %v\n", err)
-	}
+	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
+	// TODO add message(s) to builder
+
+	newBlock := builder.ConstructBlock(0)
+	newBlockHash := newBlock.Hash()
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	if *dbRecordOutputPath != "" {

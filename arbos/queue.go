@@ -1,18 +1,19 @@
 package arbos
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type QueueInStorage struct {
-	segment       *SizedArbosStorageSegment
+	segment       *StorageSegment
 	nextPutOffset *common.Hash
 	nextGetOffset *common.Hash
 }
 
 func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
-	segment, err := state.AllocateSizedSegment(2)
+	segment, err := state.AllocateSegment(2)
 	if err != nil {
 		panic(err)
 	}
@@ -23,7 +24,7 @@ func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
 }
 
 func OpenQueueInStorage(state *ArbosState, offset common.Hash) *QueueInStorage {
-	segment := state.OpenSizedSegment(offset)
+	segment := state.OpenSegment(offset)
 	npo := segment.Get(0)
 	ngo := segment.Get(1)
 	return &QueueInStorage{ segment, &npo, &ngo }
@@ -37,7 +38,7 @@ func (q *QueueInStorage) Peek() *common.Hash {   // returns nil iff queue is emp
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.storage.backingStorage.Get(*q.nextGetOffset)
+	res := q.segment.storage.Get(*q.nextGetOffset)
 	return &res
 }
 
@@ -45,7 +46,7 @@ func (q *QueueInStorage) Get() *common.Hash {   // returns nil iff queue is empt
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.storage.backingStorage.Swap(*q.nextGetOffset, common.Hash{})
+	res := q.segment.storage.Swap(*q.nextGetOffset, common.Hash{})
 	nextGetOffset := common.BigToHash(new(big.Int).Add(q.nextGetOffset.Big(), big.NewInt(1)))
 	q.nextGetOffset = &nextGetOffset
 	q.segment.Set(1, nextGetOffset)
@@ -53,7 +54,7 @@ func (q *QueueInStorage) Get() *common.Hash {   // returns nil iff queue is empt
 }
 
 func (q *QueueInStorage) Put(val common.Hash) {
-	q.segment.storage.backingStorage.Set(*q.nextPutOffset, val)
+	q.segment.storage.Set(*q.nextPutOffset, val)
 	nextPutOffset := common.BigToHash(new(big.Int).Add(q.nextPutOffset.Big(), big.NewInt(1)))
 	q.nextPutOffset = &nextPutOffset
 	q.segment.Set(0, nextPutOffset)
