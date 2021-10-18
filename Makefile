@@ -41,7 +41,7 @@ clean:
 	@touch .make/solidity
 
 .make:
-	yarn --cwd precompiles add hardhat
+	yarn --cwd precompiles install
 	mkdir .make
 
 
