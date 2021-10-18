@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -13,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-type Engine struct{
+type Engine struct {
 	IsSequencer bool
 }
 
@@ -101,6 +105,5 @@ func (ctx *ArbChainContext) GetHeader(hash common.Hash, u uint64) *types.Header 
 }
 
 func (e Engine) ToChainContext(headerReader consensus.ChainHeaderReader) core.ChainContext {
-	return &ArbChainContext{ e, headerReader }
+	return &ArbChainContext{e, headerReader}
 }
-

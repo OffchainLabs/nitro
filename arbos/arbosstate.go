@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -19,14 +23,14 @@ type EvmStorage interface {
 
 type GethEvmStorage struct {
 	account common.Address
-	db    vm.StateDB
+	db      vm.StateDB
 }
 
 // Use a Geth database to create an evm key-value store
 func NewGethEvmStorage(statedb vm.StateDB) *GethEvmStorage {
 	return &GethEvmStorage{
 		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
-		db:    statedb,
+		db:      statedb,
 	}
 }
 
@@ -60,25 +64,26 @@ func IntToHash(val int64) common.Hash {
 }
 
 func hashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y)))   //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 type ArbosState struct {
-	formatVersion     *big.Int
-	nextAlloc         *common.Hash
-	gasPool           *StorageBackedInt64
-	smallGasPool      *StorageBackedInt64
-	gasPriceWei       *big.Int
-	retryableQueue	  *QueueInStorage
-	validRetryables   EvmStorage
-	backingStorage    EvmStorage
-	timesstamp        uint64
+	formatVersion   *big.Int
+	nextAlloc       *common.Hash
+	gasPool         *StorageBackedInt64
+	smallGasPool    *StorageBackedInt64
+	gasPriceWei     *big.Int
+	retryableQueue  *QueueInStorage
+	validRetryables EvmStorage
+	backingStorage  EvmStorage
+	timesstamp      uint64
 }
 
 func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
-	for tryStorageUpgrade(backingStorage) {}
+	for tryStorageUpgrade(backingStorage) {
+	}
 
 	return &ArbosState{
 		nil,
@@ -105,13 +110,13 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 }
 
 var (
-	versionKey       = IntToHash(0)
-	storageOffsetKey = IntToHash(1)
-	gasPoolKey = IntToHash(2)
-	smallGasPoolKey = IntToHash(3)
-	gasPriceKey = IntToHash(4)
-	lastTimestampKey = IntToHash(5)
-	retryableQueueKey = IntToHash(6)
+	versionKey                 = IntToHash(0)
+	storageOffsetKey           = IntToHash(1)
+	gasPoolKey                 = IntToHash(2)
+	smallGasPoolKey            = IntToHash(3)
+	gasPriceKey                = IntToHash(4)
+	lastTimestampKey           = IntToHash(5)
+	retryableQueueKey          = IntToHash(6)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -273,7 +278,7 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
 
 func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *StorageSegment {
 	sizeWords := (len(buf) + 31) / 32
-	seg, err := state.AllocateSegmentAtOffset(uint64(1 + sizeWords), offset)
+	seg, err := state.AllocateSegmentAtOffset(uint64(1+sizeWords), offset)
 	if err != nil {
 		panic(err)
 	}
@@ -282,7 +287,6 @@ func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset comm
 
 	return seg
 }
-
 
 // StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
 //     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
@@ -293,7 +297,7 @@ type StorageBackedInt64 struct {
 }
 
 func OpenStorageBackedInt64(storage EvmStorage, offset common.Hash) *StorageBackedInt64 {
-	return &StorageBackedInt64{ storage, offset, nil }
+	return &StorageBackedInt64{storage, offset, nil}
 }
 
 func (sbi *StorageBackedInt64) Get() int64 {

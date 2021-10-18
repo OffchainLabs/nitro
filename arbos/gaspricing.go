@@ -6,15 +6,15 @@ const SpeedLimitPerSecond = 1000000
 const GasPoolMax = SpeedLimitPerSecond * 10 * 60
 const SmallGasPoolMax = SpeedLimitPerSecond * 60
 
-const PerBlockGasLimit uint64 = 20*1000000
+const PerBlockGasLimit uint64 = 20 * 1000000
 
 const Gwei = 1000000000
-const MinimumGasPriceWei = 1*Gwei
+const MinimumGasPriceWei = 1 * Gwei
 
 func (state *ArbosState) notifyGasUsed(gas uint64) {
 	gasInt := int64(gas)
-	state.SetGasPool(state.GasPool()-gasInt)
-	state.SetSmallGasPool(state.SmallGasPool()-gasInt)
+	state.SetGasPool(state.GasPool() - gasInt)
+	state.SetSmallGasPool(state.SmallGasPool() - gasInt)
 }
 
 func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {

@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -9,13 +13,13 @@ import (
 )
 
 type Retryable struct {
-	id            common.Hash    // the retryable's ID is also the offset where its segment lives in storage
-	numTries      *big.Int
-	timeout       uint64
-	from          common.Address
-	to            common.Address
-	callvalue     *big.Int
-	calldata      []byte
+	id        common.Hash // the retryable's ID is also the offset where its segment lives in storage
+	numTries  *big.Int
+	timeout   uint64
+	from      common.Address
+	to        common.Address
+	callvalue *big.Int
+	calldata  []byte
 }
 
 func CreateRetryable(
@@ -36,7 +40,7 @@ func CreateRetryable(
 		to,
 		callvalue,
 		calldata,
-	};
+	}
 	buf := bytes.Buffer{}
 	if err := ret.serialize(&buf); err != nil {
 		panic(err)
@@ -49,7 +53,7 @@ func CreateRetryable(
 	state.RetryableQueue().Put(id)
 
 	// mark the new retryable as valid
-	state.ValidRetryablesSet().Set(id, common.Hash{ 1 })
+	state.ValidRetryablesSet().Set(id, common.Hash{1})
 
 	return ret
 }

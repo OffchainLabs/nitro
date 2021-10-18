@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -13,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
-
 
 var ChainConfig = &params.ChainConfig{
 	ChainID:             big.NewInt(412345),
@@ -226,7 +229,7 @@ func FinalizeBlock(
 	txs types.Transactions,
 	receipts types.Receipts,
 	statedb *state.StateDB,
-	chainContext core.ChainContext,    // should be nil if there is no previous block
+	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
 	var headerTimeStamp uint64
 	if header != nil {
