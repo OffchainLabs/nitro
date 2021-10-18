@@ -36,14 +36,14 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segments, err := ParseIncomingL1Message(bytes.NewReader(serialized), chainId)
+	newMsg, err := ParseIncomingL1Message(bytes.NewReader(serialized))
 	if err != nil {
 		t.Error(err)
 	}
-	if len(segments) != 1 {
-		t.Fatal("unexpected segment count")
+	segment, err := IncomingMessageToSegment(newMsg, chainId)
+	if err != nil {
+		t.Error(err)
 	}
-	segment := segments[0]
 	if len(segment.txes) != 0 {
 		t.Fatal("unexpected tx count")
 	}
@@ -113,7 +113,7 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	header.requestId = common.BigToHash(big.NewInt(4))
+	header.RequestId = common.BigToHash(big.NewInt(4))
 	msgBuf2 := bytes.Buffer{}
 	if err := HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
@@ -166,26 +166,28 @@ var testChainConfig = &params.ChainConfig{
 
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
-	for _, msg := range msgs {
-		segments, err := SplitInboxMessage(msg, chainId)
+	for _, data := range msgs {
+		msg, err := ParseIncomingL1Message(bytes.NewReader(data))
 		if err != nil {
 			t.Error(err)
 		}
-		for _, segment := range segments {
-			chainContext := &TestChainContext{}
-			header := &types.Header{
-				Number: big.NewInt(1000),
-				Difficulty: big.NewInt(1000),
-			}
-			gasPool := core.GasPool(100000)
-			for _, tx := range segment.txes {
-				_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
-				if err != nil {
-					t.Fatal(err)
-				}
-			}
-
-			FinalizeBlock(nil, nil, nil)
+		segment, err := IncomingMessageToSegment(msg, chainId)
+		if err != nil {
+			t.Error(err)
 		}
+		chainContext := &TestChainContext{}
+		header := &types.Header{
+			Number:     big.NewInt(1000),
+			Difficulty: big.NewInt(1000),
+		}
+		gasPool := core.GasPool(100000)
+		for _, tx := range segment.txes {
+			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		FinalizeBlock(nil, nil, nil, statedb, nil)
 	}
 }
