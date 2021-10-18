@@ -19,14 +19,14 @@ type EvmStorage interface {
 
 type GethEvmStorage struct {
 	account common.Address
-	db    vm.StateDB
+	db      vm.StateDB
 }
 
 // Use a Geth database to create an evm key-value store
 func NewGethEvmStorage(statedb vm.StateDB) *GethEvmStorage {
 	return &GethEvmStorage{
 		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
-		db:    statedb,
+		db:      statedb,
 	}
 }
 
@@ -60,7 +60,7 @@ func IntToHash(val int64) common.Hash {
 }
 
 func hashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y)))   //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 type ArbosState struct {
@@ -77,7 +77,8 @@ type ArbosState struct {
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
-	for tryStorageUpgrade(backingStorage) {}
+	for tryStorageUpgrade(backingStorage) {
+	}
 
 	return &ArbosState{
 		nil,
@@ -105,11 +106,11 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 var (
 	versionKey       = IntToHash(0)
 	storageOffsetKey = IntToHash(1)
-	gasPoolKey = IntToHash(2)
-	smallGasPoolKey = IntToHash(3)
-	gasPriceKey = IntToHash(4)
+	gasPoolKey       = IntToHash(2)
+	smallGasPoolKey  = IntToHash(3)
+	gasPriceKey      = IntToHash(4)
 	lastTimestampKey = IntToHash(5)
-	l1PricingKey = IntToHash(6)
+	l1PricingKey     = IntToHash(6)
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
@@ -249,8 +250,8 @@ func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 }
 
 func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
-	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSegment(uint64(1+sizeWords))
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegment(uint64(1 + sizeWords))
 	if err != nil {
 		panic(err)
 	}
@@ -278,7 +279,6 @@ func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
 	}
 }
 
-
 // StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
 //     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
 type StorageBackedInt64 struct {
@@ -288,7 +288,7 @@ type StorageBackedInt64 struct {
 }
 
 func OpenStorageBackedInt64(storage EvmStorage, offset common.Hash) *StorageBackedInt64 {
-	return &StorageBackedInt64{ storage, offset, nil }
+	return &StorageBackedInt64{storage, offset, nil}
 }
 
 func (sbi *StorageBackedInt64) Get() int64 {

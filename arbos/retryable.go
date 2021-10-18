@@ -27,14 +27,14 @@ func Create(
 	calldata []byte,
 ) *Retryable {
 	ret := &Retryable{
-		common.Hash{},   // will fill in later
+		common.Hash{}, // will fill in later
 		id,
 		timeout,
 		from,
 		to,
 		callvalue,
 		calldata,
-	};
+	}
 	buf := bytes.Buffer{}
 	if err := ret.serialize(&buf); err != nil {
 		panic(err)

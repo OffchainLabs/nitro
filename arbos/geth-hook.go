@@ -26,6 +26,7 @@ func (p ArbosPrecompileWrapper) RunAdvanced(input []byte, suppliedGas uint64, in
 	output, err := p.inner.Call(input, info.PrecompileAddress, info.ActingAsAddress, info.Caller, info.Value, info.ReadOnly, info.Evm)
 	return output, suppliedGas - gasUsage, err
 }
+
 var arbAddress = common.HexToAddress("0xabc")
 
 func init() {

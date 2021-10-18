@@ -12,18 +12,18 @@ import (
 var networkFeeCollector common.Address
 
 type TxProcessor struct {
-	msg core.Message
+	msg          core.Message
 	blockContext vm.BlockContext
-	stateDB vm.StateDB
-	state *ArbosState
+	stateDB      vm.StateDB
+	state        *ArbosState
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 	return &TxProcessor{
-		msg: msg,
+		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state: OpenArbosState(evm.StateDB),
+		state:        OpenArbosState(evm.StateDB),
 	}
 }
 
@@ -43,8 +43,8 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 	return p.state.L1PricingState().GetL1Charges(
 		p.msg.From(),
 		p.getAggregator(),
-		uint64(len(p.msg.Data())),   //TODO: need to pass in decompressed L1 data size for this tx
-		false,         //TODO: this should be true iff the message was compressed
+		uint64(len(p.msg.Data())), //TODO: need to pass in decompressed L1 data size for this tx
+		false,                     //TODO: this should be true iff the message was compressed
 	)
 }
 
