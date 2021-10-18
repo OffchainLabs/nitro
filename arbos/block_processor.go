@@ -66,6 +66,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	}
 }
 
+// Must always return true if the block is empty
 func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 	if b.blockInfo == nil {
 		return true
@@ -80,6 +81,7 @@ func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
 }
 
+// Must always return true if the block is empty
 func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 	if !b.CanAddMessage(segment) {
 		return false

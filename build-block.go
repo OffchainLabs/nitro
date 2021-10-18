@@ -27,6 +27,12 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 			break
 		}
 		segment, err := arbos.IncomingMessageToSegment(message, chainId)
+		if err != nil {
+			log.Warn("error parsing incoming message: %v", err)
+			inboxMultiplexer.Advance()
+			break
+		}
+		// Always passes if the block is empty
 		if !blockBuilder.ShouldAddMessage(segment) {
 			break
 		}
