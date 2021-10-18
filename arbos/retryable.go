@@ -11,7 +11,7 @@ import (
 type Retryable struct {
 	id            common.Hash    // the retryable's ID is also the offset where its segment lives in storage
 	numTries      *big.Int
-	timeout       *big.Int
+	timeout       uint64
 	from          common.Address
 	to            common.Address
 	callvalue     *big.Int
@@ -21,7 +21,7 @@ type Retryable struct {
 func CreateRetryable(
 	state *ArbosState,
 	id common.Hash,
-	timeout *big.Int,
+	timeout uint64,
 	from common.Address,
 	to common.Address,
 	callvalue *big.Int,
@@ -69,7 +69,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if err != nil {
 		panic(err)
 	}
-	if ret.timeout.Cmp(state.LastTimestampSeen()) < 0 {
+	if ret.timeout < state.timesstamp {
 		// retryable has expired, so delete it
 		seg.Delete()
 		state.ValidRetryablesSet().Set(id, common.Hash{})
@@ -91,7 +91,7 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	numTries, err := HashFromReader(rd)
-	timeout, err := HashFromReader(rd)
+	timeout, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	return &Retryable{
 		id,
 		numTries.Big(),
-		timeout.Big(),
+		timeout,
 		from,
 		to,
 		callvalue.Big(),
@@ -132,7 +132,7 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	if _, err := wr.Write(common.BigToHash(retryable.numTries).Bytes()); err != nil {
 		return err
 	}
-	if _, err := wr.Write(common.BigToHash(retryable.timeout).Bytes()); err != nil {
+	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
 		return err
 	}
 	if _, err := wr.Write(retryable.from[:]); err != nil {

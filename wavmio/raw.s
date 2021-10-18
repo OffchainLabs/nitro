@@ -8,6 +8,10 @@ TEXT ·readInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET
 
+TEXT ·readDelayedInboxMessage(SB), NOSPLIT, $0
+  CallImport
+  RET
+
 TEXT ·advanceInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET
@@ -25,5 +29,9 @@ TEXT ·getPositionWithinMessage(SB), NOSPLIT, $0
   RET
 
 TEXT ·setPositionWithinMessage(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·getInboxPosition(SB), NOSPLIT, $0
   CallImport
   RET
