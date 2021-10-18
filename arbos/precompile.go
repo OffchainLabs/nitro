@@ -220,7 +220,6 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 
 // determine the amount of gas to charge for calling a precompile
 func (p Precompile) GasToCharge(input []byte) uint64 {
-	println("GASTOCHARGE")
 
 	if len(input) != 4 {
 		// ArbOS precompiles always have canonical method selectors
