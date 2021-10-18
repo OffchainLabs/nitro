@@ -73,7 +73,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if err != nil {
 		panic(err)
 	}
-	if ret.timeout < state.timesstamp {
+	if ret.timeout < state.timestamp {
 		// retryable has expired, so delete it
 		seg.Delete()
 		state.ValidRetryablesSet().Set(id, common.Hash{})
