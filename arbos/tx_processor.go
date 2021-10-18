@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -23,7 +27,7 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state:        OpenArbosState(evm.StateDB),
+		state:        OpenArbosState(evm.StateDB, evm.Context.Time.Uint64()),
 	}
 }
 
@@ -91,5 +95,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, gasPool *core.GasPool, success b
 	l2ChargeWei := new(big.Int).Sub(totalPaid, l1ChargeWei)
 	p.stateDB.SubBalance(p.blockContext.Coinbase, l2ChargeWei)
 	p.stateDB.AddBalance(networkFeeCollector, l2ChargeWei)
+	p.state.notifyGasUsed(new(big.Int).Div(l2ChargeWei, p.msg.GasPrice()).Uint64())
 	return nil
 }

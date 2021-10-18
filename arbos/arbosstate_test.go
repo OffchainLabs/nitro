@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -17,7 +21,7 @@ func OpenArbosStateForTest() *ArbosState {
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
-	return OpenArbosState(statedb)
+	return OpenArbosState(statedb, 1000)
 }
 
 func TestStorageOpenFromEmpty(t *testing.T) {

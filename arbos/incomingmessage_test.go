@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -57,7 +61,10 @@ func TestBrotli(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	bwr.Flush()
+	err = bwr.Flush()
+	if err != nil {
+		t.Error(err)
+	}
 	compressed := outBuf.Bytes()
 	if len(compressed) >= len(orig) {
 		t.Fatal("compression didn't make it smaller")
@@ -185,6 +192,6 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			}
 		}
 
-		FinalizeBlock(nil, nil, nil)
+		FinalizeBlock(nil, nil, nil, statedb, nil)
 	}
 }
