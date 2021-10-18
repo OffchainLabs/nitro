@@ -22,7 +22,7 @@ func (con ArbSys) ArbBlockNumberGasCost() uint64 {
 }
 
 func (con ArbSys) ArbChainID(caller common.Address, st *state.StateDB) (*big.Int, error) {
-	return nil, errors.New("unimplemented")
+	return big.NewInt(412345), nil
 }
 
 func (con ArbSys) ArbChainIDGasCost() uint64 {
@@ -30,7 +30,7 @@ func (con ArbSys) ArbChainIDGasCost() uint64 {
 }
 
 func (con ArbSys) ArbOSVersion(caller common.Address) (*big.Int, error) {
-	return nil, errors.New("unimplemented")
+	return big.NewInt(1000), nil
 }
 
 func (con ArbSys) ArbOSVersionGasCost() uint64 {

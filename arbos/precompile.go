@@ -204,22 +204,23 @@ func addr(s string) common.Address {
 
 func Precompiles() map[common.Address]ArbosPrecompile {
 	return map[common.Address]ArbosPrecompile{
-		addr("0x065"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
-		addr("0x100"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
-		addr("0x102"): makePrecompile(templates.ArbAddressTableMetaData, pre.ArbAddressTable{}),
-		addr("0x103"): makePrecompile(templates.ArbBLSMetaData, pre.ArbBLS{}),
-		addr("0x104"): makePrecompile(templates.ArbFunctionTableMetaData, pre.ArbFunctionTable{}),
-		addr("0x105"): makePrecompile(templates.ArbosTestMetaData, pre.ArbosTest{}),
-		addr("0x107"): makePrecompile(templates.ArbOwnerMetaData, pre.ArbOwner{}),
-		addr("0x108"): makePrecompile(templates.ArbGasInfoMetaData, pre.ArbGasInfo{}),
-		addr("0x109"): makePrecompile(templates.ArbAggregatorMetaData, pre.ArbAggregator{}),
-		addr("0x110"): makePrecompile(templates.ArbRetryableTxMetaData, pre.ArbRetryableTx{}),
-		addr("0x111"): makePrecompile(templates.ArbStatisticsMetaData, pre.ArbStatistics{}),
+		addr("0x41"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
+		addr("0x64"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
+		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, pre.ArbAddressTable{}),
+		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, pre.ArbBLS{}),
+		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, pre.ArbFunctionTable{}),
+		addr("0x69"): makePrecompile(templates.ArbosTestMetaData, pre.ArbosTest{}),
+		addr("0x6b"): makePrecompile(templates.ArbOwnerMetaData, pre.ArbOwner{}),
+		addr("0x6c"): makePrecompile(templates.ArbGasInfoMetaData, pre.ArbGasInfo{}),
+		addr("0x6d"): makePrecompile(templates.ArbAggregatorMetaData, pre.ArbAggregator{}),
+		addr("0x6e"): makePrecompile(templates.ArbRetryableTxMetaData, pre.ArbRetryableTx{}),
+		addr("0x6f"): makePrecompile(templates.ArbStatisticsMetaData, pre.ArbStatistics{}),
 	}
 }
 
 // determine the amount of gas to charge for calling a precompile
 func (p Precompile) GasToCharge(input []byte) uint64 {
+	println("GASTOCHARGE")
 
 	if len(input) != 4 {
 		// ArbOS precompiles always have canonical method selectors
@@ -315,9 +316,9 @@ func (p Precompile) Call(
 		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
 	}
 
-	reflectResult := method.gascost.Func.Call(reflectArgs)
+	reflectResult := method.handler.Func.Call(reflectArgs)
 	resultCount := len(reflectResult) - 1
-	if reflectResult[resultCount].Interface().(error) != nil {
+	if !reflectResult[resultCount].IsNil() {
 		// the last arg is always the error status
 		return nil, vm.ErrExecutionReverted
 	}
