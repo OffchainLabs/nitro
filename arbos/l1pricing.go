@@ -18,8 +18,9 @@ const CompressionEstimateDenominator uint64 = 1000000
 
 var (
 	initialDefaultAggregator = common.Address{} //TODO
-	preferredAggregatorKey   = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key")).Bytes()
-	aggregatorFixedChargeKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key")).Bytes()
+	preferredAggregatorKey   = crypto.Keccak256([]byte("Arbitrum ArbOS preferred aggregator key"))
+	aggregatorFixedChargeKey = crypto.Keccak256([]byte("Arbitrum ArbOS aggregator fixed charge key"))
+	aggregatorAddressToPayKey = crypto.Keccak256([]byte("Arbitrum ArbOS aggregator address to pay key"))
 )
 
 const (
@@ -131,6 +132,23 @@ func (ps *L1PricingState) SetFixedChargeForAggregatorWei(aggregator common.Addre
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) *big.Int {
 	fixedChargeL1Gas := ps.segment.storage.Get(offsetForAggregatorCharge(aggregator)).Big()
 	return new(big.Int).Mul(fixedChargeL1Gas, ps.L1GasPriceEstimateWei())
+}
+
+func offsetForAggregatorAddressToPay(aggregator common.Address) common.Hash {
+	return crypto.Keccak256Hash(aggregatorAddressToPayKey, aggregator.Bytes())
+}
+
+func SetAggregatorAddressToPay(aggregator common.Address, addr common.Address, state *ArbosState) {
+	state.backingStorage.Set(offsetForAggregatorCharge(aggregator), common.BytesToHash(addr.Bytes()))
+}
+
+func AggregatorAddressToPay(aggregator common.Address, state *ArbosState) common.Address {
+	raw := state.backingStorage.Get(offsetForAggregatorAddressToPay(aggregator))
+	if raw == (common.Hash{}) {
+		return aggregator
+	} else {
+		return common.BytesToAddress(raw.Bytes())
+	}
 }
 
 func (ps *L1PricingState) GetL1Charges(
