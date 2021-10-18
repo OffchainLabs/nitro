@@ -26,7 +26,7 @@ jobs:
         uses: actions/setup-go@v2
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v ./arbos/...
 
       - name: Test ArbOS
         run: cd arbos && gotestsum --format testname
