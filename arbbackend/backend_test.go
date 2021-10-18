@@ -2,7 +2,9 @@ package arbbackend
 
 import (
 	"crypto/ecdsa"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -18,7 +20,12 @@ import (
 
 func CreateTestBackendWithBalance(t *testing.T) (*ArbBackend, *ecdsa.PrivateKey) {
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = "./data"
+	var err error
+	stackConf.DataDir, err = ioutil.TempDir("/tmp", "nitro-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(stackConf.DataDir)
 	stackConf.HTTPHost = "localhost"
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)

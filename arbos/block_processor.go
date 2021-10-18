@@ -2,6 +2,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -156,6 +157,17 @@ func (b *BlockBuilder) PendingBlock() (*types.Block, *state.StateDB, types.Recei
 		return nil, nil, types.Receipts{}
 	}
 	return b.pendingBlock, b.statedb, b.receipts
+}
+
+func (b *BlockBuilder) ForceCloseBlock() error {
+	if b.pendingBlock != nil {
+		return nil
+	}
+	if b.blockInfo == nil {
+		return errors.New("Cannot force close block without segments")
+	}
+	b.pendingBlock = b.ConstructBlock(0)
+	return nil
 }
 
 func (b *BlockBuilder) ConstructBlock(nextIndexToRead uint64) *types.Block {

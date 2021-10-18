@@ -8,8 +8,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
@@ -18,9 +20,13 @@ type ArbBackend struct {
 	blockChain   *core.BlockChain
 	stack        *node.Node
 	chainId      *big.Int
+	apiBackend   *ArbAPIBackend
+	ethConfig    *ethconfig.Config
+	ethDatabase  ethdb.Database
 
 	chanSegments chan *arbos.MessageSegment
-	chanClose    chan struct{}
+	chanClose    chan struct{} //close coroutine
+	chanNewBlock chan struct{} //create new L2 block unless empty
 }
 
 func New(stack *node.Node, config *ethconfig.Config) (*ArbBackend, error) {
@@ -59,14 +65,17 @@ func New(stack *node.Node, config *ethconfig.Config) (*ArbBackend, error) {
 		segmentQueue: make([]*arbos.MessageSegment, 0),
 		blockChain:   blockChain,
 		stack:        stack,
-		chainId:      big.NewInt(404), //TODO
+		chainId:      arbos.ChainConfig.ChainID,
+		ethConfig:    config,
+		ethDatabase:  chainDb,
 		chanSegments: make(chan *arbos.MessageSegment, 100),
 		chanClose:    make(chan struct{}, 1),
+		chanNewBlock: make(chan struct{}, 1),
 	}
 	stack.RegisterLifecycle(backend)
-	stack.RegisterAPIs(createAPIs(backend))
 	go backend.segmentQueueRutine()
 
+	createRegisterAPIBackend(backend)
 	return backend, nil
 }
 
@@ -91,7 +100,11 @@ func (b *ArbBackend) EnqueueL2Message(tx *types.Transaction) error {
 	return nil
 }
 
-func (b *ArbBackend) buildABlock() (bool, error) {
+func (b *ArbBackend) CloseBlock() {
+	b.chanNewBlock <- struct{}{}
+}
+
+func (b *ArbBackend) tryBuildBlock(force bool) (bool, error) {
 	if len(b.segmentQueue) == 0 {
 		return false, nil
 	}
@@ -106,6 +119,9 @@ func (b *ArbBackend) buildABlock() (bool, error) {
 	for segmentDone && (iSegment < len(b.segmentQueue)) {
 		segmentDone = blockBuilder.AddSegment(b.segmentQueue[iSegment])
 		iSegment += 1
+	}
+	if force {
+		blockBuilder.ForceCloseBlock()
 	}
 	block, state, reciepts := blockBuilder.PendingBlock()
 	if block == nil {
@@ -128,7 +144,16 @@ func (b *ArbBackend) segmentQueueRutine() {
 			tryBuilding := true
 			for tryBuilding {
 				var err error
-				tryBuilding, err = b.buildABlock()
+				tryBuilding, err = b.tryBuildBlock(false)
+				if err != nil {
+					panic(err)
+				}
+			}
+		case <-b.chanNewBlock:
+			tryBuilding := true
+			for tryBuilding {
+				var err error
+				tryBuilding, err = b.tryBuildBlock(true)
 				if err != nil {
 					panic(err)
 				}
