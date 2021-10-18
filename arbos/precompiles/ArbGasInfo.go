@@ -20,8 +20,8 @@ func (con ArbGasInfo) GetGasAccountingParams(
 	return nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetGasAccountingParamsGasCost() *big.Int {
-	return nil
+func (con ArbGasInfo) GetGasAccountingParamsGasCost() uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) GetPricesInArbGas(
@@ -31,8 +31,8 @@ func (con ArbGasInfo) GetPricesInArbGas(
 	return nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetPricesInArbGasGasCost() *big.Int {
-	return nil
+func (con ArbGasInfo) GetPricesInArbGasGasCost() uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(
@@ -43,8 +43,8 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(
 	return nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetPricesInArbGasWithAggregatorGasCost(aggregator common.Address) *big.Int {
-	return nil
+func (con ArbGasInfo) GetPricesInArbGasWithAggregatorGasCost(aggregator common.Address) uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) GetPricesInWei(
@@ -54,8 +54,8 @@ func (con ArbGasInfo) GetPricesInWei(
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetPricesInWeiGasCost() *big.Int {
-	return nil
+func (con ArbGasInfo) GetPricesInWeiGasCost() uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
@@ -66,22 +66,22 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetPricesInWeiWithAggregatorGasCost(aggregator common.Address) *big.Int {
-	return nil
+func (con ArbGasInfo) GetPricesInWeiWithAggregatorGasCost(aggregator common.Address) uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) GetL1GasPriceEstimate(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) GetL1GasPriceEstimateGasCost() *big.Int {
-	return nil
+func (con ArbGasInfo) GetL1GasPriceEstimateGasCost() uint64 {
+	return 0
 }
 
 func (con ArbGasInfo) SetL1GasPriceEstimate(caller common.Address, st *state.StateDB, priceInWei *big.Int) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbGasInfo) SetL1GasPriceEstimateGasCost(priceInWei *big.Int) *big.Int {
-	return nil
+func (con ArbGasInfo) SetL1GasPriceEstimateGasCost(priceInWei *big.Int) uint64 {
+	return 0
 }

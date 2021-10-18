@@ -21,16 +21,16 @@ func (con ArbAggregator) GetFeeCollector(
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetFeeCollectorGasCost(aggregator common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) GetFeeCollectorGasCost(aggregator common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) GetDefaultAggregator(caller common.Address, st *state.StateDB) (common.Address, error) {
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetDefaultAggregatorGasCost() *big.Int {
-	return nil
+func (con ArbAggregator) GetDefaultAggregatorGasCost() uint64 {
+	return 0
 }
 
 func (con ArbAggregator) GetPreferredAggregator(
@@ -41,8 +41,8 @@ func (con ArbAggregator) GetPreferredAggregator(
 	return common.Address{}, false, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetPreferredAggregatorGasCost(addr common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) GetPreferredAggregatorGasCost(addr common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) GetTxBaseFee(
@@ -53,8 +53,8 @@ func (con ArbAggregator) GetTxBaseFee(
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbAggregator) GetTxBaseFeeGasCost(aggregator common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) GetTxBaseFeeGasCost(aggregator common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) SetFeeCollector(
@@ -66,8 +66,8 @@ func (con ArbAggregator) SetFeeCollector(
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetFeeCollectorGasCost(aggregator common.Address, newFeeCollector common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) SetFeeCollectorGasCost(aggregator common.Address, newFeeCollector common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) SetDefaultAggregator(
@@ -78,8 +78,8 @@ func (con ArbAggregator) SetDefaultAggregator(
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetDefaultAggregatorGasCost(newDefault common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) SetDefaultAggregatorGasCost(newDefault common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) SetPreferredAggregator(
@@ -90,8 +90,8 @@ func (con ArbAggregator) SetPreferredAggregator(
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetPreferredAggregatorGasCost(prefAgg common.Address) *big.Int {
-	return nil
+func (con ArbAggregator) SetPreferredAggregatorGasCost(prefAgg common.Address) uint64 {
+	return 0
 }
 
 func (con ArbAggregator) SetTxBaseFee(
@@ -103,6 +103,6 @@ func (con ArbAggregator) SetTxBaseFee(
 	return errors.New("unimplemented")
 }
 
-func (con ArbAggregator) SetTxBaseFeeGasCost(aggregator common.Address, feeInL1Gas *big.Int) *big.Int {
-	return nil
+func (con ArbAggregator) SetTxBaseFeeGasCost(aggregator common.Address, feeInL1Gas *big.Int) uint64 {
+	return 0
 }

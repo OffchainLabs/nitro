@@ -17,8 +17,8 @@ func (con ArbRetryableTx) Cancel(caller common.Address, st *state.StateDB, ticke
 	return errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) CancelGasCost(ticketId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) CancelGasCost(ticketId [32]byte) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) GetBeneficiary(
@@ -29,8 +29,8 @@ func (con ArbRetryableTx) GetBeneficiary(
 	return common.Address{}, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetBeneficiaryGasCost(ticketId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) GetBeneficiaryGasCost(ticketId [32]byte) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) GetKeepalivePrice(
@@ -41,16 +41,16 @@ func (con ArbRetryableTx) GetKeepalivePrice(
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetKeepalivePriceGasCost(ticketId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) GetKeepalivePriceGasCost(ticketId [32]byte) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) GetLifetime(caller common.Address, st *state.StateDB) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetLifetimeGasCost() *big.Int {
-	return nil
+func (con ArbRetryableTx) GetLifetimeGasCost() uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) GetSubmissionPrice(
@@ -61,16 +61,16 @@ func (con ArbRetryableTx) GetSubmissionPrice(
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetSubmissionPriceGasCost(calldataSize *big.Int) *big.Int {
-	return nil
+func (con ArbRetryableTx) GetSubmissionPriceGasCost(calldataSize *big.Int) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) GetTimeout(caller common.Address, st *state.StateDB, ticketId [32]byte) (*big.Int, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetTimeoutGasCost(ticketId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) GetTimeoutGasCost(ticketId [32]byte) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) Keepalive(
@@ -82,14 +82,14 @@ func (con ArbRetryableTx) Keepalive(
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
+	return 0
 }
 
 func (con ArbRetryableTx) Redeem(caller common.Address, st *state.StateDB, txId [32]byte) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) RedeemGasCost(txId [32]byte) *big.Int {
-	return nil
+func (con ArbRetryableTx) RedeemGasCost(txId [32]byte) uint64 {
+	return 0
 }

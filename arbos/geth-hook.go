@@ -22,7 +22,11 @@ func (p ArbosPrecompileWrapper) Run(input []byte) ([]byte, error) {
 	panic("Non-advanced precompile method called")
 }
 
-func (p ArbosPrecompileWrapper) RunAdvanced(input []byte, suppliedGas uint64, info *vm.AdvancedPrecompileCall) (ret []byte, remainingGas uint64, err error) {
+func (p ArbosPrecompileWrapper) RunAdvanced(
+	input []byte,
+	suppliedGas uint64,
+	info *vm.AdvancedPrecompileCall,
+) (ret []byte, remainingGas uint64, err error) {
 	gasUsage := p.inner.GasToCharge(input)
 	if gasUsage > suppliedGas {
 		return nil, 0, vm.ErrOutOfGas

@@ -25,7 +25,9 @@ type ArbosPrecompile interface {
 	GasToCharge(input []byte) uint64
 
 	// Important fields: evm.StateDB and evm.Config.Tracer
-	// NOTE: if precompileAddress != actingAsAddress, watch out! This is a delegatecall or callcode, so caller might be wrong. In that case, unless this precompile is pure, it should probably revert.
+	// NOTE: if precompileAddress != actingAsAddress, watch out!
+	// This is a delegatecall or callcode, so caller might be wrong.
+	// In that case, unless this precompile is pure, it should probably revert.
 	Call(
 		input []byte,
 		precompileAddress common.Address,
@@ -42,9 +44,11 @@ type Precompile struct {
 }
 
 type PrecompileMethod struct {
-	name    string
-	handler reflect.Method
-	gascost reflect.Method
+	name        string
+	template    abi.Method
+	handler     reflect.Method
+	gascost     reflect.Method
+	implementer reflect.Value
 }
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
@@ -159,20 +163,26 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 				)
 			}
 		}
-		if signature.NumOut() != 1 || signature.Out(0) != reflect.TypeOf(&big.Int{}) {
-			log.Fatal(context, "must return a *big.Int")
+		if signature.NumOut() != 1 || signature.Out(0) != reflect.TypeOf(uint64(0)) {
+			log.Fatal(context, "must return a uint64")
 		}
 
 		methods[id] = PrecompileMethod{
 			name,
+			method,
 			handler,
 			gascost,
+			reflect.ValueOf(implementer),
 		}
 	}
 
 	return Precompile{
 		methods,
 	}
+}
+
+func addr(s string) common.Address {
+	return common.HexToAddress(s)
 }
 
 func Precompiles() map[common.Address]ArbosPrecompile {
@@ -191,14 +201,35 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 	}
 }
 
-func addr(s string) common.Address {
-	return common.HexToAddress(s)
-}
-
+// determine the amount of gas to charge for calling a precompile
 func (p Precompile) GasToCharge(input []byte) uint64 {
-	return 0
+
+	if len(input) != 4 {
+		return 0
+	}
+	id := *(*[4]byte)(input)
+	method, ok := p.methods[id]
+	if !ok {
+		return 0
+	}
+
+	args, err := method.template.Inputs.Unpack(input[4:])
+	if err != nil {
+		return 0
+	}
+
+	reflectArgs := []reflect.Value{
+		method.implementer,
+	}
+	for _, arg := range args {
+		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+	}
+
+	// we checked earlier that gascost() returns a uint64
+	return method.gascost.Func.Call(reflectArgs)[0].Interface().(uint64)
 }
 
+// call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p Precompile) Call(
 	input []byte,
 	precompileAddress common.Address,

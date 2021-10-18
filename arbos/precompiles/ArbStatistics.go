@@ -20,6 +20,6 @@ func (con ArbStatistics) GetStats(
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbStatistics) GetStatsGasCost() *big.Int {
-	return nil
+func (con ArbStatistics) GetStatsGasCost() uint64 {
+	return 0
 }
