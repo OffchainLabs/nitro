@@ -49,7 +49,7 @@ func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
 
 func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
 	segment := state.OpenSegment(offset)
-	defaultAggregator := common.BytesToAddress(segment.Get(0).Bytes())
+	defaultAggregator := common.BytesToAddress(segment.Get(defaultAggregatorAddressOffset).Bytes())
 	l1GasPriceEstimate := segment.Get(l1GasPriceEstimateOffset).Big()
 	compressionEstimate := segment.Get(compressionEstimateOffset).Big().Uint64()
 	return &L1PricingState{
