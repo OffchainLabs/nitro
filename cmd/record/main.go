@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
@@ -74,19 +73,12 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	var segment *arbos.MessageSegment // TODO
-
-	builder := arbos.NewBlockBuilder(statedb, lastHeader)
-	builder.AddSegment(segment)
-
 	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
-	newBlock, err := arbstate.BuildBlock(statedb, builder.BuildBlockData(), chainContext)
-	var newBlockHash common.Hash
-	if err == nil {
-		newBlockHash = newBlock.Hash()
-	} else {
-		fmt.Printf("Error processing message: %v\n", err)
-	}
+	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
+	// TODO add message(s) to builder
+
+	newBlock := builder.ConstructBlock(0)
+	newBlockHash := newBlock.Hash()
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	if *dbRecordOutputPath != "" {

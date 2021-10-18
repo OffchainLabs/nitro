@@ -32,6 +32,12 @@ func ReadInboxMessage() []byte {
 	})
 }
 
+func ReadDelayedInboxMessage(seqNum uint64) []byte {
+	return readBuffer(func(offset uint32, buf []byte) uint32 {
+		return readDelayedInboxMessage(seqNum, offset, buf)
+	})
+}
+
 func AdvanceInboxMessage() {
 	advanceInboxMessage()
 }
@@ -52,4 +58,8 @@ func GetPositionWithinMessage() uint64 {
 
 func SetPositionWithinMessage(pos uint64) {
 	setPositionWithinMessage(pos)
+}
+
+func GetInboxPosition() uint64 {
+	return getInboxPosition()
 }

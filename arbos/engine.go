@@ -2,6 +2,7 @@ package arbos
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/core"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,7 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-type Engine struct{}
+type Engine struct{
+	IsSequencer bool
+}
 
 func (e Engine) Author(header *types.Header) (common.Address, error) {
 	return header.Coinbase, nil
@@ -39,11 +42,12 @@ func (e Engine) VerifyUncles(chain consensus.ChainReader, block *types.Block) er
 }
 
 func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+	header.Difficulty = big.NewInt(1)
 	return nil
 }
 
 func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) {
-	FinalizeBlock(header, txs, receipts)
+	FinalizeBlock(header, txs, receipts, state, e.ToChainContext(chain))
 	header.Root = state.IntermediateRoot(true)
 }
 
@@ -57,7 +61,14 @@ func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 }
 
 func (e Engine) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-	return errors.New("sealing not supported")
+	if !e.IsSequencer {
+		return errors.New("sealing not supported")
+	}
+	if len(block.Transactions()) == 0 {
+		return nil
+	}
+	results <- block
+	return nil
 }
 
 func (e Engine) SealHash(header *types.Header) common.Hash {
@@ -75,3 +86,21 @@ func (e Engine) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 func (e Engine) Close() error {
 	return nil
 }
+
+type ArbChainContext struct {
+	engine       Engine
+	headerReader consensus.ChainHeaderReader
+}
+
+func (ctx *ArbChainContext) Engine() consensus.Engine {
+	return ctx.engine
+}
+
+func (ctx *ArbChainContext) GetHeader(hash common.Hash, u uint64) *types.Header {
+	return ctx.headerReader.GetHeader(hash, u)
+}
+
+func (e Engine) ToChainContext(headerReader consensus.ChainHeaderReader) core.ChainContext {
+	return &ArbChainContext{ e, headerReader }
+}
+
