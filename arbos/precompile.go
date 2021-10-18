@@ -39,6 +39,15 @@ type ArbosPrecompile interface {
 	) (output []byte, err error)
 }
 
+type purity uint8
+
+const (
+	pure purity = iota
+	view
+	write
+	payable
+)
+
 type Precompile struct {
 	methods map[[4]byte]PrecompileMethod
 }
@@ -46,6 +55,7 @@ type Precompile struct {
 type PrecompileMethod struct {
 	name        string
 	template    abi.Method
+	purity      purity
 	handler     reflect.Method
 	gascost     reflect.Method
 	implementer reflect.Value
@@ -86,15 +96,21 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			reflect.TypeOf(common.Address{}), // the method's caller
 		}
 
+		var purity purity
+
 		switch method.StateMutability {
 		case "pure":
+			purity = pure
 		case "view":
 			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			purity = view
 		case "nonpayable":
 			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			purity = write
 		case "payable":
 			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
 			needs = append(needs, reflect.TypeOf(&big.Int{}))
+			purity = payable
 		default:
 			log.Fatal("Unknown state mutability ", method.StateMutability)
 		}
@@ -170,6 +186,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		methods[id] = PrecompileMethod{
 			name,
 			method,
+			purity,
 			handler,
 			gascost,
 			reflect.ValueOf(implementer),
@@ -205,16 +222,19 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 func (p Precompile) GasToCharge(input []byte) uint64 {
 
 	if len(input) != 4 {
+		// ArbOS precompiles always have canonical method selectors
 		return 0
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
 	if !ok {
+		// method does not exist
 		return 0
 	}
 
 	args, err := method.template.Inputs.Unpack(input[4:])
 	if err != nil {
+		// calldata does not match the method's signature
 		return 0
 	}
 
@@ -239,5 +259,78 @@ func (p Precompile) Call(
 	readOnly bool,
 	evm *vm.EVM,
 ) (output []byte, err error) {
-	return nil, nil
+
+	if len(input) != 4 {
+		// ArbOS precompiles always have canonical method selectors
+		return nil, vm.ErrExecutionReverted
+	}
+	id := *(*[4]byte)(input)
+	method, ok := p.methods[id]
+	if !ok {
+		// method does not exist
+		return nil, vm.ErrExecutionReverted
+	}
+
+	if method.purity >= view && actingAsAddress != precompileAddress {
+		// should not access precompile superpowers when not acting as the precompile
+		return nil, vm.ErrExecutionReverted
+	}
+
+	if method.purity >= write && readOnly {
+		// tried to write to global state in read-only mode
+		return nil, vm.ErrExecutionReverted
+	}
+
+	if method.purity < payable && value.Sign() != 0 {
+		// tried to pay something that's non-payable
+		return nil, vm.ErrExecutionReverted
+	}
+
+	reflectArgs := []reflect.Value{
+		method.implementer,
+		reflect.ValueOf(caller),
+	}
+
+	state := evm.StateDB.(*state.StateDB)
+
+	switch method.purity {
+	case pure:
+	case view:
+		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+	case write:
+		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+	case payable:
+		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
+	default:
+		log.Fatal("Unknown state mutability ", method.purity)
+	}
+
+	args, err := method.template.Inputs.Unpack(input[4:])
+	if err != nil {
+		// calldata does not match the method's signature
+		return nil, vm.ErrExecutionReverted
+	}
+	for _, arg := range args {
+		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+	}
+
+	reflectResult := method.gascost.Func.Call(reflectArgs)
+	resultCount := len(reflectResult) - 1
+	if reflectResult[resultCount].Interface().(error) != nil {
+		// the last arg is always the error status
+		return nil, vm.ErrExecutionReverted
+	}
+	result := make([]interface{}, resultCount)
+	for i := 0; i < resultCount; i++ {
+		result[i] = reflectResult[i].Interface()
+	}
+
+	encoded, err := method.template.Outputs.PackValues(result)
+	if err != nil {
+		// in production we'll just revert, but for now this
+		// will catch implementation errors
+		log.Fatal("Could not encode precompile result ", err)
+	}
+	return encoded, nil
 }
