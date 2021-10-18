@@ -204,8 +204,8 @@ func addr(s string) common.Address {
 
 func Precompiles() map[common.Address]ArbosPrecompile {
 	return map[common.Address]ArbosPrecompile{
-		addr("0x41"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
 		addr("0x64"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
+		addr("0x65"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
 		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, pre.ArbAddressTable{}),
 		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, pre.ArbBLS{}),
 		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, pre.ArbFunctionTable{}),
@@ -260,7 +260,7 @@ func (p Precompile) Call(
 	evm *vm.EVM,
 ) (output []byte, err error) {
 
-	if len(input) != 4 {
+	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
 		return nil, vm.ErrExecutionReverted
 	}
