@@ -188,6 +188,6 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			}
 		}
 
-		FinalizeBlock(nil, nil, statedb, nil)
+		FinalizeBlock(nil, nil, nil, statedb, nil)
 	}
 }

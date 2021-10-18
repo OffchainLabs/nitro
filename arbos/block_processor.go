@@ -68,8 +68,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 // Must always return true if the block is empty
 func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 	if b.blockInfo == nil {
-		arbosState := OpenArbosState(b.statedb, b.lastBlockHeader.Time)
-		b.blockInfo = &segment.L1Info
+		return true
 	}
 	info := segment.L1Info
 	// End current block without including segment
@@ -126,7 +125,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			l1Timestamp:   new(big.Int).SetUint64(timestamp),
 		}
 
-		gasLimit := arbosState.CurrentPerBlockGasLimit()
+		gasLimit := PerBlockGasLimit
 
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,

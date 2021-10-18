@@ -6,7 +6,7 @@ const SpeedLimitPerSecond = 1000000
 const GasPoolMax = SpeedLimitPerSecond * 10 * 60
 const SmallGasPoolMax = SpeedLimitPerSecond * 60
 
-const PerBlockGasLimit = 20*1000000
+const PerBlockGasLimit uint64 = 20*1000000
 
 const Gwei = 1000000000
 const MinimumGasPriceWei = 1*Gwei
@@ -77,7 +77,7 @@ func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
 	pool := state.GasPool()
 	if pool < 0 {
 		return 0
-	} else if pool > PerBlockGasLimit {
+	} else if pool > int64(PerBlockGasLimit) {
 		return PerBlockGasLimit
 	} else {
 		return uint64(pool)
