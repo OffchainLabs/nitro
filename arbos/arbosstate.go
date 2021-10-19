@@ -73,13 +73,14 @@ type ArbosState struct {
 	gasPool         *StorageBackedInt64
 	smallGasPool    *StorageBackedInt64
 	gasPriceWei     *big.Int
+	l1PricingState  *L1PricingState
 	retryableQueue  *QueueInStorage
 	validRetryables EvmStorage
+	timestamp       *uint64
 	backingStorage  EvmStorage
-	timesstamp      uint64
 }
 
-func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
+func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {
@@ -93,8 +94,9 @@ func OpenArbosState(stateDB vm.StateDB, timestamp uint64) *ArbosState {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
 		backingStorage,
-		timestamp,
 	}
 }
 
@@ -110,13 +112,14 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 }
 
 var (
-	versionKey                 = IntToHash(0)
-	storageOffsetKey           = IntToHash(1)
-	gasPoolKey                 = IntToHash(2)
-	smallGasPoolKey            = IntToHash(3)
-	gasPriceKey                = IntToHash(4)
-	lastTimestampKey           = IntToHash(5)
-	retryableQueueKey          = IntToHash(6)
+	versionKey       = IntToHash(0)
+	storageOffsetKey = IntToHash(1)
+	gasPoolKey       = IntToHash(2)
+	smallGasPoolKey  = IntToHash(3)
+	gasPriceKey      = IntToHash(4)
+	retryableQueueKey = IntToHash(5)
+	l1PricingKey     = IntToHash(6)
+	timestampKey     = IntToHash(7)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -126,7 +129,8 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(gasPoolKey, IntToHash(GasPoolMax))
 	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
-	backingStorage.Set(lastTimestampKey, IntToHash(0))
+	backingStorage.Set(l1PricingKey, IntToHash(0))
+	backingStorage.Set(timestampKey, IntToHash(0))
 	backingStorage.Set(retryableQueueKey, IntToHash(0))
 }
 
@@ -207,6 +211,45 @@ func (state *ArbosState) RetryableQueue() *QueueInStorage {
 	return state.retryableQueue
 }
 
+func (state *ArbosState) L1PricingState() *L1PricingState {
+	if state.l1PricingState == nil {
+		offset := state.backingStorage.Get(l1PricingKey)
+		if offset == (common.Hash{}) {
+			l1PricingState, offset := AllocateL1PricingState(state)
+			state.l1PricingState = l1PricingState
+			state.backingStorage.Set(l1PricingKey, offset)
+		} else {
+			state.l1PricingState = OpenL1PricingState(offset, state)
+		}
+	}
+	return state.l1PricingState
+}
+
+func (state *ArbosState) LastTimestampSeen() uint64 {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	return *state.timestamp
+}
+
+func (state *ArbosState) SetLastTimestampSeen(val uint64) {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	if val < *state.timestamp {
+		panic("timestamp decreased")
+	}
+	if val > *state.timestamp {
+		delta := val - *state.timestamp
+		ts := val
+		state.timestamp = &ts
+		state.backingStorage.Set(timestampKey, IntToHash(int64(ts)))
+		state.notifyGasPricerThatTimeElapsed(delta)
+	}
+}
+
 func (state *ArbosState) ValidRetryablesSet() EvmStorage {
 	// This is a virtual storage (KVS) that we use to keep track of which ids are ids of valid retryables.
 	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
@@ -282,7 +325,6 @@ func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset comm
 	if err != nil {
 		panic(err)
 	}
-
 	seg.WriteBytes(buf)
 
 	return seg

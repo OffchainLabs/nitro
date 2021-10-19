@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -23,11 +24,13 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
+	arbosState := OpenArbosState(evm.StateDB)
+	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state:        OpenArbosState(evm.StateDB, evm.Context.Time.Uint64()),
+		state:        arbosState,
 	}
 }
 
@@ -44,8 +47,16 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
-	//TODO
-	return big.NewInt(0)
+	intrinsicGas, err := core.IntrinsicGas(p.msg.Data(), nil, false, true, true)
+	if err != nil {
+		panic(err)
+	}
+	return p.state.L1PricingState().GetL1Charges(
+		p.msg.From(),
+		p.getAggregator(),
+		intrinsicGas - params.TxGas,
+		DataWasNotCompressed,    //TODO: if data was compressed, pass in compression ratio here
+	)
 }
 
 func (p *TxProcessor) getL1GasCharge() uint64 {
