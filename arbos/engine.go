@@ -51,7 +51,7 @@ func (e Engine) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 }
 
 func (e Engine) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) {
-	FinalizeBlock(header, txs, receipts, state, e.ToChainContext(chain))
+	FinalizeBlock(header, txs, receipts, state)
 	header.Root = state.IntermediateRoot(true)
 }
 
