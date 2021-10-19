@@ -4,6 +4,7 @@ use crate::{
     value::{Value, ValueType},
 };
 use digest::Digest;
+use rayon::prelude::*;
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
 
@@ -64,14 +65,18 @@ impl Memory {
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
-        let mut leaf_hashes = Vec::with_capacity(leaves);
-        let mut remaining_buf = self.buffer.as_slice();
-        for _ in 0..leaves {
-            let mut leaf = [0u8; Self::LEAF_SIZE];
-            let taking_len = std::cmp::min(Self::LEAF_SIZE, remaining_buf.len());
-            leaf[..taking_len].copy_from_slice(&remaining_buf[..taking_len]);
-            leaf_hashes.push(hash_leaf(leaf));
-            remaining_buf = &remaining_buf[taking_len..];
+        let mut leaf_hashes: Vec<Bytes32> = self
+            .buffer
+            .par_chunks(Self::LEAF_SIZE)
+            .map(|leaf| {
+                let mut full_leaf = [0u8; 32];
+                full_leaf[..leaf.len()].copy_from_slice(leaf);
+                hash_leaf(full_leaf)
+            })
+            .collect();
+        if leaf_hashes.len() < leaves {
+            let empty_hash = hash_leaf([0u8; 32]);
+            leaf_hashes.resize(leaves, empty_hash);
         }
         Cow::Owned(Merkle::new_advanced(
             MerkleType::Memory,
