@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -36,7 +40,7 @@ func CreateRetryable(
 		to,
 		callvalue,
 		calldata,
-	};
+	}
 	buf := bytes.Buffer{}
 	if err := ret.serialize(&buf); err != nil {
 		panic(err)
@@ -49,7 +53,7 @@ func CreateRetryable(
 	state.RetryableQueue().Put(id)
 
 	// mark the new retryable as valid
-	state.ValidRetryablesSet().Set(id, common.Hash{ 1 })
+	state.ValidRetryablesSet().Set(id, common.Hash{1})
 
 	return ret
 }
@@ -69,7 +73,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if err != nil {
 		panic(err)
 	}
-	if new(big.Int).SetUint64(ret.timeout).Cmp(state.LastTimestampSeen()) < 0 {
+	if ret.timeout < state.LastTimestampSeen() {
 		// retryable has expired, so delete it
 		seg.Delete()
 		state.ValidRetryablesSet().Set(id, common.Hash{})
@@ -151,6 +155,9 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 
 func (retryable *Retryable) serialize(wr io.Writer) error {
 	if err := Uint64ToWriter(retryable.numTries, wr); err != nil {
+		return err
+	}
+	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
 		return err
 	}
 	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {

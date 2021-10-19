@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -19,14 +23,14 @@ type EvmStorage interface {
 
 type GethEvmStorage struct {
 	account common.Address
-	db    vm.StateDB
+	db      vm.StateDB
 }
 
 // Use a Geth database to create an evm key-value store
 func NewGethEvmStorage(statedb vm.StateDB) *GethEvmStorage {
 	return &GethEvmStorage{
 		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
-		db:    statedb,
+		db:      statedb,
 	}
 }
 
@@ -60,28 +64,31 @@ func IntToHash(val int64) common.Hash {
 }
 
 func hashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y)))   //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 type ArbosState struct {
-	formatVersion     *big.Int
-	nextAlloc         *common.Hash
-	gasPool           *StorageBackedInt64
-	smallGasPool      *StorageBackedInt64
-	gasPriceWei       *big.Int
-	lastTimestampSeen *big.Int
-	retryableQueue	  *QueueInStorage
-	validRetryables   EvmStorage
-	pendingRedeems    *QueueInStorage
-	backingStorage    EvmStorage
+	formatVersion   *big.Int
+	nextAlloc       *common.Hash
+	gasPool         *StorageBackedInt64
+	smallGasPool    *StorageBackedInt64
+	gasPriceWei     *big.Int
+	l1PricingState  *L1PricingState
+	retryableQueue  *QueueInStorage
+	validRetryables EvmStorage
+	pendingRedeems  *QueueInStorage
+	timestamp       *uint64
+	backingStorage  EvmStorage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := NewGethEvmStorage(stateDB)
 
-	for tryStorageUpgrade(backingStorage) {}
+	for tryStorageUpgrade(backingStorage) {
+	}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -109,24 +116,26 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 var (
 	versionKey       = IntToHash(0)
 	storageOffsetKey = IntToHash(1)
-	gasPoolKey = IntToHash(2)
-	smallGasPoolKey = IntToHash(3)
-	gasPriceKey = IntToHash(4)
-	lastTimestampKey = IntToHash(5)
-	retryableQueueKey = IntToHash(6)
+	gasPoolKey       = IntToHash(2)
+	smallGasPoolKey  = IntToHash(3)
+	gasPriceKey      = IntToHash(4)
+	retryableQueueKey = IntToHash(5)
+	l1PricingKey     = IntToHash(6)
 	pendingRedeemsKey = IntToHash(7)
+	timestampKey     = IntToHash(8)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
 func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(versionKey, IntToHash(1))
 	backingStorage.Set(storageOffsetKey, crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
-	backingStorage.Set(gasPoolKey, IntToHash(10000000*10*60))
-	backingStorage.Set(smallGasPoolKey, IntToHash(10000000*60))
+	backingStorage.Set(gasPoolKey, IntToHash(GasPoolMax))
+	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
 	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
-	backingStorage.Set(lastTimestampKey, IntToHash(0))
 	backingStorage.Set(retryableQueueKey, IntToHash(0))
+	backingStorage.Set(l1PricingKey, IntToHash(0))
 	backingStorage.Set(pendingRedeemsKey, IntToHash(0))
+	backingStorage.Set(timestampKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -193,18 +202,6 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.backingStorage.Set(gasPriceKey, common.BigToHash(val))
 }
 
-func (state *ArbosState) LastTimestampSeen() *big.Int {
-	if state.lastTimestampSeen == nil {
-		state.lastTimestampSeen = state.backingStorage.Get(lastTimestampKey).Big()
-	}
-	return state.lastTimestampSeen
-}
-
-func (state *ArbosState) SetLastTimestampSeen(val *big.Int) {
-	state.lastTimestampSeen = val
-	state.backingStorage.Set(lastTimestampKey, common.BigToHash(val))
-}
-
 func (state *ArbosState) RetryableQueue() *QueueInStorage {
 	if state.retryableQueue == nil {
 		queueOffset := state.backingStorage.Get(retryableQueueKey)
@@ -216,6 +213,45 @@ func (state *ArbosState) RetryableQueue() *QueueInStorage {
 		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
 	}
 	return state.retryableQueue
+}
+
+func (state *ArbosState) L1PricingState() *L1PricingState {
+	if state.l1PricingState == nil {
+		offset := state.backingStorage.Get(l1PricingKey)
+		if offset == (common.Hash{}) {
+			l1PricingState, offset := AllocateL1PricingState(state)
+			state.l1PricingState = l1PricingState
+			state.backingStorage.Set(l1PricingKey, offset)
+		} else {
+			state.l1PricingState = OpenL1PricingState(offset, state)
+		}
+	}
+	return state.l1PricingState
+}
+
+func (state *ArbosState) LastTimestampSeen() uint64 {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	return *state.timestamp
+}
+
+func (state *ArbosState) SetLastTimestampSeen(val uint64) {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	if val < *state.timestamp {
+		panic("timestamp decreased")
+	}
+	if val > *state.timestamp {
+		delta := val - *state.timestamp
+		ts := val
+		state.timestamp = &ts
+		state.backingStorage.Set(timestampKey, IntToHash(int64(ts)))
+		state.notifyGasPricerThatTimeElapsed(delta)
+	}
 }
 
 func (state *ArbosState) ValidRetryablesSet() EvmStorage {
@@ -302,23 +338,14 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
 
 func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *StorageSegment {
 	sizeWords := (len(buf) + 31) / 32
-	seg, err := state.AllocateSegmentAtOffset(uint64(1 + sizeWords), offset)
+	seg, err := state.AllocateSegmentAtOffset(uint64(1+sizeWords), offset)
 	if err != nil {
 		panic(err)
 	}
-
 	seg.WriteBytes(buf)
 
 	return seg
 }
-
-func (state *ArbosState) AdvanceTimestampToAtLeast(newTimestamp *big.Int) {
-	currentTimestamp := state.LastTimestampSeen()
-	if newTimestamp.Cmp(currentTimestamp) > 0 {
-		state.SetLastTimestampSeen(newTimestamp)
-	}
-}
-
 
 // StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
 //     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
@@ -329,7 +356,7 @@ type StorageBackedInt64 struct {
 }
 
 func OpenStorageBackedInt64(storage EvmStorage, offset common.Hash) *StorageBackedInt64 {
-	return &StorageBackedInt64{ storage, offset, nil }
+	return &StorageBackedInt64{storage, offset, nil}
 }
 
 func (sbi *StorageBackedInt64) Get() int64 {

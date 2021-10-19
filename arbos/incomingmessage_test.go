@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -188,6 +192,6 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			}
 		}
 
-		FinalizeBlock(nil, nil, nil, statedb)
+		FinalizeBlock(nil, nil, nil, statedb, nil)
 	}
 }

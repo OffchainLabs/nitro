@@ -11,7 +11,7 @@ type virtualStorage struct {
 }
 
 func NewVirtualStorage(backingStorage EvmStorage, uniqueKey common.Hash) EvmStorage {
-	return &virtualStorage{ backingStorage, uniqueKey }
+	return &virtualStorage{backingStorage, uniqueKey}
 }
 
 func (vs *virtualStorage) mapKey(key common.Hash) common.Hash {
@@ -29,4 +29,3 @@ func (vs *virtualStorage) Set(key common.Hash, value common.Hash) {
 func (vs *virtualStorage) Swap(key common.Hash, value common.Hash) common.Hash {
 	return vs.backingStorage.Swap(vs.mapKey(key), value)
 }
-

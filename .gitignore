@@ -6,3 +6,8 @@
 .idea
 cmd/node/data
 cmd/node/node
+precompiles/artifacts
+precompiles/cache/
+precompiles/go/
+precompiles/node_modules/
+.make/

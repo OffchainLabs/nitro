@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -13,8 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
-
-var perBlockGasLimit uint64 = 20000000
 
 var ChainConfig = &params.ChainConfig{
 	ChainID:             big.NewInt(412345),
@@ -66,6 +68,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 	}
 }
 
+// Must always return true if the block is empty
 func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 	if b.blockInfo == nil {
 		return true
@@ -80,6 +83,7 @@ func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
 }
 
+// Must always return true if the block is empty
 func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 	if !b.CanAddMessage(segment) {
 		return false
@@ -95,7 +99,7 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 			newGasUsed = ^uint64(0)
 		}
 	}
-	return newGasUsed <= perBlockGasLimit
+	return newGasUsed <= PerBlockGasLimit
 }
 
 func (b *BlockBuilder) AddMessage(segment MessageSegment) {
@@ -124,7 +128,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			l1Timestamp:   new(big.Int).SetUint64(timestamp),
 		}
 
-		gasLimit := perBlockGasLimit // TODO
+		gasLimit := PerBlockGasLimit
 
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,
@@ -146,8 +150,9 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		}
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
+
 	for _, tx := range segment.txes {
-		if tx.Gas() > perBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
+		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
 		}
@@ -191,7 +196,7 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
 			Bloom:       [256]byte{}, // Filled in later
 			Difficulty:  big.NewInt(1),
 			Number:      blockNumber,
-			GasLimit:    perBlockGasLimit,
+			GasLimit:    PerBlockGasLimit,
 			GasUsed:     0,
 			Time:        b.lastBlockHeader.Time,
 			Extra:       []byte{},   // Unused
@@ -214,11 +219,18 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
-	OpenArbosState(statedb).TryToReapOneRetryable()
+func FinalizeBlock(
+	header *types.Header,
+	txs types.Transactions,
+	receipts types.Receipts,
+	statedb *state.StateDB,
+	chainContext core.ChainContext, // should be nil if there is no previous block
+) {
+	arbosState := OpenArbosState(statedb)
+	arbosState.TryToReapOneRetryable()
 }

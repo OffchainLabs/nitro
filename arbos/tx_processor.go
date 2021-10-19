@@ -1,6 +1,11 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -12,18 +17,20 @@ import (
 var networkFeeCollector common.Address
 
 type TxProcessor struct {
-	msg core.Message
+	msg          core.Message
 	blockContext vm.BlockContext
-	stateDB vm.StateDB
-	state *ArbosState
+	stateDB      vm.StateDB
+	state        *ArbosState
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
+	arbosState := OpenArbosState(evm.StateDB)
+	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
-		msg: msg,
+		msg:          msg,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
-		state: OpenArbosState(evm.StateDB),
+		state:        arbosState,
 	}
 }
 
@@ -40,8 +47,16 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
-	//TODO
-	return big.NewInt(0)
+	intrinsicGas, err := core.IntrinsicGas(p.msg.Data(), nil, false, true, true)
+	if err != nil {
+		panic(err)
+	}
+	return p.state.L1PricingState().GetL1Charges(
+		p.msg.From(),
+		p.getAggregator(),
+		intrinsicGas - params.TxGas,
+		DataWasNotCompressed,    //TODO: if data was compressed, pass in compression ratio here
+	)
 }
 
 func (p *TxProcessor) getL1GasCharge() uint64 {
@@ -87,5 +102,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, gasPool *core.GasPool, success b
 	l2ChargeWei := new(big.Int).Sub(totalPaid, l1ChargeWei)
 	p.stateDB.SubBalance(p.blockContext.Coinbase, l2ChargeWei)
 	p.stateDB.AddBalance(networkFeeCollector, l2ChargeWei)
+	p.state.notifyGasUsed(new(big.Int).Div(l2ChargeWei, p.msg.GasPrice()).Uint64())
 	return nil
 }
