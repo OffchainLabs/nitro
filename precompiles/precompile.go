@@ -11,7 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	templates "github.com/offchainlabs/arbstate/precompiles/go"
+	templates "github.com/offchainlabs/arbstate/solgen/go"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
