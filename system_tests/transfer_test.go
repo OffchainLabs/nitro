@@ -19,7 +19,7 @@ func TestTransfer(t *testing.T) {
 
 	ownerAddress := crypto.PubkeyToAddress(ownerKey.PublicKey)
 
-	signer := types.NewLondonSigner(arbos.ChainConfig.ChainID)
+	signer := types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID))
 	user2Key, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -67,4 +67,5 @@ func TestTransfer(t *testing.T) {
 	if bal2.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected recipient balance: ", bal2)
 	}
+
 }
