@@ -1,3 +1,13 @@
 /record
+/cmd/record/record
 /replay
+/cmd/replay/replay
 /*.bin
+.idea
+cmd/node/data
+cmd/node/node
+precompiles/artifacts
+precompiles/cache/
+precompiles/go/
+precompiles/node_modules/
+.make/

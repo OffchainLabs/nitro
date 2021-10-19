@@ -1,14 +1,20 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package main
 
 import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
 
@@ -22,76 +28,56 @@ func getBlockHeaderByHash(hash common.Hash) *types.Header {
 	return header
 }
 
-type WavmBlockRetriever struct {
-	earliestResolvedHeader uint64
-	knownBlockHeaders      map[uint64]*types.Header
+type WavmChainContext struct{}
+
+func (c WavmChainContext) Engine() consensus.Engine {
+	return arbos.Engine{}
 }
 
-func NewWavmBlockRetriever(lastBlockHash common.Hash) (*WavmBlockRetriever, *types.Header) {
-	knownBlockHeaders := make(map[uint64]*types.Header)
-	var earliestResolvedHeader uint64
-	var lastBlockHeader *types.Header
-	if lastBlockHash != (common.Hash{}) {
-		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
-		num := lastBlockHeader.Number.Uint64()
-		knownBlockHeaders[num] = lastBlockHeader
-		earliestResolvedHeader = num
+func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	header := getBlockHeaderByHash(hash)
+	if !header.Number.IsUint64() || header.Number.Uint64() != num {
+		panic(fmt.Sprintf("Retrieved wrong block number for header hash %v -- requested %v but got %v", hash, num, header.Number.String()))
 	}
-	return &WavmBlockRetriever{
-		earliestResolvedHeader: earliestResolvedHeader,
-		knownBlockHeaders:      knownBlockHeaders,
-	}, lastBlockHeader
+	return header
 }
 
-func (r *WavmBlockRetriever) GetBlockHash(num uint64) common.Hash {
-	if num == 0 {
-		return common.Hash{}
-	}
-	for ; r.earliestResolvedHeader > num; r.earliestResolvedHeader-- {
-		lastHeader := r.knownBlockHeaders[r.earliestResolvedHeader]
-		newHeader := getBlockHeaderByHash(lastHeader.ParentHash)
-		r.knownBlockHeaders[newHeader.Number.Uint64()] = newHeader
-	}
-	return r.knownBlockHeaders[num].Hash()
+type WavmInbox struct{}
+
+func (i WavmInbox) PeekSequencerInbox() []byte {
+	return wavmio.ReadInboxMessage()
+}
+
+func (i WavmInbox) GetSequencerInboxPosition() uint64 {
+	return wavmio.GetInboxPosition()
+}
+
+func (i WavmInbox) AdvanceSequencerInbox() {
+	wavmio.AdvanceInboxMessage()
+}
+
+func (i WavmInbox) GetPositionWithinMessage() uint64 {
+	return wavmio.GetPositionWithinMessage()
+}
+
+func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
+	wavmio.SetPositionWithinMessage(pos)
+}
+
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) []byte {
+	return wavmio.ReadDelayedInboxMessage(seqNum)
 }
 
 func main() {
-	rawdb := rawdb.NewDatabase(PreimageDb{})
-	db := state.NewDatabase(rawdb)
+	raw := rawdb.NewDatabase(PreimageDb{})
+	db := state.NewDatabase(raw)
 	lastBlockHash := wavmio.GetLastBlockHash()
 
-	inboxMessageBytes := wavmio.ReadInboxMessage()
-	inboxMessageSegments, err := arbstate.SplitInboxMessageIntoSegments(inboxMessageBytes)
-	if err != nil {
-		fmt.Printf("Error splitting inbox message into segments: %v\n", err)
-		wavmio.AdvanceInboxMessage()
-		return
-	}
-
-	positionWithinMessage := wavmio.GetPositionWithinMessage()
-	if positionWithinMessage+1 >= uint64(len(inboxMessageSegments)) {
-		// This is the last segment in the message
-		wavmio.AdvanceInboxMessage()
-		wavmio.SetPositionWithinMessage(0)
-		if positionWithinMessage >= uint64(len(inboxMessageSegments)) {
-			// The message is empty
-			return
-		}
-	} else {
-		// There's remaining segment(s) in this message
-		wavmio.SetPositionWithinMessage(positionWithinMessage + 1)
-	}
-
-	msg, err := arbstate.DecodeMessageSegment(inboxMessageSegments[positionWithinMessage])
-	if err != nil {
-		fmt.Printf("Error decoding message segment: %v\n", err)
-		return
-	}
-
 	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
-	retriever, lastBlockHeader := NewWavmBlockRetriever(lastBlockHash)
+	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
-	if lastBlockHeader != nil {
+	if lastBlockHash != (common.Hash{}) {
+		lastBlockHeader = getBlockHeaderByHash(lastBlockHash)
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
 
@@ -101,21 +87,15 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	fmt.Printf("Sender address: %v\n", msg.From.String())
-	senderBalance := statedb.GetBalance(msg.From)
-	fmt.Printf("Sender balance: %v\n", senderBalance.String())
-
-	newBlockHeader, err := arbstate.Process(statedb, lastBlockHeader, retriever, msg)
+	chainContext := WavmChainContext{}
+	newBlock := arbstate.BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
 	if err == nil {
-		fmt.Printf("New state root: %v\n", newBlockHeader.Root)
-		newBlockHash := newBlockHeader.Hash()
+		fmt.Printf("New state root: %v\n", newBlock.Root())
+		newBlockHash := newBlock.Hash()
 		fmt.Printf("New block hash: %v\n", newBlockHash)
 
 		wavmio.SetLastBlockHash(newBlockHash)
 	} else {
 		fmt.Printf("Error processing message: %v\n", err)
 	}
-
-	senderBalance = statedb.GetBalance(msg.From)
-	fmt.Printf("New sender balance: %v\n", senderBalance.String())
 }

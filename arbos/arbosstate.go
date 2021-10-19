@@ -1,48 +1,62 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
-
-type BackingEvmStorage interface {
-	Get(offset common.Hash) common.Hash
-	GetAsInt64(offset common.Hash) (int64, error)
-	Set(offset common.Hash, value common.Hash)
+type EvmStorage interface {
+	Get(key common.Hash) common.Hash
+	Set(key common.Hash, value common.Hash)
+	Swap(key common.Hash, value common.Hash) common.Hash
 }
 
-type MemoryBackingEvmStorage struct {
-	contents map[common.Hash]common.Hash
+type GethEvmStorage struct {
+	account common.Address
+	db      vm.StateDB
 }
 
-func NewMemoryBackingEvmStorage() *MemoryBackingEvmStorage {
-	return &MemoryBackingEvmStorage{
-		make(map[common.Hash]common.Hash),
+// Use a Geth database to create an evm key-value store
+func NewGethEvmStorage(statedb vm.StateDB) *GethEvmStorage {
+	return &GethEvmStorage{
+		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+		db:      statedb,
 	}
 }
 
-func (st *MemoryBackingEvmStorage) Get(offset common.Hash) common.Hash {
-	value, exists := st.contents[offset]
-	if exists {
-		return value
-	} else {
-		return common.Hash{}   // empty slot is treated as zero
+// Use Geth's memory-backed database to create an evm key-value store
+func NewMemoryBackingEvmStorage() *GethEvmStorage {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	statedb, err := state.New(common.Hash{}, db, nil)
+	if err != nil {
+		panic("failed to init empty statedb")
 	}
+	return NewGethEvmStorage(statedb)
 }
 
-func (st *MemoryBackingEvmStorage) GetAsInt64(offset common.Hash) (int64, error) {
-	rawValue := st.Get(offset).Big()
-	if rawValue.IsInt64() {
-		return rawValue.Int64(), nil
-	} else {
-		return 0, errors.New("expected int64 in backing storage")
-	}
+func (store *GethEvmStorage) Get(key common.Hash) common.Hash {
+	return store.db.GetState(store.account, key)
 }
 
-func (st *MemoryBackingEvmStorage) Set(offset common.Hash, value common.Hash) {
-	st.contents[offset] = value
+func (store *GethEvmStorage) Set(key common.Hash, value common.Hash) {
+	store.db.SetState(store.account, key, value)
+}
+
+func (store *GethEvmStorage) Swap(key common.Hash, newValue common.Hash) common.Hash {
+	oldValue := store.Get(key)
+	store.Set(key, newValue)
+	return oldValue
 }
 
 func IntToHash(val int64) common.Hash {
@@ -50,267 +64,308 @@ func IntToHash(val int64) common.Hash {
 }
 
 func hashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y)))   //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 type ArbosState struct {
-	formatVersion     common.Hash
-	nextAlloc         common.Hash
-	gasPool           int64
-	smallGasPool      int64
-	gasPriceWei       common.Hash
-	lastTimestampSeen common.Hash
-	backingStorage    BackingEvmStorage
+	formatVersion   *big.Int
+	nextAlloc       *common.Hash
+	gasPool         *StorageBackedInt64
+	smallGasPool    *StorageBackedInt64
+	gasPriceWei     *big.Int
+	l1PricingState  *L1PricingState
+	retryableQueue  *QueueInStorage
+	validRetryables EvmStorage
+	timestamp       *uint64
+	backingStorage  EvmStorage
 }
 
-func OpenArbosState(backingStorage BackingEvmStorage, timestamp common.Hash) *ArbosState {
-	for tryStorageUpgrade(backingStorage, timestamp) {}
+func OpenArbosState(stateDB vm.StateDB) *ArbosState {
+	backingStorage := NewGethEvmStorage(stateDB)
 
-	formatVersion := backingStorage.Get(IntToHash(0))
-	nextAlloc := backingStorage.Get(IntToHash(1))
-	gasPool, err := backingStorage.GetAsInt64(IntToHash(2))
-	if err != nil {
-		panic(err)
+	for tryStorageUpgrade(backingStorage) {
 	}
-	smallGasPool, err := backingStorage.GetAsInt64(IntToHash(3))
-	if err != nil {
-		panic(err)
-	}
-	gasPriceWei := backingStorage.Get(IntToHash(4))
-	lastTimestampSeen := backingStorage.Get(IntToHash(5))
+
 	return &ArbosState{
-		formatVersion,
-		nextAlloc,
-		gasPool,
-		smallGasPool,
-		gasPriceWei,
-		lastTimestampSeen,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
 		backingStorage,
 	}
 }
 
-func tryStorageUpgrade(backingStorage BackingEvmStorage, timestamp common.Hash) bool {
+func tryStorageUpgrade(backingStorage EvmStorage) bool {
 	formatVersion := backingStorage.Get(IntToHash(0))
-	if formatVersion == IntToHash(0) {
-		// we're in version 0, which is the uninitialized state; upgrade to version 1 (initialized)
-		backingStorage.Set(IntToHash(0), IntToHash(1))
-		backingStorage.Set(IntToHash(1), IntToHash(1024))
-		backingStorage.Set(IntToHash(2), IntToHash(10000000*10*60))
-		backingStorage.Set(IntToHash(3), IntToHash(10000000*60))
-		backingStorage.Set(IntToHash(4), IntToHash(1000000000)) // 1 gwei
-		backingStorage.Set(IntToHash(5), timestamp)
+	switch formatVersion {
+	case IntToHash(0):
+		upgrade_0_to_1(backingStorage)
 		return true
-	} else {
+	default:
 		return false
 	}
 }
 
-func (state *ArbosState) FormatVersion() common.Hash {
+var (
+	versionKey       = IntToHash(0)
+	storageOffsetKey = IntToHash(1)
+	gasPoolKey       = IntToHash(2)
+	smallGasPoolKey  = IntToHash(3)
+	gasPriceKey      = IntToHash(4)
+	retryableQueueKey = IntToHash(5)
+	l1PricingKey     = IntToHash(6)
+	timestampKey     = IntToHash(7)
+	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
+)
+
+func upgrade_0_to_1(backingStorage EvmStorage) {
+	backingStorage.Set(versionKey, IntToHash(1))
+	backingStorage.Set(storageOffsetKey, crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
+	backingStorage.Set(gasPoolKey, IntToHash(GasPoolMax))
+	backingStorage.Set(smallGasPoolKey, IntToHash(SmallGasPoolMax))
+	backingStorage.Set(gasPriceKey, IntToHash(1000000000)) // 1 gwei
+	backingStorage.Set(l1PricingKey, IntToHash(0))
+	backingStorage.Set(timestampKey, IntToHash(0))
+	backingStorage.Set(retryableQueueKey, IntToHash(0))
+}
+
+func (state *ArbosState) FormatVersion() *big.Int {
+	if state.formatVersion == nil {
+		state.formatVersion = state.backingStorage.Get(versionKey).Big()
+	}
 	return state.formatVersion
 }
 
-func (state *ArbosState) SetFormatVersion(val common.Hash) {
+func (state *ArbosState) SetFormatVersion(val *big.Int) {
 	state.formatVersion = val
-	state.backingStorage.Set(IntToHash(0), state.formatVersion)
+	state.backingStorage.Set(versionKey, common.BigToHash(state.formatVersion))
 }
 
-func (state *ArbosState) NextAlloc() common.Hash {
-	return state.nextAlloc
-}
-
-func (state *ArbosState) SetNextAlloc(val common.Hash) {
-	state.nextAlloc = val
-	state.backingStorage.Set(IntToHash(1), state.nextAlloc)
+func (state *ArbosState) AllocateEmptyStorageOffset() *common.Hash {
+	if state.nextAlloc == nil {
+		val := state.backingStorage.Get(storageOffsetKey)
+		state.nextAlloc = &val
+	}
+	ret := state.nextAlloc
+	nextAlloc := crypto.Keccak256Hash(state.nextAlloc.Bytes())
+	state.nextAlloc = &nextAlloc
+	state.backingStorage.Set(storageOffsetKey, nextAlloc)
+	return ret
 }
 
 func (state *ArbosState) GasPool() int64 {
-	return state.gasPool
+	if state.gasPool == nil {
+		state.gasPool = OpenStorageBackedInt64(state.backingStorage, gasPoolKey)
+	}
+	return state.gasPool.Get()
 }
 
 func (state *ArbosState) SetGasPool(val int64) {
-	state.gasPool = val
-	state.backingStorage.Set(IntToHash(2), IntToHash(val))
+	if state.gasPool == nil {
+		state.gasPool = OpenStorageBackedInt64(state.backingStorage, gasPoolKey)
+	}
+	state.gasPool.Set(val)
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
-	return state.smallGasPool
+	if state.smallGasPool == nil {
+		state.smallGasPool = OpenStorageBackedInt64(state.backingStorage, smallGasPoolKey)
+	}
+	return state.smallGasPool.Get()
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
-	state.smallGasPool = val
-	state.backingStorage.Set(IntToHash(3), IntToHash(val))
+	if state.smallGasPool == nil {
+		state.smallGasPool = OpenStorageBackedInt64(state.backingStorage, smallGasPoolKey)
+	}
+	state.smallGasPool.Set(val)
 }
 
-func (state *ArbosState) GasPriceWei() common.Hash {
+func (state *ArbosState) GasPriceWei() *big.Int {
+	if state.gasPriceWei == nil {
+		state.gasPriceWei = state.backingStorage.Get(gasPriceKey).Big()
+	}
 	return state.gasPriceWei
 }
 
-func (state *ArbosState) SetGasPriceWei(val common.Hash) {
+func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
-	state.backingStorage.Set(IntToHash(4), val)
+	state.backingStorage.Set(gasPriceKey, common.BigToHash(val))
 }
 
-func (state *ArbosState) LastTimestampSeen() common.Hash {
-	return state.lastTimestampSeen
+func (state *ArbosState) RetryableQueue() *QueueInStorage {
+	if state.retryableQueue == nil {
+		queueOffset := state.backingStorage.Get(retryableQueueKey)
+		if queueOffset == IntToHash(0) {
+			queue := AllocateQueueInStorage(state)
+			queueOffset = queue.segment.offset
+			state.backingStorage.Set(retryableQueueKey, queueOffset)
+		}
+		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
+	}
+	return state.retryableQueue
 }
 
-func (state *ArbosState) SetLastTimestampSeen(val common.Hash) {
-	state.lastTimestampSeen = val
-	state.backingStorage.Set(IntToHash(5), val)
+func (state *ArbosState) L1PricingState() *L1PricingState {
+	if state.l1PricingState == nil {
+		offset := state.backingStorage.Get(l1PricingKey)
+		if offset == (common.Hash{}) {
+			l1PricingState, offset := AllocateL1PricingState(state)
+			state.l1PricingState = l1PricingState
+			state.backingStorage.Set(l1PricingKey, offset)
+		} else {
+			state.l1PricingState = OpenL1PricingState(offset, state)
+		}
+	}
+	return state.l1PricingState
 }
 
-
-type ArbosStorageSegment struct {
-	offset      common.Hash
-	size        uint64
-	storage     *ArbosState
+func (state *ArbosState) LastTimestampSeen() uint64 {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	return *state.timestamp
 }
 
-const MaxSegmentSize = 1<<48
+func (state *ArbosState) SetLastTimestampSeen(val uint64) {
+	if state.timestamp == nil {
+		ts := state.backingStorage.Get(timestampKey).Big().Uint64()
+		state.timestamp = &ts
+	}
+	if val < *state.timestamp {
+		panic("timestamp decreased")
+	}
+	if val > *state.timestamp {
+		delta := val - *state.timestamp
+		ts := val
+		state.timestamp = &ts
+		state.backingStorage.Set(timestampKey, IntToHash(int64(ts)))
+		state.notifyGasPricerThatTimeElapsed(delta)
+	}
+}
 
-func (state *ArbosState) AllocateSegment(size uint64) (*ArbosStorageSegment, error) {
-	if size > MaxSegmentSize {
+func (state *ArbosState) ValidRetryablesSet() EvmStorage {
+	// This is a virtual storage (KVS) that we use to keep track of which ids are ids of valid retryables.
+	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
+	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
+	return NewVirtualStorage(state.backingStorage, validRetryableSetUniqueKey)
+}
+
+func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {
+	if size > MaxSizedSegmentSize {
 		return nil, errors.New("requested segment size too large")
 	}
 
-	offset := state.NextAlloc()
-	state.SetNextAlloc(hashPlusInt(state.nextAlloc, int64(size+1)))
+	offset := state.AllocateEmptyStorageOffset()
+
+	return state.AllocateSegmentAtOffset(size, *offset)
+}
+
+func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash) (*StorageSegment, error) {
+	// caller is responsible for checking that size is in bounds
 
 	state.backingStorage.Set(offset, IntToHash(int64(size)))
 
-	return &ArbosStorageSegment{
+	return &StorageSegment{
 		offset,
 		size,
-		state,
+		state.backingStorage,
 	}, nil
 }
 
-func (state *ArbosState) OpenSegment(offset common.Hash) (*ArbosStorageSegment, error) {
+func (state *ArbosState) SegmentExists(offset common.Hash) bool {
+	return state.backingStorage.Get(offset).Big().Cmp(big.NewInt(0)) == 0
+}
+
+func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
+	if bigSize.Cmp(big.NewInt(0)) == 0 {
+		// segment has been deleted
+		return nil
+	}
 	if !bigSize.IsUint64() {
-		return nil, errors.New("not a valid state segment")
+		panic("not a valid state segment")
 	}
 	size := bigSize.Uint64()
 	if size == 0 {
-		return nil, errors.New("state segment invalid or was deleted")
-	} else if size > MaxSegmentSize {
-		return nil, errors.New("state segment size invalid")
+		panic("state segment invalid or was deleted")
 	}
-	return &ArbosStorageSegment{
+	if size > MaxSizedSegmentSize {
+		panic("state segment size invalid")
+	}
+	return &StorageSegment{
 		offset,
 		size,
-		state,
-	}, nil
-}
-
-func (seg *ArbosStorageSegment) Get(offset uint64) (common.Hash, error) {
-	if offset >= seg.size {
-		return common.Hash{}, errors.New("out of bounds access to storage segment")
+		state.backingStorage,
 	}
-	return seg.storage.backingStorage.Get(hashPlusInt(seg.offset, int64(1+offset))), nil
 }
 
-func (seg *ArbosStorageSegment) GetAsInt64(offset uint64) (int64, error) {
-	raw, err := seg.Get(offset)
+func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegment(uint64(1 + sizeWords))
 	if err != nil {
-		return 0, err
+		panic(err)
 	}
-	rawBig := raw.Big()
-	if rawBig.IsInt64() {
-		return rawBig.Int64(), nil
-	} else {
-		return 0, errors.New("out of range")
-	}
+
+	seg.WriteBytes(buf)
+
+	return seg
 }
 
-func (seg *ArbosStorageSegment) GetAsUint64(offset uint64) (uint64, error) {
-	raw, err := seg.Get(offset)
+func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *StorageSegment {
+	sizeWords := (len(buf) + 31) / 32
+	seg, err := state.AllocateSegmentAtOffset(uint64(1+sizeWords), offset)
 	if err != nil {
-		return 0, err
+		panic(err)
 	}
-	rawBig := raw.Big()
-	if rawBig.IsUint64() {
-		return rawBig.Uint64(), nil
-	} else {
-		return 0, errors.New("out of range")
-	}
+	seg.WriteBytes(buf)
+
+	return seg
 }
 
-func (seg *ArbosStorageSegment) Set(offset uint64, value common.Hash) error {
-	if offset >= seg.size {
-		errors.New("offset too large in ArbosStorageSegment::Set")
-	}
-	seg.storage.backingStorage.Set(hashPlusInt(seg.offset, int64(offset+1)), value)
-	return nil
+// StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
+//     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
+type StorageBackedInt64 struct {
+	storage EvmStorage
+	offset  common.Hash
+	cache   *int64
 }
 
-func (state *ArbosState) AllocateSegmentForBytes(buf []byte) (*ArbosStorageSegment, error) {
-	sizeWords := (len(buf)+31) / 32
-	seg, err := state.AllocateSegment(uint64(1+sizeWords))
-	if err != nil {
-		return nil, err
-	}
-	if err := seg.Set(0, IntToHash(int64(len(buf)))); err != nil {
-		return nil, err
-	}
+func OpenStorageBackedInt64(storage EvmStorage, offset common.Hash) *StorageBackedInt64 {
+	return &StorageBackedInt64{storage, offset, nil}
+}
 
-	offset := uint64(1)
-	for len(buf) >= 32 {
-		if err := seg.Set(offset, common.BytesToHash(buf[:32])); err != nil {
-			return nil, err
+func (sbi *StorageBackedInt64) Get() int64 {
+	if sbi.cache == nil {
+		raw := sbi.storage.Get(sbi.offset).Big()
+		if raw.Bit(255) != 0 {
+			raw = new(big.Int).SetBit(raw, 255, 0)
+			raw = new(big.Int).Neg(raw)
 		}
-		offset += 1
-		buf = buf[32:]
+		if !raw.IsInt64() {
+			panic("expected int64 compatible value in storage")
+		}
+		i := raw.Int64()
+		sbi.cache = &i
 	}
+	return *sbi.cache
+}
 
-	endBuf := [32]byte{}
-	for i := 0; i < len(buf); i++ {
-		endBuf[i] = buf[i]
-	}
-	err = seg.Set(offset, common.BytesToHash(endBuf[:]))
-	if err == nil {
-		return seg, nil
+func (sbi *StorageBackedInt64) Set(value int64) {
+	i := value
+	sbi.cache = &i
+	var bigValue *big.Int
+	if value >= 0 {
+		bigValue = big.NewInt(value)
 	} else {
-		return nil, err
+		bigValue = new(big.Int).SetBit(big.NewInt(-value), 255, 1)
 	}
+	sbi.storage.Set(sbi.offset, common.BigToHash(bigValue))
 }
-
-func (state *ArbosState) AdvanceTimestampToAtLeast(timestamp common.Hash) {
-	newTimestampBig := timestamp.Big()
-	currentTimestampBig := state.LastTimestampSeen().Big()
-	if newTimestampBig.Cmp(currentTimestampBig) > 0 {
-		state.SetLastTimestampSeen(timestamp)
-	}
-}
-
-func (seg *ArbosStorageSegment) GetBytes() ([]byte, error) {
-	rawSize, err := seg.Get(0)
-	if err != nil {
-		return nil, err
-	}
-
-	if ! rawSize.Big().IsUint64() {
-		return nil, errors.New("invalid segment size")
-	}
-	size := rawSize.Big().Uint64()
-	sizeWords := (size+31) / 32
-	buf := make([]byte, 32*sizeWords)
-	for i := uint64(0); i < sizeWords; i++ {
-		x, err := seg.Get(i+1)
-		if err != nil {
-			return nil, err
-		}
-		iterBuf := x.Bytes()
-		for j, b := range iterBuf {
-			buf[32*i+uint64(j)] = b
-		}
-	}
-	return buf[:size], nil
-}
-
-func (seg *ArbosStorageSegment) Equals(other *ArbosStorageSegment) bool {
-	return seg.offset == other.offset
-}
-
-

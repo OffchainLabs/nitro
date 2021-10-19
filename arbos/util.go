@@ -1,9 +1,15 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
 	"encoding/binary"
-	"github.com/ethereum/go-ethereum/common"
+	"errors"
 	"io"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func HashFromReader(rd io.Reader) (common.Hash, error) {
@@ -66,6 +72,9 @@ func BytestringFromReader(rd io.Reader) ([]byte, error) {
 	size, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
+	}
+	if size > MaxL2MessageSize {
+		return nil, errors.New("attempted to extract too large of a slice from reader")
 	}
 	buf := make([]byte, size)
 	if _, err = io.ReadFull(rd, buf); err != nil {
