@@ -73,7 +73,7 @@ func TestRetryableCreate(t *testing.T) {
 func TestPlanOneRedeem(t *testing.T) {
 	state := OpenArbosStateForTest()
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := state.LastTimestampSeen().Uint64()+10000000
+	timeout := state.LastTimestampSeen()+10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)

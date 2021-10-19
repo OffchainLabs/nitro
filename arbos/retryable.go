@@ -160,9 +160,6 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
 		return err
 	}
-	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
-		return err
-	}
 	if err := AddressToWriter(retryable.from, wr); err != nil {
 		return err
 	}
