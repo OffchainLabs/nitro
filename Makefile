@@ -13,14 +13,22 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 # user targets
 
-.make/all: always .make/precompiles .make/solidity
+.make/all: always .make/precompiles .make/solidity .make/test
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
 contracts: .make/solidity
 	@printf $(done)
 
+test: .make/test
+	cd arbos && gotestsum --format short-verbose
+	@printf $(done)
+
+push: .make/push
+	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
+
 clean:
+	go clean -testcache	
 	@rm -rf precompiles/artifacts precompiles/cache precompiles/go/
 	@rm -f .make/*
 
@@ -30,6 +38,18 @@ clean:
 
 
 # strategic rules to minimize dependency building
+
+.make/fmt: *.go */*.go */*/*.go
+	go fmt ./arbos/...
+	@touch .make/fmt
+
+.make/push: .make/fmt
+	make $(MAKEFLAGS) .make/test
+	@touch .make/push
+
+.make/test: *.go */*.go */*/*.go .make/precompiles .make/solidity
+	cd arbos && gotestsum --format short-verbose
+	@touch .make/test
 
 .make/precompiles: precompiles/gen.go .make/solidity
 	mkdir -p precompiles/go/

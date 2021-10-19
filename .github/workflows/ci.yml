@@ -27,11 +27,5 @@ jobs:
         with:
           go-version: 1.17.x
 
-      - name: Generate precompiles
+      - name: Build and Test
         run: make -j
-
-      - name: Build
-        run: go build -v ./arbos/...
-
-      - name: Test ArbOS
-        run: cd arbos && gotestsum --format short-verbose
