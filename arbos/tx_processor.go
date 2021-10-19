@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -46,11 +47,15 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
+	intrinsicGas, err := core.IntrinsicGas(p.msg.Data(), nil, false, true, true)
+	if err != nil {
+		panic(err)
+	}
 	return p.state.L1PricingState().GetL1Charges(
 		p.msg.From(),
 		p.getAggregator(),
-		uint64(len(p.msg.Data())), //TODO: need to pass in decompressed L1 data size for this tx
-		false,                     //TODO: this should be true iff the message was compressed
+		intrinsicGas - params.TxGas,
+		DataWasNotCompressed,    //TODO: if data was compressed, pass in compression ratio here
 	)
 }
 
