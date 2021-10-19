@@ -2,16 +2,17 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package arbstate
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbprecompiles"
 )
 
 type ArbosPrecompileWrapper struct {
-	inner ArbosPrecompile
+	inner arbprecompiles.ArbosPrecompile
 }
 
 func (p ArbosPrecompileWrapper) RequiredGas(input []byte) uint64 {
@@ -35,13 +36,11 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	return output, suppliedGas - gasUsage, err
 }
 
-var arbAddress = common.HexToAddress("0xabc")
-
 func init() {
 	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
-		return NewTxProcessor(msg, evm)
+		return arbos.NewTxProcessor(msg, evm)
 	}
-	for addr, precompile := range Precompiles() {
+	for addr, precompile := range arbprecompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.ExtraPrecompiles[addr] = wrapped
 	}
