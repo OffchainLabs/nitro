@@ -21,7 +21,7 @@ func OpenArbosStateForTest() *ArbosState {
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
-	return OpenArbosState(statedb, 1000)
+	return OpenArbosState(statedb)
 }
 
 func TestStorageOpenFromEmpty(t *testing.T) {
