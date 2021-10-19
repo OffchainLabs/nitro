@@ -12,7 +12,7 @@ import (
 )
 
 type ArbosPrecompileWrapper struct {
-	inner arbprecompiles.ArbosPrecompile
+	inner precompiles.ArbosPrecompile
 }
 
 func (p ArbosPrecompileWrapper) RequiredGas(input []byte) uint64 {
@@ -40,7 +40,7 @@ func init() {
 	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
 		return arbos.NewTxProcessor(msg, evm)
 	}
-	for addr, precompile := range arbprecompiles.Precompiles() {
+	for addr, precompile := range precompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.ExtraPrecompiles[addr] = wrapped
 	}

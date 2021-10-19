@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbprecompiles
+package precompiles
 
 import (
 	"errors"
