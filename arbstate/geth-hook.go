@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbprecompiles"
+	"github.com/offchainlabs/arbstate/precompiles"
 )
 
 type ArbosPrecompileWrapper struct {
