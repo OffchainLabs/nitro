@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/core"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -89,21 +88,4 @@ func (e Engine) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 
 func (e Engine) Close() error {
 	return nil
-}
-
-type ArbChainContext struct {
-	engine       Engine
-	headerReader consensus.ChainHeaderReader
-}
-
-func (ctx *ArbChainContext) Engine() consensus.Engine {
-	return ctx.engine
-}
-
-func (ctx *ArbChainContext) GetHeader(hash common.Hash, u uint64) *types.Header {
-	return ctx.headerReader.GetHeader(hash, u)
-}
-
-func (e Engine) ToChainContext(headerReader consensus.ChainHeaderReader) core.ChainContext {
-	return &ArbChainContext{e, headerReader}
 }
