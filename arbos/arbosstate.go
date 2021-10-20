@@ -121,7 +121,8 @@ var (
 	gasPriceKey                = IntToHash(4)
 	retryableQueueKey          = IntToHash(5)
 	l1PricingKey               = IntToHash(6)
-	timestampKey               = IntToHash(7)
+	pendingRedeemsKey          = IntToHash(7)
+	timestampKey               = IntToHash(8)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
