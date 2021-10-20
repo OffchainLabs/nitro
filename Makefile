@@ -24,6 +24,12 @@ test: .make/test
 	gotestsum --format short-verbose
 	@printf $(done)
 
+format: .make/fmt
+	@printf $(done)
+
+lint: .make/lint
+	@printf $(done)
+
 push: .make/push
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
@@ -39,12 +45,15 @@ clean:
 
 # strategic rules to minimize dependency building
 
-.make/fmt: *.go */*.go */*/*.go
-	go fmt ./arbos/...
+.make/fmt: .golangci.yaml *.go */*.go */*/*.go
+	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/push: .make/fmt
-	golangci-lint run
+.make/lint: .golangci.yaml *.go */*.go */*/*.go
+	golangci-lint run --fix
+	@touch .make/lint
+
+.make/push: .make/lint
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
 

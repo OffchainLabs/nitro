@@ -290,16 +290,14 @@ func (p Precompile) Call(
 		reflect.ValueOf(caller),
 	}
 
-	state := evm.StateDB.(*state.StateDB)
-
 	switch method.purity {
 	case pure:
 	case view:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm.StateDB))
 	case write:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm.StateDB))
 	case payable:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm.StateDB))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
 		log.Fatal("Unknown state mutability ", method.purity)
