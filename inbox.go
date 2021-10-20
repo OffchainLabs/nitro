@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbstate
 
 import (
@@ -27,9 +31,15 @@ type InboxBackend interface {
 	ReadDelayedInbox(seqNum uint64) []byte
 }
 
+type MessageWithMetadata struct {
+	Message             *arbos.L1IncomingMessage
+	MustEndBlock        bool
+	DelayedMessagesRead uint64
+}
+
 type InboxMultiplixer interface {
 	// Returns a message and if it must end the block
-	Peek() (*arbos.L1IncomingMessage, bool, error)
+	Peek() (*MessageWithMetadata, error)
 	Advance()
 	DelayedMessagesRead() uint64
 }
@@ -105,7 +115,7 @@ const segmentKindDelayedMessages uint8 = 1
 const segmentKindAdvanceTimestamp uint8 = 2
 const segmentKindAdvanceL1BlockNumber uint8 = 3
 
-func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
+func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 	seqMsgPosition := r.backend.GetSequencerInboxPosition()
 	var seqMsg *sequencerMessage
 	if r.sequencerMessageCache != nil && r.sequencerMessageCachePosition == seqMsgPosition {
@@ -165,10 +175,14 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 			} else {
 				r.advanceAction = AdvanceDelayedMessage
 			}
-			return delayed, endOfMessage, err
+			return &MessageWithMetadata{
+				Message:             delayed,
+				MustEndBlock:        endOfMessage,
+				DelayedMessagesRead: r.delayedMessagesRead + 1,
+			}, err
 		}
 		r.advanceAction = AdvanceMessage
-		return nil, false, fmt.Errorf("reading end of sequencer message (size %v)", len(seqMsg.segments))
+		return nil, fmt.Errorf("reading end of sequencer message (size %v)", len(seqMsg.segments))
 	}
 	endOfMessage := segmentNum+1 >= uint64(len(seqMsg.segments))
 	if endOfMessage {
@@ -179,7 +193,7 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 	}
 	segment := seqMsg.segments[int(segmentNum)]
 	if len(segment) == 0 {
-		return nil, false, errors.New("empty sequencer message segment")
+		return nil, errors.New("empty sequencer message segment")
 	}
 	segmentKind := segment[0]
 	if segmentKind == segmentKindL2Message {
@@ -192,28 +206,32 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		requestId[0] = 1 << 6
 		binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
 		binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
-		msg := &arbos.L1IncomingMessage{
-			Header: &arbos.L1IncomingMessageHeader{
-				Kind:        arbos.L1MessageType_L2Message,
-				Sender:      sequencerAddress,
-				BlockNumber: blockNumberHash,
-				Timestamp:   timestampHash,
-				RequestId:   requestId,
-				GasPriceL1:  common.Hash{},
+		msg := &MessageWithMetadata{
+			Message: &arbos.L1IncomingMessage{
+				Header: &arbos.L1IncomingMessageHeader{
+					Kind:        arbos.L1MessageType_L2Message,
+					Sender:      sequencerAddress,
+					BlockNumber: blockNumberHash,
+					Timestamp:   timestampHash,
+					RequestId:   requestId,
+					GasPriceL1:  common.Hash{},
+				},
+				L2msg: segment[1:],
 			},
-			L2msg: segment[1:],
+			MustEndBlock:        endOfMessage,
+			DelayedMessagesRead: r.delayedMessagesRead,
 		}
-		return msg, true, nil
+		return msg, nil
 	} else if segmentKind == segmentKindDelayedMessages {
 		// Delayed message reading
 		rd := bytes.NewReader(segment[1:])
 		reading, err := rlp.NewStream(rd, 16).Uint()
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		newRead := r.delayedMessagesRead + reading
 		if newRead <= r.delayedMessagesRead || newRead > seqMsg.afterDelayedMessages {
-			return nil, false, errors.New("bad delayed message reading count")
+			return nil, errors.New("bad delayed message reading count")
 		}
 		endOfSegment := r.delayedMessagesRead+1 >= newRead
 		if !endOfSegment {
@@ -221,15 +239,19 @@ func (r *inboxMultiplexer) Peek() (*arbos.L1IncomingMessage, bool, error) {
 		}
 		data := r.backend.ReadDelayedInbox(r.delayedMessagesRead)
 		delayed, err := arbos.ParseIncomingL1Message(bytes.NewReader(data))
-		return delayed, endOfSegment, err
+		return &MessageWithMetadata{
+			Message:             delayed,
+			MustEndBlock:        endOfSegment,
+			DelayedMessagesRead: r.delayedMessagesRead + 1,
+		}, err
 	} else {
-		return nil, false, fmt.Errorf("bad sequencer message segment kind %v", segmentKind)
+		return nil, fmt.Errorf("bad sequencer message segment kind %v", segmentKind)
 	}
 }
 
 func (r *inboxMultiplexer) Advance() {
 	if r.advanceAction == AdvanceUnknown {
-		_, _, _ = r.Peek()
+		_, _ = r.Peek()
 		if r.advanceAction == AdvanceUnknown {
 			panic("Failed to get advance action")
 		}

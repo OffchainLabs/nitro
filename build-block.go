@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbstate
 
 import (
@@ -20,13 +24,13 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 	inboxMultiplexer := NewInboxMultiplexer(inbox, delayedMessagesRead)
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, chainContext)
 	for {
-		message, shouldEndBlock, err := inboxMultiplexer.Peek()
+		message, err := inboxMultiplexer.Peek()
 		if err != nil {
 			log.Warn("error parsing inbox message: %v", err)
 			inboxMultiplexer.Advance()
 			break
 		}
-		segment, err := arbos.IncomingMessageToSegment(message, chainId)
+		segment, err := arbos.IncomingMessageToSegment(message.Message, chainId)
 		if err != nil {
 			log.Warn("error parsing incoming message: %v", err)
 			inboxMultiplexer.Advance()
@@ -38,9 +42,10 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 		}
 		inboxMultiplexer.Advance()
 		blockBuilder.AddMessage(segment)
-		if shouldEndBlock {
+		if message.MustEndBlock {
 			break
 		}
 	}
-	return blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+	block, _, _ := blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+	return block
 }
