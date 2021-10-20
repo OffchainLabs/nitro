@@ -58,7 +58,7 @@ clean:
 	@touch .make/fmt
 
 .make/test: *.go */*.go */*/*.go .make/solgen .make/solidity
-	cd arbos && gotestsum --format short-verbose
+	gotestsum --format short-verbose
 	@touch .make/test
 
 .make/solgen: solgen/gen.go .make/solidity
