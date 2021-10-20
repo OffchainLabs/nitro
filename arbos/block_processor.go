@@ -92,7 +92,7 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 		return true
 	}
 	newGasUsed := b.header.GasUsed
-	for _, tx := range segment.txes {
+	for _, tx := range segment.Txes {
 		oldGasUsed := newGasUsed
 		newGasUsed += tx.Gas()
 		if newGasUsed < oldGasUsed {
@@ -151,7 +151,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
-	for _, tx := range segment.txes {
+	for _, tx := range segment.Txes {
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
