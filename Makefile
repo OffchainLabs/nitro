@@ -49,7 +49,7 @@ clean:
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/lint: .golangci.yaml *.go */*.go */*/*.go
+.make/lint: .golangci.yaml *.go */*.go */*/*.go .make/solgen
 	golangci-lint run --fix
 	@touch .make/lint
 
