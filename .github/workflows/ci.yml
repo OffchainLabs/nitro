@@ -23,9 +23,6 @@ jobs:
         uses: golangci/golangci-lint-action@v2
         with:
           version: latest
-          linters-settings:
-            gofmt:
-              simplify: false
 
   test:
     name: Go Tests
@@ -58,8 +55,7 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          restore-keys: ${{ runner.os }}-go-
 
       - name: Build and Test
         run: make -j
