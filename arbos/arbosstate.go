@@ -77,6 +77,7 @@ type ArbosState struct {
 	retryableQueue  *QueueInStorage
 	validRetryables EvmStorage
 	timestamp       *uint64
+	sendMerkle      *MerkleBuilder
 	backingStorage  EvmStorage
 }
 
@@ -87,6 +88,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
+		nil,
 		nil,
 		nil,
 		nil,
@@ -120,6 +122,7 @@ var (
 	retryableQueueKey = IntToHash(5)
 	l1PricingKey     = IntToHash(6)
 	timestampKey     = IntToHash(7)
+	sendMerkleKey    = IntToHash(8)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -132,6 +135,7 @@ func upgrade_0_to_1(backingStorage EvmStorage) {
 	backingStorage.Set(l1PricingKey, IntToHash(0))
 	backingStorage.Set(timestampKey, IntToHash(0))
 	backingStorage.Set(retryableQueueKey, IntToHash(0))
+	backingStorage.Set(sendMerkleKey, IntToHash(0))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -255,6 +259,25 @@ func (state *ArbosState) ValidRetryablesSet() EvmStorage {
 	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
 	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
 	return NewVirtualStorage(state.backingStorage, validRetryableSetUniqueKey)
+}
+
+func (state *ArbosState) GetSendMerkleBuilder() *MerkleBuilder {
+	if state.sendMerkle == nil {
+		offset := state.backingStorage.Get(sendMerkleKey)
+		if offset == (common.Hash{}) {
+			// need to allocate and initialize the segment
+			segment, err := state.AllocateSegment(MerkleBuilderSegmentSize)
+			if err != nil {
+				panic(err)
+			}
+			offset = segment.offset
+			state.backingStorage.Set(sendMerkleKey, offset)
+			state.sendMerkle = NewBuilder(segment)
+		} else {
+			state.sendMerkle = OpenBuilder(state.OpenSegment(offset))
+		}
+	}
+	return state.sendMerkle
 }
 
 func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {

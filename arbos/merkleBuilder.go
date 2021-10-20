@@ -11,15 +11,23 @@ import (
 )
 
 type MerkleBuilder struct {
+	segment  *StorageSegment
 	size     uint64
 	partials [][]byte
 }
 
-func NewBuilder() *MerkleBuilder {
-	return &MerkleBuilder{0, make([][]byte, 0)}
+func NewBuilder(segment *StorageSegment) *MerkleBuilder {
+	ret := &MerkleBuilder{segment, 0, make([][]byte, 0)}
+	if segment != nil {
+		ret.Persist()
+	}
+	return ret
 }
 
 func (b *MerkleBuilder) Append(itemHash common.Hash) {
+	if b.segment != nil {
+		defer b.Persist()
+	}
 	b.size++
 	level := 0
 	soFar := itemHash.Bytes()
@@ -122,18 +130,20 @@ func NewBuilderFromReader(rd io.Reader) (*MerkleBuilder, error) {
 			partials[i] = buf32[:]
 		}
 	}
-	return &MerkleBuilder{size, partials}, nil
+	return &MerkleBuilder{ nil,size, partials }, nil
 }
 
-func (b *MerkleBuilder) Persist(segment *StorageSegment) {
-	segment.Set(0, IntToHash(int64(b.size)))
-	segment.Set(1, IntToHash(int64(len(b.partials))))
+const MerkleBuilderSegmentSize = 66    // can store info for merkle tree over <= 2**64 items
+
+func (b *MerkleBuilder) Persist() {
+	b.segment.Set(0, IntToHash(int64(b.size)))
+	b.segment.Set(1, IntToHash(int64(len(b.partials))))
 	for i, partial := range b.partials {
-		segment.Set(uint64(i+2), common.BytesToHash(partial))
+		b.segment.Set(uint64(i+2), common.BytesToHash(partial))
 	}
 }
 
-func NewBuilderFromSegment(segment *StorageSegment) *MerkleBuilder {
+func OpenBuilder(segment *StorageSegment) *MerkleBuilder {
 	size := segment.Get(0).Big().Uint64()
 	numPartials := segment.Get(1).Big().Uint64()
 	partials := make([][]byte, numPartials)
@@ -145,5 +155,5 @@ func NewBuilderFromSegment(segment *StorageSegment) *MerkleBuilder {
 			partials[i] = val.Bytes()
 		}
 	}
-	return &MerkleBuilder{ size, partials }
+	return &MerkleBuilder{ segment, size, partials }
 }

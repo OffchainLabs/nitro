@@ -13,7 +13,7 @@ import (
 )
 
 func TestEmptyBuilder(t *testing.T) {
-	b := NewBuilder()
+	b := NewBuilder(nil)
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
@@ -21,7 +21,7 @@ func TestEmptyBuilder(t *testing.T) {
 }
 
 func TestBuilder1(t *testing.T) {
-	b := NewBuilder()
+	b := NewBuilder(nil)
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
@@ -39,7 +39,7 @@ func TestBuilder1(t *testing.T) {
 }
 
 func TestBuilder3(t *testing.T) {
-	b := NewBuilder()
+	b := NewBuilder(nil)
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
@@ -69,7 +69,7 @@ func TestBuilder3(t *testing.T) {
 }
 
 func TestBuilder4(t *testing.T) {
-	b := NewBuilder()
+	b := NewBuilder(nil)
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
@@ -122,8 +122,9 @@ func serdeBuilder(b *MerkleBuilder, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.Persist(segment)
-	b3 := NewBuilderFromSegment(segment)
+	b.segment = segment
+	b.Persist()
+	b3 := OpenBuilder(segment)
 	if b.size != b3.size {
 		t.Fatal()
 	}
