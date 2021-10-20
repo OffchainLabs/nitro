@@ -52,7 +52,7 @@ jobs:
           go-version: 1.17.x
 
       - name: Cache Build Products
-      - uses: actions/cache@v2
+        uses: actions/cache@v2
         with:
           path: |
             ~/go/pkg/mod
