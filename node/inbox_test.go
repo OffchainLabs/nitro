@@ -82,7 +82,7 @@ func TestInboxState(t *testing.T) {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
 			inbox.ReorgTo(blockStates[reorgTo].numMessages)
-			blockStates = blockStates[:reorgTo]
+			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]uint64)
@@ -93,6 +93,7 @@ func TestInboxState(t *testing.T) {
 			state.accounts = append([]common.Address(nil), state.accounts...)
 
 			var messages []arbstate.MessageWithMetadata
+			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
 				source := state.accounts[rand.Int()%len(state.accounts)]
@@ -117,7 +118,7 @@ func TestInboxState(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					MustEndBlock:        j == numMessages-1,
+					MustEndBlock:        j == numMessages-1 && i%2 == 0,
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount
