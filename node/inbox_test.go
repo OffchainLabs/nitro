@@ -26,6 +26,7 @@ type blockTestState struct {
 	balances    map[common.Address]uint64
 	accounts    []common.Address
 	numMessages uint64
+	blockNumber uint64
 }
 
 func TestInboxState(t *testing.T) {
@@ -77,6 +78,7 @@ func TestInboxState(t *testing.T) {
 		},
 		accounts:    []common.Address{ownerAddress},
 		numMessages: 0,
+		blockNumber: 0,
 	})
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
@@ -131,9 +133,19 @@ func TestInboxState(t *testing.T) {
 			}
 
 			state.numMessages += uint64(len(messages))
+			newBlock := bc.CurrentHeader().Number.Uint64()
+			if newBlock < state.blockNumber {
+				t.Fatal("block number went backwards")
+			}
+			state.blockNumber = newBlock
 			blockStates = append(blockStates, state)
+		}
 
-			// TODO check that state balances are consistent with blockchain's balances
+		// Check that state balances are consistent with blockchain's balances
+		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
+		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
+		if lastBlockNumber != expectedLastBlockNumber {
+			t.Fatal("unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
 		}
 	}
 }

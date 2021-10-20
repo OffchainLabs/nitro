@@ -79,7 +79,7 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 	if err != nil {
 		return 0, 0, err
 	}
-	if !roundUp && actualCount < count && block > 0 {
+	if !roundUp && actualCount > count && block > 0 {
 		block--
 	}
 	return block, actualCount, nil
@@ -122,12 +122,8 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 	if targetBlock == nil {
 		return errors.New("message count block not found")
 	}
-	headBlock := s.bc.CurrentBlock()
-	if headBlock == nil {
-		return errors.New("latest block not found")
-	}
 
-	err = s.bc.Reorg(headBlock, targetBlock)
+	err = s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}
@@ -150,7 +146,8 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, messageCount uint64, delayedMessageCount uint64) error {
+func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage uint64, delayedMessageCount uint64) error {
+	messageCount := lastMessage + 1
 	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
 	key := dbKey(messageCountToBlockPrefix, messageCount)
 	blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
