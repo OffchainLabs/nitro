@@ -74,11 +74,16 @@ type ArbosState struct {
 	smallGasPool    *StorageBackedInt64
 	gasPriceWei     *big.Int
 	l1PricingState  *L1PricingState
+	retryableState  *RetryableState
+	timestamp       *uint64
+	backingStorage  EvmStorage
+}
+
+type RetryableState struct {
+	state           *ArbosState
 	retryableQueue  *QueueInStorage
 	validRetryables EvmStorage
 	pendingRedeems  *QueueInStorage
-	timestamp       *uint64
-	backingStorage  EvmStorage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
@@ -88,8 +93,6 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
-		nil,
-		nil,
 		nil,
 		nil,
 		nil,
@@ -202,17 +205,24 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.backingStorage.Set(gasPriceKey, common.BigToHash(val))
 }
 
-func (state *ArbosState) RetryableQueue() *QueueInStorage {
-	if state.retryableQueue == nil {
-		queueOffset := state.backingStorage.Get(retryableQueueKey)
-		if queueOffset == IntToHash(0) {
-			queue := AllocateQueueInStorage(state)
-			queueOffset = queue.segment.offset
-			state.backingStorage.Set(retryableQueueKey, queueOffset)
-		}
-		state.retryableQueue = OpenQueueInStorage(state, queueOffset)
+func (state *ArbosState) RetryableState() *RetryableState {
+	if state.retryableState == nil {
+		state.retryableState = &RetryableState{ state, nil, nil, nil }
 	}
-	return state.retryableQueue
+	return state.retryableState
+}
+
+func (rs *RetryableState) RetryableQueue() *QueueInStorage {
+	if rs.retryableQueue == nil {
+		queueOffset := rs.state.backingStorage.Get(retryableQueueKey)
+		if queueOffset == IntToHash(0) {
+			queue := AllocateQueueInStorage(rs.state)
+			queueOffset = queue.segment.offset
+			rs.state.backingStorage.Set(retryableQueueKey, queueOffset)
+		}
+		rs.retryableQueue = OpenQueueInStorage(rs.state, queueOffset)
+	}
+	return rs.retryableQueue
 }
 
 func (state *ArbosState) L1PricingState() *L1PricingState {
@@ -254,24 +264,27 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 	}
 }
 
-func (state *ArbosState) ValidRetryablesSet() EvmStorage {
+func (rs *RetryableState) ValidRetryablesSet() EvmStorage {
 	// This is a virtual storage (KVS) that we use to keep track of which ids are ids of valid retryables.
 	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
 	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
-	return NewVirtualStorage(state.backingStorage, validRetryableSetUniqueKey)
+	if rs.validRetryables == nil {
+		rs.validRetryables = NewVirtualStorage(rs.state.backingStorage, validRetryableSetUniqueKey)
+	}
+	return rs.validRetryables
 }
 
-func (state *ArbosState) PendingRedeemQueue() *QueueInStorage {
-	if state.pendingRedeems == nil {
-		queueOffset := state.backingStorage.Get(pendingRedeemsKey)
+func (rs *RetryableState) PendingRedeemQueue() *QueueInStorage {
+	if rs.pendingRedeems == nil {
+		queueOffset := rs.state.backingStorage.Get(pendingRedeemsKey)
 		if queueOffset == IntToHash(0) {
-			queue := AllocateQueueInStorage(state)
+			queue := AllocateQueueInStorage(rs.state)
 			queueOffset = queue.segment.offset
-			state.backingStorage.Set(pendingRedeemsKey, queueOffset)
+			rs.state.backingStorage.Set(pendingRedeemsKey, queueOffset)
 		}
-		state.pendingRedeems = OpenQueueInStorage(state, queueOffset)
+		rs.pendingRedeems = OpenQueueInStorage(rs.state, queueOffset)
 	}
-	return state.pendingRedeems
+	return rs.pendingRedeems
 }
 
 func (state *ArbosState) AllocateSegment(size uint64) (*StorageSegment, error) {

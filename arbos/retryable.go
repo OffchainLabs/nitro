@@ -50,16 +50,17 @@ func CreateRetryable(
 	_ = state.AllocateSegmentAtOffsetForBytes(buf.Bytes(), id)
 
 	// insert the new retryable into the queue so it can be reaped later
-	state.RetryableQueue().Put(id)
+	state.RetryableState().RetryableQueue().Put(id)
 
 	// mark the new retryable as valid
-	state.ValidRetryablesSet().Set(id, common.Hash{1})
+	state.RetryableState().ValidRetryablesSet().Set(id, common.Hash{1})
 
 	return ret
 }
 
 func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
-	if state.ValidRetryablesSet().Get(id) == (common.Hash{}) {
+	vrs := state.RetryableState().ValidRetryablesSet()
+	if vrs.Get(id) == (common.Hash{}) {
 		// that is not a valid retryable
 		return nil
 	}
@@ -76,7 +77,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if ret.timeout < state.LastTimestampSeen() {
 		// retryable has expired, so delete it
 		seg.Delete()
-		state.ValidRetryablesSet().Set(id, common.Hash{})
+		vrs.Set(id, common.Hash{})
 		return nil
 	}
 	return ret
@@ -104,7 +105,7 @@ func (retryable *Retryable) GetAndIncrementTryCount(state *ArbosState) uint64 {
 }
 
 func DeleteRetryable(state *ArbosState, id common.Hash) {
-	vrs := state.ValidRetryablesSet()
+	vrs := state.RetryableState().ValidRetryablesSet()
 	if vrs.Get(id) != (common.Hash{}) {
 		vrs.Set(id, common.Hash{})
 		seg := state.OpenSegment(id)
@@ -179,7 +180,7 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 }
 
 func (state *ArbosState) TryToReapOneRetryable() {
-	queue := state.RetryableQueue()
+	queue := state.RetryableState().RetryableQueue()
 	if !queue.IsEmpty() {
 		id := queue.Get()
 		retryable := OpenRetryable(state, *id)
@@ -205,7 +206,7 @@ func NewPlannedRedeem(state *ArbosState, retryableId common.Hash, gasRefundAddr 
 		gasFundsWei,
 	}
 	ret.segment = state.AllocateSegmentForBytes(ret.serialize())
-	state.PendingRedeemQueue().Put(ret.segment.offset)
+	state.RetryableState().PendingRedeemQueue().Put(ret.segment.offset)
 	return ret
 }
 
@@ -248,7 +249,7 @@ func (pr *PlannedRedeem) serialize() []byte {
 }
 
 func PeekNextPlannedRedeem(state *ArbosState) *PlannedRedeem { // peek at the next redeem but don't consume it
-	queue := state.PendingRedeemQueue()
+	queue := state.RetryableState().PendingRedeemQueue()
 	if queue.IsEmpty() {
 		return nil
 	}
@@ -256,7 +257,7 @@ func PeekNextPlannedRedeem(state *ArbosState) *PlannedRedeem { // peek at the ne
 }
 
 func DiscardNextPlannedRedeem(state *ArbosState, deleteTheRetryable bool) {
-	queue := state.PendingRedeemQueue()
+	queue := state.RetryableState().PendingRedeemQueue()
 	if queue.IsEmpty() {
 		return
 	}
