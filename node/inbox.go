@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -26,7 +27,7 @@ type InboxState struct {
 
 func NewInboxState(db ethdb.Database, bc *core.BlockChain) (*InboxState, error) {
 	inbox := &InboxState{
-		db: db,
+		db: rawdb.NewTable(db, arbitrumPrefix),
 		bc: bc,
 	}
 	err := inbox.cleanupInconsistentState()
@@ -48,38 +49,38 @@ func (s *InboxState) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (uint64, error) {
+func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (uint64, uint64, error) {
 	minKey, err := rlp.EncodeToBytes(count)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	iter := s.db.NewIterator(messageCountToBlockPrefix, minKey)
 	defer iter.Release()
 	if iter.Error() != nil {
-		return 0, iter.Error()
+		return 0, 0, iter.Error()
 	}
 	key := iter.Key()
 	if len(key) == 0 {
-		return 0, errors.New("block for message count not found")
+		return 0, 0, errors.New("block for message count not found")
 	}
 	if !bytes.HasPrefix(key, messageCountToBlockPrefix) {
-		return 0, errors.New("iterated key missing prefix")
+		return 0, 0, errors.New("iterated key missing prefix")
 	}
 	key = key[len(messageCountToBlockPrefix):]
 	var actualCount uint64
 	err = rlp.DecodeBytes(key, &actualCount)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var block uint64
 	err = rlp.DecodeBytes(iter.Value(), &block)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if !roundUp && actualCount < count && block > 0 {
 		block--
 	}
-	return block, nil
+	return block, actualCount, nil
 }
 
 func (s *InboxState) ReorgTo(count uint64) error {
@@ -111,7 +112,7 @@ func deleteStartingAt(db ethdb.Database, prefix []byte, minKey []byte) error {
 }
 
 func (s *InboxState) reorgToWithLock(count uint64) error {
-	targetBlockNumber, err := s.LookupBlockNumByMessageCount(count, false)
+	targetBlockNumber, _, err := s.LookupBlockNumByMessageCount(count, false)
 	if err != nil {
 		return err
 	}
@@ -150,7 +151,7 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to rlp encode uint64: %s", err.Error()))
 	}
-	key := messageCountToMessagePrefix
+	key := prefix
 	key = append(key, posBytes...)
 	return key
 }
@@ -242,7 +243,14 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 	}
 
 	// We're now ready to add the new messages
-	lastBlockHeader := s.bc.CurrentHeader()
+	lastBlockNumber, startPos, err := s.LookupBlockNumByMessageCount(pos, false)
+	if err != nil {
+		return err
+	}
+	if startPos != pos {
+		panic("TODO: startPos != pos")
+	}
+	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
 	statedb, err := s.bc.State()
 	if err != nil {
 		return err
