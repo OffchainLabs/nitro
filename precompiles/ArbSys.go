@@ -111,7 +111,7 @@ func (con ArbSys) SendTxToL1(
 	arbosState := arbos.OpenArbosState(st)
 	builder := arbosState.GetSendMerkleBuilder()
 	builder.Append(sendHash)
-	//TODO: emitL2ToL1TransactionEvent(caller, destination, sendHash, builder.Size(), 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
+	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, builder.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
 	return sendHash.Big(), nil
 }
 
