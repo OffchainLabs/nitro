@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -30,11 +29,7 @@ type blockTestState struct {
 }
 
 func TestInboxState(t *testing.T) {
-	ownerKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerAddress := crypto.PubkeyToAddress(ownerKey.PublicKey)
+	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[ownerAddress] = core.GenesisAccount{
@@ -80,7 +75,7 @@ func TestInboxState(t *testing.T) {
 		numMessages: 0,
 		blockNumber: 0,
 	})
-	for i := 1; i < 100; i++ {
+	for i := 1; i < 2; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
 			inbox.ReorgTo(blockStates[reorgTo].numMessages)
@@ -92,17 +87,21 @@ func TestInboxState(t *testing.T) {
 				newBalances[k] = v
 			}
 			state.balances = newBalances
-			state.accounts = append([]common.Address(nil), state.accounts...)
 
 			var messages []arbstate.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
 				source := state.accounts[rand.Int()%len(state.accounts)]
-				amount := state.balances[source] % uint64(rand.Int())
+				amount := uint64(rand.Int()) % state.balances[source]
+				if state.balances[source]-amount < 100000000 {
+					// Leave enough funds for gas
+					amount = 1
+				}
 				var dest common.Address
 				if j == 0 {
 					binary.LittleEndian.PutUint64(dest[:], uint64(len(state.accounts)))
+					state.accounts = append(state.accounts, dest)
 				} else {
 					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
@@ -110,7 +109,7 @@ func TestInboxState(t *testing.T) {
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(100000))...)
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(1))...)
-				l2Message = append(l2Message, dest.Bytes()...)
+				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(amount))...)
 				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
@@ -146,6 +145,23 @@ func TestInboxState(t *testing.T) {
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
 		if lastBlockNumber != expectedLastBlockNumber {
 			t.Fatal("unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+		}
+
+		for _, state := range blockStates {
+			block := bc.GetBlockByNumber(state.blockNumber)
+			if block == nil {
+				t.Fatal("missing state block", state.blockNumber)
+			}
+			for acct, balance := range state.balances {
+				state, err := bc.StateAt(block.Root())
+				if err != nil {
+					t.Fatal("error getting block state", err)
+				}
+				haveBalance := state.GetBalance(acct)
+				if new(big.Int).SetUint64(balance).Cmp(haveBalance) != 0 {
+					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
+				}
+			}
 		}
 	}
 }
