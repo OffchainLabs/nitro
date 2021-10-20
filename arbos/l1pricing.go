@@ -19,7 +19,7 @@ type L1PricingState struct {
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
-	initialDefaultAggregator  = common.Address{} //TODO
+	initialDefaultAggregator  = common.Address{} // TODO
 	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
 	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
 	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))

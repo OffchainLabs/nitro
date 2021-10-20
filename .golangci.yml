@@ -1,0 +1,42 @@
+# golangci-lint configuration
+
+run:
+  skip-dirs:
+    - go-ethereum
+    - fastcache
+
+  timeout: 10m
+
+linters:
+  enable:
+    - asciicheck  # check for non-ascii characters
+    - errorlint   # enure error wrapping is safely done
+    - gocritic    # check for certain simplifications
+    - gofmt       # ensure code is formatted
+    - gosec       # check for security concerns
+    - nilerr      # ensure errors aren't mishandled
+    - staticcheck # check for suspicious constructs
+    - structcheck # check that struct fields are used
+    - unused      # check for unused constructs
+
+linters-settings:
+  errcheck:
+    # report when type assertions aren't checked for errors as in
+    #         a := b.(MyStruct)
+    #
+    check-type-assertions: true
+
+  gocritic:
+    disabled-tags:
+      - experimental
+      - opinionated
+
+    disabled-checks:
+      - ifElseChain
+      - assignOp
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment

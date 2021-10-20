@@ -99,7 +99,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 }
 
 func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
-	return msg.Header.Equals(other.Header) && (bytes.Compare(msg.L2msg, other.L2msg) == 0)
+	return msg.Header.Equals(other.Header) && bytes.Equal(msg.L2msg, other.L2msg)
 }
 
 func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
@@ -250,6 +250,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		for {
 			nextMsg, err := BytestringFromReader(rd)
 			if err != nil {
+				//lint:ignore nilerr an error here means there are no further messages in the batch
 				return segments, nil
 			}
 			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))

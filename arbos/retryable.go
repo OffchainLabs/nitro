@@ -116,6 +116,9 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	numTries, err := Uint64FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	timeout, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
