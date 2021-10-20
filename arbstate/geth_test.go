@@ -131,7 +131,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			}
 		}
 
-		arbos.FinalizeBlock(nil, nil, nil, statedb, nil)
+		arbos.FinalizeBlock(nil, nil, nil, statedb)
 	}
 }
 
