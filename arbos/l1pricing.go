@@ -175,6 +175,10 @@ func (ps *L1PricingState) GetL1Charges(
 			dataGas = 16 * uint64(len(data))
 		}
 	}
+
+	// add 5% to protect the aggregator bad price fluctuation luck
+	dataGas = dataGas * 21 / 20
+
 	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), ps.L1GasPriceEstimateWei())
 	return new(big.Int).Add(ps.FixedChargeForAggregatorWei(preferredAggregator), chargeForBytes)
 }
