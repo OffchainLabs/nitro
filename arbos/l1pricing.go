@@ -4,16 +4,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/evmStorage"
+	"github.com/offchainlabs/arbstate/arbos/storageSegment"
 	"math/big"
 )
 
 type L1PricingState struct {
-	segment                  *StorageSegment
+	segment                  *storageSegment.T
 	defaultAggregator        common.Address
 	l1GasPriceEstimate       *big.Int
-	preferredAggregators     EvmStorage
-	aggregatorFixedCharges   EvmStorage
-	aggregatorAddressesToPay EvmStorage
+	preferredAggregators     evmStorage.T
+	aggregatorFixedCharges   evmStorage.T
+	aggregatorAddressesToPay evmStorage.T
 }
 
 const CompressionEstimateDenominator uint64 = 1000000
@@ -43,10 +45,10 @@ func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
 		segment,
 		initialDefaultAggregator,
 		l1PriceEstimate,
-		NewVirtualStorage(state.backingStorage, preferredAggregatorKey),
-		NewVirtualStorage(state.backingStorage, aggregatorFixedChargeKey),
-		NewVirtualStorage(state.backingStorage, aggregatorAddressToPayKey),
-	}, segment.offset
+		evmStorage.NewVirtual(state.backingStorage, preferredAggregatorKey),
+		evmStorage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
+		evmStorage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
+	}, segment.Offset
 }
 
 func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
@@ -57,9 +59,9 @@ func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
 		segment,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		NewVirtualStorage(state.backingStorage, preferredAggregatorKey),
-		NewVirtualStorage(state.backingStorage, aggregatorFixedChargeKey),
-		NewVirtualStorage(state.backingStorage, aggregatorAddressToPayKey),
+		evmStorage.NewVirtual(state.backingStorage, preferredAggregatorKey),
+		evmStorage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
+		evmStorage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
 	}
 }
 

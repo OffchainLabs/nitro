@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
 	"math/big"
 )
@@ -94,20 +95,20 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 }
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
-	numTries, err := HashFromReader(rd)
-	timeout, err := Uint64FromReader(rd)
+	numTries, err := util.HashFromReader(rd)
+	timeout, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	from, err := AddressFromReader(rd)
+	from, err := util.AddressFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	to, err := AddressFromReader(rd)
+	to, err := util.AddressFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	callvalue, err := HashFromReader(rd)
+	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	if _, err := wr.Write(common.BigToHash(retryable.numTries).Bytes()); err != nil {
 		return err
 	}
-	if err := Uint64ToWriter(retryable.timeout, wr); err != nil {
+	if err := util.Uint64ToWriter(retryable.timeout, wr); err != nil {
 		return err
 	}
 	if _, err := wr.Write(retryable.from[:]); err != nil {

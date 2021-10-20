@@ -5,13 +5,14 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/storageSegment"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type QueueInStorage struct {
-	segment       *StorageSegment
+	segment       *storageSegment.T
 	nextPutOffset *common.Hash
 	nextGetOffset *common.Hash
 }
@@ -42,7 +43,7 @@ func (q *QueueInStorage) Peek() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.storage.Get(*q.nextGetOffset)
+	res := q.segment.Storage.Get(*q.nextGetOffset)
 	return &res
 }
 
@@ -50,7 +51,7 @@ func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.storage.Swap(*q.nextGetOffset, common.Hash{})
+	res := q.segment.Storage.Swap(*q.nextGetOffset, common.Hash{})
 	nextGetOffset := common.BigToHash(new(big.Int).Add(q.nextGetOffset.Big(), big.NewInt(1)))
 	q.nextGetOffset = &nextGetOffset
 	q.segment.Set(1, nextGetOffset)
@@ -58,7 +59,7 @@ func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 }
 
 func (q *QueueInStorage) Put(val common.Hash) {
-	q.segment.storage.Set(*q.nextPutOffset, val)
+	q.segment.Storage.Set(*q.nextPutOffset, val)
 	nextPutOffset := common.BigToHash(new(big.Int).Add(q.nextPutOffset.Big(), big.NewInt(1)))
 	q.nextPutOffset = &nextPutOffset
 	q.segment.Set(0, nextPutOffset)

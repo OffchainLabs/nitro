@@ -9,6 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/offchainlabs/arbstate/arbos/evmStorage"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"testing"
 )
@@ -30,13 +32,13 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	st := NewMemoryBackingEvmStorage()
+	st := evmStorage.NewMemoryBacked()
 	if st.Get(common.Hash{}) != (common.Hash{}) {
 		t.Fail()
 	}
 
-	loc1 := IntToHash(99)
-	val1 := IntToHash(1351908)
+	loc1 := util.IntToHash(99)
+	val1 := util.IntToHash(1351908)
 
 	st.Set(loc1, val1)
 	if st.Get(common.Hash{}) != (common.Hash{}) {
@@ -54,7 +56,7 @@ func TestStorageSegmentAllocation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if seg.size != 37 {
+	if seg.Size != 37 {
 		t.Fail()
 	}
 	res := seg.Get(19)
@@ -62,7 +64,7 @@ func TestStorageSegmentAllocation(t *testing.T) {
 		t.Fail()
 	}
 
-	val := IntToHash(51985380)
+	val := util.IntToHash(51985380)
 	seg.Set(uint64(size-2), val)
 	res = seg.Get(uint64(size - 2))
 	if res != val {
@@ -74,7 +76,7 @@ func TestStorageSegmentAllocationBytes(t *testing.T) {
 	storage := OpenArbosStateForTest()
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
 	seg := storage.AllocateSegmentForBytes(buf)
-	if int(seg.size) != 1+(len(buf)+31)/32 {
+	if int(seg.Size) != 1+(len(buf)+31)/32 {
 		t.Fail()
 	}
 

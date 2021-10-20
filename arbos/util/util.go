@@ -2,12 +2,12 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package util
 
 import (
 	"encoding/binary"
-	"errors"
 	"io"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -73,9 +73,6 @@ func BytestringFromReader(rd io.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if size > MaxL2MessageSize {
-		return nil, errors.New("attempted to extract too large of a slice from reader")
-	}
 	buf := make([]byte, size)
 	if _, err = io.ReadFull(rd, buf); err != nil {
 		return nil, err
@@ -89,4 +86,12 @@ func BytestringToWriter(val []byte, wr io.Writer) error {
 	}
 	_, err := wr.Write(val)
 	return err
+}
+
+func IntToHash(val int64) common.Hash {
+	return common.BigToHash(big.NewInt(val))
+}
+
+func HashPlusInt(x common.Hash, y int64) common.Hash {
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
