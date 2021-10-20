@@ -75,7 +75,7 @@ func TestInboxState(t *testing.T) {
 		numMessages: 0,
 		blockNumber: 0,
 	})
-	for i := 1; i < 2; i++ {
+	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
 			inbox.ReorgTo(blockStates[reorgTo].numMessages)
@@ -119,7 +119,7 @@ func TestInboxState(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					MustEndBlock:        j == numMessages-1 && i%2 == 0,
+					MustEndBlock:        j == numMessages-1,
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount

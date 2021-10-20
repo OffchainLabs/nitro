@@ -207,6 +207,8 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	}
 
 	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
+
 	b.header.Root = b.statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
@@ -218,8 +220,6 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 			txLog.BlockHash = blockHash
 		}
 	}
-
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
 
 	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 
