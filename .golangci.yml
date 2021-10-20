@@ -1,0 +1,7 @@
+linters:
+  enable:
+    - gofmt
+
+linters-settings:
+  gofmt:
+    simplify: false
