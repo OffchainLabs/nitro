@@ -112,6 +112,7 @@ func (con ArbSys) SendTxToL1(
 	builder := arbosState.GetSendMerkleBuilder()
 	builder.Append(sendHash)
 	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, builder.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
+	//TODO: deduct the callvalue from this precompile's account (burn/destroy it)
 	return sendHash.Big(), nil
 }
 
