@@ -202,6 +202,9 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 	reorg := false
 	// Skip any messages already in the database
 	for {
+		if len(messages) == 0 {
+			break
+		}
 		key := dbKey(messageCountToMessagePrefix, pos)
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
@@ -214,16 +217,14 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		if err != nil {
 			return err
 		}
-		if len(messages) > 0 {
-			wantMessage, err := serializeMsg(messages[0])
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(haveMessage, wantMessage) {
-				reorg = true
-				break
-			}
-		} else if hasMessage {
+		wantMessage, err := serializeMsg(messages[0])
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(haveMessage, wantMessage) {
+			// This message is a duplicate, skip it
+			messages = messages[1:]
+		} else {
 			reorg = true
 			break
 		}
