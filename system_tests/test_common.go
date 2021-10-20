@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
-func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.ArbBackend, *ethclient.Client, *ecdsa.PrivateKey) {
+func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
 	stackConf := node.DefaultConfig
 	var err error
 	stackConf.DataDir, err = ioutil.TempDir("/tmp", "nitro-test")
@@ -132,7 +132,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.ArbBackend, *ethclien
 }
 
 //will wait untill tx is in the blockchain. attempts = 0 is infinite
-func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.ArbBackend, client *ethclient.Client, attempts int) {
+func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, client *ethclient.Client, attempts int) {
 	chanHead := make(chan core.ChainHeadEvent, 1)
 	headSubscribe := backend.APIBackend().SubscribeChainHeadEvent(chanHead)
 	defer headSubscribe.Unsubscribe()
