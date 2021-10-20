@@ -430,9 +430,6 @@ func (w *InboxWrapper) EnqueueSequencerTx(tx *types.Transaction) error {
 	}
 
 	seqEncoded := seqMsg.Encode()
-	seqDecoded := parseSequencerMessage(seqEncoded)
-	fmt.Println("Original: ", seqMsg)
-	fmt.Println("Recoded:  ", seqDecoded)
 	w.inbox.EnqueueSequencer(seqEncoded)
 	return nil
 }
