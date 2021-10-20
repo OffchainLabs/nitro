@@ -5,6 +5,8 @@ run:
     - go-ethereum
     - fastcache
 
+  timeout: 10m
+
 linters:
   enable:
     - asciicheck  # check for non-ascii characters
