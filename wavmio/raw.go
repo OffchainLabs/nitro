@@ -2,6 +2,9 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
+//go:build js
+// +build js
+
 package wavmio
 
 func getLastBlockHash(output []byte)

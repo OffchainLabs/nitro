@@ -56,8 +56,8 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 	return p.state.L1PricingState().GetL1Charges(
 		p.msg.From(),
 		p.getAggregator(),
-		intrinsicGas - params.TxGas,
-		DataWasNotCompressed,    //TODO: if data was compressed, pass in compression ratio here
+		intrinsicGas-params.TxGas,
+		DataWasNotCompressed, //TODO: if data was compressed, pass in compression ratio here
 	)
 }
 
