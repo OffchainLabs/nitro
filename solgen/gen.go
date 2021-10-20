@@ -70,7 +70,6 @@ func main() {
 			log.Fatal(err)
 		}
 
-
 		err = ioutil.WriteFile(filepath.Join(root, "go", name+".go"), []byte(code), 0777)
 		if err != nil {
 			log.Fatal(err)

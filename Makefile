@@ -21,8 +21,7 @@ contracts: .make/solidity
 	@printf $(done)
 
 test: .make/test
-	cd arbos && gotestsum --format short-verbose
-	cd arbstate && gotestsum --format short-verbose
+	gotestsum --format short-verbose
 	@printf $(done)
 
 push: .make/push
@@ -45,6 +44,7 @@ clean:
 	@touch .make/fmt
 
 .make/push: .make/fmt
+	golangci-lint run
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
 

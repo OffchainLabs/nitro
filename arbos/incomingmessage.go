@@ -99,7 +99,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 }
 
 func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
-	return msg.Header.Equals(other.Header) && (bytes.Compare(msg.L2msg, other.L2msg) == 0)
+	return msg.Header.Equals(other.Header) && bytes.Equal(msg.L2msg, other.L2msg)
 }
 
 func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
