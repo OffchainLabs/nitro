@@ -8,6 +8,8 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos"
 	"math/big"
 )
 
@@ -105,11 +107,16 @@ func (con ArbSys) SendTxToL1(
 	destination common.Address,
 	calldataForL1 []byte,
 ) (*big.Int, error) {
-	return nil, errors.New("unimplemented")
+	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
+	arbosState := arbos.OpenArbosState(st)
+	builder := arbosState.GetSendMerkleBuilder()
+	builder.Append(sendHash)
+	//TODO: emitL2ToL1TransactionEvent(caller, destination, sendHash, builder.Size(), 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
+	return sendHash.Big(), nil
 }
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
-	return 0
+	return 0  //TODO
 }
 
 func (con ArbSys) WasMyCallersAddressAliased(caller common.Address, st *state.StateDB) (bool, error) {
@@ -126,9 +133,9 @@ func (con ArbSys) WithdrawEth(
 	value *big.Int,
 	destination common.Address,
 ) (*big.Int, error) {
-	return nil, errors.New("unimplemented")
+	return con.SendTxToL1(caller, st, value, destination, []byte{})
 }
 
 func (con ArbSys) WithdrawEthGasCost(destination common.Address) uint64 {
-	return 0
+	return con.SendTxToL1GasCost(destination, []byte{})
 }
