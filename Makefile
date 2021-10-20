@@ -20,6 +20,12 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 contracts: .make/solidity
 	@printf $(done)
 
+format fmt: .make/fmt
+	@printf $(done)
+
+lint: .make/lint
+	@printf $(done)
+
 test: .make/test
 	gotestsum --format short-verbose
 	@printf $(done)
@@ -39,14 +45,17 @@ clean:
 
 # strategic rules to minimize dependency building
 
-.make/fmt: *.go */*.go */*/*.go
-	go fmt ./arbos/...
-	@touch .make/fmt
-
-.make/push: .make/fmt
-	golangci-lint run
+.make/push: .make/lint
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
+
+.make/lint: .golangci.yml *.go */*.go */*/*.go .make/solgen
+	golangci-lint run --fix
+	@touch .make/lint
+
+.make/fmt: .golangci.yml *.go */*.go */*/*.go .make/solgen
+	golangci-lint run --disable-all -E gofmt --fix
+	@touch .make/fmt
 
 .make/test: *.go */*.go */*/*.go .make/solgen .make/solidity
 	cd arbos && gotestsum --format short-verbose
