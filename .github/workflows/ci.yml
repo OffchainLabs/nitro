@@ -9,6 +9,16 @@ on:
       - develop
 
 jobs:
+  lint:
+    name: Linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: latest
+
   test:
     name: ArbOS tests
     runs-on: ubuntu-latest
