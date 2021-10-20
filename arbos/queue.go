@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"github.com/offchainlabs/arbstate/arbos/segment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,6 +14,7 @@ import (
 
 type QueueInStorage struct {
 	segment       *segment.Segment
+	storage       storage.Storage
 	nextPutOffset *common.Hash
 	nextGetOffset *common.Hash
 }
@@ -25,14 +27,14 @@ func AllocateQueueInStorage(state *ArbosState) *QueueInStorage {
 	contentsOffset := state.AllocateEmptyStorageOffset()
 	segment.Set(0, *contentsOffset)
 	segment.Set(1, *contentsOffset)
-	return &QueueInStorage{segment, contentsOffset, contentsOffset}
+	return &QueueInStorage{segment, state.backingStorage, contentsOffset, contentsOffset}
 }
 
 func OpenQueueInStorage(state *ArbosState, offset common.Hash) *QueueInStorage {
 	segment := state.OpenSegment(offset)
 	npo := segment.Get(0)
 	ngo := segment.Get(1)
-	return &QueueInStorage{segment, &npo, &ngo}
+	return &QueueInStorage{segment, state.backingStorage, &npo, &ngo}
 }
 
 func (q *QueueInStorage) IsEmpty() bool {
@@ -43,7 +45,7 @@ func (q *QueueInStorage) Peek() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.Storage.Get(*q.nextGetOffset)
+	res := q.storage.Get(*q.nextGetOffset)
 	return &res
 }
 
@@ -51,7 +53,7 @@ func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	res := q.segment.Storage.Swap(*q.nextGetOffset, common.Hash{})
+	res := q.storage.Swap(*q.nextGetOffset, common.Hash{})
 	nextGetOffset := common.BigToHash(new(big.Int).Add(q.nextGetOffset.Big(), big.NewInt(1)))
 	q.nextGetOffset = &nextGetOffset
 	q.segment.Set(1, nextGetOffset)
@@ -59,7 +61,7 @@ func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 }
 
 func (q *QueueInStorage) Put(val common.Hash) {
-	q.segment.Storage.Set(*q.nextPutOffset, val)
+	q.storage.Set(*q.nextPutOffset, val)
 	nextPutOffset := common.BigToHash(new(big.Int).Add(q.nextPutOffset.Big(), big.NewInt(1)))
 	q.nextPutOffset = &nextPutOffset
 	q.segment.Set(0, nextPutOffset)
