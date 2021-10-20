@@ -5,14 +5,14 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/storageSegment"
+	"github.com/offchainlabs/arbstate/arbos/segment"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
 type QueueInStorage struct {
-	segment       *storageSegment.T
+	segment       *segment.Segment
 	nextPutOffset *common.Hash
 	nextGetOffset *common.Hash
 }

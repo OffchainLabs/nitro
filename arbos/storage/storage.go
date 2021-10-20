@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package evmStorage
+package storage
 
 import (
 	"github.com/ethereum/go-ethereum/common"
@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
-type T interface {
+type Storage interface {
 	Get(key common.Hash) common.Hash
 	Set(key common.Hash, value common.Hash)
 	Swap(key common.Hash, value common.Hash) common.Hash
@@ -23,7 +23,7 @@ type gethEvmStorage struct {
 }
 
 // Use a Geth database to create an evm key-value store
-func NewGeth(statedb vm.StateDB) T {
+func NewGeth(statedb vm.StateDB) Storage {
 	return &gethEvmStorage{
 		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
 		db:      statedb,
@@ -31,7 +31,7 @@ func NewGeth(statedb vm.StateDB) T {
 }
 
 // Use Geth's memory-backed database to create an evm key-value store
-func NewMemoryBacked() T {
+func NewMemoryBacked() Storage {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)

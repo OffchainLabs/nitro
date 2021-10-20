@@ -6,8 +6,8 @@ package arbos
 
 import (
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/evmStorage"
-	"github.com/offchainlabs/arbstate/arbos/storageSegment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/arbos/segment"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 
@@ -25,13 +25,13 @@ type ArbosState struct {
 	gasPriceWei     *big.Int
 	l1PricingState  *L1PricingState
 	retryableQueue  *QueueInStorage
-	validRetryables evmStorage.T
+	validRetryables storage.Storage
 	timestamp       *uint64
-	backingStorage  evmStorage.T
+	backingStorage  storage.Storage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
-	backingStorage := evmStorage.NewGeth(stateDB)
+	backingStorage := storage.NewGeth(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {
 	}
@@ -50,7 +50,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 }
 
-func tryStorageUpgrade(backingStorage evmStorage.T) bool {
+func tryStorageUpgrade(backingStorage storage.Storage) bool {
 	formatVersion := backingStorage.Get(util.IntToHash(0))
 	switch formatVersion {
 	case util.IntToHash(0):
@@ -73,7 +73,7 @@ var (
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
-func upgrade_0_to_1(backingStorage evmStorage.T) {
+func upgrade_0_to_1(backingStorage storage.Storage) {
 	backingStorage.Set(versionKey, util.IntToHash(1))
 	backingStorage.Set(storageOffsetKey, crypto.Keccak256Hash([]byte("Arbitrum ArbOS storage allocation start point")))
 	backingStorage.Set(gasPoolKey, util.IntToHash(GasPoolMax))
@@ -200,15 +200,15 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 	}
 }
 
-func (state *ArbosState) ValidRetryablesSet() evmStorage.T {
+func (state *ArbosState) ValidRetryablesSet() storage.Storage {
 	// This is a virtual storage (KVS) that we use to keep track of which ids are ids of valid retryables.
 	// We need this because untrusted users will be submitting ids, and we need to check them for validity, so that
 	//     we don't treat some maliciously chosen segment of our storage as a valid retryable.
-	return evmStorage.NewVirtual(state.backingStorage, validRetryableSetUniqueKey)
+	return storage.NewVirtual(state.backingStorage, validRetryableSetUniqueKey)
 }
 
-func (state *ArbosState) AllocateSegment(size uint64) (*storageSegment.T, error) {
-	if size > storageSegment.MaxSizedSegmentSize {
+func (state *ArbosState) AllocateSegment(size uint64) (*segment.Segment, error) {
+	if size > segment.MaxSizedSegmentSize {
 		return nil, errors.New("requested segment size too large")
 	}
 
@@ -217,12 +217,12 @@ func (state *ArbosState) AllocateSegment(size uint64) (*storageSegment.T, error)
 	return state.AllocateSegmentAtOffset(size, *offset)
 }
 
-func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash) (*storageSegment.T, error) {
+func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash) (*segment.Segment, error) {
 	// caller is responsible for checking that size is in bounds
 
 	state.backingStorage.Set(offset, util.IntToHash(int64(size)))
 
-	return &storageSegment.T{
+	return &segment.Segment{
 		offset,
 		size,
 		state.backingStorage,
@@ -233,7 +233,7 @@ func (state *ArbosState) SegmentExists(offset common.Hash) bool {
 	return state.backingStorage.Get(offset).Big().Cmp(big.NewInt(0)) == 0
 }
 
-func (state *ArbosState) OpenSegment(offset common.Hash) *storageSegment.T {
+func (state *ArbosState) OpenSegment(offset common.Hash) *segment.Segment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
 	if bigSize.Cmp(big.NewInt(0)) == 0 {
@@ -247,17 +247,17 @@ func (state *ArbosState) OpenSegment(offset common.Hash) *storageSegment.T {
 	if size == 0 {
 		panic("state segment invalid or was deleted")
 	}
-	if size > storageSegment.MaxSizedSegmentSize {
+	if size > segment.MaxSizedSegmentSize {
 		panic("state segment size invalid")
 	}
-	return &storageSegment.T{
+	return &segment.Segment{
 		offset,
 		size,
 		state.backingStorage,
 	}
 }
 
-func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *storageSegment.T {
+func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *segment.Segment {
 	sizeWords := (len(buf) + 31) / 32
 	seg, err := state.AllocateSegment(uint64(1 + sizeWords))
 	if err != nil {
@@ -269,7 +269,7 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *storageSegment.T {
 	return seg
 }
 
-func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *storageSegment.T {
+func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset common.Hash) *segment.Segment {
 	sizeWords := (len(buf) + 31) / 32
 	seg, err := state.AllocateSegmentAtOffset(uint64(1+sizeWords), offset)
 	if err != nil {
@@ -283,12 +283,12 @@ func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset comm
 // StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
 //     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
 type StorageBackedInt64 struct {
-	storage evmStorage.T
+	storage storage.Storage
 	offset  common.Hash
 	cache   *int64
 }
 
-func OpenStorageBackedInt64(storage evmStorage.T, offset common.Hash) *StorageBackedInt64 {
+func OpenStorageBackedInt64(storage storage.Storage, offset common.Hash) *StorageBackedInt64 {
 	return &StorageBackedInt64{storage, offset, nil}
 }
 

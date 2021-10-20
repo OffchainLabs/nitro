@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/offchainlabs/arbstate/arbos/evmStorage"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"testing"
@@ -32,7 +32,7 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	st := evmStorage.NewMemoryBacked()
+	st := storage.NewMemoryBacked()
 	if st.Get(common.Hash{}) != (common.Hash{}) {
 		t.Fail()
 	}

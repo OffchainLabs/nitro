@@ -4,18 +4,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/evmStorage"
-	"github.com/offchainlabs/arbstate/arbos/storageSegment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/arbos/segment"
 	"math/big"
 )
 
 type L1PricingState struct {
-	segment                  *storageSegment.T
+	segment                  *segment.Segment
 	defaultAggregator        common.Address
 	l1GasPriceEstimate       *big.Int
-	preferredAggregators     evmStorage.T
-	aggregatorFixedCharges   evmStorage.T
-	aggregatorAddressesToPay evmStorage.T
+	preferredAggregators     storage.Storage
+	aggregatorFixedCharges   storage.Storage
+	aggregatorAddressesToPay storage.Storage
 }
 
 const CompressionEstimateDenominator uint64 = 1000000
@@ -45,9 +45,9 @@ func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
 		segment,
 		initialDefaultAggregator,
 		l1PriceEstimate,
-		evmStorage.NewVirtual(state.backingStorage, preferredAggregatorKey),
-		evmStorage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
-		evmStorage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
+		storage.NewVirtual(state.backingStorage, preferredAggregatorKey),
+		storage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
+		storage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
 	}, segment.Offset
 }
 
@@ -59,9 +59,9 @@ func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
 		segment,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		evmStorage.NewVirtual(state.backingStorage, preferredAggregatorKey),
-		evmStorage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
-		evmStorage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
+		storage.NewVirtual(state.backingStorage, preferredAggregatorKey),
+		storage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
+		storage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
 	}
 }
 
