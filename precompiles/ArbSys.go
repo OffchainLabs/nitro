@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"bytes"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -118,6 +119,16 @@ func (con ArbSys) SendTxToL1(
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
 	return 0  //TODO
+}
+
+func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) ([]byte, error) {
+	var buf bytes.Buffer
+	arbos.OpenArbosState(st).GetSendMerkleBuilder().Serialize(&buf)
+	return buf.Bytes(), nil
+}
+
+func (con ArbSys) SendMerkleTreeStateGasCost() uint64 {
+	return 0
 }
 
 func (con ArbSys) WasMyCallersAddressAliased(caller common.Address, st *state.StateDB) (bool, error) {
