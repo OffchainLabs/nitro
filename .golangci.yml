@@ -35,9 +35,6 @@ linters-settings:
       - ifElseChain
       - assignOp
 
-  gofmt:
-    simplify: false
-
   govet:
     enable-all: true
     disable:
