@@ -92,7 +92,7 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 		return true
 	}
 	newGasUsed := b.header.GasUsed
-	for _, tx := range segment.txes {
+	for _, tx := range segment.Txes {
 		oldGasUsed := newGasUsed
 		newGasUsed += tx.Gas()
 		if newGasUsed < oldGasUsed {
@@ -151,7 +151,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
-	for _, tx := range segment.txes {
+	for _, tx := range segment.Txes {
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
@@ -231,18 +231,6 @@ func FinalizeBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
-	var headerTimeStamp uint64
-	if header != nil {
-		headerTimeStamp = header.Time
-	}
-	arbosState := OpenArbosState(statedb, headerTimeStamp)
-	if chainContext != nil {
-		thisTimestamp := header.Time
-		previousHeader := chainContext.GetHeader(header.ParentHash, header.Number.Uint64()-1)
-		prevTimestamp := previousHeader.Time
-		if thisTimestamp > prevTimestamp {
-			arbosState.notifyGasPricerThatTimeElapsed(thisTimestamp - prevTimestamp)
-		}
-	}
+	arbosState := OpenArbosState(statedb)
 	arbosState.TryToReapOneRetryable()
 }
