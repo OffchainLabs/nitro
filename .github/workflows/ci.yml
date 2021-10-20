@@ -35,3 +35,6 @@ jobs:
 
       - name: Test ArbOS
         run: cd arbos && gotestsum --format short-verbose
+
+      - name: Test ArbState
+        run: cd arbstate && gotestsum --format short-verbose

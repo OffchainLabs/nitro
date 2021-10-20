@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -61,7 +62,7 @@ type MessageSegment struct {
 	L1Info L1Info
 	// l1GasPrice may be null
 	l1GasPrice *big.Int
-	txes       types.Transactions
+	Txes       types.Transactions
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -172,7 +173,7 @@ func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (Message
 			l1Timestamp:   msg.Header.Timestamp.Big(),
 		},
 		l1GasPrice: msg.Header.GasPriceL1.Big(),
-		txes:       txes,
+		Txes:       txes,
 	}, nil
 }
 
