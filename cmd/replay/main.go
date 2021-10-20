@@ -89,13 +89,10 @@ func main() {
 
 	chainContext := WavmChainContext{}
 	newBlock := arbstate.BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
-	if err == nil {
-		fmt.Printf("New state root: %v\n", newBlock.Root())
-		newBlockHash := newBlock.Hash()
-		fmt.Printf("New block hash: %v\n", newBlockHash)
 
-		wavmio.SetLastBlockHash(newBlockHash)
-	} else {
-		fmt.Printf("Error processing message: %v\n", err)
-	}
+	fmt.Printf("New state root: %v\n", newBlock.Root())
+	newBlockHash := newBlock.Hash()
+	fmt.Printf("New block hash: %v\n", newBlockHash)
+
+	wavmio.SetLastBlockHash(newBlockHash)
 }

@@ -31,9 +31,7 @@ func main() {
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		if err != nil {
-			utils.Fatalf("Error creating protocol stack: %v\n", err)
-		}
+		utils.Fatalf("Error creating protocol stack: %v\n", err)
 	}
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
