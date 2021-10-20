@@ -138,7 +138,12 @@ func NewBuilderFromSegment(segment *StorageSegment) *MerkleBuilder {
 	numPartials := segment.Get(1).Big().Uint64()
 	partials := make([][]byte, numPartials)
 	for i, _ := range partials {
-		partials[i] = segment.Get(uint64(i + 2)).Bytes()
+		val := segment.Get(uint64(i+2))
+		if val == (common.Hash{}) {
+			partials[i] = nil
+		} else {
+			partials[i] = val.Bytes()
+		}
 	}
 	return &MerkleBuilder{ size, partials }
 }

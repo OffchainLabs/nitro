@@ -116,6 +116,20 @@ func serdeBuilder(b *MerkleBuilder, t *testing.T) {
 	if b.Root() != b2.Root() {
 		t.Fatal()
 	}
+
+	state := OpenArbosStateForTest()
+	segment, err := state.AllocateSegment(30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Persist(segment)
+	b3 := NewBuilderFromSegment(segment)
+	if b.size != b3.size {
+		t.Fatal()
+	}
+	if b.Root() != b3.Root() {
+		t.Fatal()
+	}
 }
 
 func pseudorandom(x uint64) common.Hash {
