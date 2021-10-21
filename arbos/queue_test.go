@@ -12,7 +12,9 @@ import (
 
 func TestQueue(t *testing.T) {
 	state := OpenArbosStateForTest()
-	q, _ := queue.AllocateQueueInStorage(state.backingStorage)
+	sto := state.backingStorage.Open([]byte{})
+	queue.Initialize(sto)
+	q := queue.Open(sto)
 
 	if !q.IsEmpty() {
 		t.Fail()

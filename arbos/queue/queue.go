@@ -17,19 +17,17 @@ type QueueInStorage struct {
 	nextGetOffset int64
 }
 
-func AllocateQueueInStorage(backingStorage *storage.Storage) (*QueueInStorage, common.Hash) {
-	key := backingStorage.UniqueKey()
-	storage := backingStorage.Open(key.Bytes())
-	storage.SetByInt64(0, util.IntToHash(2))
-	storage.SetByInt64(1, util.IntToHash(2))
-	return &QueueInStorage{storage, 2, 2}, key
+func Initialize(sto *storage.Storage) {
+	sto.SetByInt64(0, util.IntToHash(2))
+	sto.SetByInt64(1, util.IntToHash(2))
 }
 
-func OpenQueueInStorage(backingStorage *storage.Storage, key common.Hash) *QueueInStorage {
-	storage := backingStorage.Open(key.Bytes())
-	npo := storage.GetByInt64(0).Big().Int64()
-	ngo := storage.GetByInt64(1).Big().Int64()
-	return &QueueInStorage{storage, npo, ngo}
+func Open(sto *storage.Storage) *QueueInStorage {
+	return &QueueInStorage{
+		sto,
+		sto.GetByInt64(0).Big().Int64(),
+		sto.GetByInt64(1).Big().Int64(),
+	}
 }
 
 func (q *QueueInStorage) IsEmpty() bool {

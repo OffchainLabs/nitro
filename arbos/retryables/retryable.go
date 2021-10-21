@@ -2,13 +2,12 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package retryables
 
 import (
 	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/queue"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -17,23 +16,18 @@ import (
 )
 
 type RetryableState struct {
-	timeoutQueue *queue.QueueInStorage
 	retryables   *storage.Storage
+	timeoutQueue *queue.QueueInStorage
 }
 
-var retryablesStorageKey = crypto.Keccak256([]byte("retryables storage key"))
-
-func AllocateRetryableState(backingStorage *storage.Storage) (*RetryableState, common.Hash) {
-	myStorage := backingStorage.Open(retryablesStorageKey)
-	q, qOffset := queue.AllocateQueueInStorage(myStorage)
-	myStorage.SetByInt64(0, qOffset)
-	return &RetryableState{ q, myStorage }, common.BytesToHash(retryablesStorageKey)
+func InitializeRetryableState(sto *storage.Storage) {
+	queue.Initialize(sto.Open([]byte{}))
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
 	return &RetryableState{
-		queue.OpenQueueInStorage(sto, sto.GetByInt64(0)),
 		sto,
+		queue.Open(sto.Open([]byte{})),
 	}
 }
 
@@ -170,6 +164,25 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 		return err
 	}
 	return nil
+}
+
+func (retryable *Retryable) Equals(other *Retryable) bool {   // for testing
+	if retryable.id != other.id {
+		return false
+	}
+	if retryable.timeout != other.timeout {
+		return false
+	}
+	if retryable.from != other.from {
+		return false
+	}
+	if retryable.to != other.to {
+		return false
+	}
+	if retryable.callvalue.Cmp(other.callvalue) != 0 {
+		return false
+	}
+	return bytes.Equal(retryable.calldata, other.calldata)
 }
 
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
