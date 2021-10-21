@@ -5,7 +5,7 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/queue"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"testing"
 )
@@ -13,8 +13,8 @@ import (
 func TestQueue(t *testing.T) {
 	state := OpenArbosStateForTest()
 	sto := state.backingStorage.Open([]byte{})
-	queue.Initialize(sto)
-	q := queue.Open(sto)
+	storage.Initialize(sto)
+	q := storage.Open(sto)
 
 	if !q.IsEmpty() {
 		t.Fail()

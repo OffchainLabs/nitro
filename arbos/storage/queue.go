@@ -2,39 +2,38 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package queue
+package storage
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type QueueInStorage struct {
-	storage       *storage.Storage
+type Queue struct {
+	storage       *Storage
 	nextPutOffset int64
 	nextGetOffset int64
 }
 
-func Initialize(sto *storage.Storage) {
+func Initialize(sto *Storage) {
 	sto.SetByInt64(0, util.IntToHash(2))
 	sto.SetByInt64(1, util.IntToHash(2))
 }
 
-func Open(sto *storage.Storage) *QueueInStorage {
-	return &QueueInStorage{
+func Open(sto *Storage) *Queue {
+	return &Queue{
 		sto,
 		sto.GetByInt64(0).Big().Int64(),
 		sto.GetByInt64(1).Big().Int64(),
 	}
 }
 
-func (q *QueueInStorage) IsEmpty() bool {
+func (q *Queue) IsEmpty() bool {
 	return q.nextPutOffset == q.nextGetOffset
 }
 
-func (q *QueueInStorage) Peek() *common.Hash { // returns nil iff queue is empty
+func (q *Queue) Peek() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
@@ -42,7 +41,7 @@ func (q *QueueInStorage) Peek() *common.Hash { // returns nil iff queue is empty
 	return &res
 }
 
-func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
+func (q *Queue) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
@@ -52,7 +51,7 @@ func (q *QueueInStorage) Get() *common.Hash { // returns nil iff queue is empty
 	return &res
 }
 
-func (q *QueueInStorage) Put(val common.Hash) {
+func (q *Queue) Put(val common.Hash) {
 	q.storage.SetByInt64(q.nextPutOffset, val)
 	q.nextPutOffset++
 	q.storage.SetByInt64(0, util.IntToHash(q.nextPutOffset))

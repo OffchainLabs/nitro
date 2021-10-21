@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/queue"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
@@ -17,17 +16,17 @@ import (
 
 type RetryableState struct {
 	retryables   *storage.Storage
-	timeoutQueue *queue.QueueInStorage
+	timeoutQueue *storage.Queue
 }
 
 func InitializeRetryableState(sto *storage.Storage) {
-	queue.Initialize(sto.Open([]byte{}))
+	storage.Initialize(sto.Open([]byte{}))
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
 	return &RetryableState{
 		sto,
-		queue.Open(sto.Open([]byte{})),
+		storage.Open(sto.Open([]byte{})),
 	}
 }
 
