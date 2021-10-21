@@ -178,7 +178,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	}
 }
 
-func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
+func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
 	if b.header == nil {
 		var lastBlockHash common.Hash
 		blockNumber := big.NewInt(0)
@@ -219,19 +219,15 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
-	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil)), b.receipts, b.statedb
 }
 
-func FinalizeBlock(
-	header *types.Header,
-	txs types.Transactions,
-	receipts types.Receipts,
-	statedb *state.StateDB,
-	chainContext core.ChainContext, // should be nil if there is no previous block
-) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB, ) {
 	if header != nil {
-		OpenArbosState(statedb).RetryableState().TryToReapOneRetryable(header.Time)
+		state := OpenArbosState(statedb)
+		state.SetLastTimestampSeen(header.Time)
+		state.RetryableState().TryToReapOneRetryable(header.Time)
 	}
 }

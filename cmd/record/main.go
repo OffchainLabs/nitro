@@ -81,7 +81,7 @@ func main() {
 	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
 	// TODO add message(s) to builder
 
-	newBlock := builder.ConstructBlock(0)
+	newBlock, _, _ := builder.ConstructBlock(0)
 	newBlockHash := newBlock.Hash()
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 

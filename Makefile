@@ -49,15 +49,15 @@ clean:
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
 
-.make/lint: .golangci.yml *.go */*.go */*/*.go .make/solgen
+.make/lint: .golangci.yml */*.go */*/*.go .make/solgen
 	golangci-lint run --fix
 	@touch .make/lint
 
-.make/fmt: .golangci.yml *.go */*.go */*/*.go .make/solgen
+.make/fmt: .golangci.yml */*.go */*/*.go .make/solgen
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/test: *.go */*.go */*/*.go .make/solgen .make/solidity
+.make/test: */*.go */*/*.go .make/solgen .make/solidity
 	gotestsum --format short-verbose
 	@touch .make/test
 

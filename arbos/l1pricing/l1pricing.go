@@ -6,6 +6,7 @@ package l1pricing
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"math/big"
@@ -18,6 +19,7 @@ type L1PricingState struct {
 	preferredAggregators     *storage.Storage
 	aggregatorFixedCharges   *storage.Storage
 	aggregatorAddressesToPay *storage.Storage
+	aggregatorCompressionRatios *storage.Storage
 }
 
 var (
@@ -26,6 +28,7 @@ var (
 	preferredAggregatorKey    = []byte{0}
 	aggregatorFixedChargeKey  = []byte{1}
 	aggregatorAddressToPayKey = []byte{2}
+	aggregatorCompressionRatioKey = []byte{3}
 )
 
 const (
@@ -48,6 +51,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenSubStorage(preferredAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorAddressToPayKey),
+		sto.OpenSubStorage(aggregatorCompressionRatioKey),
 	}
 }
 
@@ -108,6 +112,23 @@ func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address) comm
 	}
 }
 
+func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) uint64 {
+	raw := ps.aggregatorAddressesToPay.Get(common.BytesToHash(aggregator.Bytes()))
+	if raw == (common.Hash{}) {
+		return DataWasNotCompressed
+	} else {
+		return raw.Big().Uint64()
+	}
+}
+
+func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio *uint64) {
+	val := DataWasNotCompressed
+	if (ratio != nil) && (*ratio < DataWasNotCompressed) {
+		val = *ratio
+	}
+	ps.aggregatorCompressionRatios.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(big.NewInt(int64(val))))
+}
+
 // Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
 //    a compression ratio of 1, that is, no compression.
 // A value of x (for x <= DataWasNotCompressed) corresponds to compression ratio of float(x) / float(DataWasNotCompressed).
@@ -118,8 +139,8 @@ const DataWasNotCompressed uint64 = 1000000
 func (ps *L1PricingState) GetL1Charges(
 	sender common.Address,
 	aggregator *common.Address,
-	gasForData uint64,
-	compressedSizePerMillion uint64,
+	data []byte,
+	wasCompressed bool,
 ) *big.Int {
 	if aggregator == nil {
 		return big.NewInt(0)
@@ -129,10 +150,22 @@ func (ps *L1PricingState) GetL1Charges(
 		return big.NewInt(0)
 	}
 
-	if compressedSizePerMillion < DataWasNotCompressed {
-		gasForData = gasForData * compressedSizePerMillion / DataWasNotCompressed
+	var dataGas uint64
+	if wasCompressed {
+		dataGas = 16 * uint64(len(data)) * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
+	} else {
+		var err error
+		dataGas, err = core.IntrinsicGas(data, nil, false, true, true)
+		if err == nil {
+			dataGas -= params.TxGas
+		} else {
+			dataGas = 16 * uint64(len(data))
+		}
 	}
 
-	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(gasForData)), ps.L1GasPriceEstimateWei())
+	// add 5% to protect the aggregator bad price fluctuation luck
+	dataGas = dataGas * 21 / 20
+
+	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), ps.L1GasPriceEstimateWei())
 	return new(big.Int).Add(ps.FixedChargeForAggregatorWei(preferredAggregator), chargeForBytes)
 }
