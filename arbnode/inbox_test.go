@@ -124,7 +124,6 @@ func TestInboxState(t *testing.T) {
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount
-				state.balances[source] -= gas
 				state.balances[dest] += amount
 			}
 
@@ -160,7 +159,7 @@ func TestInboxState(t *testing.T) {
 					t.Fatal("error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if new(big.Int).SetUint64(balance).Cmp(haveBalance) != 0 {
+				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
