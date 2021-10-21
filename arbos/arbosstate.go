@@ -16,7 +16,7 @@ import (
 )
 
 type ArbosState struct {
-	formatVersion  *big.Int
+	formatVersion  uint64
 	gasPool        *storage.StorageBackedInt64
 	smallGasPool   *storage.StorageBackedInt64
 	gasPriceWei    *big.Int
@@ -33,7 +33,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
-		nil,
+		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
 		nil,
 		nil,
 		nil,
@@ -45,9 +45,9 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 }
 
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.GetByInt64(int64(versionKey))
+	formatVersion := backingStorage.GetByInt64(int64(versionKey)).Big().Uint64()
 	switch formatVersion {
-	case util.IntToHash(0):
+	case 0:
 		upgrade_0_to_1(backingStorage)
 		return true
 	default:
@@ -82,16 +82,13 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 }
 
-func (state *ArbosState) FormatVersion() *big.Int {
-	if state.formatVersion == nil {
-		state.formatVersion = state.backingStorage.GetByInt64(int64(versionKey)).Big()
-	}
+func (state *ArbosState) FormatVersion() uint64 {
 	return state.formatVersion
 }
 
-func (state *ArbosState) SetFormatVersion(val *big.Int) {
+func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.formatVersion = val
-	state.backingStorage.SetByInt64(int64(versionKey), common.BigToHash(state.formatVersion))
+	state.backingStorage.SetByInt64(int64(versionKey), util.IntToHash(int64(val)))
 }
 
 func (state *ArbosState) GasPool() int64 {
