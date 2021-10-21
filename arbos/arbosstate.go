@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -22,6 +23,7 @@ type ArbosState struct {
 	gasPriceWei    *big.Int
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
+	addressTable   *addressTable.AddressTable
 	timestamp      *uint64
 	backingStorage *storage.Storage
 }
@@ -34,6 +36,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -68,8 +71,9 @@ const (
 type ArbosStateSubspaceID []byte
 
 var (
-	l1PricingSubspace  ArbosStateSubspaceID = []byte{0}
-	retryablesSubspace ArbosStateSubspaceID = []byte{1}
+	l1PricingSubspace    ArbosStateSubspaceID = []byte{0}
+	retryablesSubspace   ArbosStateSubspaceID = []byte{1}
+	addressTableSubspace ArbosStateSubspaceID = []byte{2}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
@@ -80,6 +84,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(0))
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
+	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -143,6 +148,13 @@ func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
 		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.OpenSubStorage(l1PricingSubspace))
 	}
 	return state.l1PricingState
+}
+
+func (state *ArbosState) AddressTable() *addressTable.AddressTable {
+	if state.addressTable == nil {
+		state.addressTable = addressTable.Open(state.backingStorage.OpenSubStorage(addressTableSubspace))
+	}
+	return state.addressTable
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
