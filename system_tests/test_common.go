@@ -21,11 +21,12 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 )
 
 func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
+	arbstate.RequireHookedGeth()
 	stackConf := node.DefaultConfig
 	var err error
 	stackConf.DataDir = t.TempDir()
