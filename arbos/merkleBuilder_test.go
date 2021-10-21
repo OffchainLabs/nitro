@@ -5,29 +5,28 @@
 package arbos
 
 import (
-	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/merkleBuilder"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"testing"
 )
 
 func TestEmptyBuilder(t *testing.T) {
-	b := NewBuilder(nil)
+	b := initializedMerkleBuilderForTesting()
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	serdeBuilder(b, t)
 }
 
 func TestBuilder1(t *testing.T) {
-	b := NewBuilder(nil)
+	b := initializedMerkleBuilderForTesting()
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	serdeBuilder(b, t)
 
-	itemHash := pseudorandom(0)
+	itemHash := pseudorandomForTesting(0)
 	b.Append(itemHash)
 	if b.Size() != 1 {
 		t.Fatal()
@@ -35,19 +34,17 @@ func TestBuilder1(t *testing.T) {
 	if b.Root() != itemHash {
 		t.Fatal()
 	}
-	serdeBuilder(b, t)
 }
 
 func TestBuilder3(t *testing.T) {
-	b := NewBuilder(nil)
+	b := initializedMerkleBuilderForTesting()
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	serdeBuilder(b, t)
 
-	itemHash0 := pseudorandom(0)
-	itemHash1 := pseudorandom(1)
-	itemHash2 := pseudorandom(2)
+	itemHash0 := pseudorandomForTesting(0)
+	itemHash1 := pseudorandomForTesting(1)
+	itemHash2 := pseudorandomForTesting(2)
 
 	b.Append(itemHash0)
 	b.Append(itemHash1)
@@ -64,21 +61,18 @@ func TestBuilder3(t *testing.T) {
 	if b.Root() != common.BytesToHash(expectedHash) {
 		t.Fatal()
 	}
-
-	serdeBuilder(b, t)
 }
 
 func TestBuilder4(t *testing.T) {
-	b := NewBuilder(nil)
+	b := initializedMerkleBuilderForTesting()
 	if b.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	serdeBuilder(b, t)
 
-	itemHash0 := pseudorandom(0)
-	itemHash1 := pseudorandom(1)
-	itemHash2 := pseudorandom(2)
-	itemHash3 := pseudorandom(3)
+	itemHash0 := pseudorandomForTesting(0)
+	itemHash1 := pseudorandomForTesting(1)
+	itemHash2 := pseudorandomForTesting(2)
+	itemHash3 := pseudorandomForTesting(3)
 
 	b.Append(itemHash0)
 	b.Append(itemHash1)
@@ -96,44 +90,15 @@ func TestBuilder4(t *testing.T) {
 	if b.Root() != common.BytesToHash(expectedHash) {
 		t.Fatal()
 	}
-
-	serdeBuilder(b, t)
 }
 
-func serdeBuilder(b *MerkleBuilder, t *testing.T) {
-	var buf bytes.Buffer
-	err := b.Serialize(&buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b2, err := NewBuilderFromReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Size() != b2.Size() {
-		t.Fatal()
-	}
-	if b.Root() != b2.Root() {
-		t.Fatal()
-	}
-
-	state := OpenArbosStateForTest()
-	segment, err := state.AllocateSegment(30)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b.segment = segment
-	b.Persist()
-	b3 := OpenBuilder(segment)
-	if b.size != b3.size {
-		t.Fatal()
-	}
-	if b.Root() != b3.Root() {
-		t.Fatal()
-	}
+func initializedMerkleBuilderForTesting() *merkleBuilder.MerkleBuilder {
+	sto := storage.NewMemoryBacked()
+	merkleBuilder.InitializeMerkleBuilder(sto)
+	return merkleBuilder.OpenMerkleBuilder(sto)
 }
 
-func pseudorandom(x uint64) common.Hash {
+func pseudorandomForTesting(x uint64) common.Hash {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], x)
 	return crypto.Keccak256Hash(buf[:])

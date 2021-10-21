@@ -2,46 +2,50 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package merkleBuilder
 
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"io"
+	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 type MerkleBuilder struct {
-	segment  *StorageSegment
-	size     uint64
-	partials [][]byte
+	backingStorage  *storage.Storage
+	size            uint64
+	numPartials     uint64
 }
 
-func NewBuilder(segment *StorageSegment) *MerkleBuilder {
-	ret := &MerkleBuilder{segment, 0, make([][]byte, 0)}
-	if segment != nil {
-		ret.Persist()
-	}
-	return ret
+func InitializeMerkleBuilder(sto *storage.Storage) {
+	// no initialization needed
+}
+
+func OpenMerkleBuilder(sto *storage.Storage) *MerkleBuilder {
+	size := sto.GetByInt64(0).Big().Uint64()
+	numPartials := sto.GetByInt64(1).Big().Uint64()
+	return &MerkleBuilder{ sto, size, numPartials }
 }
 
 func (b *MerkleBuilder) Append(itemHash common.Hash) {
-	if b.segment != nil {
-		defer b.Persist()
-	}
 	b.size++
-	level := 0
+	b.backingStorage.SetByInt64(0, util.IntToHash(int64(b.size)))
+	level := uint64(0)
 	soFar := itemHash.Bytes()
 	for {
-		if level == len(b.partials) {
-			b.partials = append(b.partials, soFar)
+		if level == b.numPartials {
+			b.numPartials++
+			b.backingStorage.SetByInt64(1, util.IntToHash(int64(b.numPartials)))
+			b.backingStorage.SetByInt64(int64(2+level), common.BytesToHash(soFar))
 			return
 		}
-		if b.partials[level] == nil {
-			b.partials[level] = soFar
+		thisLevel := b.backingStorage.GetByInt64(int64(2 + level))
+		if thisLevel == (common.Hash{}) {
+			b.backingStorage.SetByInt64(int64(2+level), common.BytesToHash(soFar))
 			return
 		}
-		soFar = crypto.Keccak256(b.partials[level], soFar)
-		b.partials[level] = nil
+		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
+		b.backingStorage.SetByInt64(int64(2+level), common.Hash{})
 		level += 1
 	}
 }
@@ -55,105 +59,29 @@ func (b *MerkleBuilder) Root() common.Hash {
 		return common.Hash{}
 	}
 	if b.size == 1 {
-		return common.BytesToHash(b.partials[0])
+		return b.backingStorage.GetByInt64(2)
 	}
 	ret := make([]byte, 32)
 	emptySoFar := true
-	for i := 0; i < len(b.partials); i++ {
-		if b.partials[i] == nil {
+	for i := uint64(0); i < b.numPartials; i++ {
+		thisLevel := b.backingStorage.GetByInt64(int64(2 + i))
+		if thisLevel == (common.Hash{}) {
 			if !emptySoFar {
 				ret = crypto.Keccak256(make([]byte, 32), ret)
 			}
 		} else {
 			if emptySoFar {
-				if i+1 == len(b.partials) {
-					ret = b.partials[i]
+				if i+1 == b.numPartials {
+					ret = thisLevel.Bytes()
 				} else {
 					emptySoFar = false
-					ret = crypto.Keccak256(b.partials[i], make([]byte, 32))
+					ret = crypto.Keccak256(thisLevel.Bytes(), make([]byte, 32))
 				}
 			} else {
-				ret = crypto.Keccak256(b.partials[i], ret)
+				ret = crypto.Keccak256(thisLevel.Bytes(), ret)
 			}
 		}
 	}
 
 	return common.BytesToHash(ret)
-}
-
-func (b *MerkleBuilder) Serialize(wr io.Writer) error {
-	if err := Uint64ToWriter(b.size, wr); err != nil {
-		return err
-	}
-	if err := Uint64ToWriter(uint64(len(b.partials)), wr); err != nil {
-		return err
-	}
-	for _, partial := range b.partials {
-		if partial == nil {
-			buf := []byte{0}
-			if _, err := wr.Write(buf); err != nil {
-				return err
-			}
-		} else {
-			buf := []byte{1}
-			if _, err := wr.Write(buf); err != nil {
-				return err
-			}
-			if _, err := wr.Write(partial); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func NewBuilderFromReader(rd io.Reader) (*MerkleBuilder, error) {
-	size, err := Uint64FromReader(rd)
-	if err != nil {
-		return nil, err
-	}
-	numPartials, err := Uint64FromReader(rd)
-	if err != nil {
-		return nil, err
-	}
-	partials := make([][]byte, numPartials)
-	for i := range partials {
-		var buf [1]byte
-		if _, err := rd.Read(buf[:]); err != nil {
-			return nil, err
-		}
-		if buf[0] != 0 {
-			buf32 := make([]byte, 32)
-			if _, err := io.ReadFull(rd, buf32); err != nil {
-				return nil, err
-			}
-			partials[i] = buf32[:]
-		}
-	}
-	return &MerkleBuilder{ nil,size, partials }, nil
-}
-
-const MerkleBuilderSegmentSize = 66    // can store info for merkle tree over <= 2**64 items
-
-func (b *MerkleBuilder) Persist() {
-	b.segment.Set(0, IntToHash(int64(b.size)))
-	b.segment.Set(1, IntToHash(int64(len(b.partials))))
-	for i, partial := range b.partials {
-		b.segment.Set(uint64(i+2), common.BytesToHash(partial))
-	}
-}
-
-func OpenBuilder(segment *StorageSegment) *MerkleBuilder {
-	size := segment.Get(0).Big().Uint64()
-	numPartials := segment.Get(1).Big().Uint64()
-	partials := make([][]byte, numPartials)
-	for i, _ := range partials {
-		val := segment.Get(uint64(i+2))
-		if val == (common.Hash{}) {
-			partials[i] = nil
-		} else {
-			partials[i] = val.Bytes()
-		}
-	}
-	return &MerkleBuilder{ segment, size, partials }
 }
