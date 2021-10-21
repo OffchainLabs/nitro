@@ -7,10 +7,11 @@ package arbos
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 type Retryable struct {
@@ -96,6 +97,9 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	numTries, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	timeout, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err

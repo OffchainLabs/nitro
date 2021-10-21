@@ -17,7 +17,7 @@ func HashFromReader(rd io.Reader) (common.Hash, error) {
 	if _, err := io.ReadFull(rd, buf); err != nil {
 		return common.Hash{}, err
 	}
-	return common.BytesToHash(buf[:]), nil
+	return common.BytesToHash(buf), nil
 }
 
 func HashToWriter(val common.Hash, wr io.Writer) error {
@@ -30,7 +30,7 @@ func AddressFromReader(rd io.Reader) (common.Address, error) {
 	if _, err := io.ReadFull(rd, buf); err != nil {
 		return common.Address{}, err
 	}
-	return common.BytesToAddress(buf[:]), nil
+	return common.BytesToAddress(buf), nil
 }
 
 func AddressFrom256FromReader(rd io.Reader) (common.Address, error) {

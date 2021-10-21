@@ -71,6 +71,7 @@ var (
 	retryableQueueKey = util.IntToHash(5)
 	l1PricingKey     = util.IntToHash(6)
 	timestampKey     = util.IntToHash(7)
+
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
