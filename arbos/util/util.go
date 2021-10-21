@@ -2,12 +2,13 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package util
 
 import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -17,7 +18,7 @@ func HashFromReader(rd io.Reader) (common.Hash, error) {
 	if _, err := io.ReadFull(rd, buf); err != nil {
 		return common.Hash{}, err
 	}
-	return common.BytesToHash(buf[:]), nil
+	return common.BytesToHash(buf), nil
 }
 
 func HashToWriter(val common.Hash, wr io.Writer) error {
@@ -30,7 +31,7 @@ func AddressFromReader(rd io.Reader) (common.Address, error) {
 	if _, err := io.ReadFull(rd, buf); err != nil {
 		return common.Address{}, err
 	}
-	return common.BytesToAddress(buf[:]), nil
+	return common.BytesToAddress(buf), nil
 }
 
 func AddressFrom256FromReader(rd io.Reader) (common.Address, error) {
@@ -68,13 +69,13 @@ func Uint64ToWriter(val uint64, wr io.Writer) error {
 	return err
 }
 
-func BytestringFromReader(rd io.Reader) ([]byte, error) {
+func BytestringFromReader(rd io.Reader, maxBytesToRead uint64) ([]byte, error) {
 	size, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	if size > MaxL2MessageSize {
-		return nil, errors.New("attempted to extract too large of a slice from reader")
+	if size > maxBytesToRead {
+		return nil, errors.New("size too large in ByteStringFromReader")
 	}
 	buf := make([]byte, size)
 	if _, err = io.ReadFull(rd, buf); err != nil {
@@ -89,4 +90,12 @@ func BytestringToWriter(val []byte, wr io.Writer) error {
 	}
 	_, err := wr.Write(val)
 	return err
+}
+
+func IntToHash(val int64) common.Hash {
+	return common.BigToHash(big.NewInt(val))
+}
+
+func HashPlusInt(x common.Hash, y int64) common.Hash {
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }

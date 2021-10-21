@@ -42,5 +42,6 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 			break
 		}
 	}
-	return blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+	block, _, _ := blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+	return block
 }

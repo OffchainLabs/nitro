@@ -13,14 +13,28 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 # user targets
 
-.make/all: always .make/solgen .make/solidity
+.make/all: always .make/solgen .make/solidity .make/test
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
 contracts: .make/solidity
 	@printf $(done)
 
+format fmt: .make/fmt
+	@printf $(done)
+
+lint: .make/lint
+	@printf $(done)
+
+test: .make/test
+	gotestsum --format short-verbose
+	@printf $(done)
+
+push: .make/push
+	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
+
 clean:
+	go clean -testcache		
 	@rm -rf solgen/artifacts solgen/cache solgen/go/
 	@rm -f .make/*
 
@@ -30,6 +44,22 @@ clean:
 
 
 # strategic rules to minimize dependency building
+
+.make/push: .make/lint
+	make $(MAKEFLAGS) .make/test
+	@touch .make/push
+
+.make/lint: .golangci.yml */*.go */*/*.go .make/solgen
+	golangci-lint run --fix
+	@touch .make/lint
+
+.make/fmt: .golangci.yml */*.go */*/*.go .make/solgen
+	golangci-lint run --disable-all -E gofmt --fix
+	@touch .make/fmt
+
+.make/test: */*.go */*/*.go .make/solgen .make/solidity
+	gotestsum --format short-verbose
+	@touch .make/test
 
 .make/solgen: solgen/gen.go .make/solidity
 	mkdir -p solgen/go/

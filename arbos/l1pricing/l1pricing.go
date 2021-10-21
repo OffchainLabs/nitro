@@ -1,71 +1,63 @@
-package arbos
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
+package l1pricing
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"math/big"
 )
 
 type L1PricingState struct {
-	segment                  *StorageSegment
+	storage                  *storage.Storage
 	defaultAggregator        common.Address
 	l1GasPriceEstimate       *big.Int
-	preferredAggregators     EvmStorage
-	aggregatorFixedCharges   EvmStorage
-	aggregatorAddressesToPay EvmStorage
+	preferredAggregators     *storage.Storage
+	aggregatorFixedCharges   *storage.Storage
+	aggregatorAddressesToPay *storage.Storage
+	aggregatorCompressionRatios *storage.Storage
 }
 
-const CompressionEstimateDenominator uint64 = 1000000
-
 var (
-	initialDefaultAggregator  = common.Address{} //TODO
-	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
-	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
-	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
+	initialDefaultAggregator = common.Address{} //TODO
+
+	preferredAggregatorKey    = []byte{0}
+	aggregatorFixedChargeKey  = []byte{1}
+	aggregatorAddressToPayKey = []byte{2}
+	aggregatorCompressionRatioKey = []byte{3}
 )
 
 const (
-	defaultAggregatorAddressOffset = 0
-	l1GasPriceEstimateOffset       = 1
+	defaultAggregatorAddressOffset int64 = 0
+	l1GasPriceEstimateOffset       int64 = 1
 )
-const L1PricingStateSize = 2
 
-func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
-	segment, err := state.AllocateSegment(L1PricingStateSize)
-	if err != nil {
-		panic("failed to allocate segment for L1 pricing state")
-	}
-	segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
-	l1PriceEstimate := big.NewInt(1 * params.GWei)
-	segment.Set(l1GasPriceEstimateOffset, common.BigToHash(l1PriceEstimate))
-	return &L1PricingState{
-		segment,
-		initialDefaultAggregator,
-		l1PriceEstimate,
-		NewVirtualStorage(state.backingStorage, preferredAggregatorKey),
-		NewVirtualStorage(state.backingStorage, aggregatorFixedChargeKey),
-		NewVirtualStorage(state.backingStorage, aggregatorAddressToPayKey),
-	}, segment.offset
+func InitializeL1PricingState(sto *storage.Storage) {
+	sto.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	sto.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
 }
 
-func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
-	segment := state.OpenSegment(offset)
-	defaultAggregator := common.BytesToAddress(segment.Get(defaultAggregatorAddressOffset).Bytes())
-	l1GasPriceEstimate := segment.Get(l1GasPriceEstimateOffset).Big()
+func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
+	defaultAggregator := common.BytesToAddress(sto.GetByInt64(defaultAggregatorAddressOffset).Bytes())
+	l1GasPriceEstimate := sto.GetByInt64(l1GasPriceEstimateOffset).Big()
 	return &L1PricingState{
-		segment,
+		sto,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		NewVirtualStorage(state.backingStorage, preferredAggregatorKey),
-		NewVirtualStorage(state.backingStorage, aggregatorFixedChargeKey),
-		NewVirtualStorage(state.backingStorage, aggregatorAddressToPayKey),
+		sto.OpenSubStorage(preferredAggregatorKey),
+		sto.OpenSubStorage(aggregatorFixedChargeKey),
+		sto.OpenSubStorage(aggregatorAddressToPayKey),
+		sto.OpenSubStorage(aggregatorCompressionRatioKey),
 	}
 }
 
 func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
 	ps.defaultAggregator = aggregator
-	ps.segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
+	ps.storage.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() *big.Int {
@@ -82,7 +74,7 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) {
 		),
 		big.NewInt(L1GasPriceEstimateSamplesInAverage),
 	)
-	ps.segment.Set(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
+	ps.storage.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
 }
 
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) {
@@ -111,13 +103,30 @@ func (ps *L1PricingState) SetAggregatorAddressToPay(aggregator common.Address, a
 	ps.aggregatorAddressesToPay.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
 }
 
-func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address, state *ArbosState) common.Address {
+func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address) common.Address {
 	raw := ps.aggregatorAddressesToPay.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
 		return aggregator
 	} else {
 		return common.BytesToAddress(raw.Bytes())
 	}
+}
+
+func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) uint64 {
+	raw := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
+	if raw == (common.Hash{}) {
+		return DataWasNotCompressed
+	} else {
+		return raw.Big().Uint64()
+	}
+}
+
+func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio *uint64) {
+	val := DataWasNotCompressed
+	if (ratio != nil) && (*ratio < DataWasNotCompressed) {
+		val = *ratio
+	}
+	ps.aggregatorCompressionRatios.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(big.NewInt(int64(val))))
 }
 
 // Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
@@ -130,8 +139,8 @@ const DataWasNotCompressed uint64 = 1000000
 func (ps *L1PricingState) GetL1Charges(
 	sender common.Address,
 	aggregator *common.Address,
-	gasForData uint64,
-	compressedSizePerMillion uint64,
+	data []byte,
+	wasCompressed bool,
 ) *big.Int {
 	if aggregator == nil {
 		return big.NewInt(0)
@@ -141,10 +150,22 @@ func (ps *L1PricingState) GetL1Charges(
 		return big.NewInt(0)
 	}
 
-	if compressedSizePerMillion < DataWasNotCompressed {
-		gasForData = gasForData * compressedSizePerMillion / DataWasNotCompressed
+	var dataGas uint64
+	if wasCompressed {
+		dataGas = 16 * uint64(len(data)) * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
+	} else {
+		var err error
+		dataGas, err = core.IntrinsicGas(data, nil, false, true, true)
+		if err == nil {
+			dataGas -= params.TxGas
+		} else {
+			dataGas = 16 * uint64(len(data))
+		}
 	}
 
-	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(gasForData)), ps.L1GasPriceEstimateWei())
+	// add 5% to protect the aggregator bad price fluctuation luck
+	dataGas = dataGas * 21 / 20
+
+	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), ps.L1GasPriceEstimateWei())
 	return new(big.Int).Add(ps.FixedChargeForAggregatorWei(preferredAggregator), chargeForBytes)
 }
