@@ -70,20 +70,6 @@ func (store *Storage) Open(id []byte) *Storage {
 	}
 }
 
-func (store *Storage) UniqueKey() common.Hash {
-	val := store.db.GetState(store.account, common.Hash{})
-	val = crypto.Keccak256Hash(val.Bytes())
-	store.db.SetState(store.account, common.Hash{}, val)
-	return val
-}
-
-func (store *Storage) AllocateForBytes(b []byte) (*Storage, common.Hash) {
-	key := store.UniqueKey()
-	newStorage := store.Open(key.Bytes())
-	newStorage.WriteBytes(b)
-	return newStorage, key
-}
-
 func (store *Storage) WriteBytes(b []byte) {
 	store.SetByInt64(0, util.IntToHash(int64(len(b))))
 	offset := int64(1)

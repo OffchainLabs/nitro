@@ -5,7 +5,6 @@
 package arbos
 
 import (
-	"bytes"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -45,25 +44,6 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 		t.Fail()
 	}
 	if st.Get(loc1) != val1 {
-		t.Fail()
-	}
-}
-
-func TestStorageSegmentAllocation(t *testing.T) {
-	state := OpenArbosStateForTest()
-	seg := state.backingStorage.Open(state.backingStorage.UniqueKey().Bytes())
-	res := seg.GetByInt64(19)
-	if res != (common.Hash{}) {
-		t.Fail()
-	}
-}
-
-func TestStorageSegmentAllocationBytes(t *testing.T) {
-	state := OpenArbosStateForTest()
-	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
-	seg, _ := state.backingStorage.AllocateForBytes(buf)
-	reread := seg.GetBytes()
-	if !bytes.Equal(buf, reread) {
 		t.Fail()
 	}
 }
