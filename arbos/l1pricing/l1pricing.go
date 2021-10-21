@@ -16,25 +16,22 @@ type L1PricingState struct {
 	aggregatorAddressesToPay *storage.Storage
 }
 
-const CompressionEstimateDenominator uint64 = 1000000
-
 var (
 	initialDefaultAggregator = common.Address{} //TODO
 
-	preferredAggregatorKey    = []byte{ 0 }
-	aggregatorFixedChargeKey  = []byte{ 1 }
-	aggregatorAddressToPayKey = []byte{ 2 }
+	preferredAggregatorKey    = []byte{0}
+	aggregatorFixedChargeKey  = []byte{1}
+	aggregatorAddressToPayKey = []byte{2}
 )
 
 const (
 	defaultAggregatorAddressOffset int64 = 0
-	l1GasPriceEstimateOffset     int64  = 1
+	l1GasPriceEstimateOffset       int64 = 1
 )
-const L1PricingStateSize = 2
 
 func InitializeL1PricingState(sto *storage.Storage) {
 	sto.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
-	sto.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50 * params.GWei)))
+	sto.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {

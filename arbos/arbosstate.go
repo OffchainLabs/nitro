@@ -68,7 +68,7 @@ const (
 type ArbosStateSubspaceID []byte
 
 var (
-	l1PricingSubspace ArbosStateSubspaceID = []byte{0}
+	l1PricingSubspace  ArbosStateSubspaceID = []byte{0}
 	retryablesSubspace ArbosStateSubspaceID = []byte{1}
 )
 
