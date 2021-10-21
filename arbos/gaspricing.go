@@ -30,39 +30,40 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	denominator := new(big.Int).Mul(big.NewInt(120), maxProd)
 
 	for i := uint64(0); i < secondsElapsed; i++ {
-		if (gasPool < GasPoolMax) || (smallGasPool < SmallGasPoolMax) || (price.Cmp(minPrice) > 0) {
-			gasPool = gasPool + SpeedLimitPerSecond
-			if gasPool > GasPoolMax {
-				gasPool = GasPoolMax
-			}
-			smallGasPool = smallGasPool + SpeedLimitPerSecond
-			if smallGasPool > SmallGasPoolMax {
-				smallGasPool = SmallGasPoolMax
-			}
-
-			clippedGasPool := gasPool
-			if clippedGasPool < 0 {
-				clippedGasPool = 0
-			}
-			clippedSmallGasPool := smallGasPool
-			if clippedSmallGasPool < 0 {
-				clippedSmallGasPool = 0
-			}
-
-			numerator := new(big.Int).Sub(
-				numeratorBase,
-				new(big.Int).Add(
-					new(big.Int).Mul(big.NewInt(clippedGasPool), maxSmallPoolAsBig),
-					new(big.Int).Mul(big.NewInt(clippedSmallGasPool), maxPoolAsBig),
-				),
-			)
-
-			// no need to clip the price here, because we'll do that on exit from the loop
-			price = new(big.Int).Div(
-				new(big.Int).Mul(price, numerator),
-				denominator,
-			)
+		if (gasPool >= GasPoolMax) && (smallGasPool >= SmallGasPoolMax) && (price.Cmp(minPrice) <= 0) {
+			break
 		}
+		gasPool = gasPool + SpeedLimitPerSecond
+		if gasPool > GasPoolMax {
+			gasPool = GasPoolMax
+		}
+		smallGasPool = smallGasPool + SpeedLimitPerSecond
+		if smallGasPool > SmallGasPoolMax {
+			smallGasPool = SmallGasPoolMax
+		}
+
+		clippedGasPool := gasPool
+		if clippedGasPool < 0 {
+			clippedGasPool = 0
+		}
+		clippedSmallGasPool := smallGasPool
+		if clippedSmallGasPool < 0 {
+			clippedSmallGasPool = 0
+		}
+
+		numerator := new(big.Int).Sub(
+			numeratorBase,
+			new(big.Int).Add(
+				new(big.Int).Mul(big.NewInt(clippedGasPool), maxSmallPoolAsBig),
+				new(big.Int).Mul(big.NewInt(clippedSmallGasPool), maxPoolAsBig),
+			),
+		)
+
+		// no need to clip the price here, because we'll do that on exit from the loop
+		price = new(big.Int).Div(
+			new(big.Int).Mul(price, numerator),
+			denominator,
+		)
 	}
 
 	if price.Cmp(minPrice) < 0 {

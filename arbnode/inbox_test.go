@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 )
 
 type blockTestState struct {
@@ -105,9 +105,10 @@ func TestInboxState(t *testing.T) {
 				} else {
 					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
+				var gas uint64 = 100000
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(100000))...)
+				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(1))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(amount))...)
@@ -123,6 +124,7 @@ func TestInboxState(t *testing.T) {
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount
+				state.balances[source] -= gas
 				state.balances[dest] += amount
 			}
 
