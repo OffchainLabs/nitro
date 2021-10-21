@@ -249,7 +249,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		segments := make(types.Transactions, 0)
 		index := big.NewInt(0)
 		for {
-			nextMsg, err := util.BytestringFromReader(rd)
+			nextMsg, err := util.BytestringFromReader(rd, MaxL2MessageSize)
 			if err != nil {
 				//lint:ignore nilerr an error here means there are no further messages in the batch
 				return segments, nil

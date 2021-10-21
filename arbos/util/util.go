@@ -6,6 +6,7 @@ package util
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"math/big"
 
@@ -68,10 +69,13 @@ func Uint64ToWriter(val uint64, wr io.Writer) error {
 	return err
 }
 
-func BytestringFromReader(rd io.Reader) ([]byte, error) {
+func BytestringFromReader(rd io.Reader, maxBytesToRead uint64) ([]byte, error) {
 	size, err := Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
+	}
+	if size > maxBytesToRead {
+		return nil, errors.New("size too large in ByteStringFromReader")
 	}
 	buf := make([]byte, size)
 	if _, err = io.ReadFull(rd, buf); err != nil {
