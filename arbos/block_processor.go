@@ -46,7 +46,7 @@ type BlockBuilder struct {
 	lastBlockHeader *types.Header
 	chainContext    core.ChainContext
 
-	// Setup based on first storage
+	// Setup based on first segment
 	blockInfo *L1Info
 	header    *types.Header
 	gasPool   core.GasPool
@@ -74,7 +74,7 @@ func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
 		return true
 	}
 	info := segment.L1Info
-	// End current block without including storage
+	// End current block without including segment
 	// TODO: This would split up all delayed messages
 	// If we distinguish between segments that might be aggregated from ones that definitely aren't
 	// we could handle coinbases differently

@@ -31,7 +31,7 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 }
 
 type Retryable struct {
-	id        common.Hash // the retryable's ID is also the offset where its storage lives in storage
+	id        common.Hash // the retryable's ID is also the key that determines where it lives in storage
 	numTries  *big.Int
 	timeout   uint64
 	from      common.Address
@@ -42,7 +42,7 @@ type Retryable struct {
 
 func (rs *RetryableState) CreateRetryable(
 	currentTimestamp uint64,
-	id common.Hash, // assume this is determined by a cryptographic hash, so untrusted party can't choose it
+	id common.Hash, // we assume this is determined by a cryptographic hash, so an untrusted party can't choose it
 	timeout uint64,
 	from common.Address,
 	to common.Address,
