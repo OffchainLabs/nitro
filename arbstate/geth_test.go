@@ -16,7 +16,6 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
-
 type TestChainContext struct {
 }
 
@@ -63,20 +62,20 @@ func TestEthDepositMessage(t *testing.T) {
 	}
 
 	header := arbos.L1IncomingMessageHeader{
-		arbos.L1MessageType_EthDeposit,
-		addr,
-		common.BigToHash(big.NewInt(864513)),
-		common.BigToHash(big.NewInt(8794561564)),
-		common.BigToHash(big.NewInt(3)),
-		common.BigToHash(big.NewInt(10000000000000)),
+		Kind:        arbos.L1MessageType_EthDeposit,
+		Sender:      addr,
+		BlockNumber: common.BigToHash(big.NewInt(864513)),
+		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
+		RequestId:   common.BigToHash(big.NewInt(3)),
+		GasPriceL1:  common.BigToHash(big.NewInt(10000000000000)),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := arbos.HashToWriter(balance, &msgBuf); err != nil {
 		t.Error(err)
 	}
 	msg := arbos.L1IncomingMessage{
-		&header,
-		msgBuf.Bytes(),
+		Header: &header,
+		L2msg:  msgBuf.Bytes(),
 	}
 
 	serialized, err := msg.Serialize()
@@ -90,8 +89,8 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 	msg2 := arbos.L1IncomingMessage{
-		&header,
-		msgBuf2.Bytes(),
+		Header: &header,
+		L2msg:  msgBuf2.Bytes(),
 	}
 	serialized2, err := msg2.Serialize()
 	if err != nil {
@@ -105,7 +104,6 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Fatal()
 	}
 }
-
 
 func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) {
 	chainId := big.NewInt(6456554)
@@ -134,4 +132,3 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		arbos.FinalizeBlock(nil, nil, nil, statedb)
 	}
 }
-
