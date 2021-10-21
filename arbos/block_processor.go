@@ -232,5 +232,5 @@ func FinalizeBlock(
 	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
 	arbosState := OpenArbosState(statedb)
-	arbosState.TryToReapOneRetryable()
+	arbosState.RetryableState().TryToReapOneRetryable(header.Time)
 }

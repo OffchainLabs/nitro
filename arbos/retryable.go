@@ -8,10 +8,34 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/queue"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
 	"math/big"
 )
+
+type RetryableState struct {
+	timeoutQueue *queue.QueueInStorage
+	retryables   *storage.Storage
+}
+
+var retryablesStorageKey = crypto.Keccak256([]byte("retryables storage key"))
+
+func AllocateRetryableState(backingStorage *storage.Storage) (*RetryableState, common.Hash) {
+	myStorage := backingStorage.Open(retryablesStorageKey)
+	q, qOffset := queue.AllocateQueueInStorage(myStorage)
+	myStorage.SetByInt64(0, qOffset)
+	return &RetryableState{ q, myStorage }, common.BytesToHash(retryablesStorageKey)
+}
+
+func OpenRetryableState(sto *storage.Storage) *RetryableState {
+	return &RetryableState{
+		queue.OpenQueueInStorage(sto, sto.GetByInt64(0)),
+		sto,
+	}
+}
 
 type Retryable struct {
 	id        common.Hash // the retryable's ID is also the offset where its storage lives in storage
@@ -23,16 +47,16 @@ type Retryable struct {
 	calldata  []byte
 }
 
-func CreateRetryable(
-	state *ArbosState,
-	id common.Hash,
+func (rs *RetryableState) CreateRetryable(
+	currentTimestamp uint64,
+	id common.Hash,        // assume this is determined by a cryptographic hash, so untrusted party can't choose it
 	timeout uint64,
 	from common.Address,
 	to common.Address,
 	callvalue *big.Int,
 	calldata []byte,
 ) *Retryable {
-	state.TryToReapOneRetryable()
+	rs.TryToReapOneRetryable(currentTimestamp)
 	ret := &Retryable{
 		id,
 		big.NewInt(0),
@@ -48,43 +72,35 @@ func CreateRetryable(
 	}
 
 	// set up a storage to hold the retryable
-	state.backingStorage.Open(id.Bytes()).WriteBytes(buf.Bytes())
+	rs.retryables.Open(id.Bytes()).WriteBytes(buf.Bytes())
 
 	// insert the new retryable into the queue so it can be reaped later
-	state.RetryableQueue().Put(id)
-
-	// mark the new retryable as valid
-	state.ValidRetryablesSet().Set(id, common.Hash{1})
+	rs.timeoutQueue.Put(id)
 
 	return ret
 }
 
-func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
-	if state.ValidRetryablesSet().Get(id) == (common.Hash{}) {
-		// that is not a valid retryable
+func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
+	seg := rs.retryables.Open(id.Bytes())
+	contents := seg.GetBytes()
+	if len(contents) == 0 {
+		// no valid retryable with that ID
 		return nil
 	}
-	seg := state.backingStorage.Open(id.Bytes())
-	contents := seg.GetBytes()
 	ret, err := NewRetryableFromReader(bytes.NewReader(contents), id)
 	if err != nil {
-		panic(err)
+		return nil
 	}
-	if ret.timeout < state.LastTimestampSeen() {
+	if ret.timeout < currentTimestamp {
 		// retryable has expired, so delete it
 		seg.DeleteBytes()
-		state.ValidRetryablesSet().Set(id, common.Hash{})
 		return nil
 	}
 	return ret
 }
 
-func DeleteRetryable(state *ArbosState, id common.Hash) {
-	vrs := state.ValidRetryablesSet()
-	if vrs.Get(id) != (common.Hash{}) {
-		vrs.Set(id, common.Hash{})
-		state.backingStorage.Open(id.Bytes()).DeleteBytes()
-	}
+func (rs *RetryableState) DeleteRetryable(id common.Hash) {
+	rs.retryables.Open(id.Bytes()).DeleteBytes()
 }
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
@@ -156,14 +172,13 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	return nil
 }
 
-func (state *ArbosState) TryToReapOneRetryable() {
-	queue := state.RetryableQueue()
-	if !queue.IsEmpty() {
-		id := queue.Get()
-		retryable := OpenRetryable(state, *id)
+func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
+	if !rs.timeoutQueue.IsEmpty() {
+		id := rs.timeoutQueue.Get()
+		retryable := rs.OpenRetryable(*id, currentTimestamp)
 		if retryable != nil {
 			// OpenRetryable returned non-nil, so we know the retryable hasn't expired
-			queue.Put(*id)
+			rs.timeoutQueue.Put(*id)
 		}
 	}
 }
