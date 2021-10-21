@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package node
+package arbnode
 
 import (
 	"encoding/binary"

@@ -37,7 +37,7 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64
 }
 
-type InboxMultiplixer interface {
+type InboxMultiplexer interface {
 	// Returns a message and if it must end the block
 	Peek() (*MessageWithMetadata, error)
 	Advance()
@@ -56,7 +56,7 @@ type sequencerMessage struct {
 const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
 
 func parseSequencerMessage(data []byte) *sequencerMessage {
-	if len(data) < 32 {
+	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
 	minTimestamp := binary.BigEndian.Uint64(data[:8])
@@ -81,6 +81,26 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	}
 }
 
+func (m sequencerMessage) Encode() []byte {
+	var header [40]byte
+	binary.BigEndian.PutUint64(header[:8], m.minTimestamp)
+	binary.BigEndian.PutUint64(header[8:16], m.maxTimestamp)
+	binary.BigEndian.PutUint64(header[16:24], m.minL1Block)
+	binary.BigEndian.PutUint64(header[24:32], m.maxL1Block)
+	binary.BigEndian.PutUint64(header[32:40], m.afterDelayedMessages)
+	buf := new(bytes.Buffer)
+	segmentsEnc, err := rlp.EncodeToBytes(&m.segments)
+	if err != nil {
+		panic("couldn't encode sequencerMessage")
+	}
+
+	writer := brotli.NewWriter(buf)
+	defer writer.Close()
+	writer.Write(segmentsEnc)
+	writer.Flush()
+	return append(header[:], buf.Bytes()...)
+}
+
 type AdvanceAction uint8
 
 const (
@@ -99,7 +119,7 @@ type inboxMultiplexer struct {
 	sequencerMessageCachePosition uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplixer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
@@ -108,7 +128,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) Inbox
 	}
 }
 
-var sequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
+var SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
 
 const segmentKindL2Message uint8 = 0
 const segmentKindDelayedMessages uint8 = 1
@@ -203,14 +223,17 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 		var timestampHash common.Hash
 		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
 		var requestId common.Hash
-		requestId[0] = 1 << 6
-		binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
-		binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
+		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
+		if len(segment) > 2 && segment[1] == arbos.L2MessageKind_SignedTx {
+			requestId[0] = 1 << 6
+			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
+			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
+		}
 		msg := &MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
-					Sender:      sequencerAddress,
+					Sender:      SequencerAddress,
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,

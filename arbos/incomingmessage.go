@@ -13,9 +13,7 @@ import (
 	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 
 	solsha3 "github.com/miguelmota/go-solidity-sha3"
 )
@@ -264,7 +262,11 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		}
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
-		if err := newTx.DecodeRLP(rlp.NewStream(rd, math.MaxUint64)); err != nil {
+		bytes, err := io.ReadAll(rd)
+		if err != nil {
+			return nil, err
+		}
+		if err := newTx.UnmarshalBinary(bytes); err != nil {
 			return nil, err
 		}
 		return types.Transactions{newTx}, nil

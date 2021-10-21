@@ -223,9 +223,11 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 
 	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 
-	*b = *NewBlockBuilder(b.statedb, block.Header(), b.chainContext)
+	receipts := b.receipts
 
-	return block, b.receipts, b.statedb
+	// Reset the block builder for the next block
+	*b = *NewBlockBuilder(b.statedb, block.Header(), b.chainContext)
+	return block, receipts, b.statedb
 }
 
 func FinalizeBlock(

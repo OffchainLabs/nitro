@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package node
+package arbnode
 
 import (
 	"bytes"
@@ -52,6 +52,17 @@ func (s *InboxState) cleanupInconsistentState() error {
 	if err != nil {
 		return err
 	}
+	// If it doesn't exist yet, set the message count to 0
+	hasMessageCount, err := s.db.Has(messageCountKey)
+	if err != nil {
+		return err
+	}
+	if !hasMessageCount {
+		err = s.db.Put(messageCountKey, uint64ToBytes(0))
+		if err != nil {
+			return err
+		}
+	}
 	// TODO remove trailing messageCountToMessage and messageCountToBlockPrefix entries
 	return nil
 }
@@ -91,7 +102,7 @@ func (s *InboxState) ReorgTo(count uint64) error {
 	return s.reorgToWithLock(count)
 }
 
-func deleteStartingAt(db ethdb.Database, prefix []byte, minKey []byte) error {
+func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
 	iter := db.NewIterator(prefix, minKey)
 	defer iter.Release()
 	for {
@@ -102,7 +113,7 @@ func deleteStartingAt(db ethdb.Database, prefix []byte, minKey []byte) error {
 		if len(key) == 0 {
 			break
 		}
-		err := db.Delete(key)
+		err := batch.Delete(key)
 		if err != nil {
 			return err
 		}
@@ -128,16 +139,24 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 		return err
 	}
 
-	err = deleteStartingAt(s.db, messageCountToBlockPrefix, uint64ToBytes(count+1))
+	batch := s.db.NewBatch()
+	err = deleteStartingAt(s.db, batch, messageCountToBlockPrefix, uint64ToBytes(count+1))
 	if err != nil {
+		batch.Reset()
 		return err
 	}
-	err = deleteStartingAt(s.db, messageCountToMessagePrefix, uint64ToBytes(count))
+	err = deleteStartingAt(s.db, batch, messageCountToMessagePrefix, uint64ToBytes(count))
 	if err != nil {
+		batch.Reset()
+		return err
+	}
+	err = batch.Put(messageCountKey, uint64ToBytes(count))
+	if err != nil {
+		batch.Reset()
 		return err
 	}
 
-	return nil
+	return batch.Write()
 }
 
 func dbKey(prefix []byte, pos uint64) []byte {
@@ -149,6 +168,9 @@ func dbKey(prefix []byte, pos uint64) []byte {
 func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage uint64, delayedMessageCount uint64) error {
 	messageCount := lastMessage + 1
 	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
+	if len(block.Transactions()) != len(receipts) {
+		return errors.New("mismatch between number of transactions and number of receipts")
+	}
 	key := dbKey(messageCountToBlockPrefix, messageCount)
 	blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
 	if err != nil {
@@ -180,9 +202,18 @@ func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, er
 	return message, err
 }
 
+// As a special case, if pos is the max uint64, the message is added after the last message
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
+	if pos == ^uint64(0) {
+		posBytes, err := s.db.Get(messageCountKey)
+		if err != nil {
+			return err
+		}
+		pos = binary.BigEndian.Uint64(posBytes)
+	}
 
 	if pos > 0 {
 		key := dbKey(messageCountToMessagePrefix, pos-1)
@@ -284,6 +315,8 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		}
 	}
 	pos = startPos
+
+	// Build blocks from the messages
 	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
 	statedb, err := s.bc.State()
 	if err != nil {
@@ -297,7 +330,18 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 			if err != nil {
 				return err
 			}
-			err = s.db.Put(key, msgBytes)
+			batch := s.db.NewBatch()
+			err = batch.Put(key, msgBytes)
+			if err != nil {
+				batch.Reset()
+				return err
+			}
+			err = batch.Put(messageCountKey, uint64ToBytes(pos+uint64(i)+1))
+			if err != nil {
+				batch.Reset()
+				return err
+			}
+			err = batch.Write()
 			if err != nil {
 				return err
 			}
