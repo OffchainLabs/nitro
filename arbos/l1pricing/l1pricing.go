@@ -41,9 +41,9 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		sto.Open(preferredAggregatorKey),
-		sto.Open(aggregatorFixedChargeKey),
-		sto.Open(aggregatorAddressToPayKey),
+		sto.OpenSubStorage(preferredAggregatorKey),
+		sto.OpenSubStorage(aggregatorFixedChargeKey),
+		sto.OpenSubStorage(aggregatorAddressToPayKey),
 	}
 }
 

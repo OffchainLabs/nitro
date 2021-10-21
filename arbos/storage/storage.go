@@ -62,7 +62,7 @@ func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
 	return oldValue
 }
 
-func (store *Storage) Open(id []byte) *Storage {
+func (store *Storage) OpenSubStorage(id []byte) *Storage {
 	return &Storage {
 		store.account,
 		store.db,

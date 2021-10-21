@@ -20,13 +20,13 @@ type RetryableState struct {
 }
 
 func InitializeRetryableState(sto *storage.Storage) {
-	storage.Initialize(sto.Open([]byte{}))
+	storage.InitializeQueue(sto.OpenSubStorage([]byte{}))
 }
 
 func OpenRetryableState(sto *storage.Storage) *RetryableState {
 	return &RetryableState{
 		sto,
-		storage.Open(sto.Open([]byte{})),
+		storage.OpenQueue(sto.OpenSubStorage([]byte{})),
 	}
 }
 
@@ -65,7 +65,7 @@ func (rs *RetryableState) CreateRetryable(
 	}
 
 	// set up a storage to hold the retryable
-	rs.retryables.Open(id.Bytes()).WriteBytes(buf.Bytes())
+	rs.retryables.OpenSubStorage(id.Bytes()).WriteBytes(buf.Bytes())
 
 	// insert the new retryable into the queue so it can be reaped later
 	rs.timeoutQueue.Put(id)
@@ -74,7 +74,7 @@ func (rs *RetryableState) CreateRetryable(
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
-	seg := rs.retryables.Open(id.Bytes())
+	seg := rs.retryables.OpenSubStorage(id.Bytes())
 	contents := seg.GetBytes()
 	if len(contents) == 0 {
 		// no valid retryable with that ID
@@ -93,7 +93,7 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash) {
-	rs.retryables.Open(id.Bytes()).DeleteBytes()
+	rs.retryables.OpenSubStorage(id.Bytes()).DeleteBytes()
 }
 
 func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {

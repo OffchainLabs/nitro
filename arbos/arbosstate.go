@@ -78,8 +78,8 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	backingStorage.SetByInt64(int64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
 	backingStorage.SetByInt64(int64(gasPriceKey), util.IntToHash(1000000000)) // 1 gwei
 	backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(0))
-	l1pricing.InitializeL1PricingState(backingStorage.Open(l1PricingSubspace))
-	retryables.InitializeRetryableState(backingStorage.Open(retryablesSubspace))
+	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
+	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -136,14 +136,14 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
 	if state.retryableState == nil {
-		state.retryableState = retryables.OpenRetryableState(state.backingStorage.Open(retryablesSubspace))
+		state.retryableState = retryables.OpenRetryableState(state.backingStorage.OpenSubStorage(retryablesSubspace))
 	}
 	return state.retryableState
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
 	if state.l1PricingState == nil {
-		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.Open(l1PricingSubspace))
+		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.OpenSubStorage(l1PricingSubspace))
 	}
 	return state.l1PricingState
 }

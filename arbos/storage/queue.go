@@ -16,12 +16,12 @@ type Queue struct {
 	nextGetOffset int64
 }
 
-func Initialize(sto *Storage) {
+func InitializeQueue(sto *Storage) {
 	sto.SetByInt64(0, util.IntToHash(2))
 	sto.SetByInt64(1, util.IntToHash(2))
 }
 
-func Open(sto *Storage) *Queue {
+func OpenQueue(sto *Storage) *Queue {
 	return &Queue{
 		sto,
 		sto.GetByInt64(0).Big().Int64(),
