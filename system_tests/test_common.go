@@ -133,10 +133,14 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 
 //will wait untill tx is in the blockchain. attempts = 0 is infinite
 func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, client *ethclient.Client, attempts int) {
-	chanHead := make(chan core.ChainHeadEvent, 1)
-	headSubscribe := backend.APIBackend().SubscribeChainHeadEvent(chanHead)
-	defer headSubscribe.Unsubscribe()
 	ctx := context.Background()
+	chanHead := make(chan *types.Header, 20)
+	headSubscribe, err := client.SubscribeNewHead(ctx, chanHead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer headSubscribe.Unsubscribe()
+
 	for {
 		reciept, _ := client.TransactionReceipt(ctx, txhash)
 		if reciept != nil {
