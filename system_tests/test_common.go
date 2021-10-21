@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"testing"
@@ -29,10 +28,7 @@ import (
 func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
 	stackConf := node.DefaultConfig
 	var err error
-	stackConf.DataDir, err = ioutil.TempDir("/tmp", "nitro-test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	stackConf.DataDir = t.TempDir()
 	defer os.RemoveAll(stackConf.DataDir)
 	stackConf.HTTPHost = "localhost"
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
