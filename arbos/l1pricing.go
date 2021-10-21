@@ -5,23 +5,24 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/segment"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 )
 
 type L1PricingState struct {
-	segment                  *segment.Segment
-	defaultAggregator        common.Address
+	storage           *storage.Storage
+	defaultAggregator common.Address
 	l1GasPriceEstimate       *big.Int
-	preferredAggregators     storage.Storage
-	aggregatorFixedCharges   storage.Storage
-	aggregatorAddressesToPay storage.Storage
+	preferredAggregators     *storage.Storage
+	aggregatorFixedCharges   *storage.Storage
+	aggregatorAddressesToPay *storage.Storage
 }
 
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
 	initialDefaultAggregator  = common.Address{} //TODO
+	l1PricingStateKey = crypto.Keccak256([]byte("Arbitrum ArbOS L1 pricing state key"))
 	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
 	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
 	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
@@ -34,40 +35,38 @@ const (
 const L1PricingStateSize = 2
 
 func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
-	segment, err := state.AllocateSegment(L1PricingStateSize)
-	if err != nil {
-		panic("failed to allocate segment for L1 pricing state")
-	}
-	segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	newKey := state.backingStorage.UniqueKey()
+	storage := state.backingStorage.Open(newKey.Bytes())
+	storage.Set(util.IntToHash(defaultAggregatorAddressOffset), common.BytesToHash(initialDefaultAggregator.Bytes()))
 	l1PriceEstimate := big.NewInt(1 * params.GWei)
-	segment.Set(l1GasPriceEstimateOffset, common.BigToHash(l1PriceEstimate))
+	storage.Set(util.IntToHash(l1GasPriceEstimateOffset), common.BigToHash(l1PriceEstimate))
 	return &L1PricingState{
-		segment,
+		storage,
 		initialDefaultAggregator,
 		l1PriceEstimate,
-		storage.NewVirtual(state.backingStorage, preferredAggregatorKey),
-		storage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
-		storage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
-	}, segment.Offset
+		state.backingStorage.Open(preferredAggregatorKey.Bytes()),
+		state.backingStorage.Open(aggregatorFixedChargeKey.Bytes()),
+		state.backingStorage.Open(aggregatorAddressToPayKey.Bytes()),
+	}, newKey
 }
 
-func OpenL1PricingState(offset common.Hash, state *ArbosState) *L1PricingState {
-	segment := state.OpenSegment(offset)
-	defaultAggregator := common.BytesToAddress(segment.Get(defaultAggregatorAddressOffset).Bytes())
-	l1GasPriceEstimate := segment.Get(l1GasPriceEstimateOffset).Big()
+func OpenL1PricingState(key common.Hash, backingStorage *storage.Storage) *L1PricingState {
+	storage := backingStorage.Open(key.Bytes())
+	defaultAggregator := common.BytesToAddress(storage.Get(util.IntToHash(defaultAggregatorAddressOffset)).Bytes())
+	l1GasPriceEstimate := storage.Get(util.IntToHash(l1GasPriceEstimateOffset)).Big()
 	return &L1PricingState{
-		segment,
+		storage,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		storage.NewVirtual(state.backingStorage, preferredAggregatorKey),
-		storage.NewVirtual(state.backingStorage, aggregatorFixedChargeKey),
-		storage.NewVirtual(state.backingStorage, aggregatorAddressToPayKey),
+		backingStorage.Open(preferredAggregatorKey.Bytes()),
+		backingStorage.Open(aggregatorFixedChargeKey.Bytes()),
+		backingStorage.Open(aggregatorAddressToPayKey.Bytes()),
 	}
 }
 
 func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
 	ps.defaultAggregator = aggregator
-	ps.segment.Set(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
+	ps.storage.Set(util.IntToHash(defaultAggregatorAddressOffset), common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() *big.Int {
@@ -84,7 +83,7 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) {
 		),
 		big.NewInt(L1GasPriceEstimateSamplesInAverage),
 	)
-	ps.segment.Set(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
+	ps.storage.Set(util.IntToHash(l1GasPriceEstimateOffset), common.BigToHash(ps.l1GasPriceEstimate))
 }
 
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) {

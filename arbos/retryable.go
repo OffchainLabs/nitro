@@ -14,7 +14,7 @@ import (
 )
 
 type Retryable struct {
-	id        common.Hash // the retryable's ID is also the offset where its segment lives in storage
+	id        common.Hash // the retryable's ID is also the offset where its storage lives in storage
 	numTries  *big.Int
 	timeout   uint64
 	from      common.Address
@@ -47,8 +47,8 @@ func CreateRetryable(
 		panic(err)
 	}
 
-	// set up a segment to hold the retryable
-	_ = state.AllocateSegmentAtOffsetForBytes(buf.Bytes(), id)
+	// set up a storage to hold the retryable
+	state.backingStorage.Open(id.Bytes()).WriteBytes(buf.Bytes())
 
 	// insert the new retryable into the queue so it can be reaped later
 	state.RetryableQueue().Put(id)
@@ -64,11 +64,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 		// that is not a valid retryable
 		return nil
 	}
-	seg := state.OpenSegment(id)
-	if seg == nil {
-		// retryable has been deleted
-		return nil
-	}
+	seg := state.backingStorage.Open(id.Bytes())
 	contents := seg.GetBytes()
 	ret, err := NewRetryableFromReader(bytes.NewReader(contents), id)
 	if err != nil {
@@ -76,7 +72,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	}
 	if ret.timeout < state.LastTimestampSeen() {
 		// retryable has expired, so delete it
-		seg.Delete()
+		seg.DeleteBytes()
 		state.ValidRetryablesSet().Set(id, common.Hash{})
 		return nil
 	}
@@ -87,10 +83,7 @@ func DeleteRetryable(state *ArbosState, id common.Hash) {
 	vrs := state.ValidRetryablesSet()
 	if vrs.Get(id) != (common.Hash{}) {
 		vrs.Set(id, common.Hash{})
-		seg := state.OpenSegment(id)
-		if seg != nil {
-			seg.Delete()
-		}
+		state.backingStorage.Open(id.Bytes()).DeleteBytes()
 	}
 }
 

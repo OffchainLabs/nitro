@@ -44,6 +44,9 @@ func TestRetryableCreate(t *testing.T) {
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
 	calldata := []byte{42}
+	for i, _ := range calldata {
+		calldata[i] = byte(i+3)
+	}
 	retryable := CreateRetryable(state, id, timeout, from, to, callvalue, calldata)
 
 	reread := OpenRetryable(state, id)
