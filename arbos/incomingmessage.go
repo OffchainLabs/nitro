@@ -262,6 +262,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		}
 	case L2MessageKind_SignedTx:
 		newTx := new(types.Transaction)
+		// Safe to read in its entirety, as all input readers are limited
 		bytes, err := io.ReadAll(rd)
 		if err != nil {
 			return nil, err

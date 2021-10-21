@@ -34,11 +34,20 @@ func NewInboxState(db ethdb.Database, bc *core.BlockChain) (*InboxState, error) 
 	return inbox, err
 }
 
-// Encodes a uint64 as bytes in a sortable manner
+// Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
+// Generally this is only used for database keys, which need sorted.
+// A shorter RLP encoding is usually used for database values.
 func uint64ToBytes(x uint64) []byte {
 	data := make([]byte, 8)
 	binary.BigEndian.PutUint64(data, x)
 	return data
+}
+
+func bytesToUint64(b []byte) (uint64, error) {
+	if len(b) != 8 {
+		return 0, errors.New("decoding wrong length bytes to uint64")
+	}
+	return binary.BigEndian.Uint64(b), nil
 }
 
 func (s *InboxState) cleanupInconsistentState() error {
@@ -58,7 +67,11 @@ func (s *InboxState) cleanupInconsistentState() error {
 		return err
 	}
 	if !hasMessageCount {
-		err = s.db.Put(messageCountKey, uint64ToBytes(0))
+		data, err := rlp.EncodeToBytes(uint64(0))
+		if err != nil {
+			return err
+		}
+		err = s.db.Put(messageCountKey, data)
 		if err != nil {
 			return err
 		}
@@ -84,9 +97,12 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 		return 0, 0, errors.New("iterated key missing prefix")
 	}
 	key = key[len(messageCountToBlockPrefix):]
-	actualCount := binary.BigEndian.Uint64(key)
+	actualCount, err := bytesToUint64(key)
+	if err != nil {
+		return 0, 0, err
+	}
 	var block uint64
-	err := rlp.DecodeBytes(iter.Value(), &block)
+	err = rlp.DecodeBytes(iter.Value(), &block)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -150,7 +166,12 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 		batch.Reset()
 		return err
 	}
-	err = batch.Put(messageCountKey, uint64ToBytes(count))
+	countBytes, err := rlp.EncodeToBytes(count)
+	if err != nil {
+		batch.Reset()
+		return err
+	}
+	err = batch.Put(messageCountKey, countBytes)
 	if err != nil {
 		batch.Reset()
 		return err
@@ -160,7 +181,8 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 }
 
 func dbKey(prefix []byte, pos uint64) []byte {
-	key := prefix
+	var key []byte
+	key = append(key, prefix...)
 	key = append(key, uint64ToBytes(pos)...)
 	return key
 }
@@ -212,7 +234,10 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		if err != nil {
 			return err
 		}
-		pos = binary.BigEndian.Uint64(posBytes)
+		err = rlp.DecodeBytes(posBytes, &pos)
+		if err != nil {
+			return err
+		}
 	}
 
 	if pos > 0 {
@@ -275,7 +300,8 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		return errors.New("found block after insertion position")
 	}
 	if errors.Is(err, blockForMessageNotFoundErr) {
-		// Search backwards for the last message count with a block
+		// We couldn't find a block at or after the target position.
+		// Clear the error and search backwards for the last message count with a block.
 		err = nil
 		startPos = pos
 		for startPos > 0 {
@@ -305,6 +331,31 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 	if startPos > pos {
 		return errors.New("found block for future message count")
 	}
+
+	// Write any new messages to the database
+	batch := s.db.NewBatch()
+	for i, msg := range messages {
+		key := dbKey(messageCountToMessagePrefix, pos+uint64(i))
+		msgBytes, err := rlp.EncodeToBytes(msg)
+		if err != nil {
+			return err
+		}
+		err = batch.Put(key, msgBytes)
+		if err != nil {
+			batch.Reset()
+			return err
+		}
+		err = batch.Put(messageCountKey, uint64ToBytes(pos+uint64(i)+1))
+		if err != nil {
+			batch.Reset()
+			return err
+		}
+	}
+	err = batch.Write()
+	if err != nil {
+		return err
+	}
+
 	// Fill in gap between startPos and pos
 	replayMessages := pos - startPos
 	messages = append(make([]arbstate.MessageWithMetadata, replayMessages), messages...)
@@ -318,50 +369,41 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 
 	// Build blocks from the messages
 	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
-	statedb, err := s.bc.State()
+	if lastBlockHeader == nil {
+		return errors.New("last block header not found")
+	}
+	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
 	}
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, s.bc)
 	for i, msg := range messages {
-		if uint64(i) >= replayMessages {
-			key := dbKey(messageCountToMessagePrefix, pos+uint64(i))
-			msgBytes, err := rlp.EncodeToBytes(msg)
-			if err != nil {
-				return err
-			}
-			batch := s.db.NewBatch()
-			err = batch.Put(key, msgBytes)
-			if err != nil {
-				batch.Reset()
-				return err
-			}
-			err = batch.Put(messageCountKey, uint64ToBytes(pos+uint64(i)+1))
-			if err != nil {
-				batch.Reset()
-				return err
-			}
-			err = batch.Write()
-			if err != nil {
-				return err
-			}
-		}
 		segment, err := arbos.IncomingMessageToSegment(msg.Message, arbos.ChainConfig.ChainID)
 		if err != nil {
+			// If we've failed to parse the incoming message, make a new block and move on to the next message
 			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
 			if err != nil {
 				return err
 			}
+			// Skip this invalid message
 			continue
 		}
+
+		// If we shouldn't put the next message in the current block,
+		// make a new block before adding the next message.
 		if !blockBuilder.ShouldAddMessage(segment) {
 			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
 			if err != nil {
 				return err
 			}
+			// Notice we fall through here to the AddMessage call
 		}
+
+		// Add the message to the block
 		blockBuilder.AddMessage(segment)
+
 		if msg.MustEndBlock {
+			// If this message must end the block, end it now
 			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
 			if err != nil {
 				return err

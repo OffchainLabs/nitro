@@ -224,7 +224,7 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
 		var requestId common.Hash
 		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
-		if len(segment) > 2 && segment[1] == arbos.L2MessageKind_SignedTx {
+		if len(segment) < 2 || segment[1] != arbos.L2MessageKind_SignedTx {
 			requestId[0] = 1 << 6
 			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.backend.GetSequencerInboxPosition())
 			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
