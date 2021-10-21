@@ -359,7 +359,7 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	if err != nil {
 		return nil, err
 	}
-	tx := &types.DepositTx{
+	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: header.RequestId,
 		To:          header.Sender,
