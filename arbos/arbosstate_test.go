@@ -63,7 +63,7 @@ func TestStorageSegmentAllocationBytes(t *testing.T) {
 	buf := []byte("This is a long string. The quick brown fox jumped over the lazy dog. Cogito ergo sum.")
 	seg, _ := state.backingStorage.AllocateForBytes(buf)
 	reread := seg.GetBytes()
-	if bytes.Compare(buf, reread) != 0 {
+	if !bytes.Equal(buf, reread) {
 		t.Fail()
 	}
 }

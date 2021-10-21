@@ -10,8 +10,8 @@ import (
 )
 
 type L1PricingState struct {
-	storage           *storage.Storage
-	defaultAggregator common.Address
+	storage                  *storage.Storage
+	defaultAggregator        common.Address
 	l1GasPriceEstimate       *big.Int
 	preferredAggregators     *storage.Storage
 	aggregatorFixedCharges   *storage.Storage
@@ -21,8 +21,9 @@ type L1PricingState struct {
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
-	initialDefaultAggregator  = common.Address{} //TODO
-	l1PricingStateKey = crypto.Keccak256([]byte("Arbitrum ArbOS L1 pricing state key"))
+	initialDefaultAggregator = common.Address{} //TODO
+	l1PricingStateKey        = crypto.Keccak256([]byte("Arbitrum ArbOS L1 pricing state key"))
+
 	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
 	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
 	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
