@@ -135,11 +135,17 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
-	return retryables.OpenRetryableState(state.backingStorage.Open(retryablesSubspace))
+	if state.retryableState == nil {
+		state.retryableState = retryables.OpenRetryableState(state.backingStorage.Open(retryablesSubspace))
+	}
+	return state.retryableState
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
-	return l1pricing.OpenL1PricingState(state.backingStorage.Open(l1PricingSubspace))
+	if state.l1PricingState == nil {
+		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.Open(l1PricingSubspace))
+	}
+	return state.l1PricingState
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
