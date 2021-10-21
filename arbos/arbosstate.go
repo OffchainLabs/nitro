@@ -6,10 +6,11 @@ package arbos
 
 import (
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/segment"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/segment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -221,12 +222,7 @@ func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash
 	// caller is responsible for checking that size is in bounds
 
 	state.backingStorage.Set(offset, util.IntToHash(int64(size)))
-
-	return &segment.Segment{
-		offset,
-		size,
-		state.backingStorage,
-	}, nil
+	return segment.New(offset, size, state.backingStorage), nil
 }
 
 func (state *ArbosState) SegmentExists(offset common.Hash) bool {
@@ -250,11 +246,7 @@ func (state *ArbosState) OpenSegment(offset common.Hash) *segment.Segment {
 	if size > segment.MaxSizedSegmentSize {
 		panic("state segment size invalid")
 	}
-	return &segment.Segment{
-		offset,
-		size,
-		state.backingStorage,
-	}
+	return segment.New(offset, size, state.backingStorage)
 }
 
 func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *segment.Segment {
