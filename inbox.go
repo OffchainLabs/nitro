@@ -411,7 +411,7 @@ func (w *InboxWrapper) BuildBlock(force bool) (*types.Block, types.Receipts, *st
 	return block, reciepts, statedb
 }
 
-func (w *InboxWrapper) EnqueueSequencerTx(tx *types.Transaction, l1header *types.Header) error {
+func (w *InboxWrapper) EnqueueSequencerTx(tx *types.Transaction) error {
 	var buf bytes.Buffer
 	err := tx.EncodeRLP(&buf)
 	if err != nil {
