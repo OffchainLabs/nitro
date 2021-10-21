@@ -231,6 +231,7 @@ func FinalizeBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext, // should be nil if there is no previous block
 ) {
-	arbosState := OpenArbosState(statedb)
-	arbosState.RetryableState().TryToReapOneRetryable(header.Time)
+	if header != nil {
+		OpenArbosState(statedb).RetryableState().TryToReapOneRetryable(header.Time)
+	}
 }
