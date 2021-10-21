@@ -9,22 +9,22 @@ import (
 )
 
 type L1PricingState struct {
-	segment                  *StorageSegment
-	defaultAggregator        common.Address
-	l1GasPriceEstimate       *big.Int
-	preferredAggregators     EvmStorage
-	aggregatorFixedCharges   EvmStorage
-	aggregatorAddressesToPay EvmStorage
-	aggregatorCoompressionRaios EvmStorage
+	segment                     *StorageSegment
+	defaultAggregator           common.Address
+	l1GasPriceEstimate          *big.Int
+	preferredAggregators        EvmStorage
+	aggregatorFixedCharges      EvmStorage
+	aggregatorAddressesToPay    EvmStorage
+	aggregatorCompressionRatios EvmStorage
 }
 
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
-	initialDefaultAggregator  = common.Address{} //TODO
-	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
-	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
-	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
+	initialDefaultAggregator      = common.Address{} //TODO
+	preferredAggregatorKey        = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
+	aggregatorFixedChargeKey      = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
+	aggregatorAddressToPayKey     = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
 	aggregatorCompressionRatioKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator compression ratio key"))
 )
 
@@ -139,7 +139,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 	if (ratio != nil) && (*ratio < DataWasNotCompressed) {
 		val = *ratio
 	}
-	ps.aggregatorCoompressionRaios.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(big.NewInt(int64(val))))
+	ps.aggregatorCompressionRatios.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(big.NewInt(int64(val))))
 }
 
 // Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
