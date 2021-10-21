@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package precompiles
 
 import (
 	"log"
@@ -11,8 +11,7 @@ import (
 	"strings"
 	"unicode"
 
-	pre "github.com/offchainlabs/arbstate/arbos/precompiles"
-	templates "github.com/offchainlabs/arbstate/precompiles/go"
+	templates "github.com/offchainlabs/arbstate/solgen/go"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -204,17 +203,17 @@ func addr(s string) common.Address {
 
 func Precompiles() map[common.Address]ArbosPrecompile {
 	return map[common.Address]ArbosPrecompile{
-		addr("0x64"): makePrecompile(templates.ArbSysMetaData, pre.ArbSys{}),
-		addr("0x65"): makePrecompile(templates.ArbInfoMetaData, pre.ArbInfo{}),
-		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, pre.ArbAddressTable{}),
-		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, pre.ArbBLS{}),
-		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, pre.ArbFunctionTable{}),
-		addr("0x69"): makePrecompile(templates.ArbosTestMetaData, pre.ArbosTest{}),
-		addr("0x6b"): makePrecompile(templates.ArbOwnerMetaData, pre.ArbOwner{}),
-		addr("0x6c"): makePrecompile(templates.ArbGasInfoMetaData, pre.ArbGasInfo{}),
-		addr("0x6d"): makePrecompile(templates.ArbAggregatorMetaData, pre.ArbAggregator{}),
-		addr("0x6e"): makePrecompile(templates.ArbRetryableTxMetaData, pre.ArbRetryableTx{}),
-		addr("0x6f"): makePrecompile(templates.ArbStatisticsMetaData, pre.ArbStatistics{}),
+		addr("0x64"): makePrecompile(templates.ArbSysMetaData, ArbSys{}),
+		addr("0x65"): makePrecompile(templates.ArbInfoMetaData, ArbInfo{}),
+		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, ArbAddressTable{}),
+		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, ArbBLS{}),
+		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, ArbFunctionTable{}),
+		addr("0x69"): makePrecompile(templates.ArbosTestMetaData, ArbosTest{}),
+		addr("0x6b"): makePrecompile(templates.ArbOwnerMetaData, ArbOwner{}),
+		addr("0x6c"): makePrecompile(templates.ArbGasInfoMetaData, ArbGasInfo{}),
+		addr("0x6d"): makePrecompile(templates.ArbAggregatorMetaData, ArbAggregator{}),
+		addr("0x6e"): makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableTx{}),
+		addr("0x6f"): makePrecompile(templates.ArbStatisticsMetaData, ArbStatistics{}),
 	}
 }
 
@@ -291,16 +290,19 @@ func (p Precompile) Call(
 		reflect.ValueOf(caller),
 	}
 
-	state := evm.StateDB.(*state.StateDB)
+	stateDB, ok := evm.StateDB.(*state.StateDB)
+	if !ok {
+		panic("Expected statedb to be of type *state.StateDB")
+	}
 
 	switch method.purity {
 	case pure:
 	case view:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
 	case write:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
 	case payable:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(state))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
 		log.Fatal("Unknown state mutability ", method.purity)

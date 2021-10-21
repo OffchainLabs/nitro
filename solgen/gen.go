@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -24,7 +25,12 @@ type HardHatArtifact struct {
 }
 
 func main() {
-	filePaths, err := filepath.Glob("./precompiles/artifacts/src/*/*.json")
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatal("bad path")
+	}
+	root := filepath.Dir(filename)
+	filePaths, err := filepath.Glob(filepath.Join(root, "artifacts", "src", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,7 +70,11 @@ func main() {
 			log.Fatal(err)
 		}
 
-		err = ioutil.WriteFile("./precompiles/go/"+name+".go", []byte(code), 0777)
+		/*
+			#nosec G306
+			This file contains no private information so the permissions can be lenient
+		*/
+		err = ioutil.WriteFile(filepath.Join(root, "go", name+".go"), []byte(code), 0777)
 		if err != nil {
 			log.Fatal(err)
 		}

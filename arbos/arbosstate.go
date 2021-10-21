@@ -112,14 +112,14 @@ func tryStorageUpgrade(backingStorage EvmStorage) bool {
 }
 
 var (
-	versionKey       = IntToHash(0)
-	storageOffsetKey = IntToHash(1)
-	gasPoolKey       = IntToHash(2)
-	smallGasPoolKey  = IntToHash(3)
-	gasPriceKey      = IntToHash(4)
-	retryableQueueKey = IntToHash(5)
-	l1PricingKey     = IntToHash(6)
-	timestampKey     = IntToHash(7)
+	versionKey                 = IntToHash(0)
+	storageOffsetKey           = IntToHash(1)
+	gasPoolKey                 = IntToHash(2)
+	smallGasPoolKey            = IntToHash(3)
+	gasPriceKey                = IntToHash(4)
+	retryableQueueKey          = IntToHash(5)
+	l1PricingKey               = IntToHash(6)
+	timestampKey               = IntToHash(7)
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 

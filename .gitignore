@@ -6,8 +6,8 @@
 .idea
 cmd/node/data
 cmd/node/node
-precompiles/artifacts
-precompiles/cache/
-precompiles/go/
-precompiles/node_modules/
+solgen/artifacts
+solgen/cache/
+solgen/go/
+solgen/node_modules/
 .make/

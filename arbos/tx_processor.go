@@ -5,8 +5,9 @@
 package arbos
 
 import (
-	"github.com/ethereum/go-ethereum/params"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
+var arbAddress = common.HexToAddress("0xabc")
 var networkFeeCollector common.Address
 
 type TxProcessor struct {
@@ -54,8 +56,8 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 	return p.state.L1PricingState().GetL1Charges(
 		p.msg.From(),
 		p.getAggregator(),
-		intrinsicGas - params.TxGas,
-		DataWasNotCompressed,    //TODO: if data was compressed, pass in compression ratio here
+		intrinsicGas-params.TxGas,
+		DataWasNotCompressed, //TODO: if data was compressed, pass in compression ratio here
 	)
 }
 
