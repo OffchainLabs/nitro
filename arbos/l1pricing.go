@@ -4,8 +4,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/segment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"math/big"
 )
 
@@ -21,7 +21,7 @@ type L1PricingState struct {
 const CompressionEstimateDenominator uint64 = 1000000
 
 var (
-	initialDefaultAggregator  = common.Address{} //TODO
+	initialDefaultAggregator  = common.Address{} // TODO
 	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
 	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
 	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))

@@ -81,7 +81,7 @@ func TestStorageSegmentAllocationBytes(t *testing.T) {
 	}
 
 	reread := seg.GetBytes()
-	if bytes.Compare(buf, reread) != 0 {
+	if !bytes.Equal(buf, reread) {
 		t.Fail()
 	}
 }

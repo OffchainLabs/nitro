@@ -5,25 +5,34 @@
 package segment
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
 )
 
 type Segment struct {
 	Offset  common.Hash
 	Size    uint64
-	Storage storage.Storage
+	storage storage.Storage
 }
 
 const MaxSizedSegmentSize = 1 << 48
 
+func New(offset common.Hash, size uint64, storage storage.Storage) *Segment {
+	return &Segment{
+		offset,
+		size,
+		storage,
+	}
+}
+
 func (seg *Segment) Get(offset uint64) common.Hash {
 	if offset >= seg.Size {
-		panic("out of bounds access to Storage segment")
+		panic("out of bounds access to storage segment")
 	}
-	return seg.Storage.Get(util.HashPlusInt(seg.Offset, int64(1+offset)))
+	return seg.storage.Get(util.HashPlusInt(seg.Offset, int64(1+offset)))
 }
 
 func (seg *Segment) GetAsInt64(offset uint64) int64 {
@@ -44,9 +53,9 @@ func (seg *Segment) GetAsUint64(offset uint64) uint64 {
 
 func (seg *Segment) Set(offset uint64, value common.Hash) {
 	if offset >= seg.Size {
-		panic("Offset too large in Storage::Set")
+		panic("Offset too large in storage::Set")
 	}
-	seg.Storage.Set(util.HashPlusInt(seg.Offset, int64(offset+1)), value)
+	seg.storage.Set(util.HashPlusInt(seg.Offset, int64(offset+1)), value)
 }
 
 func (seg *Segment) GetBytes() []byte {
@@ -85,10 +94,10 @@ func (seg *Segment) WriteBytes(buf []byte) {
 }
 
 func (seg *Segment) Delete() {
-	seg.Storage.Set(seg.Offset, common.Hash{})
+	seg.storage.Set(seg.Offset, common.Hash{})
 	for i := uint64(0); i < seg.Size; i++ {
 		offset := new(big.Int).Add(seg.Offset.Big(), big.NewInt(int64(i)))
-		seg.Storage.Set(common.BigToHash(offset), common.Hash{})
+		seg.storage.Set(common.BigToHash(offset), common.Hash{})
 	}
 }
 

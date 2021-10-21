@@ -54,4 +54,3 @@ func (store *gethEvmStorage) Swap(key common.Hash, newValue common.Hash) common.
 	store.Set(key, newValue)
 	return oldValue
 }
-

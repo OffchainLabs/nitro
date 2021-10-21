@@ -67,7 +67,7 @@ func TestBrotli(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if bytes.Compare(orig, result) != 0 {
+	if !bytes.Equal(orig, result) {
 		t.Fatal("decompressed data doesn't match original")
 	}
 }

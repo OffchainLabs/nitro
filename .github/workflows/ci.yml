@@ -9,8 +9,23 @@ on:
       - develop
 
 jobs:
+  lint:
+    name: Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.PRIVATE_CHECKOUT }}
+          submodules: recursive
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: latest
+
   test:
-    name: ArbOS tests
+    name: Go Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,19 +37,25 @@ jobs:
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y gotestsum
 
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
       - name: Install go
         uses: actions/setup-go@v2
         with:
           go-version: 1.17.x
 
-      - name: Generate precompiles
+      - name: Cache Build Products
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Build and Test
         run: make -j
-
-      - name: Build
-        run: go build -v ./arbos/...
-
-      - name: Test ArbOS
-        run: cd arbos && gotestsum --format short-verbose
-
-      - name: Test ArbState
-        run: cd arbstate && gotestsum --format short-verbose

@@ -6,16 +6,16 @@ package arbos
 
 import (
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/segment"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/segment"
+	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 )
-
 
 type ArbosState struct {
 	formatVersion   *big.Int
@@ -62,14 +62,15 @@ func tryStorageUpgrade(backingStorage storage.Storage) bool {
 }
 
 var (
-	versionKey       = util.IntToHash(0)
-	storageOffsetKey = util.IntToHash(1)
-	gasPoolKey       = util.IntToHash(2)
-	smallGasPoolKey  = util.IntToHash(3)
-	gasPriceKey      = util.IntToHash(4)
+	versionKey        = util.IntToHash(0)
+	storageOffsetKey  = util.IntToHash(1)
+	gasPoolKey        = util.IntToHash(2)
+	smallGasPoolKey   = util.IntToHash(3)
+	gasPriceKey       = util.IntToHash(4)
 	retryableQueueKey = util.IntToHash(5)
-	l1PricingKey     = util.IntToHash(6)
-	timestampKey     = util.IntToHash(7)
+	l1PricingKey      = util.IntToHash(6)
+	timestampKey      = util.IntToHash(7)
+
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
 
@@ -221,12 +222,7 @@ func (state *ArbosState) AllocateSegmentAtOffset(size uint64, offset common.Hash
 	// caller is responsible for checking that size is in bounds
 
 	state.backingStorage.Set(offset, util.IntToHash(int64(size)))
-
-	return &segment.Segment{
-		offset,
-		size,
-		state.backingStorage,
-	}, nil
+	return segment.New(offset, size, state.backingStorage), nil
 }
 
 func (state *ArbosState) SegmentExists(offset common.Hash) bool {
@@ -250,11 +246,7 @@ func (state *ArbosState) OpenSegment(offset common.Hash) *segment.Segment {
 	if size > segment.MaxSizedSegmentSize {
 		panic("state segment size invalid")
 	}
-	return &segment.Segment{
-		offset,
-		size,
-		state.backingStorage,
-	}
+	return segment.New(offset, size, state.backingStorage)
 }
 
 func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *segment.Segment {
