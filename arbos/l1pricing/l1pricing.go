@@ -113,7 +113,7 @@ func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address) comm
 }
 
 func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) uint64 {
-	raw := ps.aggregatorAddressesToPay.Get(common.BytesToHash(aggregator.Bytes()))
+	raw := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
 		return DataWasNotCompressed
 	} else {

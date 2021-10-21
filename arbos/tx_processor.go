@@ -5,7 +5,6 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
