@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -50,4 +51,8 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 	}
 
 	return s.inbox.AddMessages(^uint64(0), false, []arbstate.MessageWithMetadata{message})
+}
+
+func (s *Sequencer) BlockChain() *core.BlockChain {
+	return s.inbox.bc
 }
