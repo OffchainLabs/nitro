@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -57,7 +58,7 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 		p.msg.From(),
 		p.getAggregator(),
 		intrinsicGas-params.TxGas,
-		DataWasNotCompressed, //TODO: if data was compressed, pass in compression ratio here
+		l1pricing.DataWasNotCompressed, //TODO: if data was compressed, pass in compression ratio here
 	)
 }
 

@@ -5,7 +5,8 @@
 package arbos
 
 import (
-	retryables2 "github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
@@ -14,16 +15,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
-
 type ArbosState struct {
-	formatVersion   *big.Int
-	gasPool         *storage.StorageBackedInt64
-	smallGasPool    *storage.StorageBackedInt64
-	gasPriceWei     *big.Int
-	l1PricingState  *L1PricingState
-	retryables      *retryables2.RetryableState
-	timestamp       *uint64
-	backingStorage  *storage.Storage
+	formatVersion  *big.Int
+	gasPool        *storage.StorageBackedInt64
+	smallGasPool   *storage.StorageBackedInt64
+	gasPriceWei    *big.Int
+	l1PricingState *l1pricing.L1PricingState
+	retryableState *retryables.RetryableState
+	timestamp      *uint64
+	backingStorage *storage.Storage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
@@ -45,7 +45,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 }
 
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.Get(util.IntToHash(0))
+	formatVersion := backingStorage.GetByInt64(int64(versionKey))
 	switch formatVersion {
 	case util.IntToHash(0):
 		upgrade_0_to_1(backingStorage)
@@ -56,18 +56,20 @@ func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 }
 
 type ArbosStateOffset int64
+
 const (
-	versionKey ArbosStateOffset = 0
-	gasPoolKey = 1
-	smallGasPoolKey = 2
-	gasPriceKey = 3
-	l1PricingKey = 4
-	timestampKey = 5
+	versionKey      ArbosStateOffset = 0
+	gasPoolKey                       = 1
+	smallGasPoolKey                  = 2
+	gasPriceKey                      = 3
+	timestampKey                     = 4
 )
 
 type ArbosStateSubspaceID []byte
+
 var (
-	retryablesSubspace ArbosStateSubspaceID = []byte{ 0 }
+	l1PricingSubspace ArbosStateSubspaceID = []byte{0}
+	retryablesSubspace ArbosStateSubspaceID = []byte{1}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
@@ -75,9 +77,9 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	backingStorage.SetByInt64(int64(gasPoolKey), util.IntToHash(GasPoolMax))
 	backingStorage.SetByInt64(int64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
 	backingStorage.SetByInt64(int64(gasPriceKey), util.IntToHash(1000000000)) // 1 gwei
-	backingStorage.SetByInt64(int64(l1PricingKey), util.IntToHash(0))
 	backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(0))
-	retryables2.InitializeRetryableState(backingStorage.Open(retryablesSubspace))
+	l1pricing.InitializeL1PricingState(backingStorage.Open(l1PricingSubspace))
+	retryables.InitializeRetryableState(backingStorage.Open(retryablesSubspace))
 }
 
 func (state *ArbosState) FormatVersion() *big.Int {
@@ -132,22 +134,12 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.backingStorage.SetByInt64(int64(gasPriceKey), common.BigToHash(val))
 }
 
-func (state *ArbosState) RetryableState() *retryables2.RetryableState {
-	return retryables2.OpenRetryableState(state.backingStorage.Open(retryablesSubspace))
+func (state *ArbosState) RetryableState() *retryables.RetryableState {
+	return retryables.OpenRetryableState(state.backingStorage.Open(retryablesSubspace))
 }
 
-func (state *ArbosState) L1PricingState() *L1PricingState {
-	if state.l1PricingState == nil {
-		offset := state.backingStorage.GetByInt64(int64(l1PricingKey))
-		if offset == (common.Hash{}) {
-			l1PricingState, offset := AllocateL1PricingState(state)
-			state.l1PricingState = l1PricingState
-			state.backingStorage.SetByInt64(int64(l1PricingKey), offset)
-		} else {
-			state.l1PricingState = OpenL1PricingState(offset, state.backingStorage)
-		}
-	}
-	return state.l1PricingState
+func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
+	return l1pricing.OpenL1PricingState(state.backingStorage.Open(l1PricingSubspace))
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {

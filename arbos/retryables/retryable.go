@@ -43,7 +43,7 @@ type Retryable struct {
 
 func (rs *RetryableState) CreateRetryable(
 	currentTimestamp uint64,
-	id common.Hash,        // assume this is determined by a cryptographic hash, so untrusted party can't choose it
+	id common.Hash, // assume this is determined by a cryptographic hash, so untrusted party can't choose it
 	timeout uint64,
 	from common.Address,
 	to common.Address,
@@ -166,7 +166,7 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 	return nil
 }
 
-func (retryable *Retryable) Equals(other *Retryable) bool {   // for testing
+func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 	if retryable.id != other.id {
 		return false
 	}

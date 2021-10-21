@@ -43,8 +43,8 @@ func TestRetryableCreate(t *testing.T) {
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
 	calldata := []byte{42}
-	for i, _ := range calldata {
-		calldata[i] = byte(i+3)
+	for i := range calldata {
+		calldata[i] = byte(i + 3)
 	}
 	rstate := state.RetryableState()
 	retryable := rstate.CreateRetryable(state.LastTimestampSeen(), id, timeout, from, to, callvalue, calldata)
@@ -53,7 +53,7 @@ func TestRetryableCreate(t *testing.T) {
 	if reread == nil {
 		t.Fatal()
 	}
-	if ! reread.Equals(retryable) {
+	if !reread.Equals(retryable) {
 		t.Fatal()
 	}
 }

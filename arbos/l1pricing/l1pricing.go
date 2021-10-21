@@ -1,11 +1,9 @@
-package arbos
+package l1pricing
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 )
 
@@ -22,52 +20,39 @@ const CompressionEstimateDenominator uint64 = 1000000
 
 var (
 	initialDefaultAggregator = common.Address{} //TODO
-	l1PricingStateKey        = crypto.Keccak256([]byte("Arbitrum ArbOS L1 pricing state key"))
 
-	preferredAggregatorKey    = crypto.Keccak256Hash([]byte("Arbitrum ArbOS preferred aggregator key"))
-	aggregatorFixedChargeKey  = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator fixed charge key"))
-	aggregatorAddressToPayKey = crypto.Keccak256Hash([]byte("Arbitrum ArbOS aggregator address to pay key"))
+	preferredAggregatorKey    = []byte{ 0 }
+	aggregatorFixedChargeKey  = []byte{ 1 }
+	aggregatorAddressToPayKey = []byte{ 2 }
 )
 
 const (
-	defaultAggregatorAddressOffset = 0
-	l1GasPriceEstimateOffset       = 1
+	defaultAggregatorAddressOffset int64 = 0
+	l1GasPriceEstimateOffset     int64  = 1
 )
 const L1PricingStateSize = 2
 
-func AllocateL1PricingState(state *ArbosState) (*L1PricingState, common.Hash) {
-	newKey := state.backingStorage.UniqueKey()
-	storage := state.backingStorage.Open(newKey.Bytes())
-	storage.Set(util.IntToHash(defaultAggregatorAddressOffset), common.BytesToHash(initialDefaultAggregator.Bytes()))
-	l1PriceEstimate := big.NewInt(1 * params.GWei)
-	storage.Set(util.IntToHash(l1GasPriceEstimateOffset), common.BigToHash(l1PriceEstimate))
-	return &L1PricingState{
-		storage,
-		initialDefaultAggregator,
-		l1PriceEstimate,
-		state.backingStorage.Open(preferredAggregatorKey.Bytes()),
-		state.backingStorage.Open(aggregatorFixedChargeKey.Bytes()),
-		state.backingStorage.Open(aggregatorAddressToPayKey.Bytes()),
-	}, newKey
+func InitializeL1PricingState(sto *storage.Storage) {
+	sto.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	sto.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50 * params.GWei)))
 }
 
-func OpenL1PricingState(key common.Hash, backingStorage *storage.Storage) *L1PricingState {
-	storage := backingStorage.Open(key.Bytes())
-	defaultAggregator := common.BytesToAddress(storage.Get(util.IntToHash(defaultAggregatorAddressOffset)).Bytes())
-	l1GasPriceEstimate := storage.Get(util.IntToHash(l1GasPriceEstimateOffset)).Big()
+func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
+	defaultAggregator := common.BytesToAddress(sto.GetByInt64(defaultAggregatorAddressOffset).Bytes())
+	l1GasPriceEstimate := sto.GetByInt64(l1GasPriceEstimateOffset).Big()
 	return &L1PricingState{
-		storage,
+		sto,
 		defaultAggregator,
 		l1GasPriceEstimate,
-		backingStorage.Open(preferredAggregatorKey.Bytes()),
-		backingStorage.Open(aggregatorFixedChargeKey.Bytes()),
-		backingStorage.Open(aggregatorAddressToPayKey.Bytes()),
+		sto.Open(preferredAggregatorKey),
+		sto.Open(aggregatorFixedChargeKey),
+		sto.Open(aggregatorAddressToPayKey),
 	}
 }
 
 func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
 	ps.defaultAggregator = aggregator
-	ps.storage.Set(util.IntToHash(defaultAggregatorAddressOffset), common.BytesToHash(aggregator.Bytes()))
+	ps.storage.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() *big.Int {
@@ -84,7 +69,7 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) {
 		),
 		big.NewInt(L1GasPriceEstimateSamplesInAverage),
 	)
-	ps.storage.Set(util.IntToHash(l1GasPriceEstimateOffset), common.BigToHash(ps.l1GasPriceEstimate))
+	ps.storage.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
 }
 
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) {
@@ -113,7 +98,7 @@ func (ps *L1PricingState) SetAggregatorAddressToPay(aggregator common.Address, a
 	ps.aggregatorAddressesToPay.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
 }
 
-func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address, state *ArbosState) common.Address {
+func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address) common.Address {
 	raw := ps.aggregatorAddressesToPay.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
 		return aggregator
