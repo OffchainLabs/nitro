@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-
 type ArbosState struct {
 	formatVersion   *big.Int
 	nextAlloc       *common.Hash
@@ -63,14 +62,14 @@ func tryStorageUpgrade(backingStorage storage.Storage) bool {
 }
 
 var (
-	versionKey       = util.IntToHash(0)
-	storageOffsetKey = util.IntToHash(1)
-	gasPoolKey       = util.IntToHash(2)
-	smallGasPoolKey  = util.IntToHash(3)
-	gasPriceKey      = util.IntToHash(4)
+	versionKey        = util.IntToHash(0)
+	storageOffsetKey  = util.IntToHash(1)
+	gasPoolKey        = util.IntToHash(2)
+	smallGasPoolKey   = util.IntToHash(3)
+	gasPriceKey       = util.IntToHash(4)
 	retryableQueueKey = util.IntToHash(5)
-	l1PricingKey     = util.IntToHash(6)
-	timestampKey     = util.IntToHash(7)
+	l1PricingKey      = util.IntToHash(6)
+	timestampKey      = util.IntToHash(7)
 
 	validRetryableSetUniqueKey = common.BytesToHash(crypto.Keccak256([]byte("Arbitrum ArbOS valid retryable set unique key")))
 )
