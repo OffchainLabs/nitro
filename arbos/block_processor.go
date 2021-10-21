@@ -219,18 +219,15 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) *types.Block {
 		}
 	}
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 }
 
-func FinalizeBlock(
-	header *types.Header,
-	txs types.Transactions,
-	receipts types.Receipts,
-	statedb *state.StateDB,
-	chainContext core.ChainContext, // should be nil if there is no previous block
-) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	arbosState := OpenArbosState(statedb)
+	if header != nil {
+		arbosState.SetLastTimestampSeen(header.Time)
+	}
 	arbosState.TryToReapOneRetryable()
 }
