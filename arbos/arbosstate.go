@@ -68,15 +68,15 @@ func hashPlusInt(x common.Hash, y int64) common.Hash {
 }
 
 type ArbosState struct {
-	formatVersion   *big.Int
-	nextAlloc       *common.Hash
-	gasPool         *StorageBackedInt64
-	smallGasPool    *StorageBackedInt64
-	gasPriceWei     *big.Int
-	l1PricingState  *L1PricingState
-	retryableState  *RetryableState
-	timestamp       *uint64
-	backingStorage  EvmStorage
+	formatVersion  *big.Int
+	nextAlloc      *common.Hash
+	gasPool        *StorageBackedInt64
+	smallGasPool   *StorageBackedInt64
+	gasPriceWei    *big.Int
+	l1PricingState *L1PricingState
+	retryableState *RetryableState
+	timestamp      *uint64
+	backingStorage EvmStorage
 }
 
 type RetryableState struct {
@@ -207,7 +207,7 @@ func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 
 func (state *ArbosState) RetryableState() *RetryableState {
 	if state.retryableState == nil {
-		state.retryableState = &RetryableState{ state, nil, nil, nil }
+		state.retryableState = &RetryableState{state, nil, nil, nil}
 	}
 	return state.retryableState
 }
@@ -316,16 +316,13 @@ func (state *ArbosState) SegmentExists(offset common.Hash) bool {
 func (state *ArbosState) OpenSegment(offset common.Hash) *StorageSegment {
 	rawSize := state.backingStorage.Get(offset)
 	bigSize := rawSize.Big()
-	if bigSize.Cmp(big.NewInt(0)) == 0 {
-		// segment has been deleted
-		return nil
-	}
 	if !bigSize.IsUint64() {
 		panic("not a valid state segment")
 	}
 	size := bigSize.Uint64()
 	if size == 0 {
-		panic("state segment invalid or was deleted")
+		// segment is not present (may have been deleted)
+		return nil
 	}
 	if size > MaxSizedSegmentSize {
 		panic("state segment size invalid")
@@ -345,7 +342,6 @@ func (state *ArbosState) AllocateSegmentForBytes(buf []byte) *StorageSegment {
 	}
 
 	seg.WriteBytes(buf)
-
 	return seg
 }
 
@@ -356,7 +352,6 @@ func (state *ArbosState) AllocateSegmentAtOffsetForBytes(buf []byte, offset comm
 		panic(err)
 	}
 	seg.WriteBytes(buf)
-
 	return seg
 }
 

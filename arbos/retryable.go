@@ -13,13 +13,13 @@ import (
 )
 
 type Retryable struct {
-	id            common.Hash    // the retryable's ID is also the offset where its segment lives in storage
-	numTries      uint64
-	timeout       uint64
-	from          common.Address
-	to            common.Address
-	callvalue     *big.Int
-	calldata      []byte
+	id        common.Hash // the retryable's ID is also the offset where its segment lives in storage
+	numTries  uint64
+	timeout   uint64
+	from      common.Address
+	to        common.Address
+	callvalue *big.Int
+	calldata  []byte
 }
 
 func CreateRetryable(
@@ -53,14 +53,15 @@ func CreateRetryable(
 	state.RetryableState().RetryableQueue().Put(id)
 
 	// mark the new retryable as valid
-	state.RetryableState().ValidRetryablesSet().Set(id, common.Hash{1})
+	state.RetryableState().ValidRetryablesSet().Set(id, Uint256{1})
 
 	return ret
 }
 
 func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	vrs := state.RetryableState().ValidRetryablesSet()
-	if vrs.Get(id) == (common.Hash{}) {
+
+	if vrs.Get(id) == (Uint256{0}) {
 		// that is not a valid retryable
 		return nil
 	}
@@ -77,7 +78,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 	if ret.timeout < state.LastTimestampSeen() {
 		// retryable has expired, so delete it
 		seg.Delete()
-		vrs.Set(id, common.Hash{})
+		vrs.Set(id, Uint256{0})
 		return nil
 	}
 	return ret
@@ -86,7 +87,7 @@ func OpenRetryable(state *ArbosState, id common.Hash) *Retryable {
 func (retryable *Retryable) Persist(state *ArbosState) {
 	buf := bytes.Buffer{}
 	if err := retryable.serialize(&buf); err != nil {
-		panic("Unexpected error serializing retryable")  // should be impossible
+		panic("Unexpected error serializing retryable") // should be impossible
 	}
 	segment := state.OpenSegment(retryable.id)
 	segment.WriteBytes(buf.Bytes())
@@ -106,8 +107,8 @@ func (retryable *Retryable) GetAndIncrementTryCount(state *ArbosState) uint64 {
 
 func DeleteRetryable(state *ArbosState, id common.Hash) {
 	vrs := state.RetryableState().ValidRetryablesSet()
-	if vrs.Get(id) != (common.Hash{}) {
-		vrs.Set(id, common.Hash{})
+	if vrs.Get(id) != (Uint256{0}) {
+		vrs.Set(id, Uint256{0})
 		seg := state.OpenSegment(id)
 		if seg != nil {
 			seg.Delete()
@@ -267,6 +268,3 @@ func DiscardNextPlannedRedeem(state *ArbosState, deleteTheRetryable bool) {
 	}
 	redeem.segment.Delete()
 }
-
-
-

@@ -73,14 +73,14 @@ func TestRetryableCreate(t *testing.T) {
 func TestPlanOneRedeem(t *testing.T) {
 	state := OpenArbosStateForTest()
 	id := common.BigToHash(big.NewInt(978645611142))
-	timeout := state.LastTimestampSeen()+10000000
+	timeout := state.LastTimestampSeen() + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
 	calldata := []byte{42}
 	_ = CreateRetryable(state, id, timeout, from, to, callvalue, calldata)
 
-	refundAddr := common.Address{ 3, 4 }
+	refundAddr := common.Address{3, 4}
 	gasFundsWei := big.NewInt(486687768)
 	redeem := NewPlannedRedeem(state, id, refundAddr, gasFundsWei)
 
@@ -113,7 +113,8 @@ func TestPlanOneRedeem(t *testing.T) {
 		t.Fatal()
 	}
 
-	// discard the redeem without deleting the retryable, then make sure the redeem is gone but the retryable is still there
+	// discard the redeem without deleting the retryable,
+	// then make sure the redeem is gone but the retryable is still there
 	DiscardNextPlannedRedeem(state, false)
 	if PeekNextPlannedRedeem(state) != nil {
 		t.Fatal()

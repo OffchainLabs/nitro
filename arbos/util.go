@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+type Uint256 = common.Hash
+
 func HashFromReader(rd io.Reader) (common.Hash, error) {
 	buf := make([]byte, 32)
 	if _, err := io.ReadFull(rd, buf); err != nil {
