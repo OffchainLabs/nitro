@@ -207,8 +207,6 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	}
 
 	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb, b.chainContext)
-
 	b.header.Root = b.statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
@@ -223,20 +221,18 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 
 	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 
-	receipts := b.receipts
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
 	// Reset the block builder for the next block
+	receipts := b.receipts
 	*b = *NewBlockBuilder(b.statedb, block.Header(), b.chainContext)
 	return block, receipts, b.statedb
 }
 
-func FinalizeBlock(
-	header *types.Header,
-	txs types.Transactions,
-	receipts types.Receipts,
-	statedb *state.StateDB,
-	chainContext core.ChainContext, // should be nil if there is no previous block
-) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	arbosState := OpenArbosState(statedb)
+	if header != nil {
+		arbosState.SetLastTimestampSeen(header.Time)
+	}
 	arbosState.TryToReapOneRetryable()
 }
