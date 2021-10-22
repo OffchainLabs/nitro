@@ -42,7 +42,7 @@ type Retryable struct {
 
 func (rs *RetryableState) CreateRetryable(
 	currentTimestamp uint64,
-	id common.Hash, // we assume this is determined by a cryptographic hash, so an untrusted party can't choose it
+	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,
 	to common.Address,

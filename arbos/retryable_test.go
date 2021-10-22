@@ -42,7 +42,7 @@ func TestRetryableCreate(t *testing.T) {
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
-	calldata := []byte{42}
+	calldata := make([]byte, 42)
 	for i := range calldata {
 		calldata[i] = byte(i + 3)
 	}
