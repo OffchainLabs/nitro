@@ -34,7 +34,7 @@ func TestAccumulator1(t *testing.T) {
 	mt := NewEmptyMerkleTree()
 
 	itemHash := pseudorandomForTesting(0)
-	acc.Append(itemHash)
+	_ = acc.Append(itemHash)
 	if acc.Size() != 1 {
 		t.Fatal()
 	}
@@ -63,11 +63,11 @@ func TestAccumulator3(t *testing.T) {
 	itemHash1 := pseudorandomForTesting(1)
 	itemHash2 := pseudorandomForTesting(2)
 
-	acc.Append(itemHash0)
+	_ = acc.Append(itemHash0)
 	mt = mt.Append(itemHash0)
-	acc.Append(itemHash1)
+	_ = acc.Append(itemHash1)
 	mt = mt.Append(itemHash1)
-	acc.Append(itemHash2)
+	_ = acc.Append(itemHash2)
 	mt = mt.Append(itemHash2)
 
 	if acc.Size() != 3 {
@@ -103,13 +103,13 @@ func TestAccumulator4(t *testing.T) {
 	itemHash2 := pseudorandomForTesting(2)
 	itemHash3 := pseudorandomForTesting(3)
 
-	acc.Append(itemHash0)
+	_ = acc.Append(itemHash0)
 	mt = mt.Append(itemHash0)
-	acc.Append(itemHash1)
+	_ = acc.Append(itemHash1)
 	mt = mt.Append(itemHash1)
-	acc.Append(itemHash2)
+	_ = acc.Append(itemHash2)
 	mt = mt.Append(itemHash2)
-	acc.Append(itemHash3)
+	_ = acc.Append(itemHash3)
 	mt = mt.Append(itemHash3)
 
 	if acc.Size() != 4 {

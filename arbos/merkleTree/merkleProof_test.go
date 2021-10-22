@@ -11,7 +11,7 @@ import (
 
 func TestMerkleProofs(t *testing.T) {
 	items := make([]common.Hash, 13)
-	for i, _ := range items {
+	for i := range items {
 		items[i] = pseudorandomForTesting(uint64(i))
 	}
 

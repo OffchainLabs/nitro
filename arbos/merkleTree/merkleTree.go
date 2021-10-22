@@ -49,6 +49,45 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 	return newMerkleLeaf(hash), nil
 }
 
+type EventForTreeBuilding struct {
+	blockNum uint64
+	hash     common.Hash
+}
+
+func NewMerkleTreeFromEvents(events []EventForTreeBuilding) MerkleTree {
+	return nmtfeImpl(events, 0)
+}
+
+func nmtfeImpl(events []EventForTreeBuilding, ignoreUnlessAfterTimestamp uint64) MerkleTree {
+	topLevel := len(events) - 1
+	if topLevel == 0 {
+		if events[0].blockNum <= ignoreUnlessAfterTimestamp {
+			return newMerkleEmpty(1)
+		} else {
+			return newMerkleLeaf(events[0].hash)
+		}
+	} else {
+		if events[topLevel].blockNum <= ignoreUnlessAfterTimestamp {
+			subtree := nmtfeImpl(events[:topLevel], ignoreUnlessAfterTimestamp)
+			if subtree.Hash() == (common.Hash{}) {
+				return newMerkleEmpty(2 * subtree.Capacity())
+			} else {
+				return newMerkleInternal(subtree, newMerkleEmpty(subtree.Capacity()))
+			}
+		} else {
+			subtree := nmtfeImpl(events[:topLevel], events[topLevel].blockNum)
+			return newMerkleInternal(
+				&merkleCompleteSubtreeSummary{
+					events[topLevel].hash,
+					subtree.Capacity(),
+					subtree.Capacity(),
+				},
+				subtree,
+			)
+		}
+	}
+}
+
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
 	return leaf.hash
 }
