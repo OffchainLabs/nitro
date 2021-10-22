@@ -25,7 +25,7 @@ type ArbosState struct {
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
-	sendMerkle     *merkleTree.MerkleBuilder
+	sendMerkle     *merkleTree.MerkleAccumulator
 	timestamp      *uint64
 	backingStorage *storage.Storage
 }
@@ -89,7 +89,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	merkleTree.InitializeMerkleBuilder(backingStorage.OpenSubStorage(sendMerkleSubspace))
+	merkleTree.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -162,9 +162,9 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
 }
 
-func (state *ArbosState) SendMerkleBuilder() *merkleTree.MerkleBuilder {
+func (state *ArbosState) SendMerkleBuilder() *merkleTree.MerkleAccumulator {
 	if state.sendMerkle == nil {
-		state.sendMerkle = merkleTree.OpenMerkleBuilder(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
+		state.sendMerkle = merkleTree.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
 }

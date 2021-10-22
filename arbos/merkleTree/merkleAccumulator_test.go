@@ -12,46 +12,46 @@ import (
 	"testing"
 )
 
-func TestEmptyBuilder(t *testing.T) {
-	b := initializedMerkleBuilderForTesting()
-	if b.Root() != (common.Hash{}) {
+func TestEmptyAccumulator(t *testing.T) {
+	acc := initializedMerkleAccumulatorForTesting()
+	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
 	mt := NewEmptyMerkleTree()
-	if b.Root() != mt.Hash() {
+	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
 }
 
-func TestBuilder1(t *testing.T) {
-	b := initializedMerkleBuilderForTesting()
-	if b.Root() != (common.Hash{}) {
+func TestAccumulator1(t *testing.T) {
+	acc := initializedMerkleAccumulatorForTesting()
+	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
 	mt := NewEmptyMerkleTree()
 
 	itemHash := pseudorandomForTesting(0)
-	b.Append(itemHash)
-	if b.Size() != 1 {
+	acc.Append(itemHash)
+	if acc.Size() != 1 {
 		t.Fatal()
 	}
 	mt = mt.Append(itemHash)
 	if mt.Size() != 1 {
 		t.Fatal(mt.Size())
 	}
-	if b.Root() != itemHash {
+	if acc.Root() != itemHash {
 		t.Fatal()
 	}
-	if b.Root() != mt.Hash() {
+	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
 }
 
-func TestBuilder3(t *testing.T) {
-	b := initializedMerkleBuilderForTesting()
-	if b.Root() != (common.Hash{}) {
+func TestAccumulator3(t *testing.T) {
+	acc := initializedMerkleAccumulatorForTesting()
+	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
 	mt := NewEmptyMerkleTree()
@@ -60,14 +60,14 @@ func TestBuilder3(t *testing.T) {
 	itemHash1 := pseudorandomForTesting(1)
 	itemHash2 := pseudorandomForTesting(2)
 
-	b.Append(itemHash0)
+	acc.Append(itemHash0)
 	mt = mt.Append(itemHash0)
-	b.Append(itemHash1)
+	acc.Append(itemHash1)
 	mt = mt.Append(itemHash1)
-	b.Append(itemHash2)
+	acc.Append(itemHash2)
 	mt = mt.Append(itemHash2)
 
-	if b.Size() != 3 {
+	if acc.Size() != 3 {
 		t.Fatal()
 	}
 	if mt.Size() != 3 {
@@ -78,18 +78,18 @@ func TestBuilder3(t *testing.T) {
 		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
 		crypto.Keccak256(itemHash2.Bytes(), make([]byte, 32)),
 	)
-	if b.Root() != common.BytesToHash(expectedHash) {
+	if acc.Root() != common.BytesToHash(expectedHash) {
 		t.Fatal()
 	}
-	if b.Root() != mt.Hash() {
+	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
 }
 
-func TestBuilder4(t *testing.T) {
-	b := initializedMerkleBuilderForTesting()
-	if b.Root() != (common.Hash{}) {
+func TestAccumulator4(t *testing.T) {
+	acc := initializedMerkleAccumulatorForTesting()
+	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
 	mt := NewEmptyMerkleTree()
@@ -99,16 +99,16 @@ func TestBuilder4(t *testing.T) {
 	itemHash2 := pseudorandomForTesting(2)
 	itemHash3 := pseudorandomForTesting(3)
 
-	b.Append(itemHash0)
+	acc.Append(itemHash0)
 	mt = mt.Append(itemHash0)
-	b.Append(itemHash1)
+	acc.Append(itemHash1)
 	mt = mt.Append(itemHash1)
-	b.Append(itemHash2)
+	acc.Append(itemHash2)
 	mt = mt.Append(itemHash2)
-	b.Append(itemHash3)
+	acc.Append(itemHash3)
 	mt = mt.Append(itemHash3)
 
-	if b.Size() != 4 {
+	if acc.Size() != 4 {
 		t.Fatal()
 	}
 	if mt.Size() != 4 {
@@ -119,19 +119,19 @@ func TestBuilder4(t *testing.T) {
 		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
 		crypto.Keccak256(itemHash2.Bytes(), itemHash3.Bytes()),
 	)
-	if b.Root() != common.BytesToHash(expectedHash) {
+	if acc.Root() != common.BytesToHash(expectedHash) {
 		t.Fatal()
 	}
-	if b.Root() != mt.Hash() {
+	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
 }
 
-func initializedMerkleBuilderForTesting() *MerkleBuilder {
+func initializedMerkleAccumulatorForTesting() *MerkleAccumulator {
 	sto := storage.NewMemoryBacked()
-	InitializeMerkleBuilder(sto)
-	return OpenMerkleBuilder(sto)
+	InitializeMerkleAccumulator(sto)
+	return OpenMerkleAccumulator(sto)
 }
 
 func pseudorandomForTesting(x uint64) common.Hash {
