@@ -189,7 +189,7 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 		b.header = &types.Header{
 			ParentHash:  lastBlockHash,
 			UncleHash:   [32]byte{},
-			Coinbase:    b.blockInfo.l1Sender,
+			Coinbase:    common.Address{},
 			Root:        [32]byte{},  // Filled in later
 			TxHash:      [32]byte{},  // Filled in later
 			ReceiptHash: [32]byte{},  // Filled in later
@@ -219,9 +219,14 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 		}
 	}
 
+	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+
 	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
-	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil)), b.receipts, b.statedb
+	// Reset the block builder for the next block
+	receipts := b.receipts
+	*b = *NewBlockBuilder(b.statedb, block.Header(), b.chainContext)
+	return block, receipts, b.statedb
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {

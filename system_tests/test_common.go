@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 )
@@ -106,14 +107,14 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		t.Fatal(err)
 	}
 
-	currentState, err := blockChain.State()
+	inbox, err := arbnode.NewInboxState(chainDb, blockChain)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	inboxwrapper := arbstate.NewInboxWrapper(currentState, blockChain.CurrentHeader(), blockChain)
+	sequencer := arbnode.NewSequencer(inbox)
 
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, inboxwrapper)
+	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +155,9 @@ func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, clie
 		if attempts > 1 {
 			attempts -= 1
 		}
-		backend.CloseBlock()
 		select {
 		case <-chanHead:
 		case <-time.After(time.Second / 100):
-			backend.CloseBlock()
 		}
 	}
 }
