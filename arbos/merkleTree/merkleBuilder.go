@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleBuilder
+package merkleTree
 
 import (
 	"github.com/ethereum/go-ethereum/common"

@@ -7,7 +7,7 @@ package arbos
 import (
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
-	"github.com/offchainlabs/arbstate/arbos/merkleBuilder"
+	"github.com/offchainlabs/arbstate/arbos/merkleTree"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -25,7 +25,7 @@ type ArbosState struct {
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
-	sendMerkle     *merkleBuilder.MerkleBuilder
+	sendMerkle     *merkleTree.MerkleBuilder
 	timestamp      *uint64
 	backingStorage *storage.Storage
 }
@@ -89,7 +89,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	merkleBuilder.InitializeMerkleBuilder(backingStorage.OpenSubStorage(sendMerkleSubspace))
+	merkleTree.InitializeMerkleBuilder(backingStorage.OpenSubStorage(sendMerkleSubspace))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -162,9 +162,9 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
 }
 
-func (state *ArbosState) SendMerkleBuilder() *merkleBuilder.MerkleBuilder {
+func (state *ArbosState) SendMerkleBuilder() *merkleTree.MerkleBuilder {
 	if state.sendMerkle == nil {
-		state.sendMerkle = merkleBuilder.OpenMerkleBuilder(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
+		state.sendMerkle = merkleTree.OpenMerkleBuilder(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
 }
