@@ -63,7 +63,7 @@ func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
 }
 
 func (store *Storage) OpenSubStorage(id []byte) *Storage {
-	return &Storage {
+	return &Storage{
 		store.account,
 		store.db,
 		crypto.Keccak256(store.key, id),
@@ -147,4 +147,3 @@ func (sbi *StorageBackedInt64) Set(value int64) {
 	}
 	sbi.storage.Set(sbi.offset, common.BigToHash(bigValue))
 }
-

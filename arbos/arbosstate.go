@@ -61,11 +61,11 @@ func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 type ArbosStateOffset int64
 
 const (
-	versionKey      ArbosStateOffset = 0
-	gasPoolKey                       = 1
-	smallGasPoolKey                  = 2
-	gasPriceKey                      = 3
-	timestampKey                     = 4
+	versionKey ArbosStateOffset = iota
+	gasPoolKey
+	smallGasPoolKey
+	gasPriceKey
+	timestampKey
 )
 
 type ArbosStateSubspaceID []byte
