@@ -83,6 +83,10 @@ func main() {
 			log.Fatal(err)
 		}
 
+		/*
+			#nosec G306
+			This file contains no private information so the permissions can be lenient
+		*/
 		err = ioutil.WriteFile(filepath.Join(folder, name+".go"), []byte(code), 0o644)
 		if err != nil {
 			log.Fatal(err)
