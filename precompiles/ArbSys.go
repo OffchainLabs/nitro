@@ -110,9 +110,9 @@ func (con ArbSys) SendTxToL1(
 ) (*big.Int, error) {
 	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := arbos.OpenArbosState(st)
-	builder := arbosState.GetSendMerkleBuilder()
-	builder.Append(sendHash)
-	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, builder.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
+	merkleAcc := arbosState.SendMerkleAccumulator()
+	merkleAcc.Append(sendHash)
+	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, merkleAcc.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
 	//TODO: deduct the callvalue from this precompile's account (burn/destroy it)
 	return sendHash.Big(), nil
 }
@@ -123,7 +123,7 @@ func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []
 
 func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) ([]byte, error) {
 	var buf bytes.Buffer
-	arbos.OpenArbosState(st).GetSendMerkleBuilder().Serialize(&buf)
+	arbos.OpenArbosState(st).SendMerkleAccumulator().Serialize(&buf)
 	return buf.Bytes(), nil
 }
 

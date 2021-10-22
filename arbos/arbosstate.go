@@ -162,7 +162,7 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
 }
 
-func (state *ArbosState) SendMerkleBuilder() *merkleTree.MerkleAccumulator {
+func (state *ArbosState) SendMerkleAccumulator() *merkleTree.MerkleAccumulator {
 	if state.sendMerkle == nil {
 		state.sendMerkle = merkleTree.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}

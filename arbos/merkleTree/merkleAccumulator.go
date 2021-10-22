@@ -5,10 +5,12 @@
 package merkleTree
 
 import (
+	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"io"
 )
 
 type MerkleAccumulator struct {
@@ -84,4 +86,18 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 	}
 
 	return common.BytesToHash(ret)
+}
+
+func (acc *MerkleAccumulator) Serialize(wr io.Writer) error {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], acc.size)
+	if _, err := wr.Write(buf[:]); err != nil {
+		return err
+	}
+	for i:=uint64(0); i<acc.size; i++ {
+		if _, err := wr.Write(acc.backingStorage.GetByInt64(int64(i + 2)).Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
