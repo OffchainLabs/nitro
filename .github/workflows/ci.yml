@@ -47,6 +47,8 @@ jobs:
         uses: golangci/golangci-lint-action@v2
         with:
           version: latest
+          skip-go-installation: true
+          skip-pkg-cache: true
 
   test:
     name: Go Tests
