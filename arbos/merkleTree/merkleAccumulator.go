@@ -93,24 +93,24 @@ func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
 	var tree MerkleTree
 	emptySoFar := true
 	partial0 := acc.backingStorage.GetByInt64(2)
-	if partial0 ==(common.Hash{}) {
+	if partial0 == (common.Hash{}) {
 		tree = newMerkleEmpty(1)
 	} else {
 		tree = newMerkleLeaf(partial0)
 		emptySoFar = false
 	}
 	capacity := uint64(1)
-	for i := uint64(1); i<acc.numPartials; i++ {
+	for i := uint64(1); i < acc.numPartials; i++ {
 		partial := acc.backingStorage.GetByInt64(int64(i + 2))
 		if partial == (common.Hash{}) {
 			if emptySoFar {
 				tree = newMerkleEmpty(capacity * 2)
 			} else {
-				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{ partial, capacity, capacity }, tree)
+				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{partial, capacity, capacity}, tree)
 			}
 		} else {
 			emptySoFar = false
-			tree = newMerkleInternal(&merkleCompleteSubtreeSummary{ partial, capacity, capacity }, tree)
+			tree = newMerkleInternal(&merkleCompleteSubtreeSummary{partial, capacity, capacity}, tree)
 		}
 		capacity *= 2
 	}

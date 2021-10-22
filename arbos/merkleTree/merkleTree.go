@@ -256,7 +256,7 @@ func newMerkleSummaryFromReader(rd io.Reader) (MerkleTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &merkleCompleteSubtreeSummary{ hash, capacity, capacity }, nil
+	return &merkleCompleteSubtreeSummary{hash, capacity, capacity}, nil
 }
 
 func (sum *merkleCompleteSubtreeSummary) Hash() common.Hash {
