@@ -19,6 +19,9 @@ jobs:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
+      - name: Solgen
+        run: make -j contracts
+
       - name: Lint
         uses: golangci/golangci-lint-action@v2
         with:
