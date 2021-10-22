@@ -81,9 +81,6 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	if len(res) != 21 {
 		t.Fatal()
 	}
-	if res[0] != RLPPrefixFor20Bytes {
-		t.Fatal()
-	}
 	if !bytes.Equal(addr.Bytes(), res[1:]) {
 		t.Fatal()
 	}

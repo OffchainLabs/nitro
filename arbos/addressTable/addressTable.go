@@ -69,12 +69,6 @@ func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool) {
 	return common.BytesToAddress(atab.backingStorage.GetByInt64(int64(index + 1)).Bytes()), true
 }
 
-// In compression and decompression, we use a vastly simplified (but compatible) implementation of RLP encode/decode.
-// This saves us from having to bring in a whole RLP library when our needs are very simple here.
-
-const RLPPrefixFor8Bytes byte = 128 + 8
-const RLPPrefixFor20Bytes byte = 128 + 20
-
 func (atab *AddressTable) Compress(addr common.Address) []byte {
 	index, exists := atab.Lookup(addr)
 	if exists {
