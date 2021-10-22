@@ -230,9 +230,9 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
-	arbosState := OpenArbosState(statedb)
 	if header != nil {
-		arbosState.SetLastTimestampSeen(header.Time)
+		state := OpenArbosState(statedb)
+		state.SetLastTimestampSeen(header.Time)
+		state.RetryableState().TryToReapOneRetryable(header.Time)
 	}
-	arbosState.TryToReapOneRetryable()
 }
