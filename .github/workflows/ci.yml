@@ -19,7 +19,8 @@ jobs:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
-      - uses: actions/setup-node@v2
+      - name: Setup nodejs
+        uses: actions/setup-node@v2
         with:
           node-version: '16'
           cache: 'yarn'
@@ -36,7 +37,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
       - name: Solgen
@@ -60,7 +61,8 @@ jobs:
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y gotestsum
 
-      - uses: actions/setup-node@v2
+      - name: Setup nodejs
+        uses: actions/setup-node@v2
         with:
           node-version: '16'
           cache: 'yarn'
