@@ -51,7 +51,7 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 		p.msg.From(),
 		p.getAggregator(),
 		p.msg.Data(),
-		false,      //TODO: should be true iff message was compressed
+		false, //TODO: should be true iff message was compressed
 	)
 }
 

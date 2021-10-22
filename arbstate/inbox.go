@@ -90,7 +90,10 @@ func (m sequencerMessage) Encode() []byte {
 
 	writer := brotli.NewWriter(buf)
 	defer writer.Close()
-	writer.Write(segmentsEnc)
+	_, err = writer.Write(segmentsEnc)
+	if err != nil {
+		panic("Could not write")
+	}
 	writer.Flush()
 	return append(header[:], buf.Bytes()...)
 }
@@ -394,7 +397,6 @@ func (w *InboxWrapper) BuildBlock(force bool) (*types.Block, types.Receipts, *st
 		}
 		// Always passes if the block is empty
 		if !blockBuilder.ShouldAddMessage(segment) {
-			shouldEndBlock = true
 			break
 		}
 		w.multiplexer.Advance()
@@ -417,8 +419,8 @@ func (w *InboxWrapper) EnqueueSequencerTx(tx *types.Transaction) error {
 	if err != nil {
 		return err
 	}
-	l2msgKind_signedTx := []byte{segmentKindL2Message, arbos.L2MessageKind_SignedTx}
-	l2msg := append(l2msgKind_signedTx, buf.Bytes()...)
+	l2msg := []byte{segmentKindL2Message, arbos.L2MessageKind_SignedTx}
+	l2msg = append(l2msg, buf.Bytes()...)
 
 	seqMsg := sequencerMessage{
 		minTimestamp:         0,

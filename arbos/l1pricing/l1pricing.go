@@ -13,21 +13,21 @@ import (
 )
 
 type L1PricingState struct {
-	storage                  *storage.Storage
-	defaultAggregator        common.Address
-	l1GasPriceEstimate       *big.Int
-	preferredAggregators     *storage.Storage
-	aggregatorFixedCharges   *storage.Storage
-	aggregatorAddressesToPay *storage.Storage
+	storage                     *storage.Storage
+	defaultAggregator           common.Address
+	l1GasPriceEstimate          *big.Int
+	preferredAggregators        *storage.Storage
+	aggregatorFixedCharges      *storage.Storage
+	aggregatorAddressesToPay    *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
 }
 
 var (
-	initialDefaultAggregator = common.Address{} //TODO
+	initialDefaultAggregator = common.Address{} // TODO
 
-	preferredAggregatorKey    = []byte{0}
-	aggregatorFixedChargeKey  = []byte{1}
-	aggregatorAddressToPayKey = []byte{2}
+	preferredAggregatorKey        = []byte{0}
+	aggregatorFixedChargeKey      = []byte{1}
+	aggregatorAddressToPayKey     = []byte{2}
 	aggregatorCompressionRatioKey = []byte{3}
 )
 

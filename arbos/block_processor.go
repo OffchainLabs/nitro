@@ -224,7 +224,7 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	return types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil)), b.receipts, b.statedb
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB, ) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
 		state := OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
