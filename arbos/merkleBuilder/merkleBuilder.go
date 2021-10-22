@@ -12,9 +12,9 @@ import (
 )
 
 type MerkleBuilder struct {
-	backingStorage  *storage.Storage
-	size            uint64
-	numPartials     uint64
+	backingStorage *storage.Storage
+	size           uint64
+	numPartials    uint64
 }
 
 func InitializeMerkleBuilder(sto *storage.Storage) {
@@ -24,7 +24,7 @@ func InitializeMerkleBuilder(sto *storage.Storage) {
 func OpenMerkleBuilder(sto *storage.Storage) *MerkleBuilder {
 	size := sto.GetByInt64(0).Big().Uint64()
 	numPartials := sto.GetByInt64(1).Big().Uint64()
-	return &MerkleBuilder{ sto, size, numPartials }
+	return &MerkleBuilder{sto, size, numPartials}
 }
 
 func (b *MerkleBuilder) Append(itemHash common.Hash) {
