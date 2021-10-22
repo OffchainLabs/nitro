@@ -1,8 +1,13 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbtest
 
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -21,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 )
@@ -35,9 +41,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		if err != nil {
-			utils.Fatalf("Error creating protocol stack: %v\n", err)
-		}
+		utils.Fatalf("Error creating protocol stack: %v\n", err)
 	}
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
@@ -78,7 +82,8 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		IsSequencer: true,
 	}
 	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, nodeConf.Genesis, nodeConf.OverrideLondon)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
+	var configCompatError *params.ConfigCompatError
+	if errors.As(genesisErr, &configCompatError) {
 		t.Fatal(genesisErr)
 	}
 
@@ -102,14 +107,14 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		t.Fatal(err)
 	}
 
-	currentState, err := blockChain.State()
+	inbox, err := arbnode.NewInboxState(chainDb, blockChain)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	inboxwrapper := arbstate.NewInboxWrapper(currentState, blockChain.CurrentHeader(), blockChain)
+	sequencer := arbnode.NewSequencer(inbox)
 
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, inboxwrapper)
+	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +133,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	return backend, client, ownerKey
 }
 
-//will wait untill tx is in the blockchain. attempts = 0 is infinite
+// will wait untill tx is in the blockchain. attempts = 0 is infinite
 func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, client *ethclient.Client, attempts int) {
 	ctx := context.Background()
 	chanHead := make(chan *types.Header, 20)
@@ -150,11 +155,9 @@ func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, clie
 		if attempts > 1 {
 			attempts -= 1
 		}
-		backend.CloseBlock()
 		select {
 		case <-chanHead:
 		case <-time.After(time.Second / 100):
-			backend.CloseBlock()
 		}
 	}
 }

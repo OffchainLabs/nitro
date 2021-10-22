@@ -23,7 +23,7 @@ type L1PricingState struct {
 }
 
 var (
-	initialDefaultAggregator = common.Address{} //TODO
+	initialDefaultAggregator = common.Address{} // TODO
 
 	preferredAggregatorKey        = []byte{0}
 	aggregatorFixedChargeKey      = []byte{1}

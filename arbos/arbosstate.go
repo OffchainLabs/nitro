@@ -61,14 +61,16 @@ func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 	}
 }
 
+// Don't change the positions of items in the following const block, because they are part of the storage format
+//     definition that ArbOS uses, so changes would break format compatibility.
 type ArbosStateOffset int64
 
 const (
-	versionKey      ArbosStateOffset = 0
-	gasPoolKey                       = 1
-	smallGasPoolKey                  = 2
-	gasPriceKey                      = 3
-	timestampKey                     = 4
+	versionKey ArbosStateOffset = iota
+	gasPoolKey
+	smallGasPoolKey
+	gasPriceKey
+	timestampKey
 )
 
 type ArbosStateSubspaceID []byte

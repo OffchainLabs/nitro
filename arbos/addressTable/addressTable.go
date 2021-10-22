@@ -5,9 +5,10 @@
 package addressTable
 
 import (
-	"encoding/binary"
+	"bytes"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
@@ -68,35 +69,40 @@ func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool) {
 	return common.BytesToAddress(atab.backingStorage.GetByInt64(int64(index + 1)).Bytes()), true
 }
 
-// In compression and decompression, we use a vastly simplified (but compatible) implementation of RLP encode/decode.
-// This saves us from having to bring in a whole RLP library when our needs are very simple here.
-
-const RLPPrefixFor8Bytes byte = 128 + 8
-const RLPPrefixFor20Bytes byte = 128 + 20
-
 func (atab *AddressTable) Compress(addr common.Address) []byte {
 	index, exists := atab.Lookup(addr)
 	if exists {
-		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], index)
-		return append([]byte{RLPPrefixFor8Bytes}, buf[:]...)
+		return rlp.AppendUint64([]byte{}, index)
 	} else {
-		return append([]byte{RLPPrefixFor20Bytes}, addr.Bytes()...)
+		buf, err := rlp.EncodeToBytes(addr.Bytes())
+		if err != nil {
+			panic(err)
+		}
+		return buf
 	}
 }
 
 func (atab *AddressTable) Decompress(buf []byte) (common.Address, uint64, error) {
-	switch buf[0] {
-	case RLPPrefixFor8Bytes:
-		index := binary.BigEndian.Uint64(buf[1:9])
+	rd := bytes.NewReader(buf)
+	decoder := rlp.NewStream(rd, 21)
+	input, err := decoder.Bytes()
+	if err != nil {
+		return common.Address{}, 0, err
+	}
+	if len(input) == 20 {
+		numBytesRead := uint64(rd.Size() - int64(rd.Len()))
+		return common.BytesToAddress(input), numBytesRead, nil
+	} else {
+		rd = bytes.NewReader(buf)
+		index, err := rlp.NewStream(rd, 9).Uint()
+		if err != nil {
+			return common.Address{}, 0, err
+		}
 		addr, exists := atab.LookupIndex(index)
 		if !exists {
-			return common.Address{}, 0, errors.New("invalid compressed address")
+			return common.Address{}, 0, errors.New("invalid index in compressed address")
 		}
-		return addr, 9, nil
-	case RLPPrefixFor20Bytes:
-		return common.BytesToAddress(buf[1:21]), 21, nil
-	default:
-		return common.Address{}, 0, errors.New("invalid compressed address format")
+		numBytesRead := uint64(rd.Size() - int64(rd.Len()))
+		return addr, numBytesRead, nil
 	}
 }

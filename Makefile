@@ -17,7 +17,7 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
-contracts: .make/solidity
+contracts: .make/solgen
 	@printf $(done)
 
 format fmt: .make/fmt

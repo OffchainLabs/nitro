@@ -35,6 +35,10 @@ linters-settings:
       - ifElseChain
       - assignOp
 
+  gosec:
+    excludes:
+      - G404
+
   govet:
     enable-all: true
     disable:
