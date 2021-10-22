@@ -44,6 +44,7 @@ func main() {
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
+		module += "gen"
 
 		name := file[:len(file)-5]
 
@@ -66,7 +67,7 @@ func main() {
 			[]string{string(abi)},
 			[]string{artifact.Bytecode},
 			nil,
-			module+"gen",
+			module,
 			bind.LangGo,
 			nil,
 			nil,

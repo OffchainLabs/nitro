@@ -34,7 +34,7 @@ push: .make/push
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
 clean:
-	go clean -testcache		
+	go clean -testcache
 	@rm -rf solgen/artifacts solgen/cache solgen/go/
 	@rm -f .make/*
 
@@ -66,7 +66,7 @@ clean:
 	go run solgen/gen.go
 	@touch .make/solgen
 
-.make/solidity: solgen/src/*.sol | .make
+.make/solidity: solgen/src/*/*.sol | .make
 	yarn --cwd solgen build
 	@touch .make/solidity
 
