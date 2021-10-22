@@ -6,6 +6,7 @@ package arbstate
 
 import (
 	"bytes"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"testing"
 
@@ -74,7 +75,7 @@ func TestEthDepositMessage(t *testing.T) {
 		GasPriceL1:  common.BigToHash(big.NewInt(10000000000000)),
 	}
 	msgBuf := bytes.Buffer{}
-	if err := arbos.HashToWriter(balance, &msgBuf); err != nil {
+	if err := util.HashToWriter(balance, &msgBuf); err != nil {
 		t.Error(err)
 	}
 	msg := arbos.L1IncomingMessage{
@@ -89,7 +90,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	header.RequestId = common.BigToHash(big.NewInt(4))
 	msgBuf2 := bytes.Buffer{}
-	if err := arbos.HashToWriter(balance2, &msgBuf2); err != nil {
+	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
 	}
 	msg2 := arbos.L1IncomingMessage{

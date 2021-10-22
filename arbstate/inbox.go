@@ -96,7 +96,10 @@ func (m sequencerMessage) Encode() []byte {
 
 	writer := brotli.NewWriter(buf)
 	defer writer.Close()
-	writer.Write(segmentsEnc)
+	_, err = writer.Write(segmentsEnc)
+	if err != nil {
+		panic("Could not write")
+	}
 	writer.Flush()
 	return append(header[:], buf.Bytes()...)
 }

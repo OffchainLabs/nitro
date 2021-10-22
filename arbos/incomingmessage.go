@@ -7,6 +7,7 @@ package arbos
 import (
 	"bytes"
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
 	"math/big"
 
@@ -69,23 +70,23 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := AddressTo256ToWriter(msg.Header.Sender, wr); err != nil {
+	if err := util.AddressTo256ToWriter(msg.Header.Sender, wr); err != nil {
 		return nil, err
 	}
 
-	if err := HashToWriter(msg.Header.BlockNumber, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.BlockNumber, wr); err != nil {
 		return nil, err
 	}
 
-	if err := HashToWriter(msg.Header.Timestamp, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.Timestamp, wr); err != nil {
 		return nil, err
 	}
 
-	if err := HashToWriter(msg.Header.RequestId, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.RequestId, wr); err != nil {
 		return nil, err
 	}
 
-	if err := HashToWriter(msg.Header.GasPriceL1, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.GasPriceL1, wr); err != nil {
 		return nil, err
 	}
 
@@ -116,27 +117,27 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	sender, err := AddressFrom256FromReader(rd)
+	sender, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	blockNumber, err := HashFromReader(rd)
+	blockNumber, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	timestamp, err := HashFromReader(rd)
+	timestamp, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	requestId, err := HashFromReader(rd)
+	requestId, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	gasPriceL1, err := HashFromReader(rd)
+	gasPriceL1, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +247,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		segments := make(types.Transactions, 0)
 		index := big.NewInt(0)
 		for {
-			nextMsg, err := BytestringFromReader(rd)
+			nextMsg, err := util.BytestringFromReader(rd, MaxL2MessageSize)
 			if err != nil {
 				//lint:ignore nilerr an error here means there are no further messages in the batch
 				return segments, nil
@@ -290,26 +291,26 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 }
 
 func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
-	gasLimit, err := HashFromReader(rd)
+	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	gasPrice, err := HashFromReader(rd)
+	gasPrice, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
 	var nonce uint64
 	if includesNonce {
-		nonceAsHash, err := HashFromReader(rd)
+		nonceAsHash, err := util.HashFromReader(rd)
 		if err != nil {
 			return nil, err
 		}
 		nonce = nonceAsHash.Big().Uint64()
 	}
 
-	destAddr, err := AddressFrom256FromReader(rd)
+	destAddr, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +319,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 		destination = &destAddr
 	}
 
-	callvalue, err := HashFromReader(rd)
+	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +359,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 }
 
 func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
-	balance, err := HashFromReader(rd)
+	balance, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}

@@ -285,7 +285,10 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 
 	if reorg {
 		if force {
-			s.reorgToWithLock(pos)
+			err := s.reorgToWithLock(pos)
+			if err != nil {
+				return err
+			}
 		} else {
 			return errors.New("reorg required but not allowed")
 		}

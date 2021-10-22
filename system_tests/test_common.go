@@ -1,8 +1,13 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbtest
 
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -36,9 +41,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		if err != nil {
-			utils.Fatalf("Error creating protocol stack: %v\n", err)
-		}
+		utils.Fatalf("Error creating protocol stack: %v\n", err)
 	}
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
@@ -79,7 +82,8 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		IsSequencer: true,
 	}
 	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, nodeConf.Genesis, nodeConf.OverrideLondon)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
+	var configCompatError *params.ConfigCompatError
+	if errors.As(genesisErr, &configCompatError) {
 		t.Fatal(genesisErr)
 	}
 
@@ -129,7 +133,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	return backend, client, ownerKey
 }
 
-//will wait untill tx is in the blockchain. attempts = 0 is infinite
+// will wait untill tx is in the blockchain. attempts = 0 is infinite
 func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, client *ethclient.Client, attempts int) {
 	ctx := context.Background()
 	chanHead := make(chan *types.Header, 20)
