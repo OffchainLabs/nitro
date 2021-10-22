@@ -19,6 +19,26 @@ jobs:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: recursive
 
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
+      - name: Install go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17.x
+
+      - name: Cache Build Products
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
       - name: Solgen
         run: make -j contracts
 
