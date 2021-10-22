@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,7 +31,7 @@ func main() {
 		log.Fatal("bad path")
 	}
 	root := filepath.Dir(filename)
-	filePaths, err := filepath.Glob(filepath.Join(root, "artifacts", "src", "*", "*.json"))
+	filePaths, err := filepath.Glob(filepath.Join(root, "artifacts", "src", "*", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,7 +41,11 @@ func main() {
 			continue
 		}
 
-		name := path[strings.LastIndex(path, "/")+1 : len(path)-5]
+		dir, file := filepath.Split(path)
+		dir, _ = filepath.Split(dir[:len(dir)-1])
+		_, module := filepath.Split(dir[:len(dir)-1])
+
+		name := file[:len(file)-5]
 
 		data, err := ioutil.ReadFile(path)
 		if err != nil {
@@ -61,7 +66,7 @@ func main() {
 			[]string{string(abi)},
 			[]string{artifact.Bytecode},
 			nil,
-			"precompiles",
+			module+"gen",
 			bind.LangGo,
 			nil,
 			nil,
@@ -70,11 +75,14 @@ func main() {
 			log.Fatal(err)
 		}
 
-		/*
-			#nosec G306
-			This file contains no private information so the permissions can be lenient
-		*/
-		err = ioutil.WriteFile(filepath.Join(root, "go", name+".go"), []byte(code), 0777)
+		folder := filepath.Join(root, "go", module)
+
+		err = os.MkdirAll(folder, 0o755)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		err = ioutil.WriteFile(filepath.Join(folder, name+".go"), []byte(code), 0o644)
 		if err != nil {
 			log.Fatal(err)
 		}
