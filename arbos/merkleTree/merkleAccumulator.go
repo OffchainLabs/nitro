@@ -5,12 +5,10 @@
 package merkleTree
 
 import (
-	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"io"
 )
 
 type MerkleAccumulator struct {
@@ -88,16 +86,33 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 	return common.BytesToHash(ret)
 }
 
-func (acc *MerkleAccumulator) Serialize(wr io.Writer) error {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], acc.size)
-	if _, err := wr.Write(buf[:]); err != nil {
-		return err
+func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
+	if acc.size == 0 {
+		return NewEmptyMerkleTree()
 	}
-	for i:=uint64(0); i<acc.size; i++ {
-		if _, err := wr.Write(acc.backingStorage.GetByInt64(int64(i + 2)).Bytes()); err != nil {
-			return err
+	var tree MerkleTree
+	emptySoFar := true
+	partial0 := acc.backingStorage.GetByInt64(2)
+	if partial0 ==(common.Hash{}) {
+		tree = newMerkleEmpty(1)
+	} else {
+		tree = newMerkleLeaf(partial0)
+		emptySoFar = false
+	}
+	capacity := uint64(1)
+	for i := uint64(1); i<acc.numPartials; i++ {
+		partial := acc.backingStorage.GetByInt64(int64(i + 2))
+		if partial == (common.Hash{}) {
+			if emptySoFar {
+				tree = newMerkleEmpty(capacity * 2)
+			} else {
+				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{ partial, capacity, capacity }, tree)
+			}
+		} else {
+			emptySoFar = false
+			tree = newMerkleInternal(&merkleCompleteSubtreeSummary{ partial, capacity, capacity }, tree)
 		}
+		capacity *= 2
 	}
-	return nil
+	return tree
 }

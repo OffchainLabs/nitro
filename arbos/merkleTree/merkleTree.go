@@ -5,8 +5,11 @@
 package merkleTree
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/util"
+	"io"
 )
 
 type MerkleTree interface {
@@ -16,7 +19,15 @@ type MerkleTree interface {
 	Append(common.Hash) MerkleTree
 	SummarizeUpTo(num uint64) MerkleTree
 	Prove(leafIndex uint64) *MerkleProof
+	Serialize(wr io.Writer) error
 }
+
+const (
+	SerializedLeaf byte = iota
+	SerializedEmptySubtree
+	SerializedInternalNode
+	SerializedSubtreeSummary
+)
 
 func NewEmptyMerkleTree() MerkleTree {
 	return newMerkleEmpty(0)
@@ -28,6 +39,14 @@ type merkleTreeLeaf struct {
 
 func newMerkleLeaf(hash common.Hash) MerkleTree {
 	return &merkleTreeLeaf{hash}
+}
+
+func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
+	hash, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return newMerkleLeaf(hash), nil
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
@@ -62,12 +81,28 @@ func (leaf *merkleTreeLeaf) Prove(leafIndex uint64) *MerkleProof {
 	}
 }
 
+func (leaf *merkleTreeLeaf) Serialize(wr io.Writer) error {
+	if _, err := wr.Write([]byte{SerializedLeaf}); err != nil {
+		return err
+	}
+	_, err := wr.Write(leaf.hash.Bytes())
+	return err
+}
+
 type merkleEmpty struct {
 	capacity uint64
 }
 
 func newMerkleEmpty(capacity uint64) MerkleTree {
 	return &merkleEmpty{capacity}
+}
+
+func newMerkleEmptyFromReader(rd io.Reader) (MerkleTree, error) {
+	capacity, err := util.Uint64FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return newMerkleEmpty(capacity), nil
 }
 
 func (me *merkleEmpty) Hash() common.Hash {
@@ -99,6 +134,13 @@ func (me *merkleEmpty) Prove(leafIndex uint64) *MerkleProof {
 	return nil
 }
 
+func (me *merkleEmpty) Serialize(wr io.Writer) error {
+	if _, err := wr.Write([]byte{SerializedEmptySubtree}); err != nil {
+		return err
+	}
+	return util.Uint64ToWriter(me.capacity, wr)
+}
+
 type merkleInternal struct {
 	hash     common.Hash
 	size     uint64
@@ -115,6 +157,18 @@ func newMerkleInternal(left, right MerkleTree) MerkleTree {
 		left,
 		right,
 	}
+}
+
+func newMerkleInternalFromReader(rd io.Reader) (MerkleTree, error) {
+	left, err := NewMerkleTreeFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	right, err := NewMerkleTreeFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return newMerkleInternal(left, right), nil
 }
 
 func (mi *merkleInternal) Hash() common.Hash {
@@ -170,6 +224,16 @@ func (mi *merkleInternal) Prove(leafIndex uint64) *MerkleProof {
 	return proof
 }
 
+func (mi *merkleInternal) Serialize(wr io.Writer) error {
+	if _, err := wr.Write([]byte{SerializedInternalNode}); err != nil {
+		return err
+	}
+	if err := mi.left.Serialize(wr); err != nil {
+		return err
+	}
+	return mi.right.Serialize(wr)
+}
+
 type merkleCompleteSubtreeSummary struct {
 	hash     common.Hash
 	size     uint64
@@ -181,6 +245,18 @@ func summaryFromMerkleTree(subtree MerkleTree) MerkleTree {
 		return subtree
 	}
 	return &merkleCompleteSubtreeSummary{subtree.Hash(), subtree.Size(), subtree.Capacity()}
+}
+
+func newMerkleSummaryFromReader(rd io.Reader) (MerkleTree, error) {
+	capacity, err := util.Uint64FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	return &merkleCompleteSubtreeSummary{ hash, capacity, capacity }, nil
 }
 
 func (sum *merkleCompleteSubtreeSummary) Hash() common.Hash {
@@ -205,6 +281,36 @@ func (sum *merkleCompleteSubtreeSummary) SummarizeUpTo(num uint64) MerkleTree {
 
 func (sum *merkleCompleteSubtreeSummary) Prove(leafIndex uint64) *MerkleProof {
 	return nil
+}
+
+func (sum *merkleCompleteSubtreeSummary) Serialize(wr io.Writer) error {
+	if _, err := wr.Write([]byte{SerializedSubtreeSummary}); err != nil {
+		return err
+	}
+	if err := util.Uint64ToWriter(sum.capacity, wr); err != nil {
+		return err
+	}
+	_, err := wr.Write(sum.hash.Bytes())
+	return err
+}
+
+func NewMerkleTreeFromReader(rd io.Reader) (MerkleTree, error) {
+	var typeBuf [1]byte
+	if _, err := rd.Read(typeBuf[:]); err != nil {
+		return nil, err
+	}
+	switch typeBuf[0] {
+	case SerializedLeaf:
+		return newMerkleLeafFromReader(rd)
+	case SerializedInternalNode:
+		return newMerkleInternalFromReader(rd)
+	case SerializedEmptySubtree:
+		return newMerkleEmptyFromReader(rd)
+	case SerializedSubtreeSummary:
+		return newMerkleSummaryFromReader(rd)
+	default:
+		return nil, errors.New("invalid node type in deserializing Merkle tree")
+	}
 }
 
 type MerkleProof struct {

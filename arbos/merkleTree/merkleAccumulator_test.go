@@ -5,6 +5,7 @@
 package merkleTree
 
 import (
+	"bytes"
 	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,6 +23,7 @@ func TestEmptyAccumulator(t *testing.T) {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
+	testSerDe(mt, t)
 }
 
 func TestAccumulator1(t *testing.T) {
@@ -47,6 +49,7 @@ func TestAccumulator1(t *testing.T) {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
+	testSerDe(mt, t)
 }
 
 func TestAccumulator3(t *testing.T) {
@@ -85,6 +88,7 @@ func TestAccumulator3(t *testing.T) {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
+	testSerDe(mt, t)
 }
 
 func TestAccumulator4(t *testing.T) {
@@ -126,6 +130,7 @@ func TestAccumulator4(t *testing.T) {
 		t.Fatal()
 	}
 	testAllSummarySizes(mt, t)
+	testSerDe(mt, t)
 }
 
 func initializedMerkleAccumulatorForTesting() *MerkleAccumulator {
@@ -152,5 +157,21 @@ func testAllSummarySizes(tree MerkleTree, t *testing.T) {
 		if tree.Capacity() != sum.Capacity() {
 			t.Fatal()
 		}
+		testSerDe(sum, t)
+	}
+}
+
+func testSerDe(tree MerkleTree, t *testing.T) {
+	var wr bytes.Buffer
+	if err := tree.Serialize(&wr); err != nil {
+		t.Fatal(err)
+	}
+	rd := bytes.NewReader(wr.Bytes())
+	result, err := NewMerkleTreeFromReader(rd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Hash() != result.Hash() {
+		t.Fatal()
 	}
 }
