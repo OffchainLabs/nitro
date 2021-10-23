@@ -28,7 +28,7 @@ type InboxState struct {
 	bc *core.BlockChain
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex         sync.Mutex
+	ReorgMutex         sync.RWMutex
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 }
@@ -152,8 +152,8 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
+	s.ReorgMutex.Lock()
+	defer s.ReorgMutex.Unlock()
 	targetBlockNumber, _, err := s.LookupBlockNumByMessageCount(count, false)
 	if err != nil {
 		return err
@@ -460,8 +460,8 @@ func (s *InboxState) getLastBlockPosition() (uint64, uint64, error) {
 }
 
 func (s *InboxState) createBlocks(ctx context.Context) error {
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
+	s.ReorgMutex.RLock()
+	defer s.ReorgMutex.RUnlock()
 
 	pos, lastBlockNumber, err := s.getLastBlockPosition()
 	if err != nil {
