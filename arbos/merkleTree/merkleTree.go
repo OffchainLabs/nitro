@@ -344,7 +344,6 @@ func (proof *MerkleProof) IsCorrect() bool {
 		index = index / 2
 	}
 	if index != 0 {
-		panic(index)
 		return false
 	}
 	return hash == proof.RootHash

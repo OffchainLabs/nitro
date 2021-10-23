@@ -118,12 +118,14 @@ func (con ArbSys) SendTxToL1(
 }
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
-	return 0 //TODO
+	return 0 // TODO
 }
 
 func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) ([]byte, error) {
 	var buf bytes.Buffer
-	arbos.OpenArbosState(st).SendMerkleAccumulator().ToMerkleTree().Serialize(&buf)
+	if err := arbos.OpenArbosState(st).SendMerkleAccumulator().ToMerkleTree().Serialize(&buf); err != nil {
+		return nil, err
+	}
 	return buf.Bytes(), nil
 }
 
