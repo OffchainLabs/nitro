@@ -112,6 +112,8 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		t.Fatal(err)
 	}
 
+	inbox.Start(context.Background())
+
 	sequencer := arbnode.NewSequencer(inbox)
 
 	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)

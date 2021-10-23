@@ -6,29 +6,38 @@ package arbnode
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 )
 
 type InboxState struct {
-	db    ethdb.Database
-	bc    *core.BlockChain
-	mutex sync.Mutex
+	db ethdb.Database
+	bc *core.BlockChain
+
+	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
+	reorgMutex         sync.Mutex
+	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
+	newMessageNotifier chan struct{}
 }
 
 func NewInboxState(db ethdb.Database, bc *core.BlockChain) (*InboxState, error) {
 	inbox := &InboxState{
-		db: rawdb.NewTable(db, arbitrumPrefix),
-		bc: bc,
+		db:                 rawdb.NewTable(db, arbitrumPrefix),
+		bc:                 bc,
+		newMessageNotifier: make(chan struct{}, 1),
 	}
 	err := inbox.cleanupInconsistentState()
 	return inbox, err
@@ -113,9 +122,11 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 }
 
 func (s *InboxState) ReorgTo(count uint64) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.reorgToWithLock(count)
+	atomic.AddUint32(&s.reorgPending, 1)
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
+	return s.reorgToWithInsertionMutex(count)
 }
 
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
@@ -140,7 +151,9 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *InboxState) reorgToWithLock(count uint64) error {
+func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
 	targetBlockNumber, _, err := s.LookupBlockNumByMessageCount(count, false)
 	if err != nil {
 		return err
@@ -236,8 +249,8 @@ func (s *InboxState) GetMessageCount() (uint64, error) {
 }
 
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
 
 	if pos > 0 {
 		key := dbKey(messagePrefix, pos-1)
@@ -284,7 +297,7 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 
 	if reorg {
 		if force {
-			err := s.reorgToWithLock(pos)
+			err := s.reorgToWithInsertionMutex(pos)
 			if err != nil {
 				return err
 			}
@@ -296,12 +309,12 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		return nil
 	}
 
-	return s.addMessagesImpl(pos, messages)
+	return s.writeMessages(pos, messages)
 }
 
 func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
@@ -326,12 +339,12 @@ func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error
 		})
 	}
 
-	return s.addMessagesImpl(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta)
 }
 
 func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
@@ -360,49 +373,11 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 		})
 	}
 
-	return s.addMessagesImpl(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta)
 }
 
 // The mutex must be held, and pos must be the latest message count
-func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWithMetadata) error {
-	// We're now ready to add the new messages
-	lastBlockNumber, startPos, err := s.LookupBlockNumByMessageCount(pos, true)
-	if err == nil && startPos != pos {
-		return errors.New("found block after insertion position")
-	}
-	if errors.Is(err, blockForMessageNotFoundErr) {
-		// We couldn't find a block at or after the target position.
-		// Clear the error and search backwards for the last message count with a block.
-		err = nil
-		startPos = pos
-		for startPos > 0 {
-			startPos--
-			key := dbKey(messageCountToBlockPrefix, startPos)
-			hasKey, err := s.db.Has(key)
-			if err != nil {
-				return err
-			}
-			if !hasKey {
-				continue
-			}
-			blockNumBytes, err := s.db.Get(key)
-			if err != nil {
-				return err
-			}
-			err = rlp.DecodeBytes(blockNumBytes, &lastBlockNumber)
-			if err != nil {
-				return err
-			}
-			break
-		}
-	}
-	if err != nil {
-		return err
-	}
-	if startPos > pos {
-		return errors.New("found block for future message count")
-	}
-
+func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata) error {
 	// Write any new messages to the database
 	batch := s.db.NewBatch()
 	for i, msg := range messages {
@@ -415,28 +390,88 @@ func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWith
 		if err != nil {
 			return err
 		}
-		err = batch.Put(messageCountKey, uint64ToBytes(pos+uint64(i)+1))
-		if err != nil {
-			return err
-		}
+	}
+	newCount, err := rlp.EncodeToBytes(pos + uint64(len(messages)))
+	if err != nil {
+		return err
+	}
+	err = batch.Put(messageCountKey, newCount)
+	if err != nil {
+		return err
 	}
 	err = batch.Write()
 	if err != nil {
 		return err
 	}
 
-	// Fill in gap between startPos and pos
-	replayMessages := pos - startPos
-	messages = append(make([]arbstate.MessageWithMetadata, replayMessages), messages...)
-	for i := uint64(0); i < replayMessages; i++ {
-		messages[i], err = s.GetMessage(startPos + i)
-		if err != nil {
-			return err
+	select {
+	case s.newMessageNotifier <- struct{}{}:
+	default:
+	}
+
+	return nil
+}
+
+// Only safe to call from createBlocks and while the reorg mutex is held
+func (s *InboxState) getLastBlockPosition() (uint64, uint64, error) {
+	count, err := s.GetMessageCount()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	lastBlockNumber, startPos, err := s.LookupBlockNumByMessageCount(count, true)
+	if err == nil && startPos != count {
+		return 0, 0, errors.New("found block after last message")
+	}
+	if errors.Is(err, blockForMessageNotFoundErr) {
+		// We couldn't find a block at or after the target position.
+		// Clear the error and search backwards for the last message count with a block.
+		err = nil
+		startPos = count
+		for startPos > 0 {
+			startPos--
+			key := dbKey(messageCountToBlockPrefix, startPos)
+			hasKey, err := s.db.Has(key)
+			if err != nil {
+				return 0, 0, err
+			}
+			if !hasKey {
+				continue
+			}
+			blockNumBytes, err := s.db.Get(key)
+			if err != nil {
+				return 0, 0, err
+			}
+			err = rlp.DecodeBytes(blockNumBytes, &lastBlockNumber)
+			if err != nil {
+				return 0, 0, err
+			}
+			break
 		}
 	}
-	pos = startPos
+	if err != nil {
+		return 0, 0, err
+	}
+	if startPos > count {
+		return 0, 0, errors.New("found block for future message count")
+	}
 
-	// Build blocks from the messages
+	return startPos, lastBlockNumber, nil
+}
+
+func (s *InboxState) createBlocks(ctx context.Context) error {
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
+
+	pos, lastBlockNumber, err := s.getLastBlockPosition()
+	if err != nil {
+		return err
+	}
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
 	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
@@ -446,22 +481,36 @@ func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWith
 		return err
 	}
 	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, s.bc)
-	for i, msg := range messages {
+	for pos < msgCount {
+		if atomic.LoadUint32(&s.reorgPending) > 0 {
+			// stop block creation as we need to reorg
+			return nil
+		}
+		if ctx.Err() != nil {
+			// the context is done
+			return nil
+		}
+
+		msg, err := s.GetMessage(pos)
+		if err != nil {
+			return err
+		}
 		segment, err := arbos.IncomingMessageToSegment(msg.Message, arbos.ChainConfig.ChainID)
 		if err != nil {
 			// If we've failed to parse the incoming message, make a new block and move on to the next message
-			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
+			err = s.writeBlock(blockBuilder, pos, msg.DelayedMessagesRead)
 			if err != nil {
 				return err
 			}
 			// Skip this invalid message
+			pos++
 			continue
 		}
 
 		// If we shouldn't put the next message in the current block,
 		// make a new block before adding the next message.
 		if !blockBuilder.ShouldAddMessage(segment) {
-			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
+			err = s.writeBlock(blockBuilder, pos, msg.DelayedMessagesRead)
 			if err != nil {
 				return err
 			}
@@ -473,12 +522,30 @@ func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWith
 
 		if msg.MustEndBlock {
 			// If this message must end the block, end it now
-			err = s.writeBlock(blockBuilder, pos+uint64(i), msg.DelayedMessagesRead)
+			err = s.writeBlock(blockBuilder, pos, msg.DelayedMessagesRead)
 			if err != nil {
 				return err
 			}
 		}
+		pos++
 	}
 
 	return nil
+}
+
+func (s *InboxState) Start(ctx context.Context) {
+	go (func() {
+		for {
+			err := s.createBlocks(ctx)
+			if err != nil && !errors.Is(err, context.Canceled) {
+				log.Error("error creating blocks", "err", err.Error())
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.newMessageNotifier:
+			case <-time.After(10 * time.Second):
+			}
+		}
+	})()
 }

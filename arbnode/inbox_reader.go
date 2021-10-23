@@ -45,7 +45,7 @@ func (r *InboxReader) Start(ctx context.Context) {
 		for {
 			err := r.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", err)
+				log.Error("error reading inbox", "err", err)
 			}
 			select {
 			case <-ctx.Done():
@@ -198,7 +198,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				}
 			*/
 
-			log.Trace("looking up messages from", from.String(), "to", to.String())
+			log.Trace("looking up messages", "from", from.String(), "to", to.String())
 			var sequencerBatches []interface{} // TODO
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
 				missingBatchDelayed, err := ir.addMessages(sequencerBatches, delayedMessages)
