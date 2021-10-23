@@ -41,8 +41,6 @@ fn main() -> Result<()> {
     let out = opts.output.map(File::create).transpose()?;
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
-    //This is now failing with
-    //expected struct `WasmBinary`, found struct `prover::binary::WasmBinary
     let mut mach = Machine::from_binary(libraries, main_mod, opts.always_merkleize);
     println!("Starting machine hash: {}", mach.hash());
 
