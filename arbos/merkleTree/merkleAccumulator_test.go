@@ -178,7 +178,7 @@ func testSerDe(tree MerkleTree, t *testing.T) {
 
 func TestReconstructFromEvents(t *testing.T) {
 	leaves := make([]common.Hash, 13)
-	for i, _ := range leaves {
+	for i := range leaves {
 		leaves[i] = pseudorandomForTesting(uint64(i))
 	}
 

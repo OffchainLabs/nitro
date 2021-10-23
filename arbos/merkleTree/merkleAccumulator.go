@@ -25,11 +25,11 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
 	size := sto.GetByInt64(0).Big().Uint64()
 	numPartials := sto.GetByInt64(1).Big().Uint64()
-	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials) }
+	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
-	return &MerkleAccumulator{ nil, 0, 0, make([]*common.Hash, 0) }
+	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
@@ -71,13 +71,13 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) *EventForTreeBuilding
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &EventForTreeBuilding{level, acc.size-1, h}
+			return &EventForTreeBuilding{level, acc.size - 1, h}
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &EventForTreeBuilding{level, acc.size-1,h}
+			return &EventForTreeBuilding{level, acc.size - 1, h}
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
@@ -132,12 +132,12 @@ func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
 		partial := acc.getPartial(level)
 		if *partial != (common.Hash{}) {
 			if tree == nil {
-				tree = &merkleCompleteSubtreeSummary{ *partial, capacity, capacity }
+				tree = &merkleCompleteSubtreeSummary{*partial, capacity, capacity}
 			} else {
 				for tree.Capacity() < capacity {
 					tree = newMerkleInternal(tree, newMerkleEmpty(tree.Capacity()))
 				}
-				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{ *partial, capacity, capacity }, tree)
+				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{*partial, capacity, capacity}, tree)
 			}
 		}
 		capacity *= 2
@@ -151,12 +151,12 @@ func NewNonPersistentMerkleAccumulatorFromEvents(events []EventForTreeBuilding) 
 	acc.numPartials = uint64(len(events))
 	acc.partials = make([]*common.Hash, len(events))
 	zero := common.Hash{}
-	for i, _ := range acc.partials {
+	for i := range acc.partials {
 		acc.partials[i] = &zero
 	}
 
 	latestSeen := uint64(0)
-	for i := len(events)-1; i >= 0; i-- {
+	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
 		if event.leafNum > latestSeen {
 			latestSeen = event.leafNum
