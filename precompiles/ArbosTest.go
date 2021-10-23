@@ -6,47 +6,44 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"math/big"
 )
 
 type ArbosTest struct{}
 
-func (con ArbosTest) BurnArbGas(caller common.Address, st *state.StateDB, gasAmount *big.Int) error {
+func (con ArbosTest) BurnArbGas(caller addr, st *stateDB, gasAmount huge) error {
 	return nil
 }
 
-func (con ArbosTest) BurnArbGasGasCost(gasAmount *big.Int) uint64 {
+func (con ArbosTest) BurnArbGasGasCost(gasAmount huge) uint64 {
 	if !gasAmount.IsUint64() {
 		return ^uint64(0)
 	}
 	return gasAmount.Uint64()
 }
 
-func (con ArbosTest) GetAccountInfo(caller common.Address, st *state.StateDB, addr common.Address) error {
+func (con ArbosTest) GetAccountInfo(caller addr, st *stateDB, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) GetAccountInfoGasCost(addr common.Address) uint64 {
+func (con ArbosTest) GetAccountInfoGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbosTest) GetMarshalledStorage(caller common.Address, st *state.StateDB, addr common.Address) error {
+func (con ArbosTest) GetMarshalledStorage(caller addr, st *stateDB, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) GetMarshalledStorageGasCost(addr common.Address) uint64 {
+func (con ArbosTest) GetMarshalledStorageGasCost(addr addr) uint64 {
 	return 0
 }
 
 func (con ArbosTest) InstallAccount(
-	caller common.Address,
-	st *state.StateDB,
-	addr common.Address,
+	caller addr,
+	st *stateDB,
+	addr addr,
 	isEOA bool,
-	balance *big.Int,
-	nonce *big.Int,
+	balance huge,
+	nonce huge,
 	code []byte,
 	initStorage []byte,
 ) error {
@@ -54,20 +51,20 @@ func (con ArbosTest) InstallAccount(
 }
 
 func (con ArbosTest) InstallAccountGasCost(
-	addr common.Address,
+	addr addr,
 	isEOA bool,
-	balance *big.Int,
-	nonce *big.Int,
+	balance huge,
+	nonce huge,
 	code []byte,
 	initStorage []byte,
 ) uint64 {
 	return 0
 }
 
-func (con ArbosTest) SetNonce(caller common.Address, st *state.StateDB, addr common.Address, nonce *big.Int) error {
+func (con ArbosTest) SetNonce(caller addr, st *stateDB, addr addr, nonce huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbosTest) SetNonceGasCost(addr common.Address, nonce *big.Int) uint64 {
+func (con ArbosTest) SetNonceGasCost(addr addr, nonce huge) uint64 {
 	return 0
 }

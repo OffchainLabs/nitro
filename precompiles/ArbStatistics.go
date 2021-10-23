@@ -6,17 +6,11 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"math/big"
 )
 
 type ArbStatistics struct{}
 
-func (con ArbStatistics) GetStats(
-	caller common.Address,
-	st *state.StateDB,
-) (*big.Int, *big.Int, *big.Int, *big.Int, *big.Int, *big.Int, error) {
+func (con ArbStatistics) GetStats(caller addr, st *stateDB) (huge, huge, huge, huge, huge, huge, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 
