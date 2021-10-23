@@ -175,3 +175,56 @@ func testSerDe(tree MerkleTree, t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestReconstructFromEvents(t *testing.T) {
+	leaves := make([]common.Hash, 13)
+	for i, _ := range leaves {
+		leaves[i] = pseudorandomForTesting(uint64(i))
+	}
+
+	acc := initializedMerkleAccumulatorForTesting()
+	events := []EventForTreeBuilding{}
+
+	for i, leaf := range leaves {
+		ev := acc.Append(leaf)
+		if ev.level >= uint64(len(events)) {
+			events = append(events, *ev)
+		} else {
+			events[ev.level] = *ev
+		}
+		if acc.Root() != acc.ToMerkleTree().Hash() {
+			t.Fatal(i)
+		}
+	}
+
+	if acc.Root() != acc.ToMerkleTree().Hash() {
+		t.Fatal()
+	}
+
+	reconstructedAcc := NewNonPersistentMerkleAccumulatorFromEvents(events)
+	if reconstructedAcc.Root() != acc.Root() {
+		t.Fatal()
+	}
+
+	if reconstructedAcc.size != acc.size {
+		t.Fatal()
+	}
+	if reconstructedAcc.numPartials != acc.numPartials {
+		t.Fatal()
+	}
+	for i := uint64(0); i < reconstructedAcc.numPartials; i++ {
+		if *reconstructedAcc.getPartial(i) != *acc.getPartial(i) {
+			t.Fatal(i)
+		}
+	}
+
+	reconstructedTree := reconstructedAcc.ToMerkleTree()
+	if reconstructedAcc.Root() != reconstructedTree.Hash() {
+		t.Fatal()
+	}
+
+	reconstructedTree = NewMerkleTreeFromEvents(events)
+	if reconstructedTree.Hash() != acc.Root() {
+		t.Fatal()
+	}
+}
