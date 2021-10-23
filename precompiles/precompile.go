@@ -87,7 +87,11 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		log.Fatal("Implementer for precompile ", contract, " is missing an Address field")
 	}
 
-	address := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
+	address, ok := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
+	if !ok {
+		log.Fatal("Implementer for precompile ", contract, "'s Address field has the wrong type")
+	}
+
 	methods := make(map[[4]byte]PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
 
@@ -255,13 +259,15 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		structFields := reflect.ValueOf(implementer).Elem()
 		fieldPointer := structFields.FieldByName(name)
 
-		emit := func(args []reflect.Value)[]reflect.Value {
+		emit := func(args []reflect.Value) []reflect.Value {
+
+			//nolint:errcheck
 			state := args[0].Interface().(*stateDB)
 
 			event := &types.Log{
 				Address: address,
 			}
-			
+
 			state.AddLog(event)
 			println("hello")
 			return []reflect.Value{}
@@ -282,11 +288,12 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 }
 
 func Precompiles() map[addr]ArbosPrecompile {
-	
+
+	//nolint:gocritic
 	hex := func(s string) addr {
 		return common.HexToAddress(s)
 	}
-	
+
 	return map[addr]ArbosPrecompile{
 		hex("64"): makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}),
 		/*hex("65"): makePrecompile(templates.ArbInfoMetaData, &ArbInfo{}),
