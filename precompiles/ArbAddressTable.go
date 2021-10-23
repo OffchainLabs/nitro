@@ -8,9 +8,11 @@ import (
 	"errors"
 )
 
-type ArbAddressTable struct{}
+type ArbAddressTable struct {
+	Address addr
+}
 
-func (con ArbAddressTable) AddressExists(caller addr, st *stateDB, addr addr) (bool, error) {
+func (con ArbAddressTable) AddressExists(caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
@@ -18,7 +20,7 @@ func (con ArbAddressTable) AddressExistsGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbAddressTable) Compress(caller addr, st *stateDB, addr addr) ([]uint8, error) {
+func (con ArbAddressTable) Compress(caller addr, evm mech, addr addr) ([]uint8, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -34,7 +36,7 @@ func (con ArbAddressTable) DecompressGasCost(buf []uint8, offset huge) uint64 {
 	return 0
 }
 
-func (con ArbAddressTable) Lookup(caller addr, st *stateDB, addr addr) (huge, error) {
+func (con ArbAddressTable) Lookup(caller addr, evm mech, addr addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -42,7 +44,7 @@ func (con ArbAddressTable) LookupGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbAddressTable) LookupIndex(caller addr, st *stateDB, index huge) (addr, error) {
+func (con ArbAddressTable) LookupIndex(caller addr, evm mech, index huge) (addr, error) {
 	return addr{}, errors.New("unimplemented")
 }
 
@@ -50,7 +52,7 @@ func (con ArbAddressTable) LookupIndexGasCost(index huge) uint64 {
 	return 0
 }
 
-func (con ArbAddressTable) Register(caller addr, st *stateDB, addr addr) (huge, error) {
+func (con ArbAddressTable) Register(caller addr, evm mech, addr addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -58,7 +60,7 @@ func (con ArbAddressTable) RegisterGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbAddressTable) Size(caller addr, st *stateDB) (huge, error) {
+func (con ArbAddressTable) Size(caller addr, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 

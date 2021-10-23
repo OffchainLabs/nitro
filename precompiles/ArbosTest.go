@@ -8,9 +8,11 @@ import (
 	"errors"
 )
 
-type ArbosTest struct{}
+type ArbosTest struct {
+	Address addr
+}
 
-func (con ArbosTest) BurnArbGas(caller addr, st *stateDB, gasAmount huge) error {
+func (con ArbosTest) BurnArbGas(caller addr, evm mech, gasAmount huge) error {
 	return nil
 }
 
@@ -21,7 +23,7 @@ func (con ArbosTest) BurnArbGasGasCost(gasAmount huge) uint64 {
 	return gasAmount.Uint64()
 }
 
-func (con ArbosTest) GetAccountInfo(caller addr, st *stateDB, addr addr) error {
+func (con ArbosTest) GetAccountInfo(caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
@@ -29,7 +31,7 @@ func (con ArbosTest) GetAccountInfoGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbosTest) GetMarshalledStorage(caller addr, st *stateDB, addr addr) error {
+func (con ArbosTest) GetMarshalledStorage(caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
@@ -39,7 +41,7 @@ func (con ArbosTest) GetMarshalledStorageGasCost(addr addr) uint64 {
 
 func (con ArbosTest) InstallAccount(
 	caller addr,
-	st *stateDB,
+	evm mech,
 	addr addr,
 	isEOA bool,
 	balance huge,
@@ -61,7 +63,7 @@ func (con ArbosTest) InstallAccountGasCost(
 	return 0
 }
 
-func (con ArbosTest) SetNonce(caller addr, st *stateDB, addr addr, nonce huge) error {
+func (con ArbosTest) SetNonce(caller addr, evm mech, addr addr, nonce huge) error {
 	return errors.New("unimplemented")
 }
 
