@@ -100,19 +100,7 @@ func generateBindings(root, folder, suffix string, bindFunc binder) {
 }
 
 func gen(root string) {
-	binder := func(types []string, abis []string, bytecodes []string, fsigs []map[string]string, pkg string, lang bind.Lang, libs map[string]string, aliases map[string]string) (string, error) {
-		return bind.Bind(
-			types,
-			abis,
-			bytecodes,
-			fsigs,
-			pkg,
-			lang,
-			libs,
-			aliases,
-		)
-	}
-	generateBindings(root, "go", "", binder)
+	generateBindings(root, "go", "", bind.Bind)
 }
 
 func genNew(root string) {

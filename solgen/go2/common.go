@@ -16,7 +16,7 @@ func checkCall(
 	value *big.Int,
 	readOnly bool,
 	evmABI *abi.ABI,
-	) ([]interface{}, abi.Arguments, error) {
+) ([]interface{}, abi.Arguments, error) {
 	method, err := evmABI.MethodById(input)
 	if err != nil {
 		return nil, nil, err

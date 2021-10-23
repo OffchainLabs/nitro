@@ -41,11 +41,11 @@ func Precompiles() map[common.Address]ArbosPrecompile {
 		addr("0x66"): templates.NewArbAddressTable(ArbAddressTable{}),
 		addr("0x67"): templates.NewArbBLS(ArbBLS{}),
 		addr("0x68"): templates.NewArbFunctionTable(ArbFunctionTable{}),
-		addr("0x69"): templates.NewArbosTest( ArbosTest{}),
+		addr("0x69"): templates.NewArbosTest(ArbosTest{}),
 		addr("0x6b"): templates.NewArbOwner(ArbOwner{}),
 		addr("0x6c"): templates.NewArbGasInfo(ArbGasInfo{}),
-		addr("0x6d"): templates.NewArbAggregator( ArbAggregator{}),
-		addr("0x6e"): templates.NewArbRetryableTx( ArbRetryableTx{}),
-		addr("0x6f"): templates.NewArbStatistics( ArbStatistics{}),
+		addr("0x6d"): templates.NewArbAggregator(ArbAggregator{}),
+		addr("0x6e"): templates.NewArbRetryableTx(ArbRetryableTx{}),
+		addr("0x6f"): templates.NewArbStatistics(ArbStatistics{}),
 	}
 }
