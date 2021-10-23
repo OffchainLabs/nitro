@@ -8,9 +8,11 @@ import (
 	"errors"
 )
 
-type ArbStatistics struct{}
+type ArbStatistics struct {
+	Address addr
+}
 
-func (con ArbStatistics) GetStats(caller addr, st *stateDB) (huge, huge, huge, huge, huge, huge, error) {
+func (con ArbStatistics) GetStats(caller addr, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }
 

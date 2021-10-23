@@ -16,13 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 type addr = common.Address
-type stateDB = state.StateDB
+type mech = *vm.EVM
 type huge = *big.Int
 
 type ArbosPrecompile interface {
@@ -125,13 +124,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		case "pure":
 			purity = pure
 		case "view":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			purity = view
 		case "nonpayable":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			purity = write
 		case "payable":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			needs = append(needs, reflect.TypeOf(&big.Int{}))
 			purity = payable
 		default:
@@ -222,7 +221,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		name := event.RawName
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(&state.StateDB{}), // where the emit goes
+			reflect.TypeOf(&vm.EVM{}), // where the emit goes
 		}
 		for _, arg := range event.Inputs {
 			needs = append(needs, arg.Type.GetType())
@@ -260,16 +259,23 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		fieldPointer := structFields.FieldByName(name)
 
 		emit := func(args []reflect.Value) []reflect.Value {
+			println("emmitting log for ", name)
 
 			//nolint:errcheck
-			state := args[0].Interface().(*stateDB)
+			evm := args[0].Interface().(*vm.EVM)
+			state := evm.StateDB
 
 			event := &types.Log{
-				Address: address,
+				Address:     address,
+				Topics:      nil,
+				Data:        nil,
+				BlockNumber: evm.Context.BlockNumber.Uint64(),
+				// Geth will set all other fields, which includes
+				//   TxHash, TxIndex, Index, Removed
 			}
 
 			state.AddLog(event)
-			println("hello")
+
 			return []reflect.Value{}
 		}
 
@@ -296,16 +302,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	return map[addr]ArbosPrecompile{
 		hex("64"): makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}),
-		/*hex("65"): makePrecompile(templates.ArbInfoMetaData, &ArbInfo{}),
-		hex("66"): makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{}),
-		hex("67"): makePrecompile(templates.ArbBLSMetaData, &ArbBLS{}),
-		hex("68"): makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{address: hex("68")}),
-		hex("69"): makePrecompile(templates.ArbosTestMetaData, &ArbosTest{}),
-		hex("6b"): makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{}),
-		hex("6c"): makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{}),
-		hex("6d"): makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{}),
-		hex("6e"): makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{}),
-		hex("6f"): makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{}),*/
+		hex("65"): makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}),
+		hex("66"): makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}),
+		hex("67"): makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}),
+		hex("68"): makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}),
+		hex("69"): makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}),
+		hex("6b"): makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}),
+		hex("6c"): makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}),
+		hex("6d"): makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}),
+		hex("6e"): makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}),
+		hex("6f"): makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}),
 	}
 }
 
@@ -382,19 +388,14 @@ func (p Precompile) Call(
 		reflect.ValueOf(caller),
 	}
 
-	stateDB, ok := evm.StateDB.(*state.StateDB)
-	if !ok {
-		panic("Expected statedb to be of type *state.StateDB")
-	}
-
 	switch method.purity {
 	case pure:
 	case view:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 	case write:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 	case payable:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
 		log.Fatal("Unknown state mutability ", method.purity)
