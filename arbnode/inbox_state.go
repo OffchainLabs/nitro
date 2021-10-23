@@ -161,7 +161,7 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 		batch.Reset()
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, messageCountToMessagePrefix, uint64ToBytes(count))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(count))
 	if err != nil {
 		batch.Reset()
 		return err
@@ -213,8 +213,9 @@ func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage ui
 	return err
 }
 
+// Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
-	key := dbKey(messageCountToMessagePrefix, seqNum)
+	key := dbKey(messagePrefix, seqNum)
 	data, err := s.db.Get(key)
 	if err != nil {
 		return arbstate.MessageWithMetadata{}, err
@@ -224,24 +225,12 @@ func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, er
 	return message, err
 }
 
-// As a special case, if pos is the max uint64, the message is added after the last message
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if pos == ^uint64(0) {
-		posBytes, err := s.db.Get(messageCountKey)
-		if err != nil {
-			return err
-		}
-		err = rlp.DecodeBytes(posBytes, &pos)
-		if err != nil {
-			return err
-		}
-	}
-
 	if pos > 0 {
-		key := dbKey(messageCountToMessagePrefix, pos-1)
+		key := dbKey(messagePrefix, pos-1)
 		hasPrev, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -257,7 +246,7 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		if len(messages) == 0 {
 			break
 		}
-		key := dbKey(messageCountToMessagePrefix, pos)
+		key := dbKey(messagePrefix, pos)
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -297,6 +286,49 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		return nil
 	}
 
+	return s.addMessagesImpl(pos, messages)
+}
+
+func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage, delayed bool) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	posBytes, err := s.db.Get(messageCountKey)
+	if err != nil {
+		return err
+	}
+	var pos uint64
+	err = rlp.DecodeBytes(posBytes, &pos)
+	if err != nil {
+		return err
+	}
+
+	var delayedMessagesRead uint64
+	if pos > 0 {
+		lastMsg, err := s.GetMessage(pos - 1)
+		if err != nil {
+			return err
+		}
+		delayedMessagesRead = lastMsg.DelayedMessagesRead
+	}
+
+	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
+	for i, message := range messages {
+		if delayed {
+			delayedMessagesRead++
+		}
+		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
+			Message:             message,
+			MustEndBlock:        !delayed || i == len(messages)-1,
+			DelayedMessagesRead: delayedMessagesRead,
+		})
+	}
+
+	return s.addMessagesImpl(pos, messagesWithMeta)
+}
+
+// The mutex must be held, and pos must be the latest message count
+func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWithMetadata) error {
 	// We're now ready to add the new messages
 	lastBlockNumber, startPos, err := s.LookupBlockNumByMessageCount(pos, true)
 	if err == nil && startPos != pos {
@@ -338,7 +370,7 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 	// Write any new messages to the database
 	batch := s.db.NewBatch()
 	for i, msg := range messages {
-		key := dbKey(messageCountToMessagePrefix, pos+uint64(i))
+		key := dbKey(messagePrefix, pos+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)
 		if err != nil {
 			return err

@@ -74,13 +74,26 @@ func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock i
 	}, nil
 }
 
-func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber *big.Int) (common.Hash, error) {
-	return b.con.InboxAccs(&bind.CallOpts{Context: ctx}, sequenceNumber)
+func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (*big.Int, error) {
+	opts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: blockNumber,
+	}
+	return b.con.MessageCount(opts)
+}
+
+func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber *big.Int, blockNumber *big.Int) (common.Hash, error) {
+	opts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: blockNumber,
+	}
+	return b.con.InboxAccs(opts, sequenceNumber)
 }
 
 type DelayedInboxMessage struct {
 	BlockHash      common.Hash
 	BeforeInboxAcc common.Hash
+	AfterInboxAcc  common.Hash
 	Message        *arbos.L1IncomingMessage
 }
 
