@@ -158,22 +158,18 @@ func (s *InboxState) reorgToWithLock(count uint64) error {
 	batch := s.db.NewBatch()
 	err = deleteStartingAt(s.db, batch, messageCountToBlockPrefix, uint64ToBytes(count+1))
 	if err != nil {
-		batch.Reset()
 		return err
 	}
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(count))
 	if err != nil {
-		batch.Reset()
 		return err
 	}
 	countBytes, err := rlp.EncodeToBytes(count)
 	if err != nil {
-		batch.Reset()
 		return err
 	}
 	err = batch.Put(messageCountKey, countBytes)
 	if err != nil {
-		batch.Reset()
 		return err
 	}
 
@@ -377,12 +373,10 @@ func (s *InboxState) addMessagesImpl(pos uint64, messages []arbstate.MessageWith
 		}
 		err = batch.Put(key, msgBytes)
 		if err != nil {
-			batch.Reset()
 			return err
 		}
 		err = batch.Put(messageCountKey, uint64ToBytes(pos+uint64(i)+1))
 		if err != nil {
-			batch.Reset()
 			return err
 		}
 	}

@@ -198,14 +198,14 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				}
 			*/
 
-			log.Debug("looking up messages from", from.String(), "to", to.String())
+			log.Trace("looking up messages from", from.String(), "to", to.String())
 			var sequencerBatches []interface{} // TODO
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
-				missingDelayed, err := ir.addMessages(ctx, sequencerBatches, delayedMessages)
+				missingBatchDelayed, err := ir.addMessages(sequencerBatches, delayedMessages)
 				if err != nil {
 					return err
 				}
-				if missingDelayed {
+				if missingBatchDelayed {
 					reorgingDelayed = true
 				}
 			}
@@ -229,6 +229,17 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		}
 		// TODO feed reading
 	}
+}
+
+func (r *InboxReader) addMessages(sequencerBatches []interface{}, delayedMessages []*DelayedInboxMessage) (bool, error) {
+	if len(sequencerBatches) != 0 {
+		panic("TODO: sequencer batches")
+	}
+	err := r.db.addDelayedMessages(delayedMessages)
+	if err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {

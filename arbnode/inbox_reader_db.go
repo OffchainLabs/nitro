@@ -6,6 +6,7 @@ package arbnode
 
 import (
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -16,7 +17,8 @@ import (
 )
 
 type InboxReaderDb struct {
-	db ethdb.Database
+	db    ethdb.Database
+	mutex sync.Mutex
 }
 
 func NewInboxReaderDb(raw ethdb.Database) (*InboxReaderDb, error) {
@@ -100,4 +102,72 @@ func (d *InboxReaderDb) GetDelayedMessage(seqNum *big.Int) (*arbos.L1IncomingMes
 	var message arbos.L1IncomingMessage
 	err = rlp.DecodeBytes(data, &message)
 	return &message, err
+}
+
+func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	pos := messages[0].Message.Header.RequestId.Big()
+	var nextAcc common.Hash
+	if pos.Sign() > 0 {
+		var err error
+		nextAcc, err = d.GetDelayedAcc(new(big.Int).Sub(pos, big.NewInt(1)))
+		if err != nil {
+			if errors.Is(err, accumulatorNotFound) {
+				return errors.New("missing previous delayed message")
+			} else {
+				return err
+			}
+		}
+	}
+
+	batch := d.db.NewBatch()
+	for _, message := range messages {
+		seqNum := message.Message.Header.RequestId.Big()
+		if seqNum.Cmp(pos) != 0 {
+			return errors.New("unexpected delayed sequence number")
+		}
+
+		if nextAcc != messages[0].BeforeInboxAcc {
+			return errors.New("previous delayed accumulator mismatch")
+		}
+		nextAcc = message.AfterInboxAcc()
+
+		if !seqNum.IsUint64() {
+			return errors.New("delayed sequencer number isn't a uint64")
+		}
+		msgKey := dbKey(delayedMessagePrefix, seqNum.Uint64())
+
+		msgData, err := rlp.EncodeToBytes(message.Message)
+		if err != nil {
+			return err
+		}
+		data := nextAcc.Bytes()
+		data = append(data, msgData...)
+		err = batch.Put(msgKey, data)
+		if err != nil {
+			return err
+		}
+
+		pos.Add(pos, big.NewInt(1))
+	}
+
+	if !pos.IsUint64() {
+		return errors.New("delayed message count exceeded uint64")
+	}
+	newDelayedCount := pos.Uint64()
+	countData, err := rlp.EncodeToBytes(newDelayedCount)
+	if err != nil {
+		return err
+	}
+	err = batch.Put(delayedMessageCountKey, countData)
+	if err != nil {
+		return err
+	}
+
+	return batch.Write()
 }

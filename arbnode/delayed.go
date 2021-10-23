@@ -93,8 +93,20 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber *big.
 type DelayedInboxMessage struct {
 	BlockHash      common.Hash
 	BeforeInboxAcc common.Hash
-	AfterInboxAcc  common.Hash
 	Message        *arbos.L1IncomingMessage
+}
+
+func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
+	hash := utils.Keccak256(
+		[]byte{m.Message.Header.Kind},
+		m.Message.Header.Sender.Bytes(),
+		m.Message.Header.BlockNumber.Bytes(),
+		m.Message.Header.Timestamp.Bytes(),
+		m.Message.Header.RequestId.Bytes(),
+		m.Message.Header.GasPriceL1.Bytes(),
+		utils.Keccak256(m.Message.L2msg).Bytes(),
+	)
+	return utils.Keccak256(m.BeforeInboxAcc[:], hash.Bytes())
 }
 
 func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int) ([]*DelayedInboxMessage, error) {
