@@ -50,24 +50,27 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 }
 
 type EventForTreeBuilding struct {
-	blockNum uint64
-	hash     common.Hash
+	level   uint64
+	leafNum uint64
+	hash    common.Hash
 }
 
-func NewMerkleTreeFromEvents(events []EventForTreeBuilding) MerkleTree {
+func NewMerkleTreeFromEvents(
+	events []EventForTreeBuilding, // latest event at each level
+) MerkleTree {
 	return nmtfeImpl(events, 0)
 }
 
 func nmtfeImpl(events []EventForTreeBuilding, ignoreUnlessAfterTimestamp uint64) MerkleTree {
 	topLevel := len(events) - 1
 	if topLevel == 0 {
-		if events[0].blockNum <= ignoreUnlessAfterTimestamp {
+		if events[0].leafNum <= ignoreUnlessAfterTimestamp {
 			return newMerkleEmpty(1)
 		} else {
 			return newMerkleLeaf(events[0].hash)
 		}
 	} else {
-		if events[topLevel].blockNum <= ignoreUnlessAfterTimestamp {
+		if events[topLevel].leafNum <= ignoreUnlessAfterTimestamp {
 			subtree := nmtfeImpl(events[:topLevel], ignoreUnlessAfterTimestamp)
 			if subtree.Hash() == (common.Hash{}) {
 				return newMerkleEmpty(2 * subtree.Capacity())
@@ -75,7 +78,7 @@ func nmtfeImpl(events []EventForTreeBuilding, ignoreUnlessAfterTimestamp uint64)
 				return newMerkleInternal(subtree, newMerkleEmpty(subtree.Capacity()))
 			}
 		} else {
-			subtree := nmtfeImpl(events[:topLevel], events[topLevel].blockNum)
+			subtree := nmtfeImpl(events[:topLevel], events[topLevel].leafNum)
 			return newMerkleInternal(
 				&merkleCompleteSubtreeSummary{
 					events[topLevel].hash,

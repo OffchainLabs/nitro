@@ -37,12 +37,12 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) *EventForTreeBuilding
 			acc.numPartials++
 			acc.backingStorage.SetByInt64(1, util.IntToHash(int64(acc.numPartials)))
 			acc.backingStorage.SetByInt64(int64(2+level), common.BytesToHash(soFar))
-			return &EventForTreeBuilding{level, common.BytesToHash(soFar)}
+			return &EventForTreeBuilding{level, acc.size-1, common.BytesToHash(soFar)}
 		}
 		thisLevel := acc.backingStorage.GetByInt64(int64(2 + level))
 		if thisLevel == (common.Hash{}) {
 			acc.backingStorage.SetByInt64(int64(2+level), common.BytesToHash(soFar))
-			return &EventForTreeBuilding{level, common.BytesToHash(soFar)}
+			return &EventForTreeBuilding{level, acc.size-1,common.BytesToHash(soFar)}
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		acc.backingStorage.SetByInt64(int64(2+level), common.Hash{})
