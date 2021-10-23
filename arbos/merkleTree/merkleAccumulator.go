@@ -112,7 +112,7 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 				}
 				h := crypto.Keccak256Hash(partial.Bytes(), hashSoFar.Bytes())
 				hashSoFar = &h
-				capacityInHash = 2*capacity
+				capacityInHash = 2 * capacity
 			}
 		}
 		capacity *= 2
