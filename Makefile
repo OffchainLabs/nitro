@@ -13,7 +13,7 @@ clean:
 	rm -rf prover/test-cases/rust/target
 	rm -f prover/test-cases/*.wasm
 	rm -f prover/test-cases/go/main
-	rm -rf `dirname prover/generated-inc $(generated_arbitrator_header)`
+	rm -rf `dirname $(generated_arbitrator_header)`
 	rm -f rollup/test/proofs/*.json
 	rm -rf wasm-libraries/target
 	rm -f wasm-libraries/soft-float/soft-float.wasm
