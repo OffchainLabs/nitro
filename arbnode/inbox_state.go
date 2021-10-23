@@ -221,6 +221,20 @@ func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, er
 	return message, err
 }
 
+// Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
+func (s *InboxState) GetMessageCount() (uint64, error) {
+	posBytes, err := s.db.Get(messageCountKey)
+	if err != nil {
+		return 0, err
+	}
+	var pos uint64
+	err = rlp.DecodeBytes(posBytes, &pos)
+	if err != nil {
+		return 0, err
+	}
+	return pos, nil
+}
+
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -285,16 +299,11 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 	return s.addMessagesImpl(pos, messages)
 }
 
-func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage, delayed bool) error {
+func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	posBytes, err := s.db.Get(messageCountKey)
-	if err != nil {
-		return err
-	}
-	var pos uint64
-	err = rlp.DecodeBytes(posBytes, &pos)
+	pos, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
@@ -309,14 +318,45 @@ func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage, delay
 	}
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
-	for i, message := range messages {
-		if delayed {
-			delayedMessagesRead++
-		}
+	for _, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        !delayed || i == len(messages)-1,
+			MustEndBlock:        true,
 			DelayedMessagesRead: delayedMessagesRead,
+		})
+	}
+
+	return s.addMessagesImpl(pos, messagesWithMeta)
+}
+
+func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	pos, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
+	var delayedMessagesRead uint64
+	if pos > 0 {
+		lastMsg, err := s.GetMessage(pos - 1)
+		if err != nil {
+			return err
+		}
+		delayedMessagesRead = lastMsg.DelayedMessagesRead
+	}
+
+	if delayedMessagesRead != firstDelayedSeqNum {
+		return errors.New("attempted to insert delayed messages at incorrect position")
+	}
+
+	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
+	for i, message := range messages {
+		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
+			Message:             message,
+			MustEndBlock:        i != len(messages)-1,
+			DelayedMessagesRead: delayedMessagesRead + uint64(i),
 		})
 	}
 

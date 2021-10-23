@@ -232,12 +232,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 }
 
 func (r *InboxReader) addMessages(sequencerBatches []interface{}, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	if len(sequencerBatches) != 0 {
-		panic("TODO: sequencer batches")
-	}
 	err := r.db.addDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
+	}
+	if len(sequencerBatches) != 0 {
+		panic("TODO: sequencer batches")
 	}
 	return false, nil
 }
