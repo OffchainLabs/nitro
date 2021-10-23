@@ -17,8 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
+
+type addr = common.Address
+type stateDB = state.StateDB
+type huge = *big.Int
 
 type ArbosPrecompile interface {
 	GasToCharge(input []byte) uint64
@@ -49,6 +54,7 @@ const (
 
 type Precompile struct {
 	methods map[[4]byte]PrecompileMethod
+	events  map[string]PrecompileEvent
 }
 
 type PrecompileMethod struct {
@@ -60,6 +66,11 @@ type PrecompileMethod struct {
 	implementer reflect.Value
 }
 
+type PrecompileEvent struct {
+	name     string
+	template abi.Event
+}
+
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
 func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPrecompile {
@@ -68,8 +79,17 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		log.Fatal("Bad ABI")
 	}
 
-	contract := reflect.TypeOf(implementer).Name()
+	implementerType := reflect.TypeOf(implementer)
+	contract := implementerType.Elem().Name()
+
+	_, ok := implementerType.Elem().FieldByName("Address")
+	if !ok {
+		log.Fatal("Implementer for precompile ", contract, " is missing an Address field")
+	}
+
+	address := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
 	methods := make(map[[4]byte]PrecompileMethod)
+	events := make(map[string]PrecompileEvent)
 
 	for _, method := range source.Methods {
 
@@ -85,13 +105,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 		// check that the implementer has a supporting implementation for this method
 
-		handler, ok := reflect.TypeOf(implementer).MethodByName(name)
+		handler, ok := implementerType.MethodByName(name)
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name)
 		}
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(implementer),      // the contract itself
+			implementerType,                  // the contract itself
 			reflect.TypeOf(common.Address{}), // the method's caller
 		}
 
@@ -152,13 +172,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 		// ensure we have a matching gascost func
 
-		gascost, ok := reflect.TypeOf(implementer).MethodByName(name + "GasCost")
+		gascost, ok := implementerType.MethodByName(name + "GasCost")
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
 		}
 
 		needs = []reflect.Type{
-			reflect.TypeOf(implementer), // the contract itself
+			implementerType, // the contract itself
 		}
 		for _, arg := range method.Inputs {
 			needs = append(needs, arg.Type.GetType())
@@ -192,28 +212,93 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		}
 	}
 
+	// provide the implementer mechanisms to emit logs for the solidity events
+
+	for _, event := range source.Events {
+		name := event.RawName
+
+		var needs = []reflect.Type{
+			reflect.TypeOf(&state.StateDB{}), // where the emit goes
+		}
+		for _, arg := range event.Inputs {
+			needs = append(needs, arg.Type.GetType())
+		}
+
+		context := "Precompile " + contract + "'s implementer"
+		ofType := " of type\n\tfunc "
+
+		field, ok := implementerType.Elem().FieldByName(name)
+		if !ok {
+			log.Fatal(context, " is missing a field for event ", name, ofType, needs)
+		}
+
+		context = context + "'s field for event " + name + " "
+
+		if field.Type.Kind() != reflect.Func {
+			log.Fatal(context, "is not", ofType, needs)
+		}
+		if field.Type.NumIn() != len(needs) {
+			log.Fatal(context, "doesn't have the args\n\t", needs)
+		}
+		if field.Type.NumOut() != 0 {
+			log.Fatal(context, "should not return anything")
+		}
+		for i, arg := range needs {
+			if field.Type.In(i) != arg {
+				log.Fatal(
+					context, "doesn't have the args\n\t", needs, "\n",
+					"\tArg ", i, " is ", field.Type.In(i), " instead of ", arg,
+				)
+			}
+		}
+
+		structFields := reflect.ValueOf(implementer).Elem()
+		fieldPointer := structFields.FieldByName(name)
+
+		emit := func(args []reflect.Value)[]reflect.Value {
+			state := args[0].Interface().(*stateDB)
+
+			event := &types.Log{
+				Address: address,
+			}
+			
+			state.AddLog(event)
+			println("hello")
+			return []reflect.Value{}
+		}
+
+		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
+
+		events[name] = PrecompileEvent{
+			name,
+			event,
+		}
+	}
+
 	return Precompile{
 		methods,
+		events,
 	}
 }
 
-func addr(s string) common.Address {
-	return common.HexToAddress(s)
-}
-
-func Precompiles() map[common.Address]ArbosPrecompile {
-	return map[common.Address]ArbosPrecompile{
-		addr("0x64"): makePrecompile(templates.ArbSysMetaData, ArbSys{}),
-		addr("0x65"): makePrecompile(templates.ArbInfoMetaData, ArbInfo{}),
-		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, ArbAddressTable{}),
-		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, ArbBLS{}),
-		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, ArbFunctionTable{}),
-		addr("0x69"): makePrecompile(templates.ArbosTestMetaData, ArbosTest{}),
-		addr("0x6b"): makePrecompile(templates.ArbOwnerMetaData, ArbOwner{}),
-		addr("0x6c"): makePrecompile(templates.ArbGasInfoMetaData, ArbGasInfo{}),
-		addr("0x6d"): makePrecompile(templates.ArbAggregatorMetaData, ArbAggregator{}),
-		addr("0x6e"): makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableTx{}),
-		addr("0x6f"): makePrecompile(templates.ArbStatisticsMetaData, ArbStatistics{}),
+func Precompiles() map[addr]ArbosPrecompile {
+	
+	hex := func(s string) addr {
+		return common.HexToAddress(s)
+	}
+	
+	return map[addr]ArbosPrecompile{
+		hex("64"): makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}),
+		/*hex("65"): makePrecompile(templates.ArbInfoMetaData, &ArbInfo{}),
+		hex("66"): makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{}),
+		hex("67"): makePrecompile(templates.ArbBLSMetaData, &ArbBLS{}),
+		hex("68"): makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{address: hex("68")}),
+		hex("69"): makePrecompile(templates.ArbosTestMetaData, &ArbosTest{}),
+		hex("6b"): makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{}),
+		hex("6c"): makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{}),
+		hex("6d"): makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{}),
+		hex("6e"): makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{}),
+		hex("6f"): makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{}),*/
 	}
 }
 

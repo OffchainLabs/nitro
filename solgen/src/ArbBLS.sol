@@ -8,4 +8,3 @@ interface ArbBLS {
     // Get the BLS public key associated with an address (revert if there isn't one)
     function getPublicKey(address addr) external view returns (uint, uint, uint, uint);
 }
-

@@ -34,4 +34,3 @@ interface ArbGasInfo {
     // reverts unless called by chain owner or designated gas oracle (if any)
     function setL1GasPriceEstimate(uint priceInWei) external;
 }
-

@@ -50,4 +50,3 @@ interface ArbAddressTable {
     */
     function compress(address addr) external returns(bytes memory);
 }
-
