@@ -9,5 +9,6 @@ cmd/node/node
 solgen/artifacts
 solgen/cache/
 solgen/go/
+solgen/go2/*_gen.go
 solgen/node_modules/
 .make/

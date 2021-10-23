@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
+type binder = func(types []string, abis []string, bytecodes []string, fsigs []map[string]string, pkg string, lang bind.Lang, libs map[string]string, aliases map[string]string) (string, error)
+
 type HardHatArtifact struct {
 	Format       string        `json:"_format"`
 	ContractName string        `json:"contractName"`
@@ -30,11 +32,17 @@ func main() {
 		log.Fatal("bad path")
 	}
 	root := filepath.Dir(filename)
+	gen(root)
+	genNew(root)
+}
+
+func loadArtifacts(root string) []HardHatArtifact {
 	filePaths, err := filepath.Glob(filepath.Join(root, "artifacts", "src", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	var artifacts []HardHatArtifact
 	for _, path := range filePaths {
 		if strings.Contains(path, ".dbg.json") {
 			continue
@@ -51,12 +59,20 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
+		artifacts = append(artifacts, artifact)
+	}
+	return artifacts
+}
+
+func generateBindings(root, folder, suffix string, bindFunc binder) {
+	artifacts := loadArtifacts(root)
+	for _, artifact := range artifacts {
 		abi, err := json.Marshal(artifact.Abi)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		code, err := bind.Bind(
+		code, err := bindFunc(
 			[]string{artifact.ContractName},
 			[]string{string(abi)},
 			[]string{artifact.Bytecode},
@@ -74,11 +90,44 @@ func main() {
 			#nosec G306
 			This file contains no private information so the permissions can be lenient
 		*/
-		err = ioutil.WriteFile(filepath.Join(root, "go", name+".go"), []byte(code), 0644)
+		err = ioutil.WriteFile(filepath.Join(root, folder, artifact.ContractName+suffix+".go"), []byte(code), 0644)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	fmt.Println("successfully generated", len(filePaths)/2, "precompiles")
+	fmt.Println("successfully generated", len(artifacts), "precompiles")
+}
+
+func gen(root string) {
+	binder := func(types []string, abis []string, bytecodes []string, fsigs []map[string]string, pkg string, lang bind.Lang, libs map[string]string, aliases map[string]string) (string, error) {
+		return bind.Bind(
+			types,
+			abis,
+			bytecodes,
+			fsigs,
+			pkg,
+			lang,
+			libs,
+			aliases,
+		)
+	}
+	generateBindings(root, "go", "", binder)
+}
+
+func genNew(root string) {
+	binder := func(types []string, abis []string, bytecodes []string, fsigs []map[string]string, pkg string, lang bind.Lang, libs map[string]string, aliases map[string]string) (string, error) {
+		return bind.BindWithTemplate(
+			types,
+			abis,
+			bytecodes,
+			fsigs,
+			pkg,
+			lang,
+			libs,
+			aliases,
+			bind.ArbTmplSourceGo,
+		)
+	}
+	generateBindings(root, "go2", "_gen", binder)
 }
