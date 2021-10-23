@@ -193,7 +193,7 @@ func TestReconstructFromEvents(t *testing.T) {
 			events[ev.level] = *ev
 		}
 		if acc.Root() != acc.ToMerkleTree().Hash() {
-			t.Fatal(i)
+			t.Fatal(i, acc.partials)
 		}
 	}
 

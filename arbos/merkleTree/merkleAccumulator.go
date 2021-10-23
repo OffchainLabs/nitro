@@ -94,32 +94,30 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 	if acc.size == 0 {
 		return common.Hash{}
 	}
-	if acc.size == 1 {
-		return *acc.getPartial(0)
-	}
-	ret := make([]byte, 32)
-	emptySoFar := true
-	for i := uint64(0); i < acc.numPartials; i++ {
-		thisLevel := acc.getPartial(i)
-		if *thisLevel == (common.Hash{}) {
-			if !emptySoFar {
-				ret = crypto.Keccak256(make([]byte, 32), ret)
-			}
-		} else {
-			if emptySoFar {
-				if i+1 == acc.numPartials {
-					ret = thisLevel.Bytes()
-				} else {
-					emptySoFar = false
-					ret = crypto.Keccak256(thisLevel.Bytes(), make([]byte, 32))
-				}
+
+	var hashSoFar *common.Hash
+	var capacityInHash uint64
+	capacity := uint64(1)
+	for level := uint64(0); level < acc.numPartials; level++ {
+		partial := acc.getPartial(level)
+		if *partial != (common.Hash{}) {
+			if hashSoFar == nil {
+				hashSoFar = partial
+				capacityInHash = capacity
 			} else {
-				ret = crypto.Keccak256(thisLevel.Bytes(), ret)
+				for capacityInHash < capacity {
+					h := crypto.Keccak256Hash(hashSoFar.Bytes(), make([]byte, 32))
+					hashSoFar = &h
+					capacityInHash *= 2
+				}
+				h := crypto.Keccak256Hash(partial.Bytes(), hashSoFar.Bytes())
+				hashSoFar = &h
+				capacityInHash = 2*capacity
 			}
 		}
+		capacity *= 2
 	}
-
-	return common.BytesToHash(ret)
+	return *hashSoFar
 }
 
 func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
@@ -131,13 +129,19 @@ func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
 	for level := uint64(0); level < acc.numPartials; level++ {
 		partial := acc.getPartial(level)
 		if *partial != (common.Hash{}) {
+			var thisLevel MerkleTree
+			if level == 0 {
+				thisLevel = newMerkleLeaf(*partial)
+			} else {
+				thisLevel = &merkleCompleteSubtreeSummary{*partial, capacity, capacity}
+			}
 			if tree == nil {
-				tree = &merkleCompleteSubtreeSummary{*partial, capacity, capacity}
+				tree = thisLevel
 			} else {
 				for tree.Capacity() < capacity {
 					tree = newMerkleInternal(tree, newMerkleEmpty(tree.Capacity()))
 				}
-				tree = newMerkleInternal(&merkleCompleteSubtreeSummary{*partial, capacity, capacity}, tree)
+				tree = newMerkleInternal(thisLevel, tree)
 			}
 		}
 		capacity *= 2
