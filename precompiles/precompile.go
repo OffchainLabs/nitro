@@ -221,15 +221,15 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 	// provide the implementer mechanisms to emit logs for the solidity events
 
-	supportedIndecies := map[string]struct{}{
+	supportedIndices := map[string]struct{}{
 		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
 		"address": {},
 		"bytes32": {},
 		"bool":    {},
 	}
 	for i := 8; i <= 256; i += 8 {
-		supportedIndecies["int"+strconv.Itoa(i)] = struct{}{}
-		supportedIndecies["uint"+strconv.Itoa(i)] = struct{}{}
+		supportedIndices["int"+strconv.Itoa(i)] = struct{}{}
+		supportedIndices["uint"+strconv.Itoa(i)] = struct{}{}
 	}
 
 	for _, event := range source.Events {
@@ -242,7 +242,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			needs = append(needs, arg.Type.GetType())
 
 			if arg.Indexed {
-				_, ok := supportedIndecies[arg.Type.String()]
+				_, ok := supportedIndices[arg.Type.String()]
 				if !ok {
 					log.Fatal(
 						"Please change the solidity for precompile ", contract,
