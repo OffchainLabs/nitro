@@ -76,7 +76,7 @@ type PrecompileEvent struct {
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPrecompile {
+func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Fatal("Bad ABI")
@@ -371,7 +371,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		}
 	}
 
-	return Precompile{
+	return address, Precompile{
 		methods,
 		events,
 	}
@@ -384,20 +384,26 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return common.HexToAddress(s)
 	}
 
-	return map[addr]ArbosPrecompile{
-		hex("64"): makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}),
-		hex("65"): makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}),
-		hex("66"): makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}),
-		hex("67"): makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}),
-		hex("68"): makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}),
-		hex("69"): makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}),
-		hex("6b"): makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}),
-		hex("6c"): makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}),
-		hex("6d"): makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}),
-		hex("6e"): makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}),
-		hex("6f"): makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}),
-		hex("ff"): makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}),
+	contracts := make(map[addr]ArbosPrecompile)
+
+	insert := func(address addr, impl ArbosPrecompile) {
+		contracts[address] = impl
 	}
+
+	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
+	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
+	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
+	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
+	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
+	insert(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}))
+	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
+	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	return contracts
 }
 
 // determine the amount of gas to charge for calling a precompile
