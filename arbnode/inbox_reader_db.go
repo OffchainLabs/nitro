@@ -126,13 +126,14 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	}
 
 	batch := d.db.NewBatch()
+	// TODO: remove sequencer batches whose delayed count is > pos
 	for _, message := range messages {
 		seqNum := message.Message.Header.RequestId.Big()
 		if seqNum.Cmp(pos) != 0 {
 			return errors.New("unexpected delayed sequence number")
 		}
 
-		if nextAcc != messages[0].BeforeInboxAcc {
+		if nextAcc != message.BeforeInboxAcc {
 			return errors.New("previous delayed accumulator mismatch")
 		}
 		nextAcc = message.AfterInboxAcc()
@@ -160,6 +161,10 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 		return errors.New("delayed message count exceeded uint64")
 	}
 	newDelayedCount := pos.Uint64()
+	err := deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
+	if err != nil {
+		return err
+	}
 	countData, err := rlp.EncodeToBytes(newDelayedCount)
 	if err != nil {
 		return err
