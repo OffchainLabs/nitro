@@ -99,7 +99,7 @@ func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Add
 }
 
 func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Address) *big.Int {
- 	return ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes())).Big()
+	return ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes())).Big()
 }
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) *big.Int {
 	return new(big.Int).Mul(ps.FixedChargeForAggregatorL1Gas(aggregator), ps.L1GasPriceEstimateWei())
