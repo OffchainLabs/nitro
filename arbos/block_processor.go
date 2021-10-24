@@ -53,6 +53,8 @@ type BlockBuilder struct {
 
 	txes     types.Transactions
 	receipts types.Receipts
+
+	sendsBefore uint64
 }
 
 type BlockData struct {
@@ -65,6 +67,7 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
 		chainContext:    chainContext,
+		sendsBefore:     OpenArbosState(statedb).SendMerkleAccumulator().Size(),
 	}
 }
 

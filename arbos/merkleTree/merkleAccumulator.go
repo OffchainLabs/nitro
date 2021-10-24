@@ -120,6 +120,17 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 	return *hashSoFar
 }
 
+func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, partials []common.Hash) {
+	size = acc.size
+	root = acc.Root()
+	numPartials := acc.numPartials
+	partials = make([]common.Hash, numPartials)
+	for i := uint64(0); i < numPartials; i++ {
+		partials[i] = *acc.getPartial(i)
+	}
+	return
+}
+
 func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
 	if acc.numPartials == 0 {
 		return NewEmptyMerkleTree()

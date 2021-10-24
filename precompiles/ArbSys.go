@@ -5,7 +5,6 @@
 package precompiles
 
 import (
-	"bytes"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -111,8 +110,9 @@ func (con ArbSys) SendTxToL1(
 	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := arbos.OpenArbosState(st)
 	merkleAcc := arbosState.SendMerkleAccumulator()
-	_ = merkleAcc.Append(sendHash)
+	merkleUpdateEvent := merkleAcc.Append(sendHash)
 	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, merkleAcc.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
+	_ = merkleUpdateEvent   // TODO: emit an event for the merkleUpdateEvent
 	//TODO: deduct the callvalue from this precompile's account (burn/destroy it)
 	return sendHash.Big(), nil
 }
@@ -121,16 +121,20 @@ func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []
 	return 0 // TODO
 }
 
-func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := arbos.OpenArbosState(st).SendMerkleAccumulator().ToMerkleTree().Serialize(&buf); err != nil {
-		return nil, err
+func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) (*big.Int, [32]byte, [][32]byte, error) {
+	if caller != (common.Address{}) {
+		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
 	}
-	return buf.Bytes(), nil
+	size, rootHash, rawPartials := arbos.OpenArbosState(st).SendMerkleAccumulator().StateForExport()
+	partials := make([][32]byte, len(rawPartials))
+	for i, par := range rawPartials {
+		partials[i] = [32]byte(par)
+	}
+	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
 }
 
 func (con ArbSys) SendMerkleTreeStateGasCost() uint64 {
-	return 0
+	return 0   // OK to leave it at zero, because method is only callable by address zero
 }
 
 func (con ArbSys) WasMyCallersAddressAliased(caller common.Address, st *state.StateDB) (bool, error) {
