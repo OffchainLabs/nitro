@@ -156,7 +156,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if (!nbytes.IsInt64()) || (nbytes.Int64()+2 != int64(len(res)) ){
+	if (!nbytes.IsInt64()) || (nbytes.Int64()+2 != int64(len(res))) {
 		t.Fatal()
 	}
 	if dec != addr {
