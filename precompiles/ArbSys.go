@@ -102,7 +102,7 @@ func (con *ArbSys) SendTxToL1(
 	calldataForL1 []byte,
 ) (*big.Int, error) {
 	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
-	arbosState := arbos.OpenArbosState(st)
+	arbosState := arbos.OpenArbosState(evm.StateDB)
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvent := merkleAcc.Append(sendHash)
 	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, merkleAcc.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
@@ -141,11 +141,11 @@ func (con *ArbSys) WasMyCallersAddressAliasedGasCost() uint64 {
 
 func (con ArbSys) WithdrawEth(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	value *big.Int,
 	destination common.Address,
 ) (*big.Int, error) {
-	return con.SendTxToL1(caller, st, value, destination, []byte{})
+	return con.SendTxToL1(caller, evm, value, destination, []byte{})
 }
 
 func (con ArbSys) WithdrawEthGasCost(destination common.Address) uint64 {
