@@ -17,13 +17,6 @@ type ArbRetryableTx struct {
 }
 
 func (con ArbRetryableTx) Cancel(caller addr, evm mech, ticketId [32]byte) error {
-
-	// do some kind of work
-	// ...
-
-	// emit a log
-	con.Canceled(evm, ticketId)
-
 	return errors.New("unimplemented")
 }
 
