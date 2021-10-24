@@ -17,9 +17,9 @@ func (con ArbDebug) Events(caller addr, evm mech, paid huge, flag bool, value [3
 	//   Spill tests that a value wider than 32 bytes gets hashed when indexing
 	//   Mixed interleaves index'd and normal values that may need to be padded
 
-	con.Basic(evm, flag, value)
-	con.Spill(evm, flag, ([2][32]byte{value, value}))
-	con.Mixed(evm, flag, !flag, value, con.Address, caller)
+	con.Basic(evm, !flag, value)
+	con.Spill(evm, !flag, ([2][32]byte{value, value}))
+	con.Mixed(evm, !flag, flag, value, con.Address, caller)
 
 	return caller, paid, nil
 }
