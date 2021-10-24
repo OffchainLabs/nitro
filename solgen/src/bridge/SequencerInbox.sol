@@ -6,13 +6,15 @@ pragma solidity ^0.7.5;
 import "./IBridge.sol";
 import "./Messages.sol";
 import "../utils/IGasRefunder.sol";
+import "./SimpleDelayedInbox.sol";
+
 
 contract SequencerInbox {
 	bytes32[] public inboxAccs;
 	uint256 public batchCount;
     uint256 public totalDelayedMessagesRead;
 
-    IBridge public delayedBridge;
+    DelayedInbox public delayedBridge;
 
     mapping(address => bool) public isBatchPoster;
     uint256 public maxDelayBlocks;
@@ -38,7 +40,7 @@ contract SequencerInbox {
     );
 
     constructor(
-        IBridge _delayedBridge,
+        DelayedInbox _delayedBridge,
         address _sequencer
     ) {
         delayedBridge = _delayedBridge;

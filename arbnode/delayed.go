@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/arbstate/arbos"
@@ -25,17 +24,22 @@ import (
 	"github.com/offchainlabs/arbstate/utils"
 )
 
+type L1Interface interface {
+	bind.ContractBackend
+	ethereum.ChainReader
+}
+
 var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash
 var l2MessageFromOriginCallABI abi.Method
 
 func init() {
-	parsedIBridgeABI, err := abi.JSON(strings.NewReader(bridgegen.IBridgeABI))
+	parsedDelayedInboxABI, err := abi.JSON(strings.NewReader(bridgegen.DelayedInboxABI))
 	if err != nil {
 		panic(err)
 	}
-	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
+	messageDeliveredID = parsedDelayedInboxABI.Events["MessageDelivered"].ID
 
 	parsedIMessageProviderABI, err := abi.JSON(strings.NewReader(bridgegen.IMessageProviderABI))
 	if err != nil {
@@ -52,15 +56,15 @@ func init() {
 }
 
 type DelayedBridge struct {
-	con              *bridgegen.IBridge
+	con              *bridgegen.DelayedInbox
 	address          common.Address
 	fromBlock        int64
-	client           *ethclient.Client
+	client           L1Interface
 	messageProviders map[common.Address]*bridgegen.IMessageProvider
 }
 
-func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
-	con, err := bridgegen.NewIBridge(addr, client)
+func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
+	con, err := bridgegen.NewDelayedInbox(addr, client)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +163,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	if len(logs) == 0 {
 		return nil, nil
 	}
-	parsedLogs := make([]*bridgegen.IBridgeMessageDelivered, 0, len(logs))
+	parsedLogs := make([]*bridgegen.DelayedInboxMessageDelivered, 0, len(logs))
 	messageIds := make([]common.Hash, 0, len(logs))
 	rawTransactions := make(map[common.Hash]*types.Transaction)
 	inboxAddresses := make(map[common.Address]struct{})

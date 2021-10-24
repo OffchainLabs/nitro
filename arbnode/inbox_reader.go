@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -24,10 +23,10 @@ type InboxReader struct {
 	db            *InboxReaderDb
 	delayedBridge *DelayedBridge
 	caughtUpChan  chan bool
-	client        *ethclient.Client
+	client        L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, client *ethclient.Client, firstMessageBlock *big.Int, delayedBridge *DelayedBridge) (*InboxReader, error) {
+func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge) (*InboxReader, error) {
 	db, err := NewInboxReaderDb(rawDb)
 	if err != nil {
 		return nil, err

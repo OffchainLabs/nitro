@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,7 +31,52 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
+
+func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, bind.TransactOpts, common.Address, common.Address) {
+	var gasLimit uint64 = 8000029
+	l1Key, err := crypto.GenerateKey() // nolint: gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	l1Signer := types.NewLondonSigner(big.NewInt(1337))
+	l1Address := crypto.PubkeyToAddress(l1Key.PublicKey)
+	l1genAlloc := make(core.GenesisAlloc)
+	l1genAlloc[l1Address] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+
+	l1sim := backends.NewSimulatedBackend(l1genAlloc, gasLimit)
+	defer l1sim.Close()
+
+	l1TransactionOpts := bind.TransactOpts{
+		From:      l1Address,
+		Nonce:     nil,
+		GasLimit:  30000,
+		GasFeeCap: big.NewInt(5e+09),
+		GasTipCap: big.NewInt(2),
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			if address != l1Address {
+				return nil, errors.New("Bad Address")
+			}
+			signature, err := crypto.Sign(l1Signer.Hash(tx).Bytes(), l1Key)
+			if err != nil {
+				return nil, err
+			}
+			return tx.WithSignature(l1Signer, signature)
+		},
+	}
+	delayedInboxAddr, _, _, err := bridgegen.DeployDelayedInbox(&l1TransactionOpts, l1sim)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, delayedInboxAddr, l1Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return l1sim, l1TransactionOpts, sequencerInboxAddr, delayedInboxAddr
+}
 
 func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
 	arbstate.RequireHookedGeth()
@@ -45,6 +92,8 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	}
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
+
+	l1backend, _, _, l1delayedInboxAddr := CreateL1WithInbox(t)
 
 	ownerKey, err := crypto.GenerateKey()
 	if err != nil {
@@ -78,6 +127,16 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1delayedInboxAddr, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = arbnode.NewInboxReader(chainDb, l1backend, &big.Int{}, delayedBridge)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
