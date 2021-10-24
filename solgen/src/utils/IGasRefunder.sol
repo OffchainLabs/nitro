@@ -16,10 +16,12 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.7.5;
+pragma solidity >=0.6.11 <0.9.0;
 
-interface IMessageProvider {
-    event InboxMessageDelivered(uint256 indexed messageNum, bytes data);
-
-    event InboxMessageDeliveredFromOrigin(uint256 indexed messageNum);
+interface IGasRefunder {
+    function onGasSpent(
+        address payable spender,
+        uint256 gasUsed,
+        uint256 calldataSize
+    ) external returns (bool success);
 }

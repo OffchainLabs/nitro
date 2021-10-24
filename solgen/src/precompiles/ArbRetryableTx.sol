@@ -1,8 +1,8 @@
 
-pragma solidity >=0.4.21 <0.7.0;
+pragma solidity >=0.4.21 <0.8.0;
 
 /**
-* @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E 
+* @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E
 */
 interface ArbRetryableTx {
 
@@ -15,7 +15,7 @@ interface ArbRetryableTx {
      */
     function redeem(bytes32 txId) external;
 
-    /** 
+    /**
     * @notice Return the minimum lifetime of redeemable txn.
     * @return lifetime in seconds
     */
@@ -29,21 +29,21 @@ interface ArbRetryableTx {
     */
     function getTimeout(bytes32 ticketId) external view returns(uint);
 
-    /** 
+    /**
     * @notice Return the price, in wei, of submitting a new retryable tx with a given calldata size.
     * @param calldataSize call data size to get price of (in wei)
     * @return (price, nextUpdateTimestamp). Price is guaranteed not to change until nextUpdateTimestamp.
-    */ 
+    */
     function getSubmissionPrice(uint calldataSize) external view returns (uint, uint);
 
-    /** 
+    /**
      * @notice Return the price, in wei, of extending the lifetime of ticketId by an additional lifetime period. Revert if ticketId doesn't exist.
      * @param ticketId unique ticket identifier
      * @return (price, nextUpdateTimestamp). Price is guaranteed not to change until nextUpdateTimestamp.
     */
     function getKeepalivePrice(bytes32 ticketId) external view returns(uint, uint);
 
-    /** 
+    /**
     @notice Deposits callvalue into the sender's L2 account, then adds one lifetime period to the life of ticketId.
     * If successful, emits LifetimeExtended event.
     * Revert if ticketId does not exist, or if the timeout of ticketId is already at least one lifetime period in the future, or if the sender has insufficient funds (after the deposit).
@@ -60,7 +60,7 @@ interface ArbRetryableTx {
     */
     function getBeneficiary(bytes32 ticketId) external view returns (address);
 
-    /** 
+    /**
     * @notice Cancel ticketId and refund its callvalue to its beneficiary.
     * Revert if ticketId doesn't exist, or if called by anyone other than ticketId's beneficiary.
     * @param ticketId unique ticket identifier
