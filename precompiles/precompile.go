@@ -41,6 +41,8 @@ type ArbosPrecompile interface {
 		readOnly bool,
 		evm *vm.EVM,
 	) (output []byte, err error)
+
+	Precompile() Precompile
 }
 
 type purity uint8
@@ -259,8 +261,11 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		structFields := reflect.ValueOf(implementer).Elem()
 		fieldPointer := structFields.FieldByName(name)
 
+		// we can't capture `event` since the for loop will change its value
+		capturedEvent := event
+
 		emit := func(args []reflect.Value) []reflect.Value {
-			println("emmitting log for ", name)
+			println("emmitting log for", name)
 
 			//nolint:errcheck
 			evm := args[0].Interface().(*vm.EVM)
@@ -272,16 +277,19 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 				values[i] = args[i].Interface()
 			}
 
-			data, err := event.Inputs.PackValues(values)
+			data, err := capturedEvent.Inputs.PackValues(values)
 			if err != nil {
 				// in production we'll just revert, but for now this
 				// will catch implementation errors
-				log.Fatal("Could not encode event ", name, "'s result ", err)
+				log.Fatal(
+					"Could not pack values for event ", name,
+					"\nargs ", args, "\nvalues ", values, "\nerror ", err,
+				)
 			}
 
-			topics := []common.Hash{event.ID}
+			topics := []common.Hash{capturedEvent.ID}
 
-			for i, input := range event.Inputs {
+			for i, input := range capturedEvent.Inputs {
 				if input.Indexed {
 					// Geth provides infrastructure for packing arrays of values,
 					// so we create an array with just the value we want to pack.
@@ -291,7 +299,10 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 					if err != nil {
 						// in production we'll just revert, but for now this
 						// will catch implementation errors
-						log.Fatal("Could not encode event ", name, "'s result ", err)
+						log.Fatal(
+							"Could not pack topics for event ", name,
+							"\nargs ", args, "\nvalues ", values, "\nerror ", err,
+						)
 					}
 
 					var topic [32]byte
@@ -470,4 +481,8 @@ func (p Precompile) Call(
 		log.Fatal("Could not encode precompile result ", err)
 	}
 	return encoded, nil
+}
+
+func (p Precompile) Precompile() Precompile {
+	return p
 }

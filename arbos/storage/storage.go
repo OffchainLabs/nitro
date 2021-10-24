@@ -31,13 +31,18 @@ func NewGeth(statedb vm.StateDB) *Storage {
 
 // Use Geth's memory-backed database to create an evm key-value store
 func NewMemoryBacked() *Storage {
+	return NewGeth(NewMemoryBackedStateDB())
+}
+
+// Use Geth's memory-backed database to create a statedb
+func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
-	return NewGeth(statedb)
+	return statedb
 }
 
 func (store *Storage) Get(key common.Hash) common.Hash {
