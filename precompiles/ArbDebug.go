@@ -11,7 +11,7 @@ type ArbDebug struct {
 	Mixed   func(mech, bool, bool, [32]byte, addr, addr)
 }
 
-func (con ArbDebug) Events(caller addr, evm mech, flag bool, value [32]byte) error {
+func (con ArbDebug) Events(caller addr, evm mech, paid huge, flag bool, value [32]byte) (addr, huge, error) {
 	// Emits 3 events that cover each case
 	//   Basic tests an index'd value & a normal value
 	//   Spill tests that a value wider than 32 bytes gets hashed when indexing
@@ -21,9 +21,9 @@ func (con ArbDebug) Events(caller addr, evm mech, flag bool, value [32]byte) err
 	con.Spill(evm, flag, ([2][32]byte{value, value}))
 	con.Mixed(evm, flag, !flag, value, con.Address, caller)
 
-	return nil
+	return caller, paid, nil
 }
 
 func (con ArbDebug) EventsGasCost(flag bool, value [32]byte) uint64 {
-	return 0
+	return uint64(value[0])
 }
