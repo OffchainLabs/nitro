@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type addr = common.Address
@@ -264,18 +265,58 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			//nolint:errcheck
 			evm := args[0].Interface().(*vm.EVM)
 			state := evm.StateDB
+			args = args[1:]
+
+			values := make([]interface{}, len(args))
+			for i := 0; i < len(args); i++ {
+				values[i] = args[i].Interface()
+			}
+
+			data, err := event.Inputs.PackValues(values)
+			if err != nil {
+				// in production we'll just revert, but for now this
+				// will catch implementation errors
+				log.Fatal("Could not encode event ", name, "'s result ", err)
+			}
+
+			topics := []common.Hash{event.ID}
+
+			for i, input := range event.Inputs {
+				if input.Indexed {
+					// Geth provides infrastructure for packing arrays of values,
+					// so we create an array with just the value we want to pack.
+
+					packable := []interface{}{values[i]}
+					bytes, err := abi.Arguments{input}.PackValues(packable)
+					if err != nil {
+						// in production we'll just revert, but for now this
+						// will catch implementation errors
+						log.Fatal("Could not encode event ", name, "'s result ", err)
+					}
+
+					var topic [32]byte
+
+					if len(bytes) > 32 {
+						topic = *(*[32]byte)(crypto.Keccak256(bytes))
+					} else {
+						offset := 32 - len(bytes)
+						copy(topic[offset:], bytes)
+					}
+
+					topics = append(topics, topic)
+				}
+			}
 
 			event := &types.Log{
 				Address:     address,
-				Topics:      nil,
-				Data:        nil,
+				Topics:      topics,
+				Data:        data,
 				BlockNumber: evm.Context.BlockNumber.Uint64(),
-				// Geth will set all other fields, which includes
-				//   TxHash, TxIndex, Index, Removed
+				// Geth will set all other fields, which include
+				//   TxHash, TxIndex, Index, and Removed
 			}
 
 			state.AddLog(event)
-
 			return []reflect.Value{}
 		}
 
@@ -312,6 +353,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		hex("6d"): makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}),
 		hex("6e"): makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}),
 		hex("6f"): makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}),
+		hex("ff"): makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}),
 	}
 }
 
