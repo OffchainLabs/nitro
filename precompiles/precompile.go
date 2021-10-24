@@ -265,7 +265,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		capturedEvent := event
 
 		emit := func(args []reflect.Value) []reflect.Value {
-			println("emmitting log for", name)
 
 			//nolint:errcheck
 			evm := args[0].Interface().(*vm.EVM)
