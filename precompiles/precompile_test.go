@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
+	templates "github.com/offchainlabs/arbstate/solgen/go"
 	"math/big"
 	"testing"
 )
@@ -41,12 +42,15 @@ func TestEvents(t *testing.T) {
 	}
 
 	zeroHash := crypto.Keccak256([]byte{0x00})
+	trueHash := common.Hash{}.Bytes()
+	falseHash := common.Hash{}.Bytes()
+	trueHash[31] = 0x01
 
 	var data []byte
 	payload := [][]byte{
-		method.template.ID,    // select the `Events` method
-		common.Hash{}.Bytes(), // set the flag to false
-		zeroHash,              // set the value to something known
+		method.template.ID, // select the `Events` method
+		falseHash,          // set the flag to false
+		zeroHash,           // set the value to something known
 	}
 	for _, bytes := range payload {
 		data = append(data, bytes...)
@@ -86,14 +90,46 @@ func TestEvents(t *testing.T) {
 			t.Fatal("block number mismatch:", log.BlockNumber, "vs", blockNumber)
 		}
 		t.Log("topic", len(log.Topics), log.Topics)
-		t.Log("datos", len(log.Data), log.Data)
+		t.Log("data ", len(log.Data), log.Data)
 	}
 
-	basic := logs[0]
-	mixed := logs[2]
+	basicTopics := logs[0].Topics
+	spillTopics := logs[1].Topics
+	mixedTopics := logs[2].Topics
 
-	if !bytes.Equal(basic.Topics[1].Bytes(), zeroHash) || !bytes.Equal(mixed.Topics[2].Bytes(), zeroHash) {
+	if !bytes.Equal(basicTopics[1].Bytes(), zeroHash) || !bytes.Equal(mixedTopics[2].Bytes(), zeroHash) {
 		t.Fatal("indexing a bytes32 didn't work")
+	}
+	if !bytes.Equal(mixedTopics[1].Bytes(), falseHash) {
+		t.Fatal("indexing a bool didn't work")
+	}
+	if !bytes.Equal(mixedTopics[3].Bytes(), caller.Hash().Bytes()) {
+		t.Fatal("indexing an address didn't work")
+	}
+
+	spillContent := make([]byte, 64)
+	copy(spillContent, zeroHash)
+	copy(spillContent[32:], zeroHash)
+	spillHash := crypto.Keccak256(spillContent)
+	if !bytes.Equal(spillTopics[1].Bytes(), spillHash) {
+		t.Fatal("indexing an array value didn't work")
+	}
+
+	ArbDebugInfo, cerr := templates.NewArbDebug(common.Address{}, nil)
+	basic, berr := ArbDebugInfo.ParseBasic(*logs[0])
+	mixed, merr := ArbDebugInfo.ParseMixed(*logs[2])
+	if cerr != nil || berr != nil || merr != nil {
+		t.Fatal("failed to parse event logs", "\nprecompile:", cerr, "\nbasic:", berr, "\nmixed:", merr)
+	}
+
+	if basic.Flag != true || !bytes.Equal(basic.Value[:], zeroHash) {
+		t.Fatal("event Basic's data isn't correct")
+	}
+	if mixed.Flag != false || mixed.Not != true || !bytes.Equal(mixed.Value[:], zeroHash) {
+		t.Fatal("event Mixed's data isn't correct")
+	}
+	if mixed.Conn != debugContractAddr || mixed.Caller != caller {
+		t.Fatal("event Mixed's data isn't correct")
 	}
 }
 

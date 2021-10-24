@@ -271,50 +271,60 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 			state := evm.StateDB
 			args = args[1:]
 
-			values := make([]interface{}, len(args))
+			// Filter by index'd into data and topics. Indexed values, even if ultimately hashed,
+			// aren't supposed to have their contents stored in the general-purpose data portion.
+			var dataValues []interface{}
+			var topicValues []interface{}
+			dataInputs := make(abi.Arguments, 0, len(args))
+			topicInputs := make(abi.Arguments, 0, 3)
+
 			for i := 0; i < len(args); i++ {
-				values[i] = args[i].Interface()
+				if !capturedEvent.Inputs[i].Indexed {
+					dataValues = append(dataValues, args[i].Interface())
+					dataInputs = append(dataInputs, capturedEvent.Inputs[i])
+				} else {
+					topicValues = append(topicValues, args[i].Interface())
+					topicInputs = append(topicInputs, capturedEvent.Inputs[i])
+				}
 			}
 
-			data, err := capturedEvent.Inputs.PackValues(values)
+			data, err := dataInputs.PackValues(dataValues)
 			if err != nil {
 				// in production we'll just revert, but for now this
 				// will catch implementation errors
 				log.Fatal(
-					"Could not pack values for event ", name,
-					"\nargs ", args, "\nvalues ", values, "\nerror ", err,
+					"Could not pack values for event ", name, "\nargs ", args,
+					"\nvalues ", dataValues, "\ntopics", topicValues, "\nerror ", err,
 				)
 			}
 
 			topics := []common.Hash{capturedEvent.ID}
 
-			for i, input := range capturedEvent.Inputs {
-				if input.Indexed {
-					// Geth provides infrastructure for packing arrays of values,
-					// so we create an array with just the value we want to pack.
+			for i, input := range topicInputs {
+				// Geth provides infrastructure for packing arrays of values,
+				// so we create an array with just the value we want to pack.
 
-					packable := []interface{}{values[i]}
-					bytes, err := abi.Arguments{input}.PackValues(packable)
-					if err != nil {
-						// in production we'll just revert, but for now this
-						// will catch implementation errors
-						log.Fatal(
-							"Could not pack topics for event ", name,
-							"\nargs ", args, "\nvalues ", values, "\nerror ", err,
-						)
-					}
-
-					var topic [32]byte
-
-					if len(bytes) > 32 {
-						topic = *(*[32]byte)(crypto.Keccak256(bytes))
-					} else {
-						offset := 32 - len(bytes)
-						copy(topic[offset:], bytes)
-					}
-
-					topics = append(topics, topic)
+				packable := []interface{}{topicValues[i]}
+				bytes, err := abi.Arguments{input}.PackValues(packable)
+				if err != nil {
+					// in production we'll just revert, but for now this
+					// will catch implementation errors
+					log.Fatal(
+						"Could not pack values for event ", name, "\nargs ", args,
+						"\nvalues ", dataValues, "\ntopics", topicValues, "\nerror ", err,
+					)
 				}
+
+				var topic [32]byte
+
+				if len(bytes) > 32 {
+					topic = *(*[32]byte)(crypto.Keccak256(bytes))
+				} else {
+					offset := 32 - len(bytes)
+					copy(topic[offset:], bytes)
+				}
+
+				topics = append(topics, topic)
 			}
 
 			event := &types.Log{
