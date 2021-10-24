@@ -55,6 +55,10 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	}
 }
 
+func (ps *L1PricingState) DefaultAggregator() common.Address {
+	return ps.defaultAggregator
+}
+
 func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
 	ps.defaultAggregator = aggregator
 	ps.storage.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
@@ -81,16 +85,16 @@ func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregat
 	ps.preferredAggregators.Set(common.BytesToHash(sender.Bytes()), common.BytesToHash(aggregator.Bytes()))
 }
 
-func (ps *L1PricingState) PreferredAggregator(sender common.Address) common.Address {
+func (ps *L1PricingState) PreferredAggregator(sender common.Address) (common.Address, bool) {
 	fromTable := ps.preferredAggregators.Get(common.BytesToHash(sender.Bytes()))
 	if fromTable == (common.Hash{}) {
-		return ps.defaultAggregator
+		return ps.defaultAggregator, false
 	} else {
-		return common.BytesToAddress(fromTable.Bytes())
+		return common.BytesToAddress(fromTable.Bytes()), true
 	}
 }
 
-func (ps *L1PricingState) SetFixedChargeForAggregatorWei(aggregator common.Address, chargeL1Gas *big.Int) {
+func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Address, chargeL1Gas *big.Int) {
 	ps.aggregatorFixedCharges.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(chargeL1Gas))
 }
 
@@ -145,7 +149,7 @@ func (ps *L1PricingState) GetL1Charges(
 	if aggregator == nil {
 		return big.NewInt(0)
 	}
-	preferredAggregator := ps.PreferredAggregator(sender)
+	preferredAggregator, _ := ps.PreferredAggregator(sender)
 	if preferredAggregator != *aggregator {
 		return big.NewInt(0)
 	}
