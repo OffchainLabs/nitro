@@ -106,7 +106,7 @@ func (con *ArbSys) SendTxToL1(
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvent := merkleAcc.Append(sendHash)
 	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, merkleAcc.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
-	_ = merkleUpdateEvent   // TODO: emit an event for the merkleUpdateEvent
+	_ = merkleUpdateEvent // TODO: emit an event for the merkleUpdateEvent
 	//TODO: deduct the callvalue from this precompile's account (burn/destroy it)
 	return sendHash.Big(), nil
 }
@@ -128,7 +128,7 @@ func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) 
 }
 
 func (con ArbSys) SendMerkleTreeStateGasCost() uint64 {
-	return 0   // OK to leave it at zero, because method is only callable by address zero
+	return 0 // OK to leave it at zero, because method is only callable by address zero
 }
 
 func (con *ArbSys) WasMyCallersAddressAliased(caller addr, evm mech) (bool, error) {
