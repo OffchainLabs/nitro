@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
@@ -19,7 +20,7 @@ func (con ArbAggregator) GetFeeCollector(
 	st *state.StateDB,
 	aggregator common.Address,
 ) (common.Address, error) {
-	return arbos.OpenArbosState(st).L1PricingState().AggregatorAddressToPay(aggregator), nil
+	return arbos.OpenArbosState(st).L1PricingState().AggregatorFeeCollector(aggregator), nil
 }
 
 func (con ArbAggregator) GetFeeCollectorGasCost(aggregator common.Address) uint64 {
@@ -52,7 +53,7 @@ func (con ArbAggregator) GetTxBaseFee(
 	st *state.StateDB,
 	aggregator common.Address,
 ) (*big.Int, error) {
-	return arbos.OpenArbosState(st).L1PricingState().FixedChargeForAggregatorWei(aggregator), nil
+	return arbos.OpenArbosState(st).L1PricingState().FixedChargeForAggregatorL1Gas(aggregator), nil
 }
 
 func (con ArbAggregator) GetTxBaseFeeGasCost(aggregator common.Address) uint64 {
@@ -65,12 +66,17 @@ func (con ArbAggregator) SetFeeCollector(
 	aggregator common.Address,
 	newFeeCollector common.Address,
 ) error {
-	arbos.OpenArbosState(st).L1PricingState().SetAggregatorAddressToPay(aggregator, newFeeCollector)
+	l1State := arbos.OpenArbosState(st).L1PricingState()
+	if (caller != aggregator) && (caller != l1State.AggregatorFeeCollector(aggregator)) {
+		// only the aggregator and its current fee collector can change the aggregator's fee collector
+		return errors.New("non-authorized caller in ArbAggregator.SetFeeCollector")
+	}
+	l1State.SetAggregatorFeeCollector(aggregator, newFeeCollector)
 	return nil
 }
 
 func (con ArbAggregator) SetFeeCollectorGasCost(aggregator common.Address, newFeeCollector common.Address) uint64 {
-	return params.SstoreSetGas
+	return params.SloadGas + params.SstoreSetGas
 }
 
 func (con ArbAggregator) SetDefaultAggregator(

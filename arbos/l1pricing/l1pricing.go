@@ -18,7 +18,7 @@ type L1PricingState struct {
 	l1GasPriceEstimate          *big.Int
 	preferredAggregators        *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
-	aggregatorAddressesToPay    *storage.Storage
+	aggregatorFeeCollectors     *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
 }
 
@@ -27,7 +27,7 @@ var (
 
 	preferredAggregatorKey        = []byte{0}
 	aggregatorFixedChargeKey      = []byte{1}
-	aggregatorAddressToPayKey     = []byte{2}
+	aggregatorFeeCollectorKey     = []byte{2}
 	aggregatorCompressionRatioKey = []byte{3}
 )
 
@@ -50,7 +50,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		l1GasPriceEstimate,
 		sto.OpenSubStorage(preferredAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
-		sto.OpenSubStorage(aggregatorAddressToPayKey),
+		sto.OpenSubStorage(aggregatorFeeCollectorKey),
 		sto.OpenSubStorage(aggregatorCompressionRatioKey),
 	}
 }
@@ -98,17 +98,19 @@ func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Add
 	ps.aggregatorFixedCharges.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(chargeL1Gas))
 }
 
+func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Address) *big.Int {
+ 	return ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes())).Big()
+}
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) *big.Int {
-	fixedChargeL1Gas := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes())).Big()
-	return new(big.Int).Mul(fixedChargeL1Gas, ps.L1GasPriceEstimateWei())
+	return new(big.Int).Mul(ps.FixedChargeForAggregatorL1Gas(aggregator), ps.L1GasPriceEstimateWei())
 }
 
-func (ps *L1PricingState) SetAggregatorAddressToPay(aggregator common.Address, addr common.Address) {
-	ps.aggregatorAddressesToPay.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
+func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) {
+	ps.aggregatorFeeCollectors.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
 }
 
-func (ps *L1PricingState) AggregatorAddressToPay(aggregator common.Address) common.Address {
-	raw := ps.aggregatorAddressesToPay.Get(common.BytesToHash(aggregator.Bytes()))
+func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) common.Address {
+	raw := ps.aggregatorFeeCollectors.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
 		return aggregator
 	} else {
