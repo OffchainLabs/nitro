@@ -94,8 +94,7 @@ func TestEvents(t *testing.T) {
 	}
 
 	basicTopics := logs[0].Topics
-	spillTopics := logs[1].Topics
-	mixedTopics := logs[2].Topics
+	mixedTopics := logs[1].Topics
 
 	if !bytes.Equal(basicTopics[1].Bytes(), zeroHash) || !bytes.Equal(mixedTopics[2].Bytes(), zeroHash) {
 		t.Fatal("indexing a bytes32 didn't work")
@@ -107,17 +106,9 @@ func TestEvents(t *testing.T) {
 		t.Fatal("indexing an address didn't work")
 	}
 
-	spillContent := make([]byte, 64)
-	copy(spillContent, zeroHash)
-	copy(spillContent[32:], zeroHash)
-	spillHash := crypto.Keccak256(spillContent)
-	if !bytes.Equal(spillTopics[1].Bytes(), spillHash) {
-		t.Fatal("indexing an array value didn't work")
-	}
-
 	ArbDebugInfo, cerr := templates.NewArbDebug(common.Address{}, nil)
 	basic, berr := ArbDebugInfo.ParseBasic(*logs[0])
-	mixed, merr := ArbDebugInfo.ParseMixed(*logs[2])
+	mixed, merr := ArbDebugInfo.ParseMixed(*logs[1])
 	if cerr != nil || berr != nil || merr != nil {
 		t.Fatal("failed to parse event logs", "\nprecompile:", cerr, "\nbasic:", berr, "\nmixed:", merr)
 	}

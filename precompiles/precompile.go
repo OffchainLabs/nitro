@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/big"
 	"reflect"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -220,6 +221,17 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 	// provide the implementer mechanisms to emit logs for the solidity events
 
+	supportedIndecies := map[string]struct{}{
+		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
+		"address": {},
+		"bytes32": {},
+		"bool":    {},
+	}
+	for i := 8; i <= 256; i += 8 {
+		supportedIndecies["int"+strconv.Itoa(i)] = struct{}{}
+		supportedIndecies["uint"+strconv.Itoa(i)] = struct{}{}
+	}
+
 	for _, event := range source.Events {
 		name := event.RawName
 
@@ -228,6 +240,17 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		}
 		for _, arg := range event.Inputs {
 			needs = append(needs, arg.Type.GetType())
+
+			if arg.Indexed {
+				_, ok := supportedIndecies[arg.Type.String()]
+				if !ok {
+					log.Fatal(
+						"Please change the solidity for precompile ", contract,
+						"'s event ", name, ":\n\tEvent indecies of type ",
+						arg.Type.String(), " are not supported",
+					)
+				}
+			}
 		}
 
 		context := "Precompile " + contract + "'s implementer"
