@@ -14,4 +14,3 @@ interface ArbFunctionTable {
     // Returns (functionCode, isPayable, gasLimit)
     function get(address addr, uint index) external view returns(uint, bool, uint);
 }
-

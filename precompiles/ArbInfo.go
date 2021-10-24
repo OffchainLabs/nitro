@@ -6,26 +6,24 @@ package precompiles
 
 import (
 	"errors"
-	"math/big"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 )
 
-type ArbInfo struct{}
+type ArbInfo struct {
+	Address addr
+}
 
-func (con ArbInfo) GetBalance(caller common.Address, st *state.StateDB, account common.Address) (*big.Int, error) {
+func (con ArbInfo) GetBalance(caller addr, evm mech, account addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbInfo) GetBalanceGasCost(account common.Address) uint64 {
+func (con ArbInfo) GetBalanceGasCost(account addr) uint64 {
 	return 0
 }
 
-func (con ArbInfo) GetCode(caller common.Address, st *state.StateDB, account common.Address) ([]byte, error) {
+func (con ArbInfo) GetCode(caller addr, evm mech, account addr) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbInfo) GetCodeGasCost(account common.Address) uint64 {
+func (con ArbInfo) GetCodeGasCost(account addr) uint64 {
 	return 0
 }

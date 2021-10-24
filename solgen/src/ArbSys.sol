@@ -95,4 +95,3 @@ interface ArbSys {
                             uint arbBlockNum, uint ethBlockNum, uint timestamp,
                             uint callvalue, bytes data);
 }
-
