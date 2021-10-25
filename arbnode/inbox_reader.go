@@ -99,6 +99,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 			if ourLatestDelayedCount.Cmp(checkingDelayedCount) < 0 {
 				checkingDelayedCount = ourLatestDelayedCount
+				missingDelayed = true
 			}
 			checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
 			l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
@@ -107,12 +108,9 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 			dbDelayedAcc, err := ir.db.GetDelayedAcc(checkingDelayedSeqNum)
 			if err != nil {
-				if errors.Is(err, accumulatorNotFound) {
-					missingDelayed = true
-				} else {
-					return err
-				}
-			} else if dbDelayedAcc != l1DelayedAcc {
+				return err
+			}
+			if dbDelayedAcc != l1DelayedAcc {
 				reorgingDelayed = true
 			}
 		}
