@@ -242,9 +242,15 @@ func TestProofForNext(t *testing.T) {
 		if proof == nil {
 			t.Fatal(i)
 		}
-		if !proof.IsCorrect() {
+		if proof.LeafHash != leaf {
 			t.Fatal(i)
 		}
-		_ = i
+		if !proof.IsCorrect() {
+			t.Fatal(proof)
+		}
+		acc.Append(leaf)
+		if proof.RootHash != acc.Root() {
+			t.Fatal(i)
+		}
 	}
 }

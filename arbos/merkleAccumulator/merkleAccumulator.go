@@ -33,6 +33,14 @@ func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
 }
 
+func (acc *MerkleAccumulator) nonPersistentClone() *MerkleAccumulator {
+	partials := make([]*common.Hash, acc.numPartials)
+	for i := uint64(0); i < acc.numPartials; i++ {
+		partials[i] = acc.getPartial(i)
+	}
+	return &MerkleAccumulator{ nil, acc.size, acc.numPartials, partials }
+}
+
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
 	if acc.partials[level] == nil {
 		if acc.backingStorage != nil {
@@ -163,12 +171,18 @@ func (acc *MerkleAccumulator) ToMerkleTree() merkletree.MerkleTree {
 }
 
 func (acc *MerkleAccumulator) ProofForNext(nextHash common.Hash) *merkletree.MerkleProof {
-	// will substitute cleaner implementation later
-	tree := acc.ToMerkleTree().Append(nextHash)
-	if tree.Size() != 1+acc.Size() {
-		panic(acc.Size())
+	partials := make([]common.Hash, acc.numPartials)
+	for i := 0; i < len(partials); i++ {
+		partials[i] = *acc.getPartial(uint64(i))
 	}
-	return tree.Prove(acc.Size())
+	clone := acc.nonPersistentClone()
+	_ = clone.Append(nextHash)
+	return &merkletree.MerkleProof{
+		clone.Root(),
+		nextHash,
+		acc.size,
+		partials,
+	}
 }
 
 type EventForTreeBuilding struct {
