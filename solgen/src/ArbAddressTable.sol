@@ -41,7 +41,7 @@ interface ArbAddressTable {
     * @param offset offset of target address
     * @return resulting address and updated offset into the buffer (revert if buffer is too short)
     */
-    function decompress(bytes calldata buf, uint offset) external pure returns(address, uint);
+    function decompress(bytes calldata buf, uint offset) external view returns(address, uint);
 
     /**
     * @notice compress an address and return the result, possibly modifying the compression/decompression state
