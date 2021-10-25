@@ -137,10 +137,28 @@ func (con *ArbSys) SendTxToL1(
 }
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
-	return params.CallValueTransferGas +
-		2*params.LogGas +
-		6*params.LogTopicGas +
-		(10*32+uint64(len(calldataForL1)))*params.LogDataGas
+	cost := params.CallValueTransferGas
+
+	cost += con.SendMerkleUpdateGasCost(
+		new(big.Int),
+		new(big.Int),
+		common.Hash{},
+	)
+
+	cost += con.L2ToL1TransactionGasCost(
+		destination,
+		destination,
+		new(big.Int),
+		new(big.Int),
+		new(big.Int),
+		new(big.Int),
+		new(big.Int),
+		new(big.Int),
+		new(big.Int),
+		calldataForL1,
+	)
+
+	return cost
 }
 
 func (con ArbSys) SendMerkleTreeState(caller addr, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
