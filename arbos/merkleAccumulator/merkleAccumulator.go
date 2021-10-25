@@ -38,7 +38,7 @@ func (acc *MerkleAccumulator) nonPersistentClone() *MerkleAccumulator {
 	for i := uint64(0); i < acc.numPartials; i++ {
 		partials[i] = acc.getPartial(i)
 	}
-	return &MerkleAccumulator{ nil, acc.size, acc.numPartials, partials }
+	return &MerkleAccumulator{nil, acc.size, acc.numPartials, partials}
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
@@ -178,10 +178,10 @@ func (acc *MerkleAccumulator) ProofForNext(nextHash common.Hash) *merkletree.Mer
 	clone := acc.nonPersistentClone()
 	_ = clone.Append(nextHash)
 	return &merkletree.MerkleProof{
-		clone.Root(),
-		nextHash,
-		acc.size,
-		partials,
+		RootHash:  clone.Root(),
+		LeafHash:  nextHash,
+		LeafIndex: acc.size,
+		Proof:     partials,
 	}
 }
 
