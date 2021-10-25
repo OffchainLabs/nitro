@@ -11,4 +11,3 @@ interface ArbStatistics {
     //      Number of contracts created
     function getStats() external view returns(uint, uint, uint, uint, uint, uint);
 }
-

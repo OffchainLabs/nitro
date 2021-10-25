@@ -34,4 +34,3 @@ interface ArbAggregator {
     // Revert if feeInL1Gas is outside the chain's allowed bounds
     function setTxBaseFee(address aggregator, uint feeInL1Gas) external;
 }
-

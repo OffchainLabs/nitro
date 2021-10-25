@@ -14,7 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 )
 
-type ArbAddressTable struct{}
+type ArbAddressTable struct {
+	Address addr
+}
 
 func (con ArbAddressTable) AddressExists(caller common.Address, st *state.StateDB, addr common.Address) (bool, error) {
 	return arbos.OpenArbosState(st).AddressTable().AddressExists(addr), nil

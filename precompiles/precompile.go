@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/big"
 	"reflect"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -16,9 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 )
+
+type addr = common.Address
+type mech = *vm.EVM
+type huge = *big.Int
 
 type ArbosPrecompile interface {
 	GasToCharge(input []byte) uint64
@@ -36,6 +42,8 @@ type ArbosPrecompile interface {
 		readOnly bool,
 		evm *vm.EVM,
 	) (output []byte, err error)
+
+	Precompile() Precompile
 }
 
 type purity uint8
@@ -49,6 +57,7 @@ const (
 
 type Precompile struct {
 	methods map[[4]byte]PrecompileMethod
+	events  map[string]PrecompileEvent
 }
 
 type PrecompileMethod struct {
@@ -60,16 +69,34 @@ type PrecompileMethod struct {
 	implementer reflect.Value
 }
 
+type PrecompileEvent struct {
+	name     string
+	template abi.Event
+}
+
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
 // supports each method.
-func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPrecompile {
+func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, ArbosPrecompile) {
 	source, err := abi.JSON(strings.NewReader(metadata.ABI))
 	if err != nil {
 		log.Fatal("Bad ABI")
 	}
 
-	contract := reflect.TypeOf(implementer).Name()
+	implementerType := reflect.TypeOf(implementer)
+	contract := implementerType.Elem().Name()
+
+	_, ok := implementerType.Elem().FieldByName("Address")
+	if !ok {
+		log.Fatal("Implementer for precompile ", contract, " is missing an Address field")
+	}
+
+	address, ok := reflect.ValueOf(implementer).Elem().FieldByName("Address").Interface().(addr)
+	if !ok {
+		log.Fatal("Implementer for precompile ", contract, "'s Address field has the wrong type")
+	}
+
 	methods := make(map[[4]byte]PrecompileMethod)
+	events := make(map[string]PrecompileEvent)
 
 	for _, method := range source.Methods {
 
@@ -85,13 +112,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 		// check that the implementer has a supporting implementation for this method
 
-		handler, ok := reflect.TypeOf(implementer).MethodByName(name)
+		handler, ok := implementerType.MethodByName(name)
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name)
 		}
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(implementer),      // the contract itself
+			implementerType,                  // the contract itself
 			reflect.TypeOf(common.Address{}), // the method's caller
 		}
 
@@ -101,13 +128,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		case "pure":
 			purity = pure
 		case "view":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			purity = view
 		case "nonpayable":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			purity = write
 		case "payable":
-			needs = append(needs, reflect.TypeOf(&state.StateDB{}))
+			needs = append(needs, reflect.TypeOf(&vm.EVM{}))
 			needs = append(needs, reflect.TypeOf(&big.Int{}))
 			purity = payable
 		default:
@@ -152,13 +179,13 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 
 		// ensure we have a matching gascost func
 
-		gascost, ok := reflect.TypeOf(implementer).MethodByName(name + "GasCost")
+		gascost, ok := implementerType.MethodByName(name + "GasCost")
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
 		}
 
 		needs = []reflect.Type{
-			reflect.TypeOf(implementer), // the contract itself
+			implementerType, // the contract itself
 		}
 		for _, arg := range method.Inputs {
 			needs = append(needs, arg.Type.GetType())
@@ -192,29 +219,191 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) ArbosPreco
 		}
 	}
 
-	return Precompile{
+	// provide the implementer mechanisms to emit logs for the solidity events
+
+	supportedIndices := map[string]struct{}{
+		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
+		"address": {},
+		"bytes32": {},
+		"bool":    {},
+	}
+	for i := 8; i <= 256; i += 8 {
+		supportedIndices["int"+strconv.Itoa(i)] = struct{}{}
+		supportedIndices["uint"+strconv.Itoa(i)] = struct{}{}
+	}
+
+	for _, event := range source.Events {
+		name := event.RawName
+
+		var needs = []reflect.Type{
+			reflect.TypeOf(&vm.EVM{}), // where the emit goes
+		}
+		for _, arg := range event.Inputs {
+			needs = append(needs, arg.Type.GetType())
+
+			if arg.Indexed {
+				_, ok := supportedIndices[arg.Type.String()]
+				if !ok {
+					log.Fatal(
+						"Please change the solidity for precompile ", contract,
+						"'s event ", name, ":\n\tEvent indecies of type ",
+						arg.Type.String(), " are not supported",
+					)
+				}
+			}
+		}
+
+		context := "Precompile " + contract + "'s implementer"
+		ofType := " of type\n\tfunc "
+
+		field, ok := implementerType.Elem().FieldByName(name)
+		if !ok {
+			log.Fatal(context, " is missing a field for event ", name, ofType, needs)
+		}
+
+		context = context + "'s field for event " + name + " "
+
+		if field.Type.Kind() != reflect.Func {
+			log.Fatal(context, "is not", ofType, needs)
+		}
+		if field.Type.NumIn() != len(needs) {
+			log.Fatal(context, "doesn't have the args\n\t", needs)
+		}
+		if field.Type.NumOut() != 0 {
+			log.Fatal(context, "should not return anything")
+		}
+		for i, arg := range needs {
+			if field.Type.In(i) != arg {
+				log.Fatal(
+					context, "doesn't have the args\n\t", needs, "\n",
+					"\tArg ", i, " is ", field.Type.In(i), " instead of ", arg,
+				)
+			}
+		}
+
+		structFields := reflect.ValueOf(implementer).Elem()
+		fieldPointer := structFields.FieldByName(name)
+
+		// we can't capture `event` since the for loop will change its value
+		capturedEvent := event
+
+		emit := func(args []reflect.Value) []reflect.Value {
+
+			//nolint:errcheck
+			evm := args[0].Interface().(*vm.EVM)
+			state := evm.StateDB
+			args = args[1:]
+
+			// Filter by index'd into data and topics. Indexed values, even if ultimately hashed,
+			// aren't supposed to have their contents stored in the general-purpose data portion.
+			var dataValues []interface{}
+			var topicValues []interface{}
+			dataInputs := make(abi.Arguments, 0, len(args))
+			topicInputs := make(abi.Arguments, 0, 3)
+
+			for i := 0; i < len(args); i++ {
+				if !capturedEvent.Inputs[i].Indexed {
+					dataValues = append(dataValues, args[i].Interface())
+					dataInputs = append(dataInputs, capturedEvent.Inputs[i])
+				} else {
+					topicValues = append(topicValues, args[i].Interface())
+					topicInputs = append(topicInputs, capturedEvent.Inputs[i])
+				}
+			}
+
+			data, err := dataInputs.PackValues(dataValues)
+			if err != nil {
+				// in production we'll just revert, but for now this
+				// will catch implementation errors
+				log.Fatal(
+					"Could not pack values for event ", name, "\nargs ", args,
+					"\nvalues ", dataValues, "\ntopics", topicValues, "\nerror ", err,
+				)
+			}
+
+			topics := []common.Hash{capturedEvent.ID}
+
+			for i, input := range topicInputs {
+				// Geth provides infrastructure for packing arrays of values,
+				// so we create an array with just the value we want to pack.
+
+				packable := []interface{}{topicValues[i]}
+				bytes, err := abi.Arguments{input}.PackValues(packable)
+				if err != nil {
+					// in production we'll just revert, but for now this
+					// will catch implementation errors
+					log.Fatal(
+						"Could not pack values for event ", name, "\nargs ", args,
+						"\nvalues ", dataValues, "\ntopics", topicValues, "\nerror ", err,
+					)
+				}
+
+				var topic [32]byte
+
+				if len(bytes) > 32 {
+					topic = *(*[32]byte)(crypto.Keccak256(bytes))
+				} else {
+					offset := 32 - len(bytes)
+					copy(topic[offset:], bytes)
+				}
+
+				topics = append(topics, topic)
+			}
+
+			event := &types.Log{
+				Address:     address,
+				Topics:      topics,
+				Data:        data,
+				BlockNumber: evm.Context.BlockNumber.Uint64(),
+				// Geth will set all other fields, which include
+				//   TxHash, TxIndex, Index, and Removed
+			}
+
+			state.AddLog(event)
+			return []reflect.Value{}
+		}
+
+		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
+
+		events[name] = PrecompileEvent{
+			name,
+			event,
+		}
+	}
+
+	return address, Precompile{
 		methods,
+		events,
 	}
 }
 
-func addr(s string) common.Address {
-	return common.HexToAddress(s)
-}
+func Precompiles() map[addr]ArbosPrecompile {
 
-func Precompiles() map[common.Address]ArbosPrecompile {
-	return map[common.Address]ArbosPrecompile{
-		addr("0x64"): makePrecompile(templates.ArbSysMetaData, ArbSys{}),
-		addr("0x65"): makePrecompile(templates.ArbInfoMetaData, ArbInfo{}),
-		addr("0x66"): makePrecompile(templates.ArbAddressTableMetaData, ArbAddressTable{}),
-		addr("0x67"): makePrecompile(templates.ArbBLSMetaData, ArbBLS{}),
-		addr("0x68"): makePrecompile(templates.ArbFunctionTableMetaData, ArbFunctionTable{}),
-		addr("0x69"): makePrecompile(templates.ArbosTestMetaData, ArbosTest{}),
-		addr("0x6b"): makePrecompile(templates.ArbOwnerMetaData, ArbOwner{}),
-		addr("0x6c"): makePrecompile(templates.ArbGasInfoMetaData, ArbGasInfo{}),
-		addr("0x6d"): makePrecompile(templates.ArbAggregatorMetaData, ArbAggregator{}),
-		addr("0x6e"): makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableTx{}),
-		addr("0x6f"): makePrecompile(templates.ArbStatisticsMetaData, ArbStatistics{}),
+	//nolint:gocritic
+	hex := func(s string) addr {
+		return common.HexToAddress(s)
 	}
+
+	contracts := make(map[addr]ArbosPrecompile)
+
+	insert := func(address addr, impl ArbosPrecompile) {
+		contracts[address] = impl
+	}
+
+	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
+	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
+	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
+	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
+	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
+	insert(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}))
+	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
+	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	return contracts
 }
 
 // determine the amount of gas to charge for calling a precompile
@@ -290,19 +479,14 @@ func (p Precompile) Call(
 		reflect.ValueOf(caller),
 	}
 
-	stateDB, ok := evm.StateDB.(*state.StateDB)
-	if !ok {
-		panic("Expected statedb to be of type *state.StateDB")
-	}
-
 	switch method.purity {
 	case pure:
 	case view:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 	case write:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 	case payable:
-		reflectArgs = append(reflectArgs, reflect.ValueOf(stateDB))
+		reflectArgs = append(reflectArgs, reflect.ValueOf(evm))
 		reflectArgs = append(reflectArgs, reflect.ValueOf(value))
 	default:
 		log.Fatal("Unknown state mutability ", method.purity)
@@ -335,4 +519,8 @@ func (p Precompile) Call(
 		log.Fatal("Could not encode precompile result ", err)
 	}
 	return encoded, nil
+}
+
+func (p Precompile) Precompile() Precompile {
+	return p
 }
