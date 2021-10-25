@@ -35,11 +35,11 @@ var inboxMessageFromOriginID common.Hash
 var l2MessageFromOriginCallABI abi.Method
 
 func init() {
-	parsedDelayedInboxABI, err := abi.JSON(strings.NewReader(bridgegen.DelayedInboxABI))
+	parsedIBridgeABI, err := abi.JSON(strings.NewReader(bridgegen.IBridgeABI))
 	if err != nil {
 		panic(err)
 	}
-	messageDeliveredID = parsedDelayedInboxABI.Events["MessageDelivered"].ID
+	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 
 	parsedIMessageProviderABI, err := abi.JSON(strings.NewReader(bridgegen.IMessageProviderABI))
 	if err != nil {
@@ -56,7 +56,7 @@ func init() {
 }
 
 type DelayedBridge struct {
-	con              *bridgegen.DelayedInbox
+	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        int64
 	client           L1Interface
@@ -64,7 +64,7 @@ type DelayedBridge struct {
 }
 
 func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
-	con, err := bridgegen.NewDelayedInbox(addr, client)
+	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	if len(logs) == 0 {
 		return nil, nil
 	}
-	parsedLogs := make([]*bridgegen.DelayedInboxMessageDelivered, 0, len(logs))
+	parsedLogs := make([]*bridgegen.IBridgeMessageDelivered, 0, len(logs))
 	messageIds := make([]common.Hash, 0, len(logs))
 	rawTransactions := make(map[common.Hash]*types.Transaction)
 	inboxAddresses := make(map[common.Address]struct{})

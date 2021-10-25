@@ -65,17 +65,31 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, bind.TransactO
 			return tx.WithSignature(l1Signer, signature)
 		},
 	}
-	delayedInboxAddr, _, _, err := bridgegen.DeployDelayedInbox(&l1TransactionOpts, l1sim)
+	bridgeAddr, _, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, delayedInboxAddr, l1Address)
+	inboxAddr, _, inboxContract, err := bridgegen.DeployInbox(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return l1sim, l1TransactionOpts, sequencerInboxAddr, delayedInboxAddr
+	_, err = inboxContract.Initialize(&l1TransactionOpts, bridgeAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = bridgeContract.SetInbox(&l1TransactionOpts, inboxAddr, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1Address)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return l1sim, l1TransactionOpts, sequencerInboxAddr, bridgeAddr
 }
 
 func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
