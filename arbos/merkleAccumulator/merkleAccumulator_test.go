@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleTree
+package merkleAccumulator
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/util/merkletree"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestEmptyAccumulator(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := NewEmptyMerkleTree()
+	mt := merkletree.NewEmptyMerkleTree()
 	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
@@ -31,7 +32,7 @@ func TestAccumulator1(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := NewEmptyMerkleTree()
+	mt := merkletree.NewEmptyMerkleTree()
 
 	itemHash := pseudorandomForTesting(0)
 	_ = acc.Append(itemHash)
@@ -57,7 +58,7 @@ func TestAccumulator3(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := NewEmptyMerkleTree()
+	mt := merkletree.NewEmptyMerkleTree()
 
 	itemHash0 := pseudorandomForTesting(0)
 	itemHash1 := pseudorandomForTesting(1)
@@ -96,7 +97,7 @@ func TestAccumulator4(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := NewEmptyMerkleTree()
+	mt := merkletree.NewEmptyMerkleTree()
 
 	itemHash0 := pseudorandomForTesting(0)
 	itemHash1 := pseudorandomForTesting(1)
@@ -145,7 +146,7 @@ func pseudorandomForTesting(x uint64) common.Hash {
 	return crypto.Keccak256Hash(buf[:])
 }
 
-func testAllSummarySizes(tree MerkleTree, t *testing.T) {
+func testAllSummarySizes(tree merkletree.MerkleTree, t *testing.T) {
 	for i := uint64(1); i <= tree.Size(); i++ {
 		sum := tree.SummarizeUpTo(i)
 		if tree.Hash() != sum.Hash() {
@@ -161,13 +162,13 @@ func testAllSummarySizes(tree MerkleTree, t *testing.T) {
 	}
 }
 
-func testSerDe(tree MerkleTree, t *testing.T) {
+func testSerDe(tree merkletree.MerkleTree, t *testing.T) {
 	var wr bytes.Buffer
 	if err := tree.Serialize(&wr); err != nil {
 		t.Fatal(err)
 	}
 	rd := bytes.NewReader(wr.Bytes())
-	result, err := NewMerkleTreeFromReader(rd)
+	result, err := merkletree.NewMerkleTreeFromReader(rd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,5 +227,24 @@ func TestReconstructFromEvents(t *testing.T) {
 	reconstructedTree = NewMerkleTreeFromEvents(events)
 	if reconstructedTree.Hash() != acc.Root() {
 		t.Fatal()
+	}
+}
+
+func TestProofForNext(t *testing.T) {
+	leaves := make([]common.Hash, 13)
+	for i := range leaves {
+		leaves[i] = pseudorandomForTesting(uint64(i))
+	}
+
+	acc := initializedMerkleAccumulatorForTesting()
+	for i, leaf := range leaves {
+		proof := acc.ProofForNext(leaf)
+		if proof == nil {
+			t.Fatal(i)
+		}
+		if !proof.IsCorrect() {
+			t.Fatal(i)
+		}
+		_ = i
 	}
 }

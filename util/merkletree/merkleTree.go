@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleTree
+package merkletree
 
 import (
 	"errors"
@@ -30,14 +30,14 @@ const (
 )
 
 func NewEmptyMerkleTree() MerkleTree {
-	return newMerkleEmpty(0)
+	return NewMerkleEmpty(0)
 }
 
 type merkleTreeLeaf struct {
 	hash common.Hash
 }
 
-func newMerkleLeaf(hash common.Hash) MerkleTree {
+func NewMerkleLeaf(hash common.Hash) MerkleTree {
 	return &merkleTreeLeaf{hash}
 }
 
@@ -46,19 +46,7 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newMerkleLeaf(hash), nil
-}
-
-type EventForTreeBuilding struct {
-	Level   uint64
-	LeafNum uint64
-	Hash    common.Hash
-}
-
-func NewMerkleTreeFromEvents(
-	events []EventForTreeBuilding, // latest event at each Level
-) MerkleTree {
-	return NewNonPersistentMerkleAccumulatorFromEvents(events).ToMerkleTree()
+	return NewMerkleLeaf(hash), nil
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
@@ -74,7 +62,7 @@ func (leaf *merkleTreeLeaf) Capacity() uint64 {
 }
 
 func (leaf *merkleTreeLeaf) Append(newHash common.Hash) MerkleTree {
-	return newMerkleInternal(leaf, newMerkleLeaf(newHash))
+	return NewMerkleInternal(leaf, NewMerkleLeaf(newHash))
 }
 
 func (leaf *merkleTreeLeaf) SummarizeUpTo(num uint64) MerkleTree {
@@ -105,7 +93,7 @@ type merkleEmpty struct {
 	capacity uint64
 }
 
-func newMerkleEmpty(capacity uint64) MerkleTree {
+func NewMerkleEmpty(capacity uint64) MerkleTree {
 	return &merkleEmpty{capacity}
 }
 
@@ -114,7 +102,7 @@ func newMerkleEmptyFromReader(rd io.Reader) (MerkleTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newMerkleEmpty(capacity), nil
+	return NewMerkleEmpty(capacity), nil
 }
 
 func (me *merkleEmpty) Hash() common.Hash {
@@ -131,10 +119,10 @@ func (me *merkleEmpty) Capacity() uint64 {
 
 func (me *merkleEmpty) Append(newHash common.Hash) MerkleTree {
 	if me.capacity <= 1 {
-		return newMerkleLeaf(newHash)
+		return NewMerkleLeaf(newHash)
 	} else {
-		halfSizeEmpty := newMerkleEmpty(me.capacity / 2)
-		return newMerkleInternal(halfSizeEmpty.Append(newHash), halfSizeEmpty)
+		halfSizeEmpty := NewMerkleEmpty(me.capacity / 2)
+		return NewMerkleInternal(halfSizeEmpty.Append(newHash), halfSizeEmpty)
 	}
 }
 
@@ -161,7 +149,7 @@ type merkleInternal struct {
 	right    MerkleTree
 }
 
-func newMerkleInternal(left, right MerkleTree) MerkleTree {
+func NewMerkleInternal(left, right MerkleTree) MerkleTree {
 	return &merkleInternal{
 		crypto.Keccak256Hash(left.Hash().Bytes(), right.Hash().Bytes()),
 		left.Size() + right.Size(),
@@ -180,7 +168,7 @@ func newMerkleInternalFromReader(rd io.Reader) (MerkleTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newMerkleInternal(left, right), nil
+	return NewMerkleInternal(left, right), nil
 }
 
 func (mi *merkleInternal) Hash() common.Hash {
@@ -197,11 +185,11 @@ func (mi *merkleInternal) Capacity() uint64 {
 
 func (mi *merkleInternal) Append(newHash common.Hash) MerkleTree {
 	if mi.size == mi.capacity {
-		return newMerkleInternal(mi, newMerkleEmpty(mi.capacity).Append(newHash))
+		return NewMerkleInternal(mi, NewMerkleEmpty(mi.capacity).Append(newHash))
 	} else if 2*mi.size < mi.capacity {
-		return newMerkleInternal(mi.left.Append(newHash), mi.right)
+		return NewMerkleInternal(mi.left.Append(newHash), mi.right)
 	} else {
-		return newMerkleInternal(mi.left, mi.right.Append(newHash))
+		return NewMerkleInternal(mi.left, mi.right.Append(newHash))
 	}
 }
 
@@ -211,9 +199,9 @@ func (mi *merkleInternal) SummarizeUpTo(num uint64) MerkleTree {
 	} else {
 		leftSize := mi.left.Size()
 		if num <= leftSize {
-			return newMerkleInternal(mi.left.SummarizeUpTo(num), mi.right)
+			return NewMerkleInternal(mi.left.SummarizeUpTo(num), mi.right)
 		} else {
-			return newMerkleInternal(summaryFromMerkleTree(mi.left), mi.right.SummarizeUpTo(num-leftSize))
+			return NewMerkleInternal(summaryFromMerkleTree(mi.left), mi.right.SummarizeUpTo(num-leftSize))
 		}
 	}
 }
@@ -257,6 +245,10 @@ type merkleCompleteSubtreeSummary struct {
 	capacity uint64
 }
 
+func NewSummaryMerkleTree(hash common.Hash, capacity uint64) MerkleTree {
+	return &merkleCompleteSubtreeSummary{hash, capacity}
+}
+
 func summaryFromMerkleTree(subtree MerkleTree) MerkleTree {
 	if subtree.Size() == 1 {
 		return subtree
@@ -292,7 +284,7 @@ func (sum *merkleCompleteSubtreeSummary) Capacity() uint64 {
 }
 
 func (sum *merkleCompleteSubtreeSummary) Append(newHash common.Hash) MerkleTree {
-	return newMerkleInternal(sum, newMerkleEmpty(sum.capacity).Append(newHash))
+	return NewMerkleInternal(sum, NewMerkleEmpty(sum.capacity).Append(newHash))
 }
 
 func (sum *merkleCompleteSubtreeSummary) SummarizeUpTo(num uint64) MerkleTree {

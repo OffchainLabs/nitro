@@ -2,10 +2,12 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleTree
+package merkletree
 
 import (
+	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"testing"
 )
 
@@ -34,4 +36,10 @@ func TestMerkleProofs(t *testing.T) {
 			}
 		}
 	}
+}
+
+func pseudorandomForTesting(x uint64) common.Hash {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], x)
+	return crypto.Keccak256Hash(buf[:])
 }

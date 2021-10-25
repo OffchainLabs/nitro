@@ -2,13 +2,14 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleTree
+package merkleAccumulator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
 type MerkleAccumulator struct {
@@ -131,34 +132,55 @@ func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, p
 	return
 }
 
-func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
+func (acc *MerkleAccumulator) ToMerkleTree() merkletree.MerkleTree {
 	if acc.numPartials == 0 {
-		return NewEmptyMerkleTree()
+		return merkletree.NewEmptyMerkleTree()
 	}
-	var tree MerkleTree
+	var tree merkletree.MerkleTree
 	capacity := uint64(1)
 	for level := uint64(0); level < acc.numPartials; level++ {
 		partial := acc.getPartial(level)
 		if *partial != (common.Hash{}) {
-			var thisLevel MerkleTree
+			var thisLevel merkletree.MerkleTree
 			if level == 0 {
-				thisLevel = newMerkleLeaf(*partial)
+				thisLevel = merkletree.NewMerkleLeaf(*partial)
 			} else {
-				thisLevel = &merkleCompleteSubtreeSummary{*partial, capacity}
+				thisLevel = merkletree.NewSummaryMerkleTree(*partial, capacity)
 			}
 			if tree == nil {
 				tree = thisLevel
 			} else {
 				for tree.Capacity() < capacity {
-					tree = newMerkleInternal(tree, newMerkleEmpty(tree.Capacity()))
+					tree = merkletree.NewMerkleInternal(tree, merkletree.NewMerkleEmpty(tree.Capacity()))
 				}
-				tree = newMerkleInternal(thisLevel, tree)
+				tree = merkletree.NewMerkleInternal(thisLevel, tree)
 			}
 		}
 		capacity *= 2
 	}
 
 	return tree
+}
+
+func (acc *MerkleAccumulator) ProofForNext(nextHash common.Hash) *merkletree.MerkleProof {
+	// will substitute cleaner implementation later
+	tree := acc.ToMerkleTree().Append(nextHash)
+	if tree.Size() != 1+acc.Size() {
+		panic(acc.Size())
+	}
+	return tree.Prove(acc.Size())
+}
+
+type EventForTreeBuilding struct {
+	Level   uint64
+	LeafNum uint64
+	Hash    common.Hash
+}
+
+func NewMerkleTreeFromEvents(
+	events []EventForTreeBuilding, // latest event at each Level
+) merkletree.MerkleTree {
+	return NewNonPersistentMerkleAccumulatorFromEvents(events).ToMerkleTree()
 }
 
 func NewNonPersistentMerkleAccumulatorFromEvents(events []EventForTreeBuilding) *MerkleAccumulator {
