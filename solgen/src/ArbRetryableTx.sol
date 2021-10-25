@@ -12,7 +12,7 @@ interface ArbRetryableTx {
     * @param ticketId unique identifier of retryable message: keccak256(keccak256(ArbchainId, inbox-sequence-number), uint(0) )
     * @return txId that the redeem attempt will have
      */
-    function scheduleRedeem(bytes32 ticketId) external returns(bytes32);
+    function redeem(bytes32 ticketId) external returns(bytes32);
 
     /** 
     * @notice Return the lifetime assigned to newly created redeemable txns.
