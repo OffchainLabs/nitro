@@ -2,7 +2,7 @@
 # Copyright 2020, Offchain Labs, Inc. All rights reserved.
 #
 
-precompile_names = AddressTable Aggregator BLS FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
+precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubstr %,./solgen/generated/%.go, $(precompile_names))
 
 color_pink = "\e[38;5;161;1m"

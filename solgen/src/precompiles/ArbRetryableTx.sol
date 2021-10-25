@@ -72,4 +72,3 @@ interface ArbRetryableTx {
     event Redeemed(bytes32 indexed ticketId);
     event Canceled(bytes32 indexed ticketId);
 }
-

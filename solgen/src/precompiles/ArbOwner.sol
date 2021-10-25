@@ -65,4 +65,3 @@ interface ArbOwner {
 
     function getTotalOfEthBalances() external view returns(uint);
 }
-
