@@ -60,7 +60,10 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	delayedInboxContract.SendL2Message(&usertxopts, txbytes)
+	_, err = delayedInboxContract.SendL2Message(&usertxopts, txbytes)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l1backend.Commit()
 	msgs, err = delayedBridge.GetMessageCount(background, nil)
 	if err != nil {

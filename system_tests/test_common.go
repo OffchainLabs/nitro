@@ -145,7 +145,6 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 		utils.Fatalf("Error creating protocol stack: %v\n", err)
 	}
 	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = 1337
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", nodeConf.DatabaseCache, nodeConf.DatabaseHandles, nodeConf.DatabaseFreezer, "eth/db/chaindata/", false)
 	if err != nil {
