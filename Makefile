@@ -27,8 +27,7 @@ prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/s
 prover/test-cases/go/main: prover/test-cases/go/main.go prover/test-cases/go/go.mod prover/test-cases/go/go.sum
 	cd prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
-$(generated_arbitrator_header):
-# TODO only gen if needed
+$(generated_arbitrator_header): prover/src/lib.rs prover/src/utils.rs
 	cbindgen --config cbindgen.toml --crate prover --output $(generated_arbitrator_header)
 
 wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: wasm-libraries/wasi-stub/src/**

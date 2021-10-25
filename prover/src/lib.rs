@@ -1,6 +1,7 @@
 pub mod binary;
 mod host;
 pub mod machine;
+/// cbindgen:ignore
 mod memory;
 mod merkle;
 mod reinterpret;
@@ -70,13 +71,11 @@ unsafe fn arbitrator_load_machine_impl(
         parse_binary(binary_path)?
     };
 
-    let mut i: isize = 0;
     let mut libraries = Vec::new();
-    while i < library_paths_size {
+    for i in 0..library_paths_size {
         let library_path = cstr_to_string(*(library_paths.offset(i)));
         let library_path = Path::new(&library_path);
         libraries.push(parse_binary(library_path)?);
-        i += 1;
     }
 
     let mach = Machine::from_binary(libraries, main_mod, always_merkelize);
@@ -100,10 +99,11 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: isize) {
-    let mut i: isize = 0;
-    while i < num_steps {
+    for _ in 0..num_steps {
         (*mach).step();
-        i += 1;
+        if (*mach).is_halted() {
+            break;
+        }
     }
 }
 
