@@ -206,7 +206,7 @@ func (mi *merkleInternal) Append(newHash common.Hash) MerkleTree {
 }
 
 func (mi *merkleInternal) SummarizeUpTo(num uint64) MerkleTree {
-	if num == mi.size {
+	if num == mi.capacity {
 		return summaryFromMerkleTree(mi)
 	} else {
 		leftSize := mi.left.Size()
@@ -226,9 +226,15 @@ func (mi *merkleInternal) Prove(leafIndex uint64) *MerkleProof {
 	var proof *MerkleProof
 	if leafIndex < leftSize {
 		proof = mi.left.Prove(leafIndex)
+		if proof == nil {
+			return nil
+		}
 		proof.Proof = append(proof.Proof, mi.right.Hash())
 	} else {
 		proof = mi.right.Prove(leafIndex - leftSize)
+		if proof == nil {
+			return proof
+		}
 		proof.Proof = append(proof.Proof, mi.left.Hash())
 	}
 	proof.LeafIndex = leafIndex
@@ -248,7 +254,6 @@ func (mi *merkleInternal) Serialize(wr io.Writer) error {
 
 type merkleCompleteSubtreeSummary struct {
 	hash     common.Hash
-	size     uint64
 	capacity uint64
 }
 
@@ -256,7 +261,10 @@ func summaryFromMerkleTree(subtree MerkleTree) MerkleTree {
 	if subtree.Size() == 1 {
 		return subtree
 	}
-	return &merkleCompleteSubtreeSummary{subtree.Hash(), subtree.Size(), subtree.Capacity()}
+	if subtree.Size() != subtree.Capacity() {
+		panic("tried to summarize a non-full MerkleTree node")
+	}
+	return &merkleCompleteSubtreeSummary{subtree.Hash(), subtree.Capacity()}
 }
 
 func newMerkleSummaryFromReader(rd io.Reader) (MerkleTree, error) {
@@ -268,7 +276,7 @@ func newMerkleSummaryFromReader(rd io.Reader) (MerkleTree, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &merkleCompleteSubtreeSummary{hash, capacity, capacity}, nil
+	return &merkleCompleteSubtreeSummary{hash, capacity}, nil
 }
 
 func (sum *merkleCompleteSubtreeSummary) Hash() common.Hash {
@@ -276,7 +284,7 @@ func (sum *merkleCompleteSubtreeSummary) Hash() common.Hash {
 }
 
 func (sum *merkleCompleteSubtreeSummary) Size() uint64 {
-	return sum.size
+	return sum.capacity
 }
 
 func (sum *merkleCompleteSubtreeSummary) Capacity() uint64 {
@@ -284,7 +292,7 @@ func (sum *merkleCompleteSubtreeSummary) Capacity() uint64 {
 }
 
 func (sum *merkleCompleteSubtreeSummary) Append(newHash common.Hash) MerkleTree {
-	return newMerkleInternal(sum, newMerkleEmpty(sum.size).Append(newHash))
+	return newMerkleInternal(sum, newMerkleEmpty(sum.capacity).Append(newHash))
 }
 
 func (sum *merkleCompleteSubtreeSummary) SummarizeUpTo(num uint64) MerkleTree {

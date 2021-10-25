@@ -15,7 +15,7 @@ type MerkleAccumulator struct {
 	backingStorage *storage.Storage
 	size           uint64
 	numPartials    uint64
-	partials       []*common.Hash
+	partials       []*common.Hash // nil means we haven't yet loaded it from backingStorage
 }
 
 func InitializeMerkleAccumulator(sto *storage.Storage) {
@@ -144,7 +144,7 @@ func (acc *MerkleAccumulator) ToMerkleTree() MerkleTree {
 			if level == 0 {
 				thisLevel = newMerkleLeaf(*partial)
 			} else {
-				thisLevel = &merkleCompleteSubtreeSummary{*partial, capacity, capacity}
+				thisLevel = &merkleCompleteSubtreeSummary{*partial, capacity}
 			}
 			if tree == nil {
 				tree = thisLevel
