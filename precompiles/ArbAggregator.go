@@ -13,14 +13,16 @@ import (
 	"math/big"
 )
 
-type ArbAggregator struct{}
+type ArbAggregator struct {
+	Address addr
+}
 
 func (con ArbAggregator) GetFeeCollector(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	aggregator common.Address,
 ) (common.Address, error) {
-	return arbos.OpenArbosState(st).L1PricingState().AggregatorFeeCollector(aggregator), nil
+	return arbos.OpenArbosState(evm.StateDB).L1PricingState().AggregatorFeeCollector(aggregator), nil
 }
 
 func (con ArbAggregator) GetFeeCollectorGasCost(aggregator common.Address) uint64 {
@@ -37,10 +39,10 @@ func (con ArbAggregator) GetDefaultAggregatorGasCost() uint64 {
 
 func (con ArbAggregator) GetPreferredAggregator(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	addr common.Address,
 ) (common.Address, bool, error) {
-	res, exists := arbos.OpenArbosState(st).L1PricingState().PreferredAggregator(addr)
+	res, exists := arbos.OpenArbosState(evm.StateDB).L1PricingState().PreferredAggregator(addr)
 	return res, exists, nil
 }
 
@@ -50,10 +52,10 @@ func (con ArbAggregator) GetPreferredAggregatorGasCost(addr common.Address) uint
 
 func (con ArbAggregator) GetTxBaseFee(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	aggregator common.Address,
 ) (*big.Int, error) {
-	return arbos.OpenArbosState(st).L1PricingState().FixedChargeForAggregatorL1Gas(aggregator), nil
+	return arbos.OpenArbosState(evm.StateDB).L1PricingState().FixedChargeForAggregatorL1Gas(aggregator), nil
 }
 
 func (con ArbAggregator) GetTxBaseFeeGasCost(aggregator common.Address) uint64 {
@@ -62,11 +64,11 @@ func (con ArbAggregator) GetTxBaseFeeGasCost(aggregator common.Address) uint64 {
 
 func (con ArbAggregator) SetFeeCollector(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	aggregator common.Address,
 	newFeeCollector common.Address,
 ) error {
-	l1State := arbos.OpenArbosState(st).L1PricingState()
+	l1State := arbos.OpenArbosState(evm.StateDB).L1PricingState()
 	if (caller != aggregator) && (caller != l1State.AggregatorFeeCollector(aggregator)) {
 		// only the aggregator and its current fee collector can change the aggregator's fee collector
 		return errors.New("non-authorized caller in ArbAggregator.SetFeeCollector")
@@ -81,10 +83,10 @@ func (con ArbAggregator) SetFeeCollectorGasCost(aggregator common.Address, newFe
 
 func (con ArbAggregator) SetDefaultAggregator(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	newDefault common.Address,
 ) error {
-	arbos.OpenArbosState(st).L1PricingState().SetDefaultAggregator(newDefault)
+	arbos.OpenArbosState(evm.StateDB).L1PricingState().SetDefaultAggregator(newDefault)
 	return nil
 }
 
@@ -94,10 +96,10 @@ func (con ArbAggregator) SetDefaultAggregatorGasCost(newDefault common.Address) 
 
 func (con ArbAggregator) SetPreferredAggregator(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	prefAgg common.Address,
 ) error {
-	arbos.OpenArbosState(st).L1PricingState().SetPreferredAggregator(caller, prefAgg)
+	arbos.OpenArbosState(evm.StateDB).L1PricingState().SetPreferredAggregator(caller, prefAgg)
 	return nil
 }
 
@@ -107,11 +109,11 @@ func (con ArbAggregator) SetPreferredAggregatorGasCost(prefAgg common.Address) u
 
 func (con ArbAggregator) SetTxBaseFee(
 	caller common.Address,
-	st *state.StateDB,
+	evm mech,
 	aggregator common.Address,
 	feeInL1Gas *big.Int,
 ) error {
-	arbos.OpenArbosState(st).L1PricingState().SetFixedChargeForAggregatorL1Gas(aggregator, feeInL1Gas)
+	arbos.OpenArbosState(evm.StateDB).L1PricingState().SetFixedChargeForAggregatorL1Gas(aggregator, feeInL1Gas)
 	return nil
 }
 

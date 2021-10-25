@@ -6,35 +6,29 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"math/big"
 )
 
-type ArbFunctionTable struct{}
+type ArbFunctionTable struct {
+	Address addr
+}
 
-func (con ArbFunctionTable) Get(
-	caller common.Address,
-	st *state.StateDB,
-	addr common.Address,
-	index *big.Int,
-) (*big.Int, bool, *big.Int, error) {
+func (con ArbFunctionTable) Get(caller addr, evm mech, addr addr, index huge) (huge, bool, huge, error) {
 	return nil, false, nil, errors.New("unimplemented")
 }
 
-func (con ArbFunctionTable) GetGasCost(addr common.Address, index *big.Int) uint64 {
+func (con ArbFunctionTable) GetGasCost(addr addr, index huge) uint64 {
 	return 0
 }
 
-func (con ArbFunctionTable) Size(caller common.Address, st *state.StateDB, addr common.Address) (*big.Int, error) {
+func (con ArbFunctionTable) Size(caller addr, evm mech, addr addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbFunctionTable) SizeGasCost(addr common.Address) uint64 {
+func (con ArbFunctionTable) SizeGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbFunctionTable) Upload(caller common.Address, st *state.StateDB, buf []byte) error {
+func (con ArbFunctionTable) Upload(caller addr, evm mech, buf []byte) error {
 	return errors.New("unimplemented")
 }
 

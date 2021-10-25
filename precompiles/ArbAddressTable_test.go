@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func TestArbAddressTableInit(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
 
 	sz, err := atab.Size(caller, st)
@@ -40,7 +41,7 @@ func TestArbAddressTableInit(t *testing.T) {
 
 func TestAddressTable1(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -96,7 +97,7 @@ func TestAddressTable1(t *testing.T) {
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -128,7 +129,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 
 func TestAddressTableCompressInTable(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -151,7 +152,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	res = append([]byte{99}, res...)
 	res = append(res, 33)
 
-	// verify that decompressing res consumes all by two bytes of res and produces addr
+	// verify that decompressing res consumes all but two bytes of res and produces addr
 	dec, nbytes, err := atab.Decompress(caller, st, res, big.NewInt(1))
 	if err != nil {
 		t.Fatal(err)
@@ -164,12 +165,14 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	}
 }
 
-func newStateDBForTesting() *state.StateDB {
+func newMockEVMForTesting(t *testing.T) *vm.EVM {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	return statedb
+	return &vm.EVM{
+		StateDB: statedb,
+	}
 }
