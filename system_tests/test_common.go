@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -44,7 +45,7 @@ type BlockchainTestInfo struct {
 	Accounts map[string]AccountInfo
 }
 
-func NewBlocChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
+func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
 		T:        t,
 		Signer:   signer,
@@ -91,11 +92,8 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 		b.T.Fatal("no private key for account: ", name)
 	}
 	return bind.TransactOpts{
-		From:      info.Address,
-		Nonce:     nil,
-		GasLimit:  4000000,
-		GasFeeCap: big.NewInt(5e+09),
-		GasTipCap: big.NewInt(2),
+		From:     info.Address,
+		GasLimit: 4000000,
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != info.Address {
 				return nil, errors.New("bad address")
@@ -128,7 +126,7 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 
 func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
 	var gasLimit uint64 = 8000029
-	l1info := NewBlocChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
+	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -138,18 +136,7 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 	l1genAlloc[l1info.GetAddress("Sequencer")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 	l1genAlloc[l1info.GetAddress("User")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = t.TempDir()
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		utils.Fatalf("Error creating protocol stack: %v\n", err)
-	}
-	nodeConf := ethconfig.Defaults
-
-	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", nodeConf.DatabaseCache, nodeConf.DatabaseHandles, nodeConf.DatabaseFreezer, "eth/db/chaindata/", false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	chainDb := rawdb.NewMemoryDatabase()
 
 	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
 
@@ -203,7 +190,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *BlockchainT
 
 	l1backend, l1info := CreateL1WithInbox(t)
 
-	l2info := NewBlocChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
+	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
 	l2info.GenerateAccount("Owner")
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
@@ -228,10 +215,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *BlockchainT
 		BaseFee:    big.NewInt(0),
 	}
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", nodeConf.DatabaseCache, nodeConf.DatabaseHandles, nodeConf.DatabaseFreezer, "eth/db/chaindata/", false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	chainDb := rawdb.NewMemoryDatabase()
 
 	engine := arbos.Engine{
 		IsSequencer: true,
