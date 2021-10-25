@@ -94,4 +94,6 @@ interface ArbSys {
                             uint indexed batchNumber, uint indexInBatch,
                             uint arbBlockNum, uint ethBlockNum, uint timestamp,
                             uint callvalue, bytes data);
+
+    event SendMerkleUpdate(uint indexed level, uint leafNum, bytes32 hash);
 }

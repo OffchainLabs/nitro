@@ -50,13 +50,13 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 }
 
 type EventForTreeBuilding struct {
-	level   uint64
-	leafNum uint64
-	hash    common.Hash
+	Level   uint64
+	LeafNum uint64
+	Hash    common.Hash
 }
 
 func NewMerkleTreeFromEvents(
-	events []EventForTreeBuilding, // latest event at each level
+	events []EventForTreeBuilding, // latest event at each Level
 ) MerkleTree {
 	return NewNonPersistentMerkleAccumulatorFromEvents(events).ToMerkleTree()
 }

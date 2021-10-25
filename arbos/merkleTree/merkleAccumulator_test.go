@@ -187,10 +187,10 @@ func TestReconstructFromEvents(t *testing.T) {
 
 	for i, leaf := range leaves {
 		ev := acc.Append(leaf)
-		if ev.level >= uint64(len(events)) {
+		if ev.Level >= uint64(len(events)) {
 			events = append(events, *ev)
 		} else {
-			events[ev.level] = *ev
+			events[ev.Level] = *ev
 		}
 		if acc.Root() != acc.ToMerkleTree().Hash() {
 			t.Fatal(i, acc.partials)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"math/big"
 )
@@ -15,6 +16,7 @@ import (
 type ArbSys struct {
 	Address           addr
 	L2ToL1Transaction func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
+	SendMerkleUpdate  func(mech, huge, huge, [32]byte)
 }
 
 func (con *ArbSys) ArbBlockNumber(caller addr, evm mech) (huge, error) {
@@ -104,14 +106,39 @@ func (con *ArbSys) SendTxToL1(
 	arbosState := arbos.OpenArbosState(evm.StateDB)
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvent := merkleAcc.Append(sendHash)
-	//TODO: emit L2ToL1TransactionEvent(caller, destination, sendHash, merkleAcc.Size()-1, 0, arbBlockNum, ethBlockNum, arbosState.GetLastTimestampSeen(), value, calldataForL1)
-	_ = merkleUpdateEvent // TODO: emit an event for the merkleUpdateEvent
-	//TODO: deduct the callvalue from this precompile's account (burn/destroy it)
+
+	// burn the callvalue, which was previously deposited to this precompile's account
+	evm.StateDB.SubBalance(common.BigToAddress(big.NewInt(100)), value)
+
+	con.SendMerkleUpdate(
+		evm,
+		big.NewInt(int64(merkleUpdateEvent.Level)),
+		big.NewInt(int64(merkleUpdateEvent.LeafNum)),
+		merkleUpdateEvent.Hash,
+	)
+
+	con.L2ToL1Transaction(
+		evm,
+		caller,
+		destination,
+		sendHash.Big(),
+		big.NewInt(int64(merkleAcc.Size()-1)),
+		big.NewInt(0),
+		evm.Context.BlockNumber,
+		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
+		big.NewInt(int64(arbosState.LastTimestampSeen())),
+		value,
+		calldataForL1,
+	)
+
 	return sendHash.Big(), nil
 }
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
-	return 0 // TODO
+	return params.CallValueTransferGas +
+		2*params.LogGas +
+		6*params.LogTopicGas +
+		(10*32+uint64(len(calldataForL1)))*params.LogDataGas
 }
 
 func (con ArbSys) SendMerkleTreeState(caller addr, evm mech) (*big.Int, [32]byte, [][32]byte, error) {

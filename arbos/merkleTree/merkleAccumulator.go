@@ -173,13 +173,13 @@ func NewNonPersistentMerkleAccumulatorFromEvents(events []EventForTreeBuilding) 
 	latestSeen := uint64(0)
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
-		if event.leafNum > latestSeen {
-			latestSeen = event.leafNum
-			acc.size = event.leafNum
-			acc.setPartial(uint64(i), &event.hash)
+		if event.LeafNum > latestSeen {
+			latestSeen = event.LeafNum
+			acc.size = event.LeafNum
+			acc.setPartial(uint64(i), &event.Hash)
 		}
-		if acc.size <= event.leafNum {
-			acc.size = event.leafNum + 1
+		if acc.size <= event.LeafNum {
+			acc.size = event.LeafNum + 1
 		}
 	}
 	return acc
