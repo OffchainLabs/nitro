@@ -7,7 +7,6 @@ package precompiles
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"math/big"
@@ -29,8 +28,8 @@ func (con ArbAggregator) GetFeeCollectorGasCost(aggregator common.Address) uint6
 	return params.SloadGas
 }
 
-func (con ArbAggregator) GetDefaultAggregator(caller common.Address, st *state.StateDB) (common.Address, error) {
-	return arbos.OpenArbosState(st).L1PricingState().DefaultAggregator(), nil
+func (con ArbAggregator) GetDefaultAggregator(caller common.Address, evm mech) (common.Address, error) {
+	return arbos.OpenArbosState(evm.StateDB).L1PricingState().DefaultAggregator(), nil
 }
 
 func (con ArbAggregator) GetDefaultAggregatorGasCost() uint64 {
