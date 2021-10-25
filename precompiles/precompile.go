@@ -103,7 +103,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		name := method.RawName
 		capitalize := string(unicode.ToUpper(rune(name[0])))
 		name = capitalize + name[1:]
-		context := "Precompile " + contract + "'s " + name + "'s implementer "
 
 		if len(method.ID) != 4 {
 			log.Fatal("Method ID isn't 4 bytes")
@@ -155,7 +154,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 
 		if handler.Type != expectedHandlerType {
 			log.Fatal(
-				context, "has the wrong type\n",
+				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
 				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
 			)
 		}
@@ -165,7 +164,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
 		}
-		context = "Precompile " + contract + "'s " + name + "GasCost's implementer "
 
 		needs = []reflect.Type{
 			implementerType, // the contract itself
@@ -179,8 +177,8 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 
 		if gascost.Type != expectedGasCostType {
 			log.Fatal(
-				context, "has the wrong type\n",
-				"\texpected:\t", expectedGasCostType, "\n\tbut have:\t", gascost.Type,
+				"Precompile "+contract+"'s "+name+"GasCost's implementer has the wrong type",
+				"\n\texpected:\t", expectedGasCostType, "\n\tbut have:\t", gascost.Type,
 			)
 		}
 
