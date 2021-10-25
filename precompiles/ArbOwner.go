@@ -6,30 +6,29 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
-	"math/big"
 )
 
-type ArbOwner struct{}
+type ArbOwner struct {
+	Address addr
+}
 
-func (con ArbOwner) AddAllowedSender(caller common.Address, st *state.StateDB, addr common.Address) error {
+func (con ArbOwner) AddAllowedSender(caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddAllowedSenderGasCost(addr common.Address) uint64 {
+func (con ArbOwner) AddAllowedSenderGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) AddChainOwner(caller common.Address, st *state.StateDB, newOwner common.Address) error {
+func (con ArbOwner) AddChainOwner(caller addr, evm mech, newOwner addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddChainOwnerGasCost(newOwner common.Address) uint64 {
+func (con ArbOwner) AddChainOwnerGasCost(newOwner addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) AllowAllSenders(caller common.Address, st *state.StateDB) error {
+func (con ArbOwner) AllowAllSenders(caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
@@ -37,15 +36,15 @@ func (con ArbOwner) AllowAllSendersGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) AddMappingException(caller common.Address, st *state.StateDB, from *big.Int, to *big.Int) error {
+func (con ArbOwner) AddMappingException(caller addr, evm mech, from huge, to huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddMappingExceptionGasCost(from *big.Int, to *big.Int) uint64 {
+func (con ArbOwner) AddMappingExceptionGasCost(from huge, to huge) uint64 {
 	return 0
 }
 
-func (con ArbOwner) AllowOnlyOwnerToSend(caller common.Address, st *state.StateDB) error {
+func (con ArbOwner) AllowOnlyOwnerToSend(caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
@@ -53,7 +52,7 @@ func (con ArbOwner) AllowOnlyOwnerToSendGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) AddToReserveFunds(caller common.Address, st *state.StateDB, value *big.Int) error {
+func (con ArbOwner) AddToReserveFunds(caller addr, evm mech, value huge) error {
 	return errors.New("unimplemented")
 }
 
@@ -61,7 +60,7 @@ func (con ArbOwner) AddToReserveFundsGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) ContinueCodeUpload(caller common.Address, st *state.StateDB, marshalledCode []byte) error {
+func (con ArbOwner) ContinueCodeUpload(caller addr, evm mech, marshalledCode []byte) error {
 	return errors.New("unimplemented")
 }
 
@@ -69,41 +68,32 @@ func (con ArbOwner) ContinueCodeUploadGasCost(marshalledCode []byte) uint64 {
 	return 0
 }
 
-func (con ArbOwner) CreateChainParameter(
-	caller common.Address,
-	st *state.StateDB,
-	which [32]byte,
-	value *big.Int,
-) error {
+func (con ArbOwner) CreateChainParameter(caller addr, evm mech, which [32]byte, value huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) CreateChainParameterGasCost(which [32]byte, value *big.Int) uint64 {
+func (con ArbOwner) CreateChainParameterGasCost(which [32]byte, value huge) uint64 {
 	return 0
 }
 
 func (con ArbOwner) DeployContract(
-	caller common.Address,
-	st *state.StateDB,
-	value *big.Int,
+	caller addr,
+	evm mech,
+	value huge,
 	constructorData []byte,
-	deemedSender common.Address,
-	deemedNonce *big.Int,
-) (common.Address, error) {
-	return common.Address{}, errors.New("unimplemented")
+	deemedSender addr,
+	deemedNonce huge,
+) (addr, error) {
+	return addr{}, errors.New("unimplemented")
 }
 
-func (con ArbOwner) DeployContractGasCost(
-	constructorData []byte,
-	deemedSender common.Address,
-	deemedNonce *big.Int,
-) uint64 {
+func (con ArbOwner) DeployContractGasCost(constructorData []byte, deemedSender addr, deemedNonce huge) uint64 {
 	return 0
 }
 
 func (con ArbOwner) FinishCodeUploadAsArbosUpgrade(
-	caller common.Address,
-	st *state.StateDB,
+	caller addr,
+	evm mech,
 	newCodeHash [32]byte,
 	oldCodeHash [32]byte,
 ) error {
@@ -114,7 +104,7 @@ func (con ArbOwner) FinishCodeUploadAsArbosUpgradeGasCost(newCodeHash [32]byte, 
 	return 0
 }
 
-func (con ArbOwner) GetAllAllowedSenders(caller common.Address, st *state.StateDB) ([]byte, error) {
+func (con ArbOwner) GetAllAllowedSenders(caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -122,7 +112,7 @@ func (con ArbOwner) GetAllAllowedSendersGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetAllChainOwners(caller common.Address, st *state.StateDB) ([]byte, error) {
+func (con ArbOwner) GetAllChainOwners(caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -130,7 +120,7 @@ func (con ArbOwner) GetAllChainOwnersGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetAllFairGasPriceSenders(caller common.Address, st *state.StateDB) ([]byte, error) {
+func (con ArbOwner) GetAllFairGasPriceSenders(caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -138,7 +128,7 @@ func (con ArbOwner) GetAllFairGasPriceSendersGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetAllMappingExceptions(caller common.Address, st *state.StateDB) ([]byte, error) {
+func (con ArbOwner) GetAllMappingExceptions(caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -146,7 +136,7 @@ func (con ArbOwner) GetAllMappingExceptionsGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetChainParameter(caller common.Address, st *state.StateDB, which [32]byte) (*big.Int, error) {
+func (con ArbOwner) GetChainParameter(caller addr, evm mech, which [32]byte) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -154,7 +144,7 @@ func (con ArbOwner) GetChainParameterGasCost(which [32]byte) uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetTotalOfEthBalances(caller common.Address, st *state.StateDB) (*big.Int, error) {
+func (con ArbOwner) GetTotalOfEthBalances(caller addr, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -162,7 +152,7 @@ func (con ArbOwner) GetTotalOfEthBalancesGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetLastUpgradeHash(caller common.Address, st *state.StateDB) ([32]byte, error) {
+func (con ArbOwner) GetLastUpgradeHash(caller addr, evm mech) ([32]byte, error) {
 	return [32]byte{}, errors.New("unimplemented")
 }
 
@@ -170,7 +160,7 @@ func (con ArbOwner) GetLastUpgradeHashGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) GetUploadedCodeHash(caller common.Address, st *state.StateDB) ([32]byte, error) {
+func (con ArbOwner) GetUploadedCodeHash(caller addr, evm mech) ([32]byte, error) {
 	return [32]byte{}, errors.New("unimplemented")
 }
 
@@ -178,73 +168,63 @@ func (con ArbOwner) GetUploadedCodeHashGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) IsAllowedSender(caller common.Address, st *state.StateDB, addr common.Address) (bool, error) {
+func (con ArbOwner) IsAllowedSender(caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsAllowedSenderGasCost(addr common.Address) uint64 {
+func (con ArbOwner) IsAllowedSenderGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) IsChainOwner(caller common.Address, st *state.StateDB, addr common.Address) (bool, error) {
+func (con ArbOwner) IsChainOwner(caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsChainOwnerGasCost(addr common.Address) uint64 {
+func (con ArbOwner) IsChainOwnerGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) IsFairGasPriceSender(caller common.Address, st *state.StateDB, addr common.Address) (bool, error) {
+func (con ArbOwner) IsFairGasPriceSender(caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsFairGasPriceSenderGasCost(addr common.Address) uint64 {
+func (con ArbOwner) IsFairGasPriceSenderGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) IsMappingException(
-	caller common.Address,
-	st *state.StateDB,
-	from *big.Int,
-	to *big.Int,
-) (bool, error) {
+func (con ArbOwner) IsMappingException(caller addr, evm mech, from huge, to huge) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsMappingExceptionGasCost(from *big.Int, to *big.Int) uint64 {
+func (con ArbOwner) IsMappingExceptionGasCost(from huge, to huge) uint64 {
 	return 0
 }
 
-func (con ArbOwner) RemoveAllowedSender(caller common.Address, st *state.StateDB, addr common.Address) error {
+func (con ArbOwner) RemoveAllowedSender(caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveAllowedSenderGasCost(addr common.Address) uint64 {
+func (con ArbOwner) RemoveAllowedSenderGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) RemoveChainOwner(caller common.Address, st *state.StateDB, addr common.Address) error {
+func (con ArbOwner) RemoveChainOwner(caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveChainOwnerGasCost(addr common.Address) uint64 {
+func (con ArbOwner) RemoveChainOwnerGasCost(addr addr) uint64 {
 	return 0
 }
 
-func (con ArbOwner) RemoveMappingException(
-	caller common.Address,
-	st *state.StateDB,
-	from *big.Int,
-	to *big.Int,
-) error {
+func (con ArbOwner) RemoveMappingException(caller addr, evm mech, from huge, to huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveMappingExceptionGasCost(from *big.Int, to *big.Int) uint64 {
+func (con ArbOwner) RemoveMappingExceptionGasCost(from huge, to huge) uint64 {
 	return 0
 }
 
-func (con ArbOwner) SerializeAllParameters(caller common.Address, st *state.StateDB) ([]byte, error) {
+func (con ArbOwner) SerializeAllParameters(caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
@@ -252,36 +232,31 @@ func (con ArbOwner) SerializeAllParametersGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) SetChainParameter(caller common.Address, st *state.StateDB, which [32]byte, value *big.Int) error {
+func (con ArbOwner) SetChainParameter(caller addr, evm mech, which [32]byte, value huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetChainParameterGasCost(which [32]byte, value *big.Int) uint64 {
+func (con ArbOwner) SetChainParameterGasCost(which [32]byte, value huge) uint64 {
 	return 0
 }
 
-func (con ArbOwner) SetFairGasPriceSender(
-	caller common.Address,
-	st *state.StateDB,
-	addr common.Address,
-	isFairGasPriceSender bool,
-) error {
+func (con ArbOwner) SetFairGasPriceSender(caller addr, evm mech, addr addr, isFairGasPriceSender bool) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetFairGasPriceSenderGasCost(addr common.Address, isFairGasPriceSender bool) uint64 {
+func (con ArbOwner) SetFairGasPriceSenderGasCost(addr addr, isFairGasPriceSender bool) uint64 {
 	return 0
 }
 
-func (con ArbOwner) SetL1GasPriceEstimate(caller common.Address, st *state.StateDB, priceInGwei *big.Int) error {
+func (con ArbOwner) SetL1GasPriceEstimate(caller addr, evm mech, priceInGwei huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetL1GasPriceEstimateGasCost(priceInGwei *big.Int) uint64 {
+func (con ArbOwner) SetL1GasPriceEstimateGasCost(priceInGwei huge) uint64 {
 	return 0
 }
 
-func (con ArbOwner) StartCodeUpload(caller common.Address, st *state.StateDB) error {
+func (con ArbOwner) StartCodeUpload(caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
@@ -289,7 +264,7 @@ func (con ArbOwner) StartCodeUploadGasCost() uint64 {
 	return 0
 }
 
-func (con ArbOwner) StartCodeUploadWithCheck(caller common.Address, st *state.StateDB, oldCodeHash [32]byte) error {
+func (con ArbOwner) StartCodeUploadWithCheck(caller addr, evm mech, oldCodeHash [32]byte) error {
 	return errors.New("unimplemented")
 }
 

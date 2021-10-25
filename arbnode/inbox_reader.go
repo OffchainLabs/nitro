@@ -86,29 +86,34 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		reorgingDelayed := false
 		reorgingSequencer := false
 		missingDelayed := false
-		if ir.caughtUp {
-			delayedSeqNum, err := ir.delayedBridge.GetMessageCount(ctx, currentHeight)
+
+		checkingDelayedCount, err := ir.delayedBridge.GetMessageCount(ctx, currentHeight)
+		if err != nil {
+			return err
+		}
+		if checkingDelayedCount.Sign() > 0 {
+			ourLatestDelayedCount, err := ir.db.GetDelayedCount()
 			if err != nil {
 				return err
 			}
-			if delayedSeqNum.Sign() > 0 {
-				l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, delayedSeqNum, currentHeight)
-				if err != nil {
-					return err
-				}
-				dbDelayedAcc, err := ir.db.GetDelayedAcc(new(big.Int).Sub(delayedSeqNum, big.NewInt(1)))
-				if err != nil {
-					if errors.Is(err, accumulatorNotFound) {
-						missingDelayed = true
-					} else {
-						return err
-					}
-				} else if dbDelayedAcc != l1DelayedAcc {
-					reorgingDelayed = true
-				}
+			if ourLatestDelayedCount.Cmp(checkingDelayedCount) < 0 {
+				checkingDelayedCount = ourLatestDelayedCount
+				missingDelayed = true
 			}
-			// TODO the same as above but for sequencer messges
+			checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
+			l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
+			if err != nil {
+				return err
+			}
+			dbDelayedAcc, err := ir.db.GetDelayedAcc(checkingDelayedSeqNum)
+			if err != nil {
+				return err
+			}
+			if dbDelayedAcc != l1DelayedAcc {
+				reorgingDelayed = true
+			}
 		}
+		// TODO the same as above but for sequencer messges
 
 		for {
 			select {
@@ -200,11 +205,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			log.Trace("looking up messages", "from", from.String(), "to", to.String())
 			var sequencerBatches []interface{} // TODO
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
-				missingBatchDelayed, err := ir.addMessages(sequencerBatches, delayedMessages)
+				delayedMismatch, err := ir.addMessages(sequencerBatches, delayedMessages)
 				if err != nil {
 					return err
 				}
-				if missingBatchDelayed {
+				if delayedMismatch {
 					reorgingDelayed = true
 				}
 			}

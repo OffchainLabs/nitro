@@ -122,10 +122,8 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 }
 
 func (s *InboxState) ReorgTo(count uint64) error {
-	atomic.AddUint32(&s.reorgPending, 1)
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
 	return s.reorgToWithInsertionMutex(count)
 }
 
@@ -152,8 +150,10 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
+	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
+	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
 	targetBlockNumber, _, err := s.LookupBlockNumByMessageCount(count, false)
 	if err != nil {
 		return err
@@ -487,7 +487,8 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 			return nil
 		}
 		if ctx.Err() != nil {
-			// the context is done
+			// the context is done, shut down
+			// nolint:nilerr
 			return nil
 		}
 

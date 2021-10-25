@@ -33,4 +33,3 @@ contract ArbInfo {
         return code;
     }
 }
-
