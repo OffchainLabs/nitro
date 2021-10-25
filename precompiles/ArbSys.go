@@ -7,7 +7,6 @@ package precompiles
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos"
 	"math/big"
@@ -115,11 +114,11 @@ func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []
 	return 0 // TODO
 }
 
-func (con ArbSys) SendMerkleTreeState(caller common.Address, st *state.StateDB) (*big.Int, [32]byte, [][32]byte, error) {
+func (con ArbSys) SendMerkleTreeState(caller addr, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
 	if caller != (common.Address{}) {
 		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
 	}
-	size, rootHash, rawPartials := arbos.OpenArbosState(st).SendMerkleAccumulator().StateForExport()
+	size, rootHash, rawPartials := arbos.OpenArbosState(evm.StateDB).SendMerkleAccumulator().StateForExport()
 	partials := make([][32]byte, len(rawPartials))
 	for i, par := range rawPartials {
 		partials[i] = [32]byte(par)
