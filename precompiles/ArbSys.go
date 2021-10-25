@@ -108,7 +108,7 @@ func (con *ArbSys) SendTxToL1(
 	merkleUpdateEvent := merkleAcc.Append(sendHash)
 
 	// burn the callvalue, which was previously deposited to this precompile's account
-	evm.StateDB.SubBalance(common.BigToAddress(big.NewInt(100)), value)
+	evm.StateDB.SubBalance(con.Address, value)
 
 	con.SendMerkleUpdate(
 		evm,
