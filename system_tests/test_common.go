@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"testing"
 	"time"
 
@@ -34,46 +33,123 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
-func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, bind.TransactOpts, common.Address, common.Address) {
-	var gasLimit uint64 = 8000029
-	l1Key, err := crypto.GenerateKey() // nolint: gosec
-	if err != nil {
-		t.Fatal(err)
+type AccountInfo struct {
+	Address    common.Address
+	PrivateKey *ecdsa.PrivateKey
+}
+
+type BlockchainTestInfo struct {
+	T        *testing.T
+	Signer   types.Signer
+	Accounts map[string]AccountInfo
+}
+
+func NewBlocChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
+	return &BlockchainTestInfo{
+		T:        t,
+		Signer:   signer,
+		Accounts: make(map[string]AccountInfo),
 	}
-	l1Signer := types.NewLondonSigner(big.NewInt(1337))
-	l1Address := crypto.PubkeyToAddress(l1Key.PublicKey)
-	l1genAlloc := make(core.GenesisAlloc)
-	l1genAlloc[l1Address] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+}
 
-	l1sim := backends.NewSimulatedBackend(l1genAlloc, gasLimit)
-	defer l1sim.Close()
+func (b *BlockchainTestInfo) GenerateAccount(name string) {
+	b.T.Helper()
 
-	l1TransactionOpts := bind.TransactOpts{
-		From:      l1Address,
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		b.T.Fatal(err)
+	}
+	b.Accounts[name] = AccountInfo{
+		PrivateKey: privateKey,
+		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
+	}
+}
+
+func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
+	b.Accounts[name] = AccountInfo{
+		PrivateKey: nil,
+		Address:    address,
+	}
+}
+
+func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
+	b.T.Helper()
+	info, ok := b.Accounts[name]
+	if !ok {
+		b.T.Fatal("not found account: ", name)
+	}
+	return info.Address
+}
+
+func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOpts {
+	b.T.Helper()
+	info, ok := b.Accounts[name]
+	if !ok {
+		b.T.Fatal("not found account: ", name)
+	}
+	if info.PrivateKey == nil {
+		b.T.Fatal("no private key for account: ", name)
+	}
+	return bind.TransactOpts{
+		From:      info.Address,
 		Nonce:     nil,
 		GasLimit:  30000,
 		GasFeeCap: big.NewInt(5e+09),
 		GasTipCap: big.NewInt(2),
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
-			if address != l1Address {
-				return nil, errors.New("Bad Address")
+			if address != info.Address {
+				return nil, errors.New("bad address")
 			}
-			signature, err := crypto.Sign(l1Signer.Hash(tx).Bytes(), l1Key)
+			signature, err := crypto.Sign(b.Signer.Hash(tx).Bytes(), info.PrivateKey)
 			if err != nil {
 				return nil, err
 			}
-			return tx.WithSignature(l1Signer, signature)
+			return tx.WithSignature(b.Signer, signature)
 		},
 	}
+}
+
+func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Transaction {
+	b.T.Helper()
+	info, ok := b.Accounts[name]
+	if !ok {
+		b.T.Fatal("not found account: ", name)
+	}
+	if info.PrivateKey == nil {
+		b.T.Fatal("no private key for account: ", name)
+	}
+	tx := types.NewTx(data)
+	tx, err := types.SignTx(tx, b.Signer, info.PrivateKey)
+	if err != nil {
+		b.T.Fatal(err)
+	}
+	return tx
+}
+
+func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
+	var gasLimit uint64 = 8000029
+	l1info := NewBlocChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
+	l1info.GenerateAccount("RollupOwner")
+	l1info.GenerateAccount("Sequencer")
+
+	l1genAlloc := make(core.GenesisAlloc)
+	l1genAlloc[l1info.GetAddress("RollupOwner")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+	l1genAlloc[l1info.GetAddress("Sequencer")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+
+	l1sim := backends.NewSimulatedBackend(l1genAlloc, gasLimit)
+
+	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	bridgeAddr, _, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
+	l1info.SetContract("Bridge", bridgeAddr)
 
 	inboxAddr, _, inboxContract, err := bridgegen.DeployInbox(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
+	l1info.SetContract("Inbox", inboxAddr)
 
 	_, err = inboxContract.Initialize(&l1TransactionOpts, bridgeAddr)
 	if err != nil {
@@ -84,20 +160,21 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, bind.TransactO
 		t.Fatal(err)
 	}
 
-	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1Address)
+	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return l1sim, l1TransactionOpts, sequencerInboxAddr, bridgeAddr
+	l1info.SetContract("SequencerInbox", sequencerInboxAddr)
+
+	return l1sim, l1info
 }
 
-func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.Client, *ecdsa.PrivateKey) {
+func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo, *backends.SimulatedBackend, *BlockchainTestInfo) {
 	arbstate.RequireHookedGeth()
 	stackConf := node.DefaultConfig
 	var err error
 	stackConf.DataDir = t.TempDir()
-	defer os.RemoveAll(stackConf.DataDir)
 	stackConf.HTTPHost = "localhost"
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stack, err := node.New(&stackConf)
@@ -107,17 +184,14 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
 
-	l1backend, _, _, l1delayedInboxAddr := CreateL1WithInbox(t)
+	l1backend, l1info := CreateL1WithInbox(t)
 
-	ownerKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerAddress := crypto.PubkeyToAddress(ownerKey.PublicKey)
+	l2info := NewBlocChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
+	l2info.GenerateAccount("Owner")
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
-	genesisAlloc[ownerAddress] = core.GenesisAccount{
-		Balance:    big.NewInt(params.Ether),
+	genesisAlloc[l2info.GetAddress("Owner")] = core.GenesisAccount{
+		Balance:    big.NewInt(params.Ether * 2),
 		Nonce:      0,
 		PrivateKey: nil,
 	}
@@ -142,7 +216,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		t.Fatal(err)
 	}
 
-	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1delayedInboxAddr, 0)
+	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1info.GetAddress("Bridge"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +268,10 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		t.Fatal(err)
 	}
 
+	return backend, l2info, l1backend, l1info
+}
+
+func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {
 	apis := backend.APIBackend().GetAPIs()
 
 	inproc := rpc.NewServer()
@@ -203,9 +281,7 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *ethclient.C
 		}
 	}
 
-	client := ethclient.NewClient(rpc.DialInProc(inproc))
-
-	return backend, client, ownerKey
+	return ethclient.NewClient(rpc.DialInProc(inproc))
 }
 
 // will wait untill tx is in the blockchain. attempts = 0 is infinite
