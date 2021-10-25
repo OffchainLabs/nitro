@@ -1,23 +1,9 @@
-mod binary;
-mod host;
-mod machine;
-mod memory;
-mod merkle;
-mod reinterpret;
-mod utils;
-mod value;
-mod wavm;
-
-use crate::{binary::WasmBinary, machine::Machine, wavm::Opcode};
 use eyre::Result;
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
+use prover::parse_binary;
+use prover::{machine::Machine, wavm::Opcode};
 use serde::Serialize;
-use std::{
-    fs::File,
-    io::{Read, Write},
-    path::{Path, PathBuf},
-    process,
-};
+use std::{fs::File, io::Write, path::PathBuf};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -41,25 +27,6 @@ struct ProofInfo {
     before: String,
     proof: String,
     after: String,
-}
-
-fn parse_binary(path: &Path) -> Result<WasmBinary> {
-    let mut f = File::open(path)?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)?;
-
-    let bin = match binary::parse(&buf) {
-        Ok(bin) => bin,
-        Err(err) => {
-            eprintln!("Parsing error:");
-            for (input, kind) in err.errors {
-                eprintln!("Got {:?} while parsing {}", kind, hex::encode(&input[..64]));
-            }
-            process::exit(1);
-        }
-    };
-
-    Ok(bin)
 }
 
 fn main() -> Result<()> {
