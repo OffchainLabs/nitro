@@ -7,13 +7,12 @@ pragma solidity >=0.4.21 <0.7.0;
 interface ArbRetryableTx {
 
     /**
-    * @notice Schedule an attempt to redeem a redeemable tx.
-    * Revert if ticketId does not exist, or if less than gasToDonate gas is available
+    * @notice Schedule an attempt to redeem a redeemable tx, donating all of the call's gas to the redeem.
+    * Revert if ticketId does not exist.
     * @param ticketId unique identifier of retryable message: keccak256(keccak256(ArbchainId, inbox-sequence-number), uint(0) )
-    * @param gasToDonate amount of the caller's gas to donate for the redeem attempt
     * @return txId that the redeem attempt will have
      */
-    function scheduleRedeem(bytes32 ticketId, uint gasToDonate) external returns(bytes32);
+    function scheduleRedeem(bytes32 ticketId) external returns(bytes32);
 
     /** 
     * @notice Return the lifetime assigned to newly created redeemable txns.
