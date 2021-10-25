@@ -487,7 +487,8 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 			return nil
 		}
 		if ctx.Err() != nil {
-			// the context is done
+			// the context is done, shut down
+			// nolint:nilerr
 			return nil
 		}
 
