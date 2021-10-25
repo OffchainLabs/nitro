@@ -93,7 +93,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 	return bind.TransactOpts{
 		From:      info.Address,
 		Nonce:     nil,
-		GasLimit:  30000,
+		GasLimit:  4000000,
 		GasFeeCap: big.NewInt(5e+09),
 		GasTipCap: big.NewInt(2),
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
@@ -131,12 +131,28 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 	l1info := NewBlocChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
+	l1info.GenerateAccount("User")
 
 	l1genAlloc := make(core.GenesisAlloc)
 	l1genAlloc[l1info.GetAddress("RollupOwner")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 	l1genAlloc[l1info.GetAddress("Sequencer")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+	l1genAlloc[l1info.GetAddress("User")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 
-	l1sim := backends.NewSimulatedBackend(l1genAlloc, gasLimit)
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		utils.Fatalf("Error creating protocol stack: %v\n", err)
+	}
+	nodeConf := ethconfig.Defaults
+	nodeConf.NetworkId = 1337
+
+	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", nodeConf.DatabaseCache, nodeConf.DatabaseHandles, nodeConf.DatabaseFreezer, "eth/db/chaindata/", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	bridgeAddr, _, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
@@ -166,6 +182,8 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 	}
 
 	l1info.SetContract("SequencerInbox", sequencerInboxAddr)
+
+	l1sim.Commit()
 
 	return l1sim, l1info
 }
@@ -212,15 +230,6 @@ func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *BlockchainT
 	}
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", nodeConf.DatabaseCache, nodeConf.DatabaseHandles, nodeConf.DatabaseFreezer, "eth/db/chaindata/", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1info.GetAddress("Bridge"), 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = arbnode.NewInboxReader(chainDb, l1backend, &big.Int{}, delayedBridge)
 	if err != nil {
 		t.Fatal(err)
 	}
