@@ -16,7 +16,7 @@ import (
 
 func TestArbAddressTableInit(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newStateDBForTesting(t)
 	atab := ArbAddressTable{}
 
 	sz, err := atab.Size(caller, st)
@@ -40,7 +40,7 @@ func TestArbAddressTableInit(t *testing.T) {
 
 func TestAddressTable1(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newStateDBForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -96,7 +96,7 @@ func TestAddressTable1(t *testing.T) {
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newStateDBForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -128,7 +128,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 
 func TestAddressTableCompressInTable(t *testing.T) {
 	caller := common.Address{}
-	st := newStateDBForTesting()
+	st := newStateDBForTesting(t)
 	atab := ArbAddressTable{}
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -164,12 +164,12 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	}
 }
 
-func newStateDBForTesting() *state.StateDB {
+func newStateDBForTesting(t *testing.T) *state.StateDB {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	return statedb
 }
