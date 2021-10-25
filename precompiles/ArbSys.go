@@ -14,9 +14,11 @@ import (
 )
 
 type ArbSys struct {
-	Address           addr
-	L2ToL1Transaction func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
-	SendMerkleUpdate  func(mech, huge, huge, [32]byte)
+	Address                  addr
+	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
+	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
+	SendMerkleUpdate         func(mech, huge, huge, [32]byte)
+	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
 }
 
 func (con *ArbSys) ArbBlockNumber(caller addr, evm mech) (huge, error) {

@@ -145,44 +145,27 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			needs = append(needs, arg.Type.GetType())
 		}
 
-		signature := handler.Type
-
-		if signature.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
-		}
-		for i, arg := range needs {
-			if signature.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
-				)
-			}
-		}
-
 		var outputs = []reflect.Type{}
 		for _, out := range method.Outputs {
 			outputs = append(outputs, out.Type.GetType())
 		}
 		outputs = append(outputs, reflect.TypeOf((*error)(nil)).Elem())
 
-		if signature.NumOut() != len(outputs) {
-			log.Fatal("Precompile ", contract, "'s ", name, " implementer doesn't return ", outputs)
-		}
-		for i, out := range outputs {
-			if signature.Out(i) != out {
-				log.Fatal(
-					context, "doesn't have the outputs\n\t", outputs, "\n",
-					"\tReturn value ", i+1, " is ", signature.Out(i), " instead of ", out,
-				)
-			}
+		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
+
+		if handler.Type != expectedHandlerType {
+			log.Fatal(
+				context, "has the wrong type\n",
+				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
+			)
 		}
 
 		// ensure we have a matching gascost func
-
 		gascost, ok := implementerType.MethodByName(name + "GasCost")
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
 		}
+		context = "Precompile " + contract + "'s " + name + "GasCost's implementer "
 
 		needs = []reflect.Type{
 			implementerType, // the contract itself
@@ -191,22 +174,14 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			needs = append(needs, arg.Type.GetType())
 		}
 
-		signature = gascost.Type
-		context = "Precompile " + contract + "'s " + name + "GasCost's implementer "
+		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
+		expectedGasCostType := reflect.FuncOf(needs, uint64Type, false)
 
-		if signature.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
-		}
-		for i, arg := range needs {
-			if signature.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
-				)
-			}
-		}
-		if signature.NumOut() != 1 || signature.Out(0) != reflect.TypeOf(uint64(0)) {
-			log.Fatal(context, "must return a uint64")
+		if gascost.Type != expectedGasCostType {
+			log.Fatal(
+				context, "has the wrong type\n",
+				"\texpected:\t", expectedGasCostType, "\n\tbut have:\t", gascost.Type,
+			)
 		}
 
 		methods[id] = PrecompileMethod{
@@ -246,7 +221,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 				if !ok {
 					log.Fatal(
 						"Please change the solidity for precompile ", contract,
-						"'s event ", name, ":\n\tEvent indecies of type ",
+						"'s event ", name, ":\n\tEvent indices of type ",
 						arg.Type.String(), " are not supported",
 					)
 				}
@@ -260,29 +235,31 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		if !ok {
 			log.Fatal(context, " is missing a field for event ", name, ofType, needs)
 		}
+		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
+		if !ok {
+			log.Fatal(context, " is missing a GasCost field for event ", name)
+		}
 
-		context = context + "'s field for event " + name + " "
+		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
+		expectedFieldType := reflect.FuncOf(needs, []reflect.Type{}, false)
+		expectedCostType := reflect.FuncOf(needs[1:], uint64Type, false)
 
-		if field.Type.Kind() != reflect.Func {
-			log.Fatal(context, "is not", ofType, needs)
+		if field.Type != expectedFieldType {
+			log.Fatal(
+				context, "'s field for event", name, "has the wrong type\n",
+				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
+			)
 		}
-		if field.Type.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
-		}
-		if field.Type.NumOut() != 0 {
-			log.Fatal(context, "should not return anything")
-		}
-		for i, arg := range needs {
-			if field.Type.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", field.Type.In(i), " instead of ", arg,
-				)
-			}
+		if costField.Type != expectedCostType {
+			log.Fatal(
+				context, "'s field for event", name+"GasCost", "has the wrong type\n",
+				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
+			)
 		}
 
 		structFields := reflect.ValueOf(implementer).Elem()
 		fieldPointer := structFields.FieldByName(name)
+		costPointer := structFields.FieldByName(name + "GasCost")
 
 		// we can't capture `event` since the for loop will change its value
 		capturedEvent := event
@@ -363,7 +340,12 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			return []reflect.Value{}
 		}
 
+		cost := func(args []reflect.Value) []reflect.Value {
+			return []reflect.Value{}
+		}
+
 		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
+		costPointer.Set(reflect.MakeFunc(costField.Type, cost))
 
 		events[name] = PrecompileEvent{
 			name,
