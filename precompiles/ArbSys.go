@@ -139,25 +139,11 @@ func (con *ArbSys) SendTxToL1(
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
 	cost := params.CallValueTransferGas
 
-	cost += con.SendMerkleUpdateGasCost(
-		new(big.Int),
-		new(big.Int),
-		common.Hash{},
-	)
+	zero := new(big.Int)
+	dest := destination
 
-	cost += con.L2ToL1TransactionGasCost(
-		destination,
-		destination,
-		new(big.Int),
-		new(big.Int),
-		new(big.Int),
-		new(big.Int),
-		new(big.Int),
-		new(big.Int),
-		new(big.Int),
-		calldataForL1,
-	)
-
+	cost += con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
+	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
 	return cost
 }
 
