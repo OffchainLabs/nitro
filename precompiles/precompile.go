@@ -57,8 +57,9 @@ const (
 )
 
 type Precompile struct {
-	methods map[[4]byte]PrecompileMethod
-	events  map[string]PrecompileEvent
+	methods     map[[4]byte]PrecompileMethod
+	events      map[string]PrecompileEvent
+	implementer reflect.Value
 }
 
 type PrecompileMethod struct {
@@ -227,31 +228,30 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			}
 		}
 
-		context := "Precompile " + contract + "'s implementer"
-		ofType := " of type\n\tfunc "
-
-		field, ok := implementerType.Elem().FieldByName(name)
-		if !ok {
-			log.Fatal(context, " is missing a field for event ", name, ofType, needs)
-		}
-		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
-		if !ok {
-			log.Fatal(context, " is missing a GasCost field for event ", name)
-		}
-
 		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
 		expectedFieldType := reflect.FuncOf(needs, []reflect.Type{}, false)
 		expectedCostType := reflect.FuncOf(needs[1:], uint64Type, false)
 
+		context := "Precompile " + contract + "'s implementer"
+		missing := context + " is missing a field for "
+
+		field, ok := implementerType.Elem().FieldByName(name)
+		if !ok {
+			log.Fatal(missing, "event ", name, " of type\n\t", expectedFieldType)
+		}
+		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
+		if !ok {
+			log.Fatal(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
+		}
 		if field.Type != expectedFieldType {
 			log.Fatal(
-				context, "'s field for event", name, "has the wrong type\n",
+				context, "'s field for event ", name, " has the wrong type\n",
 				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
 			)
 		}
 		if costField.Type != expectedCostType {
 			log.Fatal(
-				context, "'s field for event", name+"GasCost", "has the wrong type\n",
+				context, "'s field for event ", name, "GasCost has the wrong type\n",
 				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
 			)
 		}
@@ -384,6 +384,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	return address, Precompile{
 		methods,
 		events,
+		reflect.ValueOf(implementer),
 	}
 }
 
