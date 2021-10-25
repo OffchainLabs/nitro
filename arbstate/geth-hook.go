@@ -38,7 +38,10 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 
 func init() {
 	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
-		return arbos.NewTxProcessor(msg, evm)
+		if evm.Config.IsArbitrum {
+			return arbos.NewTxProcessor(msg, evm)
+		}
+		return nil
 	}
 	for addr, precompile := range precompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}

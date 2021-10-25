@@ -6,7 +6,6 @@ package arbstate
 
 import (
 	"bytes"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"testing"
 
@@ -19,6 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 type TestChainContext struct {
@@ -128,7 +129,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		}
 		gasPool := core.GasPool(100000)
 		for _, tx := range segment.Txes {
-			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{IsArbitrum: true})
 			if err != nil {
 				t.Fatal(err)
 			}

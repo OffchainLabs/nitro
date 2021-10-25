@@ -166,8 +166,9 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			b.header,
 			tx,
 			&b.header.GasUsed,
-			vm.Config{},
+			vm.Config{IsArbitrum: true},
 		)
+
 		if err != nil {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			b.statedb.RevertToSnapshot(snap)
