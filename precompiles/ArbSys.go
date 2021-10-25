@@ -14,9 +14,11 @@ import (
 )
 
 type ArbSys struct {
-	Address           addr
-	L2ToL1Transaction func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
-	SendMerkleUpdate  func(mech, huge, huge, [32]byte)
+	Address                  addr
+	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
+	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
+	SendMerkleUpdate         func(mech, huge, huge, [32]byte)
+	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
 }
 
 func (con *ArbSys) ArbBlockNumber(caller addr, evm mech) (huge, error) {
@@ -135,10 +137,14 @@ func (con *ArbSys) SendTxToL1(
 }
 
 func (con ArbSys) SendTxToL1GasCost(destination common.Address, calldataForL1 []byte) uint64 {
-	return params.CallValueTransferGas +
-		2*params.LogGas +
-		6*params.LogTopicGas +
-		(10*32+uint64(len(calldataForL1)))*params.LogDataGas
+	cost := params.CallValueTransferGas
+
+	zero := new(big.Int)
+	dest := destination
+
+	cost += con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
+	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
+	return cost
 }
 
 func (con ArbSys) SendMerkleTreeState(caller addr, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
