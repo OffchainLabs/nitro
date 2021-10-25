@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 type addr = common.Address
@@ -259,6 +260,17 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		fieldPointer := structFields.FieldByName(name)
 		costPointer := structFields.FieldByName(name + "GasCost")
 
+		dataInputs := make(abi.Arguments, 0)
+		topicInputs := make(abi.Arguments, 0)
+
+		for _, input := range event.Inputs {
+			if input.Indexed {
+				topicInputs = append(topicInputs, input)
+			} else {
+				dataInputs = append(dataInputs, input)
+			}
+		}
+
 		// we can't capture `event` since the for loop will change its value
 		capturedEvent := event
 
@@ -273,16 +285,12 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			// aren't supposed to have their contents stored in the general-purpose data portion.
 			var dataValues []interface{}
 			var topicValues []interface{}
-			dataInputs := make(abi.Arguments, 0, len(args))
-			topicInputs := make(abi.Arguments, 0, 3)
 
 			for i := 0; i < len(args); i++ {
-				if !capturedEvent.Inputs[i].Indexed {
-					dataValues = append(dataValues, args[i].Interface())
-					dataInputs = append(dataInputs, capturedEvent.Inputs[i])
-				} else {
+				if capturedEvent.Inputs[i].Indexed {
 					topicValues = append(topicValues, args[i].Interface())
-					topicInputs = append(topicInputs, capturedEvent.Inputs[i])
+				} else {
+					dataValues = append(dataValues, args[i].Interface())
 				}
 			}
 
@@ -338,12 +346,34 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			return []reflect.Value{}
 		}
 
-		cost := func(args []reflect.Value) []reflect.Value {
-			return []reflect.Value{}
+		gascost := func(args []reflect.Value) []reflect.Value {
+
+			cost := params.LogGas
+			cost += params.LogTopicGas * uint64(1+len(topicInputs))
+
+			var dataValues []interface{}
+
+			for i := 0; i < len(args); i++ {
+				if !capturedEvent.Inputs[i].Indexed {
+					dataValues = append(dataValues, args[i].Interface())
+				}
+			}
+
+			data, err := dataInputs.PackValues(dataValues)
+			if err != nil {
+				// in production we'll just revert, but for now this
+				// will catch implementation errors
+				log.Fatal("Could not pack values for event ", name+"'s GasCost")
+			}
+
+			// charge for the number of bytes
+			cost += params.LogDataGas * uint64(len(data))
+
+			return []reflect.Value{reflect.ValueOf(cost)}
 		}
 
 		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
-		costPointer.Set(reflect.MakeFunc(costField.Type, cost))
+		costPointer.Set(reflect.MakeFunc(costField.Type, gascost))
 
 		events[name] = PrecompileEvent{
 			name,
