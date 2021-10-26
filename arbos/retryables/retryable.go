@@ -104,7 +104,7 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 }
 
 func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64) uint64 {
-	return rs.OpenRetryable(id, currentTime).CalldataSize()
+	return 6*32 + rs.OpenRetryable(id, currentTime).CalldataSize()
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
