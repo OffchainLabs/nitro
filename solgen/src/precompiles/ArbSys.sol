@@ -35,6 +35,14 @@ interface ArbSys {
     function sendTxToL1(address destination, bytes calldata calldataForL1) external payable returns(uint);
 
     /**
+    * @notice Get send Merkle tree state
+    * @return size number of sends in the history
+    * @return root root hash of the send history
+    * @return partials hashes of partial subtrees in the send history tree
+    */
+    function sendMerkleTreeState() external view returns(uint size, bytes32 root, bytes32[] memory partials);
+
+    /**
     * @notice get the number of transactions issued by the given external account or the account sequence number of the given contract
     * @param account target account
     * @return the number of transactions issued by the given external account or the account sequence number of the given contract
@@ -86,4 +94,6 @@ interface ArbSys {
                             uint indexed batchNumber, uint indexInBatch,
                             uint arbBlockNum, uint ethBlockNum, uint timestamp,
                             uint callvalue, bytes data);
+
+    event SendMerkleUpdate(uint indexed level, uint indexed leafNum, bytes32 hash);
 }
