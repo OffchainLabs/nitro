@@ -2,36 +2,35 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleEventProof
+package merkletree
 
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
-	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
-func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) merkletree.MerkleTree {
+func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) MerkleTree {
 	partials := acc.GetPartials()
 	if len(partials) == 0 {
-		return merkletree.NewEmptyMerkleTree()
+		return NewEmptyMerkleTree()
 	}
-	var tree merkletree.MerkleTree
+	var tree MerkleTree
 	capacity := uint64(1)
 	for level, partial := range partials {
 		if *partial != (common.Hash{}) {
-			var thisLevel merkletree.MerkleTree
+			var thisLevel MerkleTree
 			if level == 0 {
-				thisLevel = merkletree.NewMerkleLeaf(*partial)
+				thisLevel = NewMerkleLeaf(*partial)
 			} else {
-				thisLevel = merkletree.NewSummaryMerkleTree(*partial, capacity)
+				thisLevel = NewSummaryMerkleTree(*partial, capacity)
 			}
 			if tree == nil {
 				tree = thisLevel
 			} else {
 				for tree.Capacity() < capacity {
-					tree = merkletree.NewMerkleInternal(tree, merkletree.NewMerkleEmpty(tree.Capacity()))
+					tree = NewMerkleInternal(tree, NewMerkleEmpty(tree.Capacity()))
 				}
-				tree = merkletree.NewMerkleInternal(thisLevel, tree)
+				tree = NewMerkleInternal(thisLevel, tree)
 			}
 		}
 		capacity *= 2
@@ -42,7 +41,7 @@ func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) merk
 
 func NewMerkleTreeFromEvents(
 	events []merkleAccumulator.MerkleAccumulatorUpdateEvent, // latest event at each Level
-) merkletree.MerkleTree {
+) MerkleTree {
 	return NewMerkleTreeFromAccumulator(NewNonPersistentMerkleAccumulatorFromEvents(events))
 }
 
@@ -64,7 +63,7 @@ func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.Merk
 	return merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(partials)
 }
 
-func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) *merkletree.MerkleProof {
+func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) *MerkleProof {
 	origPartials := acc.GetPartials()
 	partials := make([]common.Hash, len(origPartials))
 	for i, orig := range origPartials {
@@ -72,7 +71,7 @@ func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash com
 	}
 	clone := acc.NonPersistentClone()
 	_ = clone.Append(nextHash)
-	return &merkletree.MerkleProof{
+	return &MerkleProof{
 		RootHash:  clone.Root(),
 		LeafHash:  nextHash,
 		LeafIndex: acc.Size(),

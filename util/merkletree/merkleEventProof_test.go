@@ -2,12 +2,10 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleEventProof
+package merkletree
 
 import (
-	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"testing"
@@ -17,12 +15,6 @@ func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulat
 	sto := storage.NewMemoryBacked()
 	merkleAccumulator.InitializeMerkleAccumulator(sto)
 	return merkleAccumulator.OpenMerkleAccumulator(sto)
-}
-
-func pseudorandomForTesting(x uint64) common.Hash {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], x)
-	return crypto.Keccak256Hash(buf[:])
 }
 
 func TestReconstructFromEvents(t *testing.T) {

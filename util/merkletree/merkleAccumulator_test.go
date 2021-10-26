@@ -2,15 +2,12 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package merkleAccumulator
+package merkletree
 
 import (
 	"bytes"
-	"encoding/binary"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util/merkletree"
 	"testing"
 )
 
@@ -19,7 +16,7 @@ func TestEmptyAccumulator(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := merkletree.NewEmptyMerkleTree()
+	mt := NewEmptyMerkleTree()
 	if acc.Root() != mt.Hash() {
 		t.Fatal()
 	}
@@ -32,7 +29,7 @@ func TestAccumulator1(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := merkletree.NewEmptyMerkleTree()
+	mt := NewEmptyMerkleTree()
 
 	itemHash := pseudorandomForTesting(0)
 	_ = acc.Append(itemHash)
@@ -58,7 +55,7 @@ func TestAccumulator3(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := merkletree.NewEmptyMerkleTree()
+	mt := NewEmptyMerkleTree()
 
 	itemHash0 := pseudorandomForTesting(0)
 	itemHash1 := pseudorandomForTesting(1)
@@ -97,7 +94,7 @@ func TestAccumulator4(t *testing.T) {
 	if acc.Root() != (common.Hash{}) {
 		t.Fatal()
 	}
-	mt := merkletree.NewEmptyMerkleTree()
+	mt := NewEmptyMerkleTree()
 
 	itemHash0 := pseudorandomForTesting(0)
 	itemHash1 := pseudorandomForTesting(1)
@@ -134,19 +131,7 @@ func TestAccumulator4(t *testing.T) {
 	testSerDe(mt, t)
 }
 
-func initializedMerkleAccumulatorForTesting() *MerkleAccumulator {
-	sto := storage.NewMemoryBacked()
-	InitializeMerkleAccumulator(sto)
-	return OpenMerkleAccumulator(sto)
-}
-
-func pseudorandomForTesting(x uint64) common.Hash {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], x)
-	return crypto.Keccak256Hash(buf[:])
-}
-
-func testAllSummarySizes(tree merkletree.MerkleTree, t *testing.T) {
+func testAllSummarySizes(tree MerkleTree, t *testing.T) {
 	for i := uint64(1); i <= tree.Size(); i++ {
 		sum := tree.SummarizeUpTo(i)
 		if tree.Hash() != sum.Hash() {
@@ -162,13 +147,13 @@ func testAllSummarySizes(tree merkletree.MerkleTree, t *testing.T) {
 	}
 }
 
-func testSerDe(tree merkletree.MerkleTree, t *testing.T) {
+func testSerDe(tree MerkleTree, t *testing.T) {
 	var wr bytes.Buffer
 	if err := tree.Serialize(&wr); err != nil {
 		t.Fatal(err)
 	}
 	rd := bytes.NewReader(wr.Bytes())
-	result, err := merkletree.NewMerkleTreeFromReader(rd)
+	result, err := NewMerkleTreeFromReader(rd)
 	if err != nil {
 		t.Fatal(err)
 	}
