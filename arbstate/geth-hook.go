@@ -29,13 +29,11 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 	input []byte,
 	suppliedGas uint64,
 	info *vm.AdvancedPrecompileCall,
-) (ret []byte, remainingGas uint64, err error) {
-	gasUsage := p.inner.GasToCharge(input)
-	if gasUsage > suppliedGas {
-		return nil, 0, vm.ErrOutOfGas
-	}
-	output, err := p.inner.Call(input, info.PrecompileAddress, info.ActingAsAddress, info.Caller, info.Value, info.ReadOnly, info.Evm)
-	return output, suppliedGas - gasUsage, err
+) (ret []byte, gasLeft uint64, err error) {
+	return p.inner.Call(
+		input, info.PrecompileAddress, info.ActingAsAddress,
+		info.Caller, info.Value, info.ReadOnly, suppliedGas, info.Evm,
+	)
 }
 
 func init() {
