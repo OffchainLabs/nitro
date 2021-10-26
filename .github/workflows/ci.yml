@@ -84,5 +84,23 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Build and Test
-        run: make -j
+      - name: Build
+        run: make build -j
+
+      - name: run tests
+        run: gotestsum --format short-verbose --jsonfile test-output.json -- -race ./... -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Annotate tests
+        if: always()
+        uses: guyarb/golang-test-annotations@v0.5.0
+        with:
+          test-results: test-output.json
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: true
+          files: ./coverage.txt
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+

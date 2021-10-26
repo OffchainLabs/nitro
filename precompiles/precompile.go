@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 type addr = common.Address
@@ -56,8 +57,9 @@ const (
 )
 
 type Precompile struct {
-	methods map[[4]byte]PrecompileMethod
-	events  map[string]PrecompileEvent
+	methods     map[[4]byte]PrecompileMethod
+	events      map[string]PrecompileEvent
+	implementer reflect.Value
 }
 
 type PrecompileMethod struct {
@@ -103,7 +105,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		name := method.RawName
 		capitalize := string(unicode.ToUpper(rune(name[0])))
 		name = capitalize + name[1:]
-		context := "Precompile " + contract + "'s " + name + "'s implementer "
 
 		if len(method.ID) != 4 {
 			log.Fatal("Method ID isn't 4 bytes")
@@ -145,40 +146,22 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			needs = append(needs, arg.Type.GetType())
 		}
 
-		signature := handler.Type
-
-		if signature.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
-		}
-		for i, arg := range needs {
-			if signature.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
-				)
-			}
-		}
-
 		var outputs = []reflect.Type{}
 		for _, out := range method.Outputs {
 			outputs = append(outputs, out.Type.GetType())
 		}
 		outputs = append(outputs, reflect.TypeOf((*error)(nil)).Elem())
 
-		if signature.NumOut() != len(outputs) {
-			log.Fatal("Precompile ", contract, "'s ", name, " implementer doesn't return ", outputs)
-		}
-		for i, out := range outputs {
-			if signature.Out(i) != out {
-				log.Fatal(
-					context, "doesn't have the outputs\n\t", outputs, "\n",
-					"\tReturn value ", i+1, " is ", signature.Out(i), " instead of ", out,
-				)
-			}
+		expectedHandlerType := reflect.FuncOf(needs, outputs, false)
+
+		if handler.Type != expectedHandlerType {
+			log.Fatal(
+				"Precompile "+contract+"'s "+name+"'s implementer has the wrong type\n",
+				"\texpected:\t", expectedHandlerType, "\n\tbut have:\t", handler.Type,
+			)
 		}
 
 		// ensure we have a matching gascost func
-
 		gascost, ok := implementerType.MethodByName(name + "GasCost")
 		if !ok {
 			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
@@ -191,22 +174,14 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			needs = append(needs, arg.Type.GetType())
 		}
 
-		signature = gascost.Type
-		context = "Precompile " + contract + "'s " + name + "GasCost's implementer "
+		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
+		expectedGasCostType := reflect.FuncOf(needs, uint64Type, false)
 
-		if signature.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
-		}
-		for i, arg := range needs {
-			if signature.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", signature.In(i), " instead of ", arg,
-				)
-			}
-		}
-		if signature.NumOut() != 1 || signature.Out(0) != reflect.TypeOf(uint64(0)) {
-			log.Fatal(context, "must return a uint64")
+		if gascost.Type != expectedGasCostType {
+			log.Fatal(
+				"Precompile "+contract+"'s "+name+"GasCost's implementer has the wrong type",
+				"\n\texpected:\t", expectedGasCostType, "\n\tbut have:\t", gascost.Type,
+			)
 		}
 
 		methods[id] = PrecompileMethod{
@@ -246,43 +221,55 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 				if !ok {
 					log.Fatal(
 						"Please change the solidity for precompile ", contract,
-						"'s event ", name, ":\n\tEvent indecies of type ",
+						"'s event ", name, ":\n\tEvent indices of type ",
 						arg.Type.String(), " are not supported",
 					)
 				}
 			}
 		}
 
+		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
+		expectedFieldType := reflect.FuncOf(needs, []reflect.Type{}, false)
+		expectedCostType := reflect.FuncOf(needs[1:], uint64Type, false)
+
 		context := "Precompile " + contract + "'s implementer"
-		ofType := " of type\n\tfunc "
+		missing := context + " is missing a field for "
 
 		field, ok := implementerType.Elem().FieldByName(name)
 		if !ok {
-			log.Fatal(context, " is missing a field for event ", name, ofType, needs)
+			log.Fatal(missing, "event ", name, " of type\n\t", expectedFieldType)
 		}
-
-		context = context + "'s field for event " + name + " "
-
-		if field.Type.Kind() != reflect.Func {
-			log.Fatal(context, "is not", ofType, needs)
+		costField, ok := implementerType.Elem().FieldByName(name + "GasCost")
+		if !ok {
+			log.Fatal(missing, "event ", name, "'s GasCost of type\n\t", expectedCostType)
 		}
-		if field.Type.NumIn() != len(needs) {
-			log.Fatal(context, "doesn't have the args\n\t", needs)
+		if field.Type != expectedFieldType {
+			log.Fatal(
+				context, "'s field for event ", name, " has the wrong type\n",
+				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
+			)
 		}
-		if field.Type.NumOut() != 0 {
-			log.Fatal(context, "should not return anything")
-		}
-		for i, arg := range needs {
-			if field.Type.In(i) != arg {
-				log.Fatal(
-					context, "doesn't have the args\n\t", needs, "\n",
-					"\tArg ", i, " is ", field.Type.In(i), " instead of ", arg,
-				)
-			}
+		if costField.Type != expectedCostType {
+			log.Fatal(
+				context, "'s field for event ", name, "GasCost has the wrong type\n",
+				"\texpected:\t", expectedCostType, "\n\tbut have:\t", costField.Type,
+			)
 		}
 
 		structFields := reflect.ValueOf(implementer).Elem()
 		fieldPointer := structFields.FieldByName(name)
+		costPointer := structFields.FieldByName(name + "GasCost")
+
+		dataInputs := make(abi.Arguments, 0)
+		topicInputs := make(abi.Arguments, 0)
+
+		for _, input := range event.Inputs {
+			if input.Indexed {
+				topicInputs = append(topicInputs, input)
+			} else {
+				dataInputs = append(dataInputs, input)
+			}
+		}
 
 		// we can't capture `event` since the for loop will change its value
 		capturedEvent := event
@@ -298,16 +285,12 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			// aren't supposed to have their contents stored in the general-purpose data portion.
 			var dataValues []interface{}
 			var topicValues []interface{}
-			dataInputs := make(abi.Arguments, 0, len(args))
-			topicInputs := make(abi.Arguments, 0, 3)
 
 			for i := 0; i < len(args); i++ {
-				if !capturedEvent.Inputs[i].Indexed {
-					dataValues = append(dataValues, args[i].Interface())
-					dataInputs = append(dataInputs, capturedEvent.Inputs[i])
-				} else {
+				if capturedEvent.Inputs[i].Indexed {
 					topicValues = append(topicValues, args[i].Interface())
-					topicInputs = append(topicInputs, capturedEvent.Inputs[i])
+				} else {
+					dataValues = append(dataValues, args[i].Interface())
 				}
 			}
 
@@ -363,7 +346,34 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			return []reflect.Value{}
 		}
 
+		gascost := func(args []reflect.Value) []reflect.Value {
+
+			cost := params.LogGas
+			cost += params.LogTopicGas * uint64(1+len(topicInputs))
+
+			var dataValues []interface{}
+
+			for i := 0; i < len(args); i++ {
+				if !capturedEvent.Inputs[i].Indexed {
+					dataValues = append(dataValues, args[i].Interface())
+				}
+			}
+
+			data, err := dataInputs.PackValues(dataValues)
+			if err != nil {
+				// in production we'll just revert, but for now this
+				// will catch implementation errors
+				log.Fatal("Could not pack values for event ", name+"'s GasCost")
+			}
+
+			// charge for the number of bytes
+			cost += params.LogDataGas * uint64(len(data))
+
+			return []reflect.Value{reflect.ValueOf(cost)}
+		}
+
 		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
+		costPointer.Set(reflect.MakeFunc(costField.Type, gascost))
 
 		events[name] = PrecompileEvent{
 			name,
@@ -374,6 +384,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	return address, Precompile{
 		methods,
 		events,
+		reflect.ValueOf(implementer),
 	}
 }
 

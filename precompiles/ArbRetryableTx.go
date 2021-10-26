@@ -15,12 +15,15 @@ import (
 )
 
 type ArbRetryableTx struct {
-	Address          addr
-	TicketCreated    func(mech, [32]byte)
-	LifetimeExtended func(mech, [32]byte, huge)
-	RedeemScheduled  func(mech, [32]byte, [32]byte, huge, huge)
-	Redeemed         func(mech, [32]byte)
-	Canceled         func(mech, [32]byte)
+	Address                 addr
+	TicketCreated           func(mech, [32]byte)
+	LifetimeExtended        func(mech, [32]byte, huge)
+	Redeemed                func(mech, [32]byte)
+	Canceled                func(mech, [32]byte)
+	TicketCreatedGasCost    func([32]byte) uint64
+	LifetimeExtendedGasCost func([32]byte, huge) uint64
+	RedeemedGasCost         func([32]byte) uint64
+	CanceledGasCost         func([32]byte) uint64
 }
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
