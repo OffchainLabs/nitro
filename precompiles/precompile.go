@@ -26,10 +26,9 @@ import (
 type addr = common.Address
 type mech = *vm.EVM
 type huge = *big.Int
+type burn = func(uint64) error
 
 type ArbosPrecompile interface {
-	GasToCharge(input []byte) uint64
-
 	// Important fields: evm.StateDB and evm.Config.Tracer
 	// NOTE: if precompileAddress != actingAsAddress, watch out!
 	// This is a delegatecall or callcode, so caller might be wrong.
@@ -41,8 +40,9 @@ type ArbosPrecompile interface {
 		caller common.Address,
 		value *big.Int,
 		readOnly bool,
+		suppliedGas uint64,
 		evm *vm.EVM,
-	) (output []byte, err error)
+	) (output []byte, gasLeft uint64, err error)
 
 	Precompile() Precompile
 }
@@ -67,7 +67,6 @@ type PrecompileMethod struct {
 	template    abi.Method
 	purity      purity
 	handler     reflect.Method
-	gascost     reflect.Method
 	implementer reflect.Value
 }
 
@@ -119,8 +118,9 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		}
 
 		var needs = []reflect.Type{
-			implementerType,                  // the contract itself
-			reflect.TypeOf(common.Address{}), // the method's caller
+			implementerType,                     // the contract itself
+			reflect.TypeOf((*burn)(nil)).Elem(), // ability to burn gas
+			reflect.TypeOf(common.Address{}),    // the method's caller
 		}
 
 		var purity purity
@@ -161,35 +161,11 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			)
 		}
 
-		// ensure we have a matching gascost func
-		gascost, ok := implementerType.MethodByName(name + "GasCost")
-		if !ok {
-			log.Fatal("Precompile ", contract, " must implement ", name+"GasCost")
-		}
-
-		needs = []reflect.Type{
-			implementerType, // the contract itself
-		}
-		for _, arg := range method.Inputs {
-			needs = append(needs, arg.Type.GetType())
-		}
-
-		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
-		expectedGasCostType := reflect.FuncOf(needs, uint64Type, false)
-
-		if gascost.Type != expectedGasCostType {
-			log.Fatal(
-				"Precompile "+contract+"'s "+name+"GasCost's implementer has the wrong type",
-				"\n\texpected:\t", expectedGasCostType, "\n\tbut have:\t", gascost.Type,
-			)
-		}
-
 		methods[id] = PrecompileMethod{
 			name,
 			method,
 			purity,
 			handler,
-			gascost,
 			reflect.ValueOf(implementer),
 		}
 	}
@@ -417,37 +393,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	return contracts
 }
 
-// determine the amount of gas to charge for calling a precompile
-func (p Precompile) GasToCharge(input []byte) uint64 {
-
-	if len(input) < 4 {
-		// ArbOS precompiles always have canonical method selectors
-		return 0
-	}
-	id := *(*[4]byte)(input)
-	method, ok := p.methods[id]
-	if !ok {
-		// method does not exist
-		return 0
-	}
-
-	args, err := method.template.Inputs.Unpack(input[4:])
-	if err != nil {
-		// calldata does not match the method's signature
-		return 0
-	}
-
-	reflectArgs := []reflect.Value{
-		method.implementer,
-	}
-	for _, arg := range args {
-		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
-	}
-
-	// we checked earlier that gascost() returns a uint64
-	return method.gascost.Func.Call(reflectArgs)[0].Interface().(uint64)
-}
-
 // call a precompile in typed form, deserializing its inputs and serializing its outputs
 func (p Precompile) Call(
 	input []byte,
@@ -456,37 +401,48 @@ func (p Precompile) Call(
 	caller common.Address,
 	value *big.Int,
 	readOnly bool,
+	suppliedGas uint64,
 	evm *vm.EVM,
-) (output []byte, err error) {
+) (output []byte, gasLeft uint64, err error) {
 
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
 	if !ok {
 		// method does not exist
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
 	}
 
 	if method.purity >= view && actingAsAddress != precompileAddress {
 		// should not access precompile superpowers when not acting as the precompile
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
 	}
 
 	if method.purity >= write && readOnly {
 		// tried to write to global state in read-only mode
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
 	}
 
 	if method.purity < payable && value.Sign() != 0 {
 		// tried to pay something that's non-payable
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
+	}
+
+	burnGas := func(amount uint64) error {
+		if suppliedGas < amount {
+			suppliedGas = 0
+			return vm.ErrOutOfGas
+		}
+		suppliedGas -= amount
+		return nil
 	}
 
 	reflectArgs := []reflect.Value{
 		method.implementer,
+		reflect.ValueOf(burnGas),
 		reflect.ValueOf(caller),
 	}
 
@@ -506,7 +462,7 @@ func (p Precompile) Call(
 	args, err := method.template.Inputs.Unpack(input[4:])
 	if err != nil {
 		// calldata does not match the method's signature
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, vm.ErrExecutionReverted
 	}
 	for _, arg := range args {
 		reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
@@ -516,7 +472,7 @@ func (p Precompile) Call(
 	resultCount := len(reflectResult) - 1
 	if !reflectResult[resultCount].IsNil() {
 		// the last arg is always the error status
-		return nil, vm.ErrExecutionReverted
+		return nil, 0, reflectResult[resultCount].Interface().(error)
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {
@@ -529,7 +485,7 @@ func (p Precompile) Call(
 		// will catch implementation errors
 		log.Fatal("Could not encode precompile result ", err)
 	}
-	return encoded, nil
+	return encoded, suppliedGas, nil
 }
 
 func (p Precompile) Precompile() Precompile {
