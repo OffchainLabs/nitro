@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
 type MerkleAccumulator struct {
@@ -33,7 +32,19 @@ func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
 }
 
-func (acc *MerkleAccumulator) nonPersistentClone() *MerkleAccumulator {
+func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) *MerkleAccumulator {
+	size := uint64(0)
+	levelSize := uint64(1)
+	for i := range partials {
+		if *partials[i] != (common.Hash{}) {
+			size += levelSize
+		}
+		levelSize *= 2
+	}
+	return &MerkleAccumulator{nil, size, uint64(len(partials)), partials}
+}
+
+func (acc *MerkleAccumulator) NonPersistentClone() *MerkleAccumulator {
 	partials := make([]*common.Hash, acc.numPartials)
 	for i := uint64(0); i < acc.numPartials; i++ {
 		partials[i] = acc.getPartial(i)
@@ -54,6 +65,15 @@ func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
 	return acc.partials[level]
 }
 
+func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
+	partials := make([]*common.Hash, acc.numPartials)
+	for i := range partials {
+		p := *acc.getPartial(uint64(i))
+		partials[i] = &p
+	}
+	return partials
+}
+
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 	if level == acc.numPartials {
 		acc.numPartials++
@@ -69,7 +89,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 	}
 }
 
-func (acc *MerkleAccumulator) Append(itemHash common.Hash) *EventForTreeBuilding {
+func (acc *MerkleAccumulator) Append(itemHash common.Hash) *MerkleAccumulatorUpdateEvent {
 	acc.size++
 	if acc.backingStorage != nil {
 		acc.backingStorage.SetByInt64(0, util.IntToHash(int64(acc.size)))
@@ -80,13 +100,13 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) *EventForTreeBuilding
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &EventForTreeBuilding{level, acc.size - 1, h}
+			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &EventForTreeBuilding{level, acc.size - 1, h}
+			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
@@ -140,83 +160,8 @@ func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, p
 	return
 }
 
-func (acc *MerkleAccumulator) ToMerkleTree() merkletree.MerkleTree {
-	if acc.numPartials == 0 {
-		return merkletree.NewEmptyMerkleTree()
-	}
-	var tree merkletree.MerkleTree
-	capacity := uint64(1)
-	for level := uint64(0); level < acc.numPartials; level++ {
-		partial := acc.getPartial(level)
-		if *partial != (common.Hash{}) {
-			var thisLevel merkletree.MerkleTree
-			if level == 0 {
-				thisLevel = merkletree.NewMerkleLeaf(*partial)
-			} else {
-				thisLevel = merkletree.NewSummaryMerkleTree(*partial, capacity)
-			}
-			if tree == nil {
-				tree = thisLevel
-			} else {
-				for tree.Capacity() < capacity {
-					tree = merkletree.NewMerkleInternal(tree, merkletree.NewMerkleEmpty(tree.Capacity()))
-				}
-				tree = merkletree.NewMerkleInternal(thisLevel, tree)
-			}
-		}
-		capacity *= 2
-	}
-
-	return tree
-}
-
-func (acc *MerkleAccumulator) ProofForNext(nextHash common.Hash) *merkletree.MerkleProof {
-	partials := make([]common.Hash, acc.numPartials)
-	for i := 0; i < len(partials); i++ {
-		partials[i] = *acc.getPartial(uint64(i))
-	}
-	clone := acc.nonPersistentClone()
-	_ = clone.Append(nextHash)
-	return &merkletree.MerkleProof{
-		RootHash:  clone.Root(),
-		LeafHash:  nextHash,
-		LeafIndex: acc.size,
-		Proof:     partials,
-	}
-}
-
-type EventForTreeBuilding struct {
+type MerkleAccumulatorUpdateEvent struct {
 	Level   uint64
 	LeafNum uint64
 	Hash    common.Hash
-}
-
-func NewMerkleTreeFromEvents(
-	events []EventForTreeBuilding, // latest event at each Level
-) merkletree.MerkleTree {
-	return NewNonPersistentMerkleAccumulatorFromEvents(events).ToMerkleTree()
-}
-
-func NewNonPersistentMerkleAccumulatorFromEvents(events []EventForTreeBuilding) *MerkleAccumulator {
-	acc := NewNonpersistentMerkleAccumulator()
-	acc.numPartials = uint64(len(events))
-	acc.partials = make([]*common.Hash, len(events))
-	zero := common.Hash{}
-	for i := range acc.partials {
-		acc.partials[i] = &zero
-	}
-
-	latestSeen := uint64(0)
-	for i := len(events) - 1; i >= 0; i-- {
-		event := events[i]
-		if event.LeafNum > latestSeen {
-			latestSeen = event.LeafNum
-			acc.size = event.LeafNum
-			acc.setPartial(uint64(i), &event.Hash)
-		}
-		if acc.size <= event.LeafNum {
-			acc.size = event.LeafNum + 1
-		}
-	}
-	return acc
 }
