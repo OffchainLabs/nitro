@@ -99,6 +99,10 @@ func (store *Storage) GetBytes() []byte {
 	return ret
 }
 
+func (store *Storage) GetBytesSize() uint64 {
+	return store.GetByInt64(0).Big().Uint64()
+}
+
 func (store *Storage) DeleteBytes() {
 	bytesLeft := store.GetByInt64(0).Big().Int64()
 	offset := int64(1)
