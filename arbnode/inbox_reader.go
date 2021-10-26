@@ -65,12 +65,6 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 	blocksToFetch := uint64(100)
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
 		l1Header, err := ir.client.BlockByNumber(ctx, nil)
 		if err != nil {
 			return err
@@ -117,10 +111,10 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		// TODO the same as above but for sequencer messges
 
 		for {
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
+				// the context is done, shut down
+				// nolint:nilerr
 				return nil
-			default:
 			}
 			if from.Cmp(currentHeight) >= 0 {
 				break
@@ -233,6 +227,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 		// TODO feed reading
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
