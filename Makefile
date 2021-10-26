@@ -72,12 +72,15 @@ clean:
 	go run solgen/gen.go
 	@touch .make/solgen
 
-.make/solidity: solgen/src/*/*.sol | .make
+.make/solidity: solgen/src/*/*.sol .make/yarndeps
 	yarn --cwd solgen build
 	@touch .make/solidity
 
-.make:
+.make/yarndeps: solgen/package.json solgen/yarn.lock
 	yarn --cwd solgen install
+	@touch .make/yarndeps
+
+.make:
 	mkdir .make
 
 
