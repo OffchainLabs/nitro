@@ -47,8 +47,8 @@ func (aset *AddressSet) IsMember(addr common.Address) bool {
 
 func (aset *AddressSet) AllMembers() []common.Address {
 	ret := make([]common.Address, aset.size)
-	for i, _ := range ret {
-		ret[i] = common.BytesToAddress(aset.backingStorage.GetByInt64(int64(i+1)).Bytes())
+	for i := range ret {
+		ret[i] = common.BytesToAddress(aset.backingStorage.GetByInt64(int64(i + 1)).Bytes())
 	}
 	return ret
 }
@@ -80,6 +80,3 @@ func (aset *AddressSet) Remove(addr common.Address) {
 	aset.size--
 	aset.backingStorage.SetByInt64(0, util.IntToHash(int64(aset.size)))
 }
-
-
-
