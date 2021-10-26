@@ -22,6 +22,23 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 	// no initialization needed
 }
 
+func InitializeMerkleAccumulatorFromPartials(sto *storage.Storage, partials []common.Hash) {
+	numPartials := uint64(len(partials))
+	size := 0
+	levelSize := 1
+	for _, partial := range partials {
+		if partial != (common.Hash{}) {
+			size += levelSize
+		}
+	}
+
+	sto.SetByInt64(0, util.IntToHash(int64(size)))
+	sto.SetByInt64(1, util.IntToHash(int64(numPartials)))
+	for i, partial := range partials {
+		sto.SetByInt64(int64(2+i), partial)
+	}
+}
+
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
 	size := sto.GetByInt64(0).Big().Uint64()
 	numPartials := sto.GetByInt64(1).Big().Uint64()
