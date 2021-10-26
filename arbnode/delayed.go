@@ -17,13 +17,17 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/utils"
 )
+
+type L1Interface interface {
+	bind.ContractBackend
+	ethereum.ChainReader
+}
 
 var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
@@ -55,11 +59,11 @@ type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        int64
-	client           *ethclient.Client
+	client           L1Interface
 	messageProviders map[common.Address]*bridgegen.IMessageProvider
 }
 
-func NewDelayedBridge(client *ethclient.Client, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
+func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
