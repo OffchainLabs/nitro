@@ -19,10 +19,12 @@ type ArbRetryableTx struct {
 	TicketCreated           func(mech, [32]byte)
 	LifetimeExtended        func(mech, [32]byte, huge)
 	Redeemed                func(mech, [32]byte)
+	RedeemScheduled         func(mech, [32]byte, [32]byte, huge, huge)
 	Canceled                func(mech, [32]byte)
 	TicketCreatedGasCost    func([32]byte) uint64
 	LifetimeExtendedGasCost func([32]byte, huge) uint64
 	RedeemedGasCost         func([32]byte) uint64
+	RedeemScheduledGasCost  func([32]byte, [32]byte, huge, huge) uint64
 	CanceledGasCost         func([32]byte) uint64
 }
 
