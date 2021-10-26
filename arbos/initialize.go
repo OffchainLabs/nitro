@@ -47,37 +47,37 @@ func InitializeArbosFromJSON(stateDB *state.StateDB, encoded []byte) error {
 	if err != nil {
 		return err
 	}
-	InitializeArbOS(stateDB, initData.addressTableContents, initData.sendPartials, initData.l1Data, initData.retryableData)
+	InitializeArbOS(stateDB, initData.AddressTableContents, initData.SendPartials, initData.L1Data, initData.RetryableData)
 	return nil
 }
 
 type ArbosInitializationInfo struct {
-	addressTableContents []common.Address
-	sendPartials []common.Hash
-	l1Data *L1PricingInitializationData
-	retryableData []InitializationDataForRetryable
+	AddressTableContents []common.Address
+	SendPartials  []common.Hash
+	L1Data        *L1PricingInitializationData
+	RetryableData []InitializationDataForRetryable
 }
 
 type L1PricingInitializationData struct {
-	defaultAggregator           common.Address
-	preferredAggregators        map[common.Address]common.Address
-	aggregatorFixedCharges      map[common.Address]*big.Int
-	aggregatorFeeCollectors     map[common.Address]common.Address
-	aggregatorCompressionRatios map[common.Address]uint64
+	DefaultAggregator      common.Address
+	PreferredAggregators    map[common.Address]common.Address
+	AggregatorFixedCharges      map[common.Address]*big.Int
+	AggregatorFeeCollectors     map[common.Address]common.Address
+	AggregatorCompressionRatios map[common.Address]uint64
 }
 
 func initializeL1Pricing(l1p *l1pricing.L1PricingState, data *L1PricingInitializationData) {
-	l1p.SetDefaultAggregator(data.defaultAggregator)
-	for a, b := range data.preferredAggregators {
+	l1p.SetDefaultAggregator(data.DefaultAggregator)
+	for a, b := range data.PreferredAggregators {
 		l1p.SetPreferredAggregator(a, b)
 	}
-	for a, b := range data.aggregatorFixedCharges {
+	for a, b := range data.AggregatorFixedCharges {
 		l1p.SetFixedChargeForAggregatorL1Gas(a, b)
 	}
-	for a, b := range data.aggregatorFeeCollectors {
+	for a, b := range data.AggregatorFeeCollectors {
 		l1p.SetAggregatorFeeCollector(a, b)
 	}
-	for a, b := range data.aggregatorCompressionRatios {
+	for a, b := range data.AggregatorCompressionRatios {
 		l1p.SetAggregatorCompressionRatio(a, &b)
 	}
 }
