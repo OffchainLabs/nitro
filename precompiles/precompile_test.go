@@ -61,16 +61,22 @@ func TestEvents(t *testing.T) {
 	caller := common.HexToAddress("aaaaaaaabbbbbbbbccccccccdddddddd")
 	number := big.NewInt(0x9364)
 
-	output, err := contract.Call(
+	output, gasLeft, err := contract.Call(
 		data,
 		debugContractAddr,
 		debugContractAddr,
 		caller,
 		number,
 		false,
+		^uint64(0),
 		&evm,
 	)
 	check(t, err, "call failed")
+
+	burned := ^uint64(0) - gasLeft
+	if burned != 3768 {
+		t.Fatal("burned", burned, "instead of", 3768, "gas")
+	}
 
 	outputAddr := common.BytesToAddress(output[:32])
 	outputData := new(big.Int).SetBytes(output[32:])

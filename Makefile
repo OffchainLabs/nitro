@@ -5,7 +5,7 @@
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
-repo_dirs = arbos # arbnode arbstate cmd precompiles solgen system_tests wavmio
+repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
 color_pink = "\e[38;5;161;1m"
