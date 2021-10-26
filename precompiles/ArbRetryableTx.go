@@ -7,6 +7,7 @@ package precompiles
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -26,10 +27,20 @@ const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 var (
 	NotFoundError = errors.New("ticketId not found")
+	UnauthorizedError = errors.New("unauthorized caller")
 )
 
 func (con ArbRetryableTx) Cancel(caller addr, evm mech, ticketId [32]byte) error {
-	arbos.OpenArbosState(evm.StateDB).RetryableState().DeleteRetryable(ticketId)
+	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryable := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
+	if retryable == nil {
+		return NotFoundError
+	}
+	if caller != retryable.Beneficiary() {
+		return UnauthorizedError
+	}
+	retryableState.DeleteRetryable(ticketId)
+	con.Canceled(evm, ticketId)
 	return nil
 }
 
@@ -88,17 +99,29 @@ func (con ArbRetryableTx) Keepalive(caller addr, evm mech, value huge, ticketId 
 	if !success {
 		return nil, NotFoundError
 	}
-	return big.NewInt(int64(rs.OpenRetryable(ticketId, currentTime).Timeout())), nil
+	newTimeout := rs.OpenRetryable(ticketId, currentTime).Timeout()
+	con.LifetimeExtended(evm, ticketId, big.NewInt(int64(newTimeout)))
+	return big.NewInt(int64(newTimeout)), nil
 }
 
 func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
 	return 3*params.SloadGas + 2*params.SstoreSetGas //TODO: add big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100))
 }
 
+const MockRedeemGasAmountBUGBUGBUG uint64 = 1000000
+
 func (con ArbRetryableTx) Redeem(caller addr, evm mech, txId [32]byte) ([32]byte, error) {
-	return [32]byte{}, errors.New("unimplemented")
+	retryable := arbos.OpenArbosState(evm.StateDB).RetryableState().OpenRetryable(txId, evm.Context.Time.Uint64())
+	if retryable == nil {
+		return common.Hash{}, NotFoundError
+	}
+	sequenceNum := retryable.IncrementNumTries()
+	donatedGas := MockRedeemGasAmountBUGBUGBUG
+	redeemTxId := crypto.Keccak256Hash(txId[:], common.BigToHash(sequenceNum).Bytes())
+	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(donatedGas)))
+	return redeemTxId, nil
 }
 
 func (con ArbRetryableTx) RedeemGasCost(txId [32]byte) uint64 {
-	return 0
+	return MockRedeemGasAmountBUGBUGBUG
 }
