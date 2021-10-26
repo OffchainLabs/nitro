@@ -5,6 +5,8 @@
 package arbstate
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -38,7 +40,10 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 
 func init() {
 	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
-		return arbos.NewTxProcessor(msg, evm)
+		if evm.ChainConfig().IsArbitrum(big.NewInt(0)) {
+			return arbos.NewTxProcessor(msg, evm)
+		}
+		return nil
 	}
 	for addr, precompile := range precompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}

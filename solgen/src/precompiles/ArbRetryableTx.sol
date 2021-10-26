@@ -1,8 +1,8 @@
 
-pragma solidity >=0.4.21 <0.7.0;
+pragma solidity >=0.4.21 <0.8.0;
 
 /**
-* @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E 
+* @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E
 */
 interface ArbRetryableTx {
 
@@ -14,8 +14,8 @@ interface ArbRetryableTx {
      */
     function redeem(bytes32 ticketId) external returns(bytes32);
 
-    /** 
-    * @notice Return the lifetime assigned to newly created redeemable txns.
+    /**
+    * @notice Return the minimum lifetime of redeemable txn.
     * @return lifetime in seconds
     */
     function getLifetime() external view returns(uint);
@@ -27,14 +27,14 @@ interface ArbRetryableTx {
     */
     function getTimeout(bytes32 ticketId) external view returns(uint);
 
-    /** 
+    /**
      * @notice Return the amount of gas required to extend the lifetime of ticketId by an additional lifetime period. Revert if ticketId doesn't exist.
      * @param ticketId unique ticket identifier
      * @return gas required
     */
     function getKeepaliveGas(bytes32 ticketId) external view returns(uint);
 
-    /** 
+    /**
     @notice Deposits callvalue into the sender's L2 account, then adds one lifetime period to the life of ticketId.
     * Donate gas to pay for the lifetime extension.
     * If successful, emits LifetimeExtended event.
@@ -52,7 +52,7 @@ interface ArbRetryableTx {
     */
     function getBeneficiary(bytes32 ticketId) external view returns (address);
 
-    /** 
+    /**
     * @notice Cancel ticketId and refund its callvalue to its beneficiary.
     * Revert if ticketId doesn't exist, or if called by anyone other than ticketId's beneficiary.
     * @param ticketId unique ticket identifier
