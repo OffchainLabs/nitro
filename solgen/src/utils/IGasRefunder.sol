@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /*
- * Copyright 2020, Offchain Labs, Inc.
+ * Copyright 2021, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +16,12 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.6.2;
+pragma solidity >=0.6.11 <0.9.0;
 
-contract ArbInfo {
-    function getBalance(address account) external view returns (uint256) {
-        return account.balance;
-    }
-
-    function getCode(address account) external view returns (bytes memory) {
-        uint256 size;
-        assembly {
-            size := extcodesize(account)
-        }
-        bytes memory code = new bytes(size);
-        assembly {
-            extcodecopy(account, add(code, 0x20), 0, size)
-        }
-        return code;
-    }
+interface IGasRefunder {
+    function onGasSpent(
+        address payable spender,
+        uint256 gasUsed,
+        uint256 calldataSize
+    ) external returns (bool success);
 }

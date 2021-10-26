@@ -6,15 +6,16 @@ package precompiles
 
 import (
 	"bytes"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	templates "github.com/offchainlabs/arbstate/solgen/go"
-	"math/big"
-	"testing"
+	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 func TestEvents(t *testing.T) {

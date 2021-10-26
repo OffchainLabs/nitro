@@ -9,7 +9,9 @@
     "build": "hardhat compile"
   },
   "dependencies": {
-    "hardhat": "^2.6.6"
+    "hardhat": "^2.6.6",
+    "@openzeppelin/contracts": "^3.4.2",
+    "@openzeppelin/contracts-upgradeable": "^3.4.2"
   },
   "private": true
 }

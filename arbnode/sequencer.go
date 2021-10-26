@@ -34,23 +34,19 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 	l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 	l2Message = append(l2Message, txBytes...)
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
-	message := arbstate.MessageWithMetadata{
-		Message: &arbos.L1IncomingMessage{
-			Header: &arbos.L1IncomingMessageHeader{
-				Kind:        arbos.L1MessageType_L2Message,
-				Sender:      arbstate.SequencerAddress,
-				BlockNumber: common.Hash{}, // TODO L1 block number
-				Timestamp:   timestamp,
-				RequestId:   common.Hash{},
-				GasPriceL1:  common.Hash{},
-			},
-			L2msg: l2Message,
+	message := &arbos.L1IncomingMessage{
+		Header: &arbos.L1IncomingMessageHeader{
+			Kind:        arbos.L1MessageType_L2Message,
+			Sender:      arbstate.SequencerAddress,
+			BlockNumber: common.Hash{}, // TODO L1 block number
+			Timestamp:   timestamp,
+			RequestId:   common.Hash{},
+			GasPriceL1:  common.Hash{},
 		},
-		MustEndBlock:        true,
-		DelayedMessagesRead: 0, // TODO
+		L2msg: l2Message,
 	}
 
-	return s.inbox.AddMessages(^uint64(0), false, []arbstate.MessageWithMetadata{message})
+	return s.inbox.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
 func (s *Sequencer) BlockChain() *core.BlockChain {

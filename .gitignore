@@ -4,6 +4,7 @@
 /cmd/replay/replay
 /*.bin
 .idea
+.vscode
 cmd/node/data
 cmd/node/node
 solgen/artifacts
