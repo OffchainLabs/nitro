@@ -101,5 +101,5 @@ func HashPlusInt(x common.Hash, y int64) common.Hash {
 }
 
 func WordsForBytes(nbytes uint64) uint64 {
-	return (nbytes+31)/32
+	return (nbytes + 31) / 32
 }

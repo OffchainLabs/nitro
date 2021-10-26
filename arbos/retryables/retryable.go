@@ -31,11 +31,11 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 }
 
 type Retryable struct {
-	id        common.Hash // the retryable's ID is also the key that determines where it lives in storage
-	numTries  *big.Int
-	timeout   uint64
-	from      common.Address
-	to        common.Address
+	id          common.Hash // the retryable's ID is also the key that determines where it lives in storage
+	numTries    *big.Int
+	timeout     uint64
+	from        common.Address
+	to          common.Address
 	callvalue   *big.Int
 	beneficiary common.Address
 	calldata    []byte

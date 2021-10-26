@@ -22,7 +22,7 @@ type ArbRetryableTx struct {
 	Canceled         func(mech, [32]byte)
 }
 
-const RetryableLifetimeSeconds = 7*24*60*60   // one week
+const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 var (
 	NotFoundError = errors.New("ticketId not found")
@@ -92,7 +92,7 @@ func (con ArbRetryableTx) Keepalive(caller addr, evm mech, value huge, ticketId 
 }
 
 func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
-	return 3 * params.SloadGas + 2 * params.SstoreSetGas //TODO: add big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100))
+	return 3*params.SloadGas + 2*params.SstoreSetGas //TODO: add big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100))
 }
 
 func (con ArbRetryableTx) Redeem(caller addr, evm mech, txId [32]byte) ([32]byte, error) {
