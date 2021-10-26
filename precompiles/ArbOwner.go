@@ -12,71 +12,40 @@ type ArbOwner struct {
 	Address addr
 }
 
-func (con ArbOwner) AddAllowedSender(caller addr, evm mech, addr addr) error {
+func (con ArbOwner) AddAllowedSender(b burn, caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddAllowedSenderGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) AddChainOwner(caller addr, evm mech, newOwner addr) error {
+func (con ArbOwner) AddChainOwner(b burn, caller addr, evm mech, newOwner addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddChainOwnerGasCost(newOwner addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) AllowAllSenders(caller addr, evm mech) error {
+func (con ArbOwner) AllowAllSenders(b burn, caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AllowAllSendersGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) AddMappingException(caller addr, evm mech, from huge, to huge) error {
+func (con ArbOwner) AddMappingException(b burn, caller addr, evm mech, from huge, to huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddMappingExceptionGasCost(from huge, to huge) uint64 {
-	return 0
-}
-
-func (con ArbOwner) AllowOnlyOwnerToSend(caller addr, evm mech) error {
+func (con ArbOwner) AllowOnlyOwnerToSend(b burn, caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AllowOnlyOwnerToSendGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) AddToReserveFunds(caller addr, evm mech, value huge) error {
+func (con ArbOwner) AddToReserveFunds(b burn, caller addr, evm mech, value huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) AddToReserveFundsGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) ContinueCodeUpload(caller addr, evm mech, marshalledCode []byte) error {
+func (con ArbOwner) ContinueCodeUpload(b burn, caller addr, evm mech, marshalledCode []byte) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) ContinueCodeUploadGasCost(marshalledCode []byte) uint64 {
-	return 0
-}
-
-func (con ArbOwner) CreateChainParameter(caller addr, evm mech, which [32]byte, value huge) error {
+func (con ArbOwner) CreateChainParameter(b burn, caller addr, evm mech, which [32]byte, value huge) error {
 	return errors.New("unimplemented")
-}
-
-func (con ArbOwner) CreateChainParameterGasCost(which [32]byte, value huge) uint64 {
-	return 0
 }
 
 func (con ArbOwner) DeployContract(
+	b burn,
 	caller addr,
 	evm mech,
 	value huge,
@@ -87,11 +56,8 @@ func (con ArbOwner) DeployContract(
 	return addr{}, errors.New("unimplemented")
 }
 
-func (con ArbOwner) DeployContractGasCost(constructorData []byte, deemedSender addr, deemedNonce huge) uint64 {
-	return 0
-}
-
 func (con ArbOwner) FinishCodeUploadAsArbosUpgrade(
+	b burn,
 	caller addr,
 	evm mech,
 	newCodeHash [32]byte,
@@ -100,174 +66,86 @@ func (con ArbOwner) FinishCodeUploadAsArbosUpgrade(
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) FinishCodeUploadAsArbosUpgradeGasCost(newCodeHash [32]byte, oldCodeHash [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetAllAllowedSenders(caller addr, evm mech) ([]byte, error) {
+func (con ArbOwner) GetAllAllowedSenders(b burn, caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetAllAllowedSendersGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetAllChainOwners(caller addr, evm mech) ([]byte, error) {
+func (con ArbOwner) GetAllChainOwners(b burn, caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetAllChainOwnersGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetAllFairGasPriceSenders(caller addr, evm mech) ([]byte, error) {
+func (con ArbOwner) GetAllFairGasPriceSenders(b burn, caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetAllFairGasPriceSendersGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetAllMappingExceptions(caller addr, evm mech) ([]byte, error) {
+func (con ArbOwner) GetAllMappingExceptions(b burn, caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetAllMappingExceptionsGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetChainParameter(caller addr, evm mech, which [32]byte) (huge, error) {
+func (con ArbOwner) GetChainParameter(b burn, caller addr, evm mech, which [32]byte) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetChainParameterGasCost(which [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetTotalOfEthBalances(caller addr, evm mech) (huge, error) {
+func (con ArbOwner) GetTotalOfEthBalances(b burn, caller addr, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetTotalOfEthBalancesGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetLastUpgradeHash(caller addr, evm mech) ([32]byte, error) {
+func (con ArbOwner) GetLastUpgradeHash(b burn, caller addr, evm mech) ([32]byte, error) {
 	return [32]byte{}, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetLastUpgradeHashGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) GetUploadedCodeHash(caller addr, evm mech) ([32]byte, error) {
+func (con ArbOwner) GetUploadedCodeHash(b burn, caller addr, evm mech) ([32]byte, error) {
 	return [32]byte{}, errors.New("unimplemented")
 }
 
-func (con ArbOwner) GetUploadedCodeHashGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) IsAllowedSender(caller addr, evm mech, addr addr) (bool, error) {
+func (con ArbOwner) IsAllowedSender(b burn, caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsAllowedSenderGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) IsChainOwner(caller addr, evm mech, addr addr) (bool, error) {
+func (con ArbOwner) IsChainOwner(b burn, caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsChainOwnerGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) IsFairGasPriceSender(caller addr, evm mech, addr addr) (bool, error) {
+func (con ArbOwner) IsFairGasPriceSender(b burn, caller addr, evm mech, addr addr) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsFairGasPriceSenderGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) IsMappingException(caller addr, evm mech, from huge, to huge) (bool, error) {
+func (con ArbOwner) IsMappingException(b burn, caller addr, evm mech, from huge, to huge) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbOwner) IsMappingExceptionGasCost(from huge, to huge) uint64 {
-	return 0
-}
-
-func (con ArbOwner) RemoveAllowedSender(caller addr, evm mech, addr addr) error {
+func (con ArbOwner) RemoveAllowedSender(b burn, caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveAllowedSenderGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) RemoveChainOwner(caller addr, evm mech, addr addr) error {
+func (con ArbOwner) RemoveChainOwner(b burn, caller addr, evm mech, addr addr) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveChainOwnerGasCost(addr addr) uint64 {
-	return 0
-}
-
-func (con ArbOwner) RemoveMappingException(caller addr, evm mech, from huge, to huge) error {
+func (con ArbOwner) RemoveMappingException(b burn, caller addr, evm mech, from huge, to huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) RemoveMappingExceptionGasCost(from huge, to huge) uint64 {
-	return 0
-}
-
-func (con ArbOwner) SerializeAllParameters(caller addr, evm mech) ([]byte, error) {
+func (con ArbOwner) SerializeAllParameters(b burn, caller addr, evm mech) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbOwner) SerializeAllParametersGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) SetChainParameter(caller addr, evm mech, which [32]byte, value huge) error {
+func (con ArbOwner) SetChainParameter(b burn, caller addr, evm mech, which [32]byte, value huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetChainParameterGasCost(which [32]byte, value huge) uint64 {
-	return 0
-}
-
-func (con ArbOwner) SetFairGasPriceSender(caller addr, evm mech, addr addr, isFairGasPriceSender bool) error {
+func (con ArbOwner) SetFairGasPriceSender(b burn, caller addr, evm mech, addr addr, isFairGasPriceSender bool) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetFairGasPriceSenderGasCost(addr addr, isFairGasPriceSender bool) uint64 {
-	return 0
-}
-
-func (con ArbOwner) SetL1GasPriceEstimate(caller addr, evm mech, priceInGwei huge) error {
+func (con ArbOwner) SetL1GasPriceEstimate(b burn, caller addr, evm mech, priceInGwei huge) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) SetL1GasPriceEstimateGasCost(priceInGwei huge) uint64 {
-	return 0
-}
-
-func (con ArbOwner) StartCodeUpload(caller addr, evm mech) error {
+func (con ArbOwner) StartCodeUpload(b burn, caller addr, evm mech) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbOwner) StartCodeUploadGasCost() uint64 {
-	return 0
-}
-
-func (con ArbOwner) StartCodeUploadWithCheck(caller addr, evm mech, oldCodeHash [32]byte) error {
+func (con ArbOwner) StartCodeUploadWithCheck(b burn, caller addr, evm mech, oldCodeHash [32]byte) error {
 	return errors.New("unimplemented")
-}
-
-func (con ArbOwner) StartCodeUploadWithCheckGasCost(oldCodeHash [32]byte) uint64 {
-	return 0
 }

@@ -377,7 +377,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		contracts[address] = impl
 	}
 
-	/*insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
 	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
 	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
@@ -387,7 +387,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
-	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))*/
+	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
 
 	return contracts
