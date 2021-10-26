@@ -31,7 +31,7 @@ type ArbRetryableTx struct {
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 var (
-	NotFoundError = errors.New("ticketId not found")
+	NotFoundError     = errors.New("ticketId not found")
 	UnauthorizedError = errors.New("unauthorized caller")
 )
 
@@ -50,7 +50,7 @@ func (con ArbRetryableTx) Cancel(caller addr, evm mech, ticketId [32]byte) error
 }
 
 func (con ArbRetryableTx) CancelGasCost(ticketId [32]byte) uint64 {
-	return 0
+	return con.CanceledGasCost(ticketId)  // TODO: add cost of deleting the retryable
 }
 
 func (con ArbRetryableTx) GetBeneficiary(caller addr, evm mech, ticketId [32]byte) (addr, error) {
@@ -110,10 +110,10 @@ func (con ArbRetryableTx) Keepalive(caller addr, evm mech, value huge, ticketId 
 }
 
 func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
-	return 3*params.SloadGas + 2*params.SstoreSetGas //TODO: add big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100))
+	return 3*params.SloadGas + 2*params.SstoreSetGas + con.LifetimeExtendedGasCost(ticketId, nil)
 }
 
-const MockRedeemGasAmountBUGBUGBUG uint64 = 1000000
+const MockRedeemGasAvailableBUGBUGBUG uint64 = 1000000
 
 func (con ArbRetryableTx) Redeem(caller addr, evm mech, txId [32]byte) ([32]byte, error) {
 	retryable := arbos.OpenArbosState(evm.StateDB).RetryableState().OpenRetryable(txId, evm.Context.Time.Uint64())
@@ -121,12 +121,17 @@ func (con ArbRetryableTx) Redeem(caller addr, evm mech, txId [32]byte) ([32]byte
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
-	donatedGas := MockRedeemGasAmountBUGBUGBUG
+	donatedGas := MockRedeemGasAvailableBUGBUGBUG - con.RedeemScheduledGasCost(txId, txId, nil, nil)
 	redeemTxId := crypto.Keccak256Hash(txId[:], common.BigToHash(sequenceNum).Bytes())
 	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(donatedGas)))
 	return redeemTxId, nil
 }
 
 func (con ArbRetryableTx) RedeemGasCost(txId [32]byte) uint64 {
-	return MockRedeemGasAmountBUGBUGBUG
+	availableGas := MockRedeemGasAvailableBUGBUGBUG
+	gasForEvent := con.RedeemScheduledGasCost(txId, txId, nil, nil)
+	if gasForEvent >= availableGas {
+		return availableGas+1
+	}
+	return availableGas-1
 }
