@@ -50,7 +50,7 @@ func (con ArbRetryableTx) GetBeneficiaryGasCost(ticketId [32]byte) uint64 {
 }
 
 func (con ArbRetryableTx) GetKeepaliveGas(caller addr, evm mech, ticketId [32]byte) (huge, error) {
-	nbytes := arbos.OpenArbosState(evm.StateDB).RetryableState().RetryableSizeBytes(ticketId)
+	nbytes := arbos.OpenArbosState(evm.StateDB).RetryableState().RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
 	if nbytes == 0 {
 		return nil, NotFoundError
 	}
@@ -74,7 +74,7 @@ func (con ArbRetryableTx) GetTimeout(caller addr, evm mech, ticketId [32]byte) (
 	if retryable == nil {
 		return nil, NotFoundError
 	}
-	return retryable.Timeout(), nil
+	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
 func (con ArbRetryableTx) GetTimeoutGasCost(ticketId [32]byte) uint64 {
@@ -88,7 +88,7 @@ func (con ArbRetryableTx) Keepalive(caller addr, evm mech, value huge, ticketId 
 	if !success {
 		return nil, NotFoundError
 	}
-	return rs.OpenRetryable(ticketId, currentTime).Timeout(), nil
+	return big.NewInt(int64(rs.OpenRetryable(ticketId, currentTime).Timeout())), nil
 }
 
 func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
