@@ -3,7 +3,10 @@
 #
 
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
-precompiles = $(patsubstr %,./solgen/generated/%.go, $(precompile_names))
+precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
+
+repo_dirs = arbos # arbnode arbstate cmd precompiles solgen system_tests wavmio
+go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
@@ -17,7 +20,7 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
-build: .make/solgen .make/solidity
+build: $(go_source) .make/solgen .make/solidity
 	@printf $(done)
 
 contracts: .make/solgen
@@ -52,15 +55,15 @@ clean:
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
 
-.make/lint: .golangci.yml */*.go */*/*.go .make/solgen
+.make/lint: .golangci.yml $(go_source) .make/solgen
 	golangci-lint run --fix
 	@touch .make/lint
 
-.make/fmt: .golangci.yml */*.go */*/*.go .make/solgen
+.make/fmt: .golangci.yml $(go_source) .make/solgen
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/test: */*.go */*/*.go .make/solgen .make/solidity
+.make/test: $(go_source) .make/solgen .make/solidity
 	gotestsum --format short-verbose
 	@touch .make/test
 
