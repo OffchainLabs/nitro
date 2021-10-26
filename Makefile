@@ -51,32 +51,32 @@ clean:
 
 # strategic rules to minimize dependency building
 
-.make/push: .make/lint
+.make/push: .make/lint | .make
 	make $(MAKEFLAGS) .make/test
 	@touch .make/push
 
-.make/lint: .golangci.yml $(go_source) .make/solgen
+.make/lint: .golangci.yml $(go_source) .make/solgen | .make
 	golangci-lint run --fix
 	@touch .make/lint
 
-.make/fmt: .golangci.yml $(go_source) .make/solgen
+.make/fmt: .golangci.yml $(go_source) .make/solgen | .make
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/test: $(go_source) .make/solgen .make/solidity
+.make/test: $(go_source) .make/solgen .make/solidity | .make
 	gotestsum --format short-verbose
 	@touch .make/test
 
-.make/solgen: solgen/gen.go .make/solidity
+.make/solgen: solgen/gen.go .make/solidity | .make
 	mkdir -p solgen/go/
 	go run solgen/gen.go
 	@touch .make/solgen
 
-.make/solidity: solgen/src/*/*.sol .make/yarndeps
+.make/solidity: solgen/src/*/*.sol .make/yarndeps | .make
 	yarn --cwd solgen build
 	@touch .make/solidity
 
-.make/yarndeps: solgen/package.json solgen/yarn.lock
+.make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
 	@touch .make/yarndeps
 
