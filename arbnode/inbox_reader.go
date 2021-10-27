@@ -129,15 +129,15 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			ourLatestBatchCount, err := ir.db.GetBatchCount()
+			if err != nil {
+				return err
+			}
+			if ourLatestBatchCount < checkingBatchCount {
+				checkingBatchCount = ourLatestBatchCount
+				missingDelayed = true
+			}
 			if checkingBatchCount > 0 {
-				ourLatestBatchCount, err := ir.db.GetBatchCount()
-				if err != nil {
-					return err
-				}
-				if ourLatestBatchCount < checkingBatchCount {
-					checkingBatchCount = ourLatestBatchCount
-					missingDelayed = true
-				}
 				checkingBatchSeqNum := checkingBatchCount - 1
 				l1DelayedAcc, err := ir.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {

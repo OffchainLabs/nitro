@@ -82,25 +82,33 @@ func (d *InboxReaderDb) GetDelayedCount() (uint64, error) {
 	return count, nil
 }
 
-func (d *InboxReaderDb) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+type BatchMetadata struct {
+	Accumulator         common.Hash
+	DelayedMessageCount uint64
+}
+
+func (d *InboxReaderDb) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	key := dbKey(sequencerBatchMetaPrefix, seqNum)
 	hasKey, err := d.db.Has(key)
 	if err != nil {
-		return common.Hash{}, err
+		return BatchMetadata{}, err
 	}
 	if !hasKey {
-		return common.Hash{}, accumulatorNotFound
+		return BatchMetadata{}, accumulatorNotFound
 	}
 	data, err := d.db.Get(key)
 	if err != nil {
-		return common.Hash{}, err
+		return BatchMetadata{}, err
 	}
-	if len(data) < 32 {
-		return common.Hash{}, errors.New("delayed message entry missing accumulator")
-	}
-	var hash common.Hash
-	copy(hash[:], data[:32])
-	return hash, nil
+	var metadata BatchMetadata
+	err = rlp.DecodeBytes(data, &metadata)
+	return metadata, err
+}
+
+// Convenience function wrapping GetBatchMetadata
+func (d *InboxReaderDb) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	meta, err := d.GetBatchMetadata(seqNum)
+	return meta.Accumulator, err
 }
 
 func (d *InboxReaderDb) GetBatchCount() (uint64, error) {
@@ -156,7 +164,6 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	}
 
 	batch := d.db.NewBatch()
-	// TODO: remove sequencer batches whose delayed count is > pos
 	for _, message := range messages {
 		seqNum, err := message.Message.Header.SeqNum()
 		if err != nil {
@@ -189,10 +196,56 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	}
 
 	newDelayedCount := pos
+
+	seqBatchIter := d.db.NewIterator(delayedSequencedPrefix, uint64ToBytes(newDelayedCount))
+	defer seqBatchIter.Release()
+	var reorgSeqBatchesToCount *uint64
+	for {
+		err = seqBatchIter.Error()
+		if err != nil {
+			return err
+		}
+		if len(seqBatchIter.Key()) == 0 {
+			break
+		}
+		var batchSeqNum uint64
+		err := rlp.DecodeBytes(seqBatchIter.Value(), &batchSeqNum)
+		if err != nil {
+			return err
+		}
+		err = batch.Delete(seqBatchIter.Key())
+		if err != nil {
+			return err
+		}
+		if reorgSeqBatchesToCount == nil {
+			// Set the count to the first deleted sequence number.
+			// E.g. if the deleted sequence number is 1, set the count to 1,
+			// meaning that the last and only batch is at sequence number 0.
+			reorgSeqBatchesToCount = &batchSeqNum
+		}
+	}
+	// Release the iterator early.
+	// It's fine to call Release multiple times,
+	// which we'll do because of the defer.
+	seqBatchIter.Release()
+	if reorgSeqBatchesToCount != nil {
+		count := *reorgSeqBatchesToCount
+		err = batch.Put(sequencerBatchCountKey, uint64ToBytes(count))
+		if err != nil {
+			return err
+		}
+		err = deleteStartingAt(d.db, batch, sequencerBatchMetaPrefix, uint64ToBytes(count))
+		if err != nil {
+			return err
+		}
+		// TODO reorg inbox state based on this
+	}
+
 	err = deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
 	if err != nil {
 		return err
 	}
+
 	countData, err := rlp.EncodeToBytes(newDelayedCount)
 	if err != nil {
 		return err
@@ -248,9 +301,24 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 
 		nextAcc = batch.AfterInboxAcc
 
-		metaKey := dbKey(sequencerBatchMetaPrefix, pos)
-		data := nextAcc.Bytes()
-		err = dbBatch.Put(metaKey, data)
+		meta := BatchMetadata{
+			Accumulator:         batch.AfterInboxAcc,
+			DelayedMessageCount: batch.AfterDelayedCount,
+		}
+		metaBytes, err := rlp.EncodeToBytes(meta)
+		if err != nil {
+			return err
+		}
+		err = dbBatch.Put(dbKey(sequencerBatchMetaPrefix, batch.SequenceNumber), metaBytes)
+		if err != nil {
+			return err
+		}
+
+		seqNumData, err := rlp.EncodeToBytes(batch.SequenceNumber)
+		if err != nil {
+			return err
+		}
+		err = dbBatch.Put(dbKey(delayedSequencedPrefix, batch.AfterDelayedCount), seqNumData)
 		if err != nil {
 			return err
 		}
