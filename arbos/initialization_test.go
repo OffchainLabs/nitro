@@ -15,11 +15,11 @@ import (
 
 func TestJsonMarshalUnmarshalSimple(t *testing.T) {
 	input := ArbosInitializationInfo{
-		[]common.Address{pseudorandomAddressForTesting(nil,0)},
+		[]common.Address{pseudorandomAddressForTesting(nil, 0)},
 		[]common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
-		pseudorandomAddressForTesting(nil,3),
+		pseudorandomAddressForTesting(nil, 3),
 		[]InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
-		[]AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil,5)},
+		[]AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
 	}
 	if len(input.AddressTableContents) != 1 {
 		t.Fatal(input)
@@ -77,13 +77,20 @@ func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) Initializa
 func pseudorandomAccountInitInfoForTesting(salt *common.Hash, x uint64) AccountInitializationInfo {
 	newSalt := pseudorandomHashForTesting(salt, x)
 	salt = &newSalt
+	aggToPay := pseudorandomAddressForTesting(salt, 7)
 	return AccountInitializationInfo{
 		pseudorandomAddressForTesting(salt, 0),
 		pseudorandomUint64ForTesting(salt, 1),
 		pseudorandomHashForTesting(salt, 2).Big(),
-		nil,
-		nil,
-		nil,
+		&AccountInitContractInfo{
+			pseudorandomDataForTesting(salt, 3, 256),
+			pseudorandomHashHashMapForTesting(salt, 4, 16),
+		},
+		&AccountInitAggregatorInfo{
+			pseudorandomAddressForTesting(salt, 5),
+			pseudorandomHashForTesting(salt, 6).Big(),
+		},
+		&aggToPay,
 	}
 }
 
@@ -96,4 +103,13 @@ func pseudorandomDataForTesting(salt *common.Hash, x uint64, maxSize uint64) []b
 		ret = append(ret, pseudorandomHashForTesting(salt, uint64(len(ret))).Bytes()...)
 	}
 	return ret[:size]
+}
+
+func pseudorandomHashHashMapForTesting(salt *common.Hash, x uint64, maxItems uint64) map[common.Hash]common.Hash {
+	size := int(pseudorandomUint64ForTesting(salt, 0) % maxItems)
+	ret := make(map[common.Hash]common.Hash)
+	for i := 0; i < size; i++ {
+		ret[pseudorandomHashForTesting(salt, 2*x+1)] = pseudorandomHashForTesting(salt, 2*x+2)
+	}
+	return ret
 }
