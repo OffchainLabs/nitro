@@ -106,7 +106,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 			if ourLatestDelayedCount < checkingDelayedCount {
 				checkingDelayedCount = ourLatestDelayedCount
-				missingSequencer = true
+				missingDelayed = true
 			}
 			if checkingDelayedCount > 0 {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
@@ -135,7 +135,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 			if ourLatestBatchCount < checkingBatchCount {
 				checkingBatchCount = ourLatestBatchCount
-				missingDelayed = true
+				missingSequencer = true
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1

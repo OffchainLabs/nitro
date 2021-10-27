@@ -22,12 +22,16 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sequencerInbox, err := arbnode.NewSequencerInbox(l1backend, l1info.GetAddress("SequencerInbox"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	inboxDB := rawdb.NewMemoryDatabase()
 	inboxReaderConfig := &arbnode.InboxReaderConfig{
 		DelayBlocks: 0,
 		CheckDelay:  time.Millisecond * 100,
 	}
-	var sequencerInbox *arbnode.SequencerInbox // TODO
 	inboxReader, err := arbnode.NewInboxReader(inboxDB, l1backend, big.NewInt(0), delayedBridge, sequencerInbox, inboxReaderConfig)
 	if err != nil {
 		t.Fatal(err)
