@@ -21,11 +21,7 @@ func TestAddressSet(t *testing.T) {
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
 	prec := &ArbOwner{}
-	callCtx := &context{
-		caller,
-		10000000,
-		10000000,
-	}
+	callCtx := testContext(caller)
 
 	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
 		t.Fatal(err)
