@@ -29,6 +29,8 @@ func NewInboxReaderDb(raw ethdb.Database) (*InboxReaderDb, error) {
 }
 
 func (d *InboxReaderDb) initialize() error {
+	batch := d.db.NewBatch()
+
 	hasKey, err := d.db.Has(delayedMessageCountKey)
 	if err != nil {
 		return err
@@ -38,12 +40,28 @@ func (d *InboxReaderDb) initialize() error {
 		if err != nil {
 			return err
 		}
-		err = d.db.Put(delayedMessageCountKey, value)
+		err = batch.Put(delayedMessageCountKey, value)
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+
+	hasKey, err = d.db.Has(sequencerBatchCountKey)
+	if err != nil {
+		return err
+	}
+	if !hasKey {
+		value, err := rlp.EncodeToBytes(uint64(0))
+		if err != nil {
+			return err
+		}
+		err = batch.Put(sequencerBatchCountKey, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	return batch.Write()
 }
 
 var accumulatorNotFound error = errors.New("accumulator not found")
