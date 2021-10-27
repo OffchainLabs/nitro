@@ -9,7 +9,6 @@ import (
 	"context"
 	"math/big"
 	"sort"
-	"strings"
 
 	"github.com/pkg/errors"
 
@@ -36,20 +35,20 @@ var inboxMessageFromOriginID common.Hash
 var l2MessageFromOriginCallABI abi.Method
 
 func init() {
-	parsedIBridgeABI, err := abi.JSON(strings.NewReader(bridgegen.IBridgeABI))
+	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 
-	parsedIMessageProviderABI, err := abi.JSON(strings.NewReader(bridgegen.IMessageProviderABI))
+	parsedIMessageProviderABI, err := bridgegen.IMessageProviderMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
 	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
 	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
 
-	parsedIInboxABI, err := abi.JSON(strings.NewReader(bridgegen.IInboxABI))
+	parsedIInboxABI, err := bridgegen.IInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
