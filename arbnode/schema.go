@@ -9,7 +9,7 @@ var (
 	messageCountToBlockPrefix []byte = []byte("b") // maps a message count to a block
 	messagePrefix             []byte = []byte("m") // maps a message sequence number to a message
 	delayedMessagePrefix      []byte = []byte("d") // maps a delayed sequence number to an accumulator and a message
-	sequencerBatchMetaPrefix  []byte = []byte("s") // maps a batch sequence number to an accumulator and an inbox state message count
+	sequencerBatchMetaPrefix  []byte = []byte("s") // maps a batch sequence number to an accumulator
 	delayedSequencedPrefix    []byte = []byte("a") // maps a delayed message count to a sequencer batch sequence number
 
 	messageCountKey        []byte = []byte("_messageCount")        // contains the current message count

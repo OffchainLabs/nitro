@@ -277,8 +277,11 @@ func (r *InboxReader) addMessages(sequencerBatches []*SequencerInboxBatch, delay
 	if err != nil {
 		return false, err
 	}
-	if len(sequencerBatches) != 0 {
-		panic("TODO: sequencer batches")
+	err = r.db.addSequencerBatches(sequencerBatches)
+	if errors.Is(err, delayedMessagesMismatch) {
+		return true, nil
+	} else if err != nil {
+		return false, err
 	}
 	return false, nil
 }

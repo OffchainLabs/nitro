@@ -185,7 +185,7 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 			return err
 		}
 
-		pos += 1
+		pos++
 	}
 
 	newDelayedCount := pos
@@ -203,4 +203,75 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	}
 
 	return batch.Write()
+}
+
+var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
+
+func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) error {
+	if len(batches) == 0 {
+		return nil
+	}
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	pos := batches[0].SequenceNumber
+	var nextAcc common.Hash
+	if pos > 0 {
+		var err error
+		nextAcc, err = d.GetBatchAcc(pos - 1)
+		if err != nil {
+			if errors.Is(err, accumulatorNotFound) {
+				return errors.New("missing previous sequencer batch")
+			} else {
+				return err
+			}
+		}
+	}
+
+	dbBatch := d.db.NewBatch()
+	for _, batch := range batches {
+		if batch.SequenceNumber != pos {
+			return errors.New("unexpected batch sequence number")
+		}
+		if nextAcc != batch.BeforeInboxAcc {
+			return errors.New("previous batch accumulator mismatch")
+		}
+
+		haveDelayedAcc, err := d.GetDelayedAcc(batch.SequenceNumber)
+		if errors.Is(err, accumulatorNotFound) {
+			return delayedMessagesMismatch
+		} else if err != nil {
+			return err
+		} else if haveDelayedAcc != batch.AfterDelayedAcc {
+			return delayedMessagesMismatch
+		}
+
+		nextAcc = batch.AfterInboxAcc
+
+		metaKey := dbKey(sequencerBatchMetaPrefix, pos)
+		data := nextAcc.Bytes()
+		err = dbBatch.Put(metaKey, data)
+		if err != nil {
+			return err
+		}
+
+		pos++
+	}
+
+	err := deleteStartingAt(d.db, dbBatch, sequencerBatchCountKey, uint64ToBytes(pos))
+	if err != nil {
+		return err
+	}
+	countData, err := rlp.EncodeToBytes(pos)
+	if err != nil {
+		return err
+	}
+	err = dbBatch.Put(sequencerBatchCountKey, countData)
+	if err != nil {
+		return err
+	}
+
+	// TODO create inbox messages from sequencer batches
+
+	return dbBatch.Write()
 }

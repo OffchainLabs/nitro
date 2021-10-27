@@ -78,13 +78,14 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 }
 
 type SequencerInboxBatch struct {
-	BlockHash       common.Hash
-	SequenceNumber  uint64
-	BeforeInboxAcc  common.Hash
-	AfterInboxAcc   common.Hash
-	AfterDelayedAcc common.Hash
-	dataIfAvailable *[]byte
-	txIndexInBlock  uint
+	BlockHash         common.Hash
+	SequenceNumber    uint64
+	BeforeInboxAcc    common.Hash
+	AfterInboxAcc     common.Hash
+	AfterDelayedAcc   common.Hash
+	AfterDelayedCount uint64
+	dataIfAvailable   *[]byte
+	txIndexInBlock    uint
 }
 
 func (m *SequencerInboxBatch) GetData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
@@ -125,14 +126,18 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			if !parsedLog.BatchSequenceNumber.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 			}
+			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
+				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
+			}
 			messages = append(messages, &SequencerInboxBatch{
-				BlockHash:       log.BlockHash,
-				SequenceNumber:  parsedLog.BatchSequenceNumber.Uint64(),
-				BeforeInboxAcc:  parsedLog.BeforeAcc,
-				AfterInboxAcc:   parsedLog.AfterAcc,
-				AfterDelayedAcc: parsedLog.DelayedAcc,
-				dataIfAvailable: &parsedLog.Data,
-				txIndexInBlock:  log.TxIndex,
+				BlockHash:         log.BlockHash,
+				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
+				BeforeInboxAcc:    parsedLog.BeforeAcc,
+				AfterInboxAcc:     parsedLog.AfterAcc,
+				AfterDelayedAcc:   parsedLog.DelayedAcc,
+				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
+				dataIfAvailable:   &parsedLog.Data,
+				txIndexInBlock:    log.TxIndex,
 			})
 		} else if log.Topics[0] == batchDeliveredFromOriginID {
 			parsedLog, err := i.con.ParseSequencerBatchDeliveredFromOrigin(log)
@@ -142,14 +147,18 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			if !parsedLog.BatchSequenceNumber.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
 			}
+			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
+				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
+			}
 			messages = append(messages, &SequencerInboxBatch{
-				BlockHash:       log.BlockHash,
-				SequenceNumber:  parsedLog.BatchSequenceNumber.Uint64(),
-				BeforeInboxAcc:  parsedLog.BeforeAcc,
-				AfterInboxAcc:   parsedLog.AfterAcc,
-				AfterDelayedAcc: parsedLog.DelayedAcc,
-				dataIfAvailable: nil,
-				txIndexInBlock:  log.TxIndex,
+				BlockHash:         log.BlockHash,
+				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
+				BeforeInboxAcc:    parsedLog.BeforeAcc,
+				AfterInboxAcc:     parsedLog.AfterAcc,
+				AfterDelayedAcc:   parsedLog.DelayedAcc,
+				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
+				dataIfAvailable:   nil,
+				txIndexInBlock:    log.TxIndex,
 			})
 		} else {
 			return nil, errors.New("unexpected log selector")
