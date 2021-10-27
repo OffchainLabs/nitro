@@ -129,23 +129,6 @@ func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big
 	return b.logsToDeliveredMessages(ctx, logs)
 }
 
-type blockInfo struct {
-	blockTime *big.Int
-	baseFee   *big.Int
-}
-
-func (b *blockInfo) txGasPrice(tx *types.Transaction) *big.Int {
-	if b.baseFee == nil {
-		return tx.GasPrice()
-	}
-	fee := new(big.Int).Add(tx.GasTipCap(), b.baseFee)
-	cap := tx.GasFeeCap()
-	if fee.Cmp(cap) > 0 {
-		fee = cap
-	}
-	return fee
-}
-
 type sortableMessageList []*DelayedInboxMessage
 
 func (l sortableMessageList) Len() int {
