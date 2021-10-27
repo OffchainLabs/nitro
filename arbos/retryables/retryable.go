@@ -7,6 +7,7 @@ package retryables
 import (
 	"bytes"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
@@ -135,10 +136,15 @@ func (retryable *Retryable) SetNumTries(nt *big.Int) {
 }
 
 func (retryable *Retryable) IncrementNumTries() *big.Int {
-	nt := retryable.NumTries()
-	incr := new(big.Int).Add(nt, big.NewInt(1))
+	seqNum := retryable.NumTries()
+	incr := new(big.Int).Add(seqNum, big.NewInt(1))
 	retryable.SetNumTries(incr)
-	return nt
+	return seqNum
+}
+
+func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum *big.Int) common.Hash {
+	// zero byte is included to prevent collision with a txId used by the Arbitrum Classic retryables API
+	return crypto.Keccak256Hash(ticketId.Bytes(), []byte{0}, trySequenceNum.Bytes())
 }
 
 func (retryable *Retryable) Beneficiary() common.Address {

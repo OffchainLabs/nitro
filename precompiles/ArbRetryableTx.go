@@ -7,9 +7,9 @@ package precompiles
 import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 )
@@ -107,8 +107,6 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 	return big.NewInt(int64(newTimeout)), nil
 }
 
-const MockRedeemGasAvailableBUGBUGBUG uint64 = 1000000
-
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, error) {
 	if err := c.burn(5 * params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, nil, nil)); err != nil {
 		return common.Hash{}, err
@@ -122,8 +120,10 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, erro
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
-	redeemTxId := crypto.Keccak256Hash(txId[:], common.BigToHash(sequenceNum).Bytes())
+	redeemTxId := retryables.TxIdForRedeemAttempt(txId, sequenceNum)
 	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(c.gasLeft)))
-	c.burn(c.gasLeft)
+	if err := c.burn(c.gasLeft); err != nil {
+		return common.Hash{}, err
+	}
 	return redeemTxId, nil
 }
