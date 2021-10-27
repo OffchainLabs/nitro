@@ -25,7 +25,9 @@ interface IBridge {
         address inbox,
         uint8 kind,
         address sender,
-        bytes32 messageDataHash
+        bytes32 messageDataHash,
+        uint256 gasPrice,
+        uint256 timestamp
     );
 
     event BridgeCallTriggered(
