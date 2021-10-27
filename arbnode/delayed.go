@@ -78,7 +78,14 @@ func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) 
 	}, nil
 }
 
+func (b *DelayedBridge) FirstBlock() *big.Int {
+	return big.NewInt(b.fromBlock)
+}
+
 func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
+	if (blockNumber != nil) && blockNumber.Cmp(big.NewInt(b.fromBlock)) < 0 {
+		return 0, nil
+	}
 	opts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: blockNumber,
@@ -99,6 +106,83 @@ func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint6
 		BlockNumber: blockNumber,
 	}
 	return b.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+}
+
+// finds the block where messageNumber was added
+// search is between first configured block and top of the chain minus 5
+// startFromBlock is a semi-educated guess, doesnt have to be correct, can be nil
+func (b *DelayedBridge) FindBlockForMessage(ctx context.Context, messageNumber uint64, startFromBlock *big.Int) (*big.Int, error) {
+	var blockNr *big.Int
+	if startFromBlock == nil {
+		blockNr = big.NewInt(b.fromBlock)
+	} else {
+		blockNr = startFromBlock
+	}
+	msgCountLion := messageNumber + 1
+	messageAtBlock, err := b.GetMessageCount(ctx, blockNr)
+	if err != nil {
+		return nil, err
+	}
+	var firstDir int64
+	if msgCountLion < messageAtBlock {
+		firstDir = 1
+	} else {
+		firstDir = -1
+	}
+	direction := big.NewInt(firstDir)
+	lastknownHeadr, err := b.client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	lastBlockNr := lastknownHeadr.Number
+	firstBlockNr := big.NewInt(b.fromBlock)
+	// exponentially increasing distance, find blocks before and after required message was added
+	var lowBlockNr, highBlockNr *big.Int
+	for {
+		newBlockNr := &big.Int{}
+		newBlockNr.Add(blockNr, direction)
+		if newBlockNr.Cmp(lastBlockNr) > 0 {
+			newBlockNr = lastBlockNr
+		}
+		if newBlockNr.Cmp(firstBlockNr) < 0 {
+			newBlockNr = firstBlockNr
+		}
+		if newBlockNr.Cmp(blockNr) == 0 {
+			return nil, errors.New("Not Found")
+		}
+		messageAtBlock, err := b.GetMessageCount(ctx, blockNr)
+		if err != nil {
+			return nil, err
+		}
+		if (messageAtBlock < msgCountLion) && firstDir < 0 {
+			lowBlockNr = newBlockNr
+			highBlockNr = blockNr
+			break
+		}
+		if (messageAtBlock >= msgCountLion) && firstDir > 0 {
+			lowBlockNr = blockNr
+			highBlockNr = newBlockNr
+			break
+		}
+		blockNr = newBlockNr
+		direction.Mul(direction, big.NewInt(2))
+	}
+	//exponentially reducing distance, find the exact block required message was added
+	for (&big.Int{}).Sub(highBlockNr, lowBlockNr).Cmp(big.NewInt(1)) > 0 {
+		newBlockNr := &big.Int{}
+		newBlockNr.Add(highBlockNr, lowBlockNr)
+		newBlockNr.Div(newBlockNr, big.NewInt(2))
+		messageAtBlock, err = b.GetMessageCount(ctx, blockNr)
+		if err != nil {
+			return nil, err
+		}
+		if messageAtBlock < msgCountLion {
+			lowBlockNr = newBlockNr
+		} else {
+			highBlockNr = newBlockNr
+		}
+	}
+	return highBlockNr, nil
 }
 
 type DelayedInboxMessage struct {
