@@ -5,26 +5,32 @@
 package arbos
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"testing"
 )
 
-func TestJsonMarshalUnmarshalSimple(t *testing.T) {
-	input := ArbosInitializationInfo{
-		[]common.Address{pseudorandomAddressForTesting(nil, 0)},
-		[]common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
-		pseudorandomAddressForTesting(nil, 3),
-		[]InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
-		[]AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
-	}
-	if len(input.AddressTableContents) != 1 {
-		t.Fatal(input)
-	}
-	marshaled, err := json.Marshal(&input)
+func TestJsonMarshalUnmarshal(t *testing.T) {
+	tryMarshalUnmarshal(
+		&ArbosInitializationInfo{
+			[]common.Address{pseudorandomAddressForTesting(nil, 0)},
+			[]common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
+			pseudorandomAddressForTesting(nil, 3),
+			[]InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
+			[]AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
+		},
+		t,
+	)
+}
+
+func tryMarshalUnmarshal(input *ArbosInitializationInfo, t *testing.T) {
+	marshaled, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +49,20 @@ func TestJsonMarshalUnmarshalSimple(t *testing.T) {
 	if len(output.AddressTableContents) != 1 {
 		t.Fatal(output)
 	}
+
+	db, err := OpenStateDBForTest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := InitializeArbosFromJSON(db, marshaled); err != nil {
+		t.Fatal(err)
+	}
+	arbState := OpenArbosState(db)
+	checkAddressTable(arbState, input.AddressTableContents, t)
+	checkSendAccum(arbState, input.SendPartials, t)
+	checkDefaultAgg(arbState, input.DefaultAggregator, t)
+	checkRetryables(arbState, input.RetryableData, t)
+	checkAccounts(db, arbState, input.Accounts, t)
 }
 
 func pseudorandomHashForTesting(salt *common.Hash, x uint64) common.Hash {
@@ -112,4 +132,102 @@ func pseudorandomHashHashMapForTesting(salt *common.Hash, x uint64, maxItems uin
 		ret[pseudorandomHashForTesting(salt, 2*x+1)] = pseudorandomHashForTesting(salt, 2*x+2)
 	}
 	return ret
+}
+
+func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *testing.T) {
+	atab := arbState.AddressTable()
+	if atab.Size() != uint64(len(addrTable)) {
+		t.Fatal()
+	}
+	for i, addr := range addrTable {
+		res, exists := atab.LookupIndex(uint64(i))
+		if !exists {
+			t.Fatal()
+		}
+		if res != addr {
+			t.Fatal()
+		}
+	}
+}
+
+func checkSendAccum(arbState *ArbosState, expected []common.Hash, t *testing.T) {
+	sa := arbState.SendMerkleAccumulator()
+	partials := sa.GetPartials()
+	if len(partials) != len(expected) {
+		t.Fatal()
+	}
+	pexp := make([]*common.Hash, len(expected))
+	for i, partial := range partials {
+		if *partial != expected[i] {
+			t.Fatal()
+		}
+		pexp[i] = &expected[i]
+	}
+	acc2 := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(pexp)
+	if acc2.Root() != sa.Root() {
+		t.Fatal()
+	}
+}
+
+func checkDefaultAgg(arbState *ArbosState, expected common.Address, t *testing.T) {
+	if arbState.L1PricingState().DefaultAggregator() != expected {
+		t.Fatal()
+	}
+}
+
+func checkRetryables(arbState *ArbosState, expected []InitializationDataForRetryable, t *testing.T) {
+	ret := arbState.RetryableState()
+	for _, exp := range expected {
+		found := ret.OpenRetryable(exp.Id, 0)
+		if found == nil {
+			t.Fatal()
+		}
+		// TODO: detailed comparison
+	}
+}
+
+func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []AccountInitializationInfo, t *testing.T) {
+	l1p := arbState.L1PricingState()
+	for _, acct := range accts {
+		addr := acct.Addr
+		if db.GetNonce(addr) != acct.Nonce {
+			t.Fatal()
+		}
+		if db.GetBalance(addr).Cmp(acct.EthBalance) != 0 {
+			t.Fatal()
+		}
+		if acct.ContractInfo != nil {
+			if !bytes.Equal(acct.ContractInfo.Code, db.GetCode(addr)) {
+				t.Fatal()
+			}
+			err := db.ForEachStorage(addr, func(key common.Hash, value common.Hash) bool {
+				val2, exists := acct.ContractInfo.ContractStorage[key]
+				if !exists {
+					t.Fatal()
+				}
+				if value != val2 {
+					t.Fatal()
+				}
+				return false
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if acct.AggregatorInfo != nil {
+			if l1p.AggregatorFeeCollector(addr) != acct.AggregatorInfo.FeeCollector {
+				t.Fatal()
+			}
+			if l1p.FixedChargeForAggregatorL1Gas(addr).Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
+				t.Fatal()
+			}
+		}
+		if acct.AggregatorToPay != nil {
+			prefAgg, _ := l1p.PreferredAggregator(addr)
+			if prefAgg != *acct.AggregatorToPay {
+				t.Fatal()
+			}
+		}
+	}
+	_ = l1p
 }

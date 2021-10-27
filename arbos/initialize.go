@@ -61,17 +61,17 @@ type ArbosInitializationInfo struct {
 }
 
 type InitializationDataForRetryable struct {
-	id        common.Hash
-	timeout   uint64
-	from      common.Address
-	to        common.Address
-	callvalue *big.Int
-	calldata  []byte
+	Id        common.Hash
+	Timeout   uint64
+	From      common.Address
+	To        common.Address
+	Callvalue *big.Int
+	Calldata  []byte
 }
 
 func initializeRetryables(rs *retryables.RetryableState, data []InitializationDataForRetryable, currentTimestampToUse uint64) {
 	for _, r := range data {
-		rs.CreateRetryable(0, r.id, r.timeout, r.from, r.to, r.callvalue, r.calldata)
+		rs.CreateRetryable(0, r.Id, r.Timeout, r.From, r.To, r.Callvalue, r.Calldata)
 	}
 }
 

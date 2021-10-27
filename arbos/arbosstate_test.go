@@ -16,13 +16,17 @@ import (
 
 // Create a memory-backed ArbOS state
 func OpenArbosStateForTest() *ArbosState {
-	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
-	statedb, err := state.New(common.Hash{}, db, nil)
+	statedb, err := OpenStateDBForTest()
 	if err != nil {
 		panic("failed to init empty statedb")
 	}
 	return OpenArbosState(statedb)
+}
+
+func OpenStateDBForTest() (*state.StateDB, error) {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	return state.New(common.Hash{}, db, nil)
 }
 
 func TestStorageOpenFromEmpty(t *testing.T) {
