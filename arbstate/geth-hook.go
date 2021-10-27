@@ -46,6 +46,7 @@ func init() {
 	for addr, precompile := range precompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.ExtraPrecompiles[addr] = wrapped
+		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
 	}
 }
 
