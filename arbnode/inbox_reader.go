@@ -89,16 +89,16 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if checkingDelayedCount.Sign() > 0 {
+			if checkingDelayedCount > 0 {
 				ourLatestDelayedCount, err := ir.db.GetDelayedCount()
 				if err != nil {
 					return err
 				}
-				if ourLatestDelayedCount.Cmp(checkingDelayedCount) < 0 {
+				if ourLatestDelayedCount < checkingDelayedCount {
 					checkingDelayedCount = ourLatestDelayedCount
 					missingSequencer = true
 				}
-				checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
+				checkingDelayedSeqNum := checkingDelayedCount - 1
 				l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
 				if err != nil {
 					return err
@@ -202,9 +202,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				reorgingDelayed = false
 				firstMsg := delayedMessages[0]
 				beforeAcc := firstMsg.BeforeInboxAcc
-				beforeSeqNum := new(big.Int).Sub(firstMsg.Message.Header.RequestId.Big(), big.NewInt(1))
-				if beforeSeqNum.Sign() >= 0 {
-					haveAcc, err := ir.db.GetDelayedAcc(beforeSeqNum)
+				beforeCount, err := firstMsg.Message.Header.SeqNum()
+				if err != nil {
+					return err
+				}
+				if beforeCount > 0 {
+					haveAcc, err := ir.db.GetDelayedAcc(beforeCount - 1)
 					if errors.Is(err, accumulatorNotFound) {
 						reorgingDelayed = true
 					} else if err != nil {
@@ -283,10 +286,10 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	if delayedCount.Sign() == 0 {
+	if delayedCount == 0 {
 		return r.firstMessageBlock, nil
 	}
-	msg, err := r.db.GetDelayedMessage(new(big.Int).Sub(delayedCount, big.NewInt(1)))
+	msg, err := r.db.GetDelayedMessage(delayedCount - 1)
 	if err != nil {
 		return nil, err
 	}
