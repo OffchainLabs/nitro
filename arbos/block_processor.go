@@ -34,6 +34,7 @@ var ChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
+	Arbitrum:            true,
 
 	Clique: &params.CliqueConfig{
 		Period: 0,
@@ -234,5 +235,8 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state := OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
+
+		// write send merkle accumulator hash into extra data field of the header
+		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
 }

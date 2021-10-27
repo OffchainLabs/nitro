@@ -8,6 +8,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -26,6 +27,7 @@ type ArbosState struct {
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
+	sendMerkle     *merkleAccumulator.MerkleAccumulator
 	timestamp      *uint64
 	backingStorage *storage.Storage
 }
@@ -38,6 +40,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -80,6 +83,7 @@ var (
 	retryablesSubspace   ArbosStateSubspaceID = []byte{1}
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
 	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
+	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
@@ -92,6 +96,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
 	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
+	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -169,6 +174,13 @@ func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
 		state.chainOwners = addressSet.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
 	}
 	return state.chainOwners
+}
+
+func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
+	if state.sendMerkle == nil {
+		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
+	}
+	return state.sendMerkle
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {

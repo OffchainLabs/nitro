@@ -5,10 +5,12 @@
 package arbnode
 
 import (
+	"context"
 	"encoding/binary"
 	"math/big"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -65,6 +67,7 @@ func TestInboxState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	inbox.Start(context.Background())
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
@@ -123,7 +126,7 @@ func TestInboxState(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					MustEndBlock:        j == numMessages-1,
+					MustEndBlock:        true,
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount
@@ -136,11 +139,18 @@ func TestInboxState(t *testing.T) {
 			}
 
 			state.numMessages += uint64(len(messages))
-			newBlock := bc.CurrentHeader().Number.Uint64()
-			if newBlock < state.blockNumber {
-				t.Fatal("block number went backwards")
+			state.blockNumber += uint64(len(messages))
+			for i := 0; ; i++ {
+				blockNumber := bc.CurrentHeader().Number.Uint64()
+				if blockNumber > state.blockNumber {
+					t.Fatal("unexpected block number", blockNumber, ">", state.blockNumber)
+				} else if blockNumber == state.blockNumber {
+					break
+				} else if i >= 100 {
+					t.Fatal("timed out waiting for new block")
+				}
+				time.Sleep(10 * time.Millisecond)
 			}
-			state.blockNumber = newBlock
 			blockStates = append(blockStates, state)
 		}
 

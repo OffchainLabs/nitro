@@ -17,44 +17,40 @@ type ArbOwner struct {
 
 var UnauthorizedError = errors.New("unauthorized caller to access-controlled method")
 
-func (con ArbOwner) AddChainOwner(caller addr, evm mech, newOwner addr) error {
+func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
+	if err := c.burn(3 * params.SstoreSetGas); err != nil {
+		return err
+	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
-	if !owners.IsMember(caller) {
+	if !owners.IsMember(c.caller) {
 		return UnauthorizedError
 	}
 	owners.Add(newOwner)
 	return nil
 }
 
-func (con ArbOwner) AddChainOwnerGasCost(newOwner addr) uint64 {
-	return 3 * params.SstoreSetGas
-}
-
-func (con ArbOwner) GetAllChainOwners(caller addr, evm mech) ([]common.Address, error) {
+func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
+	if err := c.burn(6 * params.SloadGas); err != nil {
+		return []addr{}, err
+	}
 	return arbos.OpenArbosState(evm.StateDB).ChainOwners().AllMembers(), nil
 }
 
-func (con ArbOwner) GetAllChainOwnersGasCost() uint64 {
-	return 5 * params.SstoreSetGas
-}
-
-func (con ArbOwner) IsChainOwner(caller addr, evm mech, addr addr) (bool, error) {
+func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
+	if err := c.burn(3 * params.SloadGas); err != nil {
+		return false, err
+	}
 	return arbos.OpenArbosState(evm.StateDB).ChainOwners().IsMember(addr), nil
 }
 
-func (con ArbOwner) IsChainOwnerGasCost(addr addr) uint64 {
-	return 3 * params.SstoreSetGas
-}
-
-func (con ArbOwner) RemoveChainOwner(caller addr, evm mech, addr addr) error {
+func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
+	if err := c.burn(3 * params.SstoreSetGas); err != nil {
+		return err
+	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
-	if !owners.IsMember(caller) {
+	if !owners.IsMember(c.caller) {
 		return UnauthorizedError
 	}
 	owners.Remove(addr)
 	return nil
-}
-
-func (con ArbOwner) RemoveChainOwnerGasCost(addr addr) uint64 {
-	return 3 * params.SstoreSetGas
 }

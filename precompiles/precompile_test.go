@@ -6,14 +6,16 @@ package precompiles
 
 import (
 	"bytes"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	templates "github.com/offchainlabs/arbstate/solgen/go"
-	"math/big"
-	"testing"
+	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 func TestEvents(t *testing.T) {
@@ -59,16 +61,22 @@ func TestEvents(t *testing.T) {
 	caller := common.HexToAddress("aaaaaaaabbbbbbbbccccccccdddddddd")
 	number := big.NewInt(0x9364)
 
-	output, err := contract.Call(
+	output, gasLeft, err := contract.Call(
 		data,
 		debugContractAddr,
 		debugContractAddr,
 		caller,
 		number,
 		false,
+		^uint64(0),
 		&evm,
 	)
 	check(t, err, "call failed")
+
+	burned := ^uint64(0) - gasLeft
+	if burned != 3768 {
+		t.Fatal("burned", burned, "instead of", 3768, "gas")
+	}
 
 	outputAddr := common.BytesToAddress(output[:32])
 	outputData := new(big.Int).SetBytes(output[32:])
@@ -121,6 +129,51 @@ func TestEvents(t *testing.T) {
 	}
 	if mixed.Conn != debugContractAddr || mixed.Caller != caller {
 		t.Fatal("event Mixed's data isn't correct")
+	}
+}
+
+func TestEventCosts(t *testing.T) {
+	debugContractAddr := common.HexToAddress("ff")
+	contract := Precompiles()[debugContractAddr]
+
+	//nolint:errcheck
+	impl := contract.Precompile().implementer.Interface().(*ArbDebug)
+
+	testBytes := [...][]byte{
+		nil,
+		{0x01},
+		{0x02, 0x32, 0x24, 0x48},
+		common.Hash{}.Bytes(),
+		common.Hash{}.Bytes(),
+	}
+	testBytes[4] = append(testBytes[4], common.Hash{}.Bytes()...)
+
+	tests := [...]uint64{
+		impl.StoreGasCost(true, addr{}, big.NewInt(24), common.Hash{}, testBytes[0]),
+		impl.StoreGasCost(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[1]),
+		impl.StoreGasCost(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[2]),
+		impl.StoreGasCost(true, addr{}, big.NewInt(32), common.Hash{}, testBytes[3]),
+		impl.StoreGasCost(true, addr{}, big.NewInt(64), common.Hash{}, testBytes[4]),
+	}
+
+	expected := [5]uint64{}
+
+	for i, bytes := range testBytes {
+		baseCost := params.LogGas + 3*params.LogTopicGas
+		addrCost := 32 * params.LogDataGas
+		hashCost := 32 * params.LogDataGas
+
+		sizeBytes := 32
+		offsetBytes := 32
+		storeBytes := sizeBytes + offsetBytes + len(bytes)
+		storeBytes = storeBytes + 31 - (storeBytes+31)%32 // round up to a multiple of 32
+		storeCost := uint64(storeBytes) * params.LogDataGas
+
+		expected[i] = baseCost + addrCost + hashCost + storeCost
+	}
+
+	if tests != expected {
+		t.Fatal("Events are mispriced\nexpected:", expected, "\nbut have:", tests)
 	}
 }
 
