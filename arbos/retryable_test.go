@@ -1,13 +1,14 @@
 package arbos
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
-	state := OpenArbosStateForTest()
+	state := OpenArbosStateForTest(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	retryable := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if retryable != nil {
@@ -16,7 +17,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
-	state := OpenArbosStateForTest()
+	state := OpenArbosStateForTest(t)
 	originalTimestamp := state.LastTimestampSeen()
 	newTimestamp := originalTimestamp + 42
 	state.SetLastTimestampSeen(newTimestamp)
@@ -36,7 +37,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 }
 
 func TestRetryableCreate(t *testing.T) {
-	state := OpenArbosStateForTest()
+	state := OpenArbosStateForTest(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := state.LastTimestampSeen() + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})

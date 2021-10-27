@@ -1,15 +1,20 @@
 package arbos
 
-import "math/big"
+import (
+	"math/big"
+
+	"github.com/ethereum/go-ethereum/params"
+)
 
 const SpeedLimitPerSecond = 1000000
 const GasPoolMax = SpeedLimitPerSecond * 10 * 60
-const SmallGasPoolMax = SpeedLimitPerSecond * 60
+const SmallGasPoolSeconds = 60
+const SmallGasPoolMax = SpeedLimitPerSecond * SmallGasPoolSeconds
 
 const PerBlockGasLimit uint64 = 20 * 1000000
 
-const Gwei = 1000000000
-const MinimumGasPriceWei = 1 * Gwei
+const MinimumGasPriceWei = 1 * params.GWei
+const InitialGasPriceWei = MinimumGasPriceWei
 
 func (state *ArbosState) notifyGasUsed(gas uint64) {
 	gasInt := int64(gas)
