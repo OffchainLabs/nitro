@@ -12,10 +12,10 @@ type ArbBLS struct {
 	Address addr
 }
 
-func (con ArbBLS) GetPublicKey(b burn, caller addr, evm mech, addr addr) (huge, huge, huge, huge, error) {
+func (con ArbBLS) GetPublicKey(c ctx, evm mech, addr addr) (huge, huge, huge, huge, error) {
 	return nil, nil, nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbBLS) Register(b burn, caller addr, evm mech, x0, x1, y0, y1 huge) error {
+func (con ArbBLS) Register(c ctx, evm mech, x0, x1, y0, y1 huge) error {
 	return errors.New("unimplemented")
 }
