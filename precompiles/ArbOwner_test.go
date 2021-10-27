@@ -21,31 +21,36 @@ func TestAddressSet(t *testing.T) {
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
 	prec := &ArbOwner{}
+	callCtx := &context{
+		caller,
+		10000000,
+		10000000,
+	}
 
-	if err := prec.AddChainOwner(caller, evm, addr1); err != nil {
+	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
 		t.Fatal(err)
 	}
-	if err := prec.AddChainOwner(caller, evm, addr2); err != nil {
+	if err := prec.AddChainOwner(callCtx, evm, addr2); err != nil {
 		t.Fatal(err)
 	}
-	if err := prec.AddChainOwner(caller, evm, addr1); err != nil {
+	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
 		t.Fatal(err)
 	}
-	member, err := prec.IsChainOwner(caller, evm, addr1)
+	member, err := prec.IsChainOwner(callCtx, evm, addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !member {
 		t.Fatal()
 	}
-	member, err = prec.IsChainOwner(caller, evm, addr2)
+	member, err = prec.IsChainOwner(callCtx, evm, addr2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !member {
 		t.Fatal()
 	}
-	member, err = prec.IsChainOwner(caller, evm, addr3)
+	member, err = prec.IsChainOwner(callCtx, evm, addr3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,17 +58,17 @@ func TestAddressSet(t *testing.T) {
 		t.Fatal()
 	}
 
-	if err := prec.RemoveChainOwner(caller, evm, addr1); err != nil {
+	if err := prec.RemoveChainOwner(callCtx, evm, addr1); err != nil {
 		t.Fatal(err)
 	}
-	member, err = prec.IsChainOwner(caller, evm, addr1)
+	member, err = prec.IsChainOwner(callCtx, evm, addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if member {
 		t.Fatal()
 	}
-	member, err = prec.IsChainOwner(caller, evm, addr2)
+	member, err = prec.IsChainOwner(callCtx, evm, addr2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,10 +76,10 @@ func TestAddressSet(t *testing.T) {
 		t.Fatal()
 	}
 
-	if err := prec.AddChainOwner(caller, evm, addr1); err != nil {
+	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
 		t.Fatal(err)
 	}
-	all, err := prec.GetAllChainOwners(caller, evm)
+	all, err := prec.GetAllChainOwners(callCtx, evm)
 	if err != nil {
 		t.Fatal(err)
 	}
