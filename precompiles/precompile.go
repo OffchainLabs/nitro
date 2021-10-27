@@ -23,11 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-type addr = common.Address
-type mech = *vm.EVM
-type huge = *big.Int
-type burn = func(uint64) error
-
 type ArbosPrecompile interface {
 	// Important fields: evm.StateDB and evm.Config.Tracer
 	// NOTE: if precompileAddress != actingAsAddress, watch out!
@@ -118,9 +113,8 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		}
 
 		var needs = []reflect.Type{
-			implementerType,                     // the contract itself
-			reflect.TypeOf((*burn)(nil)).Elem(), // ability to burn gas
-			reflect.TypeOf(common.Address{}),    // the method's caller
+			implementerType,            // the contract itself
+			reflect.TypeOf((ctx)(nil)), // this call's context
 		}
 
 		var purity purity
@@ -401,7 +395,7 @@ func (p Precompile) Call(
 	caller common.Address,
 	value *big.Int,
 	readOnly bool,
-	suppliedGas uint64,
+	gasSupplied uint64,
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
 
@@ -431,19 +425,15 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	burnGas := func(amount uint64) error {
-		if suppliedGas < amount {
-			suppliedGas = 0
-			return vm.ErrOutOfGas
-		}
-		suppliedGas -= amount
-		return nil
+	callerCtx := &context{
+		caller:      caller,
+		gasSupplied: gasSupplied,
+		gasLeft:     gasSupplied,
 	}
 
 	reflectArgs := []reflect.Value{
 		method.implementer,
-		reflect.ValueOf(burnGas),
-		reflect.ValueOf(caller),
+		reflect.ValueOf(callerCtx),
 	}
 
 	switch method.purity {
@@ -485,7 +475,7 @@ func (p Precompile) Call(
 		// will catch implementation errors
 		log.Fatal("Could not encode precompile result ", err)
 	}
-	return encoded, suppliedGas, nil
+	return encoded, callerCtx.gasLeft, nil
 }
 
 func (p Precompile) Precompile() Precompile {

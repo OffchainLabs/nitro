@@ -12,6 +12,6 @@ type ArbStatistics struct {
 	Address addr
 }
 
-func (con ArbStatistics) GetStats(b burn, caller addr, evm mech) (huge, huge, huge, huge, huge, huge, error) {
+func (con ArbStatistics) GetStats(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
 }

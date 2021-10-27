@@ -15,16 +15,12 @@ import (
 	"testing"
 )
 
-func fakeBurnGas(amount uint64) error {
-	return nil
-}
-
 func TestArbAddressTableInit(t *testing.T) {
-	caller := common.Address{}
 	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
+	context := testContext(common.Address{})
 
-	sz, err := atab.Size(fakeBurnGas, caller, st)
+	sz, err := atab.Size(context, st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,26 +28,26 @@ func TestArbAddressTableInit(t *testing.T) {
 		t.Fatal()
 	}
 
-	_, err = atab.Lookup(fakeBurnGas, caller, st, common.Address{})
+	_, err = atab.Lookup(context, st, common.Address{})
 	if err == nil {
 		t.Fatal()
 	}
 
-	_, err = atab.LookupIndex(fakeBurnGas, caller, st, big.NewInt(0))
+	_, err = atab.LookupIndex(context, st, big.NewInt(0))
 	if err == nil {
 		t.Fatal()
 	}
 }
 
 func TestAddressTable1(t *testing.T) {
-	caller := common.Address{}
 	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
+	context := testContext(common.Address{})
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// register addr
-	slot, err := atab.Register(fakeBurnGas, caller, st, addr)
+	slot, err := atab.Register(context, st, addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +56,7 @@ func TestAddressTable1(t *testing.T) {
 	}
 
 	// verify Size() is 1
-	sz, err := atab.Size(fakeBurnGas, caller, st)
+	sz, err := atab.Size(context, st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +65,7 @@ func TestAddressTable1(t *testing.T) {
 	}
 
 	// verify Lookup of addr returns 0
-	index, err := atab.Lookup(fakeBurnGas, caller, st, addr)
+	index, err := atab.Lookup(context, st, addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +74,13 @@ func TestAddressTable1(t *testing.T) {
 	}
 
 	// verify Lookup of nonexistent address returns error
-	_, err = atab.Lookup(fakeBurnGas, caller, st, common.Address{})
+	_, err = atab.Lookup(context, st, common.Address{})
 	if err == nil {
 		t.Fatal()
 	}
 
 	// verify LookupIndex of 0 returns addr
-	addr2, err := atab.LookupIndex(fakeBurnGas, caller, st, big.NewInt(0))
+	addr2, err := atab.LookupIndex(context, st, big.NewInt(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,21 +89,21 @@ func TestAddressTable1(t *testing.T) {
 	}
 
 	// verify LookupIndex of 1 returns error
-	_, err = atab.LookupIndex(fakeBurnGas, caller, st, big.NewInt(1))
+	_, err = atab.LookupIndex(context, st, big.NewInt(1))
 	if err == nil {
 		t.Fatal()
 	}
 }
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
-	caller := common.Address{}
 	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
+	context := testContext(common.Address{})
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// verify that compressing addr produces the 21-byte format
-	res, err := atab.Compress(fakeBurnGas, caller, st, addr)
+	res, err := atab.Compress(context, st, addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +115,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	}
 
 	// verify that decompressing res consumes 21 bytes and returns the original addr
-	dec, nbytes, err := atab.Decompress(fakeBurnGas, caller, st, res, big.NewInt(0))
+	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,19 +128,19 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 }
 
 func TestAddressTableCompressInTable(t *testing.T) {
-	caller := common.Address{}
 	st := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
+	context := testContext(common.Address{})
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// Register addr
-	if _, err := atab.Register(fakeBurnGas, caller, st, addr); err != nil {
+	if _, err := atab.Register(context, st, addr); err != nil {
 		t.Fatal(err)
 	}
 
 	// verify that compressing addr yields the <= 9 byte format
-	res, err := atab.Compress(fakeBurnGas, caller, st, addr)
+	res, err := atab.Compress(context, st, addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +153,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	res = append(res, 33)
 
 	// verify that decompressing res consumes all but two bytes of res and produces addr
-	dec, nbytes, err := atab.Decompress(fakeBurnGas, caller, st, res, big.NewInt(1))
+	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(1))
 	if err != nil {
 		t.Fatal(err)
 	}
