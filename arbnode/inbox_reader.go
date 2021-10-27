@@ -118,16 +118,16 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if checkingBatchCount.Sign() > 0 {
+			if checkingBatchCount > 0 {
 				ourLatestBatchCount, err := ir.db.GetBatchCount()
 				if err != nil {
 					return err
 				}
-				if ourLatestBatchCount.Cmp(checkingBatchCount) < 0 {
+				if ourLatestBatchCount < checkingBatchCount {
 					checkingBatchCount = ourLatestBatchCount
 					missingDelayed = true
 				}
-				checkingBatchSeqNum := new(big.Int).Sub(checkingBatchCount, big.NewInt(1))
+				checkingBatchSeqNum := checkingBatchCount - 1
 				l1DelayedAcc, err := ir.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {
 					return err
@@ -172,25 +172,38 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if len(sequencerBatches) > 0 {
 				missingSequencer = false
 				reorgingSequencer = false
-				var matching int
-				for i, batch := range sequencerBatches {
-					start := new(big.Int).Sub(batch.SequenceNumber, big.NewInt(1))
-					haveAcc, err := ir.db.GetBatchAcc(start)
+				firstBatch := sequencerBatches[0]
+				if firstBatch.SequenceNumber > 0 {
+					haveAcc, err := ir.db.GetBatchAcc(firstBatch.SequenceNumber - 1)
 					if errors.Is(err, accumulatorNotFound) {
-						if i == 0 {
-							reorgingSequencer = true
-						}
-						break
+						reorgingSequencer = true
 					} else if err != nil {
 						return err
-					} else if haveAcc != batch.BeforeInboxAcc {
+					} else if haveAcc != firstBatch.BeforeInboxAcc {
 						reorgingSequencer = true
-						break
-					} else {
-						matching++
 					}
 				}
-				sequencerBatches = sequencerBatches[matching:]
+				if !reorgingSequencer {
+					// Skip any batches we already have in the database
+					for len(sequencerBatches) > 0 {
+						batch := sequencerBatches[0]
+						haveAcc, err := ir.db.GetBatchAcc(batch.SequenceNumber)
+						if errors.Is(err, accumulatorNotFound) {
+							// This batch is new
+							break
+						} else if err != nil {
+							// Unknown error (database error?)
+							return err
+						} else if haveAcc == batch.BeforeInboxAcc {
+							// Skip this batch, as we already have it in the database
+							sequencerBatches = sequencerBatches[1:]
+						} else {
+							// The first batch BeforeInboxAcc matches, but this batch doesn't,
+							// so we'll successfully reorg it when we hit the addMessages
+							break
+						}
+					}
+				}
 			} else if missingSequencer {
 				// We were missing sequencer batches but didn't find any.
 				// This must mean that the sequencer batches are in the past.

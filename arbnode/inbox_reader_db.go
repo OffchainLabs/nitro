@@ -5,7 +5,6 @@
 package arbnode
 
 import (
-	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -83,11 +82,8 @@ func (d *InboxReaderDb) GetDelayedCount() (uint64, error) {
 	return count, nil
 }
 
-func (d *InboxReaderDb) GetBatchAcc(seqNum *big.Int) (common.Hash, error) {
-	if !seqNum.IsUint64() {
-		return common.Hash{}, accumulatorNotFound
-	}
-	key := dbKey(sequencerBatchMetaPrefix, seqNum.Uint64())
+func (d *InboxReaderDb) GetBatchAcc(seqNum uint64) (common.Hash, error) {
+	key := dbKey(sequencerBatchMetaPrefix, seqNum)
 	hasKey, err := d.db.Has(key)
 	if err != nil {
 		return common.Hash{}, err
@@ -107,17 +103,17 @@ func (d *InboxReaderDb) GetBatchAcc(seqNum *big.Int) (common.Hash, error) {
 	return hash, nil
 }
 
-func (d *InboxReaderDb) GetBatchCount() (*big.Int, error) {
+func (d *InboxReaderDb) GetBatchCount() (uint64, error) {
 	data, err := d.db.Get(sequencerBatchCountKey)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	var count uint64
 	err = rlp.DecodeBytes(data, &count)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return new(big.Int).SetUint64(count), nil
+	return count, nil
 }
 
 func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
