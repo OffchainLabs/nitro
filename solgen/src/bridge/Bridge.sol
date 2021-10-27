@@ -95,7 +95,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
             prevAcc = inboxAccs[count - 1];
         }
         inboxAccs.push(Messages.addMessageToInbox(prevAcc, messageHash));
-        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash);
+        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, gasPrice, blockTimestamp);
         return count;
     }
 
