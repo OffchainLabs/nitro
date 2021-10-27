@@ -20,66 +20,34 @@ type ArbRetryableTx struct {
 	CanceledGasCost         func([32]byte) uint64
 }
 
-func (con ArbRetryableTx) Cancel(caller addr, evm mech, ticketId [32]byte) error {
+func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	return errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) CancelGasCost(ticketId [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) GetBeneficiary(caller addr, evm mech, ticketId [32]byte) (addr, error) {
+func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
 	return addr{}, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetBeneficiaryGasCost(ticketId [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) GetKeepalivePrice(caller addr, evm mech, ticketId [32]byte) (huge, huge, error) {
+func (con ArbRetryableTx) GetKeepalivePrice(c ctx, evm mech, ticketId [32]byte) (huge, huge, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetKeepalivePriceGasCost(ticketId [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) GetLifetime(caller addr, evm mech) (huge, error) {
+func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetLifetimeGasCost() uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) GetSubmissionPrice(caller addr, evm mech, calldataSize huge) (huge, huge, error) {
+func (con ArbRetryableTx) GetSubmissionPrice(c ctx, evm mech, calldataSize huge) (huge, huge, error) {
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetSubmissionPriceGasCost(calldataSize huge) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) GetTimeout(caller addr, evm mech, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) GetTimeoutGasCost(ticketId [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) Keepalive(caller addr, evm mech, value huge, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbRetryableTx) KeepaliveGasCost(ticketId [32]byte) uint64 {
-	return 0
-}
-
-func (con ArbRetryableTx) Redeem(caller addr, evm mech, txId [32]byte) error {
+func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) error {
 	return errors.New("unimplemented")
-}
-
-func (con ArbRetryableTx) RedeemGasCost(txId [32]byte) uint64 {
-	return 0
 }

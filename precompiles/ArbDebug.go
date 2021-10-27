@@ -14,17 +14,18 @@ type ArbDebug struct {
 	StoreGasCost func(bool, addr, huge, [32]byte, []byte) uint64
 }
 
-func (con ArbDebug) Events(caller addr, evm mech, paid huge, flag bool, value [32]byte) (addr, huge, error) {
+func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value [32]byte) (addr, huge, error) {
 	// Emits 2 events that cover each case
 	//   Basic tests an index'd value & a normal value
 	//   Mixed interleaves index'd and normal values that may need to be padded
 
+	cost := con.BasicGasCost(true, value) + con.MixedGasCost(true, true, value, c.caller, c.caller)
+	if err := c.burn(cost); err != nil {
+		return c.caller, paid, err
+	}
+
 	con.Basic(evm, !flag, value)
-	con.Mixed(evm, flag, !flag, value, con.Address, caller)
+	con.Mixed(evm, flag, !flag, value, con.Address, c.caller)
 
-	return caller, paid, nil
-}
-
-func (con ArbDebug) EventsGasCost(flag bool, value [32]byte) uint64 {
-	return uint64(value[0])
+	return c.caller, paid, nil
 }
