@@ -14,10 +14,21 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+type InboxReaderConfig struct {
+	DelayBlocks int64
+	CheckDelay  time.Duration
+}
+
+var DefaultInboxReaderConfig = &InboxReaderConfig{
+	DelayBlocks: 4,
+	CheckDelay:  2 * time.Second,
+}
+
 type InboxReader struct {
 	// Only in run thread
 	caughtUp          bool
 	firstMessageBlock *big.Int
+	config            *InboxReaderConfig
 
 	// Thread safe
 	db            *InboxReaderDb
@@ -26,7 +37,7 @@ type InboxReader struct {
 	client        L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge) (*InboxReader, error) {
+func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, config *InboxReaderConfig) (*InboxReader, error) {
 	db, err := NewInboxReaderDb(rawDb)
 	if err != nil {
 		return nil, err
@@ -36,6 +47,8 @@ func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock 
 		delayedBridge:     delayedBridge,
 		client:            client,
 		firstMessageBlock: firstMessageBlock,
+		caughtUpChan:      make(chan bool, 1),
+		config:            config,
 	}, nil
 }
 
@@ -55,8 +68,6 @@ func (r *InboxReader) Start(ctx context.Context) {
 	})()
 }
 
-const inboxReaderDelay int64 = 4
-
 func (ir *InboxReader) run(ctx context.Context) error {
 	from, err := ir.getNextBlockToRead()
 	if err != nil {
@@ -70,8 +81,8 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		}
 		currentHeight := l1Header.Number()
 
-		if inboxReaderDelay > 0 {
-			currentHeight = new(big.Int).Sub(currentHeight, big.NewInt(inboxReaderDelay))
+		if ir.config.DelayBlocks > 0 {
+			currentHeight = new(big.Int).Sub(currentHeight, big.NewInt(ir.config.DelayBlocks))
 			if currentHeight.Sign() < 0 {
 				currentHeight = currentHeight.SetInt64(0)
 			}
@@ -94,6 +105,9 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				checkingDelayedCount = ourLatestDelayedCount
 				missingDelayed = true
 			}
+		}
+
+		if checkingDelayedCount.Sign() > 0 {
 			checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
 			l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
 			if err != nil {
@@ -229,7 +243,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(2 * time.Second):
+		case <-time.After(ir.config.CheckDelay):
 		}
 	}
 }
