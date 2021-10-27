@@ -43,9 +43,15 @@ func init() {
 		}
 		return nil
 	}
+
+	for k, v := range vm.PrecompiledContractsBerlin {
+		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, k)
+		vm.PrecompiledContractsArbitrum[k] = v
+	}
+
 	for addr, precompile := range precompiles.Precompiles() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.ExtraPrecompiles[addr] = wrapped
+		vm.PrecompiledContractsArbitrum[addr] = wrapped
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
 	}
 }
