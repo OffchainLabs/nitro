@@ -7,7 +7,6 @@ package arbos
 import (
 	"bytes"
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"io"
 	"math/big"
 
@@ -17,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	solsha3 "github.com/miguelmota/go-solidity-sha3"
+
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 const (
@@ -38,6 +39,14 @@ type L1IncomingMessageHeader struct {
 	Timestamp   common.Hash
 	RequestId   common.Hash
 	GasPriceL1  common.Hash
+}
+
+func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
+	seqNumBig := h.RequestId.Big()
+	if !seqNumBig.IsUint64() {
+		return 0, errors.New("bad requestId")
+	}
+	return seqNumBig.Uint64(), nil
 }
 
 type L1IncomingMessage struct {

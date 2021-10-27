@@ -78,20 +78,27 @@ func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) 
 	}, nil
 }
 
-func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (*big.Int, error) {
+func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
 	opts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	return b.con.MessageCount(opts)
+	bigRes, err := b.con.MessageCount(opts)
+	if err != nil {
+		return 0, err
+	}
+	if !bigRes.IsUint64() {
+		return 0, errors.New("DelayedBridge MessageCount doesn't make sense!")
+	}
+	return bigRes.Uint64(), nil
 }
 
-func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber *big.Int, blockNumber *big.Int) (common.Hash, error) {
+func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint64, blockNumber *big.Int) (common.Hash, error) {
 	opts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	return b.con.InboxAccs(opts, sequenceNumber)
+	return b.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
 }
 
 type DelayedInboxMessage struct {

@@ -63,7 +63,7 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msgs.Cmp(big.NewInt(0)) != 0 {
+	if msgs != 0 {
 		t.Fatal("Unexpected message count before: ", msgs)
 	}
 
@@ -85,7 +85,7 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msgs.Cmp(big.NewInt(1)) != 0 {
+	if msgs != 1 {
 		t.Fatal("Unexpected message count before: ", msgs)
 	}
 
@@ -95,7 +95,7 @@ func TestDelayInbox(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if readCount.Cmp(big.NewInt(1)) == 0 {
+			if readCount == 1 {
 				return true
 			}
 			time.Sleep(500 * time.Millisecond)
