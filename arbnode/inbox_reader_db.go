@@ -331,7 +331,7 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 		pos++
 	}
 
-	err := deleteStartingAt(d.db, dbBatch, sequencerBatchCountKey, uint64ToBytes(pos))
+	err = deleteStartingAt(d.db, dbBatch, sequencerBatchCountKey, uint64ToBytes(pos))
 	if err != nil {
 		return err
 	}
