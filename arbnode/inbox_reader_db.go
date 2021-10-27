@@ -269,19 +269,24 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 
 	pos := batches[0].SequenceNumber
 	var nextAcc common.Hash
+	var prevDelayedMessages uint64
 	if pos > 0 {
-		var err error
-		nextAcc, err = d.GetBatchAcc(pos - 1)
-		if err != nil {
-			if errors.Is(err, accumulatorNotFound) {
-				return errors.New("missing previous sequencer batch")
-			} else {
-				return err
-			}
+		meta, err := d.GetBatchMetadata(pos - 1)
+		if errors.Is(err, accumulatorNotFound) {
+			return errors.New("missing previous sequencer batch")
+		} else if err != nil {
+			return err
 		}
+		nextAcc = meta.Accumulator
+		prevDelayedMessages = meta.DelayedMessageCount
 	}
 
 	dbBatch := d.db.NewBatch()
+	err := deleteStartingAt(d.db, dbBatch, delayedSequencedPrefix, uint64ToBytes(prevDelayedMessages))
+	if err != nil {
+		return err
+	}
+
 	for _, batch := range batches {
 		if batch.SequenceNumber != pos {
 			return errors.New("unexpected batch sequence number")
