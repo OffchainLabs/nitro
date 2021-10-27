@@ -26,6 +26,7 @@ contract SequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
+        uint256 reason,
         bytes data
     );
 
@@ -98,6 +99,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
+            1,
             emptyData
         );
     }
@@ -161,6 +163,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             afterDelayedMessagesRead,
+            0,
             data
         );
 

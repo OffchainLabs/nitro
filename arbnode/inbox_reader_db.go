@@ -86,6 +86,43 @@ func (d *InboxReaderDb) GetDelayedCount() (*big.Int, error) {
 	return new(big.Int).SetUint64(count), nil
 }
 
+func (d *InboxReaderDb) GetBatchAcc(seqNum *big.Int) (common.Hash, error) {
+	if !seqNum.IsUint64() {
+		return common.Hash{}, accumulatorNotFound
+	}
+	key := dbKey(sequencerBatchMetaPrefix, seqNum.Uint64())
+	hasKey, err := d.db.Has(key)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if !hasKey {
+		return common.Hash{}, accumulatorNotFound
+	}
+	data, err := d.db.Get(key)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if len(data) < 32 {
+		return common.Hash{}, errors.New("delayed message entry missing accumulator")
+	}
+	var hash common.Hash
+	copy(hash[:], data[:32])
+	return hash, nil
+}
+
+func (d *InboxReaderDb) GetBatchCount() (*big.Int, error) {
+	data, err := d.db.Get(sequencerBatchCountKey)
+	if err != nil {
+		return nil, err
+	}
+	var count uint64
+	err = rlp.DecodeBytes(data, &count)
+	if err != nil {
+		return nil, err
+	}
+	return new(big.Int).SetUint64(count), nil
+}
+
 func (d *InboxReaderDb) GetDelayedMessage(seqNum *big.Int) (*arbos.L1IncomingMessage, error) {
 	if !seqNum.IsUint64() {
 		return nil, errors.New("delayed sequence number not a uint64")

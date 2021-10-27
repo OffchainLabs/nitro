@@ -20,13 +20,14 @@ type InboxReader struct {
 	firstMessageBlock *big.Int
 
 	// Thread safe
-	db            *InboxReaderDb
-	delayedBridge *DelayedBridge
-	caughtUpChan  chan bool
-	client        L1Interface
+	db             *InboxReaderDb
+	delayedBridge  *DelayedBridge
+	sequencerInbox *SequencerInbox
+	caughtUpChan   chan bool
+	client         L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge) (*InboxReader, error) {
+func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox) (*InboxReader, error) {
 	db, err := NewInboxReaderDb(rawDb)
 	if err != nil {
 		return nil, err
@@ -34,6 +35,7 @@ func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock 
 	return &InboxReader{
 		db:                db,
 		delayedBridge:     delayedBridge,
+		sequencerInbox:    sequencerInbox,
 		client:            client,
 		firstMessageBlock: firstMessageBlock,
 	}, nil
@@ -80,34 +82,65 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		reorgingDelayed := false
 		reorgingSequencer := false
 		missingDelayed := false
+		missingSequencer := false
 
-		checkingDelayedCount, err := ir.delayedBridge.GetMessageCount(ctx, currentHeight)
-		if err != nil {
-			return err
+		{
+			checkingDelayedCount, err := ir.delayedBridge.GetMessageCount(ctx, currentHeight)
+			if err != nil {
+				return err
+			}
+			if checkingDelayedCount.Sign() > 0 {
+				ourLatestDelayedCount, err := ir.db.GetDelayedCount()
+				if err != nil {
+					return err
+				}
+				if ourLatestDelayedCount.Cmp(checkingDelayedCount) < 0 {
+					checkingDelayedCount = ourLatestDelayedCount
+					missingSequencer = true
+				}
+				checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
+				l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
+				if err != nil {
+					return err
+				}
+				dbDelayedAcc, err := ir.db.GetDelayedAcc(checkingDelayedSeqNum)
+				if err != nil {
+					return err
+				}
+				if dbDelayedAcc != l1DelayedAcc {
+					reorgingDelayed = true
+				}
+			}
 		}
-		if checkingDelayedCount.Sign() > 0 {
-			ourLatestDelayedCount, err := ir.db.GetDelayedCount()
+
+		{
+			checkingBatchCount, err := ir.sequencerInbox.GetBatchCount(ctx, currentHeight)
 			if err != nil {
 				return err
 			}
-			if ourLatestDelayedCount.Cmp(checkingDelayedCount) < 0 {
-				checkingDelayedCount = ourLatestDelayedCount
-				missingDelayed = true
-			}
-			checkingDelayedSeqNum := new(big.Int).Sub(checkingDelayedCount, big.NewInt(1))
-			l1DelayedAcc, err := ir.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
-			if err != nil {
-				return err
-			}
-			dbDelayedAcc, err := ir.db.GetDelayedAcc(checkingDelayedSeqNum)
-			if err != nil {
-				return err
-			}
-			if dbDelayedAcc != l1DelayedAcc {
-				reorgingDelayed = true
+			if checkingBatchCount.Sign() > 0 {
+				ourLatestBatchCount, err := ir.db.GetBatchCount()
+				if err != nil {
+					return err
+				}
+				if ourLatestBatchCount.Cmp(checkingBatchCount) < 0 {
+					checkingBatchCount = ourLatestBatchCount
+					missingDelayed = true
+				}
+				checkingBatchSeqNum := new(big.Int).Sub(checkingBatchCount, big.NewInt(1))
+				l1DelayedAcc, err := ir.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
+				if err != nil {
+					return err
+				}
+				dbDelayedAcc, err := ir.db.GetBatchAcc(checkingBatchSeqNum)
+				if err != nil {
+					return err
+				}
+				if dbDelayedAcc != l1DelayedAcc {
+					reorgingSequencer = true
+				}
 			}
 		}
-		// TODO the same as above but for sequencer messges
 
 		for {
 			if ctx.Err() != nil {
@@ -127,56 +160,56 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			/*
-				sequencerBatches, err := ir.sequencerInbox.LookupBatchesInRange(ctx, from, to)
-				if err != nil {
-					return err
-				}
-			*/
+			sequencerBatches, err := ir.sequencerInbox.LookupBatchesInRange(ctx, from, to)
+			if err != nil {
+				return err
+			}
 			if !ir.caughtUp && to.Cmp(currentHeight) == 0 {
 				// TODO better caught up tracking
 				ir.caughtUp = true
 				ir.caughtUpChan <- true
 			}
-			/*
-				if len(sequencerBatches) > 0 {
-					batchAccs := make([]common.Hash, 0, len(sequencerBatches)+1)
-					start := sequencerBatches[0].GetBeforeCount()
-					checkingStart := start.Sign() > 0
-					if checkingStart {
-						start.Sub(start, big.NewInt(1))
-						batchAccs = append(batchAccs, sequencerBatches[0].GetBeforeAcc())
-					}
-					for _, batch := range sequencerBatches {
-						if len(batchAccs) > 0 && batch.GetBeforeAcc() != batchAccs[len(batchAccs)-1] {
-							return errors.New("Mismatching batch accumulators; reorg?")
-						}
-						batchAccs = append(batchAccs, batch.GetAfterAcc())
-					}
-					matching, err := ir.CountMatchingBatchAccs(start, batchAccs)
-					if err != nil {
-						return err
-					}
-					reorgingSequencer = false
-					if checkingStart {
-						if matching == 0 {
+			if len(sequencerBatches) > 0 {
+				missingSequencer = false
+				reorgingSequencer = false
+				var matching int
+				for i, batch := range sequencerBatches {
+					start := new(big.Int).Sub(batch.SequenceNumber, big.NewInt(1))
+					haveAcc, err := ir.db.GetBatchAcc(start)
+					if errors.Is(err, accumulatorNotFound) {
+						if i == 0 {
 							reorgingSequencer = true
-						} else {
-							matching--
 						}
+						break
+					} else if err != nil {
+						return err
+					} else if haveAcc != batch.BeforeInboxAcc {
+						reorgingSequencer = true
+						break
+					} else {
+						matching++
 					}
-					sequencerBatches = sequencerBatches[matching:]
 				}
-			*/
+				sequencerBatches = sequencerBatches[matching:]
+			} else if missingSequencer {
+				// We were missing sequencer batches but didn't find any.
+				// This must mean that the sequencer batches are in the past.
+				reorgingSequencer = true
+			}
+
 			if len(delayedMessages) > 0 {
 				missingDelayed = false
+				reorgingDelayed = false
 				firstMsg := delayedMessages[0]
 				beforeAcc := firstMsg.BeforeInboxAcc
 				beforeSeqNum := new(big.Int).Sub(firstMsg.Message.Header.RequestId.Big(), big.NewInt(1))
-				reorgingDelayed = false
 				if beforeSeqNum.Sign() >= 0 {
 					haveAcc, err := ir.db.GetDelayedAcc(beforeSeqNum)
-					if err != nil || haveAcc != beforeAcc {
+					if errors.Is(err, accumulatorNotFound) {
+						reorgingDelayed = true
+					} else if err != nil {
+						return err
+					} else if haveAcc != beforeAcc {
 						reorgingDelayed = true
 					}
 				}
@@ -185,19 +218,8 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				// This must mean that the delayed messages are in the past.
 				reorgingDelayed = true
 			}
-			/*
-				if len(sequencerBatches) < 5 {
-					blocksToFetch += 20
-				} else if len(sequencerBatches) > 10 {
-					blocksToFetch /= 2
-				}
-				if blocksToFetch < 2 {
-					blocksToFetch = 2
-				}
-			*/
 
 			log.Trace("looking up messages", "from", from.String(), "to", to.String())
-			var sequencerBatches []interface{} // TODO
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
 				delayedMismatch, err := ir.addMessages(sequencerBatches, delayedMessages)
 				if err != nil {
@@ -234,7 +256,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 }
 
-func (r *InboxReader) addMessages(sequencerBatches []interface{}, delayedMessages []*DelayedInboxMessage) (bool, error) {
+func (r *InboxReader) addMessages(sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
 	err := r.db.addDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
