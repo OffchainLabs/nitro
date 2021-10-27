@@ -12,10 +12,10 @@ type ArbInfo struct {
 	Address addr
 }
 
-func (con ArbInfo) GetBalance(b burn, caller addr, evm mech, account addr) (huge, error) {
+func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con ArbInfo) GetCode(b burn, caller addr, evm mech, account addr) ([]byte, error) {
+func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
 	return nil, errors.New("unimplemented")
 }

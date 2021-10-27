@@ -15,28 +15,22 @@ type ArbAddressTable struct {
 	Address addr
 }
 
-func (con ArbAddressTable) AddressExists(b burn, caller addr, evm mech, addr addr) (bool, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) AddressExists(c ctx, evm mech, addr addr) (bool, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return false, err
 	}
 	return arbos.OpenArbosState(evm.StateDB).AddressTable().AddressExists(addr), nil
 }
 
-func (con ArbAddressTable) Compress(b burn, caller addr, evm mech, addr addr) ([]uint8, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) Compress(c ctx, evm mech, addr addr) ([]uint8, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return nil, err
 	}
 	return arbos.OpenArbosState(evm.StateDB).AddressTable().Compress(addr), nil
 }
 
-func (con ArbAddressTable) Decompress(
-	b burn,
-	caller addr,
-	evm mech,
-	buf []uint8,
-	offset huge,
-) (addr, huge, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge) (addr, huge, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return addr{}, nil, err
 	}
 	if !offset.IsInt64() {
@@ -50,8 +44,8 @@ func (con ArbAddressTable) Decompress(
 	return result, big.NewInt(int64(nbytes)), err
 }
 
-func (con ArbAddressTable) Lookup(b burn, caller addr, evm mech, addr addr) (huge, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return nil, err
 	}
 	result, exists := arbos.OpenArbosState(evm.StateDB).AddressTable().Lookup(addr)
@@ -61,13 +55,8 @@ func (con ArbAddressTable) Lookup(b burn, caller addr, evm mech, addr addr) (hug
 	return big.NewInt(int64(result)), nil
 }
 
-func (con ArbAddressTable) LookupIndex(
-	b burn,
-	caller addr,
-	evm mech,
-	index huge,
-) (addr, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return addr{}, err
 	}
 	if !index.IsUint64() {
@@ -80,15 +69,15 @@ func (con ArbAddressTable) LookupIndex(
 	return result, nil
 }
 
-func (con ArbAddressTable) Register(b burn, caller addr, evm mech, addr addr) (huge, error) {
-	if err := b(params.SstoreSetGas); err != nil {
+func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
+	if err := c.burn(params.SstoreSetGas); err != nil {
 		return nil, err
 	}
 	return big.NewInt(int64(arbos.OpenArbosState(evm.StateDB).AddressTable().Register(addr))), nil
 }
 
-func (con ArbAddressTable) Size(b burn, caller addr, evm mech) (huge, error) {
-	if err := b(params.SloadGas); err != nil {
+func (con ArbAddressTable) Size(c ctx, evm mech) (huge, error) {
+	if err := c.burn(params.SloadGas); err != nil {
 		return nil, err
 	}
 	return big.NewInt(int64(arbos.OpenArbosState(evm.StateDB).AddressTable().Size())), nil

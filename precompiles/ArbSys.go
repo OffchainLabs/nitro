@@ -21,62 +21,50 @@ type ArbSys struct {
 	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
 }
 
-func (con *ArbSys) ArbBlockNumber(b burn, caller addr, evm mech) (huge, error) {
+func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con *ArbSys) ArbChainID(b burn, caller addr, evm mech) (huge, error) {
+func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 	return big.NewInt(412345), nil
 }
 
-func (con *ArbSys) ArbOSVersion(b burn, caller addr) (huge, error) {
+func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
 	return big.NewInt(1000), nil
 }
 
-func (con *ArbSys) GetStorageAt(b burn, caller addr, evm mech, address addr, index huge) (huge, error) {
+func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con *ArbSys) GetStorageGasAvailable(b burn, caller addr, evm mech) (huge, error) {
+func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con *ArbSys) GetTransactionCount(b burn, caller addr, evm mech, account addr) (huge, error) {
+func (con *ArbSys) GetTransactionCount(c ctx, evm mech, account addr) (huge, error) {
 	return nil, errors.New("unimplemented")
 }
 
-func (con *ArbSys) IsTopLevelCall(b burn, caller addr, evm mech) (bool, error) {
+func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con *ArbSys) MapL1SenderContractAddressToL2Alias(
-	b burn,
-	caller addr,
-	sender addr,
-	dest addr,
-) (addr, error) {
+func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
 	return addr{}, errors.New("unimplemented")
 }
 
-func (con *ArbSys) MyCallersAddressWithoutAliasing(b burn, caller addr, evm mech) (addr, error) {
+func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
 	return addr{}, errors.New("unimplemented")
 }
 
-func (con *ArbSys) SendTxToL1(
-	b burn,
-	caller addr,
-	evm mech,
-	value huge,
-	destination addr,
-	calldataForL1 []byte,
-) (*big.Int, error) {
+func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
 
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination
 	cost += con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
 	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
-	if err := b(cost); err != nil {
+	if err := c.burn(cost); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +85,7 @@ func (con *ArbSys) SendTxToL1(
 
 	con.L2ToL1Transaction(
 		evm,
-		caller,
+		c.caller,
 		destination,
 		sendHash.Big(),
 		big.NewInt(int64(merkleAcc.Size()-1)),
@@ -112,8 +100,8 @@ func (con *ArbSys) SendTxToL1(
 	return sendHash.Big(), nil
 }
 
-func (con ArbSys) SendMerkleTreeState(b burn, caller addr, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
-	if caller != (common.Address{}) {
+func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
+	if c.caller != (common.Address{}) {
 		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
 	}
 
@@ -127,16 +115,10 @@ func (con ArbSys) SendMerkleTreeState(b burn, caller addr, evm mech) (*big.Int, 
 	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
 }
 
-func (con *ArbSys) WasMyCallersAddressAliased(b burn, caller addr, evm mech) (bool, error) {
+func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 	return false, errors.New("unimplemented")
 }
 
-func (con ArbSys) WithdrawEth(
-	b burn,
-	caller common.Address,
-	evm mech,
-	value *big.Int,
-	destination common.Address,
-) (*big.Int, error) {
-	return con.SendTxToL1(b, caller, evm, value, destination, []byte{})
+func (con ArbSys) WithdrawEth(c ctx, evm mech, value *big.Int, destination common.Address) (*big.Int, error) {
+	return con.SendTxToL1(c, evm, value, destination, []byte{})
 }
