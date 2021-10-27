@@ -5,28 +5,29 @@
 package arbos
 
 import (
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
-	"testing"
 )
 
 // Create a memory-backed ArbOS state
-func OpenArbosStateForTest() *ArbosState {
+func OpenArbosStateForTest(t *testing.T) *ArbosState {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		panic("failed to init empty statedb")
+		t.Fatal("failed to init empty statedb")
 	}
 	return OpenArbosState(statedb)
 }
 
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosStateForTest()
+	storage := OpenArbosStateForTest(t)
 	_ = storage
 }
 
@@ -49,7 +50,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageBackedInt64(t *testing.T) {
-	state := OpenArbosStateForTest()
+	state := OpenArbosStateForTest(t)
 	storage := state.backingStorage
 	offset := common.BigToHash(big.NewInt(7895463))
 
