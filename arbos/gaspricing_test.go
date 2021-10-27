@@ -63,7 +63,7 @@ func TestGasPricingPoolPrice(t *testing.T) {
 		t.Fatal("wrong initial gas price")
 	}
 
-	initialSub := int64(SmallGasPoolMax*4)
+	initialSub := int64(SmallGasPoolMax * 4)
 	st.notifyGasUsed(uint64(initialSub))
 
 	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) != 0 {
