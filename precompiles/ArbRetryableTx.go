@@ -35,7 +35,7 @@ var (
 	UnauthorizedError = errors.New("unauthorized caller")
 )
 
-func (con ArbRetryableTx) Cancel(c ctx, caller addr, evm mech, ticketId [32]byte) error {
+func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	if err := c.burn(con.CanceledGasCost(ticketId)); err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func (con ArbRetryableTx) Cancel(c ctx, caller addr, evm mech, ticketId [32]byte
 	if retryable == nil {
 		return NotFoundError
 	}
-	if caller != retryable.Beneficiary() {
+	if c.caller != retryable.Beneficiary() {
 		return UnauthorizedError
 	}
 	retryableState.DeleteRetryable(ticketId)
@@ -52,7 +52,7 @@ func (con ArbRetryableTx) Cancel(c ctx, caller addr, evm mech, ticketId [32]byte
 	return nil
 }
 
-func (con ArbRetryableTx) GetBeneficiary(c ctx, caller addr, evm mech, ticketId [32]byte) (addr, error) {
+func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return addr{}, err
 	}
@@ -63,7 +63,7 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, caller addr, evm mech, ticketId 
 	return retryable.Beneficiary(), nil
 }
 
-func (con ArbRetryableTx) GetKeepaliveGas(c ctx, caller addr, evm mech, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return nil, err
 	}
@@ -74,14 +74,14 @@ func (con ArbRetryableTx) GetKeepaliveGas(c ctx, caller addr, evm mech, ticketId
 	return big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100)), nil
 }
 
-func (con ArbRetryableTx) GetLifetime(c ctx, caller addr, evm mech) (huge, error) {
+func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	if err := c.burn(1); err != nil {
 		return nil, err
 	}
 	return big.NewInt(RetryableLifetimeSeconds), nil
 }
 
-func (con ArbRetryableTx) GetTimeout(c ctx, caller addr, evm mech, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, caller addr, evm mech, ticketId [32]
 	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, caller addr, evm mech, value huge, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
 	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + con.LifetimeExtendedGasCost(ticketId, nil)); err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, caller addr, evm mech, value huge, ti
 
 const MockRedeemGasAvailableBUGBUGBUG uint64 = 1000000
 
-func (con ArbRetryableTx) Redeem(c ctx, caller addr, evm mech, txId [32]byte) ([32]byte, error) {
+func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, error) {
 	if err := c.burn(5 * params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, nil, nil)); err != nil {
 		return common.Hash{}, err
 	}
@@ -122,8 +122,8 @@ func (con ArbRetryableTx) Redeem(c ctx, caller addr, evm mech, txId [32]byte) ([
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
-	donatedGas := MockRedeemGasAvailableBUGBUGBUG
 	redeemTxId := crypto.Keccak256Hash(txId[:], common.BigToHash(sequenceNum).Bytes())
-	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(donatedGas)))
+	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(c.gasLeft)))
+	c.burn(c.gasLeft)
 	return redeemTxId, nil
 }
