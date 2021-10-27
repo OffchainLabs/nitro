@@ -8,18 +8,28 @@ import (
 	"encoding/json"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math/big"
 )
 
-func InitializeArbOS(
+func InitializeArbosFromJSON(stateDB *state.StateDB, encoded []byte) error {
+	initData := ArbosInitializationInfo{}
+	err := json.Unmarshal(encoded, &initData)
+	if err != nil {
+		return err
+	}
+	initializeArbOS(stateDB, initData.AddressTableContents, initData.SendPartials, initData.DefaultAggregator, initData.RetryableData, initData.Accounts)
+	return nil
+}
+
+func initializeArbOS(
 	stateDB *state.StateDB,
 	addressTableContents []common.Address,
 	sendPartials []common.Hash,
-	l1Data *L1PricingInitializationData,
+	defaultAggregator common.Address,
 	retryableData []InitializationDataForRetryable,
+	accounts []AccountInitializationInfo,
 ) {
 	arbosState := OpenArbosState(stateDB)
 
@@ -35,52 +45,19 @@ func InitializeArbOS(
 	}
 
 	merkleAccumulator.InitializeMerkleAccumulatorFromPartials(arbosState.backingStorage.OpenSubStorage(sendMerkleSubspace), sendPartials)
-
-	initializeL1Pricing(arbosState.L1PricingState(), l1Data)
-
+	arbosState.L1PricingState().SetDefaultAggregator(defaultAggregator)
 	initializeRetryables(arbosState.RetryableState(), retryableData, 0)
-}
-
-func InitializeArbosFromJSON(stateDB *state.StateDB, encoded []byte) error {
-	initData := ArbosInitializationInfo{}
-	err := json.Unmarshal(encoded, &initData)
-	if err != nil {
-		return err
+	for _, account := range accounts {
+		initializeAccount(stateDB, arbosState, account)
 	}
-	InitializeArbOS(stateDB, initData.AddressTableContents, initData.SendPartials, initData.L1Data, initData.RetryableData)
-	return nil
 }
 
 type ArbosInitializationInfo struct {
 	AddressTableContents []common.Address
 	SendPartials         []common.Hash
-	L1Data               *L1PricingInitializationData
+	DefaultAggregator    common.Address
 	RetryableData        []InitializationDataForRetryable
-}
-
-type L1PricingInitializationData struct {
-	DefaultAggregator           common.Address
-	PreferredAggregators        map[common.Address]common.Address
-	AggregatorFixedCharges      map[common.Address]*big.Int
-	AggregatorFeeCollectors     map[common.Address]common.Address
-	AggregatorCompressionRatios map[common.Address]uint64
-}
-
-func initializeL1Pricing(l1p *l1pricing.L1PricingState, data *L1PricingInitializationData) {
-	l1p.SetDefaultAggregator(data.DefaultAggregator)
-	for a, b := range data.PreferredAggregators {
-		l1p.SetPreferredAggregator(a, b)
-	}
-	for a, b := range data.AggregatorFixedCharges {
-		l1p.SetFixedChargeForAggregatorL1Gas(a, b)
-	}
-	for a, b := range data.AggregatorFeeCollectors {
-		l1p.SetAggregatorFeeCollector(a, b)
-	}
-	for a, b := range data.AggregatorCompressionRatios {
-		bb := b
-		l1p.SetAggregatorCompressionRatio(a, &bb)
-	}
+	Accounts             []AccountInitializationInfo
 }
 
 type InitializationDataForRetryable struct {
@@ -95,5 +72,42 @@ type InitializationDataForRetryable struct {
 func initializeRetryables(rs *retryables.RetryableState, data []InitializationDataForRetryable, currentTimestampToUse uint64) {
 	for _, r := range data {
 		rs.CreateRetryable(0, r.id, r.timeout, r.from, r.to, r.callvalue, r.calldata)
+	}
+}
+
+type AccountInitializationInfo struct {
+	Addr            common.Address
+	Nonce           uint64
+	EthBalance      *big.Int
+	ContractInfo    *AccountInitContractInfo
+	AggregatorInfo  *AccountInitAggregatorInfo
+	AggregatorToPay *common.Address
+}
+
+type AccountInitContractInfo struct {
+	Code            []byte
+	ContractStorage map[common.Hash]common.Hash
+}
+
+type AccountInitAggregatorInfo struct {
+	FeeCollector common.Address
+	BaseFeeL1Gas *big.Int
+}
+
+func initializeAccount(statedb *state.StateDB, arbosState *ArbosState, account AccountInitializationInfo) {
+	l1pState := arbosState.L1PricingState()
+	statedb.CreateAccount(account.Addr)
+	statedb.SetNonce(account.Addr, account.Nonce)
+	statedb.SetBalance(account.Addr, account.EthBalance)
+	if account.ContractInfo != nil {
+		statedb.SetCode(account.Addr, account.ContractInfo.Code)
+		statedb.SetStorage(account.Addr, account.ContractInfo.ContractStorage)
+	}
+	if account.AggregatorInfo != nil {
+		l1pState.SetAggregatorFeeCollector(account.Addr, account.AggregatorInfo.FeeCollector)
+		l1pState.SetFixedChargeForAggregatorL1Gas(account.Addr, account.AggregatorInfo.BaseFeeL1Gas)
+	}
+	if account.AggregatorToPay != nil {
+		l1pState.SetPreferredAggregator(account.Addr, *account.AggregatorToPay)
 	}
 }

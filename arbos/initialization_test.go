@@ -14,8 +14,9 @@ func TestJsonMarshalUnmarshalSimple(t *testing.T) {
 	input := ArbosInitializationInfo{
 		[]common.Address{common.BytesToAddress([]byte{3, 4, 5})},
 		[]common.Hash{},
-		nil,
+		common.Address{},
 		[]InitializationDataForRetryable{},
+		[]AccountInitializationInfo{},
 	}
 	if len(input.AddressTableContents) != 1 {
 		t.Fatal(input)
