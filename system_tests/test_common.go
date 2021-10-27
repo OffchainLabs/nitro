@@ -124,6 +124,21 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 	return tx
 }
 
+func ensureTxSucceeded(t *testing.T, client *backends.SimulatedBackend, tx *types.Transaction) {
+	t.Helper()
+	client.Commit()
+	txRes, err := client.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txRes == nil {
+		t.Fatal("expected receipt")
+	}
+	if txRes.Status != types.ReceiptStatusSuccessful {
+		t.Fatal("expected tx to succeed")
+	}
+}
+
 func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
 	var gasLimit uint64 = 8000029
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
@@ -141,31 +156,45 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	bridgeAddr, _, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
+	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ensureTxSucceeded(t, l1sim, tx)
 	l1info.SetContract("Bridge", bridgeAddr)
 
-	inboxAddr, _, inboxContract, err := bridgegen.DeployInbox(&l1TransactionOpts, l1sim)
+	inboxAddr, tx, inboxContract, err := bridgegen.DeployInbox(&l1TransactionOpts, l1sim)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ensureTxSucceeded(t, l1sim, tx)
 	l1info.SetContract("Inbox", inboxAddr)
 
-	_, err = inboxContract.Initialize(&l1TransactionOpts, bridgeAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = bridgeContract.SetInbox(&l1TransactionOpts, inboxAddr, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l1sim.Commit()
 
-	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1info.GetAddress("Sequencer"))
+	tx, err = inboxContract.Initialize(&l1TransactionOpts, bridgeAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ensureTxSucceeded(t, l1sim, tx)
+
+	tx, err = bridgeContract.Initialize(&l1TransactionOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ensureTxSucceeded(t, l1sim, tx)
+
+	tx, err = bridgeContract.SetInbox(&l1TransactionOpts, inboxAddr, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ensureTxSucceeded(t, l1sim, tx)
+
+	sequencerInboxAddr, tx, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1info.GetAddress("Sequencer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ensureTxSucceeded(t, l1sim, tx)
 
 	l1info.SetContract("SequencerInbox", sequencerInboxAddr)
 
