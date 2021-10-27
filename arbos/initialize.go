@@ -53,14 +53,14 @@ func InitializeArbosFromJSON(stateDB *state.StateDB, encoded []byte) error {
 
 type ArbosInitializationInfo struct {
 	AddressTableContents []common.Address
-	SendPartials  []common.Hash
-	L1Data        *L1PricingInitializationData
-	RetryableData []InitializationDataForRetryable
+	SendPartials         []common.Hash
+	L1Data               *L1PricingInitializationData
+	RetryableData        []InitializationDataForRetryable
 }
 
 type L1PricingInitializationData struct {
-	DefaultAggregator      common.Address
-	PreferredAggregators    map[common.Address]common.Address
+	DefaultAggregator           common.Address
+	PreferredAggregators        map[common.Address]common.Address
 	AggregatorFixedCharges      map[common.Address]*big.Int
 	AggregatorFeeCollectors     map[common.Address]common.Address
 	AggregatorCompressionRatios map[common.Address]uint64
@@ -78,17 +78,18 @@ func initializeL1Pricing(l1p *l1pricing.L1PricingState, data *L1PricingInitializ
 		l1p.SetAggregatorFeeCollector(a, b)
 	}
 	for a, b := range data.AggregatorCompressionRatios {
-		l1p.SetAggregatorCompressionRatio(a, &b)
+		bb := b
+		l1p.SetAggregatorCompressionRatio(a, &bb)
 	}
 }
 
 type InitializationDataForRetryable struct {
-	id   common.Hash
-	timeout uint64
-	from common.Address
-	to   common.Address
+	id        common.Hash
+	timeout   uint64
+	from      common.Address
+	to        common.Address
 	callvalue *big.Int
-	calldata []byte
+	calldata  []byte
 }
 
 func initializeRetryables(rs *retryables.RetryableState, data []InitializationDataForRetryable, currentTimestampToUse uint64) {
