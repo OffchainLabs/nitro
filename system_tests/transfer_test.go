@@ -6,6 +6,8 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/offchainlabs/arbstate/arbnode"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -44,7 +46,10 @@ func TestTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	WaitForTx(t, tx.Hash(), backend, client, 0)
+	err = arbnode.EnsureTxSucceeded(client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	bal, err := client.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)
 	if err != nil {

@@ -8,20 +8,20 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
-	"fmt"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
@@ -33,6 +33,7 @@ var simulatedChainID = big.NewInt(1337)
 type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
+	Nonce      uint64
 }
 
 type BlockchainTestInfo struct {
@@ -120,23 +121,113 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 	return tx
 }
 
-func CreateTestL1(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
-	var gasLimit uint64 = 8000029
+func CreateTestL1(t *testing.T) (arbnode.L1Interface, *BlockchainTestInfo) {
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
+	l1info.GenerateAccount("faucet")
+
+	stackConf := node.DefaultConfig
+	var err error
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nodeConf := ethconfig.Defaults
+	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
+	nodeConf.Genesis = core.DeveloperGenesisBlock(0, l1info.GetAddress("faucet"))
+	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
+
+	l1backend, err := eth.New(stack, &nodeConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
+	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["faucet"].PrivateKey, "passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = tempKeyStore.Unlock(faucetAccount, "passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l1backend.AccountManager().AddBackend(tempKeyStore)
+	l1backend.SetEtherbase(l1info.GetAddress("faucet"))
+	err = stack.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = l1backend.StartMining(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rpcClient, err := stack.Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l1Client := ethclient.NewClient(rpcClient)
+
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
-	l1genAlloc := make(core.GenesisAlloc)
-	l1genAlloc[l1info.GetAddress("RollupOwner")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
-	l1genAlloc[l1info.GetAddress("Sequencer")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
-	l1genAlloc[l1info.GetAddress("User")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+	ctx := context.Background()
+
+	addr := l1info.GetAddress("RollupOwner")
+	tx := l1info.SignTxAs("faucet", &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       30000,
+		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		Value:     big.NewInt(9223372036854775807),
+	})
+	err = l1Client.SendTransaction(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = arbnode.EnsureTxSucceeded(l1Client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr = l1info.GetAddress("Sequencer")
+	tx = l1info.SignTxAs("faucet", &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       30000,
+		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		Value:     big.NewInt(9223372036854775807),
+		Nonce:     1,
+	})
+	err = l1Client.SendTransaction(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = arbnode.EnsureTxSucceeded(l1Client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr = l1info.GetAddress("User")
+	tx = l1info.SignTxAs("faucet", &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       30000,
+		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		Value:     big.NewInt(9223372036854775807),
+		Nonce:     2,
+	})
+	err = l1Client.SendTransaction(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = arbnode.EnsureTxSucceeded(l1Client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 
-	chainDb := rawdb.NewMemoryDatabase()
-	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
-	addresses, err := arbnode.CreateL1WithInbox(l1sim, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.CreateL1WithInbox(l1Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +235,7 @@ func CreateTestL1(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 
-	return l1sim, l1info
+	return l1Client, l1info
 }
 
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
@@ -164,6 +255,7 @@ func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return backend, l2info
 }
 
@@ -178,33 +270,4 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 	}
 
 	return ethclient.NewClient(rpc.DialInProc(inproc))
-}
-
-// will wait untill tx is in the blockchain. attempts = 0 is infinite
-func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, client *ethclient.Client, attempts int) {
-	ctx := context.Background()
-	chanHead := make(chan *types.Header, 20)
-	headSubscribe, err := client.SubscribeNewHead(ctx, chanHead)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer headSubscribe.Unsubscribe()
-
-	for {
-		reciept, _ := client.TransactionReceipt(ctx, txhash)
-		if reciept != nil {
-			fmt.Println("Reciept: ", reciept)
-			break
-		}
-		if attempts == 1 {
-			t.Fatal("timeout waiting for Tx ", txhash)
-		}
-		if attempts > 1 {
-			attempts -= 1
-		}
-		select {
-		case <-chanHead:
-		case <-time.After(time.Second / 100):
-		}
-	}
 }
