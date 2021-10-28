@@ -18,7 +18,7 @@ type ArbOwner struct {
 var UnauthorizedError = errors.New("unauthorized caller to access-controlled method")
 
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
-	if err := c.burn(3 * params.SstoreSetGas); err != nil {
+	if err := c.burn(3 * params.SloadGas); err != nil { // charge less because only owner can call this
 		return err
 	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
@@ -44,7 +44,7 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 }
 
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
-	if err := c.burn(3 * params.SstoreSetGas); err != nil {
+	if err := c.burn(3 * params.SloadGas); err != nil { // charge less because only owner can call this
 		return err
 	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
