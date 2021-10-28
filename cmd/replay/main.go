@@ -44,8 +44,8 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 
 type WavmInbox struct{}
 
-func (i WavmInbox) PeekSequencerInbox() []byte {
-	return wavmio.ReadInboxMessage()
+func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
+	return wavmio.ReadInboxMessage(), nil
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
@@ -64,8 +64,8 @@ func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
 	wavmio.SetPositionWithinMessage(pos)
 }
 
-func (i WavmInbox) ReadDelayedInbox(seqNum uint64) []byte {
-	return wavmio.ReadDelayedInboxMessage(seqNum)
+func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
 func main() {
@@ -84,11 +84,18 @@ func main() {
 	fmt.Printf("Previous block state root: %v\n", lastBlockStateRoot)
 	statedb, err := state.New(lastBlockStateRoot, db, nil)
 	if err != nil {
-		panic(fmt.Sprintf("Error opening state db: %v", err))
+		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
 	chainContext := WavmChainContext{}
-	newBlock := arbstate.BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
+	newBlock, err := arbstate.BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
+	if err != nil {
+		panic(fmt.Sprintf("Error building block: %v", err.Error()))
+	}
+	if newBlock == nil {
+		// failed to parse message, move on without creating block
+		return
+	}
 
 	fmt.Printf("New state root: %v\n", newBlock.Root())
 	newBlockHash := newBlock.Hash()

@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
@@ -88,7 +87,7 @@ type SequencerInboxBatch struct {
 	txIndexInBlock    uint
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client *ethclient.Client) ([]byte, error) {
+func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) ([]byte, error) {
 	if m.dataIfAvailable != nil {
 		return *m.dataIfAvailable, nil
 	}

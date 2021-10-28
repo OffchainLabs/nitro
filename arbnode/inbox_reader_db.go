@@ -5,19 +5,23 @@
 package arbnode
 
 import (
+	"context"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/pkg/errors"
 )
 
 type InboxReaderDb struct {
-	db    ethdb.Database
-	mutex sync.Mutex
+	db         ethdb.Database
+	inboxState *InboxState
+	mutex      sync.Mutex
 }
 
 func NewInboxReaderDb(raw ethdb.Database) (*InboxReaderDb, error) {
@@ -276,6 +280,20 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	return batch.Write()
 }
 
+type multiplexerBackend struct {
+	db      ethdb.Database
+	batches []*SequencerInboxBatch
+	ctx     context.Context
+	client  L1Interface
+}
+
+func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+	if len(b.batches) == 0 {
+		return nil, errors.New("read past end of specified sequencer batches")
+	}
+	return b.batches[0].GetData(b.ctx, b.client)
+}
+
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
 func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) error {
@@ -362,7 +380,37 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 		return err
 	}
 
-	// TODO create inbox messages from sequencer batches
+	var messages []arbstate.MessageWithMetadata
+	backend := &multiplexerBackend{
+		db:      d.db,
+		batches: batches,
+	}
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
+	runningDelayedRead := prevDelayedMessages
+	for {
+		msg, err := multiplexer.Peek()
+		multiplexer.Advance()
+		if err != nil {
+			log.Warn("error parsing inbox message", "err", err)
+			messages = append(messages, arbstate.MessageWithMetadata{
+				Message: &arbos.L1IncomingMessage{
+					Header: &arbos.L1IncomingMessageHeader{
+						Kind: arbos.L1MessageType_Invalid,
+					},
+					L2msg: []byte{},
+				},
+				MustEndBlock:        true,
+				DelayedMessagesRead: runningDelayedRead,
+			})
+			continue
+		}
+		runningDelayedRead = msg.DelayedMessagesRead
+		messages = append(messages, *msg)
+	}
+	err = d.inboxState.AddMessagesAndEndBatch(batches[0].SequenceNumber, true, messages, dbBatch)
+	if err != nil {
+		return err
+	}
 
 	return dbBatch.Write()
 }

@@ -28,6 +28,7 @@ const (
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_EthDeposit            = 11
+	L1MessageType_Invalid               = 0xFF
 )
 
 const MaxL2MessageSize = 256 * 1024
@@ -209,6 +210,9 @@ func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transac
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
+	case L1MessageType_Invalid:
+		// intentionally invalid message
+		return nil, errors.New("invalid message")
 	default:
 		// invalid message, just ignore it
 		return nil, errors.New("invalid message types")

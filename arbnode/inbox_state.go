@@ -249,6 +249,10 @@ func (s *InboxState) GetMessageCount() (uint64, error) {
 }
 
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
+}
+
+func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -309,7 +313,7 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		return nil
 	}
 
-	return s.writeMessages(pos, messages)
+	return s.writeMessages(pos, messages, batch)
 }
 
 func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
@@ -339,7 +343,7 @@ func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
 func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -373,13 +377,15 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
-// The mutex must be held, and pos must be the latest message count
-func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata) error {
-	// Write any new messages to the database
-	batch := s.db.NewBatch()
+// The mutex must be held, and pos must be the latest message count.
+// `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
+func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	if batch == nil {
+		batch = s.db.NewBatch()
+	}
 	for i, msg := range messages {
 		key := dbKey(messagePrefix, pos+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)
