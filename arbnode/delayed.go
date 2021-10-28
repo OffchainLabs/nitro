@@ -9,7 +9,8 @@ import (
 	"context"
 	"math/big"
 	"sort"
-	"strings"
+
+	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -17,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
@@ -35,20 +35,20 @@ var inboxMessageFromOriginID common.Hash
 var l2MessageFromOriginCallABI abi.Method
 
 func init() {
-	parsedIBridgeABI, err := abi.JSON(strings.NewReader(bridgegen.IBridgeABI))
+	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
 
-	parsedIMessageProviderABI, err := abi.JSON(strings.NewReader(bridgegen.IMessageProviderABI))
+	parsedIMessageProviderABI, err := bridgegen.IMessageProviderMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
 	inboxMessageDeliveredID = parsedIMessageProviderABI.Events["InboxMessageDelivered"].ID
 	inboxMessageFromOriginID = parsedIMessageProviderABI.Events["InboxMessageDeliveredFromOrigin"].ID
 
-	parsedIInboxABI, err := abi.JSON(strings.NewReader(bridgegen.IInboxABI))
+	parsedIInboxABI, err := bridgegen.IInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -135,23 +135,6 @@ func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big
 	return b.logsToDeliveredMessages(ctx, logs)
 }
 
-type blockInfo struct {
-	blockTime *big.Int
-	baseFee   *big.Int
-}
-
-func (b *blockInfo) txGasPrice(tx *types.Transaction) *big.Int {
-	if b.baseFee == nil {
-		return tx.GasPrice()
-	}
-	fee := new(big.Int).Add(tx.GasTipCap(), b.baseFee)
-	cap := tx.GasFeeCap()
-	if fee.Cmp(cap) > 0 {
-		fee = cap
-	}
-	return fee
-}
-
 type sortableMessageList []*DelayedInboxMessage
 
 func (l sortableMessageList) Len() int {
@@ -172,7 +155,6 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 	}
 	parsedLogs := make([]*bridgegen.IBridgeMessageDelivered, 0, len(logs))
 	messageIds := make([]common.Hash, 0, len(logs))
-	rawTransactions := make(map[common.Hash]*types.Transaction)
 	inboxAddresses := make(map[common.Address]struct{})
 	minBlockNum := uint64(math.MaxUint64)
 	maxBlockNum := uint64(0)
@@ -189,22 +171,14 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		}
 		messageKey := common.BigToHash(parsedLog.MessageIndex)
 		parsedLogs = append(parsedLogs, parsedLog)
-
-		txData, err := b.client.TransactionInBlock(ctx, ethLog.BlockHash, ethLog.TxIndex)
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		rawTransactions[messageKey] = txData
 		inboxAddresses[parsedLog.Inbox] = struct{}{}
 		messageIds = append(messageIds, messageKey)
 	}
 
 	messageData := make(map[common.Hash][]byte)
-	if err := b.fillMessageData(ctx, inboxAddresses, messageIds, rawTransactions, messageData, minBlockNum, maxBlockNum); err != nil {
+	if err := b.fillMessageData(ctx, inboxAddresses, messageIds, messageData, minBlockNum, maxBlockNum); err != nil {
 		return nil, err
 	}
-
-	blockInfos := make(map[common.Hash]*blockInfo)
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
 	for _, parsedLog := range parsedLogs {
@@ -217,20 +191,6 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			return nil, errors.New("found message data with mismatched hash")
 		}
 
-		info, ok := blockInfos[parsedLog.Raw.BlockHash]
-		if !ok {
-			header, err := b.client.HeaderByHash(ctx, parsedLog.Raw.BlockHash)
-			if err != nil {
-				return nil, errors.WithStack(err)
-			}
-			info = &blockInfo{
-				blockTime: new(big.Int).SetUint64(header.Time),
-				baseFee:   header.BaseFee,
-			}
-			blockInfos[parsedLog.Raw.BlockHash] = info
-		}
-
-		tx := rawTransactions[msgKey]
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -239,9 +199,9 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					Kind:        parsedLog.Kind,
 					Sender:      parsedLog.Sender,
 					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
-					Timestamp:   common.BigToHash(info.blockTime),
+					Timestamp:   common.BigToHash(parsedLog.Timestamp),
 					RequestId:   common.BigToHash(parsedLog.MessageIndex),
-					GasPriceL1:  common.BigToHash(info.txGasPrice(tx)),
+					GasPriceL1:  common.BigToHash(parsedLog.GasPrice),
 				},
 				L2msg: data,
 			},
@@ -258,7 +218,6 @@ func (b *DelayedBridge) fillMessageData(
 	ctx context.Context,
 	inboxAddressSet map[common.Address]struct{},
 	messageIds []common.Hash,
-	txData map[common.Hash]*types.Transaction,
 	messageData map[common.Hash][]byte,
 	minBlockNum, maxBlockNum uint64,
 ) error {
@@ -279,7 +238,7 @@ func (b *DelayedBridge) fillMessageData(
 		return errors.WithStack(err)
 	}
 	for _, ethLog := range logs {
-		msgNum, msg, err := b.parseMessage(txData, ethLog)
+		msgNum, msg, err := b.parseMessage(ctx, ethLog)
 		if err != nil {
 			return err
 		}
@@ -288,7 +247,7 @@ func (b *DelayedBridge) fillMessageData(
 	return nil
 }
 
-func (b *DelayedBridge) parseMessage(txData map[common.Hash]*types.Transaction, ethLog types.Log) (*big.Int, []byte, error) {
+func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*big.Int, []byte, error) {
 	con, ok := b.messageProviders[ethLog.Address]
 	if !ok {
 		var err error
@@ -305,13 +264,13 @@ func (b *DelayedBridge) parseMessage(txData map[common.Hash]*types.Transaction, 
 		}
 		return parsedLog.MessageNum, parsedLog.Data, nil
 	} else if ethLog.Topics[0] == inboxMessageFromOriginID {
-		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
+		tx, err := b.client.TransactionInBlock(ctx, ethLog.BlockHash, ethLog.TxIndex)
 		if err != nil {
 			return nil, nil, errors.WithStack(err)
 		}
-		tx, ok := txData[common.BigToHash(parsedLog.MessageNum)]
-		if !ok {
-			return nil, nil, errors.New("didn't have tx data")
+		parsedLog, err := con.ParseInboxMessageDeliveredFromOrigin(ethLog)
+		if err != nil {
+			return nil, nil, errors.WithStack(err)
 		}
 		args := make(map[string]interface{})
 		err = l2MessageFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
