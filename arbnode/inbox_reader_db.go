@@ -437,5 +437,6 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 		return err
 	}
 
-	return dbBatch.Write()
+	// InboxState AddMessagesAndEndBatch has already written the batch
+	return nil
 }
