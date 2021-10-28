@@ -372,7 +372,32 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 		}
 
 		nextAcc = batch.AfterInboxAcc
+	}
 
+	var messages []arbstate.MessageWithMetadata
+	backend := &multiplexerBackend{
+		db:          d,
+		batchSeqNum: batches[0].SequenceNumber,
+		batches:     batches,
+	}
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
+	for {
+		if len(backend.batches) == 0 {
+			break
+		}
+		msg, err := multiplexer.Peek()
+		if err != nil {
+			return err
+		}
+		err = multiplexer.Advance()
+		if err != nil {
+			return err
+		}
+		messages = append(messages, *msg)
+	}
+
+	for _, batch := range batches {
+		// TODO put generated message count in batch metadata
 		meta := BatchMetadata{
 			Accumulator:         batch.AfterInboxAcc,
 			DelayedMessageCount: batch.AfterDelayedCount,
@@ -411,32 +436,6 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 		return err
 	}
 
-	var messages []arbstate.MessageWithMetadata
-	backend := &multiplexerBackend{
-		db:          d,
-		batchSeqNum: batches[0].SequenceNumber,
-		batches:     batches,
-	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
-	for {
-		if len(backend.batches) == 0 {
-			break
-		}
-		msg, err := multiplexer.Peek()
-		if err != nil {
-			return err
-		}
-		err = multiplexer.Advance()
-		if err != nil {
-			return err
-		}
-		messages = append(messages, *msg)
-	}
-	err = d.inboxState.AddMessagesAndEndBatch(batches[0].SequenceNumber, true, messages, dbBatch)
-	if err != nil {
-		return err
-	}
-
-	// InboxState AddMessagesAndEndBatch has already written the batch
-	return nil
+	// This also writes the batch
+	return d.inboxState.AddMessagesAndEndBatch(batches[0].SequenceNumber, true, messages, dbBatch)
 }
