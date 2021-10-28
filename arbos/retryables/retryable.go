@@ -242,18 +242,25 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 	return bytes.Equal(retryable.Calldata(), other.Calldata())
 }
 
-func (rs *RetryableState) MakeRetryTx(ticketId common.Hash, retryId common.Hash, seqNum uint64, gas *big.Int, currentTimestamp uint64, chainId *big.Int, gasPrice *big.Int) *types.Transaction {
-	retryable := rs.OpenRetryable(ticketId, currentTimestamp)
+func (rs *RetryableState) MakeRetryTx(retry QueuedRetry, currentTimestamp uint64, chainId *big.Int, gasPrice *big.Int) *types.Transaction {
+	retryable := rs.OpenRetryable(retry.TicketId, currentTimestamp)
+	if retryable == nil {
+		return nil
+	}
 	to := retryable.To()
-	return types.NewTx(&types.ArbitrumContractTx{ // TODO: use a new tx type, so we can handle gas and recordkeeping correctly for the retryable
-		ChainId:   chainId,
-		RequestId: retryId,
-		From:      retryable.From(),
-		GasPrice:  gasPrice,
-		Gas:       gas.Uint64(),
-		To:        &to,
-		Value:     retryable.Callvalue(),
-		Data:      retryable.Calldata(),
+	return types.NewTx(&types.ArbitrumRetryTx{
+		ArbitrumContractTx: types.ArbitrumContractTx {
+			ChainId:   chainId,
+			RequestId: retry.RetryId,
+			From:      retryable.From(),
+			GasPrice:  gasPrice,
+			Gas:       retry.Gas.Uint64(),
+			To:        &to,
+			Value:     retryable.Callvalue(),
+			Data:      retryable.Calldata(),
+		},
+		TicketId: retry.TicketId,
+		RefundTo: retry.RefundTo,
 	})
 }
 
@@ -266,4 +273,12 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
 			rs.timeoutQueue.Put(*id)
 		}
 	}
+}
+
+type QueuedRetry struct {
+	TicketId common.Hash
+	RetryId common.Hash
+	SeqNum  uint64
+	Gas     *big.Int
+	RefundTo common.Address
 }

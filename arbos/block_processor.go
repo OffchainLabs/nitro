@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -55,7 +56,7 @@ type BlockBuilder struct {
 	txes     types.Transactions
 	receipts types.Receipts
 
-	queuedRetries []QueuedRetry
+	queuedRetries []retryables.QueuedRetry
 }
 
 type BlockData struct {
@@ -154,16 +155,25 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
-	i := 0
-	for len(b.queuedRetries) > 0 || i < len(segment.Txes) {
+	arbosState := OpenArbosState(b.statedb)
+	nextTxNum := 0
+	for len(b.queuedRetries) > 0 || nextTxNum < len(segment.Txes) {
 		var tx *types.Transaction
 		if len(b.queuedRetries) > 0 {
 			retry := b.queuedRetries[0]
-			tx = OpenArbosState(b.statedb).RetryableState().MakeRetryTx(retry.ticketId, retry.retryId, retry.seqNum, retry.gas, b.header.Time, ChainConfig.ChainID, b.header.BaseFee)
 			b.queuedRetries = b.queuedRetries[1:]
+			tx = arbosState.RetryableState().MakeRetryTx(retry, b.header.Time, ChainConfig.ChainID, b.header.BaseFee)
+			if tx == nil {
+				// retryable was already deleted, so just refund the gas
+				b.statedb.AddBalance(retry.RefundTo, new(big.Int).Mul(retry.Gas, b.header.BaseFee))
+				continue
+			}
+			// add the retry tx's gas back into the gas pool
+			b.gasPool.AddGas(retry.Gas.Uint64())
+			arbosState.AddToGasPools(retry.Gas.Int64())
 		} else {
-			tx = segment.Txes[i]
-			i++
+			tx = segment.Txes[nextTxNum]
+			nextTxNum++
 		}
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore any transactions with higher than the max possible gas
@@ -186,23 +196,32 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			b.statedb.RevertToSnapshot(snap)
 			continue
 		}
+		retryTx, isRetry := tx.GetInner().(*types.ArbitrumRetryTx)
+		if isRetry {
+			arbosState.RetryableState().DeleteRetryable(retryTx.TicketId)
+			unusedGas := tx.Gas()-receipt.GasUsed
+			if unusedGas > 0 {
+				b.gasPool.SubGas(unusedGas)
+				arbosState.AddToGasPools(-int64(unusedGas))
+			}
+		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
 
-		/*
-			for _, txLog := range receipt.Logs {
-				// TODO: don't special case the address and topic[0]
-				if txLog.Address == common.HexToAddress("6e") && txLog.Topics[0] == common.HexToHash("27fc6cca2a0e9eb6f4876c01fc7779b00cdeb7277a770ac2b844db5932449578") {
-					retry := QueuedRetry{
-						txLog.Topics[1],
-						txLog.Topics[2],
-						common.BytesToHash(txLog.Data[:32]).Big().Uint64(),
-						common.BytesToHash(txLog.Data[32:64]).Big(),
-					}
-					b.queuedRetries = append(b.queuedRetries, retry)
+		for _, txLog := range receipt.Logs {
+			// TODO: don't special case the address and topic[0]
+			if txLog.Address == common.HexToAddress("6e") && txLog.Topics[0] == common.HexToHash("991f1521553c22b6a1e06060faa8d8c839962c684c5856cd72bec3b2bec7a6f7") {
+				retry := retryables.QueuedRetry{
+					txLog.Topics[1],
+					txLog.Topics[2],
+					common.BytesToHash(txLog.Data[:32]).Big().Uint64(),
+					common.BytesToHash(txLog.Data[32:64]).Big(),
+					common.BytesToAddress(txLog.Data[64:96]),
 				}
+				b.queuedRetries = append(b.queuedRetries, retry)
 			}
-		*/
+		}
+
 	}
 }
 
@@ -266,11 +285,4 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
-}
-
-type QueuedRetry struct {
-	ticketId common.Hash
-	retryId  common.Hash
-	seqNum   uint64
-	gas      *big.Int
 }

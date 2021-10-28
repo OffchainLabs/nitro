@@ -132,6 +132,11 @@ func (state *ArbosState) SetSmallGasPool(val int64) {
 	state.smallGasPool.Set(val)
 }
 
+func (state *ArbosState) AddToGasPools(val int64) {
+	state.SetGasPool(state.GasPool() + val)
+	state.SetSmallGasPool(state.SmallGasPool() + val)
+}
+
 func (state *ArbosState) GasPriceWei() *big.Int {
 	if state.gasPriceWei == nil {
 		state.gasPriceWei = state.backingStorage.GetByInt64(int64(gasPriceKey)).Big()
