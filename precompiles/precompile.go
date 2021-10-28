@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"github.com/offchainlabs/arbstate/arbos"
 	"log"
 	"math/big"
 	"reflect"
@@ -383,6 +384,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	arbos.ArbRetryableTxAddress = hex("6e")
+	arbos.RedeemScheduledEventID = contracts[arbos.ArbRetryableTxAddress].Precompile().events["RedeemScheduled"].template.ID
 
 	return contracts
 }

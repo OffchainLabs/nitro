@@ -209,8 +209,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.receipts = append(b.receipts, receipt)
 
 		for _, txLog := range receipt.Logs {
-			// TODO: don't special case the address and topic[0]
-			if txLog.Address == common.HexToAddress("6e") && txLog.Topics[0] == common.HexToHash("991f1521553c22b6a1e06060faa8d8c839962c684c5856cd72bec3b2bec7a6f7") {
+			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
 				retry := retryables.QueuedRetry{
 					TicketId: txLog.Topics[1],
 					RetryId:  txLog.Topics[2],
@@ -221,9 +220,13 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 				b.queuedRetries = append(b.queuedRetries, retry)
 			}
 		}
-
 	}
 }
+
+var (  // set by the precompile module, to avoid a package dependence cycle
+	ArbRetryableTxAddress  common.Address
+	RedeemScheduledEventID common.Hash
+)
 
 func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
 	if b.header == nil {
