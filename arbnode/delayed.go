@@ -24,11 +24,6 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
-type L1Interface interface {
-	bind.ContractBackend
-	ethereum.ChainReader
-}
-
 var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash

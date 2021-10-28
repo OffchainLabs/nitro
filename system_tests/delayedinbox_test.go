@@ -59,7 +59,7 @@ func TestDelayInbox(t *testing.T) {
 	}
 	tx := l2info.SignTxAs("Owner", txdata)
 
-	l1backend.Commit()
+	//l1backend.Commit()
 	msgs, err := delayedBridge.GetMessageCount(background, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -77,17 +77,21 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = delayedInboxContract.SendL2Message(&usertxopts, txbytes)
+	tx, err = delayedInboxContract.SendL2Message(&usertxopts, txbytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l1backend.Commit()
+	err = arbnode.EnsureTxSucceeded(l1backend, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	msgs, err = delayedBridge.GetMessageCount(background, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if msgs != 1 {
-		t.Fatal("Unexpected message count before: ", msgs)
+		t.Fatal("Unexpected message count after: ", msgs)
 	}
 
 	correctDelayedCount := func() bool {
