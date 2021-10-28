@@ -5,13 +5,13 @@
 package arbnode
 
 import (
+	"bytes"
 	"context"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -146,7 +146,7 @@ func (d *InboxReaderDb) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (d *InboxReaderDb) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 	key := dbKey(delayedMessagePrefix, seqNum)
 	data, err := d.db.Get(key)
 	if err != nil {
@@ -155,10 +155,15 @@ func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessa
 	if len(data) < 32 {
 		return nil, errors.New("delayed message entry missing accumulator")
 	}
-	data = data[32:]
-	var message arbos.L1IncomingMessage
-	err = rlp.DecodeBytes(data, &message)
-	return &message, err
+	return data[32:], nil
+}
+
+func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+	data, err := d.GetDelayedMessageBytes(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	return arbos.ParseIncomingL1Message(bytes.NewReader(data))
 }
 
 func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) error {
@@ -203,7 +208,7 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 
 		msgKey := dbKey(delayedMessagePrefix, seqNum)
 
-		msgData, err := rlp.EncodeToBytes(message.Message)
+		msgData, err := message.Message.Serialize()
 		if err != nil {
 			return err
 		}
@@ -281,17 +286,43 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 }
 
 type multiplexerBackend struct {
-	db      ethdb.Database
-	batches []*SequencerInboxBatch
-	ctx     context.Context
-	client  L1Interface
+	batchSeqNum           uint64
+	batches               []*SequencerInboxBatch
+	positionWithinMessage uint64
+
+	ctx    context.Context
+	client L1Interface
+	db     *InboxReaderDb
 }
 
 func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
 	if len(b.batches) == 0 {
 		return nil, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0].GetData(b.ctx, b.client)
+	return b.batches[0].Serialize(b.ctx, b.client)
+}
+
+func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
+	return b.batchSeqNum
+}
+
+func (b *multiplexerBackend) AdvanceSequencerInbox() {
+	b.batchSeqNum++
+	if len(b.batches) > 0 {
+		b.batches = b.batches[1:]
+	}
+}
+
+func (b *multiplexerBackend) GetPositionWithinMessage() uint64 {
+	return b.positionWithinMessage
+}
+
+func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
+	b.positionWithinMessage = pos
+}
+
+func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+	return b.db.GetDelayedMessageBytes(seqNum)
 }
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
@@ -382,29 +413,23 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 
 	var messages []arbstate.MessageWithMetadata
 	backend := &multiplexerBackend{
-		db:      d.db,
-		batches: batches,
+		db:          d,
+		batchSeqNum: batches[0].SequenceNumber,
+		batches:     batches,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
-	runningDelayedRead := prevDelayedMessages
 	for {
-		msg, err := multiplexer.Peek()
-		multiplexer.Advance()
-		if err != nil {
-			log.Warn("error parsing inbox message", "err", err)
-			messages = append(messages, arbstate.MessageWithMetadata{
-				Message: &arbos.L1IncomingMessage{
-					Header: &arbos.L1IncomingMessageHeader{
-						Kind: arbos.L1MessageType_Invalid,
-					},
-					L2msg: []byte{},
-				},
-				MustEndBlock:        true,
-				DelayedMessagesRead: runningDelayedRead,
-			})
-			continue
+		if len(backend.batches) == 0 {
+			break
 		}
-		runningDelayedRead = msg.DelayedMessagesRead
+		msg, err := multiplexer.Peek()
+		if err != nil {
+			return err
+		}
+		err = multiplexer.Advance()
+		if err != nil {
+			return err
+		}
 		messages = append(messages, *msg)
 	}
 	err = d.inboxState.AddMessagesAndEndBatch(batches[0].SequenceNumber, true, messages, dbBatch)

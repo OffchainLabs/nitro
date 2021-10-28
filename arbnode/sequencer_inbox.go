@@ -6,6 +6,7 @@ package arbnode
 
 import (
 	"context"
+	"encoding/binary"
 	"math/big"
 	"strings"
 
@@ -83,6 +84,7 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc     common.Hash
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
+	TimeBounds        [4]uint64
 	dataIfAvailable   *[]byte
 	txIndexInBlock    uint
 }
@@ -101,6 +103,29 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) (
 		return nil, errors.WithStack(err)
 	}
 	return args["data"].([]byte), nil
+}
+
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client L1Interface) ([]byte, error) {
+	var fullData []byte
+
+	// Serialize the header
+	for _, bound := range m.TimeBounds {
+		var intData [4]byte
+		binary.BigEndian.PutUint64(intData[:], bound)
+		fullData = append(fullData, intData[:]...)
+	}
+	var intData [4]byte
+	binary.BigEndian.PutUint64(intData[:], m.AfterDelayedCount)
+	fullData = append(fullData, intData[:]...)
+
+	// Append the batch data
+	data, err := m.GetData(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	fullData = append(fullData, data...)
+
+	return fullData, nil
 }
 
 func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*SequencerInboxBatch, error) {
@@ -128,7 +153,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 			}
-			messages = append(messages, &SequencerInboxBatch{
+			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
@@ -137,7 +162,14 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
 				dataIfAvailable:   &parsedLog.Data,
 				txIndexInBlock:    log.TxIndex,
-			})
+			}
+			for i, bound := range parsedLog.TimeBounds {
+				if !bound.IsUint64() {
+					return nil, errors.New("sequencer inbox event has non-uint64 time bound")
+				}
+				batch.TimeBounds[i] = bound.Uint64()
+			}
+			messages = append(messages, batch)
 		} else if log.Topics[0] == batchDeliveredFromOriginID {
 			parsedLog, err := i.con.ParseSequencerBatchDeliveredFromOrigin(log)
 			if err != nil {
@@ -149,7 +181,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
 				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
 			}
-			messages = append(messages, &SequencerInboxBatch{
+			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
@@ -158,7 +190,14 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
 				dataIfAvailable:   nil,
 				txIndexInBlock:    log.TxIndex,
-			})
+			}
+			for i, bound := range parsedLog.TimeBounds {
+				if !bound.IsUint64() {
+					return nil, errors.New("sequencer inbox event has non-uint64 time bound")
+				}
+				batch.TimeBounds[i] = bound.Uint64()
+			}
+			messages = append(messages, batch)
 		} else {
 			return nil, errors.New("unexpected log selector")
 		}
