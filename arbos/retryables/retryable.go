@@ -249,7 +249,7 @@ func (rs *RetryableState) MakeRetryTx(retry QueuedRetry, currentTimestamp uint64
 	}
 	to := retryable.To()
 	return types.NewTx(&types.ArbitrumRetryTx{
-		ArbitrumContractTx: types.ArbitrumContractTx {
+		ArbitrumContractTx: types.ArbitrumContractTx{
 			ChainId:   chainId,
 			RequestId: retry.RetryId,
 			From:      retryable.From(),
@@ -277,8 +277,8 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
 
 type QueuedRetry struct {
 	TicketId common.Hash
-	RetryId common.Hash
-	SeqNum  uint64
-	Gas     *big.Int
+	RetryId  common.Hash
+	SeqNum   uint64
+	Gas      *big.Int
 	RefundTo common.Address
 }

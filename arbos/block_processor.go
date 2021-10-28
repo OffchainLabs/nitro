@@ -199,9 +199,9 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		retryTx, isRetry := tx.GetInner().(*types.ArbitrumRetryTx)
 		if isRetry {
 			arbosState.RetryableState().DeleteRetryable(retryTx.TicketId)
-			unusedGas := tx.Gas()-receipt.GasUsed
+			unusedGas := tx.Gas() - receipt.GasUsed
 			if unusedGas > 0 {
-				b.gasPool.SubGas(unusedGas)
+				_ = b.gasPool.SubGas(unusedGas) // deliberately ignore error
 				arbosState.AddToGasPools(-int64(unusedGas))
 			}
 		}
@@ -212,11 +212,11 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			// TODO: don't special case the address and topic[0]
 			if txLog.Address == common.HexToAddress("6e") && txLog.Topics[0] == common.HexToHash("991f1521553c22b6a1e06060faa8d8c839962c684c5856cd72bec3b2bec7a6f7") {
 				retry := retryables.QueuedRetry{
-					txLog.Topics[1],
-					txLog.Topics[2],
-					common.BytesToHash(txLog.Data[:32]).Big().Uint64(),
-					common.BytesToHash(txLog.Data[32:64]).Big(),
-					common.BytesToAddress(txLog.Data[64:96]),
+					TicketId: txLog.Topics[1],
+					RetryId:  txLog.Topics[2],
+					SeqNum:   common.BytesToHash(txLog.Data[:32]).Big().Uint64(),
+					Gas:      common.BytesToHash(txLog.Data[32:64]).Big(),
+					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
 				}
 				b.queuedRetries = append(b.queuedRetries, retry)
 			}
