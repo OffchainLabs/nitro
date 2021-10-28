@@ -18,10 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/utils"
 )
 
 type L1Interface interface {
@@ -108,16 +108,16 @@ type DelayedInboxMessage struct {
 }
 
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
-	hash := utils.Keccak256(
+	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
 		m.Message.Header.Sender.Bytes(),
 		m.Message.Header.BlockNumber.Bytes(),
 		m.Message.Header.Timestamp.Bytes(),
 		m.Message.Header.RequestId.Bytes(),
 		m.Message.Header.GasPriceL1.Bytes(),
-		utils.Keccak256(m.Message.L2msg).Bytes(),
+		crypto.Keccak256(m.Message.L2msg),
 	)
-	return utils.Keccak256(m.BeforeInboxAcc[:], hash.Bytes())
+	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
 }
 
 func (b *DelayedBridge) LookupMessagesInRange(ctx context.Context, from, to *big.Int) ([]*DelayedInboxMessage, error) {
@@ -187,7 +187,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		if !ok {
 			return nil, errors.New("message not found")
 		}
-		if utils.Keccak256(data) != parsedLog.MessageDataHash {
+		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
 			return nil, errors.New("found message data with mismatched hash")
 		}
 
