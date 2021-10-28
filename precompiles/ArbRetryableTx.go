@@ -108,7 +108,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 }
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, error) {
-	if err := c.burn(5 * params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, nil, nil)); err != nil {
+	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, nil, nil)); err != nil {
 		return common.Hash{}, err
 	}
 	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
@@ -122,8 +122,17 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, erro
 	sequenceNum := retryable.IncrementNumTries()
 	redeemTxId := retryables.TxIdForRedeemAttempt(txId, sequenceNum)
 	con.RedeemScheduled(evm, txId, redeemTxId, sequenceNum, big.NewInt(int64(c.gasLeft)))
+
+	// now donate all of the remaining gas to the retry
+	// to do this, we burn the gas but also add it back into the gas pool
+	// the gas put back into the pool will be used when the retry occurs
+	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
+	arbosState := arbos.OpenArbosState(evm.StateDB)
+	arbosState.SetGasPool(arbosState.GasPool() + int64(c.gasLeft))
+	arbosState.SetSmallGasPool(arbosState.SmallGasPool() + int64(c.gasLeft))
 	if err := c.burn(c.gasLeft); err != nil {
 		return common.Hash{}, err
 	}
+
 	return redeemTxId, nil
 }

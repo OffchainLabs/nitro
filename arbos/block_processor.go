@@ -54,6 +54,8 @@ type BlockBuilder struct {
 
 	txes     types.Transactions
 	receipts types.Receipts
+
+	queuedRetries []QueuedRetry
 }
 
 type BlockData struct {
@@ -152,9 +154,19 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
-	for _, tx := range segment.Txes {
+	i := 0
+	for len(b.queuedRetries) > 0 || i < len(segment.Txes) {
+		var tx *types.Transaction
+		if len(b.queuedRetries) > 0 {
+			retry := b.queuedRetries[0]
+			tx = OpenArbosState(b.statedb).RetryableState().MakeRetryTx(retry.ticketId, retry.retryId, retry.seqNum, retry.gas, b.header.Time, ChainConfig.ChainID, b.header.BaseFee)
+			b.queuedRetries = b.queuedRetries[1:]
+		} else {
+			tx = segment.Txes[i]
+			i++
+		}
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
-			// Ignore and transactions with higher than the max possible gas
+			// Ignore any transactions with higher than the max possible gas
 			continue
 		}
 		snap := b.statedb.Snapshot()
@@ -176,6 +188,21 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
+
+		/*
+			for _, txLog := range receipt.Logs {
+				// TODO: don't special case the address and topic[0]
+				if txLog.Address == common.HexToAddress("6e") && txLog.Topics[0] == common.HexToHash("27fc6cca2a0e9eb6f4876c01fc7779b00cdeb7277a770ac2b844db5932449578") {
+					retry := QueuedRetry{
+						txLog.Topics[1],
+						txLog.Topics[2],
+						common.BytesToHash(txLog.Data[:32]).Big().Uint64(),
+						common.BytesToHash(txLog.Data[32:64]).Big(),
+					}
+					b.queuedRetries = append(b.queuedRetries, retry)
+				}
+			}
+		*/
 	}
 }
 
@@ -239,4 +266,11 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
+}
+
+type QueuedRetry struct {
+	ticketId common.Hash
+	retryId  common.Hash
+	seqNum   uint64
+	gas      *big.Int
 }
