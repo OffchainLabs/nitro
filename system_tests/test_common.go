@@ -28,6 +28,8 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
+var simulatedChainID = big.NewInt(1337)
+
 type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
@@ -120,7 +122,7 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 
 func CreateTestL1(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
 	var gasLimit uint64 = 8000029
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
+	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
