@@ -16,23 +16,19 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
+
+var simulatedChainID = big.NewInt(1337)
 
 type AccountInfo struct {
 	Address    common.Address
@@ -124,9 +120,9 @@ func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Tra
 	return tx
 }
 
-func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
+func CreateTestL1(t *testing.T) (*backends.SimulatedBackend, *BlockchainTestInfo) {
 	var gasLimit uint64 = 8000029
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(big.NewInt(1337)))
+	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -136,131 +132,39 @@ func CreateL1WithInbox(t *testing.T) (*backends.SimulatedBackend, *BlockchainTes
 	l1genAlloc[l1info.GetAddress("Sequencer")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 	l1genAlloc[l1info.GetAddress("User")] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
 
-	chainDb := rawdb.NewMemoryDatabase()
-
-	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
-
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	bridgeAddr, _, bridgeContract, err := bridgegen.DeployBridge(&l1TransactionOpts, l1sim)
+
+	chainDb := rawdb.NewMemoryDatabase()
+	l1sim := backends.NewSimulatedBackendWithDatabase(chainDb, l1genAlloc, gasLimit)
+	addresses, err := arbnode.CreateL1WithInbox(l1sim, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	l1info.SetContract("Bridge", bridgeAddr)
-
-	inboxAddr, _, inboxContract, err := bridgegen.DeployInbox(&l1TransactionOpts, l1sim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l1info.SetContract("Inbox", inboxAddr)
-
-	_, err = inboxContract.Initialize(&l1TransactionOpts, bridgeAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = bridgeContract.SetInbox(&l1TransactionOpts, inboxAddr, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sequencerInboxAddr, _, _, err := bridgegen.DeploySequencerInbox(&l1TransactionOpts, l1sim, bridgeAddr, l1info.GetAddress("Sequencer"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l1info.SetContract("SequencerInbox", sequencerInboxAddr)
-
-	l1sim.Commit()
+	l1info.SetContract("Bridge", addresses.Bridge)
+	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
+	l1info.SetContract("Inbox", addresses.Inbox)
 
 	return l1sim, l1info
 }
 
-func CreateTestBackendWithBalance(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo, *backends.SimulatedBackend, *BlockchainTestInfo) {
-	arbstate.RequireHookedGeth()
-	stackConf := node.DefaultConfig
-	var err error
-	stackConf.DataDir = t.TempDir()
-	stackConf.HTTPHost = "localhost"
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		utils.Fatalf("Error creating protocol stack: %v\n", err)
-	}
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-
-	l1backend, l1info := CreateL1WithInbox(t)
-
+func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
 	l2info.GenerateAccount("Owner")
-
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[l2info.GetAddress("Owner")] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether * 2),
 		Nonce:      0,
 		PrivateKey: nil,
 	}
-	nodeConf.Genesis = &core.Genesis{
-		Config:     arbos.ChainConfig,
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(0),
-	}
-
-	chainDb := rawdb.NewMemoryDatabase()
-
-	engine := arbos.Engine{
-		IsSequencer: true,
-	}
-	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, nodeConf.Genesis, nodeConf.OverrideLondon)
-	var configCompatError *params.ConfigCompatError
-	if errors.As(genesisErr, &configCompatError) {
-		t.Fatal(genesisErr)
-	}
-
-	vmConfig := vm.Config{
-		EnablePreimageRecording: nodeConf.EnablePreimageRecording,
-	}
-	cacheConfig := &core.CacheConfig{
-		TrieCleanLimit:      nodeConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(nodeConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  nodeConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: nodeConf.NoPrefetch,
-		TrieDirtyLimit:      nodeConf.TrieDirtyCache,
-		TrieDirtyDisabled:   nodeConf.NoPruning,
-		TrieTimeLimit:       nodeConf.TrieTimeout,
-		SnapshotLimit:       nodeConf.SnapshotCache,
-		Preimages:           nodeConf.Preimages,
-	}
-
-	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConf.TxLookupLimit)
+	stack, err := arbnode.CreateStack()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	inbox, err := arbnode.NewInboxState(chainDb, blockChain)
+	backend, err := arbnode.CreateArbBackend(stack, genesisAlloc)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	inbox.Start(context.Background())
-
-	sequencer := arbnode.NewSequencer(inbox)
-
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return backend, l2info, l1backend, l1info
+	return backend, l2info
 }
 
 func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {
@@ -303,9 +207,4 @@ func WaitForTx(t *testing.T, txhash common.Hash, backend *arbitrum.Backend, clie
 		case <-time.After(time.Second / 100):
 		}
 	}
-}
-
-// TODO: is that right?
-func shouldPreserveFalse(block *types.Block) bool {
-	return false
 }

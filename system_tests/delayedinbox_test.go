@@ -4,8 +4,10 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -13,13 +15,29 @@ import (
 )
 
 func TestDelayInbox(t *testing.T) {
-	_, l2info, l1backend, l1info := CreateTestBackendWithBalance(t)
+	background := context.Background()
+	l1backend, l1info := CreateTestL1(t)
+	_, l2info := CreateTestL2(t)
 
 	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1info.GetAddress("Bridge"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	inboxDB := rawdb.NewMemoryDatabase()
+	inboxReaderConfig := &arbnode.InboxReaderConfig{
+		DelayBlocks: 0,
+		CheckDelay:  time.Millisecond * 100,
+	}
+	inboxReader, err := arbnode.NewInboxReader(inboxDB, l1backend, big.NewInt(0), delayedBridge, inboxReaderConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+	inboxReader.Start(background)
+	readerDB, err := arbnode.NewInboxReaderDb(inboxDB)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l2info.GenerateAccount("User2")
 
 	accesses := types.AccessList{types.AccessTuple{
@@ -41,13 +59,12 @@ func TestDelayInbox(t *testing.T) {
 	}
 	tx := l2info.SignTxAs("Owner", txdata)
 
-	background := context.Background()
 	l1backend.Commit()
 	msgs, err := delayedBridge.GetMessageCount(background, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msgs.Cmp(big.NewInt(0)) != 0 {
+	if msgs != 0 {
 		t.Fatal("Unexpected message count before: ", msgs)
 	}
 
@@ -69,8 +86,24 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if msgs.Cmp(big.NewInt(0)) != 0 {
+	if msgs != 1 {
 		t.Fatal("Unexpected message count before: ", msgs)
 	}
 
+	correctDelayedCount := func() bool {
+		for i := 0; i < 5; i++ {
+			readCount, err := readerDB.GetDelayedCount()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if readCount == 1 {
+				return true
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		return false
+	}()
+	if !correctDelayedCount {
+		t.Fatal("incorrect delayed count")
+	}
 }
