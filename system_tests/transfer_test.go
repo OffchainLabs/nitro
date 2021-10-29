@@ -12,7 +12,7 @@ import (
 )
 
 func TestTransfer(t *testing.T) {
-	backend, l2info, _, _ := CreateTestBackendWithBalance(t)
+	backend, l2info := CreateTestL2(t)
 
 	client := ClientForArbBackend(t, backend)
 
