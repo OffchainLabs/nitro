@@ -59,7 +59,6 @@ func TestDelayInbox(t *testing.T) {
 	}
 	tx := l2info.SignTxAs("Owner", txdata)
 
-	//l1backend.Commit()
 	msgs, err := delayedBridge.GetMessageCount(background, nil)
 	if err != nil {
 		t.Fatal(err)
