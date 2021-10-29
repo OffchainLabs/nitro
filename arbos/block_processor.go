@@ -223,7 +223,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	}
 }
 
-var (  // set by the precompile module, to avoid a package dependence cycle
+var ( // set by the precompile module, to avoid a package dependence cycle
 	ArbRetryableTxAddress  common.Address
 	RedeemScheduledEventID common.Hash
 )

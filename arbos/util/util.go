@@ -103,3 +103,45 @@ func HashPlusInt(x common.Hash, y int64) common.Hash {
 func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32
 }
+
+type OptionAddress struct {
+	isNil bool
+	addr  common.Address
+}
+
+var NilOptionAddressAsHash = common.BytesToHash([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+
+func NewOptionAddress(a *common.Address) *OptionAddress {
+	if a == nil {
+		return &OptionAddress{true, common.Address{}}
+	}
+	return &OptionAddress{false, *a}
+}
+
+func OptionAddressFromHash(h common.Hash) *OptionAddress {
+	if h == NilOptionAddressAsHash {
+		return &OptionAddress{true, common.Address{}}
+	}
+	return &OptionAddress{false, common.BytesToAddress(h.Bytes())}
+}
+
+func (oa *OptionAddress) ToHash() common.Hash {
+	if oa.isNil {
+		return NilOptionAddressAsHash
+	}
+	return common.BytesToHash(oa.addr.Bytes())
+}
+
+func (oa *OptionAddress) ToAddressRef() *common.Address {
+	if oa.isNil {
+		return nil
+	}
+	return &(oa.addr)
+}
+
+func (oa *OptionAddress) Equals(other *OptionAddress) bool {
+	if oa.isNil {
+		return other.isNil
+	}
+	return oa.addr == other.addr
+}

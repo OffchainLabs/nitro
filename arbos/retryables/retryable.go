@@ -41,7 +41,7 @@ type Retryable struct {
 	numTries       *big.Int
 	timeout        *uint64
 	from           *common.Address
-	to             *common.Address
+	to             *util.OptionAddress
 	callvalue      *big.Int
 	beneficiary    *common.Address
 	calldata       []byte
@@ -61,7 +61,7 @@ func (rs *RetryableState) CreateRetryable(
 	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,
-	to common.Address,
+	to *common.Address,
 	callvalue *big.Int,
 	beneficiary common.Address,
 	calldata []byte,
@@ -74,7 +74,7 @@ func (rs *RetryableState) CreateRetryable(
 		big.NewInt(0),
 		&timeout,
 		&from,
-		&to,
+		util.NewOptionAddress(to),
 		callvalue,
 		&beneficiary,
 		calldata,
@@ -172,12 +172,11 @@ func (retryable *Retryable) From() common.Address {
 	return *retryable.from
 }
 
-func (retryable *Retryable) To() common.Address {
+func (retryable *Retryable) To() *common.Address {
 	if retryable.to == nil {
-		a := common.BytesToAddress(retryable.backingStorage.GetByInt64(toOffset).Bytes())
-		retryable.to = &a
+		retryable.to = util.OptionAddressFromHash(retryable.backingStorage.GetByInt64(toOffset))
 	}
-	return *retryable.to
+	return retryable.to.ToAddressRef()
 }
 
 func (retryable *Retryable) Callvalue() *big.Int {
@@ -230,7 +229,15 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 	if retryable.From() != other.From() {
 		return false
 	}
-	if retryable.To() != other.To() {
+	rto := retryable.To()
+	oto := other.To()
+	if rto == nil {
+		if oto != nil {
+			return false
+		}
+	} else if oto == nil {
+		return false
+	} else if *rto != *oto {
 		return false
 	}
 	if retryable.Callvalue().Cmp(other.Callvalue()) != 0 {
@@ -247,7 +254,6 @@ func (rs *RetryableState) MakeRetryTx(retry QueuedRetry, currentTimestamp uint64
 	if retryable == nil {
 		return nil
 	}
-	to := retryable.To()
 	return types.NewTx(&types.ArbitrumRetryTx{
 		ArbitrumContractTx: types.ArbitrumContractTx{
 			ChainId:   chainId,
@@ -255,7 +261,7 @@ func (rs *RetryableState) MakeRetryTx(retry QueuedRetry, currentTimestamp uint64
 			From:      retryable.From(),
 			GasPrice:  gasPrice,
 			Gas:       retry.Gas.Uint64(),
-			To:        &to,
+			To:        retryable.To(),
 			Value:     retryable.Callvalue(),
 			Data:      retryable.Calldata(),
 		},
