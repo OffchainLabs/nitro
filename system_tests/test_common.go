@@ -39,14 +39,14 @@ type AccountInfo struct {
 type BlockchainTestInfo struct {
 	T        *testing.T
 	Signer   types.Signer
-	Accounts map[string]AccountInfo
+	Accounts map[string]*AccountInfo
 }
 
 func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
 		T:        t,
 		Signer:   signer,
-		Accounts: make(map[string]AccountInfo),
+		Accounts: make(map[string]*AccountInfo),
 	}
 }
 
@@ -57,14 +57,15 @@ func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	if err != nil {
 		b.T.Fatal(err)
 	}
-	b.Accounts[name] = AccountInfo{
+	b.Accounts[name] = &AccountInfo{
 		PrivateKey: privateKey,
 		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
+		Nonce:      0,
 	}
 }
 
 func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
-	b.Accounts[name] = AccountInfo{
+	b.Accounts[name] = &AccountInfo{
 		PrivateKey: nil,
 		Address:    address,
 	}
@@ -72,22 +73,28 @@ func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
 	b.T.Helper()
-	info, ok := b.Accounts[name]
-	if !ok {
+	info := b.Accounts[name]
+	if info == nil {
 		b.T.Fatal("not found account: ", name)
 	}
 	return info.Address
 }
 
-func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOpts {
+func (b *BlockchainTestInfo) GetInfoWithPrivKey(name string) *AccountInfo {
 	b.T.Helper()
-	info, ok := b.Accounts[name]
-	if !ok {
+	info := b.Accounts[name]
+	if info == nil {
 		b.T.Fatal("not found account: ", name)
 	}
 	if info.PrivateKey == nil {
 		b.T.Fatal("no private key for account: ", name)
 	}
+	return info
+}
+
+func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOpts {
+	b.T.Helper()
+	info := b.GetInfoWithPrivKey(name)
 	return bind.TransactOpts{
 		From:     info.Address,
 		GasLimit: 4000000,
@@ -99,6 +106,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 			if err != nil {
 				return nil, err
 			}
+			info.Nonce += 1 // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 	}
@@ -106,19 +114,45 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 
 func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Transaction {
 	b.T.Helper()
-	info, ok := b.Accounts[name]
-	if !ok {
-		b.T.Fatal("not found account: ", name)
-	}
-	if info.PrivateKey == nil {
-		b.T.Fatal("no private key for account: ", name)
-	}
+	info := b.GetInfoWithPrivKey(name)
 	tx := types.NewTx(data)
 	tx, err := types.SignTx(tx, b.Signer, info.PrivateKey)
 	if err != nil {
 		b.T.Fatal(err)
 	}
 	return tx
+}
+
+func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.Int, data []byte) *types.Transaction {
+	b.T.Helper()
+	addr := b.GetAddress(to)
+	info := b.GetInfoWithPrivKey(from)
+	txData := &types.DynamicFeeTx{
+		To:        &addr,
+		Gas:       gas,
+		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		Value:     big.NewInt(9223372036854775807),
+		Nonce:     info.Nonce,
+	}
+	info.Nonce += 1
+	return b.SignTxAs(from, txData)
+}
+
+func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*types.Transaction) {
+	t.Helper()
+	ctx := context.Background()
+	for _, tx := range txs {
+		err := client.SendTransaction(ctx, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tx := range txs {
+		err := arbnode.EnsureTxSucceeded(client, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func CreateTestL1(t *testing.T) (arbnode.L1Interface, *BlockchainTestInfo) {
@@ -173,57 +207,10 @@ func CreateTestL1(t *testing.T) (arbnode.L1Interface, *BlockchainTestInfo) {
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
-	ctx := context.Background()
-
-	addr := l1info.GetAddress("RollupOwner")
-	tx := l1info.SignTxAs("faucet", &types.DynamicFeeTx{
-		To:        &addr,
-		Gas:       30000,
-		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
-		Value:     big.NewInt(9223372036854775807),
-	})
-	err = l1Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = arbnode.EnsureTxSucceeded(l1Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	addr = l1info.GetAddress("Sequencer")
-	tx = l1info.SignTxAs("faucet", &types.DynamicFeeTx{
-		To:        &addr,
-		Gas:       30000,
-		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
-		Value:     big.NewInt(9223372036854775807),
-		Nonce:     1,
-	})
-	err = l1Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = arbnode.EnsureTxSucceeded(l1Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	addr = l1info.GetAddress("User")
-	tx = l1info.SignTxAs("faucet", &types.DynamicFeeTx{
-		To:        &addr,
-		Gas:       30000,
-		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
-		Value:     big.NewInt(9223372036854775807),
-		Nonce:     2,
-	})
-	err = l1Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = arbnode.EnsureTxSucceeded(l1Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 
