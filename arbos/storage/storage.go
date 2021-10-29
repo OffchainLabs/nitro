@@ -101,7 +101,7 @@ func (store *Storage) GetBytes() []byte {
 
 func (store *Storage) GetBytesSize(includeHeader bool) uint64 {
 	sizeOfBytes := store.GetByInt64(0).Big().Uint64()
-	if includeHeader && sizeOfBytes > 0{
+	if includeHeader && sizeOfBytes > 0 {
 		sizeOfBytes += 8
 	}
 	return sizeOfBytes

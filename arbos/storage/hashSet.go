@@ -15,8 +15,8 @@ import (
 type HashSet struct {
 	backingStorage *Storage
 	size           uint64
-	cachedMembers map[common.Hash]struct{}
-	byHash        *Storage
+	cachedMembers  map[common.Hash]struct{}
+	byHash         *Storage
 }
 
 func InitializeHashSet(sto *Storage) {

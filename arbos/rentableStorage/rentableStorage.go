@@ -12,7 +12,7 @@ import (
 	"math/big"
 )
 
-const RentableStorageLifetimeSeconds = 7*24*60*60
+const RentableStorageLifetimeSeconds = 7 * 24 * 60 * 60
 
 type RentableStorage struct {
 	backingStorage *storage.Storage
@@ -32,9 +32,9 @@ const (
 	numBytesOffset  = 2
 
 	renewChargePer32Bytes = params.SstoreSetGas / 100
-	renewChargePerBin = 4 * renewChargePer32Bytes
-	renewChargePerSlot = 2 * renewChargePer32Bytes
-	renewChargePerByte = 1 + (renewChargePer32Bytes / 32)
+	renewChargePerBin     = 4 * renewChargePer32Bytes
+	renewChargePerSlot    = 2 * renewChargePer32Bytes
+	renewChargePerByte    = 1 + (renewChargePer32Bytes / 32)
 )
 
 var (
@@ -129,7 +129,7 @@ func (bin *RentableBin) Delete() {
 }
 
 func (bin *RentableBin) DeleteSlot(slotId common.Hash) {
-	thisSlotStorage := 	bin.backingStorage.OpenSubStorage(contentsKey).OpenSubStorage(slotId.Bytes())
+	thisSlotStorage := bin.backingStorage.OpenSubStorage(contentsKey).OpenSubStorage(slotId.Bytes())
 	thisSlotBytes := thisSlotStorage.GetBytesSize(true)
 	thisSlotStorage.DeleteBytes()
 	bin.modifyStorageCount(-1, -int64(thisSlotBytes))
@@ -137,6 +137,6 @@ func (bin *RentableBin) DeleteSlot(slotId common.Hash) {
 
 func (bin *RentableBin) modifyStorageCount(slotsDelta int64, bytesDelta int64) {
 	binStorage := bin.backingStorage
-	binStorage.SetByInt64(numSlotsOffset, util.IntToHash(binStorage.GetByInt64(numSlotsOffset).Big().Int64() + slotsDelta))
-	binStorage.SetByInt64(numBytesOffset, util.IntToHash(binStorage.GetByInt64(numBytesOffset).Big().Int64() + bytesDelta))
+	binStorage.SetByInt64(numSlotsOffset, util.IntToHash(binStorage.GetByInt64(numSlotsOffset).Big().Int64()+slotsDelta))
+	binStorage.SetByInt64(numBytesOffset, util.IntToHash(binStorage.GetByInt64(numBytesOffset).Big().Int64()+bytesDelta))
 }
