@@ -382,6 +382,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(makePrecompile(templates.ArbRentableStorageMetaData, &ArbRentableStorage{Address: hex("70")}))
 	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
 
 	return contracts

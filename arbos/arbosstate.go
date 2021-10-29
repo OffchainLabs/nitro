@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/arbstate/arbos/rentableStorage"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
@@ -29,6 +30,7 @@ type ArbosState struct {
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
+	rentables      *rentableStorage.RentableStorage
 	timestamp      *uint64
 	backingStorage *storage.Storage
 }
@@ -41,6 +43,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -85,6 +88,7 @@ var (
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
 	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
 	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
+	rentablesSubspace    ArbosStateSubspaceID = []byte{5}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
@@ -98,6 +102,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
 	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+	rentableStorage.InitializeRentableStorage(backingStorage.OpenSubStorage(rentablesSubspace))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -182,6 +187,13 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
+}
+
+func (state *ArbosState) RentableState() *rentableStorage.RentableStorage {
+	if state.rentables == nil {
+		state.rentables = rentableStorage.OpenRentableStorage(state.backingStorage.OpenSubStorage(rentablesSubspace))
+	}
+	return state.rentables
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
