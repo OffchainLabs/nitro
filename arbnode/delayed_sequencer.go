@@ -26,28 +26,36 @@ var (
 	timeAggregate    = time.Minute    // how long to wait before aggregating block
 )
 
-//context here will be used by the new function itself, not by the created sequencer
-func NewDelayedSequencer(ctx context.Context, nextToSequence uint64, client L1Interface, bridge *DelayedBridge, inboxState *InboxState) (*DelayedSequencer, error) {
-	var startBlock *big.Int
-	if nextToSequence > 0 {
-		lastBlockHeader, err := client.HeaderByNumber(ctx, nil)
+func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *InboxState) (*DelayedSequencer, error) {
+	pos, err := inboxState.GetMessageCount()
+	if err != nil {
+		return nil, err
+	}
+	var delayedMessagesRead uint64
+	var delayedBlockNrRead *big.Int
+	if pos > 0 {
+		lastMsg, err := inboxState.GetMessage(pos - 1)
 		if err != nil {
 			return nil, err
 		}
-		startLookingFromBlock := lastBlockHeader.Number
-		startBlock, err = bridge.FindBlockForMessage(ctx, nextToSequence-1, startLookingFromBlock)
-		if err != nil {
-			return nil, err
+		delayedMessagesRead = lastMsg.DelayedMessagesRead
+		if delayedMessagesRead > 0 {
+			msg, err := reader.Database().GetDelayedMessage(delayedMessagesRead - 1)
+			if err != nil {
+				return nil, err
+			}
+			delayedBlockNrRead = msg.Header.BlockNumber.Big()
 		}
-	} else {
-		startBlock = bridge.FirstBlock()
+	}
+	if delayedBlockNrRead == nil {
+		delayedBlockNrRead = reader.DelayedBridge().FirstBlock()
 	}
 	sequencer := DelayedSequencer{
 		client:         client,
-		bridge:         bridge,
+		bridge:         reader.DelayedBridge(),
 		inboxState:     inboxState,
-		nextToSequence: nextToSequence,
-		scannedBlockNr: startBlock,
+		nextToSequence: delayedMessagesRead,
+		scannedBlockNr: delayedBlockNrRead,
 	}
 	return &sequencer, nil
 }
@@ -108,7 +116,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	//these messages should be finalized, so we expect different querie to not contradt ech other
+	// these messages should be finalized, so we expect different querie to not contradt ech other
 	if (d.nextToSequence + uint64(len(newMessages))) != messagesNow {
 		return errors.New("fetching messages from delayedbridge error")
 	}
