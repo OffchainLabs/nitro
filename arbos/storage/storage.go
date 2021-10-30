@@ -68,10 +68,19 @@ func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
 }
 
 func (store *Storage) OpenSubStorage(id []byte) *Storage {
+	oldKeyLen := len(store.key)
+	idLen := len(id)
+	if idLen > 255 {
+		return nil
+	}
+	newKey := make([]byte, oldKeyLen+1+idLen)
+	copy(newKey[:], store.key[:])
+	newKey[oldKeyLen] = byte(len(id))
+	copy(newKey[oldKeyLen+1:], id)
 	return &Storage{
 		store.account,
 		store.db,
-		crypto.Keccak256(store.key, id),
+		newKey,
 	}
 }
 
