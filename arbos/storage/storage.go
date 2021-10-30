@@ -99,11 +99,8 @@ func (store *Storage) GetBytes() []byte {
 	return ret
 }
 
-func (store *Storage) GetBytesSize(includeHeader bool) uint64 {
+func (store *Storage) GetBytesSize() uint64 {
 	sizeOfBytes := store.GetByInt64(0).Big().Uint64()
-	if includeHeader && sizeOfBytes > 0 {
-		sizeOfBytes += 8
-	}
 	return sizeOfBytes
 }
 
@@ -119,6 +116,7 @@ func (store *Storage) DeleteBytes() {
 			bytesLeft -= 32
 		}
 	}
+	store.SetByInt64(0, common.Hash{})
 }
 
 // StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by

@@ -2,11 +2,10 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package addressSet
+package storage
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
@@ -14,17 +13,17 @@ import (
 //   size is stored at position 0
 //   members of the set are stored sequentially from 1 onward
 type AddressSet struct {
-	backingStorage *storage.Storage
+	backingStorage *Storage
 	size           uint64
 	cachedMembers  map[common.Address]struct{}
-	byAddress      *storage.Storage
+	byAddress      *Storage
 }
 
-func Initialize(sto *storage.Storage) {
+func InitializeAddressSet(sto *Storage) {
 	sto.SetByInt64(0, util.IntToHash(0))
 }
 
-func OpenAddressSet(sto *storage.Storage) *AddressSet {
+func OpenAddressSet(sto *Storage) *AddressSet {
 	return &AddressSet{
 		sto,
 		sto.GetByInt64(0).Big().Uint64(),

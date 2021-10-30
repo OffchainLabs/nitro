@@ -9,32 +9,39 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
 )
 
 const RentableStorageLifetimeSeconds = 7 * 24 * 60 * 60
 
+var (
+	binsStorageKey  = []byte{0}
+	timeoutQueueKey = []byte{1}
+)
+
 type RentableStorage struct {
-	backingStorage *storage.Storage
+	binsStorage  *storage.Storage
+	timeoutQueue *storage.Queue
 }
 
 func InitializeRentableStorage(sto *storage.Storage) {
-	// no initialization needed
+	storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
 func OpenRentableStorage(sto *storage.Storage) *RentableStorage {
-	return &RentableStorage{sto}
+	return &RentableStorage{
+		sto.OpenSubStorage(binsStorageKey),
+		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
+	}
 }
 
 const (
-	timestampOffset = 0
-	numSlotsOffset  = 1
-	numBytesOffset  = 2
+	timeoutOffset  = 0
+	numBytesOffset = 1
 
 	renewChargePer32Bytes = params.SstoreSetGas / 100
 	renewChargePerBin     = 4 * renewChargePer32Bytes
 	renewChargePerSlot    = 2 * renewChargePer32Bytes
-	renewChargePerByte    = 1 + (renewChargePer32Bytes / 32)
+	renewChargePerByte    = (renewChargePer32Bytes + 31) / 32
 )
 
 var (
@@ -47,19 +54,22 @@ type RentableBin struct {
 	backingStorage *storage.Storage
 	binId          common.Hash
 	timeout        uint64
-	slots          uint64
-	nbytes         uint64
+	totalBytes     uint64
 	memberSet      *storage.HashSet
+	slotsStorage   *storage.Storage
 }
 
 func (rs *RentableStorage) AllocateBin(binId common.Hash, currentTimestamp uint64) *RentableBin {
-	if rs.BinExists(binId) {
+	rs.TryToReapOneBin(currentTimestamp)
+	if rs.BinExists(binId, currentTimestamp) {
 		rs.OpenBin(binId, currentTimestamp).Delete()
 	}
+	rs.timeoutQueue.Put(binId)
 
-	backingStorage := rs.backingStorage.OpenSubStorage(binId.Bytes())
+	backingStorage := rs.binsStorage.OpenSubStorage(binId.Bytes())
 	timeout := currentTimestamp + RentableStorageLifetimeSeconds
-	backingStorage.SetByInt64(0, util.IntToHash(int64(timeout)))
+	backingStorage.SetByInt64(timeoutOffset, util.IntToHash(int64(timeout)))
+	backingStorage.SetByInt64(numBytesOffset, common.Hash{})
 	memberSetStorage := backingStorage.OpenSubStorage(memberSetKey)
 	storage.InitializeHashSet(memberSetStorage)
 	return &RentableBin{
@@ -68,21 +78,21 @@ func (rs *RentableStorage) AllocateBin(binId common.Hash, currentTimestamp uint6
 		binId,
 		timeout,
 		0,
-		0,
 		storage.OpenHashSet(memberSetStorage),
+		backingStorage.OpenSubStorage(contentsKey),
 	}
 }
 
 func (rs *RentableStorage) OpenBin(binId common.Hash, currentTimestamp uint64) *RentableBin {
-	backingStorage := rs.backingStorage.OpenSubStorage(binId.Bytes())
+	backingStorage := rs.binsStorage.OpenSubStorage(binId.Bytes())
 	ret := &RentableBin{
 		rs,
 		backingStorage,
 		binId,
-		backingStorage.GetByInt64(0).Big().Uint64(),
-		backingStorage.GetByInt64(1).Big().Uint64(),
-		backingStorage.GetByInt64(2).Big().Uint64(),
+		backingStorage.GetByInt64(timeoutOffset).Big().Uint64(),
+		backingStorage.GetByInt64(numBytesOffset).Big().Uint64(),
 		storage.OpenHashSet(backingStorage.OpenSubStorage(memberSetKey)),
+		backingStorage.OpenSubStorage(contentsKey),
 	}
 	if ret.timeout < currentTimestamp {
 		ret.Delete()
@@ -91,52 +101,86 @@ func (rs *RentableStorage) OpenBin(binId common.Hash, currentTimestamp uint64) *
 	return ret
 }
 
-func (rs *RentableStorage) BinExists(binId common.Hash) bool {
-	return rs.backingStorage.OpenSubStorage(binId.Bytes()).GetByInt64(timestampOffset).Big().Uint64() != 0
+func (rs *RentableStorage) BinExists(binId common.Hash, currentTimestamp uint64) bool {
+	binTimestamp := rs.binsStorage.OpenSubStorage(binId.Bytes()).GetByInt64(timeoutOffset).Big().Uint64()
+	if binTimestamp == 0 {
+		return false
+	}
+	if binTimestamp < currentTimestamp {
+		_ = rs.OpenBin(binId, currentTimestamp) // this will delete the bin
+		return false
+	}
+	return true
 }
 
-func (bin *RentableBin) GetTimeout() *big.Int {
-	return bin.backingStorage.GetByInt64(0).Big()
-}
-
-func (bin *RentableBin) GetRenewGas() *big.Int {
-	numSlots := bin.backingStorage.GetByInt64(numSlotsOffset).Big().Uint64()
-	numBytes := bin.backingStorage.GetByInt64(numBytesOffset).Big().Uint64()
-	return big.NewInt(int64(renewChargePerBin + numSlots*renewChargePerSlot + numBytes*renewChargePerByte))
-}
-
-func (bin *RentableBin) GetSlot(slotId common.Hash) []byte {
-	return bin.backingStorage.OpenSubStorage(slotId.Bytes()).GetBytes()
-}
-
-func (bin *RentableBin) GetSlotDataSize(slotId common.Hash) uint64 {
-	return bin.backingStorage.OpenSubStorage(slotId.Bytes()).GetBytesSize(false)
-}
-
-func (bin *RentableBin) SetSlot(slotId common.Hash, value []byte) {
-	bin.DeleteSlot(slotId)
-	bin.backingStorage.OpenSubStorage(slotId.Bytes()).WriteBytes(value)
-	bin.modifyStorageCount(1, int64(len(value)))
+func (rs *RentableStorage) TryToReapOneBin(currentTimestamp uint64) {
+	binId := rs.timeoutQueue.Get()
+	if binId != nil && rs.BinExists(*binId, currentTimestamp) {
+		rs.timeoutQueue.Put(*binId)
+	}
 }
 
 func (bin *RentableBin) Delete() {
 	backingStorage := bin.backingStorage
-	memberSet := storage.OpenHashSet(backingStorage.OpenSubStorage(memberSetKey))
-	for _, member := range memberSet.AllMembers() {
+	for _, member := range bin.memberSet.AllMembers() {
 		bin.DeleteSlot(member)
 	}
-	backingStorage.SetByInt64(timestampOffset, common.Hash{})
+	backingStorage.SetByInt64(timeoutOffset, common.Hash{})
+	backingStorage.SetByInt64(numBytesOffset, common.Hash{})
+}
+
+func (bin *RentableBin) GetTimeout() uint64 {
+	return bin.timeout
+}
+
+func (bin *RentableBin) CanBeRenewedNow(currentTimestamp uint64) bool {
+	return bin.timeout < currentTimestamp+RentableStorageLifetimeSeconds
+}
+
+func (bin *RentableBin) GetRenewGas() uint64 {
+	numSlots := bin.memberSet.Size()
+	numBytes := bin.totalBytes
+	return renewChargePerBin + numSlots*renewChargePerSlot + numBytes*renewChargePerByte
+}
+
+func (bin *RentableBin) Renew(currentTimestamp uint64) {
+	if bin.CanBeRenewedNow(currentTimestamp) {
+		bin.timeout += RentableStorageLifetimeSeconds
+		bin.backingStorage.SetByInt64(timeoutOffset, util.IntToHash(int64(bin.timeout)))
+	}
+}
+
+func (bin *RentableBin) storageForSlot(slotId common.Hash) *storage.Storage {
+	return bin.slotsStorage.OpenSubStorage(slotId.Bytes())
+}
+
+func (bin *RentableBin) GetSlot(slotId common.Hash) []byte {
+	return bin.storageForSlot(slotId).GetBytes()
+}
+
+func (bin *RentableBin) GetSlotDataSize(slotId common.Hash) uint64 {
+	return bin.storageForSlot(slotId).GetBytesSize()
+}
+
+func (bin *RentableBin) SetSlot(slotId common.Hash, value []byte) {
+	bin.DeleteSlot(slotId)
+	if len(value) > 0 {
+		bin.storageForSlot(slotId).WriteBytes(value)
+		bin.modifyStorageCount(int64(len(value)))
+		bin.memberSet.Add(slotId)
+	}
 }
 
 func (bin *RentableBin) DeleteSlot(slotId common.Hash) {
-	thisSlotStorage := bin.backingStorage.OpenSubStorage(contentsKey).OpenSubStorage(slotId.Bytes())
-	thisSlotBytes := thisSlotStorage.GetBytesSize(true)
+	thisSlotStorage := bin.storageForSlot(slotId)
+	thisSlotBytes := thisSlotStorage.GetBytesSize()
 	thisSlotStorage.DeleteBytes()
-	bin.modifyStorageCount(-1, -int64(thisSlotBytes))
+	bin.modifyStorageCount(-int64(thisSlotBytes))
+	bin.memberSet.Remove(slotId)
 }
 
-func (bin *RentableBin) modifyStorageCount(slotsDelta int64, bytesDelta int64) {
+func (bin *RentableBin) modifyStorageCount(bytesDelta int64) {
 	binStorage := bin.backingStorage
-	binStorage.SetByInt64(numSlotsOffset, util.IntToHash(binStorage.GetByInt64(numSlotsOffset).Big().Int64()+slotsDelta))
-	binStorage.SetByInt64(numBytesOffset, util.IntToHash(binStorage.GetByInt64(numBytesOffset).Big().Int64()+bytesDelta))
+	bin.totalBytes = uint64(int64(bin.totalBytes) + bytesDelta)
+	binStorage.SetByInt64(numBytesOffset, util.IntToHash(int64(bin.totalBytes)))
 }

@@ -2,18 +2,17 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package addressSet
+package storage
 
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"testing"
 )
 
 func TestEmptyAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked()
-	Initialize(sto)
+	sto := NewMemoryBacked()
+	InitializeAddressSet(sto)
 	aset := OpenAddressSet(sto)
 
 	if aset.Size() != 0 {
@@ -32,8 +31,8 @@ func TestEmptyAddressSet(t *testing.T) {
 }
 
 func TestAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked()
-	Initialize(sto)
+	sto := NewMemoryBacked()
+	InitializeAddressSet(sto)
 	aset := OpenAddressSet(sto)
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])

@@ -8,6 +8,8 @@ interface ArbRentableStorage {
 
     function GetBinRenewGas(uint id) external view returns(uint);
 
+    function RenewBin(uint id) external;
+
     function SetInBin(uint id, uint slot, bytes calldata value) external;
 
     function DeleteInBin(uint id, uint slot) external;

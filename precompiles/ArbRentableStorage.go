@@ -5,10 +5,16 @@
 package precompiles
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"math/big"
+)
+
+var (
+	ErrBinNotFound       = errors.New("bin does not exist")
+	ErrCannotRenewBinNow = errors.New("cannot renew bin now")
 )
 
 type ArbRentableStorage struct {
@@ -28,7 +34,10 @@ func (con ArbRentableStorage) GetBinTimeout(c ctx, evm mech, id *big.Int) (*big.
 		return nil, err
 	}
 	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), evm.Context.Time.Uint64())
-	return bin.GetTimeout(), nil
+	if bin == nil {
+		return nil, ErrBinNotFound
+	}
+	return big.NewInt(int64(bin.GetTimeout())), nil
 }
 
 func (con ArbRentableStorage) GetBinRenewGas(c ctx, evm mech, id *big.Int) (*big.Int, error) {
@@ -36,7 +45,29 @@ func (con ArbRentableStorage) GetBinRenewGas(c ctx, evm mech, id *big.Int) (*big
 		return nil, err
 	}
 	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), evm.Context.Time.Uint64())
-	return bin.GetRenewGas(), nil
+	if bin == nil {
+		return nil, ErrBinNotFound
+	}
+	return big.NewInt(int64(bin.GetRenewGas())), nil
+}
+
+func (con ArbRentableStorage) RenewBin(c ctx, evm mech, id *big.Int) error {
+	if err := c.burn(3 * params.SloadGas); err != nil {
+		return err
+	}
+	currentTimestamp := evm.Context.Time.Uint64()
+	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), currentTimestamp)
+	if bin == nil {
+		return ErrBinNotFound
+	}
+	if !bin.CanBeRenewedNow(currentTimestamp) {
+		return ErrCannotRenewBinNow
+	}
+	if err := c.burn(bin.GetRenewGas()); err != nil {
+		return err
+	}
+	bin.Renew(currentTimestamp)
+	return nil
 }
 
 func (con ArbRentableStorage) GetInBin(c ctx, evm mech, id *big.Int, slot *big.Int) ([]byte, error) {
@@ -44,11 +75,20 @@ func (con ArbRentableStorage) GetInBin(c ctx, evm mech, id *big.Int, slot *big.I
 		return nil, err
 	}
 	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), evm.Context.Time.Uint64())
+	if bin == nil {
+		return nil, ErrBinNotFound
+	}
 	return bin.GetSlot(common.BigToHash(slot)), nil
 }
 
 func (con ArbRentableStorage) SetInBin(c ctx, evm mech, id *big.Int, slot *big.Int, data []byte) error {
+	if err := c.burn(3 * params.SloadGas); err != nil {
+		return err
+	}
 	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), evm.Context.Time.Uint64())
+	if bin == nil {
+		return ErrBinNotFound
+	}
 	slotHash := common.BigToHash(slot)
 	oldSize := bin.GetSlotDataSize(slotHash)
 	newSize := uint64(len(data))
@@ -66,10 +106,16 @@ func (con ArbRentableStorage) SetInBin(c ctx, evm mech, id *big.Int, slot *big.I
 }
 
 func (con ArbRentableStorage) DeleteInBin(c ctx, evm mech, id *big.Int, slot *big.Int) error {
+	if err := c.burn(3 * params.SloadGas); err != nil {
+		return err
+	}
 	bin := arbos.OpenArbosState(evm.StateDB).RentableState().OpenBin(common.BigToHash(id), evm.Context.Time.Uint64())
+	if bin == nil {
+		return ErrBinNotFound
+	}
 	slotHash := common.BigToHash(slot)
 	oldSize := bin.GetSlotDataSize(slotHash)
-	if err := c.burn((3 + oldSize/32) * params.SstoreClearGas); err != nil {
+	if err := c.burn((1 + oldSize/32) * params.SstoreClearGas); err != nil {
 		return err
 	}
 	bin.DeleteSlot(slotHash)

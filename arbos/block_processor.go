@@ -235,6 +235,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state := OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
+		state.RentableState().TryToReapOneBin(header.Time)
 
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()

@@ -5,7 +5,6 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"github.com/offchainlabs/arbstate/arbos/rentableStorage"
 	"math/big"
 
@@ -28,7 +27,7 @@ type ArbosState struct {
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
-	chainOwners    *addressSet.AddressSet
+	chainOwners    *storage.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
 	rentables      *rentableStorage.RentableStorage
 	timestamp      *uint64
@@ -100,7 +99,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
+	storage.InitializeAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 	rentableStorage.InitializeRentableStorage(backingStorage.OpenSubStorage(rentablesSubspace))
 }
@@ -175,9 +174,9 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
 }
 
-func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
+func (state *ArbosState) ChainOwners() *storage.AddressSet {
 	if state.chainOwners == nil {
-		state.chainOwners = addressSet.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
+		state.chainOwners = storage.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
 	}
 	return state.chainOwners
 }
