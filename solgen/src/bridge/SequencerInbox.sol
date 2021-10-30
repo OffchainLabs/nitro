@@ -1,5 +1,7 @@
+// 
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
-// Copyright 2021, Offchain Labs, Inc.
+//
 
 pragma solidity ^0.7.5;
 
