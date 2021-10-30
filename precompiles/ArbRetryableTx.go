@@ -31,8 +31,7 @@ type ArbRetryableTx struct {
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 var (
-	NotFoundError     = errors.New("ticketId not found")
-	UnauthorizedError = errors.New("unauthorized caller")
+	NotFoundError = errors.New("ticketId not found")
 )
 
 func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
