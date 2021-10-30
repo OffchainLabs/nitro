@@ -6,6 +6,7 @@ package rentableStorage
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -59,10 +60,11 @@ type RentableBin struct {
 	slotsStorage   *storage.Storage
 }
 
-func (rs *RentableStorage) AllocateBin(binId common.Hash, currentTimestamp uint64) *RentableBin {
+func (rs *RentableStorage) AllocateBin(binOwner common.Address, ownersBinId common.Hash, currentTimestamp uint64) *RentableBin {
+	binId := crypto.Keccak256Hash(binOwner.Bytes(), ownersBinId.Bytes())
 	rs.TryToReapOneBin(currentTimestamp)
-	if rs.BinExists(binId, currentTimestamp) {
-		rs.OpenBin(binId, currentTimestamp).Delete()
+	if rs.binExistsHashed(binId, currentTimestamp) {
+		rs.openBinHashed(binId, currentTimestamp).Delete()
 	}
 	rs.timeoutQueue.Put(binId)
 
@@ -83,7 +85,12 @@ func (rs *RentableStorage) AllocateBin(binId common.Hash, currentTimestamp uint6
 	}
 }
 
-func (rs *RentableStorage) OpenBin(binId common.Hash, currentTimestamp uint64) *RentableBin {
+func (rs *RentableStorage) OpenBin(binOwner common.Address, ownersBinId common.Hash, currentTimestamp uint64) *RentableBin {
+	binId := crypto.Keccak256Hash(binOwner.Bytes(), ownersBinId.Bytes())
+	return rs.openBinHashed(binId, currentTimestamp)
+}
+
+func (rs *RentableStorage) openBinHashed(binId common.Hash, currentTimestamp uint64) *RentableBin {
 	backingStorage := rs.binsStorage.OpenSubStorage(binId.Bytes())
 	ret := &RentableBin{
 		rs,
@@ -101,13 +108,18 @@ func (rs *RentableStorage) OpenBin(binId common.Hash, currentTimestamp uint64) *
 	return ret
 }
 
-func (rs *RentableStorage) BinExists(binId common.Hash, currentTimestamp uint64) bool {
+func (rs *RentableStorage) BinExists(binOwner common.Address, ownersBinId common.Hash, currentTimestamp uint64) bool {
+	binId := crypto.Keccak256Hash(binOwner.Bytes(), ownersBinId.Bytes())
+	return rs.binExistsHashed(binId, currentTimestamp)
+}
+
+func (rs *RentableStorage) binExistsHashed(binId common.Hash, currentTimestamp uint64) bool {
 	binTimestamp := rs.binsStorage.OpenSubStorage(binId.Bytes()).GetByInt64(timeoutOffset).Big().Uint64()
 	if binTimestamp == 0 {
 		return false
 	}
 	if binTimestamp < currentTimestamp {
-		_ = rs.OpenBin(binId, currentTimestamp) // this will delete the bin
+		_ = rs.openBinHashed(binId, currentTimestamp) // this will delete the bin
 		return false
 	}
 	return true
@@ -115,7 +127,7 @@ func (rs *RentableStorage) BinExists(binId common.Hash, currentTimestamp uint64)
 
 func (rs *RentableStorage) TryToReapOneBin(currentTimestamp uint64) {
 	binId := rs.timeoutQueue.Get()
-	if binId != nil && rs.BinExists(*binId, currentTimestamp) {
+	if binId != nil && rs.binExistsHashed(*binId, currentTimestamp) {
 		rs.timeoutQueue.Put(*binId)
 	}
 }

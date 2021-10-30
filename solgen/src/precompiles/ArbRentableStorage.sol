@@ -2,17 +2,25 @@
 pragma solidity >=0.4.21 <0.8.0;
 
 interface ArbRentableStorage {
-    function AllocateBin(uint id) external;
+    function AllocateBin(uint binId) external;
 
-    function GetBinTimeout(uint id) external view returns(uint);
+    function GetBinTimeout(uint binId) external view returns(uint);
 
-    function GetBinRenewGas(uint id) external view returns(uint);
+    function GetForeignBinTimeout(address binOwner, uint binId) external view returns(uint);
 
-    function RenewBin(uint id) external;
+    function GetBinRenewGas(uint binId) external view returns(uint);
 
-    function SetInBin(uint id, uint slot, bytes calldata value) external;
+    function GetForeignBinRenewGas(address binOwner, uint binId)  external view returns(uint);
 
-    function DeleteInBin(uint id, uint slot) external;
+    function RenewBin(uint binId) external;
 
-    function GetInBin(uint id, uint slot) external view returns(bytes memory);
+    function RenewForeignBin(address binOwner, uint binId) external;
+
+    function SetInBin(uint binId, uint slot, bytes calldata value) external;
+
+    function DeleteInBin(uint binId, uint slot) external;
+
+    function GetInBin(uint binId, uint slot) external view returns(bytes memory);
+
+    function GetInForeignBin(address binOwner, uint binId, uint slot) external view returns(bytes memory);
 }
