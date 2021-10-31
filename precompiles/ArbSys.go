@@ -78,7 +78,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
 		levelAndLeafNum := new(big.Int).Add(
-			new(big.Int).Lsh(big.NewInt(1), uint(merkleUpdateEvent.Level)),
+			new(big.Int).Lsh(big.NewInt(int64(merkleUpdateEvent.Level)), 192),
 			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),
 		)
 		con.SendMerkleUpdate(
