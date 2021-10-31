@@ -5,7 +5,6 @@
 package arbnode
 
 import (
-	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -49,11 +48,8 @@ func (d *InboxReaderDb) initialize() error {
 
 var accumulatorNotFound error = errors.New("accumulator not found")
 
-func (d *InboxReaderDb) GetDelayedAcc(seqNum *big.Int) (common.Hash, error) {
-	if !seqNum.IsUint64() {
-		return common.Hash{}, accumulatorNotFound
-	}
-	key := dbKey(delayedMessagePrefix, seqNum.Uint64())
+func (d *InboxReaderDb) GetDelayedAcc(seqNum uint64) (common.Hash, error) {
+	key := dbKey(delayedMessagePrefix, seqNum)
 	hasKey, err := d.db.Has(key)
 	if err != nil {
 		return common.Hash{}, err
@@ -73,24 +69,21 @@ func (d *InboxReaderDb) GetDelayedAcc(seqNum *big.Int) (common.Hash, error) {
 	return hash, nil
 }
 
-func (d *InboxReaderDb) GetDelayedCount() (*big.Int, error) {
+func (d *InboxReaderDb) GetDelayedCount() (uint64, error) {
 	data, err := d.db.Get(delayedMessageCountKey)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	var count uint64
 	err = rlp.DecodeBytes(data, &count)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	return new(big.Int).SetUint64(count), nil
+	return count, nil
 }
 
-func (d *InboxReaderDb) GetDelayedMessage(seqNum *big.Int) (*arbos.L1IncomingMessage, error) {
-	if !seqNum.IsUint64() {
-		return nil, errors.New("delayed sequence number not a uint64")
-	}
-	key := dbKey(delayedMessagePrefix, seqNum.Uint64())
+func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+	key := dbKey(delayedMessagePrefix, seqNum)
 	data, err := d.db.Get(key)
 	if err != nil {
 		return nil, err
@@ -111,11 +104,14 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
 
-	pos := messages[0].Message.Header.RequestId.Big()
+	pos, err := messages[0].Message.Header.SeqNum()
+	if err != nil {
+		return err
+	}
 	var nextAcc common.Hash
-	if pos.Sign() > 0 {
+	if pos > 0 {
 		var err error
-		nextAcc, err = d.GetDelayedAcc(new(big.Int).Sub(pos, big.NewInt(1)))
+		nextAcc, err = d.GetDelayedAcc(pos - 1)
 		if err != nil {
 			if errors.Is(err, accumulatorNotFound) {
 				return errors.New("missing previous delayed message")
@@ -128,8 +124,12 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 	batch := d.db.NewBatch()
 	// TODO: remove sequencer batches whose delayed count is > pos
 	for _, message := range messages {
-		seqNum := message.Message.Header.RequestId.Big()
-		if seqNum.Cmp(pos) != 0 {
+		seqNum, err := message.Message.Header.SeqNum()
+		if err != nil {
+			return err
+		}
+
+		if seqNum != pos {
 			return errors.New("unexpected delayed sequence number")
 		}
 
@@ -138,10 +138,7 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 		}
 		nextAcc = message.AfterInboxAcc()
 
-		if !seqNum.IsUint64() {
-			return errors.New("delayed sequencer number isn't a uint64")
-		}
-		msgKey := dbKey(delayedMessagePrefix, seqNum.Uint64())
+		msgKey := dbKey(delayedMessagePrefix, seqNum)
 
 		msgData, err := rlp.EncodeToBytes(message.Message)
 		if err != nil {
@@ -154,14 +151,11 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 			return err
 		}
 
-		pos.Add(pos, big.NewInt(1))
+		pos += 1
 	}
 
-	if !pos.IsUint64() {
-		return errors.New("delayed message count exceeded uint64")
-	}
-	newDelayedCount := pos.Uint64()
-	err := deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
+	newDelayedCount := pos
+	err = deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
 	if err != nil {
 		return err
 	}

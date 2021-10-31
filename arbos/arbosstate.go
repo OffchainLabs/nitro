@@ -5,13 +5,15 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"math/big"
+
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -25,6 +27,7 @@ type ArbosState struct {
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
+	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
 	timestamp      *uint64
 	backingStorage *storage.Storage
@@ -38,6 +41,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -79,18 +83,20 @@ var (
 	l1PricingSubspace    ArbosStateSubspaceID = []byte{0}
 	retryablesSubspace   ArbosStateSubspaceID = []byte{1}
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
-	sendMerkleSubspace   ArbosStateSubspaceID = []byte{3}
+	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
+	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
 	backingStorage.SetByInt64(int64(versionKey), util.IntToHash(1))
 	backingStorage.SetByInt64(int64(gasPoolKey), util.IntToHash(GasPoolMax))
 	backingStorage.SetByInt64(int64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
-	backingStorage.SetByInt64(int64(gasPriceKey), util.IntToHash(1000000000)) // 1 gwei
+	backingStorage.SetByInt64(int64(gasPriceKey), util.IntToHash(InitialGasPriceWei)) // 1 gwei
 	backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(0))
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
+	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 }
 
@@ -162,6 +168,13 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 		state.addressTable = addressTable.Open(state.backingStorage.OpenSubStorage(addressTableSubspace))
 	}
 	return state.addressTable
+}
+
+func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
+	if state.chainOwners == nil {
+		state.chainOwners = addressSet.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
+	}
+	return state.chainOwners
 }
 
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
