@@ -17,8 +17,8 @@ type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
-	SendMerkleUpdate         func(mech, huge, huge, [32]byte)
-	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
+	SendMerkleUpdate         func(mech, huge, [32]byte)
+	SendMerkleUpdateGasCost  func(huge, [32]byte) uint64
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -62,7 +62,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination
-	cost += 2 * con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
+	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{})
 	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
 	if err := c.burn(cost); err != nil {
 		return nil, err
@@ -77,10 +77,13 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	evm.StateDB.SubBalance(con.Address, value)
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
+		levelAndLeafNum := new(big.Int).Add(
+			new(big.Int).Lsh(big.NewInt(1), uint(merkleUpdateEvent.Level)),
+			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),
+		)
 		con.SendMerkleUpdate(
 			evm,
-			big.NewInt(int64(merkleUpdateEvent.Level)),
-			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),
+			levelAndLeafNum,
 			merkleUpdateEvent.Hash,
 		)
 	}
