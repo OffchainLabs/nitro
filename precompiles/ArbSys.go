@@ -62,7 +62,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination
-	cost += 2*con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
+	cost += 2 * con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
 	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
 	if err := c.burn(cost); err != nil {
 		return nil, err

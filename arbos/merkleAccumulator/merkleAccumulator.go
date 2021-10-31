@@ -91,7 +91,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
 	acc.size++
-	events := append([]MerkleTreeNodeEvent{}, MerkleTreeNodeEvent{ 0, acc.size, itemHash })
+	events := append([]MerkleTreeNodeEvent{}, MerkleTreeNodeEvent{0, acc.size, itemHash})
 
 	if acc.backingStorage != nil {
 		acc.backingStorage.SetByInt64(0, util.IntToHash(int64(acc.size)))
@@ -114,7 +114,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent
 		h := common.Hash{}
 		acc.setPartial(level, &h)
 		level += 1
-		events = append(events, MerkleTreeNodeEvent{ level, acc.size,  common.BytesToHash(soFar) })
+		events = append(events, MerkleTreeNodeEvent{level, acc.size, common.BytesToHash(soFar)})
 	}
 }
 
