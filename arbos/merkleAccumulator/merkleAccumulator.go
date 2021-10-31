@@ -89,8 +89,10 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 	}
 }
 
-func (acc *MerkleAccumulator) Append(itemHash common.Hash) *MerkleAccumulatorUpdateEvent {
+func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
 	acc.size++
+	events := append([]MerkleTreeNodeEvent{}, MerkleTreeNodeEvent{ 0, acc.size, itemHash })
+
 	if acc.backingStorage != nil {
 		acc.backingStorage.SetByInt64(0, util.IntToHash(int64(acc.size)))
 	}
@@ -100,18 +102,19 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) *MerkleAccumulatorUpd
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
+			return events
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
+			return events
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
 		acc.setPartial(level, &h)
 		level += 1
+		events = append(events, MerkleTreeNodeEvent{ level, acc.size,  common.BytesToHash(soFar) })
 	}
 }
 
@@ -160,8 +163,8 @@ func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, p
 	return
 }
 
-type MerkleAccumulatorUpdateEvent struct {
-	Level   uint64
-	LeafNum uint64
-	Hash    common.Hash
+type MerkleTreeNodeEvent struct {
+	Level     uint64
+	NumLeaves uint64
+	Hash      common.Hash
 }

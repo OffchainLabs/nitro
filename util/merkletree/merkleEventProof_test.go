@@ -24,14 +24,16 @@ func TestReconstructFromEvents(t *testing.T) {
 	}
 
 	acc := initializedMerkleAccumulatorForTesting()
-	events := []merkleAccumulator.MerkleAccumulatorUpdateEvent{}
+	events := []merkleAccumulator.MerkleTreeNodeEvent{}
 
 	for i, leaf := range leaves {
-		ev := acc.Append(leaf)
-		if ev.Level >= uint64(len(events)) {
-			events = append(events, *ev)
-		} else {
-			events[ev.Level] = *ev
+		thisLeafEvents := acc.Append(leaf)
+		for _, ev := range thisLeafEvents {
+			if ev.Level >= uint64(len(events)) {
+				events = append(events, ev)
+			} else {
+				events[ev.Level] = ev
+			}
 		}
 		if acc.Root() != NewMerkleTreeFromAccumulator(acc).Hash() {
 			t.Fatal(i)
