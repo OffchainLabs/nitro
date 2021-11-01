@@ -53,12 +53,12 @@ func init() {
 type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
-	fromBlock        int64
+	fromBlock        uint64
 	client           L1Interface
 	messageProviders map[common.Address]*bridgegen.IMessageProvider
 }
 
-func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
+func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
@@ -74,11 +74,11 @@ func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) 
 }
 
 func (b *DelayedBridge) FirstBlock() *big.Int {
-	return big.NewInt(b.fromBlock)
+	return new(big.Int).SetUint64(b.fromBlock)
 }
 
 func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
-	if (blockNumber != nil) && blockNumber.Cmp(big.NewInt(b.fromBlock)) < 0 {
+	if (blockNumber != nil) && blockNumber.Cmp(new(big.Int).SetUint64(b.fromBlock)) < 0 {
 		return 0, nil
 	}
 	opts := &bind.CallOpts{
