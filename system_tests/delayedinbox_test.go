@@ -16,8 +16,9 @@ import (
 
 func TestDelayInbox(t *testing.T) {
 	background := context.Background()
-	l1backend, l1info := CreateTestL1(t)
-	_, l2info := CreateTestL2(t)
+	l2backend, l2info := CreateTestL2(t)
+	l1backend, l1info := CreateTestL1(t, l2backend)
+	l2client := ClientForArbBackend(t, l2backend)
 
 	delayedBridge, err := arbnode.NewDelayedBridge(l1backend, l1info.GetAddress("Bridge"), 0)
 	if err != nil {

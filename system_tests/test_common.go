@@ -5,6 +5,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -40,28 +42,35 @@ type BlockchainTestInfo struct {
 	T        *testing.T
 	Signer   types.Signer
 	Accounts map[string]*AccountInfo
+	keySeed  int64
 }
 
-func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
+func NewBlockChainTestInfo(t *testing.T, signer types.Signer, keySeed int64) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
 		T:        t,
 		Signer:   signer,
 		Accounts: make(map[string]*AccountInfo),
+		keySeed:  keySeed,
 	}
 }
 
 func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	b.T.Helper()
 
-	privateKey, err := crypto.GenerateKey()
+	seedBytes := common.BigToHash(big.NewInt(b.keySeed)).Bytes()
+	seedBytes = append(seedBytes, seedBytes...)
+	seedReader := bytes.NewReader(seedBytes)
+	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
 	if err != nil {
 		b.T.Fatal(err)
 	}
+	b.keySeed += 1
 	b.Accounts[name] = &AccountInfo{
 		PrivateKey: privateKey,
 		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
 		Nonce:      0,
 	}
+	log.Info("New Key ", "name", name, "Address", b.Accounts[name].Address)
 }
 
 func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
@@ -155,8 +164,8 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 	}
 }
 
-func CreateTestL1(t *testing.T) (arbnode.L1Interface, *BlockchainTestInfo) {
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
+func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *BlockchainTestInfo) {
+	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
 	l1info.GenerateAccount("faucet")
 
 	stackConf := node.DefaultConfig
@@ -226,11 +235,11 @@ func CreateTestL1(t *testing.T) (arbnode.L1Interface, *BlockchainTestInfo) {
 }
 
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
-	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
+	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[l2info.GetAddress("Owner")] = core.GenesisAccount{
-		Balance:    big.NewInt(params.Ether * 2),
+		Balance:    big.NewInt(9223372036854775807),
 		Nonce:      0,
 		PrivateKey: nil,
 	}
