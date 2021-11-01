@@ -18,15 +18,22 @@ type DelayedSequencer struct {
 	inboxState     *InboxState
 	nextToSequence uint64
 	scannedBlockNr *big.Int
+	config         *DelayedSequencerConfig
 }
 
-var (
-	finalizeDistance = big.NewInt(12) // how many blocks in the past L1 block is considered final
-	blocksAggregate  = big.NewInt(5)  // how many blocks we aggregate looking for delayedMessage
-	timeAggregate    = time.Minute    // how long to wait before aggregating block
-)
+type DelayedSequencerConfig struct {
+	FinalizeDistance *big.Int      // how many blocks in the past L1 block is considered final
+	BlocksAggregate  *big.Int      // how many blocks we aggregate looking for delayedMessage
+	TimeAggregate    time.Duration // how many blocks we aggregate looking for delayedMessages
+}
 
-func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *InboxState) (*DelayedSequencer, error) {
+var DefaultDelayedSequencerConfig = &DelayedSequencerConfig{
+	FinalizeDistance: big.NewInt(12),
+	BlocksAggregate:  big.NewInt(5),
+	TimeAggregate:    time.Minute,
+}
+
+func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *InboxState, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	pos, err := inboxState.GetMessageCount()
 	if err != nil {
 		return nil, err
@@ -56,6 +63,7 @@ func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *In
 		inboxState:     inboxState,
 		nextToSequence: delayedMessagesRead,
 		scannedBlockNr: delayedBlockNrRead,
+		config:         config,
 	}
 	return &sequencer, nil
 }
@@ -65,7 +73,7 @@ func (d *DelayedSequencer) finalizedBlockNr(ctx context.Context) (*big.Int, erro
 	if err != nil {
 		return nil, err
 	}
-	finalized := new(big.Int).Sub(lastBlockHeader.Number, finalizeDistance)
+	finalized := new(big.Int).Sub(lastBlockHeader.Number, d.config.FinalizeDistance)
 	if finalized.Sign() > 0 {
 		return finalized, nil
 	}
@@ -177,9 +185,9 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		timeout := time.After(timeAggregate)
-		nextBlockToCheck := new(big.Int).Add(d.scannedBlockNr, finalizeDistance)
-		nextBlockToCheck.Add(nextBlockToCheck, blocksAggregate)
+		timeout := time.After(d.config.TimeAggregate)
+		nextBlockToCheck := new(big.Int).Add(d.scannedBlockNr, d.config.FinalizeDistance)
+		nextBlockToCheck.Add(nextBlockToCheck, d.config.BlocksAggregate)
 	AggregateWaitLoop:
 		for {
 			select {
