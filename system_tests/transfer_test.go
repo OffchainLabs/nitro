@@ -7,10 +7,6 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/arbstate/arbnode"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
 func TestTransfer(t *testing.T) {
@@ -22,31 +18,14 @@ func TestTransfer(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 
-	accesses := types.AccessList{types.AccessTuple{
-		Address:     l2info.GetAddress("User2"),
-		StorageKeys: []common.Hash{{0}},
-	}}
-
-	l2addr := l2info.GetAddress("User2")
-	txdata := &types.DynamicFeeTx{
-		ChainID:    arbos.ChainConfig.ChainID,
-		Nonce:      0,
-		To:         &l2addr,
-		Gas:        30000,
-		GasFeeCap:  big.NewInt(5e+09),
-		GasTipCap:  big.NewInt(2),
-		Value:      big.NewInt(1e12),
-		AccessList: accesses,
-		Data:       []byte{},
-	}
-	tx := l2info.SignTxAs("Owner", txdata)
+	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
 	err := client.SendTransaction(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = arbnode.EnsureTxSucceeded(client, tx)
+	_, err = arbnode.EnsureTxSucceeded(client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
