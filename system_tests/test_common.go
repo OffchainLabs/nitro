@@ -157,7 +157,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 		}
 	}
 	for _, tx := range txs {
-		err := arbnode.EnsureTxSucceeded(client, tx)
+		_, err := arbnode.EnsureTxSucceeded(client, tx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -223,7 +223,7 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 
-	addresses, err := arbnode.CreateL1WithInbox(l1Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
