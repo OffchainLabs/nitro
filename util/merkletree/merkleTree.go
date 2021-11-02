@@ -6,10 +6,11 @@ package merkletree
 
 import (
 	"errors"
+	"io"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"io"
 )
 
 type MerkleTree interface {

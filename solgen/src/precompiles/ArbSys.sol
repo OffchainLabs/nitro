@@ -90,10 +90,32 @@ interface ArbSys {
      */
     function getStorageGasAvailable() external returns(uint);
 
-    event L2ToL1Transaction(address caller, address indexed destination, uint indexed uniqueId,
-                            uint indexed batchNumber, uint indexInBatch,
-                            uint arbBlockNum, uint ethBlockNum, uint timestamp,
-                            uint callvalue, bytes data);
+    /**
+     * @notice creates a send txn from L2 to L1
+     * @param position = (level << 192) + offset = (0 << 192) + offset = offset
+    */
+    event L2ToL1Transaction(
+        address caller,
+        address indexed destination,
+        uint indexed hash,
+        uint indexed position,
+        uint indexInBatch,
+        uint arbBlockNum,
+        uint ethBlockNum,
+        uint timestamp,
+        uint callvalue,
+        bytes data
+    );
 
-    event SendMerkleUpdate(uint indexed levelAndLeafNum, bytes32 hash);   // levelAndLeafNum = (level << 192) + leafNum
+    /**
+     * @notice logs a merkle branch for proof sythesis
+     * @param reserved an index meant only to align the 4th index with L2ToL1Transaction's 4th event
+     * @param hash the merkle hash
+     * @param position = (level << 192) + offset
+    */
+    event SendMerkleUpdate(
+        uint indexed reserved,
+        bytes32 indexed hash,
+        uint indexed position
+    );
 }

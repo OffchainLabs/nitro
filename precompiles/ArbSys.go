@@ -6,19 +6,20 @@ package precompiles
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
-	"math/big"
 )
 
 type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
-	SendMerkleUpdate         func(mech, huge, [32]byte)
-	SendMerkleUpdateGasCost  func(huge, [32]byte) uint64
+	SendMerkleUpdate         func(mech, huge, [32]byte, huge)
+	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) uint64
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -62,7 +63,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination
-	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{})
+	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{}, zero)
 	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
 	if err := c.burn(cost); err != nil {
 		return nil, err
@@ -77,23 +78,27 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	evm.StateDB.SubBalance(con.Address, value)
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
-		levelAndLeafNum := new(big.Int).Add(
+		// position = (level << 192) + offset
+		position := new(big.Int).Add(
 			new(big.Int).Lsh(big.NewInt(int64(merkleUpdateEvent.Level)), 192),
 			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),
 		)
 		con.SendMerkleUpdate(
 			evm,
-			levelAndLeafNum,
+			big.NewInt(0),
 			merkleUpdateEvent.Hash,
+			position,
 		)
 	}
+
+	leafNum := big.NewInt(int64(merkleAcc.Size() - 1))
 
 	con.L2ToL1Transaction(
 		evm,
 		c.caller,
 		destination,
 		sendHash.Big(),
-		big.NewInt(int64(merkleAcc.Size()-1)),
+		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
 		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
