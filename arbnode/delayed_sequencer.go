@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -80,24 +81,45 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 
 	// Retrieve all finalized delayed messages
 	pos := startPos
+	var lastDelayedAcc common.Hash
 	var messages []*arbos.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, err := d.inboxDb.GetDelayedMessage(pos)
+		msg, acc, err := d.inboxDb.GetDelayedMessageAndAccumulator(pos)
 		if err != nil {
 			return err
 		}
 		blockNumber := msg.Header.BlockNumber.Big()
 		if blockNumber.Cmp(finalized) > 0 {
-			// Message is too far in the future; stop here
+			// Message isn't finalized yet; stop here
 			d.waitingForBlock = new(big.Int).Add(blockNumber, d.config.FinalizeDistance)
 			break
 		}
+		if lastDelayedAcc != (common.Hash{}) {
+			// Ensure that there hasn't been a reorg and this message follows the last
+			fullMsg := DelayedInboxMessage{
+				BeforeInboxAcc: lastDelayedAcc,
+				Message:        msg,
+			}
+			if fullMsg.AfterInboxAcc() != acc {
+				return errors.New("delayed message accumulator mismatch while sequencing")
+			}
+		}
+		lastDelayedAcc = acc
 		messages = append(messages, msg)
 		pos++
 	}
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
+		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, finalized)
+		if err != nil {
+			return err
+		}
+		if delayedBridgeAcc != lastDelayedAcc {
+			// Probably a reorg that hasn't been picked up by the inbox reader
+			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
+		}
+
 		err = d.inboxState.SequenceDelayedMessages(messages, startPos)
 		if err != nil {
 			return err
