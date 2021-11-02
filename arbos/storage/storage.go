@@ -74,7 +74,7 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 		return nil
 	}
 	newKey := make([]byte, oldKeyLen+1+idLen)
-	copy(newKey[:], store.key[:])
+	copy(newKey, store.key)
 	newKey[oldKeyLen] = byte(len(id))
 	copy(newKey[oldKeyLen+1:], id)
 	return &Storage{

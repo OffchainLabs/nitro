@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/rentableStorage"
 	"math/big"
 )
 
@@ -106,16 +107,26 @@ func (con ArbRentableStorage) SetInBin(c ctx, evm mech, binId *big.Int, slot *bi
 		return ErrBinNotFound
 	}
 	slotHash := common.BigToHash(slot)
-	oldSize := bin.GetSlotDataSize(slotHash)
-	newSize := uint64(len(data))
-	if oldSize > newSize {
-		if err := c.burn((3 + oldSize/32) * params.SstoreResetGas); err != nil {
-			return err
-		}
+	oldSizeWords := (bin.GetSlotDataSize(slotHash) + 31) / 32
+	newSizeWords := (uint64(len(data)) + 31) / 32
+	gasToCharge := 3 * params.SstoreSetGas
+	if newSizeWords >= oldSizeWords {
+		gasToCharge += oldSizeWords*params.SstoreResetGas + (newSizeWords-oldSizeWords)*params.SstoreSetGas
+		// charge for storing the added data until this bin's timeout
+		gasToCharge += (newSizeWords - oldSizeWords) * rentableStorage.RenewChargePer32Bytes * (evm.Context.Time.Uint64() - bin.GetTimeout()) / rentableStorage.RentableStorageLifetimeSeconds
 	} else {
-		if err := c.burn((3+oldSize/32)*params.SstoreResetGas + ((newSize+31-oldSize)/32)*params.SstoreSetGas); err != nil {
-			return err
+		gasToCharge += newSizeWords * params.SstoreResetGas
+		// refund gas that would have paid for the deleted storage until this bin's timeout
+		// but don't reduce gasToCharge by more than 20%
+		refund := (oldSizeWords - newSizeWords) * rentableStorage.RenewChargePer32Bytes * (evm.Context.Time.Uint64() - bin.GetTimeout()) / rentableStorage.RentableStorageLifetimeSeconds
+		if refund > gasToCharge/5 {
+			gasToCharge = 4 * gasToCharge / 5
+		} else {
+			gasToCharge -= refund
 		}
+	}
+	if err := c.burn(gasToCharge); err != nil {
+		return err
 	}
 	bin.SetSlot(slotHash, data)
 	return nil

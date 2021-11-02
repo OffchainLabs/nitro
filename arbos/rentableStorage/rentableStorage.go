@@ -39,10 +39,10 @@ const (
 	timeoutOffset  = 0
 	numBytesOffset = 1
 
-	renewChargePer32Bytes = params.SstoreSetGas / 100
-	renewChargePerBin     = 4 * renewChargePer32Bytes
-	renewChargePerSlot    = 2 * renewChargePer32Bytes
-	renewChargePerByte    = (renewChargePer32Bytes + 31) / 32
+	RenewChargePer32Bytes = params.SstoreSetGas / 100
+	renewChargePerBin     = 4 * RenewChargePer32Bytes
+	renewChargePerSlot    = 2 * RenewChargePer32Bytes
+	renewChargePerByte    = (RenewChargePer32Bytes + 31) / 32
 )
 
 var (
