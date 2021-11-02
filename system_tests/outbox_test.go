@@ -9,9 +9,11 @@ import (
 	"math/big"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util/merkletree"
@@ -34,7 +36,7 @@ func TestOutboxProofs(t *testing.T) {
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	txnCount := int64(2 + rand.Intn(1024))
+	txnCount := int64(2 + rand.Intn(128))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -44,11 +46,27 @@ func TestOutboxProofs(t *testing.T) {
 
 	provables := make([]proofPair, 0)
 
+	txns := []common.Hash{}
+
 	for i := int64(0); i < txnCount; i++ {
 		ownerOps.Value = big.NewInt(i * 1000000000)
+		ownerOps.Nonce = big.NewInt(i)
 		tx, err := arbSys.WithdrawEth(&ownerOps, common.Address{})
 		failOnError(t, err, "ArbSys failed")
-		receipt, err := client.TransactionReceipt(ctx, tx.Hash())
+		txns = append(txns, tx.Hash())
+	}
+
+	for _, tx := range txns {
+		var receipt *types.Receipt
+		for {
+			receipt, err = client.TransactionReceipt(ctx, tx)
+			if err != nil {
+				time.Sleep(10 * time.Millisecond)
+			} else {
+				break
+			}
+		}
+
 		failOnError(t, err, "No receipt for txn")
 
 		for _, log := range receipt.Logs {
