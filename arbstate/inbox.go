@@ -68,7 +68,7 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	var segments [][]byte
 	err := rlp.NewStream(reader, uint64(maxDecompressedLen)).Decode(&segments)
 	if err != nil {
-		fmt.Printf("Error parsing sequencer message segments: %s\n", err.Error())
+		log.Warn("error parsing sequencer message segments", "err", err.Error())
 		segments = nil
 	}
 	return &sequencerMessage{

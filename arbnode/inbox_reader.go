@@ -38,8 +38,8 @@ type InboxReader struct {
 	client         L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
-	db, err := NewInboxReaderDb(rawDb)
+func NewInboxReader(rawDb ethdb.Database, inboxState *InboxState, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+	db, err := NewInboxReaderDb(rawDb, inboxState)
 	if err != nil {
 		return nil, err
 	}
@@ -147,15 +147,15 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
-				l1DelayedAcc, err := ir.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
+				l1BatchAcc, err := ir.sequencerInbox.GetAccumulator(ctx, checkingBatchSeqNum, currentHeight)
 				if err != nil {
 					return err
 				}
-				dbDelayedAcc, err := ir.db.GetBatchAcc(checkingBatchSeqNum)
+				dbBatchAcc, err := ir.db.GetBatchAcc(checkingBatchSeqNum)
 				if err != nil {
 					return err
 				}
-				if dbDelayedAcc != l1DelayedAcc {
+				if dbBatchAcc != l1BatchAcc {
 					reorgingSequencer = true
 				}
 			}
@@ -256,7 +256,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 
 			log.Trace("looking up messages", "from", from.String(), "to", to.String())
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
-				delayedMismatch, err := ir.addMessages(sequencerBatches, delayedMessages)
+				delayedMismatch, err := ir.addMessages(ctx, sequencerBatches, delayedMessages)
 				if err != nil {
 					return err
 				}
@@ -291,12 +291,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 }
 
-func (r *InboxReader) addMessages(sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
+func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
 	err := r.db.addDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
-	err = r.db.addSequencerBatches(sequencerBatches)
+	err = r.db.addSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {

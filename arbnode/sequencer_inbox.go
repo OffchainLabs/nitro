@@ -114,11 +114,11 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client L1Interface)
 
 	// Serialize the header
 	for _, bound := range m.TimeBounds {
-		var intData [4]byte
+		var intData [8]byte
 		binary.BigEndian.PutUint64(intData[:], bound)
 		fullData = append(fullData, intData[:]...)
 	}
-	var intData [4]byte
+	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], m.AfterDelayedCount)
 	fullData = append(fullData, intData[:]...)
 

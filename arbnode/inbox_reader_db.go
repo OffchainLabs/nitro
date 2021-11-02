@@ -24,9 +24,10 @@ type InboxReaderDb struct {
 	mutex      sync.Mutex
 }
 
-func NewInboxReaderDb(raw ethdb.Database) (*InboxReaderDb, error) {
+func NewInboxReaderDb(raw ethdb.Database, inboxState *InboxState) (*InboxReaderDb, error) {
 	db := &InboxReaderDb{
-		db: rawdb.NewTable(raw, arbitrumPrefix),
+		db:         rawdb.NewTable(raw, arbitrumPrefix),
+		inboxState: inboxState,
 	}
 	err := db.initialize()
 	return db, err
@@ -344,7 +345,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) error {
+func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interface, batches []*SequencerInboxBatch) error {
 	if len(batches) == 0 {
 		return nil
 	}
@@ -381,13 +382,15 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 			return errors.New("previous batch accumulator mismatch")
 		}
 
-		haveDelayedAcc, err := d.GetDelayedAcc(batch.SequenceNumber)
-		if errors.Is(err, accumulatorNotFound) {
-			return delayedMessagesMismatch
-		} else if err != nil {
-			return err
-		} else if haveDelayedAcc != batch.AfterDelayedAcc {
-			return delayedMessagesMismatch
+		if batch.AfterDelayedCount > 0 {
+			haveDelayedAcc, err := d.GetDelayedAcc(batch.AfterDelayedCount - 1)
+			if errors.Is(err, accumulatorNotFound) {
+				return delayedMessagesMismatch
+			} else if err != nil {
+				return err
+			} else if haveDelayedAcc != batch.AfterDelayedAcc {
+				return delayedMessagesMismatch
+			}
 		}
 
 		nextAcc = batch.AfterInboxAcc
@@ -395,9 +398,12 @@ func (d *InboxReaderDb) addSequencerBatches(batches []*SequencerInboxBatch) erro
 
 	var messages []arbstate.MessageWithMetadata
 	backend := &multiplexerBackend{
-		db:          d,
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
+
+		db:     d,
+		ctx:    ctx,
+		client: client,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
 	batchMessageCounts := make(map[uint64]uint64)

@@ -166,16 +166,17 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	}
 	inboxReaderConfig := *DefaultInboxReaderConfig
 	inboxReaderConfig.CheckDelay = time.Millisecond * 10
-	inboxReader, err := NewInboxReader(rawdb, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
-	if err != nil {
-		return nil, err
-	}
-	inboxReader.Start(context.Background())
+	inboxReaderConfig.DelayBlocks = 0
 	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
 	if !ok {
 		return nil, errors.New("l2backend doesn't have a sequencer")
 	}
 	inbox := sequencerObj.InboxState()
+	inboxReader, err := NewInboxReader(rawdb, inbox, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
+	if err != nil {
+		return nil, err
+	}
+	inboxReader.Start(context.Background())
 	delayedSequencerConfig := *DefaultDelayedSequencerConfig
 	// not necessary, but should help prevent spurious failures in delayed sequencer test
 	delayedSequencerConfig.TimeAggregate = time.Second

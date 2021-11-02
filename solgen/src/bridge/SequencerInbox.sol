@@ -1,4 +1,4 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
@@ -29,7 +29,6 @@ contract SequencerInbox {
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
         uint256[4] timeBounds,
-        uint256 reason,
         bytes data
     );
 
@@ -58,9 +57,17 @@ contract SequencerInbox {
 
     function getTimeBounds() internal view returns (uint256[4] memory) {
         uint256[4] memory bounds;
-        bounds[0] = block.timestamp - maxDelaySeconds;
+        if (block.timestamp > maxDelaySeconds) {
+            bounds[0] = block.timestamp - maxDelaySeconds;
+        } else {
+            bounds[0] = 0;
+        }
         bounds[1] = block.timestamp + maxFutureSeconds;
-        bounds[2] = block.number - maxDelayBlocks;
+        if (block.number > maxDelayBlocks) {
+            bounds[2] = block.number - maxDelayBlocks;
+        } else {
+            bounds[2] = 0;
+        }
         bounds[3] = block.number + maxFutureBlocks;
         return bounds;
     }
@@ -102,7 +109,7 @@ contract SequencerInbox {
         }
 
         bytes calldata emptyData;
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             emptyData,
             _totalDelayedMessagesRead
         );
@@ -112,8 +119,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
-            getTimeBounds(),
-            1,
+            timeBounds,
             emptyData
         );
     }
@@ -135,7 +141,7 @@ contract SequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -145,7 +151,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
-            getTimeBounds()
+            timeBounds
         );
 
         if (gasRefunder != IGasRefunder(0)) {
@@ -164,7 +170,7 @@ contract SequencerInbox {
         uint256 startGasLeft = gasleft();
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -174,8 +180,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             afterDelayedMessagesRead,
-            getTimeBounds(),
-            0,
+            timeBounds,
             data
         );
 
@@ -191,7 +196,7 @@ contract SequencerInbox {
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
-    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) {
+    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint256[4] memory timeBounds) {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
 
@@ -220,8 +225,9 @@ contract SequencerInbox {
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
+        timeBounds = getTimeBounds();
         bytes32 fullDataHash = keccak256(fullData);
-        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc));
+        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }

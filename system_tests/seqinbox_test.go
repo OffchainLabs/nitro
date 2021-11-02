@@ -41,6 +41,7 @@ func TestInboxState(t *testing.T) {
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
+	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
@@ -48,7 +49,7 @@ func TestInboxState(t *testing.T) {
 			ownerAddress: params.Ether,
 		},
 		accounts:      []common.Address{ownerAddress},
-		l2BlockNumber: 0,
+		l2BlockNumber: startL2BlockNumber,
 	})
 
 	accountName := func(x int) string {
@@ -120,8 +121,12 @@ func TestInboxState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
+			err = writer.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
 			batchData := batchBuffer.Bytes()
+
 			tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
 			if err != nil {
 				t.Fatal(err)
