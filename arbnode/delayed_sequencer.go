@@ -13,12 +13,12 @@ import (
 )
 
 type DelayedSequencer struct {
-	client         L1Interface
-	bridge         *DelayedBridge
-	inboxState     *InboxState
-	nextToSequence uint64
-	scannedBlockNr *big.Int
-	config         *DelayedSequencerConfig
+	client          L1Interface
+	bridge          *DelayedBridge
+	inboxDb         *InboxReaderDb
+	inboxState      *InboxState
+	waitingForBlock *big.Int
+	config          *DelayedSequencerConfig
 }
 
 type DelayedSequencerConfig struct {
@@ -34,146 +34,80 @@ var DefaultDelayedSequencerConfig = &DelayedSequencerConfig{
 }
 
 func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *InboxState, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
-	pos, err := inboxState.GetMessageCount()
-	if err != nil {
-		return nil, err
-	}
-	var delayedMessagesRead uint64
-	var delayedBlockNrRead *big.Int
-	if pos > 0 {
-		lastMsg, err := inboxState.GetMessage(pos - 1)
-		if err != nil {
-			return nil, err
-		}
-		delayedMessagesRead = lastMsg.DelayedMessagesRead
-		if delayedMessagesRead > 0 {
-			msg, err := reader.Database().GetDelayedMessage(delayedMessagesRead - 1)
-			if err != nil {
-				return nil, err
-			}
-			delayedBlockNrRead = msg.Header.BlockNumber.Big()
-		}
-	}
-	if delayedBlockNrRead == nil {
-		delayedBlockNrRead = reader.DelayedBridge().FirstBlock()
-	}
-	sequencer := DelayedSequencer{
-		client:         client,
-		bridge:         reader.DelayedBridge(),
-		inboxState:     inboxState,
-		nextToSequence: delayedMessagesRead,
-		scannedBlockNr: delayedBlockNrRead,
-		config:         config,
-	}
-	return &sequencer, nil
+	return &DelayedSequencer{
+		client:     client,
+		bridge:     reader.DelayedBridge(),
+		inboxDb:    reader.Database(),
+		inboxState: inboxState,
+		config:     config,
+	}, nil
 }
 
-func (d *DelayedSequencer) finalizedBlockNr(ctx context.Context) (*big.Int, error) {
-	lastBlockHeader, err := d.client.HeaderByNumber(ctx, nil)
+func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
+	pos, err := d.inboxState.GetMessageCount()
+	if err != nil || pos == 0 {
+		return 0, err
+	}
+	lastMsg, err := d.inboxState.GetMessage(pos - 1)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	finalized := new(big.Int).Sub(lastBlockHeader.Number, d.config.FinalizeDistance)
-	if finalized.Sign() > 0 {
-		return finalized, nil
-	}
-	return big.NewInt(0), nil
-}
-
-func (d *DelayedSequencer) sendToSequencer(newMessages []*DelayedInboxMessage) error {
-	l1msgs := make([]*arbos.L1IncomingMessage, len(newMessages))
-	for i, delayedMsg := range newMessages {
-		l1msgs[i] = delayedMsg.Message
-	}
-	err := d.inboxState.SequenceDelayedMessages(l1msgs, d.nextToSequence)
-	if err != nil {
-		return err
-	}
-	d.nextToSequence += uint64(len(newMessages))
-	return nil
+	return lastMsg.DelayedMessagesRead, nil
 }
 
 func (d *DelayedSequencer) update(ctx context.Context) error {
-	blockNr, err := d.finalizedBlockNr(ctx)
+	lastBlockHeader, err := d.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if blockNr.Cmp(d.scannedBlockNr) <= 0 {
-		// make sure there wasn't a deep reorg
-		messageNrReorged, err := d.bridge.GetMessageCount(ctx, d.scannedBlockNr)
+
+	// Unless we find an unfinalized message (which sets waitingForBlock),
+	// we won't find a new finalized message until FinalizeDistance blocks in the future.
+	d.waitingForBlock = new(big.Int).Add(lastBlockHeader.Number, d.config.FinalizeDistance)
+	finalized := new(big.Int).Sub(lastBlockHeader.Number, d.config.FinalizeDistance)
+	if finalized.Sign() < 0 {
+		finalized.SetInt64(0)
+	}
+
+	dbDelayedCount, err := d.inboxDb.GetDelayedCount()
+	if err != nil {
+		return err
+	}
+	startPos, err := d.getDelayedMessagesRead()
+	if err != nil {
+		return err
+	}
+
+	// Retrieve all finalized delayed messages
+	pos := startPos
+	var messages []*arbos.L1IncomingMessage
+	for pos < dbDelayedCount {
+		msg, err := d.inboxDb.GetDelayedMessage(pos)
 		if err != nil {
 			return err
 		}
-		if messageNrReorged != d.nextToSequence {
-			return errors.New("deep reorg detected")
+		blockNumber := msg.Header.BlockNumber.Big()
+		if blockNumber.Cmp(finalized) > 0 {
+			// Message is too far in the future; stop here
+			d.waitingForBlock = new(big.Int).Add(blockNumber, d.config.FinalizeDistance)
+			break
 		}
-		return nil
+		messages = append(messages, msg)
+		pos++
 	}
-	messagesNow, err := d.bridge.GetMessageCount(ctx, blockNr)
-	if err != nil {
-		return err
-	}
-	if messagesNow < d.nextToSequence {
-		return errors.New("deep reorg detected")
-	}
-	if messagesNow == d.nextToSequence {
-		d.scannedBlockNr = blockNr
-		return nil
-	}
-	newMessages, err := d.bridge.LookupMessagesInRange(ctx, new(big.Int).Add(d.scannedBlockNr, big.NewInt(1)), blockNr)
-	if err != nil {
-		return err
-	}
-	// these messages should be finalized, so we expect different querie to not contradt ech other
-	if (d.nextToSequence + uint64(len(newMessages))) != messagesNow {
-		return errors.New("fetching messages from delayedbridge error")
-	}
-	err = d.sendToSequencer(newMessages)
-	if err != nil {
-		return err
-	}
-	d.scannedBlockNr = blockNr
-	return nil
-}
 
-// only if pushed externaly - it's possible that only some of the messages posted in
-// a single L1 block were sent to the sequencer inbox.
-// handle it by sending a batch completing the delayed messages posted in the same block.
-func (d *DelayedSequencer) consumeFullBlock(ctx context.Context) error {
-	if d.nextToSequence == 0 {
-		return nil
+	// Sequence the delayed messages, if any
+	if len(messages) > 0 {
+		err = d.inboxState.SequenceDelayedMessages(messages, startPos)
+		if err != nil {
+			return err
+		}
 	}
-	msgCountScannedBlock, err := d.bridge.GetMessageCount(ctx, d.scannedBlockNr)
-	if err != nil {
-		return err
-	}
-	if msgCountScannedBlock < d.nextToSequence {
-		return errors.New("either reorg or scanned block not set well")
-	}
-	if msgCountScannedBlock == d.nextToSequence {
-		return nil
-	}
-	blockMessages, err := d.bridge.LookupMessagesInRange(ctx, d.scannedBlockNr, d.scannedBlockNr)
-	if err != nil {
-		return err
-	}
-	indexOfLastScanned := int64(d.nextToSequence) + int64(len(blockMessages)) - int64(msgCountScannedBlock)
-	if indexOfLastScanned < 1 {
-		return errors.New("either reorg or scanned block not set well")
-	}
-	blockMessages = blockMessages[indexOfLastScanned+1:]
-	err = d.sendToSequencer(blockMessages)
-	if err != nil {
-		return err
-	}
+
 	return nil
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) error {
-	err := d.consumeFullBlock(ctx)
-	if err != nil {
-		return err
-	}
 	headerChan := make(chan *types.Header)
 	headSubscribe, err := d.client.SubscribeNewHead(ctx, headerChan)
 	if err != nil {
@@ -186,8 +120,6 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 			return err
 		}
 		timeout := time.After(d.config.TimeAggregate)
-		nextBlockToCheck := new(big.Int).Add(d.scannedBlockNr, d.config.FinalizeDistance)
-		nextBlockToCheck.Add(nextBlockToCheck, d.config.BlocksAggregate)
 	AggregateWaitLoop:
 		for {
 			select {
@@ -196,7 +128,7 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 			case <-timeout:
 				break AggregateWaitLoop
 			case newHeader := <-headerChan:
-				if newHeader.Number.Cmp(nextBlockToCheck) >= 0 {
+				if d.waitingForBlock == nil || newHeader.Number.Cmp(d.waitingForBlock) >= 0 {
 					break AggregateWaitLoop
 				}
 			}

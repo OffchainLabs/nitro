@@ -41,6 +41,9 @@ func TestDelayInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// give the inbox reader a bit of time to pick up the delayed message
+	time.Sleep(time.Millisecond * 100)
+
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, l1backend, []*types.Transaction{
