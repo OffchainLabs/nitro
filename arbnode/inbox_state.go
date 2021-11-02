@@ -124,7 +124,16 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 func (s *InboxState) ReorgTo(count uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	return s.reorgToWithInsertionMutex(count)
+	batch := s.db.NewBatch()
+	s.reorgToInternal(batch, count)
+	return batch.Write()
+}
+
+func (s *InboxState) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	s.reorgToInternal(batch, count)
+	return batch.Write()
 }
 
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
@@ -149,7 +158,7 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
+func (s *InboxState) reorgToInternal(batch ethdb.Batch, count uint64) error {
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
@@ -168,7 +177,6 @@ func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
 		return err
 	}
 
-	batch := s.db.NewBatch()
 	err = deleteStartingAt(s.db, batch, messageCountToBlockPrefix, uint64ToBytes(count+1))
 	if err != nil {
 		return err
@@ -186,7 +194,7 @@ func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
 		return err
 	}
 
-	return batch.Write()
+	return nil
 }
 
 func dbKey(prefix []byte, pos uint64) []byte {
@@ -301,7 +309,12 @@ func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []a
 
 	if reorg {
 		if force {
-			err := s.reorgToWithInsertionMutex(pos)
+			batch := s.db.NewBatch()
+			err := s.reorgToInternal(batch, pos)
+			if err != nil {
+				return err
+			}
+			err = batch.Write()
 			if err != nil {
 				return err
 			}
