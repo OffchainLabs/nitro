@@ -68,6 +68,14 @@ func (r *InboxReader) Start(ctx context.Context) {
 	})()
 }
 
+func (r *InboxReader) Database() *InboxReaderDb {
+	return r.db
+}
+
+func (r *InboxReader) DelayedBridge() *DelayedBridge {
+	return r.delayedBridge
+}
+
 func (ir *InboxReader) run(ctx context.Context) error {
 	from, err := ir.getNextBlockToRead()
 	if err != nil {

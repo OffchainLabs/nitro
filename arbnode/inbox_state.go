@@ -368,7 +368,7 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 	for i, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        i != len(messages)-1,
+			MustEndBlock:        i == len(messages)-1,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i),
 		})
 	}

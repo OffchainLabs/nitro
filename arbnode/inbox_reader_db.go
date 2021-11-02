@@ -82,19 +82,25 @@ func (d *InboxReaderDb) GetDelayedCount() (uint64, error) {
 	return count, nil
 }
 
-func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+func (d *InboxReaderDb) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(delayedMessagePrefix, seqNum)
 	data, err := d.db.Get(key)
 	if err != nil {
-		return nil, err
+		return nil, common.Hash{}, err
 	}
 	if len(data) < 32 {
-		return nil, errors.New("delayed message entry missing accumulator")
+		return nil, common.Hash{}, errors.New("delayed message entry missing accumulator")
 	}
-	data = data[32:]
+	var acc common.Hash
+	copy(acc[:], data[:32])
 	var message arbos.L1IncomingMessage
-	err = rlp.DecodeBytes(data, &message)
-	return &message, err
+	err = rlp.DecodeBytes(data[32:], &message)
+	return &message, acc, err
+}
+
+func (d *InboxReaderDb) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
+	msg, _, err := d.GetDelayedMessageAndAccumulator(seqNum)
+	return msg, err
 }
 
 func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) error {
