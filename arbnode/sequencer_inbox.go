@@ -43,7 +43,7 @@ type SequencerInbox struct {
 func NewSequencerInbox(client L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	return &SequencerInbox{
@@ -55,13 +55,16 @@ func NewSequencerInbox(client L1Interface, addr common.Address, fromBlock int64)
 }
 
 func (i *SequencerInbox) GetBatchCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
+	if blockNumber.IsInt64() && blockNumber.Int64() < i.fromBlock {
+		return 0, nil
+	}
 	opts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
 	count, err := i.con.BatchCount(opts)
 	if err != nil {
-		return 0, err
+		return 0, errors.WithStack(err)
 	}
 	if !count.IsUint64() {
 		return 0, errors.New("sequencer inbox returned non-uint64 batch count")
@@ -74,7 +77,8 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
-	return i.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+	acc, err := i.con.InboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+	return acc, errors.WithStack(err)
 }
 
 type SequencerInboxBatch struct {

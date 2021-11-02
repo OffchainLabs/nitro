@@ -164,7 +164,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 	}
 }
 
-func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *BlockchainTestInfo) {
+func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *core.BlockChain, *BlockchainTestInfo) {
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
 	l1info.GenerateAccount("faucet")
 
@@ -231,7 +231,7 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 
-	return l1Client, l1info
+	return l1Client, l1backend.BlockChain(), l1info
 }
 
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {

@@ -31,6 +31,7 @@ type L1Interface interface {
 	bind.ContractBackend
 	ethereum.ChainReader
 	ethereum.TransactionReader
+	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 }
 
 // will wait untill tx is in the blockchain. attempts = 0 is infinite
@@ -66,7 +67,28 @@ func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receip
 		return nil, errors.New("expected receipt")
 	}
 	if txRes.Status != types.ReceiptStatusSuccessful {
-		return nil, errors.New("expected tx to succeed")
+		// Re-execute the transaction as a call to get
+		ctx := context.TODO()
+		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
+		if err != nil {
+			return nil, err
+		}
+		callMsg := ethereum.CallMsg{
+			From:       from,
+			To:         tx.To(),
+			Gas:        tx.Gas(),
+			GasPrice:   tx.GasPrice(),
+			GasFeeCap:  tx.GasFeeCap(),
+			GasTipCap:  tx.GasTipCap(),
+			Value:      tx.Value(),
+			Data:       tx.Data(),
+			AccessList: tx.AccessList(),
+		}
+		_, err = client.CallContract(ctx, callMsg, txRes.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("tx failed but call succeeded")
 	}
 	return txRes, nil
 }
