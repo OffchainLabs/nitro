@@ -138,9 +138,13 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	if err != nil {
 		return nil, err
 	}
+	sequencerInbox, err := NewSequencerInbox(l1client, sequencerInboxAddr, int64(blockDeployed))
+	if err != nil {
+		return nil, err
+	}
 	inboxReaderConfig := *DefaultInboxReaderConfig
 	inboxReaderConfig.CheckDelay = time.Millisecond * 10
-	inboxReader, err := NewInboxReader(rawdb, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, &inboxReaderConfig)
+	inboxReader, err := NewInboxReader(rawdb, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
 	if err != nil {
 		return nil, err
 	}

@@ -28,6 +28,8 @@ contract SequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
+        uint256[4] timeBounds,
+        uint256 reason,
         bytes data
     );
 
@@ -36,7 +38,8 @@ contract SequencerInbox {
         bytes32 indexed beforeAcc,
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead
+        uint256 afterDelayedMessagesRead,
+        uint256[4] timeBounds
     );
 
     constructor(
@@ -51,6 +54,15 @@ contract SequencerInbox {
 
 		maxDelayBlocks = maxDelaySeconds * 15;
 		maxFutureBlocks = 12;
+    }
+
+    function getTimeBounds() internal view returns (uint256[4] memory) {
+        uint256[4] memory bounds;
+        bounds[0] = block.timestamp - maxDelaySeconds;
+        bounds[1] = block.timestamp + maxFutureSeconds;
+        bounds[2] = block.number - maxDelayBlocks;
+        bounds[3] = block.number + maxFutureBlocks;
+        return bounds;
     }
 
     function forceInclusion(
@@ -100,6 +112,8 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
+            getTimeBounds(),
+            1,
             emptyData
         );
     }
@@ -130,7 +144,8 @@ contract SequencerInbox {
             beforeAcc,
             afterAcc,
             delayedAcc,
-            totalDelayedMessagesRead
+            totalDelayedMessagesRead,
+            getTimeBounds()
         );
 
         if (gasRefunder != IGasRefunder(0)) {
@@ -147,10 +162,6 @@ contract SequencerInbox {
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
         uint256 startGasLeft = gasleft();
-        uint256 calldataSize;
-        assembly {
-            calldataSize := calldatasize()
-        }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
         (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
@@ -163,10 +174,16 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             afterDelayedMessagesRead,
+            getTimeBounds(),
+            0,
             data
         );
 
         if (gasRefunder != IGasRefunder(0)) {
+            uint256 calldataSize;
+            assembly {
+                calldataSize := calldatasize()
+            }
             gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
         }
     }
