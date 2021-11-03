@@ -6,16 +6,19 @@ package arbtest
 
 import (
 	"context"
+	"encoding/hex"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
@@ -26,17 +29,18 @@ func TestOutboxProofs(t *testing.T) {
 	failOnError(t, err, "failed to get abi")
 	withdrawTopic := arbSysAbi.Events["L2ToL1Transaction"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
+	arbSysAddress := common.HexToAddress("0x64")
 
 	backend, l2info := CreateTestL2(t)
 	client := ClientForArbBackend(t, backend)
-	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
+	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	txnCount := int64(2 + rand.Intn(128))
+	txnCount := int64(1 + rand.Intn(128))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -92,10 +96,50 @@ func TestOutboxProofs(t *testing.T) {
 
 	merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
 	failOnError(t, err, "could not get merkle root")
-	rootHash := merkleState.Root // we assume the user knows the root and size
+	rootHash := merkleState.Root          // we assume the user knows the root and size
+	treeSize := merkleState.Size.Uint64() //
+
+	treeLevels := util.Log2ceil(treeSize)
+
+	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
+	t.Log("Root hash", hex.EncodeToString(rootHash[:]))
 
 	// using only the root and position, we'll prove the send hash exists for each node
 	for _, provable := range provables {
+		t.Log("Proving leaf", provable.leaf)
+
+		// find which nodes we'll want in our proof
+		needs := make([]common.Hash, 0)
+		place := provable.leaf
+		for level := 0; level < int(treeLevels); level++ {
+			sibling := place ^ 0b1
+
+			position := new(big.Int).Add(
+				new(big.Int).Lsh(big.NewInt(int64(level)), 192),
+				big.NewInt(int64(sibling)),
+			)
+
+			needs = append(needs, common.BigToHash(position))
+			place >>= 1
+		}
+
+		// query geth for
+		logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
+			Addresses: []common.Address{
+				arbSysAddress,
+			},
+			Topics: [][]common.Hash{
+				{merkleTopic, withdrawTopic},
+				nil,
+				nil,
+				needs,
+			},
+		})
+		failOnError(t, err, "couldn't get logs")
+
+		t.Log("Querried for", len(needs), "hashes")
+		t.Fatal("Found", len(logs), "logs for proof of", provable.leaf, "in", txnCount)
+
 		proof := merkletree.MerkleProof{
 			RootHash:  rootHash,
 			LeafHash:  provable.hash,
