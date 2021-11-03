@@ -125,7 +125,10 @@ func (s *InboxState) ReorgTo(count uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	batch := s.db.NewBatch()
-	s.reorgToInternal(batch, count)
+	err := s.reorgToInternal(batch, count)
+	if err != nil {
+		return err
+	}
 	return batch.Write()
 }
 
