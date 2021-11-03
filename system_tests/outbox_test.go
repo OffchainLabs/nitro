@@ -29,7 +29,7 @@ func TestOutboxProofs(t *testing.T) {
 
 	backend, l2info := CreateTestL2(t)
 	client := ClientForArbBackend(t, backend)
-	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x65"), client)
+	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,15 @@ func TestOutboxProofs(t *testing.T) {
 
 		failOnError(t, err, "No receipt for txn")
 
+		if receipt.Status != types.ReceiptStatusSuccessful {
+			t.Fatal("Tx failed with status code:", receipt)
+		}
+		if len(receipt.Logs) == 0 {
+			t.Fatal("Tx didn't emit any logs")
+		}
+
 		for _, log := range receipt.Logs {
+
 			if log.Topics[0] == withdrawTopic {
 				parsedLog, err := arbSys.ParseL2ToL1Transaction(*log)
 				failOnError(t, err, "Failed to parse log")
