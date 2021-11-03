@@ -108,7 +108,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			state.nonces = newNonces
 
 			var batchSegments [][]byte
-			numMessages := rand.Int() % 5
+			numMessages := 1 + rand.Int()%5
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
