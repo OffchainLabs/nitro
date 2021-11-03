@@ -224,10 +224,13 @@ func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage ui
 		logs = append(logs, receipt.Logs...)
 	}
 	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	if err != nil {
+		return err
+	}
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	return err
+	return nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.

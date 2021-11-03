@@ -156,10 +156,6 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	if err != nil {
 		return nil, err
 	}
-	rawdb, err := l2backend.Stack().OpenDatabase("l2inbox", 0, 0, "", false) // TODO: use l2chaindata?
-	if err != nil {
-		return nil, err
-	}
 	sequencerInbox, err := NewSequencerInbox(l1client, sequencerInboxAddr, int64(blockDeployed))
 	if err != nil {
 		return nil, err
@@ -172,7 +168,7 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 		return nil, errors.New("l2backend doesn't have a sequencer")
 	}
 	inbox := sequencerObj.InboxState()
-	inboxReader, err := NewInboxReader(rawdb, inbox, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
+	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +258,11 @@ func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitr
 		return nil, err
 	}
 
-	inbox, err := NewInboxState(chainDb, blockChain)
+	inboxDb, err := stack.OpenDatabase("l2inbox", 0, 0, "", false)
+	if err != nil {
+		utils.Fatalf("Failed to open inbox database: %v", err)
+	}
+	inbox, err := NewInboxState(inboxDb, blockChain)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitr
 
 	sequencer := NewSequencer(inbox)
 
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
+	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, inboxDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
 	if err != nil {
 		return nil, err
 	}

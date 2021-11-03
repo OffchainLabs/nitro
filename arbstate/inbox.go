@@ -203,7 +203,7 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 			r.advanceSegmentTo = currentSegment + 1
 		}
 		// check if we're advancing past the end of the message
-		if uint64(len(seqMsg.segments)) >= r.advanceSegmentTo {
+		if r.advanceSegmentTo >= uint64(len(seqMsg.segments)) {
 			if r.advanceDelayedTo >= seqMsg.afterDelayedMessages {
 				// we're ready to move on to the next message
 				r.advanceMessage = true

@@ -394,6 +394,7 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 		}
 
 		nextAcc = batch.AfterInboxAcc
+		pos++
 	}
 
 	var messages []arbstate.MessageWithMetadata

@@ -15,7 +15,6 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
@@ -30,7 +29,7 @@ type blockTestState struct {
 	l1BlockNumber uint64
 }
 
-func TestInboxState(t *testing.T) {
+func TestSequencerInboxReader(t *testing.T) {
 	l2Backend, l2Info := CreateTestL2(t)
 	l1Client, l1BlockChain, l1Info := CreateTestL1(t, l2Backend)
 
@@ -43,10 +42,16 @@ func TestInboxState(t *testing.T) {
 	ownerAddress := l2Info.GetAddress("Owner")
 	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
+	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(context.Background(), rpc.LatestBlockNumber)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startOwnerBalance := startState.GetBalance(ownerAddress).Uint64()
+
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]uint64{
-			ownerAddress: params.Ether,
+			ownerAddress: startOwnerBalance,
 		},
 		accounts:      []common.Address{ownerAddress},
 		l2BlockNumber: startL2BlockNumber,
@@ -147,7 +152,7 @@ func TestInboxState(t *testing.T) {
 			if blockNumber == expectedBlockNumber {
 				break
 			} else if i >= 100 {
-				t.Fatal("timed out waiting for l2 block update")
+				t.Fatal("timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
