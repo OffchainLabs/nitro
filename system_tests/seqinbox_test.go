@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -128,7 +129,7 @@ func TestSequencerInboxReader(t *testing.T) {
 					t.Fatal(err)
 				}
 				var segment []byte
-				segment = append(segment, 0) // segmentKindL2Message
+				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
 				batchSegments = append(batchSegments, segment)
@@ -168,7 +169,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			blockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 			if blockNumber == expectedBlockNumber {
 				break
-			} else if i >= 100 {
+			} else if i >= 1000 {
 				t.Fatal("timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
 			}
 			time.Sleep(10 * time.Millisecond)

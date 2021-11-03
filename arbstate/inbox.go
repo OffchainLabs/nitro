@@ -132,10 +132,10 @@ var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 	L2msg: []byte{},
 }
 
-const segmentKindL2Message uint8 = 0
-const segmentKindDelayedMessages uint8 = 1
-const segmentKindAdvanceTimestamp uint8 = 2
-const segmentKindAdvanceL1BlockNumber uint8 = 3
+const BatchSegmentKindL2Message uint8 = 0
+const BatchSegmentKindDelayedMessages uint8 = 1
+const BatchSegmentKindAdvanceTimestamp uint8 = 2
+const BatchSegmentKindAdvanceL1BlockNumber uint8 = 3
 
 // Returns the next message without advancing, and any *backend* error
 // This does *not* return parse errors, those are transformed into invalid messages
@@ -238,16 +238,16 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 			continue
 		}
 		segmentKind := segment[0]
-		if segmentKind == segmentKindAdvanceTimestamp || segmentKind == segmentKindAdvanceL1BlockNumber {
+		if segmentKind == BatchSegmentKindAdvanceTimestamp || segmentKind == BatchSegmentKindAdvanceL1BlockNumber {
 			rd := bytes.NewReader(segment[1:])
 			advancing, err := rlp.NewStream(rd, 16).Uint()
 			if err != nil {
 				log.Warn("error parsing sequencer advancing segment", "err", err)
 				continue
 			}
-			if segmentKind == segmentKindAdvanceTimestamp {
+			if segmentKind == BatchSegmentKindAdvanceTimestamp {
 				timestamp += advancing
-			} else if segmentKind == segmentKindAdvanceL1BlockNumber {
+			} else if segmentKind == BatchSegmentKindAdvanceL1BlockNumber {
 				blockNumber += advancing
 			}
 			segmentNum++
@@ -277,7 +277,7 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		return nil, nil, errors.New("empty sequencer message segment")
 	}
 	segmentKind := segment[0]
-	if segmentKind == segmentKindL2Message {
+	if segmentKind == BatchSegmentKindL2Message {
 		// L2 message
 		var blockNumberHash common.Hash
 		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
@@ -306,7 +306,7 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
 		return msg, nil, nil
-	} else if segmentKind == segmentKindDelayedMessages {
+	} else if segmentKind == BatchSegmentKindDelayedMessages {
 		// Delayed message reading
 		rd := bytes.NewReader(segment[1:])
 		reading, err := rlp.NewStream(rd, 16).Uint()

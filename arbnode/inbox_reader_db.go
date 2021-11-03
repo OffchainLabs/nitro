@@ -232,8 +232,14 @@ func (d *InboxReaderDb) addDelayedMessages(messages []*DelayedInboxMessage) erro
 		pos++
 	}
 
-	newDelayedCount := pos
-	err = deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
+	return d.setDelayedCountReorgAndWriteBatch(batch, pos)
+}
+
+// All-in-one delayed message count adjuster. Can go forwards or backwards.
+// Requires the mutex is held. Sets the delayed count and performs any sequencer batch reorg necessary.
+// Also deletes any future delayed messages.
+func (d *InboxReaderDb) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newDelayedCount uint64) error {
+	err := deleteStartingAt(d.db, batch, delayedMessagePrefix, uint64ToBytes(newDelayedCount))
 	if err != nil {
 		return err
 	}
@@ -452,7 +458,7 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 		pos++
 	}
 
-	err = deleteStartingAt(d.db, dbBatch, sequencerBatchCountKey, uint64ToBytes(pos))
+	err = deleteStartingAt(d.db, dbBatch, sequencerBatchMetaPrefix, uint64ToBytes(pos))
 	if err != nil {
 		return err
 	}
@@ -467,4 +473,58 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 
 	// This also writes the batch
 	return d.inboxState.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
+}
+
+func (d *InboxReaderDb) ReorgDelayedTo(count uint64) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	currentCount, err := d.GetDelayedCount()
+	if err != nil {
+		return err
+	}
+	if currentCount == count {
+		return nil
+	} else if currentCount < count {
+		return errors.New("attempted to reorg to future delayed count")
+	}
+
+	return d.setDelayedCountReorgAndWriteBatch(d.db.NewBatch(), count)
+}
+
+func (d *InboxReaderDb) ReorgBatchesTo(count uint64) error {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	var prevMeta BatchMetadata
+	if count > 0 {
+		var err error
+		prevMeta, err = d.GetBatchMetadata(count - 1)
+		if errors.Is(err, accumulatorNotFound) {
+			return errors.New("attempted to reorg to future batch count")
+		} else if err != nil {
+			return err
+		}
+	}
+
+	dbBatch := d.db.NewBatch()
+
+	err := deleteStartingAt(d.db, dbBatch, delayedSequencedPrefix, uint64ToBytes(prevMeta.DelayedMessageCount))
+	if err != nil {
+		return err
+	}
+	err = deleteStartingAt(d.db, dbBatch, sequencerBatchMetaPrefix, uint64ToBytes(count))
+	if err != nil {
+		return err
+	}
+	countData, err := rlp.EncodeToBytes(count)
+	if err != nil {
+		return err
+	}
+	err = dbBatch.Put(sequencerBatchCountKey, countData)
+	if err != nil {
+		return err
+	}
+
+	return d.inboxState.ReorgToAndEndBatch(dbBatch, prevMeta.MessageCount)
 }

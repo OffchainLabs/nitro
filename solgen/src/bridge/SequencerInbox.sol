@@ -11,7 +11,6 @@ import "../utils/IGasRefunder.sol";
 
 contract SequencerInbox {
 	bytes32[] public inboxAccs;
-	uint256 public batchCount;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
@@ -230,5 +229,9 @@ contract SequencerInbox {
         acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
+    }
+
+    function batchCount() external view returns (uint256) {
+        return inboxAccs.length;
     }
 }

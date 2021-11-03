@@ -17,11 +17,13 @@ import (
 type InboxReaderConfig struct {
 	DelayBlocks int64
 	CheckDelay  time.Duration
+	HardReorg   bool // erase future transactions in addition to overwriting existing ones
 }
 
 var DefaultInboxReaderConfig = &InboxReaderConfig{
 	DelayBlocks: 4,
 	CheckDelay:  2 * time.Second,
+	HardReorg:   true,
 }
 
 type InboxReader struct {
@@ -115,6 +117,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if ourLatestDelayedCount < checkingDelayedCount {
 				checkingDelayedCount = ourLatestDelayedCount
 				missingDelayed = true
+			} else if ourLatestDelayedCount > checkingDelayedCount && ir.config.HardReorg {
+				err = ir.db.ReorgDelayedTo(checkingDelayedCount)
+				if err != nil {
+					return err
+				}
 			}
 			if checkingDelayedCount > 0 {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
@@ -144,6 +151,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if ourLatestBatchCount < checkingBatchCount {
 				checkingBatchCount = ourLatestBatchCount
 				missingSequencer = true
+			} else if ourLatestBatchCount > checkingBatchCount && ir.config.HardReorg {
+				err = ir.db.ReorgBatchesTo(checkingBatchCount)
+				if err != nil {
+					return err
+				}
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
@@ -223,7 +235,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 						}
 					}
 				}
-			} else if missingSequencer {
+			} else if missingSequencer && to.Cmp(currentHeight) >= 0 {
 				// We were missing sequencer batches but didn't find any.
 				// This must mean that the sequencer batches are in the past.
 				reorgingSequencer = true
@@ -248,7 +260,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 						reorgingDelayed = true
 					}
 				}
-			} else if missingDelayed {
+			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {
 				// We were missing delayed messages but didn't find any.
 				// This must mean that the delayed messages are in the past.
 				reorgingDelayed = true
