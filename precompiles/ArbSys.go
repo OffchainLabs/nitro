@@ -23,7 +23,7 @@ type ArbSys struct {
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
-	return evm.Context.Time, nil
+	return evm.Context.BlockNumber, nil
 }
 
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
