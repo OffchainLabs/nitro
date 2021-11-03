@@ -121,7 +121,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][3
 }
 
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	return false, errors.New("unimplemented")
+	return evm.Depth()==2 && evm.OriginWasRemapped, nil
 }
 
 func (con ArbSys) WithdrawEth(c ctx, evm mech, value *big.Int, destination common.Address) (*big.Int, error) {
