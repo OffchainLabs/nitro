@@ -158,6 +158,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			continue
 		}
 		snap := b.statedb.Snapshot()
+		b.statedb.Prepare(tx.Hash(), len(b.txes))
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
 			b.chainContext,
@@ -180,9 +181,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 }
 
 func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
-
-	println("\n\nCONSTRUCTING BLOCK")
-
 	if b.header == nil {
 		var lastBlockHash common.Hash
 		blockNumber := big.NewInt(0)
@@ -217,10 +215,7 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	tmpBlock := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
-	println("\tREC: ", len(b.receipts))
-
 	for _, receipt := range b.receipts {
-		println("\tLOGS:", len(receipt.Logs))
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
 			txLog.BlockHash = blockHash
