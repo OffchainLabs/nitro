@@ -15,6 +15,8 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
@@ -24,6 +26,7 @@ import (
 
 type blockTestState struct {
 	balances      map[common.Address]uint64
+	nonces        map[common.Address]uint64
 	accounts      []common.Address
 	l2BlockNumber uint64
 	l1BlockNumber uint64
@@ -47,11 +50,15 @@ func TestSequencerInboxReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	startOwnerBalance := startState.GetBalance(ownerAddress).Uint64()
+	startOwnerNonce := startState.GetNonce(ownerAddress)
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]uint64{
 			ownerAddress: startOwnerBalance,
+		},
+		nonces: map[common.Address]uint64{
+			ownerAddress: startOwnerNonce,
 		},
 		accounts:      []common.Address{ownerAddress},
 		l2BlockNumber: startL2BlockNumber,
@@ -81,6 +88,11 @@ func TestSequencerInboxReader(t *testing.T) {
 				newBalances[k] = v
 			}
 			state.balances = newBalances
+			newNonces := make(map[common.Address]uint64)
+			for k, v := range state.nonces {
+				newNonces[k] = v
+			}
+			state.nonces = newNonces
 
 			var batchSegments [][]byte
 			numMessages := rand.Int() % 5
@@ -88,24 +100,29 @@ func TestSequencerInboxReader(t *testing.T) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := uint64(rand.Int()) % state.balances[source]
-				if state.balances[source]-amount < 100000000 || amount == 0 {
+				if state.balances[source]-amount < params.InitialBaseFee*100000 || amount == 0 {
 					// Leave enough funds for gas
 					amount = 1
 				}
 				var dest common.Address
-				var destNum int
 				if j == 0 {
-					destNum = len(state.accounts)
-					name := accountName(destNum)
+					name := accountName(len(state.accounts))
 					l2Info.GenerateAccount(name)
 					dest = l2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
 				} else {
-					destNum = rand.Int() % len(state.accounts)
-					dest = state.accounts[destNum]
+					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
 
-				tx := l2Info.PrepareTx(accountName(sourceNum), accountName(destNum), 50001, big.NewInt(1e6), nil)
+				rawTx := &types.DynamicFeeTx{
+					To:        &dest,
+					Gas:       21000,
+					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					Value:     new(big.Int).SetUint64(amount),
+					Nonce:     state.nonces[source],
+				}
+				state.nonces[source]++
+				tx := l2Info.SignTxAs(accountName(sourceNum), rawTx)
 				txData, err := tx.MarshalBinary()
 				if err != nil {
 					t.Fatal(err)
@@ -172,7 +189,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			for acct, balance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
-					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
+					t.Fatal("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
 		}
