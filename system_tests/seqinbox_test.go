@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -76,6 +77,16 @@ func TestSequencerInboxReader(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
+			t.Logf("Iteration %v: reorg to state %v", i, reorgTo)
+			// Make the reorg larger to force the miner to discard transactions.
+			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
+			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
+			// Therefore, we make a bunch of small blocks to prevent the code from running.
+			for j := 0; j < 64; j++ {
+				SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+					l1Info.PrepareTx("faucet", "faucet", 30000, big.NewInt(1e12), nil),
+				})
+			}
 			reorgTarget := l1BlockChain.GetBlockByNumber(blockStates[reorgTo].l1BlockNumber)
 			err := l1BlockChain.ReorgToOldBlock(reorgTarget)
 			if err != nil {
@@ -83,6 +94,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
+			t.Logf("Iteration %v: state %v", i, len(blockStates))
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]uint64)
 			for k, v := range state.balances {
@@ -162,6 +174,19 @@ func TestSequencerInboxReader(t *testing.T) {
 			state.l2BlockNumber += uint64(numMessages)
 			state.l1BlockNumber = txRes.BlockNumber.Uint64()
 			blockStates = append(blockStates, state)
+		}
+
+		for i := 0; ; i++ {
+			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if batchCount.Cmp(big.NewInt(int64(len(blockStates)-1))) == 0 {
+				break
+			} else if i >= 100 {
+				t.Fatal("timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 
 		expectedBlockNumber := blockStates[len(blockStates)-1].l2BlockNumber

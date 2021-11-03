@@ -454,8 +454,6 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 		if err != nil {
 			return err
 		}
-
-		pos++
 	}
 
 	err = deleteStartingAt(d.db, dbBatch, sequencerBatchMetaPrefix, uint64ToBytes(pos))
