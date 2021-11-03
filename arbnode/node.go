@@ -57,32 +57,33 @@ func WaitForTx(client L1Interface, txhash common.Hash, timeout time.Duration) (*
 	}
 }
 
-func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) error {
+func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
 	txRes, err := WaitForTx(client, tx.Hash(), time.Second)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if txRes == nil {
-		return errors.New("expected receipt")
+		return nil, errors.New("expected receipt")
 	}
 	if txRes.Status != types.ReceiptStatusSuccessful {
-		return errors.New("expected tx to succeed")
+		return nil, errors.New("expected tx to succeed")
 	}
-	return nil
+	return txRes, nil
 }
 
 type RollupAddresses struct {
 	Bridge         common.Address
 	Inbox          common.Address
 	SequencerInbox common.Address
+	DeployedAt     uint64
 }
 
-func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
+func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -90,7 +91,7 @@ func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequ
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -98,7 +99,7 @@ func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequ
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -106,7 +107,7 @@ func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequ
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -114,7 +115,7 @@ func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequ
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -122,14 +123,47 @@ func CreateL1WithInbox(l1client L1Interface, deployAuth *bind.TransactOpts, sequ
 	if err != nil {
 		return nil, err
 	}
-	if err := EnsureTxSucceeded(l1client, tx); err != nil {
+	txRes, err := EnsureTxSucceeded(l1client, tx)
+	if err != nil {
 		return nil, err
 	}
+
+	blockDeployed := txRes.BlockNumber.Uint64()
+
+	delayedBridge, err := NewDelayedBridge(l1client, bridgeAddr, blockDeployed)
+	if err != nil {
+		return nil, err
+	}
+	rawdb, err := l2backend.Stack().OpenDatabase("l2inbox", 0, 0, "", false) // TODO: use l2chaindata?
+	if err != nil {
+		return nil, err
+	}
+	inboxReaderConfig := *DefaultInboxReaderConfig
+	inboxReaderConfig.CheckDelay = time.Millisecond * 10
+	inboxReader, err := NewInboxReader(rawdb, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, &inboxReaderConfig)
+	if err != nil {
+		return nil, err
+	}
+	inboxReader.Start(context.Background())
+	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
+	if !ok {
+		return nil, errors.New("l2backend doesn't have a sequencer")
+	}
+	inbox := sequencerObj.InboxState()
+	delayedSequencerConfig := *DefaultDelayedSequencerConfig
+	// not necessary, but should help prevent spurious failures in delayed sequencer test
+	delayedSequencerConfig.TimeAggregate = time.Second
+	delayed_sequencer, err := NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
+	if err != nil {
+		return nil, err
+	}
+	delayed_sequencer.Start(context.Background())
 
 	return &RollupAddresses{
 		Bridge:         bridgeAddr,
 		Inbox:          inboxAddr,
 		SequencerInbox: sequencerInboxAddr,
+		DeployedAt:     txRes.BlockNumber.Uint64(),
 	}, nil
 }
 
@@ -165,7 +199,7 @@ func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitr
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(0),
+		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
 	}
 
 	engine := arbos.Engine{

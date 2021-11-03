@@ -8,10 +8,13 @@ import (
 	"errors"
 	"math/big"
 
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 type ArbSys struct {
@@ -23,11 +26,11 @@ type ArbSys struct {
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
-	return nil, errors.New("unimplemented")
+	return evm.Context.BlockNumber, nil
 }
 
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
-	return big.NewInt(412345), nil
+	return evm.ChainConfig().ChainID, nil
 }
 
 func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
@@ -35,31 +38,35 @@ func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
-	return nil, errors.New("unimplemented")
+	if err := c.burn(params.SloadGas); err != nil {
+		return nil, err
+	}
+	return evm.StateDB.GetState(address, common.BigToHash(index)).Big(), nil
 }
 
 func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
-	return nil, errors.New("unimplemented")
+	return big.NewInt(0), nil
 }
 
 func (con *ArbSys) GetTransactionCount(c ctx, evm mech, account addr) (huge, error) {
-	return nil, errors.New("unimplemented")
+	return big.NewInt(int64(evm.StateDB.GetNonce(account))), nil
 }
 
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
+	// need to modify EVM to add a getter for its depth field
 	return false, errors.New("unimplemented")
 }
 
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
-	return addr{}, errors.New("unimplemented")
+	return util.RemapL1Address(sender), nil
 }
 
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
+	// need special support to enable this
 	return addr{}, errors.New("unimplemented")
 }
 
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
-
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination

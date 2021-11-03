@@ -14,7 +14,6 @@ import (
 )
 
 var arbAddress = common.HexToAddress("0xabc")
-var networkFeeCollector common.Address
 
 type TxProcessor struct {
 	msg          core.Message
@@ -96,9 +95,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, gasPool *core.GasPool, success b
 	totalPaid := new(big.Int).Mul(gasUsed, p.msg.GasPrice())
 	l1ChargeWei := p.getExtraGasChargeWei()
 	l2ChargeWei := new(big.Int).Sub(totalPaid, l1ChargeWei)
-	p.stateDB.SubBalance(p.blockContext.Coinbase, l2ChargeWei)
-	p.stateDB.AddBalance(networkFeeCollector, l2ChargeWei)
+	//TODO:
+	//	p.stateDB.SubBalance(p.blockContext.Coinbase, l2ChargeWei)
+	//	p.stateDB.AddBalance(networkFeeCollector, l2ChargeWei)
 	if p.msg.GasPrice().Sign() > 0 {
+		// in tests, gasprice coud be 0
 		p.state.notifyGasUsed(new(big.Int).Div(l2ChargeWei, p.msg.GasPrice()).Uint64())
 	}
 	return nil
