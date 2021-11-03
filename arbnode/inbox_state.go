@@ -122,20 +122,16 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 }
 
 func (s *InboxState) ReorgTo(count uint64) error {
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
-	batch := s.db.NewBatch()
-	err := s.reorgToInternal(batch, count)
-	if err != nil {
-		return err
-	}
-	return batch.Write()
+	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
 }
 
 func (s *InboxState) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	s.reorgToInternal(batch, count)
+	err := s.reorgToInternal(batch, count)
+	if err != nil {
+		return err
+	}
 	return batch.Write()
 }
 
