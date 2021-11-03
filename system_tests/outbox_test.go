@@ -137,8 +137,8 @@ func TestOutboxProofs(t *testing.T) {
 		})
 		failOnError(t, err, "couldn't get logs")
 
-		t.Log("Querried for", len(needs), "hashes")
-		t.Fatal("Found", len(logs), "logs for proof of", provable.leaf, "in", txnCount)
+		t.Log("Querried for", len(needs), "positions", needs)
+		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
 
 		proof := merkletree.MerkleProof{
 			RootHash:  rootHash,
