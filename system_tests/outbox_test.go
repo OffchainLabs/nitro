@@ -103,6 +103,7 @@ func TestOutboxProofs(t *testing.T) {
 
 	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
 	t.Log("Root hash", hex.EncodeToString(rootHash[:]))
+	t.Log("Will query against topics\n\tmerkle:   ", merkleTopic, "\n\twithdraw: ", withdrawTopic)
 
 	// using only the root and position, we'll prove the send hash exists for each node
 	for _, provable := range provables {
@@ -110,9 +111,9 @@ func TestOutboxProofs(t *testing.T) {
 
 		// find which nodes we'll want in our proof
 		needs := make([]common.Hash, 0)
-		place := provable.leaf
+		place := uint64(1)
 		for level := 0; level < int(treeLevels); level++ {
-			sibling := place ^ 0b1
+			sibling := provable.leaf ^ place
 
 			position := new(big.Int).Add(
 				new(big.Int).Lsh(big.NewInt(int64(level)), 192),
@@ -120,7 +121,7 @@ func TestOutboxProofs(t *testing.T) {
 			)
 
 			needs = append(needs, common.BigToHash(position))
-			place >>= 1
+			place <<= 1
 		}
 
 		// query geth for
@@ -139,6 +140,10 @@ func TestOutboxProofs(t *testing.T) {
 
 		t.Log("Querried for", len(needs), "positions", needs)
 		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
+
+		for _, log := range logs {
+			t.Log(log)
+		}
 
 		proof := merkletree.MerkleProof{
 			RootHash:  rootHash,
