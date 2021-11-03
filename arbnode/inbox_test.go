@@ -7,6 +7,7 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -32,9 +33,10 @@ type blockTestState struct {
 
 func TestInboxState(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
-	genesisAlloc[ownerAddress] = core.GenesisAccount{
+	genesisAlloc[rewrittenOwnerAddress] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether),
 		Nonce:      0,
 		PrivateKey: nil,
@@ -72,9 +74,9 @@ func TestInboxState(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]uint64{
-			ownerAddress: params.Ether,
+			rewrittenOwnerAddress: params.Ether,
 		},
-		accounts:    []common.Address{ownerAddress},
+		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 0,
 		blockNumber: 0,
 	})
@@ -122,7 +124,7 @@ func TestInboxState(t *testing.T) {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,
-							Sender: source,
+							Sender: util.InverseRemapL1Address(source),
 						},
 						L2msg: l2Message,
 					},

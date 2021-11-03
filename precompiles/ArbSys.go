@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 )
 
@@ -19,16 +20,6 @@ type ArbSys struct {
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
 	SendMerkleUpdate         func(mech, huge, huge, [32]byte)
 	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
-}
-
-var AddressAliasOffset *big.Int
-
-func init() {
-	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
-	if !success {
-		panic("Error initializing AddressAliasOffset")
-	}
-	AddressAliasOffset = offset
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -64,11 +55,7 @@ func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
 }
 
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
-	sumBytes := new(big.Int).Add(new(big.Int).SetBytes(sender.Bytes()), AddressAliasOffset).Bytes()
-	if len(sumBytes) > 20 {
-		sumBytes = sumBytes[len(sumBytes)-20:]
-	}
-	return common.BytesToAddress(sumBytes), nil
+	return util.RemapL1Address(sender), nil
 }
 
 func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
