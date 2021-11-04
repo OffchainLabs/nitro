@@ -347,7 +347,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 	if includesNonce {
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:  nil,
-			From:     l1Sender,
+			From:     util.RemapL1Address(l1Sender),
 			Nonce:    nonce,
 			GasPrice: gasPrice.Big(),
 			Gas:      gasLimit.Big().Uint64(),
@@ -359,7 +359,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 		inner = &types.ArbitrumContractTx{
 			ChainId:   nil,
 			RequestId: requestId,
-			From:      l1Sender,
+			From:      util.RemapL1Address(l1Sender),
 			GasPrice:  gasPrice.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
