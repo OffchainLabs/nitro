@@ -40,7 +40,8 @@ func TestOutboxProofs(t *testing.T) {
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	txnCount := int64(1 + rand.Intn(128))
+	//txnCount := int64(1 + rand.Intn(128))
+	txnCount := int64(util.NextPowerOf2(uint64(rand.Intn(48))))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -100,6 +101,7 @@ func TestOutboxProofs(t *testing.T) {
 	treeSize := merkleState.Size.Uint64() //
 
 	treeLevels := util.Log2ceil(treeSize)
+	proofLevels := int(treeLevels - 1)
 
 	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
 	t.Log("Root hash", hex.EncodeToString(rootHash[:]))
@@ -111,9 +113,11 @@ func TestOutboxProofs(t *testing.T) {
 
 		// find which nodes we'll want in our proof
 		needs := make([]common.Hash, 0)
-		place := uint64(1)
-		for level := 0; level < int(treeLevels); level++ {
-			sibling := provable.leaf ^ place
+		which := uint64(1)     // which bit to flip & set
+		place := provable.leaf // where we are in the tree
+
+		for level := 0; level < proofLevels; level++ {
+			sibling := place ^ which
 
 			position := new(big.Int).Add(
 				new(big.Int).Lsh(big.NewInt(int64(level)), 192),
@@ -121,7 +125,8 @@ func TestOutboxProofs(t *testing.T) {
 			)
 
 			needs = append(needs, common.BigToHash(position))
-			place <<= 1
+			place |= which // set the bit so that we approach from the right
+			which <<= 1    // advance to the next bit
 		}
 
 		// query geth for
@@ -141,15 +146,22 @@ func TestOutboxProofs(t *testing.T) {
 		t.Log("Querried for", len(needs), "positions", needs)
 		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
 
+		hashes := make([]common.Hash, proofLevels)
 		for _, log := range logs {
-			t.Log(log)
+			level := new(big.Int).SetBytes(log.Topics[3][:8]).Uint64()
+			hashes[level] = log.Topics[2]
+			t.Log("Log:\n\tposition:", log.Topics[3], level, "\n\thash:    ", log.Topics[2])
+		}
+
+		for i, hash := range hashes {
+			t.Log("part", i, hash)
 		}
 
 		proof := merkletree.MerkleProof{
 			RootHash:  rootHash,
 			LeafHash:  provable.hash,
 			LeafIndex: provable.leaf,
-			Proof:     []common.Hash{},
+			Proof:     hashes,
 		}
 
 		if !proof.IsCorrect() {

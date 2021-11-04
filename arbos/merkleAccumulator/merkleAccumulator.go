@@ -114,7 +114,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent
 		h := common.Hash{}
 		acc.setPartial(level, &h)
 		level += 1
-		events = append(events, MerkleTreeNodeEvent{level, acc.size, common.BytesToHash(soFar)})
+		events = append(events, MerkleTreeNodeEvent{level, acc.size - 1, common.BytesToHash(soFar)})
 	}
 }
 
