@@ -91,6 +91,9 @@ func TestSequencerInboxReader(t *testing.T) {
 		}
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
+			if reorgTo == 0 {
+				reorgTo = 1
+			}
 			// Make the reorg larger to force the miner to discard transactions.
 			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
@@ -134,7 +137,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := uint64(rand.Int()) % state.balances[source]
-				if state.balances[source]-amount < params.InitialBaseFee*100000 || amount == 0 {
+				if state.balances[source]-amount < params.InitialBaseFee*10000000 || amount == 0 {
 					// Leave enough funds for gas
 					amount = 1
 				}
@@ -190,6 +193,15 @@ func TestSequencerInboxReader(t *testing.T) {
 			txRes, err := arbnode.EnsureTxSucceeded(l1Client, tx)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			for i := 0; i < len(state.accounts); i++ {
+				account := state.accounts[i]
+				if state.balances[account] == 0 {
+					delete(state.balances, account)
+					state.accounts = append(state.accounts[:i], state.accounts[(i+1):]...)
+					i--
+				}
 			}
 
 			state.l2BlockNumber += uint64(numMessages)
