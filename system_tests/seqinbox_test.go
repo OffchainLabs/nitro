@@ -131,7 +131,8 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			state.nonces = newNonces
 
-			var batchSegments [][]byte
+			batchBuffer := bytes.NewBuffer([]byte{0})
+			batchWriter := brotli.NewWriter(batchBuffer)
 			numMessages := 1 + rand.Int()%5
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
@@ -168,19 +169,16 @@ func TestSequencerInboxReader(t *testing.T) {
 				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
-				batchSegments = append(batchSegments, segment)
+				err = rlp.Encode(batchWriter, segment)
+				if err != nil {
+					t.Fatal(err)
+				}
 
 				state.balances[source] -= amount
 				state.balances[dest] += amount
 			}
 
-			batchBuffer := new(bytes.Buffer)
-			writer := brotli.NewWriter(batchBuffer)
-			err := rlp.Encode(writer, batchSegments)
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = writer.Close()
+			err = batchWriter.Close()
 			if err != nil {
 				t.Fatal(err)
 			}

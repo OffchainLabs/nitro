@@ -64,12 +64,23 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	minL1Block := binary.BigEndian.Uint64(data[16:24])
 	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
-	reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[40:])), maxDecompressedLen)
 	var segments [][]byte
-	err := rlp.NewStream(reader, uint64(maxDecompressedLen)).Decode(&segments)
-	if err != nil {
-		log.Warn("error parsing sequencer message segments", "err", err.Error())
-		segments = nil
+	if len(data) >= 41 && data[40] == 0 {
+		reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
+		stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+		for {
+			var segment []byte
+			err := stream.Decode(&segment)
+			if err != nil {
+				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+					log.Warn("error parsing sequencer message segment", "err", err.Error())
+				}
+				break
+			}
+			segments = append(segments, segment)
+		}
+	} else {
+		log.Warn("unknown sequencer message format")
 	}
 	return &sequencerMessage{
 		minTimestamp:         minTimestamp,
