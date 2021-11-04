@@ -40,8 +40,7 @@ func TestOutboxProofs(t *testing.T) {
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	//txnCount := int64(1 + rand.Intn(128))
-	txnCount := int64(util.NextPowerOf2(uint64(rand.Intn(48))))
+	txnCount := int64(1 + rand.Intn(32))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -99,19 +98,21 @@ func TestOutboxProofs(t *testing.T) {
 	failOnError(t, err, "could not get merkle root")
 	rootHash := merkleState.Root          // we assume the user knows the root and size
 	treeSize := merkleState.Size.Uint64() //
+	balanced := treeSize == util.RoundUpToPowerOf2(treeSize)/2
 
 	treeLevels := util.Log2ceil(treeSize)
 	proofLevels := int(treeLevels - 1)
 
 	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
 	t.Log("Root hash", hex.EncodeToString(rootHash[:]))
+	t.Log("Balanced:", balanced)
 	t.Log("Will query against topics\n\tmerkle:   ", merkleTopic, "\n\twithdraw: ", withdrawTopic)
 
 	// using only the root and position, we'll prove the send hash exists for each node
 	for _, provable := range provables {
 		t.Log("Proving leaf", provable.leaf)
 
-		// find which nodes we'll want in our proof
+		// find which nodes we'll want in our proof up to a partial
 		needs := make([]common.Hash, 0)
 		which := uint64(1)     // which bit to flip & set
 		place := provable.leaf // where we are in the tree
@@ -127,6 +128,28 @@ func TestOutboxProofs(t *testing.T) {
 			needs = append(needs, common.BigToHash(position))
 			place |= which // set the bit so that we approach from the right
 			which <<= 1    // advance to the next bit
+		}
+
+		// find all the partials
+		if !balanced {
+			power := uint64(1) << proofLevels
+			total := uint64(0)
+			for level := proofLevels; level >= 0; level-- {
+
+				if (power & treeSize) > 0 { // the partials map to the binary representation of the tree size
+
+					total += power       // The actual leaf for a given partial is the sum of the powers of 2
+					partial := total - 1 // preceding it. We count from zero and thus subtract 1.
+
+					position := new(big.Int).Add(
+						new(big.Int).Lsh(big.NewInt(int64(level)), 192),
+						big.NewInt(int64(partial)),
+					)
+
+					needs = append(needs, common.BigToHash(position))
+				}
+				power >>= 1
+			}
 		}
 
 		// query geth for
@@ -149,8 +172,9 @@ func TestOutboxProofs(t *testing.T) {
 		hashes := make([]common.Hash, proofLevels)
 		for _, log := range logs {
 			level := new(big.Int).SetBytes(log.Topics[3][:8]).Uint64()
-			hashes[level] = log.Topics[2]
-			t.Log("Log:\n\tposition:", log.Topics[3], level, "\n\thash:    ", log.Topics[2])
+			leaf := new(big.Int).SetBytes(log.Topics[3][8:]).Uint64()
+			//hashes[level] = log.Topics[2]
+			t.Log("Log:\n\tposition: level", level, "leaf", leaf, "\n\thash:    ", log.Topics[2])
 		}
 
 		for i, hash := range hashes {
