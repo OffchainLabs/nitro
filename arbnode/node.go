@@ -100,7 +100,7 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address, isTest bool) (*RollupAddresses, error) {
+func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address, sequencerTxOpt *bind.TransactOpts, isTest bool) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,13 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 		return nil, err
 	}
 	delayed_sequencer.Start(context.Background())
-
+	if sequencerTxOpt != nil {
+		batchPoster, err := NewBatchPoster(l1client, inboxReader.Database(), inbox, &DefaultBatchPosterConfig, sequencerInboxAddr, common.Address{}, sequencerTxOpt)
+		if err != nil {
+			return nil, err
+		}
+		batchPoster.Start()
+	}
 	return &RollupAddresses{
 		Bridge:         bridgeAddr,
 		Inbox:          inboxAddr,
