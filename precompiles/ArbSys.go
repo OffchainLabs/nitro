@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
 type ArbSys struct {
@@ -83,16 +84,15 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	evm.StateDB.SubBalance(con.Address, value)
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
-		// position = (level << 192) + leaf
-		position := new(big.Int).Add(
-			new(big.Int).Lsh(big.NewInt(int64(merkleUpdateEvent.Level)), 192),
-			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),
-		)
+		position := merkletree.LevelAndLeaf{
+			Level: merkleUpdateEvent.Level,
+			Leaf:  merkleUpdateEvent.NumLeaves,
+		}
 		con.SendMerkleUpdate(
 			evm,
 			big.NewInt(0),
 			merkleUpdateEvent.Hash,
-			position,
+			position.ToBigInt(),
 		)
 	}
 

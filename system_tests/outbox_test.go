@@ -120,10 +120,10 @@ func TestOutboxProofs(t *testing.T) {
 		for level := 0; level < proofLevels; level++ {
 			sibling := place ^ which
 
-			position := new(big.Int).Add(
-				new(big.Int).Lsh(big.NewInt(int64(level)), 192),
-				big.NewInt(int64(sibling)),
-			)
+			position := merkletree.LevelAndLeaf{
+				Level: uint64(level),
+				Leaf:  sibling,
+			}.ToBigInt()
 
 			needs = append(needs, common.BigToHash(position))
 			place |= which // set the bit so that we approach from the right
@@ -131,6 +131,7 @@ func TestOutboxProofs(t *testing.T) {
 		}
 
 		// find all the partials
+		partials := make(map[merkletree.LevelAndLeaf]common.Hash)
 		if !balanced {
 			power := uint64(1) << proofLevels
 			total := uint64(0)
@@ -138,19 +139,21 @@ func TestOutboxProofs(t *testing.T) {
 
 				if (power & treeSize) > 0 { // the partials map to the binary representation of the tree size
 
-					total += power       // The actual leaf for a given partial is the sum of the powers of 2
-					partial := total - 1 // preceding it. We count from zero and thus subtract 1.
+					total += power    // The actual leaf for a given partial is the sum of the powers of 2
+					leaf := total - 1 // preceding it. We count from zero and thus subtract 1.
 
-					position := new(big.Int).Add(
-						new(big.Int).Lsh(big.NewInt(int64(level)), 192),
-						big.NewInt(int64(partial)),
-					)
+					partial := merkletree.LevelAndLeaf{
+						Level: uint64(level),
+						Leaf:  leaf,
+					}
 
-					needs = append(needs, common.BigToHash(position))
+					needs = append(needs, common.BigToHash(partial.ToBigInt()))
+					partials[partial] = common.Hash{}
 				}
 				power >>= 1
 			}
 		}
+		t.Log("Found", len(partials), "partials")
 
 		// query geth for
 		logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
@@ -169,16 +172,46 @@ func TestOutboxProofs(t *testing.T) {
 		t.Log("Querried for", len(needs), "positions", needs)
 		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
 
-		hashes := make([]common.Hash, proofLevels)
+		hashes := make([]common.Hash, treeLevels)
 		for _, log := range logs {
-			level := new(big.Int).SetBytes(log.Topics[3][:8]).Uint64()
-			leaf := new(big.Int).SetBytes(log.Topics[3][8:]).Uint64()
-			// hashes[level] = log.Topics[2]
-			t.Log("Log:\n\tposition: level", level, "leaf", leaf, "\n\thash:    ", log.Topics[2])
+
+			hash := log.Topics[2]
+			position := log.Topics[3]
+
+			level := new(big.Int).SetBytes(position[:8]).Uint64()
+			leaf := new(big.Int).SetBytes(position[8:]).Uint64()
+
+			place := merkletree.LevelAndLeaf{
+				Level: level,
+				Leaf:  leaf,
+			}
+
+			t.Log("Log:\n\tposition: level", level, "leaf", leaf, "\n\thash:    ", hash)
+
+			if zero, ok := partials[place]; ok {
+				if zero != (common.Hash{}) {
+					t.Fatal("Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
+				}
+				partials[place] = hash
+			} else {
+				hashes[level] = log.Topics[2]
+			}
+		}
+
+		if balanced {
+			last := len(hashes) - 1
+			if hashes[last] != (common.Hash{}) {
+				t.Fatal("A balanced tree's last element should be a zero")
+			}
+			hashes = hashes[:last]
+		}
+
+		for place, hash := range partials {
+			t.Log("partial", place.Level, hash, "@", place)
 		}
 
 		for i, hash := range hashes {
-			t.Log("part", i, hash)
+			t.Log("sibling", i, hash)
 		}
 
 		proof := merkletree.MerkleProof{

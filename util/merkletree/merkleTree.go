@@ -7,6 +7,7 @@ package merkletree
 import (
 	"errors"
 	"io"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -29,6 +30,18 @@ const (
 	SerializedInternalNode
 	SerializedSubtreeSummary
 )
+
+type LevelAndLeaf struct {
+	Level uint64
+	Leaf  uint64
+}
+
+func (place LevelAndLeaf) ToBigInt() *big.Int {
+	return new(big.Int).Add(
+		new(big.Int).Lsh(big.NewInt(int64(place.Level)), 192),
+		big.NewInt(int64(place.Leaf)),
+	)
+}
 
 func NewEmptyMerkleTree() MerkleTree {
 	return NewMerkleEmpty(0)
