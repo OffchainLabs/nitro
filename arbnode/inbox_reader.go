@@ -181,7 +181,17 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				return nil
 			}
 			if from.Cmp(currentHeight) >= 0 {
-				break
+				if missingDelayed {
+					reorgingDelayed = true
+				}
+				if missingSequencer {
+					reorgingSequencer = true
+				}
+				if !reorgingDelayed && !reorgingSequencer {
+					break
+				} else {
+					from = currentHeight
+				}
 			}
 			to := new(big.Int).Add(from, new(big.Int).SetUint64(blocksToFetch))
 			if to.Cmp(currentHeight) > 0 {

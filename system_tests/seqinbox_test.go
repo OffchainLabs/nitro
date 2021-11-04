@@ -74,19 +74,41 @@ func TestSequencerInboxReader(t *testing.T) {
 		}
 	}
 
-	for i := 1; i < 100; i++ {
+	l1Info.GenerateAccount("ReorgPadding")
+	SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+		l1Info.PrepareTx("faucet", "ReorgPadding", 30000, big.NewInt(1e14), nil),
+	})
+
+	l1NoncesAtState := make(map[int]map[common.Address]uint64)
+	for i := 1; i < 40; i++ {
+		l1Nonces := make(map[common.Address]uint64)
+		l1NoncesAtState[len(blockStates)] = l1Nonces
+		if len(blockStates) > 0 {
+			prevL1Nonces := l1NoncesAtState[len(blockStates)-1]
+			for key, value := range prevL1Nonces {
+				l1Nonces[key] = value
+			}
+		}
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			t.Logf("Iteration %v: reorg to state %v", i, reorgTo)
 			// Make the reorg larger to force the miner to discard transactions.
 			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 			// Therefore, we make a bunch of small blocks to prevent the code from running.
+			faucetAddr := l1Info.GetAddress("ReorgPadding")
 			for j := 0; j < 64; j++ {
-				SendWaitTestTransactions(t, l1Client, []*types.Transaction{
-					l1Info.PrepareTx("faucet", "faucet", 30000, big.NewInt(1e12), nil),
-				})
+				rawTx := &types.DynamicFeeTx{
+					To:        &faucetAddr,
+					Gas:       21000,
+					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					Value:     new(big.Int),
+					Nonce:     l1Nonces[faucetAddr],
+				}
+				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
+				SendWaitTestTransactions(t, l1Client, []*types.Transaction{tx})
+				l1Nonces[faucetAddr]++
 			}
+			t.Logf("Reorganizing to L1 block %v", blockStates[reorgTo].l1BlockNumber)
 			reorgTarget := l1BlockChain.GetBlockByNumber(blockStates[reorgTo].l1BlockNumber)
 			err := l1BlockChain.ReorgToOldBlock(reorgTarget)
 			if err != nil {
@@ -94,7 +116,6 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
-			t.Logf("Iteration %v: state %v", i, len(blockStates))
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]uint64)
 			for k, v := range state.balances {
@@ -175,6 +196,8 @@ func TestSequencerInboxReader(t *testing.T) {
 			state.l1BlockNumber = txRes.BlockNumber.Uint64()
 			blockStates = append(blockStates, state)
 		}
+
+		t.Logf("Iteration %v: state %v block %v", i, len(blockStates)-1, blockStates[len(blockStates)-1].l2BlockNumber)
 
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})

@@ -100,7 +100,7 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
+func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address, isTest bool) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
@@ -161,8 +161,10 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 		return nil, err
 	}
 	inboxReaderConfig := *DefaultInboxReaderConfig
-	inboxReaderConfig.CheckDelay = time.Millisecond * 10
-	inboxReaderConfig.DelayBlocks = 0
+	if isTest {
+		inboxReaderConfig.CheckDelay = time.Millisecond * 10
+		inboxReaderConfig.DelayBlocks = 0
+	}
 	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
 	if !ok {
 		return nil, errors.New("l2backend doesn't have a sequencer")
@@ -174,8 +176,10 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	}
 	inboxReader.Start(context.Background())
 	delayedSequencerConfig := *DefaultDelayedSequencerConfig
-	// not necessary, but should help prevent spurious failures in delayed sequencer test
-	delayedSequencerConfig.TimeAggregate = time.Second
+	if isTest {
+		// not necessary, but should help prevent spurious failures in delayed sequencer test
+		delayedSequencerConfig.TimeAggregate = time.Second
+	}
 	delayed_sequencer, err := NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
 	if err != nil {
 		return nil, err

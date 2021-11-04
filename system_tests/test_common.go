@@ -223,7 +223,7 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 
-	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
