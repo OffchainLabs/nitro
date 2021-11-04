@@ -186,7 +186,12 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			batchData := batchBuffer.Bytes()
 
-			tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+			var tx *types.Transaction
+			if i%5 == 0 {
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+			} else {
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
