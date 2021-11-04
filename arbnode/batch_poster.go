@@ -63,7 +63,7 @@ type batchSegments struct {
 	pendingDelayed   uint64
 	sizeLimit        int
 	currentSize      int
-	trailingHeaders  int //how many trailing segments are headers
+	trailingHeaders  int // how many trailing segments are headers
 	isDone           bool
 }
 
@@ -72,7 +72,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriter(compressedBuffer),
-		sizeLimit:        config.MaxBatchSize - 40, //TODO
+		sizeLimit:        config.MaxBatchSize - 40, // TODO
 		rawSegments:      make([][]byte, 128),
 		delayedMsg:       firstDelayed,
 		pendingDelayed:   firstDelayed,
@@ -105,7 +105,7 @@ func (s *batchSegments) close(mustRecompress bool) error {
 	return nil
 }
 
-//This segment will be added even if it's overbound
+// This segment will be added even if it's overbound
 func (s *batchSegments) unconditionalAddSegment(segment []byte) error {
 	lenWritten, err := s.compressedWriter.Write(segment)
 	if err != nil {
@@ -273,7 +273,7 @@ func (b *BatchPoster) lastSubmittionIsSynced() bool {
 	return true
 }
 
-//TODO make sure we detect end of block!
+// TODO make sure we detect end of block!
 func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmittionIsSynced() {
 		<-time.After(time.Second)
