@@ -83,7 +83,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	evm.StateDB.SubBalance(con.Address, value)
 
 	for _, merkleUpdateEvent := range merkleUpdateEvents {
-		// position = (level << 192) + offset
+		// position = (level << 192) + leaf
 		position := new(big.Int).Add(
 			new(big.Int).Lsh(big.NewInt(int64(merkleUpdateEvent.Level)), 192),
 			big.NewInt(int64(merkleUpdateEvent.NumLeaves)),

@@ -98,7 +98,7 @@ func TestOutboxProofs(t *testing.T) {
 	failOnError(t, err, "could not get merkle root")
 	rootHash := merkleState.Root          // we assume the user knows the root and size
 	treeSize := merkleState.Size.Uint64() //
-	balanced := treeSize == util.RoundUpToPowerOf2(treeSize)/2
+	balanced := treeSize == util.NextPowerOf2(treeSize)/2
 
 	treeLevels := util.Log2ceil(treeSize)
 	proofLevels := int(treeLevels - 1)
@@ -173,7 +173,7 @@ func TestOutboxProofs(t *testing.T) {
 		for _, log := range logs {
 			level := new(big.Int).SetBytes(log.Topics[3][:8]).Uint64()
 			leaf := new(big.Int).SetBytes(log.Topics[3][8:]).Uint64()
-			//hashes[level] = log.Topics[2]
+			// hashes[level] = log.Topics[2]
 			t.Log("Log:\n\tposition: level", level, "leaf", leaf, "\n\thash:    ", log.Topics[2])
 		}
 

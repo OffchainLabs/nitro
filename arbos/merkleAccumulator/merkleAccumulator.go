@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	util_math "github.com/offchainlabs/arbstate/util"
 )
 
 type MerkleAccumulator struct {
@@ -24,12 +25,16 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
 	size := sto.GetByInt64(0).Big().Uint64()
-	numPartials := sto.GetByInt64(1).Big().Uint64()
+	numPartials := CalcNumPartials(size)
 	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
+}
+
+func CalcNumPartials(size uint64) uint64 {
+	return util_math.Log2ceil(size)
 }
 
 func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) *MerkleAccumulator {
@@ -77,9 +82,6 @@ func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 	if level == acc.numPartials {
 		acc.numPartials++
-		if acc.backingStorage != nil {
-			acc.backingStorage.SetByInt64(1, util.IntToHash(int64(acc.numPartials)))
-		}
 		acc.partials = append(acc.partials, val)
 	} else {
 		acc.partials[level] = val
