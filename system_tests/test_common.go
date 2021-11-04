@@ -169,6 +169,9 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 	l1info.GenerateAccount("faucet")
 
 	stackConf := node.DefaultConfig
+	stackConf.HTTPPort = 0
+	stackConf.WSPort = 0
+	stackConf.P2P.ListenAddr = ":0"
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)

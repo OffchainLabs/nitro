@@ -67,7 +67,7 @@ func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receip
 		return nil, errors.New("expected receipt")
 	}
 	if txRes.Status != types.ReceiptStatusSuccessful {
-		// Re-execute the transaction as a call to get
+		// Re-execute the transaction as a call to get a better error
 		ctx := context.TODO()
 		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
 		if err != nil {
