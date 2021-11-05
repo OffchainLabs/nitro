@@ -101,8 +101,8 @@ func TestOutboxProofs(t *testing.T) {
 	treeSize := merkleState.Size.Uint64() //
 	balanced := treeSize == util.NextPowerOf2(treeSize)/2
 
-	treeLevels := util.Log2ceil(treeSize)
-	proofLevels := int(treeLevels - 1)
+	treeLevels := int(util.Log2ceil(treeSize))
+	proofLevels := treeLevels - 1
 
 	t.Log("Tree has", treeSize, "leaves and", treeLevels, "levels")
 	t.Log("Root hash", hex.EncodeToString(rootHash[:]))
@@ -111,24 +111,23 @@ func TestOutboxProofs(t *testing.T) {
 
 	// using only the root and position, we'll prove the send hash exists for each node
 	for _, provable := range provables {
-		if provable.leaf < 8 {
-			continue
-		}
 		t.Log("Proving leaf", provable.leaf)
 
 		// find which nodes we'll want in our proof up to a partial
-		needs := make([]common.Hash, 0)
-		which := uint64(1)     // which bit to flip & set
-		place := provable.leaf // where we are in the tree
-		for level := 0; level < proofLevels; level++ {
+		query := make([]common.Hash, 0)             // the nodes we'll query for
+		nodes := make([]merkletree.LevelAndLeaf, 0) // the nodes needed (might not be found from query)
+		which := uint64(1)                          // which bit to flip & set
+		place := provable.leaf                      // where we are in the tree
+		for level := 0; level < treeLevels; level++ {
 			sibling := place ^ which
 
 			position := merkletree.LevelAndLeaf{
 				Level: uint64(level),
 				Leaf:  sibling,
-			}.ToBigInt()
+			}
 
-			needs = append(needs, common.BigToHash(position))
+			query = append(query, common.BigToHash(position.ToBigInt()))
+			nodes = append(nodes, position)
 			place |= which // set the bit so that we approach from the right
 			which <<= 1    // advance to the next bit
 		}
@@ -150,7 +149,7 @@ func TestOutboxProofs(t *testing.T) {
 						Leaf:  leaf,
 					}
 
-					needs = append(needs, common.BigToHash(partial.ToBigInt()))
+					query = append(query, common.BigToHash(partial.ToBigInt()))
 					partials[partial] = common.Hash{}
 				}
 				power >>= 1
@@ -167,17 +166,16 @@ func TestOutboxProofs(t *testing.T) {
 				{merkleTopic, withdrawTopic},
 				nil,
 				nil,
-				needs,
+				query,
 			},
 		})
 		failOnError(t, err, "couldn't get logs")
 
-		t.Log("Querried for", len(needs), "positions", needs)
+		t.Log("Querried for", len(query), "positions", query)
 		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
 
-		hashes := make([]common.Hash, treeLevels)              //
 		known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
-		partialsByLevel := make(map[uint64]common.Hash)        //
+		partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
 		var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
 
 		for _, log := range logs {
@@ -205,8 +203,6 @@ func TestOutboxProofs(t *testing.T) {
 				if minPartialPlace == nil || level < minPartialPlace.Level {
 					minPartialPlace = &place
 				}
-			} else {
-				hashes[level] = log.Topics[2]
 			}
 		}
 
@@ -218,22 +214,16 @@ func TestOutboxProofs(t *testing.T) {
 		for place, hash := range partials {
 			t.Log("partial", place.Level, hash, "@", place)
 		}
-		for i, hash := range hashes {
-			t.Log("sibling", i, hash)
-		}
 		t.Log("resolving frontiers\n")
 
-		if balanced {
-			last := len(hashes) - 1
-			if hashes[last] != (common.Hash{}) {
-				t.Fatal("A balanced tree's last element should be a zero")
-			}
-			hashes = hashes[:last]
-		} else {
+		if !balanced {
+			// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
+			// To do this, we'll walk the boundry of what's known, computing hashes along the way
+
 			zero := common.Hash{}
 
 			step := *minPartialPlace
-			step.Leaf += 1 << step.Level // we'll start on the min partial's zero-hash sibling
+			step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling
 			known[step] = zero
 
 			for step.Level < uint64(treeLevels) {
@@ -270,12 +260,25 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			if known[step] != rootHash {
-				t.Log("Walking up the tree didn't re-create the root")
+				// a correct walk of the frontier should end with resolving the root
+				t.Log("Walking up the tree didn't re-create the root", known[step], "vs", rootHash)
 			}
 
 			for place, hash := range known {
 				t.Log("known", place, hash)
 			}
+		}
+
+		t.Log("Complete proof of leaf", provable.leaf)
+
+		hashes := make([]common.Hash, len(nodes))
+		for i, place := range nodes {
+			hash, ok := known[place]
+			if !ok {
+				t.Fatal("We're missing data for the node at position", place)
+			}
+			hashes[i] = hash
+			t.Log("node", place, hash)
 		}
 
 		proof := merkletree.MerkleProof{
