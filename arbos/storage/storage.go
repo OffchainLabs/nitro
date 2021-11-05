@@ -5,13 +5,14 @@
 package storage
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
 )
 
 type Storage struct {
@@ -22,8 +23,10 @@ type Storage struct {
 
 // Use a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB) *Storage {
+	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
+	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
-		account: common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"),
+		account: account,
 		db:      statedb,
 		key:     []byte{},
 	}

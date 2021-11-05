@@ -40,12 +40,12 @@ func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) Merk
 }
 
 func NewMerkleTreeFromEvents(
-	events []merkleAccumulator.MerkleAccumulatorUpdateEvent, // latest event at each Level
+	events []merkleAccumulator.MerkleTreeNodeEvent, // latest event at each Level
 ) MerkleTree {
 	return NewMerkleTreeFromAccumulator(NewNonPersistentMerkleAccumulatorFromEvents(events))
 }
 
-func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.MerkleAccumulatorUpdateEvent) *merkleAccumulator.MerkleAccumulator {
+func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.MerkleTreeNodeEvent) *merkleAccumulator.MerkleAccumulator {
 	partials := make([]*common.Hash, len(events))
 	zero := common.Hash{}
 	for i := range partials {
@@ -55,8 +55,8 @@ func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.Merk
 	latestSeen := uint64(0)
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
-		if event.LeafNum > latestSeen {
-			latestSeen = event.LeafNum
+		if event.NumLeaves > latestSeen {
+			latestSeen = event.NumLeaves
 			partials[i] = &event.Hash
 		}
 	}

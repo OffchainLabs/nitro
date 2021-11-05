@@ -49,6 +49,10 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 	return s.inbox.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
+func (s *Sequencer) InboxState() *InboxState {
+	return s.inbox
+}
+
 func (s *Sequencer) BlockChain() *core.BlockChain {
 	return s.inbox.bc
 }

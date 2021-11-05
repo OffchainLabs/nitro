@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020, Offchain Labs, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 pragma solidity >=0.4.21 <0.8.0;
 
 /**
@@ -90,10 +106,32 @@ interface ArbSys {
      */
     function getStorageGasAvailable() external returns(uint);
 
-    event L2ToL1Transaction(address caller, address indexed destination, uint indexed uniqueId,
-                            uint indexed batchNumber, uint indexInBatch,
-                            uint arbBlockNum, uint ethBlockNum, uint timestamp,
-                            uint callvalue, bytes data);
+    /**
+     * @notice creates a send txn from L2 to L1
+     * @param position = (level << 192) + leaf = (0 << 192) + leaf = leaf
+    */
+    event L2ToL1Transaction(
+        address caller,
+        address indexed destination,
+        uint indexed hash,
+        uint indexed position,
+        uint indexInBatch,
+        uint arbBlockNum,
+        uint ethBlockNum,
+        uint timestamp,
+        uint callvalue,
+        bytes data
+    );
 
-    event SendMerkleUpdate(uint indexed level, uint indexed leafNum, bytes32 hash);
+    /**
+     * @notice logs a merkle branch for proof sythesis
+     * @param reserved an index meant only to align the 4th index with L2ToL1Transaction's 4th event
+     * @param hash the merkle hash
+     * @param position = (level << 192) + leaf
+    */
+    event SendMerkleUpdate(
+        uint indexed reserved,
+        bytes32 indexed hash,
+        uint indexed position
+    );
 }

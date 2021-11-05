@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -106,6 +107,44 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 	return newGasUsed <= PerBlockGasLimit
 }
 
+func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
+	var lastBlockHash common.Hash
+	blockNumber := big.NewInt(0)
+	baseFee := big.NewInt(params.InitialBaseFee / 100)
+	timestamp := uint64(time.Now().Unix())
+	coinbase := common.Address{}
+	if l1info != nil {
+		timestamp = l1info.l1Timestamp.Uint64()
+		coinbase = l1info.l1Sender
+	}
+	if prevHeader != nil {
+		lastBlockHash = prevHeader.Hash()
+		blockNumber.Add(prevHeader.Number, big.NewInt(1))
+		baseFee = prevHeader.BaseFee
+		if timestamp < prevHeader.Time {
+			timestamp = prevHeader.Time
+		}
+	}
+	return &types.Header{
+		ParentHash:  lastBlockHash,
+		UncleHash:   [32]byte{},
+		Coinbase:    coinbase,
+		Root:        [32]byte{},  // Filled in later
+		TxHash:      [32]byte{},  // Filled in later
+		ReceiptHash: [32]byte{},  // Filled in later
+		Bloom:       [256]byte{}, // Filled in later
+		Difficulty:  big.NewInt(1),
+		Number:      blockNumber,
+		GasLimit:    PerBlockGasLimit,
+		GasUsed:     0,
+		Time:        timestamp,
+		Extra:       []byte{},   // Unused
+		MixDigest:   [32]byte{}, // Unused
+		Nonce:       [8]byte{},  // Filled in later
+		BaseFee:     baseFee,    //TODO: parameter
+	}
+}
+
 func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	if !b.CanAddMessage(segment) {
 		log.Warn("attempted to add incompatible message to block")
@@ -113,45 +152,13 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	}
 	if b.blockInfo == nil {
 		l1Info := segment.L1Info
-		l1Sender := l1Info.l1Sender
-		timestamp := l1Info.l1Timestamp.Uint64()
-		l1BlockNumber := l1Info.l1BlockNumber.Uint64()
-		var lastBlockHash common.Hash
-		blockNumber := big.NewInt(0)
-		if b.lastBlockHeader != nil {
-			lastBlockHash = b.lastBlockHeader.Hash()
-			blockNumber.Add(b.lastBlockHeader.Number, big.NewInt(1))
-			if timestamp < b.lastBlockHeader.Time {
-				timestamp = b.lastBlockHeader.Time
-			}
-			// TODO ensure l1BlockNumber is non-decreasing
-		}
 		b.blockInfo = &L1Info{
-			l1Sender:      l1Sender,
-			l1BlockNumber: new(big.Int).SetUint64(l1BlockNumber),
-			l1Timestamp:   new(big.Int).SetUint64(timestamp),
+			l1Sender:      l1Info.l1Sender,
+			l1BlockNumber: new(big.Int).Set(l1Info.l1BlockNumber),
+			l1Timestamp:   new(big.Int).Set(l1Info.l1Timestamp),
 		}
 
-		gasLimit := PerBlockGasLimit
-
-		b.header = &types.Header{
-			ParentHash:  lastBlockHash,
-			UncleHash:   [32]byte{},
-			Coinbase:    b.blockInfo.l1Sender,
-			Root:        [32]byte{},  // Filled in later
-			TxHash:      [32]byte{},  // Filled in later
-			ReceiptHash: [32]byte{},  // Filled in later
-			Bloom:       [256]byte{}, // Filled in later
-			Difficulty:  big.NewInt(1),
-			Number:      blockNumber,
-			GasLimit:    gasLimit,
-			GasUsed:     0, // Filled in later
-			Time:        timestamp,
-			Extra:       []byte{},   // Unused
-			MixDigest:   [32]byte{}, // Unused
-			Nonce:       [8]byte{},  // Filled in later
-			BaseFee:     new(big.Int),
-		}
+		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
 		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
@@ -180,6 +187,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			continue
 		}
 		snap := b.statedb.Snapshot()
+		b.statedb.Prepare(tx.Hash(), len(b.txes))
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
 			b.chainContext,
@@ -230,30 +238,7 @@ var ( // set by the precompile module, to avoid a package dependence cycle
 
 func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
 	if b.header == nil {
-		var lastBlockHash common.Hash
-		blockNumber := big.NewInt(0)
-		if b.lastBlockHeader != nil {
-			lastBlockHash = b.lastBlockHeader.Hash()
-			blockNumber.Add(b.lastBlockHeader.Number, big.NewInt(1))
-		}
-		b.header = &types.Header{
-			ParentHash:  lastBlockHash,
-			UncleHash:   [32]byte{},
-			Coinbase:    common.Address{},
-			Root:        [32]byte{},  // Filled in later
-			TxHash:      [32]byte{},  // Filled in later
-			ReceiptHash: [32]byte{},  // Filled in later
-			Bloom:       [256]byte{}, // Filled in later
-			Difficulty:  big.NewInt(1),
-			Number:      blockNumber,
-			GasLimit:    PerBlockGasLimit,
-			GasUsed:     0,
-			Time:        b.lastBlockHeader.Time,
-			Extra:       []byte{},   // Unused
-			MixDigest:   [32]byte{}, // Unused
-			Nonce:       [8]byte{},  // Filled in later
-			BaseFee:     new(big.Int),
-		}
+		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
 	}
 
 	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
@@ -262,6 +247,7 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	// Touch up the block hashes in receipts
 	tmpBlock := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
+
 	for _, receipt := range b.receipts {
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
