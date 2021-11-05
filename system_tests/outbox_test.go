@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"math/big"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -40,8 +41,7 @@ func TestOutboxProofs(t *testing.T) {
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	//txnCount := int64(1 + rand.Intn(32))
-	txnCount := int64(10)
+	txnCount := int64(1 + rand.Intn(128))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
