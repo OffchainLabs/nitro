@@ -34,7 +34,7 @@ func TestRedeemNonExistentRetryable(t *testing.T) {
 	tx, err := arbRetryableTx.Redeem(&ownerOps, [32]byte{})
 	failOnError(t, err, "Error executing redeem")
 
-	time.Sleep(4 * time.Millisecond)  // allow some time for the receipt to show up
+	time.Sleep(4 * time.Millisecond) // allow some time for the receipt to show up
 	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
 	failOnError(t, err, "Error getting receipt")
 	if receipt.Status != 0 {
