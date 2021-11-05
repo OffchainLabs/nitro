@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/hex"
 	"math/big"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
@@ -40,7 +40,8 @@ func TestOutboxProofs(t *testing.T) {
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
 	ctx := context.Background()
-	txnCount := int64(1 + rand.Intn(32))
+	//txnCount := int64(1 + rand.Intn(32))
+	txnCount := int64(10)
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -110,13 +111,15 @@ func TestOutboxProofs(t *testing.T) {
 
 	// using only the root and position, we'll prove the send hash exists for each node
 	for _, provable := range provables {
+		if provable.leaf < 8 {
+			continue
+		}
 		t.Log("Proving leaf", provable.leaf)
 
 		// find which nodes we'll want in our proof up to a partial
 		needs := make([]common.Hash, 0)
 		which := uint64(1)     // which bit to flip & set
 		place := provable.leaf // where we are in the tree
-
 		for level := 0; level < proofLevels; level++ {
 			sibling := place ^ which
 
@@ -140,7 +143,7 @@ func TestOutboxProofs(t *testing.T) {
 				if (power & treeSize) > 0 { // the partials map to the binary representation of the tree size
 
 					total += power    // The actual leaf for a given partial is the sum of the powers of 2
-					leaf := total - 1 // preceding it. We count from zero and thus subtract 1.
+					leaf := total - 1 // preceding it. We subtract 1 since we count from 0
 
 					partial := merkletree.LevelAndLeaf{
 						Level: uint64(level),
@@ -155,7 +158,7 @@ func TestOutboxProofs(t *testing.T) {
 		}
 		t.Log("Found", len(partials), "partials")
 
-		// query geth for
+		// in one lookup, query geth for all the data we need to construct a proof
 		logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
 			Addresses: []common.Address{
 				arbSysAddress,
@@ -172,7 +175,11 @@ func TestOutboxProofs(t *testing.T) {
 		t.Log("Querried for", len(needs), "positions", needs)
 		t.Log("Found", len(logs), "logs for proof", provable.leaf, "of", txnCount)
 
-		hashes := make([]common.Hash, treeLevels)
+		hashes := make([]common.Hash, treeLevels)              //
+		known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
+		partialsByLevel := make(map[uint64]common.Hash)        //
+		var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
+
 		for _, log := range logs {
 
 			hash := log.Topics[2]
@@ -187,16 +194,34 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			t.Log("Log:\n\tposition: level", level, "leaf", leaf, "\n\thash:    ", hash)
+			known[place] = hash
 
 			if zero, ok := partials[place]; ok {
 				if zero != (common.Hash{}) {
 					t.Fatal("Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
 				}
 				partials[place] = hash
+				partialsByLevel[level] = hash
+				if minPartialPlace == nil || level < minPartialPlace.Level {
+					minPartialPlace = &place
+				}
 			} else {
 				hashes[level] = log.Topics[2]
 			}
 		}
+
+		for place, hash := range known {
+			t.Log("known  ", place.Level, hash, "@", place)
+		}
+		t.Log(len(known), "values are known\n")
+
+		for place, hash := range partials {
+			t.Log("partial", place.Level, hash, "@", place)
+		}
+		for i, hash := range hashes {
+			t.Log("sibling", i, hash)
+		}
+		t.Log("resolving frontiers\n")
 
 		if balanced {
 			last := len(hashes) - 1
@@ -204,14 +229,53 @@ func TestOutboxProofs(t *testing.T) {
 				t.Fatal("A balanced tree's last element should be a zero")
 			}
 			hashes = hashes[:last]
-		}
+		} else {
+			zero := common.Hash{}
 
-		for place, hash := range partials {
-			t.Log("partial", place.Level, hash, "@", place)
-		}
+			step := *minPartialPlace
+			step.Leaf += 1 << step.Level // we'll start on the min partial's zero-hash sibling
+			known[step] = zero
 
-		for i, hash := range hashes {
-			t.Log("sibling", i, hash)
+			for step.Level < uint64(treeLevels) {
+
+				curr, ok := known[step]
+				if !ok {
+					t.Fatal("We should know the current node's value")
+				}
+
+				left := curr
+				right := curr
+
+				if _, ok := partialsByLevel[step.Level]; ok {
+					// a partial on the frontier can only appear on the left
+					// moving leftward for a level l skips 2^l leaves
+					step.Leaf -= 1 << step.Level
+					partial, ok := known[step]
+					if !ok {
+						t.Fatal("There should be a partial here")
+					}
+					left = partial
+				} else {
+					// getting to the next partial means covering its mirror subtree, so we look right
+					// moving rightward for a level l skips 2^l leaves
+					step.Leaf += 1 << step.Level
+					known[step] = zero
+					right = zero
+				}
+
+				// move to the parent
+				step.Level += 1
+				step.Leaf |= 1 << (step.Level - 1)
+				known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
+			}
+
+			if known[step] != rootHash {
+				t.Log("Walking up the tree didn't re-create the root")
+			}
+
+			for place, hash := range known {
+				t.Log("known", place, hash)
+			}
 		}
 
 		proof := merkletree.MerkleProof{
@@ -225,8 +289,6 @@ func TestOutboxProofs(t *testing.T) {
 			t.Fatal("Proof is wrong")
 		}
 	}
-
-	_ = merkleTopic
 }
 
 func failOnError(t *testing.T, err error, msg string) {
