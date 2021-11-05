@@ -5,8 +5,11 @@
 package util
 
 import (
+	"math/big"
 	"math/bits"
 )
+
+var BigZero = big.NewInt(0)
 
 func NextPowerOf2(value uint64) uint64 {
 	return 1 << Log2ceil(value)

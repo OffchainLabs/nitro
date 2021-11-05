@@ -11,6 +11,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	mathutil "github.com/offchainlabs/arbstate/util"
 	"math/big"
 )
 
@@ -92,7 +93,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 }
 
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
-	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + con.LifetimeExtendedGasCost(ticketId, nil)); err != nil {
+	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + con.LifetimeExtendedGasCost(ticketId, mathutil.BigZero)); err != nil {
 		return nil, err
 	}
 	currentTime := evm.Context.Time.Uint64()
@@ -107,7 +108,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 }
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, error) {
-	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, nil, nil, c.caller)); err != nil {
+	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, mathutil.BigZero, mathutil.BigZero, c.caller)); err != nil {
 		return common.Hash{}, err
 	}
 	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
