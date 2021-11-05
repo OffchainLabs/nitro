@@ -6,20 +6,22 @@ package precompiles
 
 import (
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"math/big"
+	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
 type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
-	SendMerkleUpdate         func(mech, huge, huge, [32]byte)
-	SendMerkleUpdateGasCost  func(huge, huge, [32]byte) uint64
+	SendMerkleUpdate         func(mech, huge, [32]byte, huge)
+	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) uint64
 }
 
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
@@ -67,7 +69,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	cost := params.CallValueTransferGas
 	zero := new(big.Int)
 	dest := destination
-	cost += con.SendMerkleUpdateGasCost(zero, zero, common.Hash{})
+	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{}, zero)
 	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
 	if err := c.burn(cost); err != nil {
 		return nil, err
@@ -76,24 +78,32 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := arbos.OpenArbosState(evm.StateDB)
 	merkleAcc := arbosState.SendMerkleAccumulator()
-	merkleUpdateEvent := merkleAcc.Append(sendHash)
+	merkleUpdateEvents := merkleAcc.Append(sendHash)
 
 	// burn the callvalue, which was previously deposited to this precompile's account
 	evm.StateDB.SubBalance(con.Address, value)
 
-	con.SendMerkleUpdate(
-		evm,
-		big.NewInt(int64(merkleUpdateEvent.Level)),
-		big.NewInt(int64(merkleUpdateEvent.LeafNum)),
-		merkleUpdateEvent.Hash,
-	)
+	for _, merkleUpdateEvent := range merkleUpdateEvents {
+		position := merkletree.LevelAndLeaf{
+			Level: merkleUpdateEvent.Level,
+			Leaf:  merkleUpdateEvent.NumLeaves,
+		}
+		con.SendMerkleUpdate(
+			evm,
+			big.NewInt(0),
+			merkleUpdateEvent.Hash,
+			position.ToBigInt(),
+		)
+	}
+
+	leafNum := big.NewInt(int64(merkleAcc.Size() - 1))
 
 	con.L2ToL1Transaction(
 		evm,
 		c.caller,
 		destination,
 		sendHash.Big(),
-		big.NewInt(int64(merkleAcc.Size()-1)),
+		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
 		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
