@@ -28,11 +28,13 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize int
+	MaxBatchSize   int
+	BatchPollDelay time.Duration
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize: 500,
+	MaxBatchSize:   500,
+	BatchPollDelay: time.Second / 10,
 }
 
 func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxState, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
@@ -73,7 +75,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriter(compressedBuffer),
 		sizeLimit:        config.MaxBatchSize - 40, // TODO
-		rawSegments:      make([][]byte, 128),
+		rawSegments:      make([][]byte, 0, 128),
 		delayedMsg:       firstDelayed,
 		pendingDelayed:   firstDelayed,
 	}
@@ -105,13 +107,22 @@ func (s *batchSegments) close(mustRecompress bool) error {
 	return nil
 }
 
-// This segment will be added even if it's overbound
-func (s *batchSegments) unconditionalAddSegment(segment []byte) error {
-	lenWritten, err := s.compressedWriter.Write(segment)
+func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
+	encoded, err := rlp.EncodeToBytes(segment)
 	if err != nil {
 		return err
 	}
+	lenWritten, err := s.compressedWriter.Write(encoded)
 	s.currentSize += lenWritten
+	return err
+}
+
+// This segment will be added even if it's overbound
+func (s *batchSegments) unconditionalAddSegment(segment []byte) error {
+	err := s.addSegmentToCompressed(segment)
+	if err != nil {
+		return err
+	}
 	s.trailingHeaders = 0
 	s.rawSegments = append(s.rawSegments, segment)
 	return nil
@@ -122,15 +133,14 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if s.isDone {
 		return false, nil
 	}
-	lenWritten, err := s.compressedWriter.Write(segment)
+	err := s.addSegmentToCompressed(segment)
 	if err != nil {
 		return false, err
 	}
-	if (lenWritten + s.currentSize) > s.sizeLimit {
+	if s.currentSize > s.sizeLimit {
 		return false, s.close(true)
 	}
 	s.rawSegments = append(s.rawSegments, segment)
-	s.currentSize += lenWritten
 	if isHeader {
 		s.trailingHeaders++
 	} else {
@@ -234,11 +244,18 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 			return nil, err
 		}
 	}
+	if len(s.rawSegments) == 0 {
+		return nil, nil
+	}
 	err := s.compressedWriter.Close()
 	if err != nil {
 		return nil, err
 	}
-	return s.compressedBuffer.Bytes(), nil
+	compressedBytes := s.compressedBuffer.Bytes()
+	fullMsg := make([]byte, 1, len(compressedBytes)+1)
+	fullMsg[0] = 0 // Header
+	fullMsg = append(fullMsg, compressedBytes...)
+	return fullMsg, nil
 }
 
 func (b *BatchPoster) lastSubmittionIsSynced() bool {
@@ -292,6 +309,9 @@ func (b *BatchPoster) postSequencerBatch() error {
 	if err != nil {
 		return err
 	}
+	if sequencerMsg == nil {
+		return nil
+	}
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(prevDelayedMsg), b.gasRefunder)
 	return err
 }
@@ -310,7 +330,7 @@ func (b *BatchPoster) Start() {
 			select {
 			case <-b.chanStop:
 				return
-			case <-time.After(10 * time.Second):
+			case <-time.After(b.config.BatchPollDelay):
 			}
 		}
 	})()
