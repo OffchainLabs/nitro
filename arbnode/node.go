@@ -174,27 +174,13 @@ func CreateStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitrum.Backend, error) {
+func CreateArbBackend(stack *node.Node, genesis *core.Genesis) (*arbitrum.Backend, error) {
 	arbstate.RequireHookedGeth()
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
 
-	nodeConf.Genesis = &core.Genesis{
-		Config:     arbos.ChainConfig,
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
-	}
+	nodeConf.Genesis = genesis
 
 	engine := arbos.Engine{
 		IsSequencer: true,

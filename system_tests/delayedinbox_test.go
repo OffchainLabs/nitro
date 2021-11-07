@@ -19,7 +19,7 @@ import (
 func TestDelayInbox(t *testing.T) {
 	background := context.Background()
 	l2backend, l2info := CreateTestL2(t)
-	l1info, _, _ := CreateTestNodeOnL1(t, l2backend, true)
+	l1info, _, _, _ := CreateTestNodeOnL1(t, l2backend, true)
 
 	l2client := l2info.Client
 	l1client := l1info.Client

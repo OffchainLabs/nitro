@@ -36,8 +36,10 @@ type blockTestState struct {
 
 func TestSequencerInboxReader(t *testing.T) {
 	l2Backend, l2Info := CreateTestL2(t)
-	l1Info, _, l1BlockChain := CreateTestNodeOnL1(t, l2Backend, false)
+	l1Info, _, l1backend, _ := CreateTestNodeOnL1(t, l2Backend, false)
 	l1Client := l1Info.Client
+
+	l1BlockChain := l1backend.BlockChain()
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	if err != nil {
