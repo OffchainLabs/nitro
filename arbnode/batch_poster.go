@@ -156,27 +156,25 @@ func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byt
 	return append(segment, enc...), nil
 }
 
-func (s *batchSegments) diffFromBase(base uint64, newVal common.Hash) (uint64, error) {
+func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, segmentHeader byte) (bool, error) {
 	asBig := newVal.Big()
 	if !asBig.IsUint64() {
-		return 0, errors.New("number not uint64")
+		return false, errors.New("number not uint64")
 	}
 	asUint := asBig.Uint64()
-	if asUint <= base {
-		return 0, nil
-	}
-	return asUint - base, nil
-}
-
-func (s *batchSegments) maybeAddDiffSegment(diff uint64, segmentHeader byte) (bool, error) {
-	if diff == 0 {
+	if asUint <= *base {
 		return true, nil
 	}
+	diff := asUint - *base
 	seg, err := s.prepareIntSegment(diff, segmentHeader)
 	if err != nil {
 		return false, err
 	}
-	return s.addSegment(seg, true)
+	success, err := s.addSegment(seg, true)
+	if success {
+		*base = asUint
+	}
+	return success, err
 }
 
 func (s *batchSegments) testAddDelayedMessage() error {
@@ -199,32 +197,6 @@ func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, err
 	if s.isDone {
 		return false, nil
 	}
-	blockDiff, err := s.diffFromBase(s.blockNum, msg.Message.Header.BlockNumber)
-	if err != nil {
-		return false, err
-	}
-	timeDiff, err := s.diffFromBase(s.blockNum, msg.Message.Header.BlockNumber)
-	if err != nil {
-		return false, err
-	}
-	if timeDiff > 0 || blockDiff > 0 {
-		err := s.testAddDelayedMessage()
-		if err != nil {
-			return false, err
-		}
-		success, err := s.maybeAddDiffSegment(timeDiff, arbstate.BatchSegmentKindAdvanceTimestamp)
-		if success {
-			s.timestamp += timeDiff
-		} else {
-			return false, err
-		}
-		success, err = s.maybeAddDiffSegment(blockDiff, arbstate.BatchSegmentKindAdvanceL1BlockNumber)
-		if success {
-			s.blockNum += blockDiff
-		} else {
-			return false, err
-		}
-	}
 	if msg.DelayedMessagesRead > s.pendingDelayed {
 		s.pendingDelayed = msg.DelayedMessagesRead
 		if msg.MustEndBlock {
@@ -235,6 +207,18 @@ func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, err
 			return true, nil
 		}
 		return true, nil
+	}
+	err := s.testAddDelayedMessage()
+	if err != nil {
+		return false, err
+	}
+	success, err := s.maybeAddDiffSegment(&s.timestamp, msg.Message.Header.Timestamp, arbstate.BatchSegmentKindAdvanceTimestamp)
+	if !success {
+		return false, err
+	}
+	success, err = s.maybeAddDiffSegment(&s.blockNum, msg.Message.Header.BlockNumber, arbstate.BatchSegmentKindAdvanceL1BlockNumber)
+	if !success {
+		return false, err
 	}
 	return s.addL2Msg(msg.Message.L2msg)
 }
@@ -278,12 +262,16 @@ func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmittionIsSynced() {
 		<-time.After(time.Second)
 	}
-	prevBatchMeta, err := b.inbox.GetBatchMetadata(b.sequencesPosted)
-	if err != nil {
-		return err
+	var msgToPost, prevDelayedMsg uint64
+	if b.sequencesPosted > 0 {
+		prevBatchMeta, err := b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
+		if err != nil {
+			return err
+		}
+		msgToPost = prevBatchMeta.MessageCount
+		prevDelayedMsg = prevBatchMeta.DelayedMessageCount
 	}
-	msgToPost := prevBatchMeta.MessageCount + 1
-	segments := newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config)
+	segments := newBatchSegments(prevDelayedMsg, b.config)
 	for {
 		msg, err := b.streamer.GetMessage(msgToPost)
 		if err != nil {
@@ -304,7 +292,7 @@ func (b *BatchPoster) postSequencerBatch() error {
 	if err != nil {
 		return err
 	}
-	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(prevBatchMeta.DelayedMessageCount), b.gasRefunder)
+	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(prevDelayedMsg), b.gasRefunder)
 	return err
 }
 
