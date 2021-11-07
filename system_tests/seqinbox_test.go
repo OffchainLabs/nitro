@@ -79,16 +79,7 @@ func TestSequencerInboxReader(t *testing.T) {
 		l1Info.PrepareTx("faucet", "ReorgPadding", 30000, big.NewInt(1e14), nil),
 	})
 
-	l1NoncesAtState := make(map[int]map[common.Address]uint64)
 	for i := 1; i < 40; i++ {
-		l1Nonces := make(map[common.Address]uint64)
-		l1NoncesAtState[len(blockStates)] = l1Nonces
-		if len(blockStates) > 0 {
-			prevL1Nonces := l1NoncesAtState[len(blockStates)-1]
-			for key, value := range prevL1Nonces {
-				l1Nonces[key] = value
-			}
-		}
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
 			if reorgTo == 0 {
@@ -98,22 +89,29 @@ func TestSequencerInboxReader(t *testing.T) {
 			// The miner usually collects transactions from deleted blocks and puts them in the mempool.
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 			// Therefore, we make a bunch of small blocks to prevent the code from running.
-			faucetAddr := l1Info.GetAddress("ReorgPadding")
-			for j := 0; j < 64; j++ {
+			padAddr := l1Info.GetAddress("ReorgPadding")
+			for j := uint64(0); j < 65; j++ {
 				rawTx := &types.DynamicFeeTx{
-					To:        &faucetAddr,
+					To:        &padAddr,
 					Gas:       21000,
 					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 					Value:     new(big.Int),
-					Nonce:     l1Nonces[faucetAddr],
+					Nonce:     j,
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
 				SendWaitTestTransactions(t, l1Client, []*types.Transaction{tx})
-				l1Nonces[faucetAddr]++
 			}
-			t.Logf("Reorganizing to L1 block %v", blockStates[reorgTo].l1BlockNumber)
-			reorgTarget := l1BlockChain.GetBlockByNumber(blockStates[reorgTo].l1BlockNumber)
-			err := l1BlockChain.ReorgToOldBlock(reorgTarget)
+			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
+			currentHeader, err := l1Client.HeaderByNumber(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
+				t.Fatal("Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
+			}
+			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
+			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
+			err = l1BlockChain.ReorgToOldBlock(reorgTarget)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,12 +136,12 @@ func TestSequencerInboxReader(t *testing.T) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := uint64(rand.Int()) % state.balances[source]
-				if state.balances[source]-amount < params.InitialBaseFee*10000000 || amount == 0 {
+				if state.balances[source]-amount < params.InitialBaseFee*10000000 {
 					// Leave enough funds for gas
 					amount = 1
 				}
 				var dest common.Address
-				if j == 0 {
+				if j == 0 && amount >= params.InitialBaseFee*1000000 {
 					name := accountName(len(state.accounts))
 					l2Info.GenerateAccount(name)
 					dest = l2Info.GetAddress(name)
@@ -196,15 +194,6 @@ func TestSequencerInboxReader(t *testing.T) {
 			txRes, err := arbnode.EnsureTxSucceeded(l1Client, tx)
 			if err != nil {
 				t.Fatal(err)
-			}
-
-			for i := 0; i < len(state.accounts); i++ {
-				account := state.accounts[i]
-				if state.balances[account] == 0 {
-					delete(state.balances, account)
-					state.accounts = append(state.accounts[:i], state.accounts[(i+1):]...)
-					i--
-				}
 			}
 
 			state.l2BlockNumber += uint64(numMessages)
