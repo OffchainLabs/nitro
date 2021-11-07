@@ -19,14 +19,15 @@ import (
 func TestDelayInbox(t *testing.T) {
 	background := context.Background()
 	l2backend, l2info := CreateTestL2(t)
-	l1backend, _, l1info := CreateTestL1(t, l2backend)
-	l2client := ClientForArbBackend(t, l2backend)
+	l1info, _, _ := CreateTestNodeOnL1(t, l2backend, true)
 
+	l2client := l2info.Client
+	l1client := l1info.Client
 	l2info.GenerateAccount("User2")
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
 
-	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1backend)
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func TestDelayInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = arbnode.EnsureTxSucceeded(l1backend, l1tx)
+	_, err = arbnode.EnsureTxSucceeded(l1client, l1tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestDelayInbox(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, l1backend, []*types.Transaction{
+		SendWaitTestTransactions(t, l1client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}

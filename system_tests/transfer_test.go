@@ -14,9 +14,9 @@ import (
 )
 
 func TestTransfer(t *testing.T) {
-	backend, l2info := CreateTestL2(t)
+	_, l2info := CreateTestL2(t)
 
-	client := ClientForArbBackend(t, backend)
+	client := l2info.Client
 
 	ctx := context.Background()
 

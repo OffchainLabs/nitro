@@ -33,7 +33,7 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address, sequencerTxOpt *bind.TransactOpts, isTest bool) (*RollupAddresses, error) {
+func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
@@ -83,13 +83,33 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 		return nil, err
 	}
 
-	blockDeployed := txRes.BlockNumber.Uint64()
+	return &RollupAddresses{
+		Bridge:         bridgeAddr,
+		Inbox:          inboxAddr,
+		SequencerInbox: sequencerInboxAddr,
+		DeployedAt:     txRes.BlockNumber.Uint64(),
+	}, nil
+}
 
-	delayedBridge, err := NewDelayedBridge(l1client, bridgeAddr, blockDeployed)
+type Node struct {
+	Backend          *arbitrum.Backend
+	DeployInfo       *RollupAddresses
+	InboxReader      *InboxReader
+	BatchPoster      *BatchPoster
+	DelayedSequencer *DelayedSequencer
+	TxStreamer       *InboxState
+	InboxTracker     *InboxReaderDb
+}
+
+func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *arbitrum.Backend, sequencerTxOpt *bind.TransactOpts, isTest bool) (*Node, error) {
+	if deployInfo == nil {
+		return nil, errors.New("deployinfo is nil")
+	}
+	delayedBridge, err := NewDelayedBridge(l1client, deployInfo.Bridge, deployInfo.DeployedAt)
 	if err != nil {
 		return nil, err
 	}
-	sequencerInbox, err := NewSequencerInbox(l1client, sequencerInboxAddr, int64(blockDeployed))
+	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
 	if err != nil {
 		return nil, err
 	}
@@ -103,11 +123,11 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 		return nil, errors.New("l2backend doesn't have a sequencer")
 	}
 	inbox := sequencerObj.InboxState()
-	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
+	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &inboxReaderConfig)
 	if err != nil {
 		return nil, err
 	}
-	inboxReader.Start(context.Background())
+	inboxTracker := inboxReader.Database()
 	delayedSequencerConfig := *DefaultDelayedSequencerConfig
 	if isTest {
 		// not necessary, but should help prevent spurious failures in delayed sequencer test
@@ -117,20 +137,28 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	if err != nil {
 		return nil, err
 	}
-	delayed_sequencer.Start(context.Background())
+	var batchPoster *BatchPoster
 	if sequencerTxOpt != nil {
-		batchPoster, err := NewBatchPoster(l1client, inboxReader.Database(), inbox, &DefaultBatchPosterConfig, sequencerInboxAddr, common.Address{}, sequencerTxOpt)
+		batchPoster, err = NewBatchPoster(l1client, inboxTracker, inbox, &DefaultBatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
 		if err != nil {
 			return nil, err
 		}
-		batchPoster.Start()
 	}
-	return &RollupAddresses{
-		Bridge:         bridgeAddr,
-		Inbox:          inboxAddr,
-		SequencerInbox: sequencerInboxAddr,
-		DeployedAt:     txRes.BlockNumber.Uint64(),
-	}, nil
+	return &Node{l2backend, deployInfo, inboxReader, batchPoster, delayed_sequencer, inbox, inboxTracker}, nil
+}
+
+func (n *Node) Start(ctx context.Context) {
+	n.DelayedSequencer.Start(ctx)
+	n.InboxReader.Start(ctx)
+	if n.BatchPoster != nil {
+		n.BatchPoster.Start()
+	}
+}
+
+func (n *Node) Stop() {
+	if n.BatchPoster != nil {
+		n.BatchPoster.Stop()
+	}
 }
 
 func CreateStack() (*node.Node, error) {

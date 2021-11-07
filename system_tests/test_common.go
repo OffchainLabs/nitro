@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -42,7 +43,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 	}
 }
 
-func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *core.BlockChain, *BlockchainTestInfo) {
+func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *core.BlockChain) {
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
 	l1info.GenerateAccount("faucet")
 
@@ -93,28 +94,50 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 
 	l1Client := ethclient.NewClient(rpcClient)
 
+	l1info.Client = l1Client
+
+	return l1info, l1backend.BlockChain()
+}
+
+func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
-	SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+	SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
 		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	sequencerTxOpt := l1info.GetDefaultTransactOpts("Sequencer")
-	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"), &sequencerTxOpt, true)
+	addresses, err := arbnode.DeployOnL1(l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
-
-	return l1Client, l1backend.BlockChain(), l1info
+	return addresses
 }
 
+// Create and deploy L1 and arbnode around the previously created L2 backend
+func CreateTestNodeOnL1(t *testing.T, l2backend *arbitrum.Backend, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *core.BlockChain) {
+	l1info, l1blockchain := CreateTestL1BlockChain(t)
+	addresses := TestDeployOnL1(t, l1info)
+	var sequencerTxOptsPtr *bind.TransactOpts
+	if isSequencer {
+		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
+		sequencerTxOptsPtr = &sequencerTxOpts
+	}
+	node, err := arbnode.CreateNode(l1info.Client, addresses, l2backend, sequencerTxOptsPtr, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node.Start(context.Background())
+	return l1info, node, l1blockchain
+}
+
+// L2 -Only. Enough for tests that needs no interface to L1
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
@@ -132,6 +155,7 @@ func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	l2info.Client = ClientForArbBackend(t, backend)
 
 	return backend, l2info
 }

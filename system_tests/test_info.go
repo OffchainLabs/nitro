@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -26,6 +27,7 @@ type BlockchainTestInfo struct {
 	Signer   types.Signer
 	Accounts map[string]*AccountInfo
 	keySeed  int64
+	Client   *ethclient.Client
 }
 
 func NewBlockChainTestInfo(t *testing.T, signer types.Signer, keySeed int64) *BlockchainTestInfo {
