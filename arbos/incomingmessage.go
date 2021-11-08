@@ -225,7 +225,8 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
-	L2MessageKind_BrotliCompressed = 9
+	L2MessageKind_BrotliCompressed  = 9
+	L2MessageKind_SubmitRetryableTx = 10
 )
 
 func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
@@ -236,13 +237,19 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
-		tx, err := parseUnsignedTx(rd, l1Sender, requestId, true)
+		tx, err := parseUnsignedTx(rd, l1Sender, requestId, L2MessageKind_UnsignedUserTx)
 		if err != nil {
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
-		tx, err := parseUnsignedTx(rd, l1Sender, requestId, false)
+		tx, err := parseUnsignedTx(rd, l1Sender, requestId, L2MessageKind_ContractTx)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
+	case L2MessageKind_SubmitRetryableTx:
+		tx, err := parseUnsignedTx(rd, l1Sender, requestId, L2MessageKind_SubmitRetryableTx)
 		if err != nil {
 			return nil, err
 		}
@@ -299,7 +306,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
+func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Hash, txKind byte) (*types.Transaction, error) {
 	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -311,7 +318,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 	}
 
 	var nonce uint64
-	if includesNonce {
+	if txKind == L2MessageKind_UnsignedUserTx {
 		nonceAsHash, err := util.HashFromReader(rd)
 		if err != nil {
 			return nil, err
@@ -333,6 +340,14 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 		return nil, err
 	}
 
+	var beneficiary common.Address
+	if txKind == L2MessageKind_SubmitRetryableTx {
+		beneficiary, err = util.AddressFromReader(rd)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	calldata, err := io.ReadAll(rd)
 	if err != nil {
 		return nil, err
@@ -340,7 +355,8 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 
 	var inner types.TxData
 
-	if includesNonce {
+	switch txKind {
+	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:  nil,
 			From:     util.RemapL1Address(l1Sender),
@@ -351,7 +367,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 			Value:    callvalue.Big(),
 			Data:     calldata,
 		}
-	} else {
+	case L2MessageKind_ContractTx:
 		inner = &types.ArbitrumContractTx{
 			ChainId:   nil,
 			RequestId: requestId,
@@ -362,6 +378,20 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 			Value:     callvalue.Big(),
 			Data:      calldata,
 		}
+	case L2MessageKind_SubmitRetryableTx:
+		inner = &types.ArbitrumSubmitRetryableTx{
+			ChainId:     nil,
+			RequestId:   requestId,
+			From:        util.RemapL1Address(l1Sender),
+			GasPrice:    gasPrice.Big(),
+			Gas:         gasLimit.Big().Uint64(),
+			To:          destination,
+			Value:       callvalue.Big(),
+			Beneficiary: beneficiary,
+			Data:        calldata,
+		}
+	default:
+		panic("Invalid L2 tx type in parseUnsignedTx")
 	}
 
 	return types.NewTx(inner), nil

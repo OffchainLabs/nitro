@@ -6,6 +6,7 @@ package precompiles
 
 import (
 	"errors"
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -83,24 +84,24 @@ func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
-		return nil, err
+		return big.NewInt(0), err
 	}
 	retryable := arbos.OpenArbosState(evm.StateDB).RetryableState().OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if retryable == nil {
-		return nil, NotFoundError
+		return big.NewInt(0), NotFoundError
 	}
 	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
 	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + con.LifetimeExtendedGasCost(ticketId, mathutil.BigZero)); err != nil {
-		return nil, err
+		return big.NewInt(0), err
 	}
 	currentTime := evm.Context.Time.Uint64()
 	rs := arbos.OpenArbosState(evm.StateDB).RetryableState()
 	success := rs.Keepalive(ticketId, currentTime, currentTime+RetryableLifetimeSeconds, RetryableLifetimeSeconds)
 	if !success {
-		return nil, NotFoundError
+		return big.NewInt(0), NotFoundError
 	}
 	newTimeout := rs.OpenRetryable(ticketId, currentTime).Timeout()
 	con.LifetimeExtended(evm, ticketId, big.NewInt(int64(newTimeout)))
@@ -117,6 +118,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, erro
 	}
 	retryable := retryableState.OpenRetryable(txId, evm.Context.Time.Uint64())
 	if retryable == nil {
+		fmt.Println("Retryable ", txId, " doesn't exist")
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
