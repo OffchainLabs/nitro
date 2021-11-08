@@ -124,6 +124,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		log.Info("DelayedSequencer: Sequenced", "msgnum", len(messages), "startpos", startPos)
 	}
 
 	return nil
