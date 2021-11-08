@@ -267,7 +267,7 @@ func (b *BatchPoster) lastSubmittionIsSynced() bool {
 		return false
 	}
 	if batchcount > b.sequencesPosted {
-		log.Warn("detected unexpected sequences posted", batchcount, "expected", b.sequencesPosted)
+		log.Warn("detected unexpected sequences posted", "actual", batchcount, "expected", b.sequencesPosted)
 		b.sequencesPosted = batchcount
 		return true
 	}
@@ -289,7 +289,12 @@ func (b *BatchPoster) postSequencerBatch() error {
 		prevDelayedMsg = prevBatchMeta.DelayedMessageCount
 	}
 	segments := newBatchSegments(prevDelayedMsg, b.config)
-	for {
+	firstMsgToPost := msgToPost
+	msgCount, err := b.streamer.GetMessageCount()
+	if err != nil {
+		return err
+	}
+	for msgToPost < msgCount {
 		msg, err := b.streamer.GetMessage(msgToPost)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
@@ -312,7 +317,11 @@ func (b *BatchPoster) postSequencerBatch() error {
 	if sequencerMsg == nil {
 		return nil
 	}
-	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(prevDelayedMsg), b.gasRefunder)
+	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+	if err == nil {
+		b.sequencesPosted++
+	}
+	log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	return err
 }
 
