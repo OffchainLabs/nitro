@@ -127,6 +127,7 @@ func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.I
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     value,
 		Nonce:     info.Nonce,
+		Data:      data,
 	}
 	info.Nonce += 1
 	return b.SignTxAs(from, txData)
