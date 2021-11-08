@@ -128,7 +128,7 @@ func TestDelayInbox(t *testing.T) {
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
-		//adding multiple messages in the same AddLocal to get them in the same L1 block
+		// adding multiple messages in the same AddLocal to get them in the same L1 block
 		errs := l1backend.TxPool().AddLocals(l1Txs)
 		for _, err := range errs {
 			if err != nil {
