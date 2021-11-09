@@ -6,10 +6,12 @@ package merkletree
 
 import (
 	"errors"
+	"io"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"io"
 )
 
 type MerkleTree interface {
@@ -18,7 +20,6 @@ type MerkleTree interface {
 	Capacity() uint64
 	Append(common.Hash) MerkleTree
 	SummarizeUpTo(num uint64) MerkleTree
-	Prove(leafIndex uint64) *MerkleProof
 	Serialize(wr io.Writer) error
 }
 
@@ -28,6 +29,18 @@ const (
 	SerializedInternalNode
 	SerializedSubtreeSummary
 )
+
+type LevelAndLeaf struct {
+	Level uint64
+	Leaf  uint64
+}
+
+func (place LevelAndLeaf) ToBigInt() *big.Int {
+	return new(big.Int).Add(
+		new(big.Int).Lsh(big.NewInt(int64(place.Level)), 192),
+		big.NewInt(int64(place.Leaf)),
+	)
+}
 
 func NewEmptyMerkleTree() MerkleTree {
 	return NewMerkleEmpty(0)
@@ -67,18 +80,6 @@ func (leaf *merkleTreeLeaf) Append(newHash common.Hash) MerkleTree {
 
 func (leaf *merkleTreeLeaf) SummarizeUpTo(num uint64) MerkleTree {
 	return leaf
-}
-
-func (leaf *merkleTreeLeaf) Prove(leafIndex uint64) *MerkleProof {
-	if leafIndex != 0 {
-		return nil
-	}
-	return &MerkleProof{
-		leaf.hash,
-		leaf.hash,
-		0,
-		[]common.Hash{},
-	}
 }
 
 func (leaf *merkleTreeLeaf) Serialize(wr io.Writer) error {
@@ -128,10 +129,6 @@ func (me *merkleEmpty) Append(newHash common.Hash) MerkleTree {
 
 func (me *merkleEmpty) SummarizeUpTo(num uint64) MerkleTree {
 	return me
-}
-
-func (me *merkleEmpty) Prove(leafIndex uint64) *MerkleProof {
-	return nil
 }
 
 func (me *merkleEmpty) Serialize(wr io.Writer) error {
@@ -206,30 +203,6 @@ func (mi *merkleInternal) SummarizeUpTo(num uint64) MerkleTree {
 	}
 }
 
-func (mi *merkleInternal) Prove(leafIndex uint64) *MerkleProof {
-	if leafIndex >= mi.size {
-		return nil
-	}
-	leftSize := mi.left.Size()
-	var proof *MerkleProof
-	if leafIndex < leftSize {
-		proof = mi.left.Prove(leafIndex)
-		if proof == nil {
-			return nil
-		}
-		proof.Proof = append(proof.Proof, mi.right.Hash())
-	} else {
-		proof = mi.right.Prove(leafIndex - leftSize)
-		if proof == nil {
-			return proof
-		}
-		proof.Proof = append(proof.Proof, mi.left.Hash())
-	}
-	proof.LeafIndex = leafIndex
-	proof.RootHash = mi.hash
-	return proof
-}
-
 func (mi *merkleInternal) Serialize(wr io.Writer) error {
 	if _, err := wr.Write([]byte{SerializedInternalNode}); err != nil {
 		return err
@@ -289,10 +262,6 @@ func (sum *merkleCompleteSubtreeSummary) Append(newHash common.Hash) MerkleTree 
 
 func (sum *merkleCompleteSubtreeSummary) SummarizeUpTo(num uint64) MerkleTree {
 	return sum
-}
-
-func (sum *merkleCompleteSubtreeSummary) Prove(leafIndex uint64) *MerkleProof {
-	return nil
 }
 
 func (sum *merkleCompleteSubtreeSummary) Serialize(wr io.Writer) error {
