@@ -41,7 +41,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 		}
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(client, tx)
+		_, err := arbnode.EnsureTxSucceeded(context.Background(), client, tx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +116,7 @@ func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAdd
 		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	addresses, err := arbnode.DeployOnL1(l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.DeployOnL1(context.Background(), l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}

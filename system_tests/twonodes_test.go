@@ -33,7 +33,7 @@ func Create2ndNode(t *testing.T, first *arbnode.Node, l1client arbnode.L1Interfa
 }
 
 func TestTwoNodes(t *testing.T) {
-	background := context.Background()
+	ctx := context.Background()
 	l2backend, l2info := CreateTestL2(t)
 	l1info, node1, _, l1stack := CreateTestNodeOnL1(t, l2backend, true)
 
@@ -49,14 +49,12 @@ func TestTwoNodes(t *testing.T) {
 
 	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
-	ctx := context.Background()
-
 	err = l2info.Client.SendTransaction(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(l2info.Client, tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +69,11 @@ func TestTwoNodes(t *testing.T) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l2balance, err := l2clientB.BalanceAt(background, l2info.GetAddress("User2"), nil)
+	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

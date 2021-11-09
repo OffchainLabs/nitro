@@ -18,9 +18,8 @@ type L1Interface interface {
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 }
 
-// will wait untill tx is in the blockchain. attempts = 0 is infinite
-func WaitForTx(client L1Interface, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
-	ctx := context.Background()
+// Will wait until txhash is in the blockchain and return its receipt
+func WaitForTx(ctx context.Context, client L1Interface, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
 	chanHead := make(chan *types.Header, 20)
 	headSubscribe, err := client.SubscribeNewHead(ctx, chanHead)
 	if err != nil {
@@ -42,8 +41,8 @@ func WaitForTx(client L1Interface, txhash common.Hash, timeout time.Duration) (*
 	}
 }
 
-func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	txRes, err := WaitForTx(client, tx.Hash(), time.Second)
+func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
+	txRes, err := WaitForTx(ctx, client, tx.Hash(), time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +51,6 @@ func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receip
 	}
 	if txRes.Status != types.ReceiptStatusSuccessful {
 		// Re-execute the transaction as a call to get a better error
-		ctx := context.TODO()
 		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
 		if err != nil {
 			return nil, err

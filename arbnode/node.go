@@ -33,12 +33,12 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -46,7 +46,7 @@ func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer c
 	if err != nil {
 		return nil, err
 	}
-	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -54,7 +54,7 @@ func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer c
 	if err != nil {
 		return nil, err
 	}
-	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -62,7 +62,7 @@ func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer c
 	if err != nil {
 		return nil, err
 	}
-	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -70,7 +70,7 @@ func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer c
 	if err != nil {
 		return nil, err
 	}
-	if _, err := EnsureTxSucceeded(l1client, tx); err != nil {
+	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
 		return nil, err
 	}
 
@@ -78,7 +78,7 @@ func DeployOnL1(l1client L1Interface, deployAuth *bind.TransactOpts, sequencer c
 	if err != nil {
 		return nil, err
 	}
-	txRes, err := EnsureTxSucceeded(l1client, tx)
+	txRes, err := EnsureTxSucceeded(ctx, l1client, tx)
 	if err != nil {
 		return nil, err
 	}
