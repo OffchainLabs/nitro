@@ -122,9 +122,17 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 }
 
 func (s *InboxState) ReorgTo(count uint64) error {
+	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
+}
+
+func (s *InboxState) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	return s.reorgToWithInsertionMutex(count)
+	err := s.reorgToInternal(batch, count)
+	if err != nil {
+		return err
+	}
+	return batch.Write()
 }
 
 func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKey []byte) error {
@@ -149,7 +157,7 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
+func (s *InboxState) reorgToInternal(batch ethdb.Batch, count uint64) error {
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
@@ -168,7 +176,6 @@ func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
 		return err
 	}
 
-	batch := s.db.NewBatch()
 	err = deleteStartingAt(s.db, batch, messageCountToBlockPrefix, uint64ToBytes(count+1))
 	if err != nil {
 		return err
@@ -186,7 +193,7 @@ func (s *InboxState) reorgToWithInsertionMutex(count uint64) error {
 		return err
 	}
 
-	return batch.Write()
+	return nil
 }
 
 func dbKey(prefix []byte, pos uint64) []byte {
@@ -216,10 +223,13 @@ func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage ui
 		logs = append(logs, receipt.Logs...)
 	}
 	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	if err != nil {
+		return err
+	}
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	return err
+	return nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -249,6 +259,10 @@ func (s *InboxState) GetMessageCount() (uint64, error) {
 }
 
 func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
+}
+
+func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -297,7 +311,12 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 
 	if reorg {
 		if force {
-			err := s.reorgToWithInsertionMutex(pos)
+			batch := s.db.NewBatch()
+			err := s.reorgToInternal(batch, pos)
+			if err != nil {
+				return err
+			}
+			err = batch.Write()
 			if err != nil {
 				return err
 			}
@@ -309,7 +328,7 @@ func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.Mes
 		return nil
 	}
 
-	return s.writeMessages(pos, messages)
+	return s.writeMessages(pos, messages, batch)
 }
 
 func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
@@ -339,7 +358,7 @@ func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
 func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -373,13 +392,15 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta)
+	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
-// The mutex must be held, and pos must be the latest message count
-func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata) error {
-	// Write any new messages to the database
-	batch := s.db.NewBatch()
+// The mutex must be held, and pos must be the latest message count.
+// `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
+func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	if batch == nil {
+		batch = s.db.NewBatch()
+	}
 	for i, msg := range messages {
 		key := dbKey(messagePrefix, pos+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)

@@ -164,11 +164,14 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 	}
 }
 
-func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *BlockchainTestInfo) {
+func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interface, *core.BlockChain, *BlockchainTestInfo) {
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
 	l1info.GenerateAccount("faucet")
 
 	stackConf := node.DefaultConfig
+	stackConf.HTTPPort = 0
+	stackConf.WSPort = 0
+	stackConf.P2P.ListenAddr = ":0"
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)
@@ -223,7 +226,7 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 
-	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.CreateL1WithInbox(l1Client, l2backend, &l1TransactionOpts, l1info.GetAddress("Sequencer"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +234,7 @@ func CreateTestL1(t *testing.T, l2backend *arbitrum.Backend) (arbnode.L1Interfac
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 
-	return l1Client, l1info
+	return l1Client, l1backend.BlockChain(), l1info
 }
 
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {

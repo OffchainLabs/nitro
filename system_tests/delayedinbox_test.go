@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbtest
 
 import (
@@ -15,7 +19,7 @@ import (
 func TestDelayInbox(t *testing.T) {
 	background := context.Background()
 	l2backend, l2info := CreateTestL2(t)
-	l1backend, l1info := CreateTestL1(t, l2backend)
+	l1backend, _, l1info := CreateTestL1(t, l2backend)
 	l2client := ClientForArbBackend(t, l2backend)
 
 	l2info.GenerateAccount("User2")

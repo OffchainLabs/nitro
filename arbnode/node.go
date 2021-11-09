@@ -31,6 +31,7 @@ type L1Interface interface {
 	bind.ContractBackend
 	ethereum.ChainReader
 	ethereum.TransactionReader
+	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 }
 
 // will wait untill tx is in the blockchain. attempts = 0 is infinite
@@ -66,7 +67,28 @@ func EnsureTxSucceeded(client L1Interface, tx *types.Transaction) (*types.Receip
 		return nil, errors.New("expected receipt")
 	}
 	if txRes.Status != types.ReceiptStatusSuccessful {
-		return nil, errors.New("expected tx to succeed")
+		// Re-execute the transaction as a call to get a better error
+		ctx := context.TODO()
+		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
+		if err != nil {
+			return nil, err
+		}
+		callMsg := ethereum.CallMsg{
+			From:       from,
+			To:         tx.To(),
+			Gas:        tx.Gas(),
+			GasPrice:   tx.GasPrice(),
+			GasFeeCap:  tx.GasFeeCap(),
+			GasTipCap:  tx.GasTipCap(),
+			Value:      tx.Value(),
+			Data:       tx.Data(),
+			AccessList: tx.AccessList(),
+		}
+		_, err = client.CallContract(ctx, callMsg, txRes.BlockNumber)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New("tx failed but call succeeded")
 	}
 	return txRes, nil
 }
@@ -78,7 +100,7 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
+func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deployAuth *bind.TransactOpts, sequencer common.Address, isTest bool) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
 		return nil, err
@@ -134,25 +156,30 @@ func CreateL1WithInbox(l1client L1Interface, l2backend *arbitrum.Backend, deploy
 	if err != nil {
 		return nil, err
 	}
-	rawdb, err := l2backend.Stack().OpenDatabase("l2inbox", 0, 0, "", false) // TODO: use l2chaindata?
+	sequencerInbox, err := NewSequencerInbox(l1client, sequencerInboxAddr, int64(blockDeployed))
 	if err != nil {
 		return nil, err
 	}
 	inboxReaderConfig := *DefaultInboxReaderConfig
-	inboxReaderConfig.CheckDelay = time.Millisecond * 10
-	inboxReader, err := NewInboxReader(rawdb, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, &inboxReaderConfig)
-	if err != nil {
-		return nil, err
+	if isTest {
+		inboxReaderConfig.CheckDelay = time.Millisecond * 10
+		inboxReaderConfig.DelayBlocks = 0
 	}
-	inboxReader.Start(context.Background())
 	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
 	if !ok {
 		return nil, errors.New("l2backend doesn't have a sequencer")
 	}
 	inbox := sequencerObj.InboxState()
+	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(blockDeployed), delayedBridge, sequencerInbox, &inboxReaderConfig)
+	if err != nil {
+		return nil, err
+	}
+	inboxReader.Start(context.Background())
 	delayedSequencerConfig := *DefaultDelayedSequencerConfig
-	// not necessary, but should help prevent spurious failures in delayed sequencer test
-	delayedSequencerConfig.TimeAggregate = time.Second
+	if isTest {
+		// not necessary, but should help prevent spurious failures in delayed sequencer test
+		delayedSequencerConfig.TimeAggregate = time.Second
+	}
 	delayed_sequencer, err := NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
 	if err != nil {
 		return nil, err
@@ -235,7 +262,11 @@ func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitr
 		return nil, err
 	}
 
-	inbox, err := NewInboxState(chainDb, blockChain)
+	inboxDb, err := stack.OpenDatabase("l2inbox", 0, 0, "", false)
+	if err != nil {
+		utils.Fatalf("Failed to open inbox database: %v", err)
+	}
+	inbox, err := NewInboxState(inboxDb, blockChain)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +275,7 @@ func CreateArbBackend(stack *node.Node, genesisAlloc core.GenesisAlloc) (*arbitr
 
 	sequencer := NewSequencer(inbox)
 
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
+	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, inboxDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
 	if err != nil {
 		return nil, err
 	}
