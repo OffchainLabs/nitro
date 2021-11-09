@@ -20,7 +20,7 @@ import (
 )
 
 func TestDelayInboxSimple(t *testing.T) {
-	background := context.Background()
+	ctx := context.Background()
 	l2backend, l2info := CreateTestL2(t)
 	l1info, _, _, _ := CreateTestNodeOnL1(t, l2backend, true)
 
@@ -44,7 +44,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = arbnode.EnsureTxSucceeded(l1client, l1tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +59,11 @@ func TestDelayInboxSimple(t *testing.T) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(l2client, delayedTx.Hash(), time.Second*5)
+	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l2balance, err := l2client.BalanceAt(background, l2info.GetAddress("User2"), nil)
+	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestDelayInbox(t *testing.T) {
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10
 
-	background := context.Background()
+	ctx := context.Background()
 	l2backend, l2info := CreateTestL2(t)
 	l1info, _, l1backend, _ := CreateTestNodeOnL1(t, l2backend, true)
 
@@ -136,7 +136,7 @@ func TestDelayInbox(t *testing.T) {
 			}
 		}
 		for _, l1tx := range l1Txs {
-			_, err := arbnode.EnsureTxSucceeded(l1client, l1tx)
+			_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -157,11 +157,11 @@ func TestDelayInbox(t *testing.T) {
 		time.Sleep(time.Millisecond * 10)
 	}
 
-	_, err := arbnode.WaitForTx(l2client, lastDelayedMessage.Hash(), time.Second*5)
+	_, err := arbnode.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l2balance, err := l2client.BalanceAt(background, l2info.GetAddress("User2"), nil)
+	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
