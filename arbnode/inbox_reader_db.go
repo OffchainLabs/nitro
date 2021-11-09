@@ -345,6 +345,9 @@ func (b *multiplexerBackend) SetPositionWithinMessage(pos uint64) {
 }
 
 func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
+		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
+	}
 	data, _, err := b.db.getDelayedMessageBytesAndAccumulator(seqNum)
 	return data, err
 }
@@ -391,10 +394,12 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 		if batch.AfterDelayedCount > 0 {
 			haveDelayedAcc, err := d.GetDelayedAcc(batch.AfterDelayedCount - 1)
 			if errors.Is(err, accumulatorNotFound) {
+				// We somehow missed a referenced delayed message; go back and look for it
 				return delayedMessagesMismatch
 			} else if err != nil {
 				return err
 			} else if haveDelayedAcc != batch.AfterDelayedAcc {
+				// We somehow missed a delayed message reorg; go back and look for it
 				return delayedMessagesMismatch
 			}
 		}
