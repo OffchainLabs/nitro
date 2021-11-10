@@ -95,8 +95,8 @@ func (ir *InboxReader) run(ctx context.Context) error {
 
 		if ir.config.DelayBlocks > 0 {
 			currentHeight = new(big.Int).Sub(currentHeight, big.NewInt(ir.config.DelayBlocks))
-			if currentHeight.Sign() < 0 {
-				currentHeight = currentHeight.SetInt64(0)
+			if currentHeight.Cmp(ir.firstMessageBlock) < 0 {
+				currentHeight = new(big.Int).Set(ir.firstMessageBlock)
 			}
 		}
 
@@ -334,7 +334,7 @@ func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
 	}
 	newFrom := new(big.Int).Sub(from, big.NewInt(10))
 	if newFrom.Cmp(r.firstMessageBlock) < 0 {
-		newFrom = r.firstMessageBlock
+		newFrom = new(big.Int).Set(r.firstMessageBlock)
 	}
 	return newFrom, nil
 }
@@ -345,7 +345,7 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		return nil, err
 	}
 	if delayedCount == 0 {
-		return r.firstMessageBlock, nil
+		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
 	msg, err := r.db.GetDelayedMessage(delayedCount - 1)
 	if err != nil {
