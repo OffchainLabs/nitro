@@ -260,6 +260,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 func (b *BatchPoster) lastSubmittionIsSynced() bool {
 	batchcount, err := b.inbox.GetBatchCount()
 	if err != nil {
+		log.Warn("BatchPoster: batchcount failed", "err", err)
 		return false
 	}
 	if batchcount < b.sequencesPosted {
@@ -276,6 +277,7 @@ func (b *BatchPoster) lastSubmittionIsSynced() bool {
 // TODO make sure we detect end of block!
 func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmittionIsSynced() {
+		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(time.Second)
 	}
 	var msgToPost, prevDelayedMsg uint64
@@ -314,6 +316,7 @@ func (b *BatchPoster) postSequencerBatch() error {
 		return err
 	}
 	if sequencerMsg == nil {
+		log.Info("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "prev delayed", prevDelayedMsg)
 		return nil
 	}
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)

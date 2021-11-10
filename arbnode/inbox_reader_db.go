@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -64,6 +65,7 @@ func (d *InboxReaderDb) initialize() error {
 		if err != nil {
 			return err
 		}
+		log.Info("InboxTracker", "SequencerBatchCount", 0)
 	}
 
 	return batch.Write()
@@ -290,6 +292,7 @@ func (d *InboxReaderDb) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, new
 		if err != nil {
 			return err
 		}
+		log.Info("InboxTracker", "SequencerBatchCount", count)
 		err = deleteStartingAt(d.db, batch, sequencerBatchMetaPrefix, uint64ToBytes(count))
 		if err != nil {
 			return err
@@ -473,7 +476,7 @@ func (d *InboxReaderDb) addSequencerBatches(ctx context.Context, client L1Interf
 	if err != nil {
 		return err
 	}
-
+	log.Info("InboxTracker", "SequencerBatchCount", pos)
 	// This also writes the batch
 	return d.inboxState.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
 }
@@ -528,6 +531,6 @@ func (d *InboxReaderDb) ReorgBatchesTo(count uint64) error {
 	if err != nil {
 		return err
 	}
-
+	log.Info("InboxTracker", "SequencerBatchCount", count)
 	return d.inboxState.ReorgToAndEndBatch(dbBatch, prevMeta.MessageCount)
 }
