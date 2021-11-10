@@ -59,10 +59,14 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
-	minTimestamp := binary.BigEndian.Uint64(data[:8])
-	maxTimestamp := binary.BigEndian.Uint64(data[8:16])
-	minL1Block := binary.BigEndian.Uint64(data[16:24])
-	maxL1Block := binary.BigEndian.Uint64(data[24:32])
+	// minTimestamp := binary.BigEndian.Uint64(data[:8])
+	// maxTimestamp := binary.BigEndian.Uint64(data[8:16])
+	// minL1Block := binary.BigEndian.Uint64(data[16:24])
+	// maxL1Block := binary.BigEndian.Uint64(data[24:32])
+	minTimestamp := uint64(0)
+	maxTimestamp := uint64(0)
+	minL1Block := uint64(0)
+	maxL1Block := uint64(0)
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
 	if len(data) >= 41 && data[40] == 0 {
@@ -298,7 +302,7 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		var blockNumberHash common.Hash
 		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
 		var timestampHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
+		copy(timestampHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
 		var requestId common.Hash
 		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
 		if len(segment) < 2 || segment[1] != arbos.L2MessageKind_SignedTx {
@@ -309,10 +313,13 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		msg := &MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
-					Kind:        arbos.L1MessageType_L2Message,
-					Sender:      SequencerAddress,
-					BlockNumber: blockNumberHash,
-					Timestamp:   timestampHash,
+					Kind:   arbos.L1MessageType_L2Message,
+					Sender: SequencerAddress,
+					// TODO
+					// BlockNumber: blockNumberHash,
+					// Timestamp:   timestampHash,
+					BlockNumber: common.Hash{},
+					Timestamp:   common.Hash{},
 					RequestId:   requestId,
 					GasPriceL1:  common.Hash{},
 				},
