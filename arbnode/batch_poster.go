@@ -96,11 +96,10 @@ func (s *batchSegments) close(mustRecompress bool) error {
 		s.compressedWriter = brotli.NewWriter(s.compressedBuffer)
 		s.currentSize = 0
 		for _, segment := range s.rawSegments {
-			len, err := s.compressedWriter.Write(segment)
+			err := s.addSegmentToCompressed(segment)
 			if err != nil {
 				return err
 			}
-			s.currentSize += len
 		}
 	}
 	s.isDone = true
