@@ -86,7 +86,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	}
 }
 
-func TestTwoNodesLong(t *testing.T) {
+func TestTwoNodesXL(t *testing.T) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10

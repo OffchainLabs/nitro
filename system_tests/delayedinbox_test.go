@@ -95,7 +95,7 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 	return l1info.PrepareTx(delayedSender, "Inbox", gas, big.NewInt(0), delayedInboxTxData)
 }
 
-func TestDelayInbox(t *testing.T) {
+func TestDelayInboxXL(t *testing.T) {
 	addLocalLoops := 3
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10
