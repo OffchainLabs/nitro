@@ -133,22 +133,25 @@ func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *ar
 		// not necessary, but should help prevent spurious failures in delayed sequencer test
 		delayedSequencerConfig.TimeAggregate = time.Second
 	}
-	delayed_sequencer, err := NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
-	if err != nil {
-		return nil, err
-	}
+	var delayedSequencer *DelayedSequencer
 	var batchPoster *BatchPoster
 	if sequencerTxOpt != nil {
+		delayedSequencer, err = NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
+		if err != nil {
+			return nil, err
+		}
 		batchPoster, err = NewBatchPoster(l1client, inboxTracker, inbox, &DefaultBatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return &Node{l2backend, deployInfo, inboxReader, batchPoster, delayed_sequencer, inbox, inboxTracker}, nil
+	return &Node{l2backend, deployInfo, inboxReader, batchPoster, delayedSequencer, inbox, inboxTracker}, nil
 }
 
 func (n *Node) Start(ctx context.Context) {
-	n.DelayedSequencer.Start(ctx)
+	if n.DelayedSequencer != nil {
+		n.DelayedSequencer.Start(ctx)
+	}
 	n.InboxReader.Start(ctx)
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start()
