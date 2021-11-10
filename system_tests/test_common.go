@@ -147,9 +147,15 @@ func CreateTestNodeOnL1(t *testing.T, l2backend *arbitrum.Backend, isSequencer b
 func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
+	l2info.GenerateAccount("Faucet")
 	l2GenesysAlloc := make(map[common.Address]core.GenesisAccount)
 	l2GenesysAlloc[l2info.GetAddress("Owner")] = core.GenesisAccount{
 		Balance:    big.NewInt(9223372036854775807),
+		Nonce:      0,
+		PrivateKey: nil,
+	}
+	l2GenesysAlloc[l2info.GetAddress("Faucet")] = core.GenesisAccount{
+		Balance:    new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)),
 		Nonce:      0,
 		PrivateKey: nil,
 	}
