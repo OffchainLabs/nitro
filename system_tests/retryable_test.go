@@ -6,8 +6,10 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/util"
 	"math/rand"
 	"testing"
@@ -62,6 +64,20 @@ func TestSubmitRetryable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(arbRetryableAddress, client)
+	callOpts := bind.CallOpts{
+		Pending: false,
+		From: ownerOps.From,
+		BlockNumber: nil,
+		Context: ctx,
+	}
+	lifetime, err := arbRetryableTx.GetLifetime(&callOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = lifetime
+
 	requestId := common.BytesToHash([]byte{13})
 	retryableTx := types.ArbitrumSubmitRetryableTx{
 		ChainId:     chainId,
@@ -72,7 +88,7 @@ func TestSubmitRetryable(t *testing.T) {
 		To:          &arbRetryableAddress,
 		Value:       util.BigZero,
 		Beneficiary: ownerOps.From,
-		Data:        []byte{0x81, 0xe6, 0xe0, 0x83},
+		Data:        []byte{0x1c, 0x12, 0x3c, 0xf1},
 	}
 	tx := types.NewTx(&retryableTx)
 
@@ -82,25 +98,19 @@ func TestSubmitRetryable(t *testing.T) {
 	}
 
 	time.Sleep(4 * time.Millisecond) // allow some time for the receipt to show up
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-	failOnError(t, err, "Error getting receipt")
-	if receipt.Status != 0 {
-		t.Fatal("Submitted retryable tx failed")
-	}
-
-	reqId := receipt.TxHash
-
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(arbRetryableAddress, client)
+	_, err = arbnode.EnsureTxSucceeded(client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
+	failOnError(t, err, "Error getting receipt")
+	fmt.Println("gas used: ", receipt.GasUsed)
+	reqId := receipt.TxHash
 
-	callOpts := bind.CallOpts{
-		Pending: false,
-		From: ownerOps.From,
-		BlockNumber: nil,
-		Context: ctx,
+	if receipt.Status == 0 {
+		t.Fatal("transaction failed")
 	}
+
 	_, err = arbRetryableTx.GetTimeout(&callOpts, reqId)
 	if err == nil {
 		t.Fatal("unexpected success of GetTimeout for retryable that shouldn't exist")

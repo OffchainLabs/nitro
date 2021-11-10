@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math/big"
 	"time"
@@ -188,6 +189,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		}
 		snap := b.statedb.Snapshot()
 		b.statedb.Prepare(tx.Hash(), len(b.txes))
+		fmt.Println("Trying tx type ", tx.Type())
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
 			b.chainContext,
