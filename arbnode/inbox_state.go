@@ -325,7 +325,10 @@ func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []a
 		}
 	}
 	if len(messages) == 0 {
-		return nil
+		if batch == nil {
+			return nil
+		}
+		return batch.Write()
 	}
 
 	return s.writeMessages(pos, messages, batch)
