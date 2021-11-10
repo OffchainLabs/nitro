@@ -14,8 +14,8 @@ import (
 
 type MerkleAccumulator struct {
 	backingStorage *storage.Storage
-	size           uint64
-	numPartials    uint64
+	size           uint64         // stored in backingStorage, slot 0, if backingStorage exists
+	numPartials    uint64         // not stored in the DB, but calculated from size
 	partials       []*common.Hash // nil means we haven't yet loaded it from backingStorage
 }
 

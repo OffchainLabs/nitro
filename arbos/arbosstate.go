@@ -29,7 +29,7 @@ type ArbosState struct {
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      *uint64
+	timestamp      *storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
 
@@ -49,7 +49,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		nil,
 		nil,
 		nil,
-		nil,
+		backingStorage.OpenStorageBackedUint64(util.IntToHash(int64(timestampKey))),
 		backingStorage,
 	}
 }
@@ -185,26 +185,17 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
-	if state.timestamp == nil {
-		ts := state.backingStorage.GetByInt64(int64(timestampKey)).Big().Uint64()
-		state.timestamp = &ts
-	}
-	return *state.timestamp
+	return state.timestamp.Get()
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	if state.timestamp == nil {
-		ts := state.backingStorage.GetByInt64(int64(timestampKey)).Big().Uint64()
-		state.timestamp = &ts
-	}
-	if val < *state.timestamp {
+	ts := state.timestamp.Get()
+	if val < ts {
 		panic("timestamp decreased")
 	}
-	if val > *state.timestamp {
-		delta := val - *state.timestamp
-		ts := val
-		state.timestamp = &ts
-		state.backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(int64(ts)))
+	if val > ts {
+		delta := val - ts
+		state.timestamp.Set(val)
 		state.notifyGasPricerThatTimeElapsed(delta)
 	}
 }
