@@ -58,7 +58,7 @@ func (p *TxProcessor) getL1GasCharge() uint64 {
 	extraGasChargeWei := p.getExtraGasChargeWei()
 	gasPrice := p.msg.GasPrice()
 	if gasPrice.Cmp(big.NewInt(0)) == 0 {
-		return 0
+		gasPrice = p.blockContext.BaseFee
 	}
 	l1ChargesBig := new(big.Int).Div(extraGasChargeWei, gasPrice)
 	if !l1ChargesBig.IsUint64() {
