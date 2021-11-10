@@ -128,9 +128,9 @@ func (sto *Storage) OpenStorageBackedInt64(offset common.Hash) *StorageBackedInt
 	return &StorageBackedInt64{sto, offset, nil}
 }
 
-func (sbi *StorageBackedInt64) Get() int64 {
-	if sbi.cache == nil {
-		raw := sbi.storage.Get(sbi.offset).Big()
+func (sbu *StorageBackedInt64) Get() int64 {
+	if sbu.cache == nil {
+		raw := sbu.storage.Get(sbu.offset).Big()
 		if raw.Bit(255) != 0 {
 			raw = new(big.Int).SetBit(raw, 255, 0)
 			raw = new(big.Int).Neg(raw)
@@ -139,19 +139,49 @@ func (sbi *StorageBackedInt64) Get() int64 {
 			panic("expected int64 compatible value in storage")
 		}
 		i := raw.Int64()
-		sbi.cache = &i
+		sbu.cache = &i
 	}
-	return *sbi.cache
+	return *sbu.cache
 }
 
-func (sbi *StorageBackedInt64) Set(value int64) {
+func (sbu *StorageBackedInt64) Set(value int64) {
 	i := value
-	sbi.cache = &i
+	sbu.cache = &i
 	var bigValue *big.Int
 	if value >= 0 {
 		bigValue = big.NewInt(value)
 	} else {
 		bigValue = new(big.Int).SetBit(big.NewInt(-value), 255, 1)
 	}
-	sbi.storage.Set(sbi.offset, common.BigToHash(bigValue))
+	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
 }
+
+type StorageBackedUint64 struct {
+	storage *Storage
+	offset  common.Hash
+	cache   *uint64
+}
+
+func (sto *Storage) OpenStorageBackedUint64(offset common.Hash) *StorageBackedUint64 {
+	return &StorageBackedUint64{sto, offset, nil}
+}
+
+func (sbu *StorageBackedUint64) Get() uint64 {
+	if sbu.cache == nil {
+		raw := sbu.storage.Get(sbu.offset).Big()
+		if !raw.IsUint64() {
+			panic("expected uint64 compatible value in storage")
+		}
+		i := raw.Uint64()
+		sbu.cache = &i
+	}
+	return *sbu.cache
+}
+
+func (sbu *StorageBackedUint64) Set(value uint64) {
+	i := value
+	sbu.cache = &i
+	bigValue := new(big.Int).SetUint64(value)
+	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+}
+

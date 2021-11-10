@@ -16,14 +16,14 @@ import (
 type AddressTable struct {
 	backingStorage *storage.Storage
 	byAddress      *storage.Storage // 0 means item isn't in the table; n > 0 means it's in the table at slot n-1
-	numItems       uint64
+	numItems       *storage.StorageBackedUint64
 }
 
 func Initialize(sto *storage.Storage) {
 }
 
 func Open(sto *storage.Storage) *AddressTable {
-	numItems := sto.GetByInt64(0).Big().Uint64()
+	numItems := sto.OpenStorageBackedUint64(util.IntToHash(0))
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 
@@ -32,9 +32,8 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 	rev := atab.byAddress.Get(addrAsHash)
 	if rev == (common.Hash{}) {
 		// addr isn't in the table, so add it
-		ret := atab.numItems
-		atab.numItems++
-		atab.backingStorage.SetByInt64(0, util.IntToHash(int64(atab.numItems)))
+		ret := atab.numItems.Get()
+		atab.numItems.Set(ret+1)
 		atab.backingStorage.SetByInt64(int64(ret+1), addrAsHash)
 		atab.byAddress.Set(addrAsHash, util.IntToHash(int64(ret+1)))
 		return ret
@@ -59,11 +58,11 @@ func (atab *AddressTable) AddressExists(addr common.Address) bool {
 }
 
 func (atab *AddressTable) Size() uint64 {
-	return atab.numItems
+	return atab.numItems.Get()
 }
 
 func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool) {
-	if index >= atab.numItems {
+	if index >= atab.numItems.Get() {
 		return common.Address{}, false
 	}
 	return common.BytesToAddress(atab.backingStorage.GetByInt64(int64(index + 1)).Bytes()), true
