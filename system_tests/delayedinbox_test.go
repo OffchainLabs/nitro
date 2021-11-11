@@ -2,6 +2,10 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
+// fail with race detection due to timeouts
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
@@ -18,6 +22,29 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
+
+var inboxABI abi.ABI
+
+func init() {
+	var err error
+	inboxABI, err = abi.JSON(strings.NewReader(bridgegen.InboxABI))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainTestInfo, delayedSender string, gas uint64) *types.Transaction {
+	txbytes, err := l2Tx.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
+	delayedInboxTxData, err := inboxABI.Pack("sendL2Message", txwrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l1info.PrepareTx(delayedSender, "Inbox", gas, big.NewInt(0), delayedInboxTxData)
+}
 
 func TestDelayInboxSimple(t *testing.T) {
 	ctx := context.Background()
@@ -72,30 +99,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	}
 }
 
-var inboxABI abi.ABI
-
-func init() {
-	var err error
-	inboxABI, err = abi.JSON(strings.NewReader(bridgegen.InboxABI))
-	if err != nil {
-		panic(err)
-	}
-}
-
-func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainTestInfo, delayedSender string, gas uint64) *types.Transaction {
-	txbytes, err := l2Tx.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
-	delayedInboxTxData, err := inboxABI.Pack("sendL2Message", txwrapped)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return l1info.PrepareTx(delayedSender, "Inbox", gas, big.NewInt(0), delayedInboxTxData)
-}
-
-func TestDelayInbox(t *testing.T) {
+func TestDelayInboxLong(t *testing.T) {
 	addLocalLoops := 3
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10
