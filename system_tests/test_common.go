@@ -182,7 +182,10 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*a
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.Start(context.Background())
+	err = node.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	return l2backend, l2info, l1info, node, l1backend, l1stack
 }
 

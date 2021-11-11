@@ -149,7 +149,7 @@ func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *ar
 	return &Node{l2backend, sequencerObj, deployInfo, inboxReader, batchPoster, delayedSequencer, inbox, inboxTracker}, nil
 }
 
-func (n *Node) Start(ctx context.Context) {
+func (n *Node) Start(ctx context.Context) error {
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
 	}
@@ -157,7 +157,7 @@ func (n *Node) Start(ctx context.Context) {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start()
 	}
-	n.Sequencer.Start(ctx)
+	return n.Sequencer.Start(ctx)
 }
 
 func (n *Node) Stop() {

@@ -36,7 +36,10 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.Start(ctx)
+	err = node.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
 }
