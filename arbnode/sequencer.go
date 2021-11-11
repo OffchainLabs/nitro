@@ -22,14 +22,13 @@ type Sequencer struct {
 	inbox         *InboxState
 	l1Client      L1Interface
 	l1BlockNumber uint64
-	stopChan      chan struct{}
+	stop          func()
 }
 
 func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
 	seq := &Sequencer{
 		inbox:    inbox,
 		l1Client: l1Client,
-		stopChan: make(chan struct{}, 1),
 	}
 	if l1Client != nil {
 		block, err := l1Client.HeaderByNumber(ctx, nil)
@@ -79,11 +78,8 @@ func (s *Sequencer) Start() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go (func() {
-		<-s.stopChan
-		cancel()
-	})()
+	var ctx context.Context
+	ctx, s.stop = context.WithCancel(context.Background())
 
 	headerChan := make(chan *types.Header)
 	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
@@ -112,7 +108,7 @@ func (s *Sequencer) Start() error {
 				}
 			case <-ctx.Done():
 				headerSubscription.Unsubscribe()
-				break
+				return
 			}
 		}
 	})()
@@ -120,6 +116,8 @@ func (s *Sequencer) Start() error {
 }
 
 func (s *Sequencer) Stop() error {
-	s.stopChan <- struct{}{}
+	if s.stop != nil {
+		s.stop()
+	}
 	return nil
 }
