@@ -31,9 +31,8 @@ var (
 	l1Genesys, l2Genesys *core.Genesis
 )
 
-func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*types.Transaction) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
 	t.Helper()
-	ctx := context.Background()
 	for _, tx := range txs {
 		err := client.SendTransaction(ctx, tx)
 		if err != nil {
@@ -41,7 +40,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 		}
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(context.Background(), client, tx)
+		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,18 +104,18 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	return l1info, l1backend, stack
 }
 
-func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
+func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
-	SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	addresses, err := arbnode.DeployOnL1(context.Background(), l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.DeployOnL1(ctx, l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,9 +126,9 @@ func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAdd
 }
 
 // Create and deploy L1 and arbnode around the previously created L2 backend
-func CreateTestNodeOnL1(t *testing.T, l2backend *arbitrum.Backend, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *eth.Ethereum, *node.Node) {
+func CreateTestNodeOnL1(t *testing.T, ctx context.Context, l2backend *arbitrum.Backend, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
-	addresses := TestDeployOnL1(t, l1info)
+	addresses := TestDeployOnL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
@@ -139,12 +138,12 @@ func CreateTestNodeOnL1(t *testing.T, l2backend *arbitrum.Backend, isSequencer b
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.Start(context.Background())
+	node.Start(ctx)
 	return l1info, node, l1backend, l1stack
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
+func CreateTestL2(t *testing.T, ctx context.Context) (*arbitrum.Backend, *BlockchainTestInfo) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
@@ -178,7 +177,7 @@ func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(stack, l2Genesys)
+	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys)
 	if err != nil {
 		t.Fatal(err)
 	}

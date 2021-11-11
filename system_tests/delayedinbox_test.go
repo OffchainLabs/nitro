@@ -43,9 +43,12 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 }
 
 func TestDelayInboxSimple(t *testing.T) {
-	ctx := context.Background()
-	l2backend, l2info := CreateTestL2(t)
-	l1info, _, _, _ := CreateTestNodeOnL1(t, l2backend, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2backend, l2info := CreateTestL2(t, ctx)
+	l1info, arbNode, _, stack := CreateTestNodeOnL1(t, ctx, l2backend, true)
+	defer arbNode.Stop()
+	defer stack.Close()
 
 	l2client := l2info.Client
 	l1client := l1info.Client
@@ -72,15 +75,15 @@ func TestDelayInboxSimple(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
-
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, l1client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
+
+	// give the inbox reader a bit of time to pick up the delayed message
+	time.Sleep(time.Second)
 
 	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	if err != nil {
@@ -100,9 +103,12 @@ func TestDelayInboxLong(t *testing.T) {
 	messagesPerAddLocal := 1000
 	messagesPerDelayed := 10
 
-	ctx := context.Background()
-	l2backend, l2info := CreateTestL2(t)
-	l1info, _, l1backend, _ := CreateTestNodeOnL1(t, l2backend, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2backend, l2info := CreateTestL2(t, ctx)
+	l1info, arbNode, l1backend, stack := CreateTestNodeOnL1(t, ctx, l2backend, true)
+	defer arbNode.Stop()
+	defer stack.Close()
 
 	l2client := l2info.Client
 	l1client := l1info.Client
@@ -150,7 +156,7 @@ func TestDelayInboxLong(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 100; i++ {
-		SendWaitTestTransactions(t, l1client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 		// give the inbox reader a bit of time to pick up the delayed message

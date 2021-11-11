@@ -14,11 +14,11 @@ import (
 )
 
 func TestTransfer(t *testing.T) {
-	_, l2info := CreateTestL2(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, l2info := CreateTestL2(t, ctx)
 
 	client := l2info.Client
-
-	ctx := context.Background()
 
 	l2info.GenerateAccount("User2")
 
