@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"math/big"
 	"os"
 
@@ -55,11 +56,12 @@ func main() {
 		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
 	}
 
+	ctx := context.Background()
 	stack, err := arbnode.CreateStack()
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbnode.CreateArbBackend(stack, l2Genesys, nil)
+	_, err = arbnode.CreateArbBackend(ctx, stack, l2Genesys, nil)
 	if err != nil {
 		panic(err)
 	}

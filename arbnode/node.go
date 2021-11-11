@@ -177,7 +177,7 @@ func CreateStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateArbBackend(stack *node.Node, genesis *core.Genesis, l1Client L1Interface) (*arbitrum.Backend, error) {
+func CreateArbBackend(ctx context.Context, stack *node.Node, genesis *core.Genesis, l1Client L1Interface) (*arbitrum.Backend, error) {
 	arbstate.RequireHookedGeth()
 
 	nodeConf := ethconfig.Defaults
@@ -227,9 +227,9 @@ func CreateArbBackend(stack *node.Node, genesis *core.Genesis, l1Client L1Interf
 		return nil, err
 	}
 
-	inbox.Start(context.Background())
+	inbox.Start(ctx)
 
-	sequencer, err := NewSequencer(inbox, l1Client)
+	sequencer, err := NewSequencer(ctx, inbox, l1Client)
 	if err != nil {
 		return nil, err
 	}

@@ -35,7 +35,11 @@ type blockTestState struct {
 }
 
 func TestSequencerInboxReader(t *testing.T) {
-	l2Backend, l2Info, l1Info, _, l1backend, _ := CreateTestNodeOnL1(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2Backend, l2Info, l1Info, arbNode, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
+	defer arbNode.Stop()
+	defer stack.Close()
 	l1Client := l1Info.Client
 
 	l1BlockChain := l1backend.BlockChain()
@@ -49,7 +53,6 @@ func TestSequencerInboxReader(t *testing.T) {
 	ownerAddress := l2Info.GetAddress("Owner")
 	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
-	ctx := context.Background()
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +81,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	}
 
 	l1Info.GenerateAccount("ReorgPadding")
-	SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{
 		l1Info.PrepareTx("faucet", "ReorgPadding", 30000, big.NewInt(1e14), nil),
 	})
 
@@ -102,7 +105,7 @@ func TestSequencerInboxReader(t *testing.T) {
 					Nonce:     j,
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
-				SendWaitTestTransactions(t, l1Client, []*types.Transaction{tx})
+				SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{tx})
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)

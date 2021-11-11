@@ -31,9 +31,8 @@ var (
 	l1Genesys, l2Genesys *core.Genesis
 )
 
-func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*types.Transaction) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
 	t.Helper()
-	ctx := context.Background()
 	for _, tx := range txs {
 		err := client.SendTransaction(ctx, tx)
 		if err != nil {
@@ -41,7 +40,7 @@ func SendWaitTestTransactions(t *testing.T, client arbnode.L1Interface, txs []*t
 		}
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(context.Background(), client, tx)
+		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,18 +104,18 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	return l1info, l1backend, stack
 }
 
-func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
+func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
-	SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	addresses, err := arbnode.DeployOnL1(context.Background(), l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
+	addresses, err := arbnode.DeployOnL1(ctx, l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +125,7 @@ func TestDeployOnL1(t *testing.T, l1info *BlockchainTestInfo) *arbnode.RollupAdd
 	return addresses
 }
 
-func createTestL2Internal(t *testing.T, l1Client arbnode.L1Interface) (*arbitrum.Backend, *BlockchainTestInfo) {
+func createTestL2Internal(t *testing.T, ctx context.Context, l1Client arbnode.L1Interface) (*arbitrum.Backend, *BlockchainTestInfo) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
@@ -160,7 +159,7 @@ func createTestL2Internal(t *testing.T, l1Client arbnode.L1Interface) (*arbitrum
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(stack, l2Genesys, l1Client)
+	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys, l1Client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,10 +169,10 @@ func createTestL2Internal(t *testing.T, l1Client arbnode.L1Interface) (*arbitrum
 }
 
 // Create and deploy L1 and arbnode for L2
-func CreateTestNodeOnL1(t *testing.T, isSequencer bool) (*arbitrum.Backend, *BlockchainTestInfo, *BlockchainTestInfo, *arbnode.Node, *eth.Ethereum, *node.Node) {
+func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*arbitrum.Backend, *BlockchainTestInfo, *BlockchainTestInfo, *arbnode.Node, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
-	l2backend, l2info := createTestL2Internal(t, l1info.Client)
-	addresses := TestDeployOnL1(t, l1info)
+	l2backend, l2info := createTestL2Internal(t, ctx, l1info.Client)
+	addresses := TestDeployOnL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
@@ -188,8 +187,8 @@ func CreateTestNodeOnL1(t *testing.T, isSequencer bool) (*arbitrum.Backend, *Blo
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T) (*arbitrum.Backend, *BlockchainTestInfo) {
-	return createTestL2Internal(t, nil)
+func CreateTestL2(t *testing.T, ctx context.Context) (*arbitrum.Backend, *BlockchainTestInfo) {
+	return createTestL2Internal(t, ctx, nil)
 }
 
 func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {

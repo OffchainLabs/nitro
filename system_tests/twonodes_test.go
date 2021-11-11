@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func Create2ndNode(t *testing.T, first *arbnode.Node, l1stack *node.Node) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +28,7 @@ func Create2ndNode(t *testing.T, first *arbnode.Node, l1stack *node.Node) (*ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(stack, l2Genesys, l1client)
+	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys, l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,21 +36,24 @@ func Create2ndNode(t *testing.T, first *arbnode.Node, l1stack *node.Node) (*ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.Start(context.Background())
+	node.Start(ctx)
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	_, l2info, l1info, node1, _, l1stack := CreateTestNodeOnL1(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, l2info, l1info, node1, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer node1.Stop()
+	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, node1, l1stack)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack)
+	defer nodeB.Stop()
 
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
-
-	ctx := context.Background()
 
 	err := l2info.Client.SendTransaction(ctx, tx)
 	if err != nil {
@@ -67,7 +70,7 @@ func TestTwoNodesSimple(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
@@ -100,10 +103,14 @@ func TestTwoNodesLong(t *testing.T) {
 
 	delayedTxs := make([]*types.Transaction, 0, largeLoops*avgDelayedMessagesPerLoop*2)
 
-	ctx := context.Background()
-	_, l2info, l1info, node1, l1backend, l1stack := CreateTestNodeOnL1(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, l2info, l1info, node1, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	defer node1.Stop()
+	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, node1, l1stack)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack)
+	defer nodeB.Stop()
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -111,7 +118,7 @@ func TestTwoNodesLong(t *testing.T) {
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
-	SendWaitTestTransactions(t, l2info.Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "DelayedFaucet", 30000, delayedFaucetNeeds, nil),
 	})
 	delayedFaucetBalance, err := l2info.Client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
@@ -154,7 +161,7 @@ func TestTwoNodesLong(t *testing.T) {
 		for len(l2Txs) < l2TxsThisTime {
 			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", 30000, fundsPerDirect, nil))
 		}
-		SendWaitTestTransactions(t, l2info.Client, l2Txs)
+		SendWaitTestTransactions(t, ctx, l2info.Client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		for _, l1tx := range l1Txs {
 			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1tx)
@@ -164,7 +171,7 @@ func TestTwoNodesLong(t *testing.T) {
 		}
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
-			SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
+			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
@@ -178,7 +185,7 @@ func TestTwoNodesLong(t *testing.T) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < finalPropagateLoops; i++ {
 		for j := 0; j < 30; j++ {
-			SendWaitTestTransactions(t, l1info.Client, []*types.Transaction{
+			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}

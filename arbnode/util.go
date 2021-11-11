@@ -19,7 +19,10 @@ type L1Interface interface {
 }
 
 // Will wait until txhash is in the blockchain and return its receipt
-func WaitForTx(ctx context.Context, client L1Interface, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+	ctx, cancel := context.WithTimeout(ctxinput, timeout)
+	defer cancel()
+
 	chanHead := make(chan *types.Header, 20)
 	headSubscribe, err := client.SubscribeNewHead(ctx, chanHead)
 	if err != nil {
@@ -27,7 +30,6 @@ func WaitForTx(ctx context.Context, client L1Interface, txhash common.Hash, time
 	}
 	defer headSubscribe.Unsubscribe()
 
-	chTimeout := time.After(timeout)
 	for {
 		reciept, err := client.TransactionReceipt(ctx, txhash)
 		if reciept != nil {
@@ -35,8 +37,9 @@ func WaitForTx(ctx context.Context, client L1Interface, txhash common.Hash, time
 		}
 		select {
 		case <-chanHead:
-		case <-chTimeout:
-			return nil, errors.New("timeout waiting for transaction")
+		case <-time.After(timeout / 5):
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 }

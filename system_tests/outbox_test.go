@@ -26,6 +26,8 @@ import (
 func TestOutboxProofs(t *testing.T) {
 	arbstate.RequireHookedGeth()
 	rand.Seed(time.Now().UTC().UnixNano())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	arbSysAbi, err := precompilesgen.ArbSysMetaData.GetAbi()
 	failOnError(t, err, "failed to get abi")
@@ -33,15 +35,14 @@ func TestOutboxProofs(t *testing.T) {
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 	arbSysAddress := common.HexToAddress("0x64")
 
-	backend, l2info := CreateTestL2(t)
-	client := ClientForArbBackend(t, backend)
+	_, l2info := CreateTestL2(t, ctx)
+	client := l2info.Client
 	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
 
-	ctx := context.Background()
 	txnCount := int64(1 + rand.Intn(128))
 
 	// represents a send we should be able to prove exists

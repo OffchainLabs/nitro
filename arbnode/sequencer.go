@@ -25,15 +25,13 @@ type Sequencer struct {
 	stopChan      chan struct{}
 }
 
-func NewSequencer(inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
+func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
 	seq := &Sequencer{
 		inbox:    inbox,
 		l1Client: l1Client,
 		stopChan: make(chan struct{}, 1),
 	}
 	if l1Client != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 		block, err := l1Client.HeaderByNumber(ctx, nil)
 		if err != nil {
 			return nil, err
