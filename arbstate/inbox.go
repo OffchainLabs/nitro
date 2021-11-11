@@ -319,12 +319,12 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		msg := &MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
-					Kind:   arbos.L1MessageType_L2Message,
-					Sender: SequencerAddress,
-					//BlockNumber: blockNumberHash,
-					Timestamp:  timestampHash,
-					RequestId:  requestId,
-					GasPriceL1: common.Hash{},
+					Kind:        arbos.L1MessageType_L2Message,
+					Sender:      SequencerAddress,
+					BlockNumber: blockNumberHash,
+					Timestamp:   timestampHash,
+					RequestId:   requestId,
+					GasPriceL1:  common.Hash{},
 				},
 				L2msg: segment[1:],
 			},
