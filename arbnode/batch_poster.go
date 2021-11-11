@@ -51,7 +51,7 @@ func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxSta
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
-		chanStop:        make(chan struct{}, 1),
+		chanStop:        make(chan struct{}),
 	}, nil
 }
 
