@@ -21,8 +21,7 @@ import (
 
 func TestDelayInboxSimple(t *testing.T) {
 	ctx := context.Background()
-	l2backend, l2info := CreateTestL2(t)
-	l1info, _, _, _ := CreateTestNodeOnL1(t, l2backend, true)
+	_, l2info, l1info, _, _, _ := CreateTestNodeOnL1(t, true)
 
 	l2client := l2info.Client
 	l1client := l1info.Client
@@ -101,8 +100,7 @@ func TestDelayInbox(t *testing.T) {
 	messagesPerDelayed := 10
 
 	ctx := context.Background()
-	l2backend, l2info := CreateTestL2(t)
-	l1info, _, l1backend, _ := CreateTestNodeOnL1(t, l2backend, true)
+	_, l2info, l1info, _, l1backend, _ := CreateTestNodeOnL1(t, true)
 
 	l2client := l2info.Client
 	l1client := l1info.Client

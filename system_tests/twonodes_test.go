@@ -28,7 +28,7 @@ func Create2ndNode(t *testing.T, first *arbnode.Node, l1stack *node.Node) (*ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(stack, l2Genesys)
+	backend, err := arbnode.CreateArbBackend(stack, l2Genesys, l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +42,7 @@ func Create2ndNode(t *testing.T, first *arbnode.Node, l1stack *node.Node) (*ethc
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	l2backend, l2info := CreateTestL2(t)
-	l1info, node1, _, l1stack := CreateTestNodeOnL1(t, l2backend, true)
+	_, l2info, l1info, node1, _, l1stack := CreateTestNodeOnL1(t, true)
 
 	l2clientB, _ := Create2ndNode(t, node1, l1stack)
 
@@ -102,8 +101,7 @@ func TestTwoNodesLong(t *testing.T) {
 	delayedTxs := make([]*types.Transaction, 0, largeLoops*avgDelayedMessagesPerLoop*2)
 
 	ctx := context.Background()
-	l2backend, l2info := CreateTestL2(t)
-	l1info, node1, l1backend, l1stack := CreateTestNodeOnL1(t, l2backend, true)
+	_, l2info, l1info, node1, l1backend, l1stack := CreateTestNodeOnL1(t, true)
 
 	l2clientB, _ := Create2ndNode(t, node1, l1stack)
 

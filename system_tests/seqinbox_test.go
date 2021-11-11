@@ -35,8 +35,7 @@ type blockTestState struct {
 }
 
 func TestSequencerInboxReader(t *testing.T) {
-	l2Backend, l2Info := CreateTestL2(t)
-	l1Info, _, l1backend, _ := CreateTestNodeOnL1(t, l2Backend, false)
+	l2Backend, l2Info, l1Info, _, l1backend, _ := CreateTestNodeOnL1(t, true)
 	l1Client := l1Info.Client
 
 	l1BlockChain := l1backend.BlockChain()

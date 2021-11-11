@@ -59,14 +59,10 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
-	// minTimestamp := binary.BigEndian.Uint64(data[:8])
-	// maxTimestamp := binary.BigEndian.Uint64(data[8:16])
-	// minL1Block := binary.BigEndian.Uint64(data[16:24])
-	// maxL1Block := binary.BigEndian.Uint64(data[24:32])
-	minTimestamp := uint64(0)
-	maxTimestamp := uint64(0)
-	minL1Block := uint64(0)
-	maxL1Block := uint64(0)
+	minTimestamp := binary.BigEndian.Uint64(data[:8])
+	maxTimestamp := binary.BigEndian.Uint64(data[8:16])
+	minL1Block := binary.BigEndian.Uint64(data[16:24])
+	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
 	if len(data) >= 41 && data[40] == 0 {
@@ -124,6 +120,9 @@ type inboxMultiplexer struct {
 	delayedMessagesRead           uint64
 	sequencerMessageCache         *sequencerMessage
 	sequencerMessageCachePosition uint64
+	cachedSegmentNum              uint64
+	cachedSegmentTimestamp        uint64
+	cachedSegmentBlockNumber      uint64
 
 	delayedSegmentUntil *uint64
 
@@ -240,9 +239,10 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 
 // Returns a message, the delayed messages being read up to if applicable, and any *parsing* error
 func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithMetadata, *uint64, error) {
-	segmentNum := r.backend.GetPositionWithinMessage()
-	var timestamp uint64
-	var blockNumber uint64
+	targetSegment := r.backend.GetPositionWithinMessage()
+	segmentNum := r.cachedSegmentNum
+	timestamp := r.cachedSegmentTimestamp
+	blockNumber := r.cachedSegmentBlockNumber
 	for {
 		if segmentNum >= uint64(len(seqMsg.segments)) {
 			break
@@ -266,10 +266,16 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 				blockNumber += advancing
 			}
 			segmentNum++
+		} else if segmentNum < targetSegment {
+			segmentNum++
 		} else {
 			break
 		}
 	}
+	r.advanceSegmentTo = segmentNum + 1
+	r.cachedSegmentNum = segmentNum
+	r.cachedSegmentTimestamp = timestamp
+	r.cachedSegmentBlockNumber = blockNumber
 	if timestamp < seqMsg.minTimestamp {
 		timestamp = seqMsg.minTimestamp
 	} else if timestamp > seqMsg.maxTimestamp {
@@ -315,13 +321,10 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:   arbos.L1MessageType_L2Message,
 					Sender: SequencerAddress,
-					// TODO
-					// BlockNumber: blockNumberHash,
-					// Timestamp:   timestampHash,
-					BlockNumber: common.Hash{},
-					Timestamp:   common.Hash{},
-					RequestId:   requestId,
-					GasPriceL1:  common.Hash{},
+					//BlockNumber: blockNumberHash,
+					Timestamp:  timestampHash,
+					RequestId:  requestId,
+					GasPriceL1: common.Hash{},
 				},
 				L2msg: segment[1:],
 			},
@@ -365,6 +368,9 @@ func (r *inboxMultiplexer) Advance() error {
 	r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
 	if r.advanceMessage {
 		r.backend.AdvanceSequencerInbox()
+		r.cachedSegmentNum = 0
+		r.cachedSegmentTimestamp = 0
+		r.cachedSegmentBlockNumber = 0
 	}
 	r.advanceComputed = false
 	return nil
