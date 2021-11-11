@@ -93,6 +93,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 
 type Node struct {
 	Backend          *arbitrum.Backend
+	Sequencer        *Sequencer
 	DeployInfo       *RollupAddresses
 	InboxReader      *InboxReader
 	BatchPoster      *BatchPoster
@@ -145,7 +146,7 @@ func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *ar
 			return nil, err
 		}
 	}
-	return &Node{l2backend, deployInfo, inboxReader, batchPoster, delayedSequencer, inbox, inboxTracker}, nil
+	return &Node{l2backend, sequencerObj, deployInfo, inboxReader, batchPoster, delayedSequencer, inbox, inboxTracker}, nil
 }
 
 func (n *Node) Start(ctx context.Context) {
@@ -156,6 +157,7 @@ func (n *Node) Start(ctx context.Context) {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start()
 	}
+	n.Sequencer.Start(ctx)
 }
 
 func (n *Node) Stop() {

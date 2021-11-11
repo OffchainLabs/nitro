@@ -22,15 +22,12 @@ type Sequencer struct {
 	inbox         *InboxState
 	l1Client      L1Interface
 	l1BlockNumber uint64
-	stop          func()
-	onStopChan    chan struct{}
 }
 
 func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
 	seq := &Sequencer{
-		inbox:      inbox,
-		l1Client:   l1Client,
-		onStopChan: make(chan struct{}),
+		inbox:    inbox,
+		l1Client: l1Client,
 	}
 	if l1Client != nil {
 		block, err := l1Client.HeaderByNumber(ctx, nil)
@@ -75,13 +72,10 @@ func (s *Sequencer) BlockChain() *core.BlockChain {
 	return s.inbox.bc
 }
 
-func (s *Sequencer) Start() error {
+func (s *Sequencer) Start(ctx context.Context) error {
 	if s.l1Client == nil {
 		return nil
 	}
-
-	var ctx context.Context
-	ctx, s.stop = context.WithCancel(context.Background())
 
 	headerChan := make(chan *types.Header)
 	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
@@ -89,7 +83,6 @@ func (s *Sequencer) Start() error {
 		return err
 	}
 	go (func() {
-		defer close(s.onStopChan)
 		for {
 			select {
 			case header := <-headerChan:
@@ -115,13 +108,6 @@ func (s *Sequencer) Start() error {
 			}
 		}
 	})()
-	return nil
-}
 
-func (s *Sequencer) Stop() error {
-	if s.stop != nil {
-		s.stop()
-		<-s.onStopChan
-	}
 	return nil
 }
