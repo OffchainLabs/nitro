@@ -37,6 +37,7 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 		}
 		select {
 		case <-chanHead:
+		case <-time.After(timeout / 5):
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
