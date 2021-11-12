@@ -325,7 +325,10 @@ func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []a
 		}
 	}
 	if len(messages) == 0 {
-		return nil
+		if batch == nil {
+			return nil
+		}
+		return batch.Write()
 	}
 
 	return s.writeMessages(pos, messages, batch)
@@ -388,10 +391,10 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
 			MustEndBlock:        i == len(messages)-1,
-			DelayedMessagesRead: delayedMessagesRead + uint64(i),
+			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
 		})
 	}
-
+	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
 	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
@@ -524,6 +527,7 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			log.Warn("TransactionStreamer: closeblock and skipping message", "pos", pos)
 			// Skip this invalid message
 			pos++
 			continue
@@ -536,6 +540,7 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			log.Info("TransactionStreamer: closed block", "pos", pos)
 			// Notice we fall through here to the AddMessage call
 		}
 
@@ -548,6 +553,7 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			log.Info("TransactionStreamer: closed block", "pos", pos)
 		}
 		pos++
 	}

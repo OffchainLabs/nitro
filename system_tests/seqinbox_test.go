@@ -35,8 +35,15 @@ type blockTestState struct {
 }
 
 func TestSequencerInboxReader(t *testing.T) {
-	l2Backend, l2Info := CreateTestL2(t)
-	l1Client, l1BlockChain, l1Info := CreateTestL1(t, l2Backend)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2Backend, l2Info := CreateTestL2(t, ctx)
+	l1Info, arbNode, l1backend, stack := CreateTestNodeOnL1(t, ctx, l2Backend, false)
+	defer arbNode.Stop()
+	defer stack.Close()
+	l1Client := l1Info.Client
+
+	l1BlockChain := l1backend.BlockChain()
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	if err != nil {
@@ -47,7 +54,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	ownerAddress := l2Info.GetAddress("Owner")
 	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
-	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(context.Background(), rpc.LatestBlockNumber)
+	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +82,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	}
 
 	l1Info.GenerateAccount("ReorgPadding")
-	SendWaitTestTransactions(t, l1Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{
 		l1Info.PrepareTx("faucet", "ReorgPadding", 30000, big.NewInt(1e14), nil),
 	})
 
@@ -99,10 +106,10 @@ func TestSequencerInboxReader(t *testing.T) {
 					Nonce:     j,
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
-				SendWaitTestTransactions(t, l1Client, []*types.Transaction{tx})
+				SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{tx})
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
-			currentHeader, err := l1Client.HeaderByNumber(context.Background(), nil)
+			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +198,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			txRes, err := arbnode.EnsureTxSucceeded(l1Client, tx)
+			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -228,14 +235,14 @@ func TestSequencerInboxReader(t *testing.T) {
 		}
 
 		for _, state := range blockStates {
-			block, err := l2Backend.APIBackend().BlockByNumber(context.Background(), rpc.BlockNumber(state.l2BlockNumber))
+			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			if err != nil {
 				t.Fatal(err)
 			}
 			if block == nil {
 				t.Fatal("missing state block", state.l2BlockNumber)
 			}
-			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(context.Background(), rpc.BlockNumber(state.l2BlockNumber))
+			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			if err != nil {
 				t.Fatal(err)
 			}
