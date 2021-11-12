@@ -56,17 +56,18 @@ func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxSta
 }
 
 type batchSegments struct {
-	compressedBuffer *bytes.Buffer
-	compressedWriter *brotli.Writer
-	rawSegments      [][]byte
-	timestamp        uint64
-	blockNum         uint64
-	delayedMsg       uint64
-	pendingDelayed   uint64
-	sizeLimit        int
-	currentSize      int
-	trailingHeaders  int // how many trailing segments are headers
-	isDone           bool
+	compressedBuffer    *bytes.Buffer
+	compressedWriter    *brotli.Writer
+	rawSegments         [][]byte
+	timestamp           uint64
+	blockNum            uint64
+	delayedMsg          uint64
+	pendingDelayed      uint64
+	sizeLimit           int
+	newUncompressedSize int
+	lastCompressedSize  int
+	trailingHeaders     int // how many trailing segments are headers
+	isDone              bool
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
@@ -81,26 +82,50 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 	}
 }
 
-func (s *batchSegments) close(mustRecompress bool) error {
+func (s *batchSegments) recompressAll() error {
+	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
+	s.compressedWriter = brotli.NewWriter(s.compressedBuffer)
+	s.newUncompressedSize = 0
+	for _, segment := range s.rawSegments {
+		err := s.addSegmentToCompressed(segment)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *batchSegments) testForOverflow() (bool, error) {
+	// there is room, no need to flush
+	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
+		return false, nil
+	}
+	// don't want to flush for headers
+	if s.trailingHeaders > 0 {
+		return false, nil
+	}
+	err := s.compressedWriter.Flush()
+	if err != nil {
+		return true, err
+	}
+	s.lastCompressedSize = s.compressedBuffer.Len()
+	s.newUncompressedSize = 0
+	if s.lastCompressedSize >= s.sizeLimit {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *batchSegments) close() error {
 	err := s.testAddDelayedMessage()
 	if err != nil {
 		return err
 	}
 	s.rawSegments = s.rawSegments[:len(s.rawSegments)-s.trailingHeaders]
-	if s.trailingHeaders > 0 {
-		mustRecompress = true
-	}
 	s.trailingHeaders = 0
-	if mustRecompress {
-		s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
-		s.compressedWriter = brotli.NewWriter(s.compressedBuffer)
-		s.currentSize = 0
-		for _, segment := range s.rawSegments {
-			err := s.addSegmentToCompressed(segment)
-			if err != nil {
-				return err
-			}
-		}
+	err = s.recompressAll()
+	if err != nil {
+		return err
 	}
 	s.isDone = true
 	return nil
@@ -112,7 +137,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 		return err
 	}
 	lenWritten, err := s.compressedWriter.Write(encoded)
-	s.currentSize += lenWritten
+	s.newUncompressedSize += lenWritten
 	return err
 }
 
@@ -136,8 +161,12 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if s.currentSize > s.sizeLimit {
-		return false, s.close(true)
+	overflow, err := s.testForOverflow()
+	if err != nil {
+		return false, err
+	}
+	if overflow {
+		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
 	if isHeader {
@@ -238,7 +267,7 @@ func (s *batchSegments) IsDone() bool {
 
 func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	if !s.isDone {
-		err := s.close(false)
+		err := s.close()
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +286,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) lastSubmittionIsSynced() bool {
+func (b *BatchPoster) lastSubmissionIsSynced() bool {
 	batchcount, err := b.inbox.GetBatchCount()
 	if err != nil {
 		log.Warn("BatchPoster: batchcount failed", "err", err)
@@ -276,7 +305,7 @@ func (b *BatchPoster) lastSubmittionIsSynced() bool {
 
 // TODO make sure we detect end of block!
 func (b *BatchPoster) postSequencerBatch() error {
-	for !b.lastSubmittionIsSynced() {
+	for !b.lastSubmissionIsSynced() {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(time.Second)
 	}
@@ -322,8 +351,8 @@ func (b *BatchPoster) postSequencerBatch() error {
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
 	if err == nil {
 		b.sequencesPosted++
+		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	}
-	log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	return err
 }
 
