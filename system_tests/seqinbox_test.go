@@ -37,7 +37,8 @@ type blockTestState struct {
 func TestSequencerInboxReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Backend, l2Info, l1Info, arbNode, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2Backend := arbNode.Backend
 	defer arbNode.Stop()
 	defer stack.Close()
 	l1Client := l1Info.Client

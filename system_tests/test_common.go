@@ -169,7 +169,7 @@ func createTestL2Internal(t *testing.T, ctx context.Context, l1Client arbnode.L1
 }
 
 // Create and deploy L1 and arbnode for L2
-func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*arbitrum.Backend, *BlockchainTestInfo, *BlockchainTestInfo, *arbnode.Node, *eth.Ethereum, *node.Node) {
+func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
 	l2backend, l2info := createTestL2Internal(t, ctx, l1info.Client)
 	addresses := TestDeployOnL1(t, ctx, l1info)
@@ -178,15 +178,15 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*a
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
-	node, err := arbnode.CreateNode(l1info.Client, addresses, l2backend, sequencerTxOptsPtr, true)
+	l2node, err := arbnode.CreateNode(l1info.Client, addresses, l2backend, sequencerTxOptsPtr, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = node.Start(context.Background())
+	err = l2node.Start(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return l2backend, l2info, l1info, node, l1backend, l1stack
+	return l2info, l2node, l1info, l1backend, l1stack
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1

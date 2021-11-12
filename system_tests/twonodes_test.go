@@ -45,7 +45,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, l2info, l1info, node1, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer node1.Stop()
 	defer l1stack.Close()
 
