@@ -51,7 +51,7 @@ func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxSta
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
-		chanStop:        make(chan struct{}, 1),
+		chanStop:        make(chan struct{}),
 	}, nil
 }
 
@@ -200,7 +200,7 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, se
 		return false, errors.New("number not uint64")
 	}
 	asUint := asBig.Uint64()
-	if asUint <= *base {
+	if asUint == *base {
 		return true, nil
 	}
 	diff := asUint - *base

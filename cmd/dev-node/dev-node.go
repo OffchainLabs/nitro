@@ -61,7 +61,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbnode.CreateArbBackend(ctx, stack, l2Genesys)
+	_, err = arbnode.CreateArbBackend(ctx, stack, l2Genesys, nil)
 	if err != nil {
 		panic(err)
 	}

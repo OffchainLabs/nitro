@@ -26,7 +26,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys)
+	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys, l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,10 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	if err != nil {
 		t.Fatal(err)
 	}
-	node.Start(ctx)
+	err = node.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
 }
@@ -42,8 +45,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2backend, l2info := CreateTestL2(t, ctx)
-	l1info, node1, _, l1stack := CreateTestNodeOnL1(t, ctx, l2backend, true)
+	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer node1.Stop()
 	defer l1stack.Close()
 

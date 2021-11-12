@@ -26,8 +26,7 @@ func TestDelayInboxLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2backend, l2info := CreateTestL2(t, ctx)
-	l1info, arbNode, l1backend, stack := CreateTestNodeOnL1(t, ctx, l2backend, true)
+	l2info, arbNode, l1info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer arbNode.Stop()
 	defer stack.Close()
 

@@ -37,8 +37,7 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2backend, l2info := CreateTestL2(t, ctx)
-	l1info, node1, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, l2backend, true)
+	l2info, node1, l1info, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer node1.Stop()
 	defer l1stack.Close()
 
