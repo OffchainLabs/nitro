@@ -120,6 +120,11 @@ type inboxMultiplexer struct {
 	delayedMessagesRead           uint64
 	sequencerMessageCache         *sequencerMessage
 	sequencerMessageCachePosition uint64
+	cachedSegmentNum              uint64
+	cachedSegmentTimestamp        uint64
+	cachedSegmentBlockNumber      uint64
+
+	delayedSegmentUntil *uint64
 
 	advanceComputed  bool
 	advanceSegmentTo uint64
@@ -192,15 +197,13 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 			log.Warn("error parsing delayed message", "err", parseErr)
 			delayed = invalidMessage
 		}
-		endOfMessage := r.delayedMessagesRead+1 >= *delayedTarget
-		msg = &MessageWithMetadata{
-			Message:             delayed,
-			MustEndBlock:        endOfMessage,
-			DelayedMessagesRead: r.delayedMessagesRead + 1,
-		}
-
 		r.advanceDelayedTo = r.delayedMessagesRead + 1
 		endSegment = r.advanceDelayedTo == *delayedTarget
+		msg = &MessageWithMetadata{
+			Message:             delayed,
+			MustEndBlock:        endSegment,
+			DelayedMessagesRead: r.advanceDelayedTo,
+		}
 	} else {
 		r.advanceDelayedTo = r.delayedMessagesRead
 		endSegment = true
@@ -236,9 +239,10 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 
 // Returns a message, the delayed messages being read up to if applicable, and any *parsing* error
 func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithMetadata, *uint64, error) {
-	segmentNum := r.backend.GetPositionWithinMessage()
-	var timestamp uint64
-	var blockNumber uint64
+	targetSegment := r.backend.GetPositionWithinMessage()
+	segmentNum := r.cachedSegmentNum
+	timestamp := r.cachedSegmentTimestamp
+	blockNumber := r.cachedSegmentBlockNumber
 	for {
 		if segmentNum >= uint64(len(seqMsg.segments)) {
 			break
@@ -262,10 +266,16 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 				blockNumber += advancing
 			}
 			segmentNum++
+		} else if segmentNum < targetSegment {
+			segmentNum++
 		} else {
 			break
 		}
 	}
+	r.advanceSegmentTo = segmentNum + 1
+	r.cachedSegmentNum = segmentNum
+	r.cachedSegmentTimestamp = timestamp
+	r.cachedSegmentBlockNumber = blockNumber
 	if timestamp < seqMsg.minTimestamp {
 		timestamp = seqMsg.minTimestamp
 	} else if timestamp > seqMsg.maxTimestamp {
@@ -282,10 +292,15 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		}
 		return nil, nil, fmt.Errorf("after end of sequencer message (size %v)", len(seqMsg.segments))
 	}
-	r.advanceSegmentTo = segmentNum + 1
 	segment := seqMsg.segments[int(segmentNum)]
 	if len(segment) == 0 {
 		return nil, nil, errors.New("empty sequencer message segment")
+	}
+	if r.delayedSegmentUntil != nil {
+		if segment[0] != BatchSegmentKindDelayedMessages {
+			return nil, nil, errors.New("have currentDelaySegment but not in delaysegment")
+		}
+		return nil, r.delayedSegmentUntil, nil
 	}
 	segmentKind := segment[0]
 	if segmentKind == BatchSegmentKindL2Message {
@@ -293,7 +308,7 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		var blockNumberHash common.Hash
 		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
 		var timestampHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
+		copy(timestampHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
 		var requestId common.Hash
 		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
 		if len(segment) < 2 || segment[1] != arbos.L2MessageKind_SignedTx {
@@ -324,11 +339,13 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 		if err != nil {
 			return nil, nil, err
 		}
-		newRead := r.delayedMessagesRead + reading
-		if newRead <= r.delayedMessagesRead || newRead > seqMsg.afterDelayedMessages {
-			return nil, nil, errors.New("bad delayed message reading count")
+		delayedLimit := new(uint64)
+		*delayedLimit = r.delayedMessagesRead + reading
+		if *delayedLimit <= r.delayedMessagesRead || *delayedLimit > seqMsg.afterDelayedMessages {
+			return nil, nil, fmt.Errorf("bad delayed message reading count got: %v exp (%v, %v]", *delayedLimit, r.delayedMessagesRead, seqMsg.afterDelayedMessages)
 		}
-		return nil, &newRead, nil
+		r.delayedSegmentUntil = delayedLimit
+		return nil, delayedLimit, nil
 	} else {
 		return nil, nil, fmt.Errorf("bad sequencer message segment kind %v", segmentKind)
 	}
@@ -345,9 +362,15 @@ func (r *inboxMultiplexer) Advance() error {
 		}
 	}
 	r.delayedMessagesRead = r.advanceDelayedTo
+	if (r.delayedSegmentUntil != nil) && (*r.delayedSegmentUntil == r.delayedMessagesRead) {
+		r.delayedSegmentUntil = nil
+	}
 	r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
 	if r.advanceMessage {
 		r.backend.AdvanceSequencerInbox()
+		r.cachedSegmentNum = 0
+		r.cachedSegmentTimestamp = 0
+		r.cachedSegmentBlockNumber = 0
 	}
 	r.advanceComputed = false
 	return nil

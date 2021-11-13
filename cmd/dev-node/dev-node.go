@@ -5,15 +5,18 @@
 package main
 
 import (
+	"context"
 	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbos"
 )
 
 func main() {
@@ -37,12 +40,28 @@ func main() {
 		Nonce:      0,
 		PrivateKey: nil,
 	}
+	l2Genesys := &core.Genesis{
+		Config:     arbos.ChainConfig,
+		Nonce:      0,
+		Timestamp:  1633932474,
+		ExtraData:  []byte("ArbitrumMainnet"),
+		GasLimit:   0,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.Hash{},
+		Coinbase:   common.Address{},
+		Alloc:      genesisAlloc,
+		Number:     0,
+		GasUsed:    0,
+		ParentHash: common.Hash{},
+		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+	}
 
+	ctx := context.Background()
 	stack, err := arbnode.CreateStack()
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbnode.CreateArbBackend(stack, genesisAlloc)
+	_, err = arbnode.CreateArbBackend(ctx, stack, l2Genesys, nil)
 	if err != nil {
 		panic(err)
 	}
