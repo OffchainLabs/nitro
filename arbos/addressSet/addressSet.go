@@ -80,5 +80,5 @@ func (aset *AddressSet) Remove(addr common.Address) {
 		aset.backingStorage.SetByInt64(int64(slot), aset.backingStorage.GetByInt64(int64(sz)))
 	}
 	aset.backingStorage.SetByInt64(int64(sz), common.Hash{})
-	aset.size.Set(sz-1)
+	aset.size.Set(sz - 1)
 }
