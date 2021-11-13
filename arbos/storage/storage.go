@@ -184,4 +184,3 @@ func (sbu *StorageBackedUint64) Set(value uint64) {
 	bigValue := new(big.Int).SetUint64(value)
 	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
 }
-
