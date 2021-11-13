@@ -23,7 +23,7 @@ func Initialize(sto *storage.Storage) {
 }
 
 func Open(sto *storage.Storage) *AddressTable {
-	numItems := sto.OpenStorageBackedUint64(util.IntToHash(0))
+	numItems := sto.OpenStorageBackedUint64(util.UintToHash(0))
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 
@@ -34,8 +34,8 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 		// addr isn't in the table, so add it
 		ret := atab.numItems.Get()
 		atab.numItems.Set(ret + 1)
-		atab.backingStorage.SetByInt64(int64(ret+1), addrAsHash)
-		atab.byAddress.Set(addrAsHash, util.IntToHash(int64(ret+1)))
+		atab.backingStorage.SetByUint64(ret+1, addrAsHash)
+		atab.byAddress.Set(addrAsHash, util.UintToHash(ret+1))
 		return ret
 	} else {
 		return rev.Big().Uint64() - 1
@@ -65,7 +65,7 @@ func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool) {
 	if index >= atab.numItems.Get() {
 		return common.Address{}, false
 	}
-	return common.BytesToAddress(atab.backingStorage.GetByInt64(int64(index + 1)).Bytes()), true
+	return common.BytesToAddress(atab.backingStorage.GetByUint64(index + 1).Bytes()), true
 }
 
 func (atab *AddressTable) Compress(addr common.Address) []byte {
