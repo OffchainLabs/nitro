@@ -202,10 +202,7 @@ func CreateDefaultStack() (*node.Node, error) {
 func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Database, *core.BlockChain, error) {
 	arbstate.RequireHookedGeth()
 
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-
-	nodeConf.Genesis = genesis
+	defaultConf := ethconfig.Defaults
 
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -214,28 +211,28 @@ func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Dat
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
-	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, nodeConf.Genesis, nodeConf.OverrideLondon)
+	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideLondon)
 	var configCompatError *params.ConfigCompatError
 	if errors.As(genesisErr, &configCompatError) {
 		return nil, nil, genesisErr
 	}
 
 	vmConfig := vm.Config{
-		EnablePreimageRecording: nodeConf.EnablePreimageRecording,
+		EnablePreimageRecording: defaultConf.EnablePreimageRecording,
 	}
 	cacheConfig := &core.CacheConfig{
-		TrieCleanLimit:      nodeConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(nodeConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  nodeConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: nodeConf.NoPrefetch,
-		TrieDirtyLimit:      nodeConf.TrieDirtyCache,
-		TrieDirtyDisabled:   nodeConf.NoPruning,
-		TrieTimeLimit:       nodeConf.TrieTimeout,
-		SnapshotLimit:       nodeConf.SnapshotCache,
-		Preimages:           nodeConf.Preimages,
+		TrieCleanLimit:      defaultConf.TrieCleanCache,
+		TrieCleanJournal:    stack.ResolvePath(defaultConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:  defaultConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch: defaultConf.NoPrefetch,
+		TrieDirtyLimit:      defaultConf.TrieDirtyCache,
+		TrieDirtyDisabled:   defaultConf.NoPruning,
+		TrieTimeLimit:       defaultConf.TrieTimeout,
+		SnapshotLimit:       defaultConf.SnapshotCache,
+		Preimages:           defaultConf.Preimages,
 	}
 
-	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConf.TxLookupLimit)
+	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
 	if err != nil {
 		return nil, nil, err
 	}
