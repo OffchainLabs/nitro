@@ -18,16 +18,16 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 )
 
-type Sequencer struct {
-	inbox         *InboxState
+type ArbInterface struct {
+	txStreamer    *TransactionStreamer
 	l1Client      L1Interface
 	l1BlockNumber uint64
 }
 
-func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
-	seq := &Sequencer{
-		inbox:    inbox,
-		l1Client: l1Client,
+func NewSequencer(ctx context.Context, txStreamer *TransactionStreamer, l1Client L1Interface) (*ArbInterface, error) {
+	seq := &ArbInterface{
+		txStreamer: txStreamer,
+		l1Client:   l1Client,
 	}
 	if l1Client != nil {
 		block, err := l1Client.HeaderByNumber(ctx, nil)
@@ -39,7 +39,7 @@ func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) 
 	return seq, nil
 }
 
-func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
+func (s *ArbInterface) PublishTransaction(tx *types.Transaction) error {
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
@@ -61,18 +61,18 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 		L2msg: l2Message,
 	}
 
-	return s.inbox.SequenceMessages([]*arbos.L1IncomingMessage{message})
+	return s.txStreamer.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
-func (s *Sequencer) InboxState() *InboxState {
-	return s.inbox
+func (s *ArbInterface) TransactionStreamer() *TransactionStreamer {
+	return s.txStreamer
 }
 
-func (s *Sequencer) BlockChain() *core.BlockChain {
-	return s.inbox.bc
+func (s *ArbInterface) BlockChain() *core.BlockChain {
+	return s.txStreamer.bc
 }
 
-func (s *Sequencer) Start(ctx context.Context) error {
+func (s *ArbInterface) Start(ctx context.Context) error {
 	if s.l1Client == nil {
 		return nil
 	}

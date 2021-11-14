@@ -33,20 +33,20 @@ type InboxReader struct {
 	config            *InboxReaderConfig
 
 	// Thread safe
-	db             *InboxReaderDb
+	tracker        *InboxTracker
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
 	client         L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, inboxState *InboxState, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
-	db, err := NewInboxReaderDb(rawDb, inboxState)
+func NewInboxReader(rawDb ethdb.Database, txStreamer *TransactionStreamer, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+	tracker, err := NewInboxTracker(rawDb, txStreamer)
 	if err != nil {
 		return nil, err
 	}
 	return &InboxReader{
-		db:                db,
+		tracker:           tracker,
 		delayedBridge:     delayedBridge,
 		sequencerInbox:    sequencerInbox,
 		client:            client,
@@ -72,8 +72,8 @@ func (r *InboxReader) Start(ctx context.Context) {
 	})()
 }
 
-func (r *InboxReader) Database() *InboxReaderDb {
-	return r.db
+func (r *InboxReader) Tracker() *InboxTracker {
+	return r.tracker
 }
 
 func (r *InboxReader) DelayedBridge() *DelayedBridge {
@@ -110,7 +110,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			ourLatestDelayedCount, err := ir.db.GetDelayedCount()
+			ourLatestDelayedCount, err := ir.tracker.GetDelayedCount()
 			if err != nil {
 				return err
 			}
@@ -119,7 +119,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				missingDelayed = true
 			} else if ourLatestDelayedCount > checkingDelayedCount && ir.config.HardReorg {
 				log.Info("backwards reorg of delayed messages", "from", ourLatestDelayedCount, "to", checkingDelayedCount)
-				err = ir.db.ReorgDelayedTo(checkingDelayedCount)
+				err = ir.tracker.ReorgDelayedTo(checkingDelayedCount)
 				if err != nil {
 					return err
 				}
@@ -130,7 +130,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				dbDelayedAcc, err := ir.db.GetDelayedAcc(checkingDelayedSeqNum)
+				dbDelayedAcc, err := ir.tracker.GetDelayedAcc(checkingDelayedSeqNum)
 				if err != nil {
 					return err
 				}
@@ -145,7 +145,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			ourLatestBatchCount, err := ir.db.GetBatchCount()
+			ourLatestBatchCount, err := ir.tracker.GetBatchCount()
 			if err != nil {
 				return err
 			}
@@ -153,7 +153,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				checkingBatchCount = ourLatestBatchCount
 				missingSequencer = true
 			} else if ourLatestBatchCount > checkingBatchCount && ir.config.HardReorg {
-				err = ir.db.ReorgBatchesTo(checkingBatchCount)
+				err = ir.tracker.ReorgBatchesTo(checkingBatchCount)
 				if err != nil {
 					return err
 				}
@@ -164,7 +164,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				dbBatchAcc, err := ir.db.GetBatchAcc(checkingBatchSeqNum)
+				dbBatchAcc, err := ir.tracker.GetBatchAcc(checkingBatchSeqNum)
 				if err != nil {
 					return err
 				}
@@ -216,7 +216,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				reorgingSequencer = false
 				firstBatch := sequencerBatches[0]
 				if firstBatch.SequenceNumber > 0 {
-					haveAcc, err := ir.db.GetBatchAcc(firstBatch.SequenceNumber - 1)
+					haveAcc, err := ir.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
 					if errors.Is(err, accumulatorNotFound) {
 						reorgingSequencer = true
 					} else if err != nil {
@@ -229,7 +229,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					// Skip any batches we already have in the database
 					for len(sequencerBatches) > 0 {
 						batch := sequencerBatches[0]
-						haveAcc, err := ir.db.GetBatchAcc(batch.SequenceNumber)
+						haveAcc, err := ir.tracker.GetBatchAcc(batch.SequenceNumber)
 						if errors.Is(err, accumulatorNotFound) {
 							// This batch is new
 							break
@@ -262,7 +262,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 					return err
 				}
 				if beforeCount > 0 {
-					haveAcc, err := ir.db.GetDelayedAcc(beforeCount - 1)
+					haveAcc, err := ir.tracker.GetDelayedAcc(beforeCount - 1)
 					if errors.Is(err, accumulatorNotFound) {
 						reorgingDelayed = true
 					} else if err != nil {
@@ -315,11 +315,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.db.addDelayedMessages(delayedMessages)
+	err := r.tracker.addDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
-	err = r.db.addSequencerBatches(ctx, r.client, sequencerBatches)
+	err = r.tracker.addSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {
@@ -340,14 +340,14 @@ func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
 }
 
 func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
-	delayedCount, err := r.db.GetDelayedCount()
+	delayedCount, err := r.tracker.GetDelayedCount()
 	if err != nil {
 		return nil, err
 	}
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	msg, err := r.db.GetDelayedMessage(delayedCount - 1)
+	msg, err := r.tracker.GetDelayedMessage(delayedCount - 1)
 	if err != nil {
 		return nil, err
 	}
