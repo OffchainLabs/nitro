@@ -93,13 +93,13 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 
 type Node struct {
 	Backend          *arbitrum.Backend
-	Sequencer        *Sequencer
+	ArbInterface     *ArbInterface
 	DeployInfo       *RollupAddresses
 	InboxReader      *InboxReader
 	BatchPoster      *BatchPoster
 	DelayedSequencer *DelayedSequencer
-	TxStreamer       *InboxState
-	InboxTracker     *InboxReaderDb
+	TxStreamer       *TransactionStreamer
+	InboxTracker     *InboxTracker
 }
 
 func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *arbitrum.Backend, sequencerTxOpt *bind.TransactOpts, isTest bool) (*Node, error) {
@@ -119,16 +119,16 @@ func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *ar
 		inboxReaderConfig.CheckDelay = time.Millisecond * 10
 		inboxReaderConfig.DelayBlocks = 0
 	}
-	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
+	sequencerObj, ok := l2backend.Publisher().(*ArbInterface)
 	if !ok {
 		return nil, errors.New("l2backend doesn't have a sequencer")
 	}
-	inbox := sequencerObj.InboxState()
+	inbox := sequencerObj.TransactionStreamer()
 	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &inboxReaderConfig)
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker := inboxReader.Database()
+	inboxTracker := inboxReader.Tracker()
 	delayedSequencerConfig := *DefaultDelayedSequencerConfig
 	if isTest {
 		// not necessary, but should help prevent spurious failures in delayed sequencer test
@@ -157,7 +157,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start()
 	}
-	return n.Sequencer.Start(ctx)
+	return n.ArbInterface.Start(ctx)
 }
 
 func (n *Node) Stop() {
@@ -224,7 +224,7 @@ func CreateArbBackend(ctx context.Context, stack *node.Node, genesis *core.Genes
 	if err != nil {
 		utils.Fatalf("Failed to open inbox database: %v", err)
 	}
-	inbox, err := NewInboxState(inboxDb, blockChain)
+	inbox, err := NewTransactionStreamer(inboxDb, blockChain)
 	if err != nil {
 		return nil, err
 	}

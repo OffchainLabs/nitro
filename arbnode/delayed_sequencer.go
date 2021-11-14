@@ -16,8 +16,8 @@ import (
 type DelayedSequencer struct {
 	client          L1Interface
 	bridge          *DelayedBridge
-	inboxDb         *InboxReaderDb
-	inboxState      *InboxState
+	inbox           *InboxTracker
+	txStreamer      *TransactionStreamer
 	waitingForBlock *big.Int
 	config          *DelayedSequencerConfig
 }
@@ -34,22 +34,22 @@ var DefaultDelayedSequencerConfig = &DelayedSequencerConfig{
 	TimeAggregate:    time.Minute,
 }
 
-func NewDelayedSequencer(client L1Interface, reader *InboxReader, inboxState *InboxState, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(client L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		client:     client,
 		bridge:     reader.DelayedBridge(),
-		inboxDb:    reader.Database(),
-		inboxState: inboxState,
+		inbox:      reader.Tracker(),
+		txStreamer: txStreamer,
 		config:     config,
 	}, nil
 }
 
 func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
-	pos, err := d.inboxState.GetMessageCount()
+	pos, err := d.txStreamer.GetMessageCount()
 	if err != nil || pos == 0 {
 		return 0, err
 	}
-	lastMsg, err := d.inboxState.GetMessage(pos - 1)
+	lastMsg, err := d.txStreamer.GetMessage(pos - 1)
 	if err != nil {
 		return 0, err
 	}
@@ -70,7 +70,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 		finalized.SetInt64(0)
 	}
 
-	dbDelayedCount, err := d.inboxDb.GetDelayedCount()
+	dbDelayedCount, err := d.inbox.GetDelayedCount()
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 	var lastDelayedAcc common.Hash
 	var messages []*arbos.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, err := d.inboxDb.GetDelayedMessageAndAccumulator(pos)
+		msg, acc, err := d.inbox.GetDelayedMessageAndAccumulator(pos)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
 		}
 
-		err = d.inboxState.SequenceDelayedMessages(messages, startPos)
+		err = d.txStreamer.SequenceDelayedMessages(messages, startPos)
 		if err != nil {
 			return err
 		}

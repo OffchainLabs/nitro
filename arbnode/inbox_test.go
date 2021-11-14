@@ -32,7 +32,7 @@ type blockTestState struct {
 	blockNumber uint64
 }
 
-func TestInboxState(t *testing.T) {
+func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
@@ -66,7 +66,7 @@ func TestInboxState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inbox, err := NewInboxState(db, bc)
+	inbox, err := NewTransactionStreamer(db, bc)
 	if err != nil {
 		t.Fatal(err)
 	}

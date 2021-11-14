@@ -17,8 +17,8 @@ import (
 
 type BatchPoster struct {
 	client          L1Interface
-	inbox           *InboxReaderDb
-	streamer        *InboxState
+	inbox           *InboxTracker
+	streamer        *TransactionStreamer
 	config          *BatchPosterConfig
 	inboxContract   *bridgegen.SequencerInbox
 	sequencesPosted uint64
@@ -37,7 +37,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	BatchPollDelay: time.Second / 10,
 }
 
-func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxState, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
