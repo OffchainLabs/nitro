@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"bytes"
+	"context"
 	"math/big"
 	"time"
 
@@ -360,7 +361,7 @@ func (b *BatchPoster) Stop() {
 	b.chanStop <- struct{}{}
 }
 
-func (b *BatchPoster) Start() {
+func (b *BatchPoster) Start(ctx context.Context) {
 	go (func() {
 		for {
 			err := b.postSequencerBatch()
@@ -368,7 +369,7 @@ func (b *BatchPoster) Start() {
 				log.Error("error posting batch", "err", err.Error())
 			}
 			select {
-			case <-b.chanStop:
+			case <-ctx.Done():
 				return
 			case <-time.After(b.config.BatchPollDelay):
 			}
