@@ -57,13 +57,22 @@ func main() {
 	}
 
 	ctx := context.Background()
-	stack, err := arbnode.CreateStack()
+	stack, err := arbnode.CreateDefaultStack()
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbnode.CreateArbBackend(ctx, stack, l2Genesys, nil)
+	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
 	if err != nil {
 		panic(err)
+	}
+	nodeConf := arbnode.NodeConfigDefault
+	nodeConf.L1Reader = false
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, nil, nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	if err := node.Start(ctx); err != nil {
+		utils.Fatalf("Error starting node: %v\n", err)
 	}
 
 	if err := stack.Start(); err != nil {
