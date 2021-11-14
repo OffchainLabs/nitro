@@ -24,19 +24,11 @@ type ArbInterface struct {
 	l1BlockNumber uint64
 }
 
-func NewSequencer(ctx context.Context, txStreamer *TransactionStreamer, l1Client L1Interface) (*ArbInterface, error) {
-	seq := &ArbInterface{
+func NewArbInterface(txStreamer *TransactionStreamer, l1Client L1Interface) (*ArbInterface, error) {
+	return &ArbInterface{
 		txStreamer: txStreamer,
 		l1Client:   l1Client,
-	}
-	if l1Client != nil {
-		block, err := l1Client.HeaderByNumber(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		atomic.StoreUint64(&seq.l1BlockNumber, block.Number.Uint64())
-	}
-	return seq, nil
+	}, nil
 }
 
 func (s *ArbInterface) PublishTransaction(tx *types.Transaction) error {
@@ -82,6 +74,12 @@ func (s *ArbInterface) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	block, err := s.l1Client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+	atomic.StoreUint64(&s.l1BlockNumber, block.Number.Uint64())
+
 	go (func() {
 		for {
 			select {
