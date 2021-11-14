@@ -155,15 +155,9 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.InboxReader.Start(ctx)
 	if n.BatchPoster != nil {
-		n.BatchPoster.Start()
+		n.BatchPoster.Start(ctx)
 	}
 	return n.ArbInterface.Start(ctx)
-}
-
-func (n *Node) Stop() {
-	if n.BatchPoster != nil {
-		n.BatchPoster.Stop()
-	}
 }
 
 func CreateStack() (*node.Node, error) {
