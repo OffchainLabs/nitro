@@ -167,7 +167,10 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		mykeystore.Unlock(account, *keystorepassphrase)
+		err = mykeystore.Unlock(account, *keystorepassphrase)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	genesisAlloc := make(core.GenesisAlloc)
