@@ -39,8 +39,8 @@ func main() {
 	l1bridge := flag.String("l1bridge", "", "l1 bridge address (required if using l1 and !l1deploy)")
 	l1inbox := flag.String("l1inbox", "", "l1 inbox address (required if using l1 and !l1deploy)")
 	l1seqinbox := flag.String("l1seqinbox", "", "l1 sequencer inbox address (required if using l1 and !l1deploy)")
-	l1deployedAt := flag.Uint64("l1deployedAt", 0, "l1 deployed at (required if using l1 and !l1deploy)")
-	l1ChainIdUint := flag.Uint64("l1chainId", 1337, "L1 chain ID")
+	l1deployedAt := flag.Uint64("l1deployedat", 0, "l1 deployed at (required if using l1 and !l1deploy)")
+	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
