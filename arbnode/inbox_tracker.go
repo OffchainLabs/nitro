@@ -30,11 +30,10 @@ func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*Inbo
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
 	}
-	err := db.initialize()
-	return db, err
+	return db, nil
 }
 
-func (t *InboxTracker) initialize() error {
+func (t *InboxTracker) Initialize() error {
 	batch := t.db.NewBatch()
 
 	hasKey, err := t.db.Has(delayedMessageCountKey)

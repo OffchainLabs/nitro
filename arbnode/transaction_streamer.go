@@ -39,8 +39,7 @@ func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*Transactio
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 	}
-	err := inbox.cleanupInconsistentState()
-	return inbox, err
+	return inbox, nil
 }
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -559,6 +558,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *TransactionStreamer) Initialize() error {
+	return s.cleanupInconsistentState()
 }
 
 func (s *TransactionStreamer) Start(ctx context.Context) {
