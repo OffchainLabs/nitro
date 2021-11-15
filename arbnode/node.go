@@ -177,12 +177,27 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	err := n.ArbInterface.Start(ctx)
+	err := n.ArbInterface.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	err = n.TxStreamer.Initialize()
+	if err != nil {
+		return err
+	}
+	if n.InboxTracker != nil {
+		err = n.InboxTracker.Initialize()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = n.ArbInterface.Start(ctx)
 	if err != nil {
 		return err
 	}
 	n.TxStreamer.Start(ctx)
-	if n.InboxTracker != nil {
+	if n.InboxReader != nil {
 		n.InboxReader.Start(ctx)
 	}
 	if n.DelayedSequencer != nil {

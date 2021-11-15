@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/pkg/errors"
 )
 
 type ArbInterface struct {
@@ -26,8 +27,9 @@ type ArbInterface struct {
 
 func NewArbInterface(txStreamer *TransactionStreamer, l1Client L1Interface) (*ArbInterface, error) {
 	return &ArbInterface{
-		txStreamer: txStreamer,
-		l1Client:   l1Client,
+		txStreamer:    txStreamer,
+		l1Client:      l1Client,
+		l1BlockNumber: 0,
 	}, nil
 }
 
@@ -64,9 +66,27 @@ func (a *ArbInterface) BlockChain() *core.BlockChain {
 	return a.txStreamer.bc
 }
 
+func (a *ArbInterface) Initialize(ctx context.Context) error {
+	if a.l1Client == nil {
+		return nil
+	}
+
+	block, err := a.l1Client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+	atomic.StoreUint64(&a.l1BlockNumber, block.Number.Uint64())
+	return nil
+}
+
 func (a *ArbInterface) Start(ctx context.Context) error {
 	if a.l1Client == nil {
 		return nil
+	}
+
+	initialBlockNr := atomic.LoadUint64(&a.l1BlockNumber)
+	if initialBlockNr == 0 {
+		return errors.New("ArbInterface: not initialized")
 	}
 
 	headerChan := make(chan *types.Header)
@@ -74,11 +94,6 @@ func (a *ArbInterface) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	block, err := a.l1Client.HeaderByNumber(ctx, nil)
-	if err != nil {
-		return err
-	}
-	atomic.StoreUint64(&a.l1BlockNumber, block.Number.Uint64())
 
 	go (func() {
 		for {
