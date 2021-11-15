@@ -31,7 +31,7 @@ func NewArbInterface(txStreamer *TransactionStreamer, l1Client L1Interface) (*Ar
 	}, nil
 }
 
-func (s *ArbInterface) PublishTransaction(tx *types.Transaction) error {
+func (a *ArbInterface) PublishTransaction(tx *types.Transaction) error {
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
@@ -40,7 +40,7 @@ func (s *ArbInterface) PublishTransaction(tx *types.Transaction) error {
 	l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 	l2Message = append(l2Message, txBytes...)
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
-	l1Block := atomic.LoadUint64(&s.l1BlockNumber)
+	l1Block := atomic.LoadUint64(&a.l1BlockNumber)
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
@@ -53,42 +53,42 @@ func (s *ArbInterface) PublishTransaction(tx *types.Transaction) error {
 		L2msg: l2Message,
 	}
 
-	return s.txStreamer.SequenceMessages([]*arbos.L1IncomingMessage{message})
+	return a.txStreamer.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
-func (s *ArbInterface) TransactionStreamer() *TransactionStreamer {
-	return s.txStreamer
+func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
+	return a.txStreamer
 }
 
-func (s *ArbInterface) BlockChain() *core.BlockChain {
-	return s.txStreamer.bc
+func (a *ArbInterface) BlockChain() *core.BlockChain {
+	return a.txStreamer.bc
 }
 
-func (s *ArbInterface) Start(ctx context.Context) error {
-	if s.l1Client == nil {
+func (a *ArbInterface) Start(ctx context.Context) error {
+	if a.l1Client == nil {
 		return nil
 	}
 
 	headerChan := make(chan *types.Header)
-	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
+	headerSubscription, err := a.l1Client.SubscribeNewHead(ctx, headerChan)
 	if err != nil {
 		return err
 	}
-	block, err := s.l1Client.HeaderByNumber(ctx, nil)
+	block, err := a.l1Client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
 	}
-	atomic.StoreUint64(&s.l1BlockNumber, block.Number.Uint64())
+	atomic.StoreUint64(&a.l1BlockNumber, block.Number.Uint64())
 
 	go (func() {
 		for {
 			select {
 			case header := <-headerChan:
-				atomic.StoreUint64(&s.l1BlockNumber, header.Number.Uint64())
+				atomic.StoreUint64(&a.l1BlockNumber, header.Number.Uint64())
 			case err := <-headerSubscription.Err():
 				log.Warn("error in subscription to L1 headers", "err", err)
 				for {
-					headerSubscription, err = s.l1Client.SubscribeNewHead(ctx, headerChan)
+					headerSubscription, err = a.l1Client.SubscribeNewHead(ctx, headerChan)
 					if err != nil {
 						log.Warn("error re-subscribing to L1 headers", "err", err)
 						select {
