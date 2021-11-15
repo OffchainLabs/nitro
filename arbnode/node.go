@@ -120,7 +120,15 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	arbInterface, err := NewArbInterface(txStreamer, l1client)
+	var arbInterface *ArbInterface
+	if config.L1Reader {
+		if l1client == nil {
+			return nil, errors.New("l1client is nil")
+		}
+		arbInterface, err = NewArbInterface(txStreamer, l1client)
+	} else {
+		arbInterface, err = NewArbInterface(txStreamer, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
