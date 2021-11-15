@@ -25,7 +25,6 @@ type BatchPoster struct {
 	sequencesPosted uint64
 	gasRefunder     common.Address
 	transactOpts    *bind.TransactOpts
-	chanStop        chan struct{}
 }
 
 type BatchPosterConfig struct {
@@ -52,7 +51,6 @@ func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *Transacti
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
-		chanStop:        make(chan struct{}),
 	}, nil
 }
 
@@ -355,10 +353,6 @@ func (b *BatchPoster) postSequencerBatch() error {
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	}
 	return err
-}
-
-func (b *BatchPoster) Stop() {
-	b.chanStop <- struct{}{}
 }
 
 func (b *BatchPoster) Start(ctx context.Context) {
