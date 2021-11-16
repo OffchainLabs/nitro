@@ -35,7 +35,8 @@ func TestOutboxProofs(t *testing.T) {
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 	arbSysAddress := common.HexToAddress("0x64")
 
-	l2info, _ := CreateTestL2(t, ctx)
+	l2info, l2node := CreateTestL2(t, ctx)
+	defer l2node.Stop()
 	client := l2info.Client
 	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
 	if err != nil {

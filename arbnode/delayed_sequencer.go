@@ -165,8 +165,10 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctx context.Context) {
-	go (func() {
+func (d *DelayedSequencer) Start(parentCtx context.Context) *Stopper {
+	stopper, ctx := NewStopper(parentCtx, "Delayed sequencer")
+	go func() {
+		defer stopper.Close()
 		for {
 			err := d.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -178,5 +180,6 @@ func (d *DelayedSequencer) Start(ctx context.Context) {
 			case <-time.After(time.Second):
 			}
 		}
-	})()
+	}()
+	return stopper
 }

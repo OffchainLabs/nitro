@@ -39,8 +39,10 @@ func TestTwoNodesLong(t *testing.T) {
 	defer cancel()
 	l2info, node1, l1info, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
+	defer node1.Stop()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
+	l2clientB, node2 := Create2ndNode(t, ctx, node1, l1stack)
+	defer node2.Stop()
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")

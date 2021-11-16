@@ -10,13 +10,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/pkg/errors"
 )
 
 type ArbInterface struct {
@@ -79,23 +80,25 @@ func (a *ArbInterface) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (a *ArbInterface) Start(ctx context.Context) error {
+func (a *ArbInterface) Start(parentCtx context.Context) (*Stopper, error) {
 	if a.l1Client == nil {
-		return nil
+		return nil, nil
 	}
 
 	initialBlockNr := atomic.LoadUint64(&a.l1BlockNumber)
 	if initialBlockNr == 0 {
-		return errors.New("ArbInterface: not initialized")
+		return nil, errors.New("ArbInterface: not initialized")
 	}
 
 	headerChan := make(chan *types.Header)
-	headerSubscription, err := a.l1Client.SubscribeNewHead(ctx, headerChan)
+	headerSubscription, err := a.l1Client.SubscribeNewHead(parentCtx, headerChan)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	go (func() {
+	stopper, ctx := NewStopper(parentCtx, "Arb Interface")
+	go func() {
+		defer stopper.Close()
 		for {
 			select {
 			case header := <-headerChan:
@@ -120,7 +123,7 @@ func (a *ArbInterface) Start(ctx context.Context) error {
 				return
 			}
 		}
-	})()
+	}()
 
-	return nil
+	return stopper, nil
 }

@@ -564,8 +564,10 @@ func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
 
-func (s *TransactionStreamer) Start(ctx context.Context) {
-	go (func() {
+func (s *TransactionStreamer) Start(parentCtx context.Context) *Stopper {
+	stopper, ctx := NewStopper(parentCtx, "Transaction streamer")
+	go func() {
+		defer stopper.Close()
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -578,5 +580,6 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			case <-time.After(10 * time.Second):
 			}
 		}
-	})()
+	}()
+	return stopper
 }

@@ -113,6 +113,8 @@ type Node struct {
 	InboxTracker     *InboxTracker
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
+
+	stoper *GroupStopper
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
@@ -138,7 +140,11 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, nil, nil, nil, nil, nil}, nil
+		return &Node{
+			Backend:      backend,
+			ArbInterface: arbInterface,
+			TxStreamer:   txStreamer,
+		}, nil
 	}
 
 	if deployInfo == nil {
@@ -159,7 +165,14 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	inboxTracker := inboxReader.Tracker()
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, nil, nil}, nil
+		return &Node{
+			Backend:      backend,
+			ArbInterface: arbInterface,
+			TxStreamer:   txStreamer,
+			DeployInfo:   deployInfo,
+			InboxReader:  inboxReader,
+			InboxTracker: inboxTracker,
+		}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -173,10 +186,22 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster}, nil
+	return &Node{
+		Backend:          backend,
+		ArbInterface:     arbInterface,
+		TxStreamer:       txStreamer,
+		DeployInfo:       deployInfo,
+		InboxReader:      inboxReader,
+		InboxTracker:     inboxTracker,
+		DelayedSequencer: delayedSequencer,
+		BatchPoster:      batchPoster,
+	}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	if n.stoper != nil {
+		return errors.New("already started")
+	}
 	err := n.ArbInterface.Initialize(ctx)
 	if err != nil {
 		return err
@@ -192,21 +217,30 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 
-	err = n.ArbInterface.Start(ctx)
+	n.stoper = &GroupStopper{}
+
+	stopper, err := n.ArbInterface.Start(ctx)
 	if err != nil {
 		return err
 	}
-	n.TxStreamer.Start(ctx)
+	n.stoper.Add(stopper)
+	n.stoper.Add(n.TxStreamer.Start(ctx))
 	if n.InboxReader != nil {
-		n.InboxReader.Start(ctx)
+		n.stoper.Add(n.InboxReader.Start(ctx))
 	}
 	if n.DelayedSequencer != nil {
-		n.DelayedSequencer.Start(ctx)
+		n.stoper.Add(n.DelayedSequencer.Start(ctx))
 	}
 	if n.BatchPoster != nil {
-		n.BatchPoster.Start(ctx)
+		n.stoper.Add(n.BatchPoster.Start(ctx))
 	}
 	return nil
+}
+
+func (n *Node) Stop() {
+	if n.stoper != nil {
+		n.stoper.Stop()
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {

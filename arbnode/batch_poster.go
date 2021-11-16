@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/pkg/errors"
 )
 
 type BatchPoster struct {
@@ -303,7 +304,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 }
 
 // TODO make sure we detect end of block!
-func (b *BatchPoster) postSequencerBatch() error {
+func (b *BatchPoster) postSequencerBatch(ctx context.Context) error {
 	for !b.lastSubmissionIsSynced() {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(time.Second)
@@ -347,7 +348,19 @@ func (b *BatchPoster) postSequencerBatch() error {
 		log.Info("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "prev delayed", prevDelayedMsg)
 		return nil
 	}
-	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+	opts := &bind.TransactOpts{
+		From:      b.transactOpts.From,
+		Nonce:     b.transactOpts.Nonce,
+		Signer:    b.transactOpts.Signer,
+		Value:     b.transactOpts.Value,
+		GasPrice:  b.transactOpts.GasPrice,
+		GasFeeCap: b.transactOpts.GasFeeCap,
+		GasTipCap: b.transactOpts.GasTipCap,
+		GasLimit:  b.transactOpts.GasLimit,
+		Context:   ctx,
+		NoSend:    b.transactOpts.NoSend,
+	}
+	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(opts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
 	if err == nil {
 		b.sequencesPosted++
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
@@ -355,10 +368,12 @@ func (b *BatchPoster) postSequencerBatch() error {
 	return err
 }
 
-func (b *BatchPoster) Start(ctx context.Context) {
-	go (func() {
+func (b *BatchPoster) Start(parentCtx context.Context) *Stopper {
+	stopper, ctx := NewStopper(parentCtx, "Batch poster")
+	go func() {
+		defer stopper.Close()
 		for {
-			err := b.postSequencerBatch()
+			err := b.postSequencerBatch(ctx)
 			if err != nil {
 				log.Error("error posting batch", "err", err.Error())
 			}
@@ -368,5 +383,6 @@ func (b *BatchPoster) Start(ctx context.Context) {
 			case <-time.After(b.config.BatchPollDelay):
 			}
 		}
-	})()
+	}()
+	return stopper
 }

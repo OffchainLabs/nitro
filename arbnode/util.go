@@ -3,12 +3,14 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type L1Interface interface {
@@ -76,4 +78,47 @@ func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transa
 		return nil, errors.New("tx failed but call succeeded")
 	}
 	return txRes, nil
+}
+
+type Stopper struct {
+	cancelFunc context.CancelFunc
+	stopChan   chan bool
+	processName string
+}
+
+func NewStopper(parentCtx context.Context, processName string) (*Stopper, context.Context) {
+	ctx, cancelFunc := context.WithCancel(parentCtx)
+	return &Stopper{
+		cancelFunc: cancelFunc,
+		stopChan:   make(chan bool),
+		processName: processName,
+	}, ctx
+}
+
+func (s *Stopper) Close() {
+	s.cancelFunc()
+	s.stopChan <- true
+	close(s.stopChan)
+}
+
+func (s *Stopper) Stop() {
+	s.cancelFunc()
+	<-s.stopChan
+	log.Info(fmt.Sprintf("Arbitrum %v stopped", s.processName))
+}
+
+type GroupStopper struct {
+	stoppers []*Stopper
+}
+
+func (g *GroupStopper) Add(s *Stopper) {
+	if s != nil {
+		g.stoppers = append(g.stoppers, s)
+	}
+}
+
+func (g *GroupStopper) Stop() {
+	for i := 0; i < len(g.stoppers); i++ {
+		g.stoppers[len(g.stoppers)-1-i].Stop()
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -40,6 +41,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
 	l2Backend := arbNode.Backend
 	defer stack.Close()
+	defer arbNode.Stop()
 	l1Client := l1Info.Client
 
 	l1BlockChain := l1backend.BlockChain()

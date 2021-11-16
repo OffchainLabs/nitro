@@ -62,8 +62,10 @@ func NewInboxReader(rawDb ethdb.Database, txStreamer *TransactionStreamer, clien
 	}, nil
 }
 
-func (r *InboxReader) Start(ctx context.Context) {
-	go (func() {
+func (r *InboxReader) Start(parentCtx context.Context) *Stopper {
+	stopper, ctx := NewStopper(parentCtx, "Inbox reader")
+	go func() {
+		defer stopper.Close()
 		for {
 			err := r.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -75,7 +77,8 @@ func (r *InboxReader) Start(ctx context.Context) {
 			case <-time.After(time.Second):
 			}
 		}
-	})()
+	}()
+	return stopper
 }
 
 func (r *InboxReader) Tracker() *InboxTracker {
