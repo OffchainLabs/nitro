@@ -20,8 +20,8 @@ COPY . ./
 COPY --from=contracts-builder app/solgen/artifacts solgen/artifacts/
 RUN mkdir -p solgen/go/ && \
 	go run solgen/gen.go && \
-    go build ./cmd/dev-node
+    go build ./cmd/node
 
 FROM alpine:20210804
-COPY --from=builder app/dev-node .
-ENTRYPOINT [ "./dev-node" ]
+COPY --from=builder app/node .
+ENTRYPOINT [ "./node" ]
