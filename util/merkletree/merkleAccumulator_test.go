@@ -7,6 +7,7 @@ package merkletree
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -131,6 +132,32 @@ func TestAccumulator4(t *testing.T) {
 	}
 	testAllSummarySizes(mt, t)
 	testSerDe(mt, t)
+}
+
+const consistencyProofTestSize = 14
+
+func TestConsistencyProofs(t *testing.T) {
+	leaves := []common.Hash{ }
+	trees := []MerkleTree{ NewEmptyMerkleTree() }
+	accs := []*merkleAccumulator.MerkleAccumulator{ merkleAccumulator.NewNonpersistentMerkleAccumulator() }
+	for i := 1; i < consistencyProofTestSize; i++ {
+		newLeaf := pseudorandomForTesting(uint64(i))
+		leaves = append(leaves, newLeaf)
+		trees = append(trees, trees[i-1].Append(newLeaf))
+		newAcc := accs[i-1].NonPersistentClone()
+		newAcc.Append(newLeaf)
+		accs = append(accs, newAcc)
+	}
+	finalTree := trees[consistencyProofTestSize-1]
+
+	for i := 0; i < consistencyProofTestSize; i++ {
+		for j := i+1; j < consistencyProofTestSize; j++ {
+			proof := finalTree.ConsistencyProof(uint64(i), uint64(j))
+			if ! accs[i].VerifyConsistencyProof(accs[j].Root(), proof) {
+				t.Fatal(i, j, leaves[i], proof)
+			}
+		}
+	}
 }
 
 func testAllSummarySizes(tree MerkleTree, t *testing.T) {

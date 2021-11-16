@@ -6,6 +6,8 @@ package merkletree
 
 import (
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
+	util2 "github.com/offchainlabs/arbstate/util"
 	"io"
 	"math/big"
 
@@ -21,6 +23,7 @@ type MerkleTree interface {
 	Append(common.Hash) MerkleTree
 	SummarizeUpTo(num uint64) MerkleTree
 	Serialize(wr io.Writer) error
+	ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash
 }
 
 const (
@@ -90,6 +93,13 @@ func (leaf *merkleTreeLeaf) Serialize(wr io.Writer) error {
 	return err
 }
 
+func (leaf *merkleTreeLeaf) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
+	if before==after {
+		return []merkleAccumulator.LevelAndHash{}
+	}
+	return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ 0, leaf.hash } }
+}
+
 type merkleEmpty struct {
 	capacity uint64
 }
@@ -136,6 +146,10 @@ func (me *merkleEmpty) Serialize(wr io.Writer) error {
 		return err
 	}
 	return util.Uint64ToWriter(me.capacity, wr)
+}
+
+func (me *merkleEmpty) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
+	return []merkleAccumulator.LevelAndHash{}
 }
 
 type merkleInternal struct {
@@ -213,6 +227,20 @@ func (mi *merkleInternal) Serialize(wr io.Writer) error {
 	return mi.right.Serialize(wr)
 }
 
+func (mi *merkleInternal) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
+	if before == 0 && after == mi.capacity {
+		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2ceil(mi.capacity), mi.hash } }
+	}
+	mid := mi.capacity / 2
+	if before >= mid {
+		return mi.right.ConsistencyProof(before-mid, after-mid)
+	}
+	if after <= mid {
+		return mi.left.ConsistencyProof(before, after)
+	}
+	return append(mi.left.ConsistencyProof(before, mid), mi.right.ConsistencyProof(mid, after)...)
+}
+
 type merkleCompleteSubtreeSummary struct {
 	hash     common.Hash
 	capacity uint64
@@ -273,6 +301,13 @@ func (sum *merkleCompleteSubtreeSummary) Serialize(wr io.Writer) error {
 	}
 	_, err := wr.Write(sum.hash.Bytes())
 	return err
+}
+
+func (sum *merkleCompleteSubtreeSummary) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
+	if before == 0 && after == sum.capacity {
+		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2ceil(sum.capacity), sum.hash } }
+	}
+	return nil  // error
 }
 
 func NewMerkleTreeFromReader(rd io.Reader) (MerkleTree, error) {
