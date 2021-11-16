@@ -81,16 +81,16 @@ func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transa
 }
 
 type Stopper struct {
-	cancelFunc context.CancelFunc
-	stopChan   chan bool
+	cancelFunc  context.CancelFunc
+	stopChan    chan bool
 	processName string
 }
 
 func NewStopper(parentCtx context.Context, processName string) (*Stopper, context.Context) {
 	ctx, cancelFunc := context.WithCancel(parentCtx)
 	return &Stopper{
-		cancelFunc: cancelFunc,
-		stopChan:   make(chan bool),
+		cancelFunc:  cancelFunc,
+		stopChan:    make(chan bool),
 		processName: processName,
 	}, ctx
 }
