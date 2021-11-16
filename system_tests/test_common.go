@@ -54,7 +54,9 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.WSPort = 0
-	stackConf.P2P.ListenAddr = ":0"
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)
