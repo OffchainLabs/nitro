@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"bytes"
+	"context"
 	"math/big"
 	"time"
 
@@ -17,14 +18,13 @@ import (
 
 type BatchPoster struct {
 	client          L1Interface
-	inbox           *InboxReaderDb
-	streamer        *InboxState
+	inbox           *InboxTracker
+	streamer        *TransactionStreamer
 	config          *BatchPosterConfig
 	inboxContract   *bridgegen.SequencerInbox
 	sequencesPosted uint64
 	gasRefunder     common.Address
 	transactOpts    *bind.TransactOpts
-	chanStop        chan struct{}
 }
 
 type BatchPosterConfig struct {
@@ -37,7 +37,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	BatchPollDelay: time.Second / 10,
 }
 
-func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxState, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,6 @@ func NewBatchPoster(client L1Interface, inbox *InboxReaderDb, streamer *InboxSta
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
-		chanStop:        make(chan struct{}),
 	}, nil
 }
 
@@ -356,11 +355,7 @@ func (b *BatchPoster) postSequencerBatch() error {
 	return err
 }
 
-func (b *BatchPoster) Stop() {
-	b.chanStop <- struct{}{}
-}
-
-func (b *BatchPoster) Start() {
+func (b *BatchPoster) Start(ctx context.Context) {
 	go (func() {
 		for {
 			err := b.postSequencerBatch()
@@ -368,7 +363,7 @@ func (b *BatchPoster) Start() {
 				log.Error("error posting batch", "err", err.Error())
 			}
 			select {
-			case <-b.chanStop:
+			case <-ctx.Done():
 				return
 			case <-time.After(b.config.BatchPollDelay):
 			}

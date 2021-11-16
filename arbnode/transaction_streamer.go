@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 )
 
-type InboxState struct {
+type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
 
@@ -33,14 +33,13 @@ type InboxState struct {
 	newMessageNotifier chan struct{}
 }
 
-func NewInboxState(db ethdb.Database, bc *core.BlockChain) (*InboxState, error) {
-	inbox := &InboxState{
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*TransactionStreamer, error) {
+	inbox := &TransactionStreamer{
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 	}
-	err := inbox.cleanupInconsistentState()
-	return inbox, err
+	return inbox, nil
 }
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -59,7 +58,7 @@ func bytesToUint64(b []byte) (uint64, error) {
 	return binary.BigEndian.Uint64(b), nil
 }
 
-func (s *InboxState) cleanupInconsistentState() error {
+func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// Insert a messageCountToBlockPrefix entry for the genesis block
 	key := dbKey(messageCountToBlockPrefix, 0)
 	blockNumBytes, err := rlp.EncodeToBytes(uint64(0))
@@ -89,9 +88,9 @@ func (s *InboxState) cleanupInconsistentState() error {
 	return nil
 }
 
-var blockForMessageNotFoundErr = errors.New("block for message count not found")
+var errBlockForMessageNotFound = errors.New("block for message count not found")
 
-func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (uint64, uint64, error) {
+func (s *TransactionStreamer) LookupBlockNumByMessageCount(count uint64, roundUp bool) (uint64, uint64, error) {
 	minKey := uint64ToBytes(count)
 	iter := s.db.NewIterator(messageCountToBlockPrefix, minKey)
 	defer iter.Release()
@@ -100,7 +99,7 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 	}
 	key := iter.Key()
 	if len(key) == 0 {
-		return 0, 0, blockForMessageNotFoundErr
+		return 0, 0, errBlockForMessageNotFound
 	}
 	if !bytes.HasPrefix(key, messageCountToBlockPrefix) {
 		return 0, 0, errors.New("iterated key missing prefix")
@@ -121,11 +120,11 @@ func (s *InboxState) LookupBlockNumByMessageCount(count uint64, roundUp bool) (u
 	return block, actualCount, nil
 }
 
-func (s *InboxState) ReorgTo(count uint64) error {
+func (s *TransactionStreamer) ReorgTo(count uint64) error {
 	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
 }
 
-func (s *InboxState) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	err := s.reorgToInternal(batch, count)
@@ -157,7 +156,7 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *InboxState) reorgToInternal(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) error {
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
@@ -203,7 +202,7 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage uint64, delayedMessageCount uint64) error {
+func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage uint64, delayedMessageCount uint64) error {
 	messageCount := lastMessage + 1
 	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
 	if len(block.Transactions()) != len(receipts) {
@@ -233,7 +232,7 @@ func (s *InboxState) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage ui
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, seqNum)
 	data, err := s.db.Get(key)
 	if err != nil {
@@ -245,7 +244,7 @@ func (s *InboxState) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, er
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *InboxState) GetMessageCount() (uint64, error) {
+func (s *TransactionStreamer) GetMessageCount() (uint64, error) {
 	posBytes, err := s.db.Get(messageCountKey)
 	if err != nil {
 		return 0, err
@@ -258,11 +257,11 @@ func (s *InboxState) GetMessageCount() (uint64, error) {
 	return pos, nil
 }
 
-func (s *InboxState) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+func (s *TransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -334,7 +333,7 @@ func (s *InboxState) AddMessagesAndEndBatch(pos uint64, force bool, messages []a
 	return s.writeMessages(pos, messages, batch)
 }
 
-func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
+func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -364,7 +363,7 @@ func (s *InboxState) SequenceMessages(messages []*arbos.L1IncomingMessage) error
 	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
-func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
+func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -400,7 +399,7 @@ func (s *InboxState) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
@@ -437,7 +436,7 @@ func (s *InboxState) writeMessages(pos uint64, messages []arbstate.MessageWithMe
 }
 
 // Only safe to call from createBlocks and while the reorg mutex is held
-func (s *InboxState) getLastBlockPosition() (uint64, uint64, error) {
+func (s *TransactionStreamer) getLastBlockPosition() (uint64, uint64, error) {
 	count, err := s.GetMessageCount()
 	if err != nil {
 		return 0, 0, err
@@ -447,7 +446,7 @@ func (s *InboxState) getLastBlockPosition() (uint64, uint64, error) {
 	if err == nil && startPos != count {
 		return 0, 0, errors.New("found block after last message")
 	}
-	if errors.Is(err, blockForMessageNotFoundErr) {
+	if errors.Is(err, errBlockForMessageNotFound) {
 		// We couldn't find a block at or after the target position.
 		// Clear the error and search backwards for the last message count with a block.
 		err = nil
@@ -483,7 +482,7 @@ func (s *InboxState) getLastBlockPosition() (uint64, uint64, error) {
 	return startPos, lastBlockNumber, nil
 }
 
-func (s *InboxState) createBlocks(ctx context.Context) error {
+func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
@@ -561,7 +560,11 @@ func (s *InboxState) createBlocks(ctx context.Context) error {
 	return nil
 }
 
-func (s *InboxState) Start(ctx context.Context) {
+func (s *TransactionStreamer) Initialize() error {
+	return s.cleanupInconsistentState()
+}
+
+func (s *TransactionStreamer) Start(ctx context.Context) {
 	go (func() {
 		for {
 			err := s.createBlocks(ctx)

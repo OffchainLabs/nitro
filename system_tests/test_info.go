@@ -67,8 +67,8 @@ func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
 	b.T.Helper()
-	info := b.Accounts[name]
-	if info == nil {
+	info, ok := b.Accounts[name]
+	if !ok {
 		b.T.Fatal("not found account: ", name)
 	}
 	return info.Address
@@ -76,8 +76,8 @@ func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
 
 func (b *BlockchainTestInfo) GetInfoWithPrivKey(name string) *AccountInfo {
 	b.T.Helper()
-	info := b.Accounts[name]
-	if info == nil {
+	info, ok := b.Accounts[name]
+	if !ok {
 		b.T.Fatal("not found account: ", name)
 	}
 	if info.PrivateKey == nil {

@@ -39,7 +39,6 @@ func TestSequencerInboxReader(t *testing.T) {
 	defer cancel()
 	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
 	l2Backend := arbNode.Backend
-	defer arbNode.Stop()
 	defer stack.Close()
 	l1Client := l1Info.Client
 

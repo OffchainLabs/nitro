@@ -16,30 +16,24 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/pkg/errors"
 )
 
-type Sequencer struct {
-	inbox         *InboxState
+type ArbInterface struct {
+	txStreamer    *TransactionStreamer
 	l1Client      L1Interface
 	l1BlockNumber uint64
 }
 
-func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
-	seq := &Sequencer{
-		inbox:    inbox,
-		l1Client: l1Client,
-	}
-	if l1Client != nil {
-		block, err := l1Client.HeaderByNumber(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		atomic.StoreUint64(&seq.l1BlockNumber, block.Number.Uint64())
-	}
-	return seq, nil
+func NewArbInterface(txStreamer *TransactionStreamer, l1Client L1Interface) (*ArbInterface, error) {
+	return &ArbInterface{
+		txStreamer:    txStreamer,
+		l1Client:      l1Client,
+		l1BlockNumber: 0,
+	}, nil
 }
 
-func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
+func (a *ArbInterface) PublishTransaction(tx *types.Transaction) error {
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
@@ -48,7 +42,7 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 	l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 	l2Message = append(l2Message, txBytes...)
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
-	l1Block := atomic.LoadUint64(&s.l1BlockNumber)
+	l1Block := atomic.LoadUint64(&a.l1BlockNumber)
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
@@ -61,36 +55,55 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 		L2msg: l2Message,
 	}
 
-	return s.inbox.SequenceMessages([]*arbos.L1IncomingMessage{message})
+	return a.txStreamer.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
-func (s *Sequencer) InboxState() *InboxState {
-	return s.inbox
+func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
+	return a.txStreamer
 }
 
-func (s *Sequencer) BlockChain() *core.BlockChain {
-	return s.inbox.bc
+func (a *ArbInterface) BlockChain() *core.BlockChain {
+	return a.txStreamer.bc
 }
 
-func (s *Sequencer) Start(ctx context.Context) error {
-	if s.l1Client == nil {
+func (a *ArbInterface) Initialize(ctx context.Context) error {
+	if a.l1Client == nil {
 		return nil
 	}
 
-	headerChan := make(chan *types.Header)
-	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
+	block, err := a.l1Client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
 	}
+	atomic.StoreUint64(&a.l1BlockNumber, block.Number.Uint64())
+	return nil
+}
+
+func (a *ArbInterface) Start(ctx context.Context) error {
+	if a.l1Client == nil {
+		return nil
+	}
+
+	initialBlockNr := atomic.LoadUint64(&a.l1BlockNumber)
+	if initialBlockNr == 0 {
+		return errors.New("ArbInterface: not initialized")
+	}
+
+	headerChan := make(chan *types.Header)
+	headerSubscription, err := a.l1Client.SubscribeNewHead(ctx, headerChan)
+	if err != nil {
+		return err
+	}
+
 	go (func() {
 		for {
 			select {
 			case header := <-headerChan:
-				atomic.StoreUint64(&s.l1BlockNumber, header.Number.Uint64())
+				atomic.StoreUint64(&a.l1BlockNumber, header.Number.Uint64())
 			case err := <-headerSubscription.Err():
 				log.Warn("error in subscription to L1 headers", "err", err)
 				for {
-					headerSubscription, err = s.l1Client.SubscribeNewHead(ctx, headerChan)
+					headerSubscription, err = a.l1Client.SubscribeNewHead(ctx, headerChan)
 					if err != nil {
 						log.Warn("error re-subscribing to L1 headers", "err", err)
 						select {

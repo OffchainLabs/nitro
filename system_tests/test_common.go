@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -54,7 +55,9 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.WSPort = 0
-	stackConf.P2P.ListenAddr = ":0"
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)
@@ -125,7 +128,7 @@ func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 	return addresses
 }
 
-func createTestL2Internal(t *testing.T, ctx context.Context, l1Client arbnode.L1Interface) (*arbitrum.Backend, *BlockchainTestInfo) {
+func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
 	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
@@ -155,43 +158,15 @@ func createTestL2Internal(t *testing.T, ctx context.Context, l1Client arbnode.L1
 		ParentHash: common.Hash{},
 		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
 	}
-	stack, err := arbnode.CreateStack()
+	stack, err := arbnode.CreateDefaultStack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys, l1Client)
+	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l2info.Client = ClientForArbBackend(t, backend)
-
-	return backend, l2info
-}
-
-// Create and deploy L1 and arbnode for L2
-func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
-	l2backend, l2info := createTestL2Internal(t, ctx, l1info.Client)
-	addresses := TestDeployOnL1(t, ctx, l1info)
-	var sequencerTxOptsPtr *bind.TransactOpts
-	if isSequencer {
-		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
-		sequencerTxOptsPtr = &sequencerTxOpts
-	}
-	l2node, err := arbnode.CreateNode(l1info.Client, addresses, l2backend, sequencerTxOptsPtr, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = l2node.Start(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return l2info, l2node, l1info, l1backend, l1stack
-}
-
-// L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T, ctx context.Context) (*arbitrum.Backend, *BlockchainTestInfo) {
-	return createTestL2Internal(t, ctx, nil)
+	return l2info, stack, chainDb, blockchain
 }
 
 func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Client {
@@ -205,4 +180,43 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 	}
 
 	return ethclient.NewClient(rpc.DialInProc(inproc))
+}
+
+// Create and deploy L1 and arbnode for L2
+func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
+	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
+	addresses := TestDeployOnL1(t, ctx, l1info)
+	var sequencerTxOptsPtr *bind.TransactOpts
+	if isSequencer {
+		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
+		sequencerTxOptsPtr = &sequencerTxOpts
+	}
+
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, &arbnode.NodeConfigL1Test, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = node.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l2info.Client = ClientForArbBackend(t, node.Backend)
+	return l2info, node, l1info, l1backend, l1stack
+}
+
+// L2 -Only. Enough for tests that needs no interface to L1
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node) {
+	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
+	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = node.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2info.Client = ClientForArbBackend(t, node.Backend)
+	return l2info, node
 }

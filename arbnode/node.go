@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -19,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -91,18 +91,56 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	}, nil
 }
 
-type Node struct {
-	Backend          *arbitrum.Backend
-	Sequencer        *Sequencer
-	DeployInfo       *RollupAddresses
-	InboxReader      *InboxReader
-	BatchPoster      *BatchPoster
-	DelayedSequencer *DelayedSequencer
-	TxStreamer       *InboxState
-	InboxTracker     *InboxReaderDb
+type NodeConfig struct {
+	ArbConfig              arbitrum.Config
+	L1Reader               bool
+	InboxReaderConfig      InboxReaderConfig
+	DelayedSequencerConfig DelayedSequencerConfig
+	BatchPoster            bool
+	BatchPosterConfig      BatchPosterConfig
 }
 
-func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *arbitrum.Backend, sequencerTxOpt *bind.TransactOpts, isTest bool) (*Node, error) {
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig}
+var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
+
+type Node struct {
+	Backend          *arbitrum.Backend
+	ArbInterface     *ArbInterface
+	TxStreamer       *TransactionStreamer
+	DeployInfo       *RollupAddresses
+	InboxReader      *InboxReader
+	InboxTracker     *InboxTracker
+	DelayedSequencer *DelayedSequencer
+	BatchPoster      *BatchPoster
+}
+
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
+	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain)
+	if err != nil {
+		return nil, err
+	}
+	var arbInterface *ArbInterface
+	if config.L1Reader {
+		if l1client == nil {
+			return nil, errors.New("l1client is nil")
+		}
+		arbInterface, err = NewArbInterface(txStreamer, l1client)
+	} else {
+		arbInterface, err = NewArbInterface(txStreamer, nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	backend, err := arbitrum.NewBackend(stack, &config.ArbConfig, chainDb, l2BlockChain, arbInterface)
+	if err != nil {
+		return nil, err
+	}
+
+	if !config.L1Reader {
+		return &Node{backend, arbInterface, txStreamer, nil, nil, nil, nil, nil}, nil
+	}
+
 	if deployInfo == nil {
 		return nil, errors.New("deployinfo is nil")
 	}
@@ -114,59 +152,64 @@ func CreateNode(l1client L1Interface, deployInfo *RollupAddresses, l2backend *ar
 	if err != nil {
 		return nil, err
 	}
-	inboxReaderConfig := *DefaultInboxReaderConfig
-	if isTest {
-		inboxReaderConfig.CheckDelay = time.Millisecond * 10
-		inboxReaderConfig.DelayBlocks = 0
-	}
-	sequencerObj, ok := l2backend.Publisher().(*Sequencer)
-	if !ok {
-		return nil, errors.New("l2backend doesn't have a sequencer")
-	}
-	inbox := sequencerObj.InboxState()
-	inboxReader, err := NewInboxReader(l2backend.InboxDb(), inbox, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &inboxReaderConfig)
+	inboxReader, err := NewInboxReader(chainDb, txStreamer, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReaderConfig))
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker := inboxReader.Database()
-	delayedSequencerConfig := *DefaultDelayedSequencerConfig
-	if isTest {
-		// not necessary, but should help prevent spurious failures in delayed sequencer test
-		delayedSequencerConfig.TimeAggregate = time.Second
+	inboxTracker := inboxReader.Tracker()
+
+	if !config.BatchPoster {
+		return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, nil, nil}, nil
 	}
-	var delayedSequencer *DelayedSequencer
-	var batchPoster *BatchPoster
-	if sequencerTxOpt != nil {
-		delayedSequencer, err = NewDelayedSequencer(l1client, inboxReader, inbox, &delayedSequencerConfig)
-		if err != nil {
-			return nil, err
-		}
-		batchPoster, err = NewBatchPoster(l1client, inboxTracker, inbox, &DefaultBatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
-		if err != nil {
-			return nil, err
-		}
+
+	if sequencerTxOpt == nil {
+		return nil, errors.New("sequencerTxOpts is nil")
 	}
-	return &Node{l2backend, sequencerObj, deployInfo, inboxReader, batchPoster, delayedSequencer, inbox, inboxTracker}, nil
+	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, &(config.DelayedSequencerConfig))
+	if err != nil {
+		return nil, err
+	}
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &DefaultBatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
+	if err != nil {
+		return nil, err
+	}
+	return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	err := n.ArbInterface.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	err = n.TxStreamer.Initialize()
+	if err != nil {
+		return err
+	}
+	if n.InboxTracker != nil {
+		err = n.InboxTracker.Initialize()
+		if err != nil {
+			return err
+		}
+	}
+
+	err = n.ArbInterface.Start(ctx)
+	if err != nil {
+		return err
+	}
+	n.TxStreamer.Start(ctx)
+	if n.InboxReader != nil {
+		n.InboxReader.Start(ctx)
+	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
 	}
-	n.InboxReader.Start(ctx)
 	if n.BatchPoster != nil {
-		n.BatchPoster.Start()
+		n.BatchPoster.Start(ctx)
 	}
-	return n.Sequencer.Start(ctx)
+	return nil
 }
 
-func (n *Node) Stop() {
-	if n.BatchPoster != nil {
-		n.BatchPoster.Stop()
-	}
-}
-
-func CreateStack() (*node.Node, error) {
+func CreateDefaultStack() (*node.Node, error) {
 	stackConf := node.DefaultConfig
 	var err error
 	stackConf.DataDir = ""
@@ -179,13 +222,10 @@ func CreateStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateArbBackend(ctx context.Context, stack *node.Node, genesis *core.Genesis, l1Client L1Interface) (*arbitrum.Backend, error) {
+func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Database, *core.BlockChain, error) {
 	arbstate.RequireHookedGeth()
 
-	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-
-	nodeConf.Genesis = genesis
+	defaultConf := ethconfig.Defaults
 
 	engine := arbos.Engine{
 		IsSequencer: true,
@@ -194,56 +234,35 @@ func CreateArbBackend(ctx context.Context, stack *node.Node, genesis *core.Genes
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
-	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, nodeConf.Genesis, nodeConf.OverrideLondon)
+	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideLondon)
 	var configCompatError *params.ConfigCompatError
 	if errors.As(genesisErr, &configCompatError) {
-		return nil, genesisErr
+		return nil, nil, genesisErr
 	}
 
 	vmConfig := vm.Config{
-		EnablePreimageRecording: nodeConf.EnablePreimageRecording,
+		EnablePreimageRecording: defaultConf.EnablePreimageRecording,
 	}
 	cacheConfig := &core.CacheConfig{
-		TrieCleanLimit:      nodeConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(nodeConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  nodeConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: nodeConf.NoPrefetch,
-		TrieDirtyLimit:      nodeConf.TrieDirtyCache,
-		TrieDirtyDisabled:   nodeConf.NoPruning,
-		TrieTimeLimit:       nodeConf.TrieTimeout,
-		SnapshotLimit:       nodeConf.SnapshotCache,
-		Preimages:           nodeConf.Preimages,
+		TrieCleanLimit:      defaultConf.TrieCleanCache,
+		TrieCleanJournal:    stack.ResolvePath(defaultConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:  defaultConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch: defaultConf.NoPrefetch,
+		TrieDirtyLimit:      defaultConf.TrieDirtyCache,
+		TrieDirtyDisabled:   defaultConf.NoPruning,
+		TrieTimeLimit:       defaultConf.TrieTimeout,
+		SnapshotLimit:       defaultConf.SnapshotCache,
+		Preimages:           defaultConf.Preimages,
 	}
 
-	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &nodeConf.TxLookupLimit)
+	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
 	if err != nil {
-		return nil, err
-	}
-
-	inboxDb, err := stack.OpenDatabase("l2inbox", 0, 0, "", false)
-	if err != nil {
-		utils.Fatalf("Failed to open inbox database: %v", err)
-	}
-	inbox, err := NewInboxState(inboxDb, blockChain)
-	if err != nil {
-		return nil, err
-	}
-
-	inbox.Start(ctx)
-
-	sequencer, err := NewSequencer(ctx, inbox, l1Client)
-	if err != nil {
-		return nil, err
-	}
-
-	backend, err := arbitrum.NewBackend(stack, &nodeConf, chainDb, inboxDb, blockChain, arbos.ChainConfig.ChainID, sequencer)
-	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
 
-	return backend, nil
+	return chainDb, blockChain, nil
 }
 
 // TODO: is that right?
