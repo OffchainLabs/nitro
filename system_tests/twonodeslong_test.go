@@ -93,8 +93,8 @@ func TestTwoNodesLong(t *testing.T) {
 		}
 		SendWaitTestTransactions(t, ctx, l2info.Client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
-		for _, l1tx := range l1Txs {
-			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1tx)
+		if len(l1Txs) > 0 {
+			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,17 +123,13 @@ func TestTwoNodesLong(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 
-	for i, dtx := range delayedTxs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, l2info.Client, dtx)
-		if err != nil {
-			t.Fatal("Failed waiting for Tx on main node", "tx", i, "err", err)
-		}
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1])
+	if err != nil {
+		t.Fatal("Failed waiting for Tx on main node", "err", err)
 	}
-	for i, dtx := range delayedTxs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, l2clientB, dtx)
-		if err != nil {
-			t.Fatal("Failed waiting for Tx on secondary node", "tx", i, "err", err)
-		}
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientB, delayedTxs[len(delayedTxs)-1])
+	if err != nil {
+		t.Fatal("Failed waiting for Tx on secondary node", "err", err)
 	}
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	if err != nil {
