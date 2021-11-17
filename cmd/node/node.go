@@ -41,6 +41,7 @@ func main() {
 	l1seqinbox := flag.String("l1seqinbox", "", "l1 sequencer inbox address (required if using l1 and !l1deploy)")
 	l1deployedAt := flag.Uint64("l1deployedat", 0, "l1 deployed at (required if using l1 and !l1deploy)")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
+	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
@@ -54,6 +55,7 @@ func main() {
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
+	nodeConf.ForwardingTarget = *forwardingtarget
 	if *l1role == "none" {
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
