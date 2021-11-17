@@ -49,7 +49,7 @@ type Retryable struct {
 }
 
 const (
-	numTriesOffset int64 = iota
+	numTriesOffset uint64 = iota
 	timeoutOffset
 	fromOffset
 	toOffset
@@ -81,12 +81,12 @@ func (rs *RetryableState) CreateRetryable(
 		&beneficiary,
 		calldata,
 	}
-	sto.SetByInt64(numTriesOffset, common.Hash{})
-	sto.SetByInt64(timeoutOffset, util.IntToHash(int64(timeout)))
-	sto.SetByInt64(fromOffset, common.BytesToHash(from.Bytes()))
-	sto.SetByInt64(toOffset, common.BytesToHash(to.Bytes()))
-	sto.SetByInt64(callvalueOffset, common.BigToHash(callvalue))
-	sto.SetByInt64(beneficiaryOffset, common.BytesToHash(beneficiary.Bytes()))
+	sto.SetByUint64(numTriesOffset, common.Hash{})
+	sto.SetByUint64(timeoutOffset, util.IntToHash(int64(timeout)))
+	sto.SetByUint64(fromOffset, common.BytesToHash(from.Bytes()))
+	sto.SetByUint64(toOffset, common.BytesToHash(to.Bytes()))
+	sto.SetByUint64(callvalueOffset, common.BigToHash(callvalue))
+	sto.SetByUint64(beneficiaryOffset, common.BytesToHash(beneficiary.Bytes()))
 	sto.OpenSubStorage(calldataKey).WriteBytes(calldata)
 
 	// insert the new retryable into the queue so it can be reaped later
@@ -97,7 +97,7 @@ func (rs *RetryableState) CreateRetryable(
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
-	if sto.GetByInt64(timeoutOffset) == (common.Hash{}) {
+	if sto.GetByUint64(timeoutOffset) == (common.Hash{}) {
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
 	}
@@ -117,29 +117,29 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
 	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
-	if retStorage.GetByInt64(timeoutOffset) == (common.Hash{}) {
+	if retStorage.GetByUint64(timeoutOffset) == (common.Hash{}) {
 		return false
 	}
-	retStorage.SetByInt64(numTriesOffset, common.Hash{})
-	retStorage.SetByInt64(timeoutOffset, common.Hash{})
-	retStorage.SetByInt64(fromOffset, common.Hash{})
-	retStorage.SetByInt64(toOffset, common.Hash{})
-	retStorage.SetByInt64(callvalueOffset, common.Hash{})
-	retStorage.SetByInt64(beneficiaryOffset, common.Hash{})
+	retStorage.SetByUint64(numTriesOffset, common.Hash{})
+	retStorage.SetByUint64(timeoutOffset, common.Hash{})
+	retStorage.SetByUint64(fromOffset, common.Hash{})
+	retStorage.SetByUint64(toOffset, common.Hash{})
+	retStorage.SetByUint64(callvalueOffset, common.Hash{})
+	retStorage.SetByUint64(beneficiaryOffset, common.Hash{})
 	retStorage.OpenSubStorage(calldataKey).DeleteBytes()
 	return true
 }
 
 func (retryable *Retryable) NumTries() *big.Int {
 	if retryable.numTries == nil {
-		retryable.numTries = retryable.backingStorage.GetByInt64(numTriesOffset).Big()
+		retryable.numTries = retryable.backingStorage.GetByUint64(numTriesOffset).Big()
 	}
 	return retryable.numTries
 }
 
 func (retryable *Retryable) SetNumTries(nt *big.Int) {
 	retryable.numTries = nt
-	retryable.backingStorage.SetByInt64(numTriesOffset, common.BigToHash(nt))
+	retryable.backingStorage.SetByUint64(numTriesOffset, common.BigToHash(nt))
 }
 
 func (retryable *Retryable) IncrementNumTries() *big.Int {
@@ -156,7 +156,7 @@ func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum *big.Int) common.
 
 func (retryable *Retryable) Beneficiary() common.Address {
 	if retryable.beneficiary == nil {
-		b := common.BytesToAddress(retryable.backingStorage.GetByInt64(beneficiaryOffset).Bytes())
+		b := common.BytesToAddress(retryable.backingStorage.GetByUint64(beneficiaryOffset).Bytes())
 		retryable.beneficiary = &b
 	}
 	return *retryable.beneficiary
@@ -164,7 +164,7 @@ func (retryable *Retryable) Beneficiary() common.Address {
 
 func (retryable *Retryable) Timeout() uint64 {
 	if retryable.timeout == nil {
-		t := retryable.backingStorage.GetByInt64(timeoutOffset).Big().Uint64()
+		t := retryable.backingStorage.GetByUint64(timeoutOffset).Big().Uint64()
 		retryable.timeout = &t
 	}
 	return *retryable.timeout
@@ -172,7 +172,7 @@ func (retryable *Retryable) Timeout() uint64 {
 
 func (retryable *Retryable) From() common.Address {
 	if retryable.from == nil {
-		a := common.BytesToAddress(retryable.backingStorage.GetByInt64(fromOffset).Bytes())
+		a := common.BytesToAddress(retryable.backingStorage.GetByUint64(fromOffset).Bytes())
 		retryable.from = &a
 	}
 	return *retryable.from
@@ -180,14 +180,14 @@ func (retryable *Retryable) From() common.Address {
 
 func (retryable *Retryable) To() *common.Address {
 	if retryable.to == nil {
-		retryable.to = util.OptionAddressFromHash(retryable.backingStorage.GetByInt64(toOffset))
+		retryable.to = util.OptionAddressFromHash(retryable.backingStorage.GetByUint64(toOffset))
 	}
 	return retryable.to.ToAddressRef()
 }
 
 func (retryable *Retryable) Callvalue() *big.Int {
 	if retryable.callvalue == nil {
-		retryable.callvalue = retryable.backingStorage.GetByInt64(callvalueOffset).Big()
+		retryable.callvalue = retryable.backingStorage.GetByUint64(callvalueOffset).Big()
 	}
 	return retryable.callvalue
 }
@@ -209,7 +209,7 @@ func (retryable *Retryable) CalldataSize() uint64 { // efficiently gets size of 
 
 func (retryable *Retryable) SetTimeout(timeout uint64) {
 	retryable.timeout = &timeout
-	retryable.backingStorage.SetByInt64(timeoutOffset, util.IntToHash(int64(timeout)))
+	retryable.backingStorage.SetByUint64(timeoutOffset, util.IntToHash(int64(timeout)))
 }
 
 func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) bool {

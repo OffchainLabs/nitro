@@ -103,7 +103,7 @@ func (store *Storage) GetBytes() []byte {
 }
 
 func (store *Storage) GetBytesSize() uint64 {
-	return store.GetByInt64(0).Big().Uint64()
+	return store.GetByUint64(0).Big().Uint64()
 }
 
 func (store *Storage) DeleteBytes() {
