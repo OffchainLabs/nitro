@@ -87,7 +87,7 @@ func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.In
 	}
 	bigRes, err := b.con.MessageCount(opts)
 	if err != nil {
-		return 0, err
+		return 0, errors.WithStack(err)
 	}
 	if !bigRes.IsUint64() {
 		return 0, errors.New("DelayedBridge MessageCount doesn't make sense!")
@@ -179,7 +179,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 
 	messageData := make(map[common.Hash][]byte)
 	if err := b.fillMessageData(ctx, inboxAddresses, messageIds, messageData, minBlockNum, maxBlockNum); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
@@ -255,7 +255,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		var err error
 		con, err = bridgegen.NewIMessageProvider(ethLog.Address, b.client)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, errors.WithStack(err)
 		}
 		b.messageProviders[ethLog.Address] = con
 	}

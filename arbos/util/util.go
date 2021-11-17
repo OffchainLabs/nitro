@@ -108,6 +108,10 @@ func IntToHash(val int64) common.Hash {
 	return common.BigToHash(big.NewInt(val))
 }
 
+func UintToHash(val uint64) common.Hash {
+	return common.BigToHash(new(big.Int).SetUint64(val))
+}
+
 func HashPlusInt(x common.Hash, y int64) common.Hash {
 	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }

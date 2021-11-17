@@ -7,11 +7,12 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -31,7 +32,7 @@ type blockTestState struct {
 	blockNumber uint64
 }
 
-func TestInboxState(t *testing.T) {
+func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
@@ -65,11 +66,13 @@ func TestInboxState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inbox, err := NewInboxState(db, bc)
+	inbox, err := NewTransactionStreamer(db, bc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inbox.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inbox.Start(ctx)
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{

@@ -1,4 +1,4 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
@@ -11,7 +11,6 @@ import "../utils/IGasRefunder.sol";
 
 contract SequencerInbox {
 	bytes32[] public inboxAccs;
-	uint256 public batchCount;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
@@ -28,6 +27,7 @@ contract SequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
+        uint256[4] timeBounds,
         bytes data
     );
 
@@ -36,7 +36,8 @@ contract SequencerInbox {
         bytes32 indexed beforeAcc,
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead
+        uint256 afterDelayedMessagesRead,
+        uint256[4] timeBounds
     );
 
     constructor(
@@ -51,6 +52,23 @@ contract SequencerInbox {
 
 		maxDelayBlocks = maxDelaySeconds * 15;
 		maxFutureBlocks = 12;
+    }
+
+    function getTimeBounds() internal view returns (uint256[4] memory) {
+        uint256[4] memory bounds;
+        if (block.timestamp > maxDelaySeconds) {
+            bounds[0] = block.timestamp - maxDelaySeconds;
+        } else {
+            bounds[0] = 0;
+        }
+        bounds[1] = block.timestamp + maxFutureSeconds;
+        if (block.number > maxDelayBlocks) {
+            bounds[2] = block.number - maxDelayBlocks;
+        } else {
+            bounds[2] = 0;
+        }
+        bounds[3] = block.number + maxFutureBlocks;
+        return bounds;
     }
 
     function forceInclusion(
@@ -90,7 +108,7 @@ contract SequencerInbox {
         }
 
         bytes calldata emptyData;
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             emptyData,
             _totalDelayedMessagesRead
         );
@@ -100,6 +118,7 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
+            timeBounds,
             emptyData
         );
     }
@@ -121,7 +140,7 @@ contract SequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -130,7 +149,8 @@ contract SequencerInbox {
             beforeAcc,
             afterAcc,
             delayedAcc,
-            totalDelayedMessagesRead
+            totalDelayedMessagesRead,
+            timeBounds
         );
 
         if (gasRefunder != IGasRefunder(0)) {
@@ -147,13 +167,9 @@ contract SequencerInbox {
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
         uint256 startGasLeft = gasleft();
-        uint256 calldataSize;
-        assembly {
-            calldataSize := calldatasize()
-        }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -163,10 +179,15 @@ contract SequencerInbox {
             afterAcc,
             delayedAcc,
             afterDelayedMessagesRead,
+            timeBounds,
             data
         );
 
         if (gasRefunder != IGasRefunder(0)) {
+            uint256 calldataSize;
+            assembly {
+                calldataSize := calldatasize()
+            }
             gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
         }
     }
@@ -174,7 +195,7 @@ contract SequencerInbox {
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
-    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) {
+    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint256[4] memory timeBounds) {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
 
@@ -203,9 +224,14 @@ contract SequencerInbox {
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
+        timeBounds = getTimeBounds();
         bytes32 fullDataHash = keccak256(fullData);
-        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc));
+        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
+    }
+
+    function batchCount() external view returns (uint256) {
+        return inboxAccs.length;
     }
 }

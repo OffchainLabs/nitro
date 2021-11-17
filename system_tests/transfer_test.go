@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbtest
 
 import (
@@ -10,11 +14,11 @@ import (
 )
 
 func TestTransfer(t *testing.T) {
-	backend, l2info := CreateTestL2(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2info, _ := CreateTestL2(t, ctx)
 
-	client := ClientForArbBackend(t, backend)
-
-	ctx := context.Background()
+	client := l2info.Client
 
 	l2info.GenerateAccount("User2")
 
@@ -25,7 +29,7 @@ func TestTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(client, tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}

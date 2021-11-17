@@ -15,26 +15,26 @@ import (
 //   members of the set are stored sequentially from 1 onward
 type AddressSet struct {
 	backingStorage *storage.Storage
-	size           uint64
+	size           *storage.StorageBackedUint64
 	cachedMembers  map[common.Address]struct{}
 	byAddress      *storage.Storage
 }
 
 func Initialize(sto *storage.Storage) {
-	sto.SetByInt64(0, util.IntToHash(0))
+	sto.SetByUint64(0, util.UintToHash(0))
 }
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
-		sto.GetByInt64(0).Big().Uint64(),
+		sto.OpenStorageBackedUint64(util.UintToHash(0)),
 		make(map[common.Address]struct{}),
 		sto.OpenSubStorage([]byte{0}),
 	}
 }
 
 func (aset *AddressSet) Size() uint64 {
-	return aset.size
+	return aset.size.Get()
 }
 
 func (aset *AddressSet) IsMember(addr common.Address) bool {
@@ -49,9 +49,9 @@ func (aset *AddressSet) IsMember(addr common.Address) bool {
 }
 
 func (aset *AddressSet) AllMembers() []common.Address {
-	ret := make([]common.Address, aset.size)
+	ret := make([]common.Address, aset.size.Get())
 	for i := range ret {
-		ret[i] = common.BytesToAddress(aset.backingStorage.GetByInt64(int64(i + 1)).Bytes())
+		ret[i] = common.BytesToAddress(aset.backingStorage.GetByUint64(uint64(i + 1)).Bytes())
 	}
 	return ret
 }
@@ -60,12 +60,11 @@ func (aset *AddressSet) Add(addr common.Address) {
 	if aset.IsMember(addr) {
 		return
 	}
-	slot := util.IntToHash(int64(1 + aset.size))
+	slot := util.UintToHash(1 + aset.size.Get())
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	aset.byAddress.Set(addrAsHash, slot)
 	aset.backingStorage.Set(slot, addrAsHash)
-	aset.size++
-	aset.backingStorage.SetByInt64(0, util.IntToHash(int64(aset.size)))
+	aset.size.Set(aset.size.Get() + 1)
 }
 
 func (aset *AddressSet) Remove(addr common.Address) {
@@ -76,10 +75,10 @@ func (aset *AddressSet) Remove(addr common.Address) {
 	}
 	delete(aset.cachedMembers, addr)
 	aset.byAddress.Set(addrAsHash, common.Hash{})
-	if slot < aset.size {
-		aset.backingStorage.SetByInt64(int64(slot), aset.backingStorage.GetByInt64(int64(aset.size)))
+	sz := aset.size.Get()
+	if slot < sz {
+		aset.backingStorage.SetByUint64(slot, aset.backingStorage.GetByUint64(sz))
 	}
-	aset.backingStorage.SetByInt64(int64(aset.size), common.Hash{})
-	aset.size--
-	aset.backingStorage.SetByInt64(0, util.IntToHash(int64(aset.size)))
+	aset.backingStorage.SetByUint64(sz, common.Hash{})
+	aset.size.Set(sz - 1)
 }
