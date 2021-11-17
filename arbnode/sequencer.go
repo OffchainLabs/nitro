@@ -10,12 +10,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/pkg/errors"
 )
 
 type Sequencer struct {
@@ -73,23 +74,24 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) Start(ctx context.Context) error {
+func (s *Sequencer) Start(parentCtx context.Context) (*Stopper, error) {
 	if s.l1Client == nil {
-		return nil
+		return nil, nil
 	}
 
 	initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 	if initialBlockNr == 0 {
-		return errors.New("ArbInterface: not initialized")
+		return nil, errors.New("ArbInterface: not initialized")
 	}
 
 	headerChan := make(chan *types.Header)
-	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
+	headerSubscription, err := s.l1Client.SubscribeNewHead(parentCtx, headerChan)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	go (func() {
+	stopper, ctx := NewStopper(parentCtx, "Sequencer")
+	go func() {
+		defer stopper.Close()
 		for {
 			select {
 			case header := <-headerChan:
@@ -114,7 +116,7 @@ func (s *Sequencer) Start(ctx context.Context) error {
 				return
 			}
 		}
-	})()
+	}()
 
-	return nil
+	return stopper, nil
 }

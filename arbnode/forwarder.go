@@ -35,6 +35,6 @@ func (f *TxForwarder) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (f *TxForwarder) Start(ctx context.Context) error {
-	return nil
+func (f *TxForwarder) Start(ctx context.Context) (*Stopper, error) {
+	return nil, nil
 }
