@@ -78,10 +78,6 @@ func TestDelayInboxSimple(t *testing.T) {
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
-
-	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Second)
-
 	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)

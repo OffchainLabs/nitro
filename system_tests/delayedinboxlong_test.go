@@ -77,8 +77,6 @@ func TestDelayInboxLong(t *testing.T) {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 10)
 	}
 
 	_, err := arbnode.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
