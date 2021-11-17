@@ -40,8 +40,8 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 			t.Fatal(err)
 		}
 	}
-	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+	if len(txs) > 0 {
+		_, err := arbnode.EnsureTxSucceeded(ctx, client, txs[len(txs)-1])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,9 +55,11 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.WSPort = 0
+	stackConf.UseLightweightKDF = true
 	stackConf.P2P.ListenAddr = ""
 	stackConf.P2P.NoDial = true
 	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.NAT = nil
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)

@@ -16,6 +16,7 @@ type L1Interface interface {
 	ethereum.ChainReader
 	ethereum.TransactionReader
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
+	BlockNumber(ctx context.Context) (uint64, error)
 }
 
 // Will wait until txhash is in the blockchain and return its receipt
@@ -45,7 +46,11 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 }
 
 func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	txRes, err := WaitForTx(ctx, client, tx.Hash(), time.Second)
+	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second)
+}
+
+func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
 		return nil, err
 	}

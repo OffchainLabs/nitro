@@ -93,8 +93,8 @@ func TestTwoNodesLong(t *testing.T) {
 		}
 		SendWaitTestTransactions(t, ctx, l2info.Client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
-		for _, l1tx := range l1Txs {
-			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1tx)
+		if len(l1Txs) > 0 {
+			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,26 +114,27 @@ func TestTwoNodesLong(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < finalPropagateLoops; i++ {
+		var tx *types.Transaction
 		for j := 0; j < 30; j++ {
-			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
-			})
+			tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+			err := l1info.Client.SendTransaction(ctx, tx)
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Second)
+		_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	for i, dtx := range delayedTxs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, l2info.Client, dtx)
-		if err != nil {
-			t.Fatal("Failed waiting for Tx on main node", "tx", i, "err", err)
-		}
+	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	if err != nil {
+		t.Fatal("Failed waiting for Tx on main node", "err", err)
 	}
-	for i, dtx := range delayedTxs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, l2clientB, dtx)
-		if err != nil {
-			t.Fatal("Failed waiting for Tx on secondary node", "tx", i, "err", err)
-		}
+	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	if err != nil {
+		t.Fatal("Failed waiting for Tx on secondary node", "err", err)
 	}
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	if err != nil {

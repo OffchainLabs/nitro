@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/pkg/errors"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/pkg/errors"
 )
 
 type BatchPoster struct {
@@ -28,13 +29,24 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize   int
-	BatchPollDelay time.Duration
+	MaxBatchSize        int
+	BatchPollDelay      time.Duration
+	SubmissionSyncDelay time.Duration
+	CompressionLevel    int
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:   500,
-	BatchPollDelay: time.Second / 10,
+	MaxBatchSize:        500,
+	BatchPollDelay:      time.Second / 10,
+	SubmissionSyncDelay: time.Second,
+	CompressionLevel:    brotli.DefaultCompression,
+}
+
+var TestBatchPosterConfig = BatchPosterConfig{
+	MaxBatchSize:        10000,
+	BatchPollDelay:      time.Millisecond * 10,
+	SubmissionSyncDelay: time.Millisecond * 10,
+	CompressionLevel:    2,
 }
 
 func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
@@ -63,6 +75,7 @@ type batchSegments struct {
 	delayedMsg          uint64
 	pendingDelayed      uint64
 	sizeLimit           int
+	compressionLevel    int
 	newUncompressedSize int
 	lastCompressedSize  int
 	trailingHeaders     int // how many trailing segments are headers
@@ -73,8 +86,9 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
-		compressedWriter: brotli.NewWriter(compressedBuffer),
+		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
 		sizeLimit:        config.MaxBatchSize - 40, // TODO
+		compressionLevel: config.CompressionLevel,
 		rawSegments:      make([][]byte, 0, 128),
 		delayedMsg:       firstDelayed,
 		pendingDelayed:   firstDelayed,
@@ -83,7 +97,7 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 
 func (s *batchSegments) recompressAll() error {
 	s.compressedBuffer = bytes.NewBuffer(make([]byte, 0, s.sizeLimit*2))
-	s.compressedWriter = brotli.NewWriter(s.compressedBuffer)
+	s.compressedWriter = brotli.NewWriterLevel(s.compressedBuffer, s.compressionLevel)
 	s.newUncompressedSize = 0
 	for _, segment := range s.rawSegments {
 		err := s.addSegmentToCompressed(segment)
@@ -306,7 +320,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmissionIsSynced() {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
-		<-time.After(time.Second)
+		<-time.After(b.config.SubmissionSyncDelay)
 	}
 	var msgToPost, prevDelayedMsg uint64
 	if b.sequencesPosted > 0 {

@@ -60,11 +60,10 @@ func TestDelayInboxLong(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		for _, l1tx := range l1Txs {
-			_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-			if err != nil {
-				t.Fatal(err)
-			}
+		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
+		_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 
@@ -78,8 +77,6 @@ func TestDelayInboxLong(t *testing.T) {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Millisecond * 10)
 	}
 
 	_, err := arbnode.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)

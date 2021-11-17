@@ -93,11 +93,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 	}
 	blocksToFetch := uint64(100)
 	for {
-		l1Header, err := ir.client.BlockByNumber(ctx, nil)
+		currentHeightRaw, err := ir.client.BlockNumber(ctx)
 		if err != nil {
 			return err
 		}
-		currentHeight := l1Header.Number()
+		currentHeight := new(big.Int).SetUint64(currentHeightRaw)
 
 		if ir.config.DelayBlocks > 0 {
 			currentHeight = new(big.Int).Sub(currentHeight, big.NewInt(ir.config.DelayBlocks))
