@@ -15,8 +15,8 @@ import (
 
 type MerkleAccumulator struct {
 	backingStorage *storage.Storage
-	size           uint64
-	numPartials    uint64
+	size           uint64         // stored in backingStorage, slot 0, if backingStorage exists
+	numPartials    uint64         // not stored in the DB, but calculated from size
 	partials       []*common.Hash // nil means we haven't yet loaded it from backingStorage
 }
 
@@ -25,7 +25,7 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
-	size := sto.GetByInt64(0).Big().Uint64()
+	size := sto.GetByUint64(0).Big().Uint64()
 	numPartials := CalcNumPartials(size)
 	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
 }
@@ -61,14 +61,14 @@ func (acc *MerkleAccumulator) NonPersistentClone() *MerkleAccumulator {
 func (acc *MerkleAccumulator) setSize(size uint64) {
 	acc.size = size
 	if acc.backingStorage != nil {
-		acc.backingStorage.SetByInt64(0, util.IntToHash(int64(size)))
+		acc.backingStorage.SetByUint64(0, util.IntToHash(int64(size)))
 	}
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
 	if acc.partials[level] == nil {
 		if acc.backingStorage != nil {
-			h := acc.backingStorage.GetByInt64(int64(2 + level))
+			h := acc.backingStorage.GetByUint64(2 + level)
 			acc.partials[level] = &h
 		} else {
 			h := common.Hash{}
@@ -109,7 +109,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash, adjustS
 		acc.partials[level] = val
 	}
 	if acc.backingStorage != nil {
-		acc.backingStorage.SetByInt64(int64(2+level), *val)
+		acc.backingStorage.SetByUint64(2+level, *val)
 	}
 }
 

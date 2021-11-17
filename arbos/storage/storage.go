@@ -52,16 +52,16 @@ func (store *Storage) Get(key common.Hash) common.Hash {
 	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()))
 }
 
-func (store *Storage) GetByInt64(key int64) common.Hash {
-	return store.Get(util.IntToHash(key))
+func (store *Storage) GetByUint64(key uint64) common.Hash {
+	return store.Get(util.UintToHash(key))
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) {
 	store.db.SetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()), value)
 }
 
-func (store *Storage) SetByInt64(key int64, value common.Hash) {
-	store.Set(util.IntToHash(key), value)
+func (store *Storage) SetByUint64(key uint64, value common.Hash) {
+	store.Set(util.UintToHash(key), value)
 }
 
 func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
@@ -79,34 +79,34 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 }
 
 func (store *Storage) WriteBytes(b []byte) {
-	store.SetByInt64(0, util.IntToHash(int64(len(b))))
-	offset := int64(1)
+	store.SetByUint64(0, util.UintToHash(uint64(len(b))))
+	offset := uint64(1)
 	for len(b) >= 32 {
-		store.SetByInt64(offset, common.BytesToHash(b[:32]))
+		store.SetByUint64(offset, common.BytesToHash(b[:32]))
 		b = b[32:]
 		offset++
 	}
-	store.SetByInt64(offset, common.BytesToHash(b))
+	store.SetByUint64(offset, common.BytesToHash(b))
 }
 
 func (store *Storage) GetBytes() []byte {
-	bytesLeft := store.GetByInt64(0).Big().Int64()
+	bytesLeft := store.GetByUint64(0).Big().Uint64()
 	ret := []byte{}
-	offset := int64(1)
+	offset := uint64(1)
 	for bytesLeft >= 32 {
-		ret = append(ret, store.GetByInt64(offset).Bytes()...)
+		ret = append(ret, store.GetByUint64(offset).Bytes()...)
 		bytesLeft -= 32
 		offset++
 	}
-	ret = append(ret, store.GetByInt64(offset).Bytes()[32-bytesLeft:]...)
+	ret = append(ret, store.GetByUint64(offset).Bytes()[32-bytesLeft:]...)
 	return ret
 }
 
 func (store *Storage) DeleteBytes() {
-	bytesLeft := store.GetByInt64(0).Big().Int64()
-	offset := int64(1)
+	bytesLeft := store.GetByUint64(0).Big().Uint64()
+	offset := uint64(1)
 	for bytesLeft > 0 {
-		store.SetByInt64(offset, common.Hash{})
+		store.SetByUint64(offset, common.Hash{})
 		offset++
 		if bytesLeft < 32 {
 			bytesLeft = 0
@@ -128,9 +128,9 @@ func (sto *Storage) OpenStorageBackedInt64(offset common.Hash) *StorageBackedInt
 	return &StorageBackedInt64{sto, offset, nil}
 }
 
-func (sbi *StorageBackedInt64) Get() int64 {
-	if sbi.cache == nil {
-		raw := sbi.storage.Get(sbi.offset).Big()
+func (sbu *StorageBackedInt64) Get() int64 {
+	if sbu.cache == nil {
+		raw := sbu.storage.Get(sbu.offset).Big()
 		if raw.Bit(255) != 0 {
 			raw = new(big.Int).SetBit(raw, 255, 0)
 			raw = new(big.Int).Neg(raw)
@@ -139,19 +139,48 @@ func (sbi *StorageBackedInt64) Get() int64 {
 			panic("expected int64 compatible value in storage")
 		}
 		i := raw.Int64()
-		sbi.cache = &i
+		sbu.cache = &i
 	}
-	return *sbi.cache
+	return *sbu.cache
 }
 
-func (sbi *StorageBackedInt64) Set(value int64) {
+func (sbu *StorageBackedInt64) Set(value int64) {
 	i := value
-	sbi.cache = &i
+	sbu.cache = &i
 	var bigValue *big.Int
 	if value >= 0 {
 		bigValue = big.NewInt(value)
 	} else {
 		bigValue = new(big.Int).SetBit(big.NewInt(-value), 255, 1)
 	}
-	sbi.storage.Set(sbi.offset, common.BigToHash(bigValue))
+	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+}
+
+type StorageBackedUint64 struct {
+	storage *Storage
+	offset  common.Hash
+	cache   *uint64
+}
+
+func (sto *Storage) OpenStorageBackedUint64(offset common.Hash) *StorageBackedUint64 {
+	return &StorageBackedUint64{sto, offset, nil}
+}
+
+func (sbu *StorageBackedUint64) Get() uint64 {
+	if sbu.cache == nil {
+		raw := sbu.storage.Get(sbu.offset).Big()
+		if !raw.IsUint64() {
+			panic("expected uint64 compatible value in storage")
+		}
+		i := raw.Uint64()
+		sbu.cache = &i
+	}
+	return *sbu.cache
+}
+
+func (sbu *StorageBackedUint64) Set(value uint64) {
+	i := value
+	sbu.cache = &i
+	bigValue := new(big.Int).SetUint64(value)
+	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
 }

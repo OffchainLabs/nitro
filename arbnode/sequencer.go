@@ -11,35 +11,28 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/pkg/errors"
 )
 
 type Sequencer struct {
-	inbox         *InboxState
+	txStreamer    *TransactionStreamer
 	l1Client      L1Interface
 	l1BlockNumber uint64
 }
 
-func NewSequencer(ctx context.Context, inbox *InboxState, l1Client L1Interface) (*Sequencer, error) {
-	seq := &Sequencer{
-		inbox:    inbox,
-		l1Client: l1Client,
-	}
-	if l1Client != nil {
-		block, err := l1Client.HeaderByNumber(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
-		atomic.StoreUint64(&seq.l1BlockNumber, block.Number.Uint64())
-	}
-	return seq, nil
+func NewSequencer(txStreamer *TransactionStreamer, l1Client L1Interface) (*Sequencer, error) {
+	return &Sequencer{
+		txStreamer:    txStreamer,
+		l1Client:      l1Client,
+		l1BlockNumber: 0,
+	}, nil
 }
 
-func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
+func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
@@ -49,6 +42,9 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 	l2Message = append(l2Message, txBytes...)
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
 	l1Block := atomic.LoadUint64(&s.l1BlockNumber)
+	if s.l1Client != nil && l1Block == 0 {
+		return errors.New("unknown L1 block")
+	}
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
@@ -61,15 +57,20 @@ func (s *Sequencer) PublishTransaction(tx *types.Transaction) error {
 		L2msg: l2Message,
 	}
 
-	return s.inbox.SequenceMessages([]*arbos.L1IncomingMessage{message})
+	return s.txStreamer.SequenceMessages([]*arbos.L1IncomingMessage{message})
 }
 
-func (s *Sequencer) InboxState() *InboxState {
-	return s.inbox
-}
+func (s *Sequencer) Initialize(ctx context.Context) error {
+	if s.l1Client == nil {
+		return nil
+	}
 
-func (s *Sequencer) BlockChain() *core.BlockChain {
-	return s.inbox.bc
+	block, err := s.l1Client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+	atomic.StoreUint64(&s.l1BlockNumber, block.Number.Uint64())
+	return nil
 }
 
 func (s *Sequencer) Start(ctx context.Context) error {
@@ -77,11 +78,17 @@ func (s *Sequencer) Start(ctx context.Context) error {
 		return nil
 	}
 
+	initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
+	if initialBlockNr == 0 {
+		return errors.New("ArbInterface: not initialized")
+	}
+
 	headerChan := make(chan *types.Header)
 	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
 	if err != nil {
 		return err
 	}
+
 	go (func() {
 		for {
 			select {

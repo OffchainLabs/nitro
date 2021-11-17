@@ -22,15 +22,17 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 		t.Fatal(err)
 	}
 	l1client := ethclient.NewClient(l1rpcClient)
-	stack, err := arbnode.CreateStack()
+	l2stack, err := arbnode.CreateDefaultStack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend, err := arbnode.CreateArbBackend(ctx, stack, l2Genesys, l1client)
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	node, err := arbnode.CreateNode(l1client, first.DeployInfo, backend, nil, true)
+	nodeConf := arbnode.NodeConfigL1Test
+	nodeConf.BatchPoster = false
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeConf, l2blockchain, l1client, first.DeployInfo, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +48,9 @@ func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
-	defer node1.Stop()
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack)
-	defer nodeB.Stop()
+	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
 
 	l2info.GenerateAccount("User2")
 
