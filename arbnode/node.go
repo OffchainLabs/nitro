@@ -98,16 +98,18 @@ type NodeConfig struct {
 	DelayedSequencerConfig DelayedSequencerConfig
 	BatchPoster            bool
 	BatchPosterConfig      BatchPosterConfig
+	ForwardingTarget       string // "" if not forwarding
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, ""}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, ""}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
 	TxStreamer       *TransactionStreamer
+	TxPublisher      TransactionPublisher
 	DeployInfo       *RollupAddresses
 	InboxReader      *InboxReader
 	InboxTracker     *InboxTracker
@@ -120,15 +122,21 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	var arbInterface *ArbInterface
-	if config.L1Reader {
+	var txPublisher TransactionPublisher
+	if config.ForwardingTarget != "" {
+		txPublisher, err = NewForwarder(config.ForwardingTarget)
+	} else if config.L1Reader {
 		if l1client == nil {
 			return nil, errors.New("l1client is nil")
 		}
-		arbInterface, err = NewArbInterface(txStreamer, l1client)
+		txPublisher, err = NewSequencer(txStreamer, l1client)
 	} else {
-		arbInterface, err = NewArbInterface(txStreamer, nil)
+		txPublisher, err = NewSequencer(txStreamer, nil)
 	}
+	if err != nil {
+		return nil, err
+	}
+	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +146,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, nil, nil, nil, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil}, nil
 	}
 
 	if deployInfo == nil {
@@ -159,7 +167,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	inboxTracker := inboxReader.Tracker()
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -173,11 +181,11 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	err := n.ArbInterface.Initialize(ctx)
+	err := n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return err
 	}
@@ -192,7 +200,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 
-	err = n.ArbInterface.Start(ctx)
+	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return err
 	}
