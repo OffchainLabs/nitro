@@ -114,10 +114,17 @@ func TestTwoNodesLong(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < finalPropagateLoops; i++ {
+		var tx *types.Transaction
 		for j := 0; j < 30; j++ {
-			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
-			})
+			tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+			err := l1info.Client.SendTransaction(ctx, tx)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, tx)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 

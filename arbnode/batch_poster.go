@@ -29,21 +29,24 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize     int
-	BatchPollDelay   time.Duration
-	CompressionLevel int
+	MaxBatchSize        int
+	BatchPollDelay      time.Duration
+	SubmissionSyncDelay time.Duration
+	CompressionLevel    int
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:     500,
-	BatchPollDelay:   time.Second / 10,
-	CompressionLevel: brotli.DefaultCompression,
+	MaxBatchSize:        500,
+	BatchPollDelay:      time.Second / 10,
+	SubmissionSyncDelay: time.Second,
+	CompressionLevel:    brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:     4000,
-	BatchPollDelay:   time.Millisecond * 20,
-	CompressionLevel: 2,
+	MaxBatchSize:        10000,
+	BatchPollDelay:      time.Millisecond * 10,
+	SubmissionSyncDelay: time.Millisecond * 10,
+	CompressionLevel:    2,
 }
 
 func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
@@ -317,7 +320,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmissionIsSynced() {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
-		<-time.After(time.Second)
+		<-time.After(b.config.SubmissionSyncDelay)
 	}
 	var msgToPost, prevDelayedMsg uint64
 	if b.sequencesPosted > 0 {
