@@ -44,6 +44,8 @@ clean:
 	@rm -rf solgen/artifacts solgen/cache solgen/go/
 	@rm -f .make/*
 
+docker:
+	docker build -t nitro-node .
 
 # regular build rules
 

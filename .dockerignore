@@ -1,0 +1,15 @@
+**/.github
+.make
+**/.dockerignore
+**/Dockerfile
+**/.gitignore
+**/.git
+**/.gitmodules
+**/.gitignore
+go-ethereum/tests
+**/*.yml
+solgen/artifacts
+solgen/cache/
+solgen/go
+**/node_modules
+**/Makefile
