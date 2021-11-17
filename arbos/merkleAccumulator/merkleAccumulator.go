@@ -6,7 +6,6 @@ package merkleAccumulator
 
 import (
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -88,19 +87,23 @@ func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
 	return partials
 }
 
-func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
+func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash, adjustSize bool) {
 	if level == acc.numPartials {
 		acc.numPartials++
 		acc.partials = append(acc.partials, val)
-		acc.setSize(acc.size + (1 << level))
+		if adjustSize {
+			acc.setSize(acc.size + (1 << level))
+		}
 	} else {
-		if *acc.partials[level] == (common.Hash{}) {
-			if *val != (common.Hash{}) {
-				acc.setSize(acc.size + (1 << level))
-			}
-		} else {
-			if *val == (common.Hash{}) {
-				acc.setSize(acc.size - (1 << level))
+		if adjustSize {
+			if *acc.partials[level] == (common.Hash{}) {
+				if *val != (common.Hash{}) {
+					acc.setSize(acc.size + (1 << level))
+				}
+			} else {
+				if *val == (common.Hash{}) {
+					acc.setSize(acc.size - (1 << level))
+				}
 			}
 		}
 		acc.partials[level] = val
@@ -113,23 +116,25 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
 	events := []MerkleTreeNodeEvent{}
 
+	acc.setSize(acc.size+1)
+
 	level := uint64(0)
 	soFar := itemHash.Bytes()
 	for {
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
-			acc.setPartial(level, &h)
+			acc.setPartial(level, &h, false)
 			return events
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
-			acc.setPartial(level, &h)
+			acc.setPartial(level, &h, false)
 			return events
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
-		acc.setPartial(level, &h)
+		acc.setPartial(level, &h, false)
 		level += 1
 		events = append(events, MerkleTreeNodeEvent{level, acc.size - 1, common.BytesToHash(soFar)})
 	}
@@ -138,27 +143,31 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent
 var ErrInvalidLevel = errors.New("invalid partial level")
 
 func (acc *MerkleAccumulator) AppendPartial(level uint64, val *common.Hash) error {
-	for i := uint64(0); i < level; i++ {
-		if acc.getPartial(i) != nil {
+	for i := uint64(0); i < level && i < acc.numPartials; i++ {
+		res := acc.getPartial(i)
+		if res != nil && *res != (common.Hash{}) {
 			return ErrInvalidLevel
 		}
+	}
+	for acc.numPartials < level {
+		acc.setPartial(acc.numPartials, &common.Hash{}, false)
 	}
 	soFar := val.Bytes()
 	for {
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
-			acc.setPartial(level, &h)
+			acc.setPartial(level, &h, true)
 			return nil
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
-			acc.setPartial(level, &h)
+			acc.setPartial(level, &h, true)
 			return nil
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
-		acc.setPartial(level, &h)
+		acc.setPartial(level, &h, true)
 		level += 1
 	}
 }
@@ -209,7 +218,6 @@ func (before *MerkleAccumulator) VerifyConsistencyProof(afterHash common.Hash, p
 			return false
 		}
 	}
-	fmt.Println(before.size, len(proof), before.Root(), working.Root())
 	return working.Root() == afterHash
 }
 
@@ -229,7 +237,7 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 		return ccp.BeforeHash == ccp.AfterHash && len(ccp.Proof) == 0
 	}
 
-	// build the before MerkleAccumulator
+	// build the before MerkleAccumulator and verify its hash
 	beforeSize := ccp.BeforeSize
 	acc := NewNonpersistentMerkleAccumulator()
 	proof := ccp.Proof
@@ -249,11 +257,11 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 		return false
 	}
 
-	switchoverLevel := util_math.Log2floor(ccp.BeforeSize ^ ccp.AfterSize)
-
+	// apply a series of partials, in two passes, to transition to the after state, then verify its hash
 	// upward pass
-	for level := uint64(0); level <= switchoverLevel; level++ {
-		if ccp.BeforeSize& (1 << level) != 0 {
+	switchoverLevel := util_math.Log2floor(ccp.BeforeSize ^ ccp.AfterSize)
+	for level := uint64(0); level < switchoverLevel; level++ {
+		if acc.size & (1 << level) != 0 {
 			if len(proof) == 0 {
 				return false
 			}
@@ -266,17 +274,16 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 	}
 
 	// downward pass
-	for level := int64(switchoverLevel); level >= 0; level-- {
-		if ccp.AfterSize& (1 << level) != 0 {
-			if len(proof) == 0 {
-				return false
-			}
-			if err := acc.AppendPartial(uint64(level), &proof[0]); err != nil {
-				// OK to panic here because the error should be impossible, can only happen if there is a bug in this function
-				panic("error in downward pass in ConciseConsistencyProof::Verify")
-			}
-			proof = proof[1:]
+	for acc.size < ccp.AfterSize {
+		level := util_math.Log2floor(ccp.AfterSize-acc.size)
+		if len(proof) == 0 {
+			return false
 		}
+		if err := acc.AppendPartial(uint64(level), &proof[0]); err != nil {
+			// OK to panic here because the error should be impossible, can only happen if there is a bug in this function
+			panic("error in downward pass in ConciseConsistencyProof::Verify")
+		}
+		proof = proof[1:]
 	}
 
 	return acc.Root() == ccp.AfterHash && len(proof) == 0

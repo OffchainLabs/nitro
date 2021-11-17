@@ -154,7 +154,18 @@ func TestConsistencyProofs(t *testing.T) {
 		for j := i+1; j < consistencyProofTestSize; j++ {
 			proof := finalTree.ConsistencyProof(uint64(i), uint64(j))
 			if ! accs[i].VerifyConsistencyProof(accs[j].Root(), proof) {
-				t.Fatal(i, j, leaves[i], proof)
+				t.Fatal(i, j, proof)
+			}
+
+			if finalTree.Truncate(uint64(i)).Hash() != trees[i].Hash() {
+				t.Fatal(i)
+			}
+			if finalTree.Truncate(uint64(j)).Hash() != trees[j].Hash() {
+				t.Fatal(j)
+			}
+			conciseProof := MakeConciseConsistencyProof(finalTree, uint64(i), uint64(j))
+			if !conciseProof.Verify() {
+				t.Fatal(i, j, conciseProof)
 			}
 		}
 	}

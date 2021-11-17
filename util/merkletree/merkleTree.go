@@ -24,6 +24,8 @@ type MerkleTree interface {
 	SummarizeUpTo(num uint64) MerkleTree
 	Serialize(wr io.Writer) error
 	ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash
+	Truncate(toSize uint64) MerkleTree
+	GetPartials() []merkleAccumulator.LevelAndHash
 }
 
 const (
@@ -100,6 +102,21 @@ func (leaf *merkleTreeLeaf) ConsistencyProof(before, after uint64) []merkleAccum
 	return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ 0, leaf.hash } }
 }
 
+func (leaf *merkleTreeLeaf) Truncate(toSize uint64) MerkleTree {
+	if toSize > 1 {
+		return nil
+	}
+	if toSize == 0 {
+		return NewEmptyMerkleTree()
+	} else {
+		return leaf
+	}
+}
+
+func (leaf *merkleTreeLeaf) GetPartials() []merkleAccumulator.LevelAndHash {
+	return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ Level: 0, Hash: leaf.hash } }
+}
+
 type merkleEmpty struct {
 	capacity uint64
 }
@@ -149,6 +166,17 @@ func (me *merkleEmpty) Serialize(wr io.Writer) error {
 }
 
 func (me *merkleEmpty) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
+	return []merkleAccumulator.LevelAndHash{}
+}
+
+func (me *merkleEmpty) Truncate(toSize uint64) MerkleTree {
+	if toSize != 0 {
+		return nil
+	}
+	return me
+}
+
+func (me *merkleEmpty) GetPartials() []merkleAccumulator.LevelAndHash {
 	return []merkleAccumulator.LevelAndHash{}
 }
 
@@ -229,7 +257,7 @@ func (mi *merkleInternal) Serialize(wr io.Writer) error {
 
 func (mi *merkleInternal) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
 	if before == 0 && after == mi.capacity {
-		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2ceil(mi.capacity), mi.hash } }
+		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2floor(mi.capacity), mi.hash } }
 	}
 	mid := mi.capacity / 2
 	if before >= mid {
@@ -238,7 +266,40 @@ func (mi *merkleInternal) ConsistencyProof(before, after uint64) []merkleAccumul
 	if after <= mid {
 		return mi.left.ConsistencyProof(before, after)
 	}
-	return append(mi.left.ConsistencyProof(before, mid), mi.right.ConsistencyProof(mid, after)...)
+	return append(mi.left.ConsistencyProof(before, mid), mi.right.ConsistencyProof(0, after-mid)...)
+}
+
+func (mi *merkleInternal) Truncate(toSize uint64) MerkleTree {
+	if toSize > mi.size {
+		return nil
+	}
+	if toSize == 0 {
+		return NewEmptyMerkleTree()
+	}
+	if toSize == mi.size {
+		return mi
+	}
+	mid := mi.capacity/2
+	if toSize <= mid {
+		return mi.left.Truncate(toSize)
+	} else {
+		right := mi.right.Truncate(toSize-mid)
+		for right.Capacity() < mi.left.Capacity() {
+			right = NewMerkleInternal(right, NewMerkleEmpty(right.Capacity()))
+		}
+		return NewMerkleInternal(mi.left, right)
+	}
+}
+
+func (mi *merkleInternal) GetPartials() []merkleAccumulator.LevelAndHash {
+	if mi.size == mi.capacity {
+		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ Level: util2.Log2floor(mi.capacity), Hash: mi.hash } }
+	}
+	if mi.size <= mi.capacity / 2 {
+		return mi.left.GetPartials()
+	} else {
+		return append(mi.left.GetPartials(), mi.right.GetPartials()...)
+	}
 }
 
 type merkleCompleteSubtreeSummary struct {
@@ -305,9 +366,23 @@ func (sum *merkleCompleteSubtreeSummary) Serialize(wr io.Writer) error {
 
 func (sum *merkleCompleteSubtreeSummary) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
 	if before == 0 && after == sum.capacity {
-		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2ceil(sum.capacity), sum.hash } }
+		return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ util2.Log2floor(sum.capacity), sum.hash } }
 	}
 	return nil  // error
+}
+
+func (sum *merkleCompleteSubtreeSummary) Truncate(toSize uint64) MerkleTree {
+	if toSize == 0 {
+		return NewEmptyMerkleTree()
+	} else if toSize == sum.capacity {
+		return sum
+	} else {
+		return nil
+	}
+}
+
+func (sum *merkleCompleteSubtreeSummary) GetPartials() []merkleAccumulator.LevelAndHash {
+	return []merkleAccumulator.LevelAndHash{ merkleAccumulator.LevelAndHash{ Level: util2.Log2floor(sum.capacity), Hash: sum.hash } }
 }
 
 func NewMerkleTreeFromReader(rd io.Reader) (MerkleTree, error) {
@@ -326,6 +401,25 @@ func NewMerkleTreeFromReader(rd io.Reader) (MerkleTree, error) {
 		return newMerkleSummaryFromReader(rd)
 	default:
 		return nil, errors.New("invalid node type in deserializing Merkle tree")
+	}
+}
+
+func MakeConciseConsistencyProof(tree MerkleTree, before, after uint64) merkleAccumulator.ConciseConsistencyProof {
+	verboseConsistencyProof := tree.ConsistencyProof(before, after)
+	proof := []common.Hash{}
+	beforeTree := tree.Truncate(before)
+	for _, landh := range beforeTree.GetPartials() {
+		proof = append(proof, landh.Hash)
+	}
+	for _, landh := range verboseConsistencyProof {
+		proof = append(proof, landh.Hash)
+	}
+	return merkleAccumulator.ConciseConsistencyProof{
+		before,
+		after,
+		beforeTree.Hash(),
+		tree.Truncate(after).Hash(),
+		proof,
 	}
 }
 
