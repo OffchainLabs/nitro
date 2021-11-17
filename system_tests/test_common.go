@@ -40,8 +40,8 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 			t.Fatal(err)
 		}
 	}
-	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+	if len(txs) > 0 {
+		_, err := arbnode.EnsureTxSucceeded(ctx, client, txs[len(txs)-1])
 		if err != nil {
 			t.Fatal(err)
 		}

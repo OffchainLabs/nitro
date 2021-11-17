@@ -46,7 +46,11 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 }
 
 func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	txRes, err := WaitForTx(ctx, client, tx.Hash(), time.Second)
+	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second)
+}
+
+func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
+	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
 		return nil, err
 	}

@@ -119,15 +119,13 @@ func TestTwoNodesLong(t *testing.T) {
 				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
-		// give the inbox reader a bit of time to pick up the delayed message
-		time.Sleep(time.Second)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1])
+	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	if err != nil {
 		t.Fatal("Failed waiting for Tx on main node", "err", err)
 	}
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientB, delayedTxs[len(delayedTxs)-1])
+	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	if err != nil {
 		t.Fatal("Failed waiting for Tx on secondary node", "err", err)
 	}
