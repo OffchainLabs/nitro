@@ -201,7 +201,12 @@ func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transac
 	case L1MessageType_L2FundedByL1:
 		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:
-		panic("unimplemented")
+		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
+		if err != nil {
+			panic(err)
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
@@ -230,7 +235,6 @@ const (
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
 	L2MessageKind_BrotliCompressed  = 9
-	L2MessageKind_SubmitRetryableTx = 10
 )
 
 func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
@@ -248,12 +252,6 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
 		tx, err := parseUnsignedTx(rd, l1Sender, requestId, L2MessageKind_ContractTx)
-		if err != nil {
-			return nil, err
-		}
-		return types.Transactions{tx}, nil
-	case L2MessageKind_SubmitRetryableTx:
-		tx, err := parseUnsignedTx(rd, l1Sender, requestId, L2MessageKind_SubmitRetryableTx)
 		if err != nil {
 			return nil, err
 		}
@@ -344,14 +342,6 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 		return nil, err
 	}
 
-	var beneficiary common.Address
-	if txKind == L2MessageKind_SubmitRetryableTx {
-		beneficiary, err = util.AddressFromReader(rd)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	calldata, err := io.ReadAll(rd)
 	if err != nil {
 		return nil, err
@@ -382,18 +372,6 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 			Value:     callvalue.Big(),
 			Data:      calldata,
 		}
-	case L2MessageKind_SubmitRetryableTx:
-		inner = &types.ArbitrumSubmitRetryableTx{
-			ChainId:     nil,
-			RequestId:   requestId,
-			From:        util.RemapL1Address(l1Sender),
-			GasPrice:    gasPrice.Big(),
-			Gas:         gasLimit.Big().Uint64(),
-			To:          destination,
-			Value:       callvalue.Big(),
-			Beneficiary: beneficiary,
-			Data:        calldata,
-		}
 	default:
 		panic("Invalid L2 tx type in parseUnsignedTx")
 	}
@@ -414,3 +392,62 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	}
 	return types.NewTx(tx), nil
 }
+
+func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
+	destAddr, err := util.AddressFrom256FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	pDestAddr := &destAddr
+	if destAddr == (common.Address{}) {
+		pDestAddr = nil
+	}
+	callvalue, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	depositValue, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	submissionFeePaid, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	feeRefundAddress, err := util.AddressFrom256FromReader(rd)
+	if err != nil { return nil, err }
+	callvalueRefundAddress, err := util.AddressFrom256FromReader(rd)
+	if err != nil { return nil, err }
+	maxGas, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	maxGasBig := maxGas.Big()
+	if ! maxGasBig.IsUint64() {
+		return nil, errors.New("gas too large")
+	}
+	gasPriceBid, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	dataLength256, err := util.HashFromReader(rd)
+	if err != nil { return nil, err }
+	dataLengthBig := dataLength256.Big()
+	if !dataLengthBig.IsUint64() {
+		return nil, errors.New("data length field too large")
+	}
+	dataLength := dataLengthBig.Uint64()
+	data := make([]byte, dataLength)
+	if dataLength > 0 {
+		if _, err := rd.Read(data); err != nil {
+			return nil, err
+		}
+	}
+	tx := &types.ArbitrumSubmitRetryableTx {
+		chainId,
+		header.RequestId,
+		header.Sender,
+		depositValue.Big(),
+		gasPriceBid.Big(),
+		maxGasBig.Uint64(),
+		pDestAddr,
+		callvalue.Big(),
+		callvalueRefundAddress,
+		submissionFeePaid.Big(),
+		feeRefundAddress,
+		data,
+	}
+	return types.NewTx(tx), nil
+}
+
+// destAddr, l2CallValue, maxSubmissionCost, excessFeeRefundAddress, callValueRefundAddress, maxGas, gasPriceBid, data

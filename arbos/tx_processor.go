@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -67,17 +68,28 @@ func (p *TxProcessor) getL1GasCharge() uint64 {
 	return l1ChargesBig.Uint64()
 }
 
-func (p *TxProcessor) InterceptMessage() (*core.ExecutionResult, error) {
-	if p.msg.From() != arbAddress {
+func (p *TxProcessor) StartTxHook() (*core.ExecutionResult, error) {
+	underlyingTx := p.msg.UnderlyingTransaction()
+	if underlyingTx == nil {
 		return nil, nil
 	}
-	// Message is deposit
-	p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
-	return &core.ExecutionResult{
-		UsedGas:    0,
-		Err:        nil,
-		ReturnData: nil,
-	}, nil
+	switch tx := underlyingTx.GetInner().(type) {
+	case *types.ArbitrumDepositTx:
+		if p.msg.From() != arbAddress {
+			return nil, nil
+		}
+		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		return &core.ExecutionResult{
+			UsedGas:    0,
+			Err:        nil,
+			ReturnData: nil,
+		}, nil
+	case *types.ArbitrumSubmitRetryableTx:
+		p.stateDB.AddBalance(tx.From, tx.DepositValue)
+		return nil, nil
+	default:
+		return nil, nil
+	}
 }
 
 func (p *TxProcessor) ExtraGasChargingHook(gasRemaining *uint64, gasPool *core.GasPool) error {

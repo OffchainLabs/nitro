@@ -6,127 +6,92 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/util"
-	"math/rand"
+	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"math/big"
 	"testing"
 	"time"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
-func TestRedeemNonExistentRetryable(t *testing.T) {
-	arbstate.RequireHookedGeth()
-	rand.Seed(time.Now().UTC().UnixNano())
+func TestSubmitRetryableImmediateSuccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
+	defer stack.Close()
 
-	arbRetryableAddress := common.HexToAddress("0x6e")
+	l2client := l2info.Client
+	l1client := l1info.Client
+	l2info.GenerateAccount("User2")
+	user2Address := l2info.GetAddress("User2")
 
-	backend, l2info := CreateTestL2(t)
-	client := ClientForArbBackend(t, backend)
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(arbRetryableAddress, client)
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownerOps := l2info.GetDefaultTransactOpts("Owner")
+	usertxopts := l1info.GetDefaultTransactOpts("faucet")
+	usertxopts.Value = new(big.Int).Mul(big.NewInt(1e12), big.NewInt(1e12))
 
-	ctx := context.Background()
-
-	tx, err := arbRetryableTx.Redeem(&ownerOps, [32]byte{})
-	failOnError(t, err, "Error executing redeem")
-
-	time.Sleep(4 * time.Millisecond) // allow some time for the receipt to show up
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-	failOnError(t, err, "Error getting receipt")
-	if receipt.Status != 0 {
-		t.Fatal("redeem of non-existent retryable reported success")
-	}
-}
-
-func TestSubmitRetryable(t *testing.T) {
-	arbstate.RequireHookedGeth()
-	rand.Seed(time.Now().UTC().UnixNano())
-
-	arbRetryableAddress := common.HexToAddress("0x6e")
-
-	backend, l2info := CreateTestL2(t)
-	client := ClientForArbBackend(t, backend)
-
-	ownerOps := l2info.GetDefaultTransactOpts("Owner")
-
-	ctx := context.Background()
-
-	chainId, err := client.ChainID(ctx)
+	l1tx, err := delayedInboxContract.CreateRetryableTicket(
+		&usertxopts,
+		user2Address,
+		big.NewInt(1e6),
+		big.NewInt(1e6),
+		user2Address,
+		user2Address,
+		big.NewInt(50001),
+		big.NewInt(params.InitialBaseFee * 2),
+		[]byte{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(arbRetryableAddress, client)
-	callOpts := bind.CallOpts{
-		Pending: false,
-		From: ownerOps.From,
-		BlockNumber: nil,
-		Context: ctx,
-	}
-	lifetime, err := arbRetryableTx.GetLifetime(&callOpts)
+	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = lifetime
-
-	requestId := common.BytesToHash([]byte{13})
-	retryableTx := types.ArbitrumSubmitRetryableTx{
-		ChainId:     chainId,
-		RequestId:   requestId,
-		From:        ownerOps.From,
-		GasPrice:    ownerOps.GasPrice,
-		Gas:         ownerOps.GasLimit,
-		To:          &arbRetryableAddress,
-		Value:       util.BigZero,
-		Beneficiary: ownerOps.From,
-		Data:        []byte{0x1c, 0x12, 0x3c, 0xf1},
+	if l1receipt.Status != 1 {
+		t.Fatal("l1receipt indicated failure")
 	}
-	tx := types.NewTx(&retryableTx)
 
-	err = client.SendTransaction(ctx, tx)
+	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var l2TxId *common.Hash
+	for _, log := range l1receipt.Logs {
+		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
+		if msg != nil {
+			id := common.BigToHash(msg.MessageNum)
+			l2TxId = &id
+		}
+	}
+	if l2TxId == nil {
+		t.Fatal()
+	}
 
-	time.Sleep(4 * time.Millisecond) // allow some time for the receipt to show up
-	_, err = arbnode.EnsureTxSucceeded(client, tx)
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+	}
+
+	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-	failOnError(t, err, "Error getting receipt")
-	fmt.Println("gas used: ", receipt.GasUsed)
-	reqId := receipt.TxHash
-
-	if receipt.Status == 0 {
-		t.Fatal("transaction failed")
+	if receipt.Status != 1 {
+		t.Fatal()
 	}
 
-	_, err = arbRetryableTx.GetTimeout(&callOpts, reqId)
-	if err == nil {
-		t.Fatal("unexpected success of GetTimeout for retryable that shouldn't exist")
-	}
-	if err.Error() != "ticketId not found" {
-		t.Fatal(err)
-	}
-
-	tx, err = arbRetryableTx.Redeem(&ownerOps, reqId)
+	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(4 * time.Millisecond) // allow some time for the receipt to show up
-	receipt, err = client.TransactionReceipt(ctx, tx.Hash())
-	failOnError(t, err, "Error getting receipt")
-	if receipt.Status != 0 {
-		t.Fatal("was able to redeem a retryable that should not have existed")
+	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
 	}
 }
