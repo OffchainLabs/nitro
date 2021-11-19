@@ -30,8 +30,6 @@ type ArbRetryableTx struct {
 	CanceledGasCost         func([32]byte) uint64
 }
 
-const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
-
 var (
 	NotFoundError = errors.New("ticketId not found")
 )
@@ -79,7 +77,7 @@ func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	if err := c.burn(1); err != nil {
 		return nil, err
 	}
-	return big.NewInt(RetryableLifetimeSeconds), nil
+	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
 func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
@@ -99,7 +97,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 	}
 	currentTime := evm.Context.Time.Uint64()
 	rs := arbos.OpenArbosState(evm.StateDB).RetryableState()
-	success := rs.Keepalive(ticketId, currentTime, currentTime+RetryableLifetimeSeconds, RetryableLifetimeSeconds)
+	success := rs.Keepalive(ticketId, currentTime, currentTime+retryables.RetryableLifetimeSeconds, retryables.RetryableLifetimeSeconds)
 	if !success {
 		return big.NewInt(0), NotFoundError
 	}

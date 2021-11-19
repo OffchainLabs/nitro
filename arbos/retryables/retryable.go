@@ -15,6 +15,8 @@ import (
 	"math/big"
 )
 
+const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
+
 type RetryableState struct {
 	retryables   *storage.Storage
 	timeoutQueue *storage.Queue
