@@ -228,6 +228,7 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	*blockBuilder = *arbos.NewBlockBuilder(statedb, block.Header(), s.bc)
 	return nil
 }
 
