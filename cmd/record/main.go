@@ -12,13 +12,34 @@ import (
 	"path/filepath"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 )
+
+type RecordingChainContext struct {
+	db                     ethdb.Database
+	minBlockNumberAccessed uint64
+}
+
+func (r *RecordingChainContext) Engine() consensus.Engine {
+	return arbos.Engine{}
+}
+
+func (r *RecordingChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
+	if num == 0 {
+		return nil
+	}
+	if num < r.minBlockNumberAccessed {
+		r.minBlockNumberAccessed = num
+	}
+	return rawdb.ReadHeader(r.db, hash, num)
+}
 
 func main() {
 	dbPath := flag.String("db-path", "", "The path to the Geth LevelDB database")
@@ -54,7 +75,7 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err))
 	}
 
-	chainContext := arbstate.NewRecordingChainContext(raw, lastBlockNumber)
+	chainContext := &RecordingChainContext{db: raw, minBlockNumberAccessed: lastBlockNumber}
 	builder := arbos.NewBlockBuilder(statedb, lastHeader, chainContext)
 	// TODO add message(s) to builder
 
@@ -65,7 +86,7 @@ func main() {
 	readDbEntries := recordingDb.GetRecordedEntries()
 	if *dbRecordOutputPath != "" {
 		// Fill in block headers to readDbEntries
-		for i := chainContext.GetMinBlockNumberAccessed(); i <= lastBlockNumber; i++ {
+		for i := chainContext.minBlockNumberAccessed; i <= lastBlockNumber; i++ {
 			hash := rawdb.ReadCanonicalHash(raw, i)
 			header := rawdb.ReadHeader(raw, hash, i)
 			bytes, err := rlp.EncodeToBytes(header)
