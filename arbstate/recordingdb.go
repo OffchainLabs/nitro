@@ -11,19 +11,22 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type RecordingDb struct {
-	inner         ethdb.Database
+	inner         ethdb.KeyValueStore
 	readDbEntries map[common.Hash][]byte
 }
 
-func NewRecordingDb(inner ethdb.Database) *RecordingDb {
+func NewRecordingDb(inner ethdb.KeyValueStore) *RecordingDb {
 	return &RecordingDb{inner, make(map[common.Hash][]byte)}
 }
 
@@ -122,16 +125,21 @@ func (i ErrorIterator) Value() []byte {
 func (i ErrorIterator) Release() {}
 
 type RecordingChainContext struct {
-	db                     ethdb.Database
+	bc                     core.ChainContext
 	minBlockNumberAccessed uint64
+	initialBlockNumber     uint64
 }
 
-func NewRecordingChainContext(inner ethdb.Database, blocknumber uint64) *RecordingChainContext {
-	return &RecordingChainContext{db: inner, minBlockNumberAccessed: blocknumber}
+func NewRecordingChainContext(inner core.ChainContext, blocknumber uint64) *RecordingChainContext {
+	return &RecordingChainContext{
+		bc:                     inner,
+		minBlockNumberAccessed: blocknumber,
+		initialBlockNumber:     blocknumber,
+	}
 }
 
 func (r *RecordingChainContext) Engine() consensus.Engine {
-	return arbos.Engine{}
+	return r.bc.Engine()
 }
 
 func (r *RecordingChainContext) GetHeader(hash common.Hash, num uint64) *types.Header {
@@ -141,9 +149,67 @@ func (r *RecordingChainContext) GetHeader(hash common.Hash, num uint64) *types.H
 	if num < r.minBlockNumberAccessed {
 		r.minBlockNumberAccessed = num
 	}
-	return rawdb.ReadHeader(r.db, hash, num)
+	return r.bc.GetHeader(hash, num)
 }
 
 func (r *RecordingChainContext) GetMinBlockNumberAccessed() uint64 {
 	return r.minBlockNumberAccessed
+}
+
+func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, recording bool) (*arbos.BlockBuilder, error) {
+	lastBlockHeader := blockchain.GetHeaderByHash(lastblockHash)
+	if lastBlockHeader == nil {
+		return nil, errors.New("block header not found")
+	}
+	statedb, err := blockchain.StateAt(lastBlockHeader.Root)
+	if err != nil {
+		return nil, err
+	}
+	if !recording {
+		return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain, nil, nil, nil), nil
+	}
+	rawKeyValue := blockchain.StateCache().TrieDB().DiskDB()
+	recordingKeyValue := NewRecordingDb(rawKeyValue)
+	recordingStateDatabase := state.NewDatabase(rawdb.NewDatabase(recordingKeyValue))
+	recordingStateDb, err := state.New(lastBlockHeader.Root, recordingStateDatabase, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !lastBlockHeader.Number.IsUint64() {
+		return nil, errors.New("block number not uint64")
+	}
+	recordingChainContext := NewRecordingChainContext(blockchain, lastBlockHeader.Number.Uint64())
+	return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain, recordingStateDb, recordingChainContext, recordingKeyValue), nil
+}
+
+func GetRecordsFromBuilder(builder *arbos.BlockBuilder) (map[common.Hash][]byte, error) {
+	recordingStateDb := builder.RecordingStateDB()
+	if recordingStateDb == nil {
+		return nil, errors.New("no recording statedb")
+	}
+	recordingKeyValue := builder.RecordingKeyValue()
+	recordingDb, ok := recordingKeyValue.(*RecordingDb)
+	if !ok {
+		return nil, errors.New("statedb does not have valid records")
+	}
+	entries := recordingDb.GetRecordedEntries()
+	chainContextIf := builder.RecordingChainContext()
+	recordingChainContext, ok := chainContextIf.(*RecordingChainContext)
+	if (recordingChainContext == nil) || (!ok) {
+		return nil, errors.New("recordingChainContext invalid")
+	}
+	blockchain, ok := recordingChainContext.bc.(*core.BlockChain)
+	if (blockchain == nil) || (!ok) {
+		return nil, errors.New("blockchain invalid")
+	}
+	for i := recordingChainContext.GetMinBlockNumberAccessed(); i <= recordingChainContext.initialBlockNumber; i++ {
+		header := blockchain.GetHeaderByNumber(i)
+		hash := header.Hash()
+		bytes, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			panic(fmt.Sprintf("Error RLP encoding header: %v\n", err))
+		}
+		entries[hash] = bytes
+	}
+	return entries, nil
 }

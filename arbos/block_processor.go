@@ -7,6 +7,7 @@ package arbos
 import (
 	"encoding/binary"
 	"math/big"
+	"reflect"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -48,6 +50,12 @@ type BlockBuilder struct {
 	lastBlockHeader *types.Header
 	chainContext    core.ChainContext
 
+	recordingStatedb      *state.StateDB
+	recordingChainContext core.ChainContext
+	recordingGasPool      core.GasPool
+	recordingHeader       *types.Header
+	recordingKeyValue     ethdb.KeyValueStore
+
 	// Setup based on first segment
 	blockInfo *L1Info
 	header    *types.Header
@@ -64,11 +72,14 @@ type BlockData struct {
 	Header *types.Header
 }
 
-func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *BlockBuilder {
+func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext, recordingstateDb *state.StateDB, recordingChainContext core.ChainContext, recordingKeyValue ethdb.KeyValueStore) *BlockBuilder {
 	return &BlockBuilder{
-		statedb:         statedb,
-		lastBlockHeader: lastBlockHeader,
-		chainContext:    chainContext,
+		statedb:               statedb,
+		lastBlockHeader:       lastBlockHeader,
+		chainContext:          chainContext,
+		recordingStatedb:      recordingstateDb,
+		recordingChainContext: recordingChainContext,
+		recordingKeyValue:     recordingKeyValue,
 	}
 }
 
@@ -162,6 +173,10 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 
 		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
 		b.gasPool = core.GasPool(b.header.GasLimit)
+		if b.recordingStatedb != nil {
+			b.recordingHeader = createNewHeader(b.lastBlockHeader, b.blockInfo)
+			b.recordingGasPool = b.gasPool
+		}
 	}
 
 	for _, tx := range segment.Txes {
@@ -186,6 +201,24 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			b.statedb.RevertToSnapshot(snap)
 			continue
+		}
+		if b.recordingStatedb != nil {
+			recReciept, err := core.ApplyTransaction(
+				ChainConfig,
+				b.recordingChainContext,
+				&b.recordingHeader.Coinbase,
+				&b.recordingGasPool,
+				b.recordingStatedb,
+				b.recordingHeader,
+				tx,
+				&b.recordingHeader.GasUsed,
+				vm.Config{},
+			)
+			if (err != nil) || !reflect.DeepEqual(recReciept.Logs, receipt.Logs) || !reflect.DeepEqual(b.header, b.recordingHeader) {
+				log.Error("recording transaction failed", "txhash", tx.Hash())
+				b.recordingChainContext = nil
+				b.recordingStatedb = nil
+			}
 		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
@@ -230,4 +263,16 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
+}
+
+func (b *BlockBuilder) RecordingStateDB() *state.StateDB {
+	return b.recordingStatedb
+}
+
+func (b *BlockBuilder) RecordingChainContext() core.ChainContext {
+	return b.recordingChainContext
+}
+
+func (b *BlockBuilder) RecordingKeyValue() ethdb.KeyValueStore {
+	return b.recordingKeyValue
 }

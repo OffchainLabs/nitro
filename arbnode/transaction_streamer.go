@@ -228,7 +228,11 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	*blockBuilder = *arbos.NewBlockBuilder(statedb, block.Header(), s.bc)
+	newbuilder, err := arbstate.CreateBlockBuilder(s.bc, block.Hash(), false)
+	if err != nil {
+		return err
+	}
+	*blockBuilder = *newbuilder
 	return nil
 }
 
@@ -500,11 +504,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
 	}
-	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+	blockBuilder, err := arbstate.CreateBlockBuilder(s.bc, lastBlockHeader.Hash(), false)
 	if err != nil {
 		return err
 	}
-	blockBuilder := arbos.NewBlockBuilder(statedb, lastBlockHeader, s.bc)
 	for pos < msgCount {
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
