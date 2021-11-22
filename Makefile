@@ -133,7 +133,8 @@ rollup/test/proofs/go.json: \
 		prover/test-cases/go/main \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/** \
-		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm
+		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm \
+		wasm-libraries/target/wasm32-wasi/debug/host_io.wasm
 	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -l wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm -o $@ -i 5000000
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
