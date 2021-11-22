@@ -33,9 +33,9 @@ func GetLastBlockHash() (hash common.Hash) {
 	return
 }
 
-func ReadInboxMessage() []byte {
+func ReadInboxMessage(msgNum uint64) []byte {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
-		return readInboxMessage(offset, buf)
+		return readInboxMessage(msgNum, offset, buf)
 	})
 }
 

@@ -48,8 +48,9 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 type WavmInbox struct{}
 
 func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
-	res := wavmio.ReadInboxMessage()
-	log.Info("PeekSequencerInbox", "res", res[:8])
+	pos := wavmio.GetInboxPosition()
+	res := wavmio.ReadInboxMessage(pos)
+	log.Info("PeekSequencerInbox", "pos", pos, "res[:8]", res[:8])
 	return res, nil
 }
 
