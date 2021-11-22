@@ -7,6 +7,7 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -194,8 +195,10 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
+	nodeconf := arbnode.NodeConfigL1Test
+	nodeconf.RecordPath = os.ExpandEnv("${ARBRECORDPATH}")
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, &arbnode.NodeConfigL1Test, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeconf, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
 	if err != nil {
 		t.Fatal(err)
 	}
