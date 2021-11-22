@@ -537,7 +537,6 @@ impl Module {
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
-
 #[derive(Clone, Debug)]
 pub struct GlobalState {
     pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
@@ -1492,10 +1491,7 @@ impl Machine {
                 } else {
                     let message = match self.inbox.get(&msg_num) {
                         Some(b) => b,
-                        None => panic!(
-                            "Missing requested inbox message {}",
-                            msg_num
-                        ),
+                        None => panic!("Missing requested inbox message {}", msg_num),
                     };
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));

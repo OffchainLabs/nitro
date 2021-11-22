@@ -153,7 +153,7 @@ fn main() -> Result<()> {
 
     let global_state = GlobalState {
         u64_vals: [opts.inbox_position, opts.position_within_message],
-        bytes32_vals : [last_block_hash],
+        bytes32_vals: [last_block_hash],
     };
 
     let mut mach = Machine::from_binary(
