@@ -111,6 +111,9 @@ wasm-libraries/soft-float/soft-float.wasm: \
 wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: wasm-libraries/go-stub/src/**
 	cd wasm-libraries && cargo build --target wasm32-wasi --package go-stub
 
+wasm-libraries/target/wasm32-wasi/debug/host_io.wasm: wasm-libraries/host-io/src/**
+	cd wasm-libraries && cargo build --target wasm32-wasi --package host-io
+
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
