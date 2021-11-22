@@ -78,11 +78,12 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
         }
         ("env", "wavm_read_inbox_message") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ValueType::I64, ValueType::I32, ValueType::I32],
                 outputs: vec![ValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
             insts.push(HirInstruction::Simple(Opcode::ReadInboxMessage));
         }
         ("env", "wavm_get_position_within_message") => {

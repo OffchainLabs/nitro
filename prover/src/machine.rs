@@ -1456,14 +1456,15 @@ impl Machine {
             Opcode::ReadInboxMessage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
+                let msg_num = self.value_stack.pop().unwrap().assume_u64();
                 if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    let message = match self.inbox.get(&self.global_state.inbox_position) {
+                    let message = match self.inbox.get(&msg_num) {
                         Some(b) => b,
                         None => panic!(
                             "Missing requested inbox message {}",
-                            self.global_state.inbox_position
+                            msg_num
                         ),
                     };
                     let offset = usize::try_from(offset).unwrap();
