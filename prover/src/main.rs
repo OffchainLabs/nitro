@@ -152,9 +152,8 @@ fn main() -> Result<()> {
         .wrap_err("failed to parse --last-block-hash contents")?;
 
     let global_state = GlobalState {
-        inbox_position: opts.inbox_position,
-        position_within_message: opts.position_within_message,
-        last_block_hash,
+        u64_vals: [opts.inbox_position, opts.position_within_message],
+        bytes32_vals : [last_block_hash],
     };
 
     let mut mach = Machine::from_binary(

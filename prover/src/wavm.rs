@@ -150,24 +150,20 @@ pub enum Opcode {
     CrossModuleCall,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
-    /// Writes the last block hash to the pointer on the stack
-    GetLastBlockHash,
-    /// Sets the last block hash to the value of pointer on the stack
-    SetLastBlockHash,
-    /// Advances the inbox position
-    AdvanceInboxPosition,
+    /// Gets bytes32 from global state
+    GetGlobalStateBytes32,
+    /// Sets bytes32 in global state
+    SetGlobalStateBytes32,
+    /// Gets u64 from global state
+    GetGlobalStateU64,
+    /// Sets u64 in global state
+    SetGlobalStateU64,
     /// Reads the preimage of a hash in-place into the pointer on the stack at an offset
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
-    /// Retrieves the "position in message" register (part of global state)
-    GetPositionWithinMessage,
-    /// Sets the "position in message" register (part of global state)
-    SetPositionWithinMessage,
     /// Reads a given delayed inbox message into the pointer on the stack at an offset
     ReadDelayedInboxMessage,
-    /// Puts the current inbox position on the stack
-    GetInboxPosition,
 }
 
 impl Opcode {
@@ -278,15 +274,13 @@ impl Opcode {
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
             Opcode::CallerModuleInternalCall => 0x800A,
-            Opcode::GetLastBlockHash => 0x800B,
-            Opcode::SetLastBlockHash => 0x800C,
-            Opcode::AdvanceInboxPosition => 0x800D,
-            Opcode::ReadPreImage => 0x800E,
-            Opcode::ReadInboxMessage => 0x800F,
-            Opcode::GetPositionWithinMessage => 0x8010,
-            Opcode::SetPositionWithinMessage => 0x8011,
-            Opcode::ReadDelayedInboxMessage => 0x8012,
-            Opcode::GetInboxPosition => 0x8013,
+            Opcode::GetGlobalStateBytes32 => 0x8010,
+            Opcode::SetGlobalStateBytes32 => 0x8011,
+            Opcode::GetGlobalStateU64 => 0x8012,
+            Opcode::SetGlobalStateU64 => 0x8013,
+            Opcode::ReadPreImage => 0x8020,
+            Opcode::ReadInboxMessage => 0x8021,
+            Opcode::ReadDelayedInboxMessage => 0x8022,
         }
     }
 }

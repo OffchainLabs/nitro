@@ -530,28 +530,41 @@ impl Module {
     }
 }
 
+// Globalstate holds:
+// bytes32 - lastblockhash
+// uint64 - inbox_position
+// uint64 - position_within_message
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
+pub const GLOBAL_STATE_U64_NUM: usize = 2;
+
+
 #[derive(Clone, Debug)]
 pub struct GlobalState {
-    pub last_block_hash: Bytes32,
-    pub inbox_position: u64,
-    pub position_within_message: u64,
+    pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
+    pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
 }
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        h.update(self.last_block_hash);
-        h.update(self.inbox_position.to_be_bytes());
-        h.update(self.position_within_message.to_be_bytes());
+        for item in self.bytes32_vals {
+            h.update(item)
+        }
+        for item in self.u64_vals {
+            h.update(item.to_be_bytes())
+        }
         h.finalize().into()
     }
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        data.extend(self.last_block_hash);
-        data.extend(self.inbox_position.to_be_bytes());
-        data.extend(&self.position_within_message.to_be_bytes());
+        for item in self.bytes32_vals {
+            data.extend(item)
+        }
+        for item in self.u64_vals {
+            data.extend(item.to_be_bytes())
+        }
         data
     }
 }
@@ -1411,28 +1424,45 @@ impl Machine {
                 let val = self.value_stack.last().cloned().unwrap();
                 self.value_stack.push(val);
             }
-            Opcode::GetLastBlockHash => {
+            Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
-                if !module
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.bytes32_vals.len() {
+                    self.halted = true;
+                } else if !module
                     .memory
-                    .store_slice_aligned(ptr.into(), &*self.global_state.last_block_hash)
+                    .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                 {
                     self.halted = true;
                 }
             }
-            Opcode::SetLastBlockHash => {
+            Opcode::SetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
-                if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                    self.global_state.last_block_hash = hash;
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.bytes32_vals.len() {
+                    self.halted = true;
+                } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                    self.global_state.bytes32_vals[idx] = hash;
                 } else {
                     self.halted = true;
                 }
             }
-            Opcode::AdvanceInboxPosition => {
-                if let Some(new_pos) = self.global_state.inbox_position.checked_add(1) {
-                    self.global_state.inbox_position = new_pos;
-                } else {
+            Opcode::GetGlobalStateU64 => {
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.u64_vals.len() {
                     self.halted = true;
+                } else {
+                    self.value_stack
+                        .push(Value::I64(self.global_state.u64_vals[idx]));
+                }
+            }
+            Opcode::SetGlobalStateU64 => {
+                let val = self.value_stack.pop().unwrap().assume_u64();
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.u64_vals.len() {
+                    self.halted = true;
+                } else {
+                    self.global_state.u64_vals[idx] = val
                 }
             }
             Opcode::ReadPreImage => {
@@ -1477,14 +1507,6 @@ impl Machine {
                     }
                 }
             }
-            Opcode::GetPositionWithinMessage => {
-                self.value_stack
-                    .push(Value::I64(self.global_state.position_within_message));
-            }
-            Opcode::SetPositionWithinMessage => {
-                self.global_state.position_within_message =
-                    self.value_stack.pop().unwrap().assume_u64();
-            }
             Opcode::ReadDelayedInboxMessage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
@@ -1506,10 +1528,6 @@ impl Machine {
                         self.halted = true;
                     }
                 }
-            }
-            Opcode::GetInboxPosition => {
-                self.value_stack
-                    .push(Value::I64(self.global_state.inbox_position));
             }
         }
     }
@@ -1684,12 +1702,10 @@ impl Machine {
         if let Some(next_inst) = func.code.get(self.pc.inst) {
             if matches!(
                 next_inst.opcode,
-                Opcode::AdvanceInboxPosition
-                    | Opcode::ReadInboxMessage
-                    | Opcode::SetLastBlockHash
-                    | Opcode::GetLastBlockHash
-                    | Opcode::GetPositionWithinMessage
-                    | Opcode::SetPositionWithinMessage
+                Opcode::GetGlobalStateBytes32
+                    | Opcode::SetGlobalStateBytes32
+                    | Opcode::GetGlobalStateU64
+                    | Opcode::SetGlobalStateU64
             ) {
                 data.extend(self.global_state.serialize());
             }
@@ -1790,7 +1806,7 @@ impl Machine {
                 }
             } else if matches!(
                 next_inst.opcode,
-                Opcode::GetLastBlockHash | Opcode::SetLastBlockHash,
+                Opcode::GetGlobalStateBytes32 | Opcode::SetGlobalStateBytes32,
             ) {
                 let ptr = self.value_stack.last().unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
