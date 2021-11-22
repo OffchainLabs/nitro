@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -47,26 +48,35 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 type WavmInbox struct{}
 
 func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
-	return wavmio.ReadInboxMessage(), nil
+	res := wavmio.ReadInboxMessage()
+	log.Info("PeekSequencerInbox", "res", res[:8])
+	return res, nil
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
-	return wavmio.GetInboxPosition()
+	pos := wavmio.GetInboxPosition()
+	log.Info("GetSequencerInboxPosition", "pos", pos)
+	return pos
 }
 
 func (i WavmInbox) AdvanceSequencerInbox() {
+	log.Info("AdvanceSequencerInbox")
 	wavmio.AdvanceInboxMessage()
 }
 
 func (i WavmInbox) GetPositionWithinMessage() uint64 {
-	return wavmio.GetPositionWithinMessage()
+	pos := wavmio.GetPositionWithinMessage()
+	log.Info("GetPositionWithinMessage", "pos", pos)
+	return pos
 }
 
 func (i WavmInbox) SetPositionWithinMessage(pos uint64) {
+	log.Info("SetPositionWithinMessage", "pos", pos)
 	wavmio.SetPositionWithinMessage(pos)
 }
 
 func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
+	log.Info("ReadDelayedMsg", "seqNum", seqNum)
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
@@ -112,6 +122,9 @@ func main() {
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
 	lastBlockHash := wavmio.GetLastBlockHash()
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlDebug)
+	log.Root().SetHandler(glogger)
 
 	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
 	var lastBlockHeader *types.Header
