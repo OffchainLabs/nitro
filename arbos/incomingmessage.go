@@ -7,6 +7,7 @@ package arbos
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 
@@ -121,6 +122,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
+	fmt.Println("=============== parsing incoming message")
 	var kindBuf [1]byte
 	_, err := rd.Read(kindBuf[:])
 	if err != nil {
@@ -187,6 +189,7 @@ func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (Message
 }
 
 func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transactions, error) {
+	fmt.Println("========= typeSpecificParse for type", msg.Header.Kind)
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
@@ -242,6 +245,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
 	}
+	fmt.Println("============ parsing L2 message type", l2KindBuf[0])
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:

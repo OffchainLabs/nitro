@@ -168,6 +168,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	for len(b.queuedRetries) > 0 || nextTxNum < len(segment.Txes) {
 		var tx *types.Transaction
 		if len(b.queuedRetries) > 0 {
+			fmt.Println("============ running retry tx")
 			retry := b.queuedRetries[0]
 			b.queuedRetries = b.queuedRetries[1:]
 			tx = arbosState.RetryableState().MakeRetryTx(retry, b.header.Time, ChainConfig.ChainID, b.header.BaseFee)
@@ -183,13 +184,13 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			tx = segment.Txes[nextTxNum]
 			nextTxNum++
 		}
+		fmt.Println("========= AddMessage processing message of type", tx.Type())
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore any transactions with higher than the max possible gas
 			continue
 		}
 		snap := b.statedb.Snapshot()
 		b.statedb.Prepare(tx.Hash(), len(b.txes))
-		fmt.Println("Trying tx type ", tx.Type())
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
 			b.chainContext,
@@ -205,6 +206,20 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			b.statedb.RevertToSnapshot(snap)
 			continue
+		}
+		if tx.Type() == types.ArbitrumSubmitRetryableTxType && receipt.Status == 0 {
+			fmt.Println("============ creating retryable", tx.Hash())
+			arbTx := tx.GetInner().(*types.ArbitrumSubmitRetryableTx)
+			arbosState.RetryableState().CreateRetryable(
+				b.header.Time,
+				tx.Hash(),
+				b.header.Time + retryables.RetryableLifetimeSeconds,
+				arbTx.From,
+				tx.To(),
+				tx.Value(),
+				arbTx.Beneficiary,
+				tx.Data(),
+			)
 		}
 		retryTx, isRetry := tx.GetInner().(*types.ArbitrumRetryTx)
 		if isRetry {

@@ -107,6 +107,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 }
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, error) {
+	fmt.Println("============= In Redeem")
 	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + con.RedeemScheduledGasCost(txId, txId, mathutil.BigZero, mathutil.BigZero, c.caller)); err != nil {
 		return common.Hash{}, err
 	}

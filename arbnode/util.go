@@ -32,9 +32,9 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 	defer headSubscribe.Unsubscribe()
 
 	for {
-		reciept, err := client.TransactionReceipt(ctx, txhash)
-		if reciept != nil {
-			return reciept, err
+		receipt, err := client.TransactionReceipt(ctx, txhash)
+		if receipt != nil {
+			return receipt, err
 		}
 		select {
 		case <-chanHead:
