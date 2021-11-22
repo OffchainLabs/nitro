@@ -99,10 +99,11 @@ type NodeConfig struct {
 	BatchPoster            bool
 	BatchPosterConfig      BatchPosterConfig
 	ForwardingTarget       string // "" if not forwarding
+	RecordPath             string // "" if not recording
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, ""}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, ""}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", ""}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", ""}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -118,7 +119,8 @@ type Node struct {
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
-	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain)
+	config.BatchPosterConfig.OutputPath = config.RecordPath
+	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, config.RecordPath)
 	if err != nil {
 		return nil, err
 	}
