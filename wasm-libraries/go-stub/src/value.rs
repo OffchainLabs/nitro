@@ -87,7 +87,7 @@ pub enum DynamicObject {
     FunctionWrapper(InterpValue, InterpValue),
     PendingEvent(PendingEvent),
     ValueArray(Vec<GoValue>),
-    Date(),
+    Date,
 }
 
 #[derive(Default, Debug)]
