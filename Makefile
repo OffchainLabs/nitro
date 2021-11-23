@@ -127,7 +127,7 @@ rollup/test/proofs/rust-%.json: \
 		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
+	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi
 
 rollup/test/proofs/go.json: \
 		prover/test-cases/go/main \
