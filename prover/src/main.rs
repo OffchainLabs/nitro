@@ -38,6 +38,8 @@ struct Opts {
     #[structopt(short = "b", long)]
     proving_backoff: bool,
     #[structopt(long)]
+    allow_hostapi: bool,
+    #[structopt(long)]
     always_merkleize: bool,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: usize,
@@ -160,6 +162,7 @@ fn main() -> Result<()> {
         libraries,
         main_mod,
         opts.always_merkleize,
+        opts.allow_hostapi,
         global_state,
         inbox,
         delayed_inbox,

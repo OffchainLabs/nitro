@@ -255,7 +255,7 @@ impl Module {
         bin: WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
-        is_library: bool,
+        allow_hostapi: bool,
     ) -> Module {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -292,8 +292,8 @@ impl Module {
                         "Import has different function signature than host function",
                     );
                     assert!(
-                        is_library,
-                        "Only libraries are allowed to use host function {}",
+                        allow_hostapi,
+                        "Calling hostapi directly is not allowed. Function {}",
                         import.name,
                     );
                 }
@@ -750,6 +750,7 @@ impl Machine {
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
         always_merkleize: bool,
+        allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox: HashMap<u64, Vec<u8>>,
         delayed_inbox: HashMap<u64, Vec<u8>>,
@@ -814,7 +815,7 @@ impl Machine {
             bin,
             &available_imports,
             &floating_point_impls,
-            false,
+            allow_hostapi_from_main,
         ));
 
         // Build the entrypoint module
