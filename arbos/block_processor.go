@@ -205,7 +205,10 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			continue
 		}
 		if tx.Type() == types.ArbitrumSubmitRetryableTxType && receipt.Status == 0 {
-			arbTx := tx.GetInner().(*types.ArbitrumSubmitRetryableTx)
+			arbTx, ok := tx.GetInner().(*types.ArbitrumSubmitRetryableTx)
+			if !ok {
+				panic("Tx of type ArbitrumSubmitRetryableTxType is somehow not an ")
+			}
 			arbosState.RetryableState().CreateRetryable(
 				b.header.Time,
 				tx.Hash(),

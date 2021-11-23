@@ -6,7 +6,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -182,7 +181,6 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	usertxopts = l1info.GetDefaultTransactOpts("faucet")
-	fmt.Println("============== submitting redeem message to delayed inbox")
 	l1tx, err = delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
 	if err != nil {
 		t.Fatal(err)

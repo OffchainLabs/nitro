@@ -206,7 +206,6 @@ func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transac
 	case L1MessageType_SubmitRetryable:
 		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
 		if err != nil {
-			panic(err)
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
@@ -454,18 +453,18 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		}
 	}
 	tx := &types.ArbitrumSubmitRetryableTx{
-		chainId,
-		header.RequestId,
-		header.Sender,
-		depositValue.Big(),
-		gasPriceBid.Big(),
-		maxGasBig.Uint64(),
-		pDestAddr,
-		callvalue.Big(),
-		callvalueRefundAddress,
-		submissionFeePaid.Big(),
-		feeRefundAddress,
-		data,
+		ChainId:           chainId,
+		RequestId:         header.RequestId,
+		From:              header.Sender,
+		DepositValue:      depositValue.Big(),
+		GasPrice:          gasPriceBid.Big(),
+		Gas:               maxGasBig.Uint64(),
+		To:                pDestAddr,
+		Value:             callvalue.Big(),
+		Beneficiary:       callvalueRefundAddress,
+		SubmissionFeePaid: submissionFeePaid.Big(),
+		FeeRefundAddr:     feeRefundAddress,
+		Data:              data,
 	}
 	return types.NewTx(tx), nil
 }
