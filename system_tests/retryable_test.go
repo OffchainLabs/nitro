@@ -169,11 +169,11 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	arbRetryableAddress := common.BigToAddress(big.NewInt(0x6e))
 	txData := &types.DynamicFeeTx{
 		To:        &arbRetryableAddress,
-		Gas:       50001,
+		Gas:       100001,
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     big.NewInt(0),
 		Nonce:     0,
-		Data:      append(arbRetryableTxAbi.Methods["Redeem"].ID, make([]byte, 32)...),
+		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, make([]byte, 32)...),
 	}
 	tx := l2info.SignTxAs("Owner", txData)
 	txbytes, err := tx.MarshalBinary()

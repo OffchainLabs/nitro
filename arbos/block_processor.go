@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math/big"
 	"time"
@@ -168,7 +167,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	for len(b.queuedRetries) > 0 || nextTxNum < len(segment.Txes) {
 		var tx *types.Transaction
 		if len(b.queuedRetries) > 0 {
-			fmt.Println("============ running retry tx")
 			retry := b.queuedRetries[0]
 			b.queuedRetries = b.queuedRetries[1:]
 			tx = arbosState.RetryableState().MakeRetryTx(retry, b.header.Time, ChainConfig.ChainID, b.header.BaseFee)
@@ -184,7 +182,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			tx = segment.Txes[nextTxNum]
 			nextTxNum++
 		}
-		fmt.Println("========= AddMessage processing message of type", tx.Type())
 		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore any transactions with higher than the max possible gas
 			continue
@@ -208,7 +205,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			continue
 		}
 		if tx.Type() == types.ArbitrumSubmitRetryableTxType && receipt.Status == 0 {
-			fmt.Println("============ creating retryable", tx.Hash())
 			arbTx := tx.GetInner().(*types.ArbitrumSubmitRetryableTx)
 			arbosState.RetryableState().CreateRetryable(
 				b.header.Time,
@@ -222,7 +218,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			)
 		}
 		retryTx, isRetry := tx.GetInner().(*types.ArbitrumRetryTx)
-		if isRetry {
+		if isRetry && receipt.Status == 1{
 			arbosState.RetryableState().DeleteRetryable(retryTx.TicketId)
 			unusedGas := tx.Gas() - receipt.GasUsed
 			if unusedGas > 0 {
@@ -259,6 +255,8 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	}
 
 	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
+
+	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 	b.header.Root = b.statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
@@ -273,8 +271,6 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	}
 
 	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
-
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
 	// Reset the block builder for the next block
 	receipts := b.receipts
