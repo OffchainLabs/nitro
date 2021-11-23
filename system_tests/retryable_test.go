@@ -46,7 +46,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		user2Address,
 		user2Address,
 		big.NewInt(50001),
-		big.NewInt(params.InitialBaseFee * 2),
+		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
 	)
 	if err != nil {
@@ -120,8 +120,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		big.NewInt(1e6),
 		user2Address,
 		user2Address,
-		big.NewInt(1),   // send inadequate L2 gas
-		big.NewInt(params.InitialBaseFee * 2),
+		big.NewInt(1), // send inadequate L2 gas
+		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
 	)
 	if err != nil {
@@ -218,4 +218,3 @@ func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient
 		})
 	}
 }
-

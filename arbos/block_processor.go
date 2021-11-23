@@ -209,7 +209,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			arbosState.RetryableState().CreateRetryable(
 				b.header.Time,
 				tx.Hash(),
-				b.header.Time + retryables.RetryableLifetimeSeconds,
+				b.header.Time+retryables.RetryableLifetimeSeconds,
 				arbTx.From,
 				tx.To(),
 				tx.Value(),
@@ -218,7 +218,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			)
 		}
 		retryTx, isRetry := tx.GetInner().(*types.ArbitrumRetryTx)
-		if isRetry && receipt.Status == 1{
+		if isRetry && receipt.Status == 1 {
 			arbosState.RetryableState().DeleteRetryable(retryTx.TicketId)
 			unusedGas := tx.Gas() - receipt.GasUsed
 			if unusedGas > 0 {

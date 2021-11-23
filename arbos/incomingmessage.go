@@ -237,7 +237,7 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
-	L2MessageKind_BrotliCompressed  = 9
+	L2MessageKind_BrotliCompressed = 9
 )
 
 func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
@@ -407,25 +407,41 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		pDestAddr = nil
 	}
 	callvalue, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	depositValue, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	submissionFeePaid, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	feeRefundAddress, err := util.AddressFrom256FromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	callvalueRefundAddress, err := util.AddressFrom256FromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	maxGas, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	maxGasBig := maxGas.Big()
-	if ! maxGasBig.IsUint64() {
+	if !maxGasBig.IsUint64() {
 		return nil, errors.New("gas too large")
 	}
 	gasPriceBid, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	dataLength256, err := util.HashFromReader(rd)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	dataLengthBig := dataLength256.Big()
 	if !dataLengthBig.IsUint64() {
 		return nil, errors.New("data length field too large")
@@ -437,7 +453,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 			return nil, err
 		}
 	}
-	tx := &types.ArbitrumSubmitRetryableTx {
+	tx := &types.ArbitrumSubmitRetryableTx{
 		chainId,
 		header.RequestId,
 		header.Sender,
