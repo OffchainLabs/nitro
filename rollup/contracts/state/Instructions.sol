@@ -137,15 +137,15 @@ library Instructions {
     uint16 constant DUP = 0x8008;
     uint16 constant CROSS_MODULE_CALL = 0x8009;
     uint16 constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
-    uint16 constant GET_LAST_BLOCK_HASH = 0x800B;
-    uint16 constant SET_LAST_BLOCK_HASH = 0x800C;
-    uint16 constant ADVANCE_INBOX_POSITION = 0x800D;
-    uint16 constant READ_PRE_IMAGE = 0x800E;
-    uint16 constant READ_INBOX_MESSAGE = 0x800F;
-    uint16 constant GET_POSITION_WITHIN_MESSAGE = 0x8010;
-    uint16 constant SET_POSITION_WITHIN_MESSAGE = 0x8011;
-    uint16 constant READ_DELAYED_INBOX_MESSAGE = 0x8012;
-    uint16 constant GET_INBOX_POSITION = 0x8013;
+
+    uint16 constant GET_GLOBAL_STATE_BYTES32 = 0x8010;
+    uint16 constant SET_GLOBAL_STATE_BYTES32 = 0x8011;
+    uint16 constant GET_GLOBAL_STATE_U64 = 0x8012;
+    uint16 constant SET_GLOBAL_STATE_U64 = 0x8013;
+
+    uint16 constant READ_PRE_IMAGE = 0x8020;
+    uint16 constant READ_INBOX_MESSAGE = 0x8021;
+    uint16 constant READ_DELAYED_INBOX_MESSAGE = 0x8022;
 
     function hash(Instruction memory inst) internal pure returns (bytes32) {
         return
