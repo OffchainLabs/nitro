@@ -116,7 +116,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash, adjustS
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
 	events := []MerkleTreeNodeEvent{}
 
-	acc.setSize(acc.size+1)
+	acc.setSize(acc.size + 1)
 
 	level := uint64(0)
 	soFar := itemHash.Bytes()
@@ -225,8 +225,8 @@ type ConciseConsistencyProof struct {
 	BeforeSize uint64
 	AfterSize  uint64
 	BeforeHash common.Hash
-	AfterHash common.Hash
-	Proof     []common.Hash
+	AfterHash  common.Hash
+	Proof      []common.Hash
 }
 
 func (ccp *ConciseConsistencyProof) Verify() bool {
@@ -250,7 +250,7 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 			// OK to panic here because the error should be impossible, can only happen if there is a bug in this function
 			panic("error building acc in ConciseConsistencyProof::Verify")
 		}
-		beforeSize -= 1<< level
+		beforeSize -= 1 << level
 		proof = proof[1:]
 	}
 	if acc.Root() != ccp.BeforeHash {
@@ -261,7 +261,7 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 	// upward pass
 	switchoverLevel := util_math.Log2floor(ccp.BeforeSize ^ ccp.AfterSize)
 	for level := uint64(0); level < switchoverLevel; level++ {
-		if acc.size & (1 << level) != 0 {
+		if acc.size&(1<<level) != 0 {
 			if len(proof) == 0 {
 				return false
 			}
@@ -275,7 +275,7 @@ func (ccp *ConciseConsistencyProof) Verify() bool {
 
 	// downward pass
 	for acc.size < ccp.AfterSize {
-		level := util_math.Log2floor(ccp.AfterSize-acc.size)
+		level := util_math.Log2floor(ccp.AfterSize - acc.size)
 		if len(proof) == 0 {
 			return false
 		}

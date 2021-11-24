@@ -137,9 +137,9 @@ func TestAccumulator4(t *testing.T) {
 const consistencyProofTestSize = 14
 
 func TestConsistencyProofs(t *testing.T) {
-	leaves := []common.Hash{ }
-	trees := []MerkleTree{ NewEmptyMerkleTree() }
-	accs := []*merkleAccumulator.MerkleAccumulator{ merkleAccumulator.NewNonpersistentMerkleAccumulator() }
+	leaves := []common.Hash{}
+	trees := []MerkleTree{NewEmptyMerkleTree()}
+	accs := []*merkleAccumulator.MerkleAccumulator{merkleAccumulator.NewNonpersistentMerkleAccumulator()}
 	for i := 1; i < consistencyProofTestSize; i++ {
 		newLeaf := pseudorandomForTesting(uint64(i))
 		leaves = append(leaves, newLeaf)
@@ -151,9 +151,9 @@ func TestConsistencyProofs(t *testing.T) {
 	finalTree := trees[consistencyProofTestSize-1]
 
 	for i := 0; i < consistencyProofTestSize; i++ {
-		for j := i+1; j < consistencyProofTestSize; j++ {
+		for j := i + 1; j < consistencyProofTestSize; j++ {
 			proof := finalTree.ConsistencyProof(uint64(i), uint64(j))
-			if ! accs[i].VerifyConsistencyProof(accs[j].Root(), proof) {
+			if !accs[i].VerifyConsistencyProof(accs[j].Root(), proof) {
 				t.Fatal(i, j, proof)
 			}
 

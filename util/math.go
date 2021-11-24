@@ -24,6 +24,6 @@ func Log2floor(value uint64) uint64 {
 	if value == 1<<l2c {
 		return l2c
 	} else {
-		return l2c-1
+		return l2c - 1
 	}
 }
