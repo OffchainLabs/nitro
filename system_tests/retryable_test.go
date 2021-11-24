@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"math/big"
@@ -190,6 +191,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// wait for redeem transaction to complete successfully
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	if err != nil {
@@ -199,12 +201,23 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		t.Fatal()
 	}
 
+	// verify that balance transfer happened, so we know the retry succeeded
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	// check the receipt for the retry
+	retryTxId := retryables.TxIdForRedeemAttempt(*l2TxId, big.NewInt(0))
+	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Status != 1 {
+		t.Fatal()
 	}
 }
 
