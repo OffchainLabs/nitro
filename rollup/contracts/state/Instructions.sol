@@ -145,7 +145,6 @@ library Instructions {
 
     uint16 constant READ_PRE_IMAGE = 0x8020;
     uint16 constant READ_INBOX_MESSAGE = 0x8021;
-    uint16 constant READ_DELAYED_INBOX_MESSAGE = 0x8022;
 
     function hash(Instruction memory inst) internal pure returns (bytes32) {
         return
