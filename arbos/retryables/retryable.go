@@ -6,7 +6,6 @@ package retryables
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -69,7 +68,6 @@ func (rs *RetryableState) CreateRetryable(
 	beneficiary common.Address,
 	calldata []byte,
 ) *Retryable {
-	fmt.Println("Created retryable with ID ", id)
 	rs.TryToReapOneRetryable(currentTimestamp)
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{

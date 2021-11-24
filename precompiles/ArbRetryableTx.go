@@ -6,7 +6,6 @@ package precompiles
 
 import (
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -116,7 +115,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, txId [32]byte) ([32]byte, erro
 	}
 	retryable := retryableState.OpenRetryable(txId, evm.Context.Time.Uint64())
 	if retryable == nil {
-		fmt.Println("Retryable ", txId, " doesn't exist")
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
