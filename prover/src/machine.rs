@@ -22,6 +22,7 @@ use std::{
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -539,6 +540,7 @@ pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[repr(C)]
 pub struct GlobalState {
     pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
     pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
@@ -593,9 +595,9 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = fn(inbox_idx: u64, seq_num: u64) -> Vec<u8>;
+pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
@@ -608,7 +610,7 @@ pub struct Machine {
     halted: bool,
     stdio_output: Vec<u8>,
     inbox_cache: HashMap<(u64, u64), Vec<u8>>,
-    inbox_reader: Box<InboxReaderFn>,
+    inbox_reader: Arc<InboxReaderFn>,
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -756,7 +758,7 @@ impl Machine {
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox_cache: HashMap<(u64, u64), Vec<u8>>,
-        inbox_reader: Box<InboxReaderFn>,
+        inbox_reader: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
@@ -955,7 +957,7 @@ impl Machine {
             halted: false,
             stdio_output: Vec::new(),
             inbox_cache,
-            inbox_reader,
+            inbox_reader: Arc::new(inbox_reader),
             preimages,
         }
     }

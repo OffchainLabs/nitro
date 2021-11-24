@@ -125,7 +125,7 @@ fn main() -> Result<()> {
         opts.allow_hostapi,
         global_state,
         inbox,
-        Box::new((|_, _| panic!("Inbox message not found")) as InboxReaderFn),
+        Box::new(|_, _| -> Vec<u8> { panic!("Inbox message not found") }) as InboxReaderFn,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());
