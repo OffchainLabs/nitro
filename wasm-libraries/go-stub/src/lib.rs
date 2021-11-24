@@ -186,6 +186,9 @@ unimpl_js!(
     go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
+    go__syscall_js_valueDelete,
+    go__syscall_js_valueInvoke,
+    go__syscall_js_valueInstanceOf,
 );
 
 #[no_mangle]
@@ -227,6 +230,12 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
                 args,
             );
         }
+    } else if class == DATE_ID {
+        let id = DynamicObjectPool::singleton()
+            .insert(DynamicObject::Date);
+        sp.write_u64(4, GoValue::Object(id).encode());
+        sp.write_u8(5, 1);
+        return;
     } else {
         eprintln!(
             "Go attempting to construct unimplemented JS value {}",
@@ -424,6 +433,24 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
             }
         }
         Ok(GoValue::Undefined)
+    } else if let InterpValue::Ref(obj_id) = object {
+        let val = DynamicObjectPool::singleton().get(obj_id);
+        if let Some(DynamicObject::Date) = val {
+            if &method_name == b"getTimezoneOffset" {
+                return Ok(GoValue::Number(0.0));
+            } else {
+                return Err(format!(
+                    "Go attempting to call unknown method {} for date object",
+                    String::from_utf8_lossy(&method_name),
+                ));
+            }
+        } else {
+            return Err(format!(
+                "Go attempting to call method {} for unknown object - id {}",
+                String::from_utf8_lossy(&method_name),
+                obj_id,
+            ));
+        }
     } else {
         Err(format!(
             "Go attempting to call unknown method {:?} . {}",
