@@ -99,7 +99,7 @@ func (leaf *merkleTreeLeaf) ConsistencyProof(before, after uint64) []merkleAccum
 	if before == after {
 		return []merkleAccumulator.LevelAndHash{}
 	}
-	return []merkleAccumulator.LevelAndHash{{0, leaf.hash}}
+	return []merkleAccumulator.LevelAndHash{{Level: 0, Hash: leaf.hash}}
 }
 
 func (leaf *merkleTreeLeaf) Truncate(toSize uint64) MerkleTree {
@@ -257,7 +257,7 @@ func (mi *merkleInternal) Serialize(wr io.Writer) error {
 
 func (mi *merkleInternal) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
 	if before == 0 && after == mi.capacity {
-		return []merkleAccumulator.LevelAndHash{{util2.Log2floor(mi.capacity), mi.hash}}
+		return []merkleAccumulator.LevelAndHash{{Level: util2.Log2floor(mi.capacity), Hash: mi.hash}}
 	}
 	mid := mi.capacity / 2
 	if before >= mid {
@@ -366,7 +366,7 @@ func (sum *merkleCompleteSubtreeSummary) Serialize(wr io.Writer) error {
 
 func (sum *merkleCompleteSubtreeSummary) ConsistencyProof(before, after uint64) []merkleAccumulator.LevelAndHash {
 	if before == 0 && after == sum.capacity {
-		return []merkleAccumulator.LevelAndHash{{util2.Log2floor(sum.capacity), sum.hash}}
+		return []merkleAccumulator.LevelAndHash{{Level: util2.Log2floor(sum.capacity), Hash: sum.hash}}
 	}
 	return nil // error
 }
@@ -415,11 +415,11 @@ func MakeConciseConsistencyProof(tree MerkleTree, before, after uint64) merkleAc
 		proof = append(proof, landh.Hash)
 	}
 	return merkleAccumulator.ConciseConsistencyProof{
-		before,
-		after,
-		beforeTree.Hash(),
-		tree.Truncate(after).Hash(),
-		proof,
+		BeforeSize: before,
+		AfterSize:  after,
+		BeforeHash: beforeTree.Hash(),
+		AfterHash:  tree.Truncate(after).Hash(),
+		Proof:      proof,
 	}
 }
 
