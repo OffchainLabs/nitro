@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos/util"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -30,11 +32,12 @@ type blockTestState struct {
 	blockNumber uint64
 }
 
-func TestInboxState(t *testing.T) {
+func TestTransactionStreamer(t *testing.T) {
 	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
-	genesisAlloc[ownerAddress] = core.GenesisAccount{
+	genesisAlloc[rewrittenOwnerAddress] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether),
 		Nonce:      0,
 		PrivateKey: nil,
@@ -63,18 +66,20 @@ func TestInboxState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inbox, err := NewInboxState(db, bc)
+	inbox, err := NewTransactionStreamer(db, bc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inbox.Start(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	inbox.Start(ctx)
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]uint64{
-			ownerAddress: params.Ether,
+			rewrittenOwnerAddress: params.Ether,
 		},
-		accounts:    []common.Address{ownerAddress},
+		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 0,
 		blockNumber: 0,
 	})
@@ -122,7 +127,7 @@ func TestInboxState(t *testing.T) {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,
-							Sender: source,
+							Sender: util.InverseRemapL1Address(source),
 						},
 						L2msg: l2Message,
 					},

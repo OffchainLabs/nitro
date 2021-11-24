@@ -5,8 +5,6 @@
 package arbstate
 
 import (
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -14,9 +12,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
-var chainId = big.NewInt(0xA4B12) // TODO
-
-func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, inbox InboxBackend) *types.Block {
+func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, inbox InboxBackend) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -26,26 +22,30 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 	for {
 		message, err := inboxMultiplexer.Peek()
 		if err != nil {
-			log.Warn("error parsing inbox message: %v", err)
-			inboxMultiplexer.Advance()
-			break
+			return nil, err
 		}
-		segment, err := arbos.IncomingMessageToSegment(message.Message, chainId)
+		segment, err := arbos.IncomingMessageToSegment(message.Message, arbos.ChainConfig.ChainID)
 		if err != nil {
-			log.Warn("error parsing incoming message: %v", err)
-			inboxMultiplexer.Advance()
+			log.Warn("error parsing incoming message", "err", err)
+			err = inboxMultiplexer.Advance()
+			if err != nil {
+				return nil, err
+			}
 			break
 		}
 		// Always passes if the block is empty
 		if !blockBuilder.ShouldAddMessage(segment) {
 			break
 		}
-		inboxMultiplexer.Advance()
+		err = inboxMultiplexer.Advance()
+		if err != nil {
+			return nil, err
+		}
 		blockBuilder.AddMessage(segment)
 		if message.MustEndBlock {
 			break
 		}
 	}
 	block, _, _ := blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
-	return block
+	return block, nil
 }

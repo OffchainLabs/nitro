@@ -9,12 +9,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	util_math "github.com/offchainlabs/arbstate/util"
 )
 
 type MerkleAccumulator struct {
 	backingStorage *storage.Storage
-	size           uint64
-	numPartials    uint64
+	size           uint64         // stored in backingStorage, slot 0, if backingStorage exists
+	numPartials    uint64         // not stored in the DB, but calculated from size
 	partials       []*common.Hash // nil means we haven't yet loaded it from backingStorage
 }
 
@@ -40,13 +41,17 @@ func InitializeMerkleAccumulatorFromPartials(sto *storage.Storage, partials []co
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
-	size := sto.GetByInt64(0).Big().Uint64()
-	numPartials := sto.GetByInt64(1).Big().Uint64()
+	size := sto.GetByUint64(0).Big().Uint64()
+	numPartials := CalcNumPartials(size)
 	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
+}
+
+func CalcNumPartials(size uint64) uint64 {
+	return util_math.Log2ceil(size)
 }
 
 func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) *MerkleAccumulator {
@@ -72,7 +77,7 @@ func (acc *MerkleAccumulator) NonPersistentClone() *MerkleAccumulator {
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
 	if acc.partials[level] == nil {
 		if acc.backingStorage != nil {
-			h := acc.backingStorage.GetByInt64(int64(2 + level))
+			h := acc.backingStorage.GetByUint64(2 + level)
 			acc.partials[level] = &h
 		} else {
 			h := common.Hash{}
@@ -94,22 +99,21 @@ func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 	if level == acc.numPartials {
 		acc.numPartials++
-		if acc.backingStorage != nil {
-			acc.backingStorage.SetByInt64(1, util.IntToHash(int64(acc.numPartials)))
-		}
 		acc.partials = append(acc.partials, val)
 	} else {
 		acc.partials[level] = val
 	}
 	if acc.backingStorage != nil {
-		acc.backingStorage.SetByInt64(int64(2+level), *val)
+		acc.backingStorage.SetByUint64(2+level, *val)
 	}
 }
 
-func (acc *MerkleAccumulator) Append(itemHash common.Hash) *MerkleAccumulatorUpdateEvent {
+func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
 	acc.size++
+	events := []MerkleTreeNodeEvent{}
+
 	if acc.backingStorage != nil {
-		acc.backingStorage.SetByInt64(0, util.IntToHash(int64(acc.size)))
+		acc.backingStorage.SetByUint64(0, util.UintToHash(acc.size))
 	}
 	level := uint64(0)
 	soFar := itemHash.Bytes()
@@ -117,18 +121,19 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) *MerkleAccumulatorUpd
 		if level == acc.numPartials {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
+			return events
 		}
 		thisLevel := acc.getPartial(level)
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
-			return &MerkleAccumulatorUpdateEvent{level, acc.size - 1, h}
+			return events
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}
 		acc.setPartial(level, &h)
 		level += 1
+		events = append(events, MerkleTreeNodeEvent{level, acc.size - 1, common.BytesToHash(soFar)})
 	}
 }
 
@@ -177,8 +182,8 @@ func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, p
 	return
 }
 
-type MerkleAccumulatorUpdateEvent struct {
-	Level   uint64
-	LeafNum uint64
-	Hash    common.Hash
+type MerkleTreeNodeEvent struct {
+	Level     uint64
+	NumLeaves uint64
+	Hash      common.Hash
 }

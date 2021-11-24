@@ -29,7 +29,7 @@ type ArbosState struct {
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      *uint64
+	timestamp      *storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
 
@@ -40,7 +40,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
-		backingStorage.GetByInt64(int64(versionKey)).Big().Uint64(),
+		backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64(),
 		nil,
 		nil,
 		nil,
@@ -49,13 +49,13 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		nil,
 		nil,
 		nil,
-		nil,
+		backingStorage.OpenStorageBackedUint64(util.UintToHash(uint64(timestampKey))),
 		backingStorage,
 	}
 }
 
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.GetByInt64(int64(versionKey)).Big().Uint64()
+	formatVersion := backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64()
 	switch formatVersion {
 	case 0:
 		upgrade_0_to_1(backingStorage)
@@ -88,11 +88,11 @@ var (
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
-	backingStorage.SetByInt64(int64(versionKey), util.IntToHash(1))
-	backingStorage.SetByInt64(int64(gasPoolKey), util.IntToHash(GasPoolMax))
-	backingStorage.SetByInt64(int64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
-	backingStorage.SetByInt64(int64(gasPriceKey), util.IntToHash(InitialGasPriceWei)) // 1 gwei
-	backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(0))
+	backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(1))
+	backingStorage.SetByUint64(uint64(gasPoolKey), util.IntToHash(GasPoolMax))
+	backingStorage.SetByUint64(uint64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
+	backingStorage.SetByUint64(uint64(gasPriceKey), util.UintToHash(InitialGasPriceWei))
+	backingStorage.SetByUint64(uint64(timestampKey), util.UintToHash(0))
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
@@ -106,47 +106,47 @@ func (state *ArbosState) FormatVersion() uint64 {
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.formatVersion = val
-	state.backingStorage.SetByInt64(int64(versionKey), util.IntToHash(int64(val)))
+	state.backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(val))
 }
 
 func (state *ArbosState) GasPool() int64 {
 	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.IntToHash(int64(gasPoolKey)))
+		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
 	}
 	return state.gasPool.Get()
 }
 
 func (state *ArbosState) SetGasPool(val int64) {
 	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.IntToHash(int64(gasPoolKey)))
+		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
 	}
 	state.gasPool.Set(val)
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
 	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.IntToHash(int64(smallGasPoolKey)))
+		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
 	}
 	return state.smallGasPool.Get()
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
 	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.IntToHash(int64(smallGasPoolKey)))
+		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
 	}
 	state.smallGasPool.Set(val)
 }
 
 func (state *ArbosState) GasPriceWei() *big.Int {
 	if state.gasPriceWei == nil {
-		state.gasPriceWei = state.backingStorage.GetByInt64(int64(gasPriceKey)).Big()
+		state.gasPriceWei = state.backingStorage.GetByUint64(uint64(gasPriceKey)).Big()
 	}
 	return state.gasPriceWei
 }
 
 func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
-	state.backingStorage.SetByInt64(int64(gasPriceKey), common.BigToHash(val))
+	state.backingStorage.SetByUint64(uint64(gasPriceKey), common.BigToHash(val))
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
@@ -185,26 +185,17 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
-	if state.timestamp == nil {
-		ts := state.backingStorage.GetByInt64(int64(timestampKey)).Big().Uint64()
-		state.timestamp = &ts
-	}
-	return *state.timestamp
+	return state.timestamp.Get()
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	if state.timestamp == nil {
-		ts := state.backingStorage.GetByInt64(int64(timestampKey)).Big().Uint64()
-		state.timestamp = &ts
-	}
-	if val < *state.timestamp {
+	ts := state.timestamp.Get()
+	if val < ts {
 		panic("timestamp decreased")
 	}
-	if val > *state.timestamp {
-		delta := val - *state.timestamp
-		ts := val
-		state.timestamp = &ts
-		state.backingStorage.SetByInt64(int64(timestampKey), util.IntToHash(int64(ts)))
+	if val > ts {
+		delta := val - ts
+		state.timestamp.Set(val)
 		state.notifyGasPricerThatTimeElapsed(delta)
 	}
 }

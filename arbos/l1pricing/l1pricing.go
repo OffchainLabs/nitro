@@ -32,18 +32,18 @@ var (
 )
 
 const (
-	defaultAggregatorAddressOffset int64 = 0
-	l1GasPriceEstimateOffset       int64 = 1
+	defaultAggregatorAddressOffset uint64 = 0
+	l1GasPriceEstimateOffset       uint64 = 1
 )
 
 func InitializeL1PricingState(sto *storage.Storage) {
-	sto.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
-	sto.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
+	sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	sto.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
-	defaultAggregator := common.BytesToAddress(sto.GetByInt64(defaultAggregatorAddressOffset).Bytes())
-	l1GasPriceEstimate := sto.GetByInt64(l1GasPriceEstimateOffset).Big()
+	defaultAggregator := common.BytesToAddress(sto.GetByUint64(defaultAggregatorAddressOffset).Bytes())
+	l1GasPriceEstimate := sto.GetByUint64(l1GasPriceEstimateOffset).Big()
 	return &L1PricingState{
 		sto,
 		defaultAggregator,
@@ -61,7 +61,7 @@ func (ps *L1PricingState) DefaultAggregator() common.Address {
 
 func (ps *L1PricingState) SetDefaultAggregator(aggregator common.Address) {
 	ps.defaultAggregator = aggregator
-	ps.storage.SetByInt64(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
+	ps.storage.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(aggregator.Bytes()))
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() *big.Int {
@@ -78,7 +78,7 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) {
 		),
 		big.NewInt(L1GasPriceEstimateSamplesInAverage),
 	)
-	ps.storage.SetByInt64(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
+	ps.storage.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(ps.l1GasPriceEstimate))
 }
 
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) {

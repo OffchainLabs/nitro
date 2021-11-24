@@ -13,6 +13,18 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var AddressAliasOffset *big.Int
+var InverseAddressAliasOffset *big.Int
+
+func init() {
+	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
+	if !success {
+		panic("Error initializing AddressAliasOffset")
+	}
+	AddressAliasOffset = offset
+	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
+}
+
 func HashFromReader(rd io.Reader) (common.Hash, error) {
 	buf := make([]byte, 32)
 	if _, err := io.ReadFull(rd, buf); err != nil {
@@ -96,6 +108,26 @@ func IntToHash(val int64) common.Hash {
 	return common.BigToHash(big.NewInt(val))
 }
 
+func UintToHash(val uint64) common.Hash {
+	return common.BigToHash(new(big.Int).SetUint64(val))
+}
+
 func HashPlusInt(x common.Hash, y int64) common.Hash {
 	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+}
+
+func RemapL1Address(l1Addr common.Address) common.Address {
+	sumBytes := new(big.Int).Add(new(big.Int).SetBytes(l1Addr.Bytes()), AddressAliasOffset).Bytes()
+	if len(sumBytes) > 20 {
+		sumBytes = sumBytes[len(sumBytes)-20:]
+	}
+	return common.BytesToAddress(sumBytes)
+}
+
+func InverseRemapL1Address(l1Addr common.Address) common.Address {
+	sumBytes := new(big.Int).Add(new(big.Int).SetBytes(l1Addr.Bytes()), InverseAddressAliasOffset).Bytes()
+	if len(sumBytes) > 20 {
+		sumBytes = sumBytes[len(sumBytes)-20:]
+	}
+	return common.BytesToAddress(sumBytes)
 }

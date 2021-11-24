@@ -6,9 +6,11 @@ package merkletree
 
 import (
 	"bytes"
+	"encoding/binary"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"testing"
 )
 
 func TestEmptyAccumulator(t *testing.T) {
@@ -160,4 +162,10 @@ func testSerDe(tree MerkleTree, t *testing.T) {
 	if tree.Hash() != result.Hash() {
 		t.Fatal()
 	}
+}
+
+func pseudorandomForTesting(x uint64) common.Hash {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], x)
+	return crypto.Keccak256Hash(buf[:])
 }

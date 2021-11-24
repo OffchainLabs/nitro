@@ -53,12 +53,12 @@ func init() {
 type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
-	fromBlock        int64
+	fromBlock        uint64
 	client           L1Interface
 	messageProviders map[common.Address]*bridgegen.IMessageProvider
 }
 
-func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) (*DelayedBridge, error) {
+func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
@@ -73,14 +73,21 @@ func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock int64) 
 	}, nil
 }
 
+func (b *DelayedBridge) FirstBlock() *big.Int {
+	return new(big.Int).SetUint64(b.fromBlock)
+}
+
 func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.Int) (uint64, error) {
+	if (blockNumber != nil) && blockNumber.Cmp(new(big.Int).SetUint64(b.fromBlock)) < 0 {
+		return 0, nil
+	}
 	opts := &bind.CallOpts{
 		Context:     ctx,
 		BlockNumber: blockNumber,
 	}
 	bigRes, err := b.con.MessageCount(opts)
 	if err != nil {
-		return 0, err
+		return 0, errors.WithStack(err)
 	}
 	if !bigRes.IsUint64() {
 		return 0, errors.New("DelayedBridge MessageCount doesn't make sense!")
@@ -172,7 +179,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 
 	messageData := make(map[common.Hash][]byte)
 	if err := b.fillMessageData(ctx, inboxAddresses, messageIds, messageData, minBlockNum, maxBlockNum); err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
 	messages := make([]*DelayedInboxMessage, 0, len(logs))
@@ -248,7 +255,7 @@ func (b *DelayedBridge) parseMessage(ctx context.Context, ethLog types.Log) (*bi
 		var err error
 		con, err = bridgegen.NewIMessageProvider(ethLog.Address, b.client)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, errors.WithStack(err)
 		}
 		b.messageProviders[ethLog.Address] = con
 	}

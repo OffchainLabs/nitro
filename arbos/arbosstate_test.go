@@ -43,8 +43,8 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 		t.Fail()
 	}
 
-	loc1 := util.IntToHash(99)
-	val1 := util.IntToHash(1351908)
+	loc1 := util.UintToHash(99)
+	val1 := util.UintToHash(1351908)
 
 	st.Set(loc1, val1)
 	if st.Get(common.Hash{}) != (common.Hash{}) {
