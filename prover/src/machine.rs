@@ -18,6 +18,7 @@ use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
+    collections::hash_map,
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
@@ -537,7 +538,7 @@ impl Module {
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GlobalState {
     pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
     pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
@@ -592,6 +593,8 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
+pub type InboxReaderFn = fn(inbox_idx: u64, seq_num: u64) -> Vec<u8>;
+
 #[derive(Clone, Debug)]
 pub struct Machine {
     value_stack: Vec<Value>,
@@ -604,8 +607,8 @@ pub struct Machine {
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
-    inbox: HashMap<u64, Vec<u8>>,
-    delayed_inbox: HashMap<u64, Vec<u8>>,
+    inbox_cache: HashMap<(u64, u64), Vec<u8>>,
+    inbox_reader: Box<InboxReaderFn>,
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -752,8 +755,8 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox: HashMap<u64, Vec<u8>>,
-        delayed_inbox: HashMap<u64, Vec<u8>>,
+        inbox_cache: HashMap<(u64, u64), Vec<u8>>,
+        inbox_reader: Box<InboxReaderFn>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
@@ -951,8 +954,8 @@ impl Machine {
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
-            inbox,
-            delayed_inbox,
+            inbox_cache,
+            inbox_reader,
             preimages,
         }
     }
@@ -1490,9 +1493,13 @@ impl Machine {
                 if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    let message = match self.inbox.get(&msg_num) {
-                        Some(b) => b,
-                        None => panic!("Missing requested inbox message {}", msg_num),
+                    let entry = self.inbox_cache.entry((inst.argument_data, msg_num));
+                    let message: &[u8] = match entry {
+                        hash_map::Entry::Occupied(e) => e.into_mut(),
+                        hash_map::Entry::Vacant(e) => {
+                            let msg = (self.inbox_reader)(inst.argument_data, msg_num);
+                            e.insert(msg)
+                        }
                     };
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));
@@ -1500,28 +1507,6 @@ impl Machine {
                     if module.memory.store_slice_aligned(ptr.into(), read) {
                         self.value_stack.push(Value::I32(len as u32));
                     } else {
-                        self.halted = true;
-                    }
-                }
-            }
-            Opcode::ReadDelayedInboxMessage => {
-                let offset = self.value_stack.pop().unwrap().assume_u32();
-                let ptr = self.value_stack.pop().unwrap().assume_u32();
-                let seq_num = self.value_stack.pop().unwrap().assume_u64();
-                if ptr as u64 + 32 > module.memory.size() {
-                    self.halted = true;
-                } else {
-                    if let Some(message) = self.delayed_inbox.get(&seq_num) {
-                        let offset = usize::try_from(offset).unwrap();
-                        let len = std::cmp::min(32, message.len().saturating_sub(offset));
-                        let read = message.get(offset..(offset + len)).unwrap_or_default();
-                        if module.memory.store_slice_aligned(ptr.into(), read) {
-                            self.value_stack.push(Value::I32(len as u32));
-                        } else {
-                            self.halted = true;
-                        }
-                    } else {
-                        eprintln!("Missing requested delayed inbox message {}", seq_num);
                         self.halted = true;
                     }
                 }
