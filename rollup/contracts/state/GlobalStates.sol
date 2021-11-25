@@ -18,5 +18,4 @@ library GlobalStates {
 			state.u64_vals[1]
 		));
 	}
-
 }

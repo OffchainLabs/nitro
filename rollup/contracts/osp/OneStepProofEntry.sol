@@ -118,13 +118,10 @@ contract OneStepProofEntry {
                 proof[offset:]
             );
         } else if (
-            (opcode == Instructions.GET_LAST_BLOCK_HASH ||
-                opcode == Instructions.SET_LAST_BLOCK_HASH) ||
-            opcode == Instructions.ADVANCE_INBOX_POSITION ||
-            opcode == Instructions.READ_PRE_IMAGE ||
-            opcode == Instructions.READ_INBOX_MESSAGE ||
-            opcode == Instructions.GET_POSITION_WITHIN_MESSAGE ||
-            opcode == Instructions.SET_POSITION_WITHIN_MESSAGE
+            (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
+                opcode <= Instructions.SET_GLOBAL_STATE_U64) ||
+            (opcode >= Instructions.READ_PRE_IMAGE &&
+                opcode <= Instructions.READ_DELAYED_INBOX_MESSAGE)
         ) {
             (mach, mod) = proverHostIo.executeOneStep(
                 mach,
