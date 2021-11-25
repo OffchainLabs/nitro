@@ -64,10 +64,7 @@ contract OneStepProverHostIo is IOneStepProver {
 
     function executeGetU64(
         Machine memory mach,
-        Module memory mod,
-        GlobalState memory state,
-        Instruction calldata inst,
-        bytes calldata proof
+        GlobalState memory state
     ) internal pure {
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
@@ -84,10 +81,7 @@ contract OneStepProverHostIo is IOneStepProver {
 
     function executeSetU64(
         Machine memory mach,
-        Module memory mod,
-        GlobalState memory state,
-        Instruction calldata inst,
-        bytes calldata proof
+        GlobalState memory state
     ) internal pure {
         uint64 val = Values.assumeI64(ValueStacks.pop(mach.valueStack));
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
@@ -204,20 +198,16 @@ contract OneStepProverHostIo is IOneStepProver {
             "BAD_GLOBAL_STATE"
         );
 
-        function(Machine memory, Module memory, GlobalState memory, Instruction calldata, bytes calldata) internal pure impl;
-
         if (opcode == Instructions.GET_GLOBAL_STATE_BYTES32 ||
             opcode == Instructions.SET_GLOBAL_STATE_BYTES32) {
-            impl = executeGetOrSetBytes32;
+            executeGetOrSetBytes32(mach, mod, state, inst, proof[proofOffset:]);
         } else if (opcode == Instructions.GET_GLOBAL_STATE_U64) {
-            impl = executeGetU64;
+            executeGetU64(mach, state);
         } else if (opcode == Instructions.SET_GLOBAL_STATE_U64) {
-            impl = executeSetU64;
+            executeSetU64(mach, state);
         } else {
             revert("INVALID_GLOBALSTATE_OPCODE");
         }
-
-        impl(mach, mod, state, inst, proof[proofOffset:]);
 
         mach.globalStateHash = GlobalStates.hash(state);
 
