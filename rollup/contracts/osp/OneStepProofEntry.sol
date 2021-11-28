@@ -120,8 +120,8 @@ contract OneStepProofEntry {
         } else if (
             (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
                 opcode <= Instructions.SET_GLOBAL_STATE_U64) ||
-            (opcode >= Instructions.READ_PRE_IMAGE &&
-                opcode <= Instructions.READ_DELAYED_INBOX_MESSAGE)
+            opcode == Instructions.READ_PRE_IMAGE ||
+            opcode == Instructions.READ_INBOX_MESSAGE
         ) {
             (mach, mod) = proverHostIo.executeOneStep(
                 mach,
