@@ -1,6 +1,6 @@
 use crate::{
     binary::{BlockType, Code, HirInstruction},
-    machine::Function,
+    machine::{Function, InboxIdentifier},
     value::{FunctionType, ValueType},
     wavm::{FloatingPointImpls, Opcode},
 };
@@ -95,7 +95,10 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
-            insts.push(HirInstruction::WithIdx(Opcode::ReadInboxMessage, 0));
+            insts.push(HirInstruction::WithIdx(
+                Opcode::ReadInboxMessage,
+                InboxIdentifier::Sequencer as u32,
+            ));
         }
         ("env", "wavm_read_delayed_inbox_message") => {
             ty = FunctionType {
@@ -105,7 +108,10 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
-            insts.push(HirInstruction::WithIdx(Opcode::ReadInboxMessage, 1));
+            insts.push(HirInstruction::WithIdx(
+                Opcode::ReadInboxMessage,
+                InboxIdentifier::Delayed as u32,
+            ));
         }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
