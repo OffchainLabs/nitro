@@ -162,8 +162,6 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
-    /// Reads a given delayed inbox message into the pointer on the stack at an offset
-    ReadDelayedInboxMessage,
 }
 
 impl Opcode {
@@ -280,7 +278,6 @@ impl Opcode {
             Opcode::SetGlobalStateU64 => 0x8013,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
-            Opcode::ReadDelayedInboxMessage => 0x8022,
         }
     }
 }
@@ -485,6 +482,7 @@ impl Instruction {
                             | Opcode::Call
                             | Opcode::FuncRefConst
                             | Opcode::CallerModuleInternalCall
+                            | Opcode::ReadInboxMessage
                     ),
                     "WithIdx HirInstruction has bad WithIdx opcode {:?}",
                     op,

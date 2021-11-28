@@ -4,7 +4,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+/// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
 impl Deref for Bytes32 {

@@ -162,49 +162,7 @@ contract OneStepProverHostIo is IOneStepProver {
             proofOffset
         );
 
-        revert("TODO: proper inbox API");
-        bytes memory message; // TODO
-        uint32 i = 0;
-        for (; i < 32 && messageOffset + i < message.length; i++) {
-            leafContents = setLeafByte(
-                leafContents,
-                i,
-                uint8(message[messageOffset + i])
-            );
-        }
-
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            merkleProof,
-            leafIdx,
-            leafContents
-        );
-        ValueStacks.push(mach.valueStack, Values.newI32(i));
-    }
-
-    function executeReadDelayedInboxMessage(
-        Machine memory mach,
-        Module memory mod,
-        Instruction calldata,
-        bytes calldata proof
-    ) internal pure {
-        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
-            return;
-        }
-
-        uint256 leafIdx = ptr / LEAF_SIZE;
-        uint256 proofOffset = 0;
-        bytes32 leafContents;
-        MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-            mod.moduleMemory,
-            leafIdx,
-            proof,
-            proofOffset
-        );
-
+        // TODO: use instruction argumentData to read from correct inbox
         revert("TODO: proper inbox API");
         bytes memory message; // TODO
         uint32 i = 0;
@@ -276,8 +234,6 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeReadPreImage;
         } else if (opcode == Instructions.READ_INBOX_MESSAGE) {
             impl = executeReadInboxMessage;
-        } else if (opcode == Instructions.READ_DELAYED_INBOX_MESSAGE) {
-            impl = executeReadDelayedInboxMessage;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
