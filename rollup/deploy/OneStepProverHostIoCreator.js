@@ -5,7 +5,7 @@ module.exports = async (hre) => {
 
   await deploy("OneStepProverHostIo", {
     from: deployer,
-    args: [],
+    args: ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000"],
   });
 };
 

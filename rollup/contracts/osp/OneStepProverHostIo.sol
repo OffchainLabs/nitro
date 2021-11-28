@@ -5,9 +5,24 @@ import "../state/Values.sol";
 import "../state/Machines.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
+import "../bridge/Messages.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/ISequencerInbox.sol";
 
 contract OneStepProverHostIo is IOneStepProver {
     uint256 constant LEAF_SIZE = 32;
+    uint256 constant INBOX_NUM = 2;
+
+    ISequencerInbox seqInbox;
+    IBridge delayedInbox;
+
+    constructor(
+        ISequencerInbox _seqInbox,
+        IBridge _delayedInbox
+    ) {
+        seqInbox = _seqInbox;
+        delayedInbox = _delayedInbox;
+    }
 
     function setLeafByte(
         bytes32 oldLeaf,
@@ -138,14 +153,72 @@ contract OneStepProverHostIo is IOneStepProver {
         ValueStacks.push(mach.valueStack, Values.newI32(i));
     }
 
+    function validateSequencerInbox(
+        uint64 msgIndex,
+        bytes calldata message
+    ) internal view returns (bool) {
+        require (message.length >= 40, "BAD_SEQINBOX_PROOF");
+
+        uint64 afterDelayedMsg;
+        (afterDelayedMsg, ) = Deserialize.u64(message, 32);
+        bytes32 messageHash = keccak256(message);
+        bytes32 beforeAcc;
+        bytes32 delayedAcc;
+
+        if (msgIndex > seqInbox.batchCount()) {
+            return false;
+        }
+        if (msgIndex > 0) {
+            beforeAcc =  seqInbox.inboxAccs(msgIndex - 1);
+        }
+        if (afterDelayedMsg > 0) {
+            delayedAcc = delayedInbox.inboxAccs(afterDelayedMsg - 1);
+        }
+        bytes32 acc = keccak256(abi.encodePacked(beforeAcc, messageHash, delayedAcc));
+        require(acc == seqInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
+        return true;
+    }
+
+    function validateDelayedInbox(
+        uint64 msgIndex,
+        bytes calldata message
+    ) internal view returns (bool) {
+        if (msgIndex > delayedInbox.messageCount()) {
+            return false;
+        }
+        require (message.length >= 161, "BAD_DELAYED_PROOF");
+
+// TODO: do we want to validate requestId? requires modifications in testing
+//        {
+//            uint requestId;
+//            (requestId, ) = Deserialize.u256(message, 96);
+//            require (requestId == msgIndex, "BAD_DELAYED_MSG_REQID");
+//        }
+
+        bytes32 beforeAcc;
+
+        if (msgIndex > 0) {
+            beforeAcc =  delayedInbox.inboxAccs(msgIndex - 1);
+        }
+
+        bytes32 messageDataHash = keccak256(message[161:]);
+
+        bytes32 messageHash = keccak256(abi.encodePacked(message[:161], messageDataHash));
+        bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
+
+        require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
+        return true;
+    }
+
     function executeReadInboxMessage(
         Machine memory mach,
         Module memory mod,
-        Instruction calldata,
+        Instruction calldata inst,
         bytes calldata proof
-    ) internal pure {
+    ) internal view {
         uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
         uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
+        uint256 msgIndex = ValueStacks.pop(mach.valueStack).contents;
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.halted = true;
             return;
@@ -162,15 +235,34 @@ contract OneStepProverHostIo is IOneStepProver {
             proofOffset
         );
 
-        // TODO: use instruction argumentData to read from correct inbox
-        revert("TODO: proper inbox API");
-        bytes memory message; // TODO
+        {
+            function(uint64, bytes calldata) internal view returns (bool) inboxValidate;
+
+            bool success;
+            if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER) {
+                inboxValidate = validateSequencerInbox;
+            } else if (inst.argumentData == Instructions.INBOX_INDEX_DELAYED) {
+                inboxValidate = validateDelayedInbox;
+            } else {
+                mach.halted = true;
+                return;
+            }
+            success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
+            if (! success) {
+                mach.halted = true;
+                return;
+            }
+        }
+
+        require(proof.length >= proofOffset, "BAD_MESSAGE_PROOF");
+        uint messageLength = proof.length - proofOffset;
+
         uint32 i = 0;
-        for (; i < 32 && messageOffset + i < message.length; i++) {
+        for (; i < 32 && messageOffset + i < messageLength; i++) {
             leafContents = setLeafByte(
                 leafContents,
                 i,
-                uint8(message[messageOffset + i])
+                uint8(proof[proofOffset + messageOffset + i])
             );
         }
 
@@ -218,13 +310,13 @@ contract OneStepProverHostIo is IOneStepProver {
         Module calldata startMod,
         Instruction calldata inst,
         bytes calldata proof
-    ) external pure override returns (Machine memory mach, Module memory mod) {
+    ) external view override returns (Machine memory mach, Module memory mod) {
         mach = startMach;
         mod = startMod;
 
         uint16 opcode = inst.opcode;
 
-        function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal pure impl;
+        function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal view impl;
 
         if (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
             opcode <= Instructions.SET_GLOBAL_STATE_U64)

@@ -146,6 +146,9 @@ library Instructions {
     uint16 constant READ_PRE_IMAGE = 0x8020;
     uint16 constant READ_INBOX_MESSAGE = 0x8021;
 
+    uint256 constant INBOX_INDEX_SEQUENCER = 0;
+    uint256 constant INBOX_INDEX_DELAYED = 1;
+
     function hash(Instruction memory inst) internal pure returns (bytes32) {
         return
             keccak256(
