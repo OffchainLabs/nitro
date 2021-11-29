@@ -1,6 +1,6 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::InboxReaderFn;
+use prover::machine::{InboxIdentifier, InboxReaderFn};
 use prover::parse_binary;
 use prover::{machine::GlobalState, utils::Bytes32};
 use prover::{machine::Machine, wavm::Opcode};
@@ -26,9 +26,13 @@ struct Opts {
     #[structopt(long)]
     allow_hostapi: bool,
     #[structopt(long)]
+    inbox_add_stub_headers: bool,
+    #[structopt(long)]
     always_merkleize: bool,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: usize,
+    #[structopt(long, default_value = "0")]
+    delayed_inbox_position: u64,
     #[structopt(long, default_value = "0")]
     inbox_position: u64,
     #[structopt(long, default_value = "0")]
@@ -39,9 +43,9 @@ struct Opts {
     )]
     last_block_hash: String,
     #[structopt(long)]
-    inbox: Option<PathBuf>,
+    inbox: Vec<PathBuf>,
     #[structopt(long)]
-    delayed_inbox: Option<PathBuf>,
+    delayed_inbox: Vec<PathBuf>,
     #[structopt(long)]
     preimages: Option<PathBuf>,
 }
@@ -71,6 +75,12 @@ fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
     Ok(contents)
 }
 
+fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
+    let mut msg = vec![0u8; headerlength];
+    File::open(path).unwrap().read_to_end(&mut msg)?;
+    Ok(msg)
+}
+
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -80,17 +90,29 @@ fn main() -> Result<()> {
     }
     let main_mod = parse_binary(&opts.binary)?;
 
-    let mut inbox = HashMap::default();
-    for (inbox_idx, path) in [opts.inbox, opts.delayed_inbox].iter().enumerate() {
-        if let Some(path) = path {
-            let inbox_position = opts.inbox_position;
-            inbox.extend(
-                parse_size_delim(&path)?
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, b)| ((inbox_idx as u64, inbox_position + i as u64), b)),
-            );
-        }
+    let mut inbox_cache = HashMap::default();
+    let mut inbox_position = opts.inbox_position;
+    let mut delayed_position = opts.delayed_inbox_position;
+    let inbox_header_len;
+    let delayed_header_len;
+    if opts.inbox_add_stub_headers {
+        inbox_header_len = 40;
+        delayed_header_len = 161;
+    } else {
+        inbox_header_len = 0;
+        delayed_header_len = 0;
+    }
+
+    for path in opts.inbox {
+        inbox_cache.insert((InboxIdentifier::Sequencer, inbox_position),
+                        file_with_stub_header(&path, inbox_header_len)?);
+        println!("read file {:?} to seq. inbox {}", &path, inbox_position);
+        inbox_position += 1;
+    }
+    for path in opts.delayed_inbox {
+        inbox_cache.insert((InboxIdentifier::Delayed, delayed_position),
+                        file_with_stub_header(&path, delayed_header_len)?);
+        delayed_position += 1;
     }
 
     let mut preimages = HashMap::default();
@@ -124,8 +146,8 @@ fn main() -> Result<()> {
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
-        inbox,
-        Box::new(|_, _| -> Vec<u8> { panic!("Inbox message not found") }) as InboxReaderFn,
+        inbox_cache,
+        Box::new(|a: u64, b: u64| -> Vec<u8> { panic!("Inbox message not found {}, {}", a ,b) }) as InboxReaderFn,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());
