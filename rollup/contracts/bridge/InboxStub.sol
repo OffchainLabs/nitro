@@ -9,7 +9,7 @@ import "./IInbox.sol";
 import "./IBridge.sol";
 
 import "./Messages.sol";
-import "./Bridge.sol";
+import "./BridgeStub.sol";
 
 contract Inbox is IInbox {
     uint8 internal constant ETH_TRANSFER = 0;

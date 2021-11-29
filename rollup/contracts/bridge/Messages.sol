@@ -19,7 +19,7 @@ library Messages {
             keccak256(
                 abi.encodePacked(
                     kind,
-                    sender,
+                    uint256(uint160(sender)),
                     blockNumber,
                     timestamp,
                     inboxSeqNum,

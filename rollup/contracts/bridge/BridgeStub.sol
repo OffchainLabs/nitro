@@ -5,8 +5,7 @@
 
 pragma solidity ^0.8.0;
 
-import "./Inbox.sol";
-import "./Outbox.sol";
+import "./InboxStub.sol";
 
 import "./IBridge.sol";
 
@@ -31,7 +30,7 @@ contract Bridge is IBridge {
         return allowedInboxesMap[inbox].allowed;
     }
 
-    function allowedOutboxes(address outbox) external view override returns (bool) {
+    function allowedOutboxes(address) external view override returns (bool) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -53,21 +52,21 @@ contract Bridge is IBridge {
     }
 
     function addMessageToInbox(
-        uint8 kind,
-        address sender,
-        uint256 blockNumber,
-        uint256 blockTimestamp,
-        uint256 gasPrice,
+        uint8,
+        address,
+        uint256,
+        uint256,
+        uint256,
         bytes32 messageDataHash
     ) internal returns (uint256) {
         uint256 count = inboxAccs.length;
         bytes32 messageHash = Messages.messageHash(
-            kind,
-            sender,
-            blockNumber,
-            blockTimestamp,
-            count,
-            gasPrice,
+            0,
+            address(uint160(0)),
+            0,
+            0,
+            0,
+            0,
             messageDataHash
         );
         bytes32 prevAcc = 0;
@@ -75,15 +74,14 @@ contract Bridge is IBridge {
             prevAcc = inboxAccs[count - 1];
         }
         inboxAccs.push(Messages.addMessageToInbox(prevAcc, messageHash));
-        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, gasPrice, blockTimestamp);
         return count;
     }
 
     function executeCall(
-        address destAddr,
-        uint256 amount,
-        bytes calldata data
-    ) external override returns (bool success, bytes memory returnData) {
+        address,
+        uint256,
+        bytes calldata
+    ) external override returns (bool, bytes memory) {
         revert("NOT_IMPLEMENTED");
     }
 
