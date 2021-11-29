@@ -42,7 +42,7 @@ pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()>
     match argument_data {
         0x0 => Ok(InboxIdentifier::Sequencer),
         0x1 => Ok(InboxIdentifier::Delayed),
-        _ => Err(())
+        _ => Err(()),
     }
 }
 
@@ -634,7 +634,11 @@ impl InboxReaderCached {
             .or_insert_with(|| (inbox_reader)(inbox_identifier as u64, msg_num))
     }
 
-    pub fn get_inbox_msg_immutable(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
+    pub fn get_inbox_msg_immutable(
+        &self,
+        inbox_identifier: InboxIdentifier,
+        msg_num: u64,
+    ) -> Vec<u8> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
             Some(val) => val.to_vec(),
             None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
@@ -1868,7 +1872,8 @@ impl Machine {
                             .get(self.value_stack.len() - 3)
                             .unwrap()
                             .assume_u64();
-                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data).unwrap();
+                        let inbox_identifier =
+                            argument_data_to_inbox(next_inst.argument_data).unwrap();
                         let msg_data = self
                             .inbox_reader
                             .get_inbox_msg_immutable(inbox_identifier, msg_idx);

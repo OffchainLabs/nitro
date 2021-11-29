@@ -104,14 +104,18 @@ fn main() -> Result<()> {
     }
 
     for path in opts.inbox {
-        inbox_cache.insert((InboxIdentifier::Sequencer, inbox_position),
-                        file_with_stub_header(&path, inbox_header_len)?);
+        inbox_cache.insert(
+            (InboxIdentifier::Sequencer, inbox_position),
+            file_with_stub_header(&path, inbox_header_len)?,
+        );
         println!("read file {:?} to seq. inbox {}", &path, inbox_position);
         inbox_position += 1;
     }
     for path in opts.delayed_inbox {
-        inbox_cache.insert((InboxIdentifier::Delayed, delayed_position),
-                        file_with_stub_header(&path, delayed_header_len)?);
+        inbox_cache.insert(
+            (InboxIdentifier::Delayed, delayed_position),
+            file_with_stub_header(&path, delayed_header_len)?,
+        );
         delayed_position += 1;
     }
 
@@ -147,7 +151,8 @@ fn main() -> Result<()> {
         opts.allow_hostapi,
         global_state,
         inbox_cache,
-        Box::new(|a: u64, b: u64| -> Vec<u8> { panic!("Inbox message not found {}, {}", a ,b) }) as InboxReaderFn,
+        Box::new(|a: u64, b: u64| -> Vec<u8> { panic!("Inbox message not found {}, {}", a, b) })
+            as InboxReaderFn,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());
