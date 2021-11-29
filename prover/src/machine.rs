@@ -32,9 +32,18 @@ fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     h.finalize().into()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InboxIdentifier {
     Sequencer = 0,
     Delayed,
+}
+
+pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()> {
+    match argument_data {
+        0x0 => Ok(InboxIdentifier::Sequencer),
+        0x1 => Ok(InboxIdentifier::Delayed),
+        _ => Err(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -603,13 +612,13 @@ pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
 
 #[derive(Clone)]
 pub struct InboxReaderCached {
-    inbox_cache: HashMap<(u64, u64), Vec<u8>>,
+    inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     inbox_reader: Arc<InboxReaderFn>,
 }
 
 impl InboxReaderCached {
     pub fn create(
-        inbox_cache: HashMap<(u64, u64), Vec<u8>>,
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         inbox_reader_fn: InboxReaderFn,
     ) -> InboxReaderCached {
         InboxReaderCached {
@@ -618,16 +627,17 @@ impl InboxReaderCached {
         }
     }
 
-    pub fn get_inbox_msg(&mut self, inbox_identifier: u64, msg_num: u64) -> &Vec<u8> {
+    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &Vec<u8> {
+        let inbox_reader = self.inbox_reader.clone();
         self.inbox_cache
             .entry((inbox_identifier, msg_num))
-            .or_insert((self.inbox_reader)(inbox_identifier, msg_num))
+            .or_insert_with(|| (inbox_reader)(inbox_identifier as u64, msg_num))
     }
 
-    pub fn get_inbox_msg_immutable(&self, inbox_identifier: u64, msg_num: u64) -> Vec<u8> {
+    pub fn get_inbox_msg_immutable(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
             Some(val) => val.to_vec(),
-            None => (self.inbox_reader)(inbox_identifier, msg_num),
+            None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
         }
     }
 }
@@ -791,7 +801,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox_cache: HashMap<(u64, u64), Vec<u8>>,
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         inbox_reader_fn: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
@@ -1532,7 +1542,8 @@ impl Machine {
                         inst.argument_data <= (InboxIdentifier::Delayed as u64),
                         "Bad inbox identifier"
                     );
-                    let message = self.inbox_reader.get_inbox_msg(inst.argument_data, msg_num);
+                    let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
+                    let message = self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num);
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));
                     let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -1857,13 +1868,10 @@ impl Machine {
                             .get(self.value_stack.len() - 3)
                             .unwrap()
                             .assume_u64();
-                        assert!(
-                            next_inst.argument_data <= (InboxIdentifier::Delayed as u64),
-                            "Bad inbox identifier"
-                        );
+                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data).unwrap();
                         let msg_data = self
                             .inbox_reader
-                            .get_inbox_msg_immutable(next_inst.argument_data, msg_idx);
+                            .get_inbox_msg_immutable(inbox_identifier, msg_idx);
                         data.extend(msg_data);
                     } else {
                         panic!("Should never ever get here");
