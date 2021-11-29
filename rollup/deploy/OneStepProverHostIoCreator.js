@@ -3,6 +3,8 @@ module.exports = async (hre) => {
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
 
+  const gasOpts = { gasLimit: ethers.utils.hexlify(250000), gasPrice: ethers.utils.parseUnits('5', "gwei") };
+
   await deploy("Bridge", {from: deployer, args: []})
   await deploy("Inbox", {from: deployer, args: []})
 
@@ -11,8 +13,8 @@ module.exports = async (hre) => {
 
   await deploy("SequencerInbox", {from: deployer, args: [bridge.address, deployer]})
 
-  await bridge.setInbox(inbox.address, true);
-  await inbox.initialize(bridge.address);
+  await bridge.setInbox(inbox.address, true, gasOpts);
+  await inbox.initialize(bridge.address, gasOpts);
 
   seqInbox = await ethers.getContract("SequencerInbox", deployer)
 

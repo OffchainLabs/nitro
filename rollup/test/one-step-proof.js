@@ -9,12 +9,13 @@ async function sendTestMessages(deployment) {
   const { deployer } = await getNamedAccounts();
   inbox = await ethers.getContract("Inbox", deployer);
   seqInbox = await ethers.getContract("SequencerInbox", deployer);
-  const msgRoot = "../prover/test-cases/rust/messages/"
+  const msgRoot = "../prover/test-cases/rust/messages/";
+  const gasOpts = { gasLimit: ethers.utils.hexlify(250000), gasPrice: ethers.utils.parseUnits('5', "gwei") };
   for (let msgNum = 0;  msgNum < 2; msgNum++) {
-    let path = msgRoot + "msg" + String(msgNum) +".bin"
+    let path = msgRoot + "msg" + String(msgNum) +".bin";
     buf = fs.readFileSync(path);
-    inbox.sendL2MessageFromOrigin(buf);
-    seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, "0", "0");
+    inbox.sendL2MessageFromOrigin(buf, gasOpts);
+    seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, "0", "0", gasOpts);
   } 
 }
 
