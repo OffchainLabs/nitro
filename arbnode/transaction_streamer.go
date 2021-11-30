@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,19 +27,14 @@ type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
 
-	recording     bool
-	recordingPath string
-
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.Mutex
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, recordingPath string) (*TransactionStreamer, error) {
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
-		recording:          (recordingPath != ""),
-		recordingPath:      recordingPath,
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
@@ -234,35 +228,7 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	if s.recording {
-		records, err := arbstate.GetRecordsFromBuilder(blockBuilder)
-		if err != nil {
-			return err
-		}
-		lastblockheader := block.Header()
-		fileout, err := os.Create(s.recordingPath + lastblockheader.ParentHash.Hex() + "_" + lastblockheader.Hash().Hex() + ".preimage")
-		if err != nil {
-			return err
-		}
-		for _, value := range records {
-			err = binary.Write(fileout, binary.LittleEndian, uint64(len(value)))
-			if err != nil {
-				log.Error("failed writing length to recording")
-				return err
-			}
-			_, err = fileout.Write(value)
-			if err != nil {
-				log.Error("failed writing value to recording")
-				return err
-			}
-		}
-		err = fileout.Close()
-		if err != nil {
-			log.Error("failed closing recording")
-			return err
-		}
-	}
-	newbuilder, err := arbstate.CreateBlockBuilder(s.bc, block.Hash(), s.recording)
+	newbuilder, err := arbstate.CreateBlockBuilder(s.bc, block.Hash(), false)
 	if err != nil {
 		return err
 	}
@@ -538,7 +504,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
 	}
-	blockBuilder, err := arbstate.CreateBlockBuilder(s.bc, lastBlockHeader.Hash(), s.recording)
+	blockBuilder, err := arbstate.CreateBlockBuilder(s.bc, lastBlockHeader.Hash(), false)
 	if err != nil {
 		return err
 	}
