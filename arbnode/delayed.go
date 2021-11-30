@@ -112,7 +112,7 @@ type DelayedInboxMessage struct {
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Sender.Bytes(),
+		m.Message.Header.Sender.Hash().Bytes(),
 		m.Message.Header.BlockNumber.Bytes(),
 		m.Message.Header.Timestamp.Bytes(),
 		m.Message.Header.RequestId.Bytes(),
