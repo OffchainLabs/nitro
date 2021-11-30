@@ -13,23 +13,24 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/statetransfer"
 	"testing"
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {
 	tryMarshalUnmarshal(
-		&ArbosInitializationInfo{
+		&statetransfer.ArbosInitializationInfo{
 			[]common.Address{pseudorandomAddressForTesting(nil, 0)},
 			[]common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
 			pseudorandomAddressForTesting(nil, 3),
-			[]InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
-			[]AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
+			[]statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
+			[]statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
 		},
 		t,
 	)
 }
 
-func tryMarshalUnmarshal(input *ArbosInitializationInfo, t *testing.T) {
+func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testing.T) {
 	marshaled, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +42,7 @@ func tryMarshalUnmarshal(input *ArbosInitializationInfo, t *testing.T) {
 		t.Fatal()
 	}
 
-	output := ArbosInitializationInfo{}
+	output := statetransfer.ArbosInitializationInfo{}
 	err = json.Unmarshal(marshaled, &output)
 	if err != nil {
 		t.Fatal(err)
@@ -81,10 +82,10 @@ func pseudorandomUint64ForTesting(salt *common.Hash, x uint64) uint64 {
 	return binary.BigEndian.Uint64(pseudorandomHashForTesting(salt, x).Bytes()[:8])
 }
 
-func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) InitializationDataForRetryable {
+func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) statetransfer.InitializationDataForRetryable {
 	newSalt := pseudorandomHashForTesting(salt, x)
 	salt = &newSalt
-	return InitializationDataForRetryable{
+	return statetransfer.InitializationDataForRetryable{
 		pseudorandomHashForTesting(salt, 0),
 		pseudorandomUint64ForTesting(salt, 1),
 		pseudorandomAddressForTesting(salt, 2),
@@ -94,19 +95,19 @@ func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) Initializa
 	}
 }
 
-func pseudorandomAccountInitInfoForTesting(salt *common.Hash, x uint64) AccountInitializationInfo {
+func pseudorandomAccountInitInfoForTesting(salt *common.Hash, x uint64) statetransfer.AccountInitializationInfo {
 	newSalt := pseudorandomHashForTesting(salt, x)
 	salt = &newSalt
 	aggToPay := pseudorandomAddressForTesting(salt, 7)
-	return AccountInitializationInfo{
+	return statetransfer.AccountInitializationInfo{
 		pseudorandomAddressForTesting(salt, 0),
 		pseudorandomUint64ForTesting(salt, 1),
 		pseudorandomHashForTesting(salt, 2).Big(),
-		&AccountInitContractInfo{
+		&statetransfer.AccountInitContractInfo{
 			pseudorandomDataForTesting(salt, 3, 256),
 			pseudorandomHashHashMapForTesting(salt, 4, 16),
 		},
-		&AccountInitAggregatorInfo{
+		&statetransfer.AccountInitAggregatorInfo{
 			pseudorandomAddressForTesting(salt, 5),
 			pseudorandomHashForTesting(salt, 6).Big(),
 		},
@@ -175,7 +176,7 @@ func checkDefaultAgg(arbState *ArbosState, expected common.Address, t *testing.T
 	}
 }
 
-func checkRetryables(arbState *ArbosState, expected []InitializationDataForRetryable, t *testing.T) {
+func checkRetryables(arbState *ArbosState, expected []statetransfer.InitializationDataForRetryable, t *testing.T) {
 	ret := arbState.RetryableState()
 	for _, exp := range expected {
 		found := ret.OpenRetryable(exp.Id, 0)
@@ -186,7 +187,7 @@ func checkRetryables(arbState *ArbosState, expected []InitializationDataForRetry
 	}
 }
 
-func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []AccountInitializationInfo, t *testing.T) {
+func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfer.AccountInitializationInfo, t *testing.T) {
 	l1p := arbState.L1PricingState()
 	for _, acct := range accts {
 		addr := acct.Addr

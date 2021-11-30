@@ -10,11 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"math/big"
+	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
 func InitializeArbosFromJSON(stateDB *state.StateDB, encoded []byte) error {
-	initData := ArbosInitializationInfo{}
+	initData := statetransfer.ArbosInitializationInfo{}
 	err := json.Unmarshal(encoded, &initData)
 	if err != nil {
 		return err
@@ -28,8 +28,8 @@ func initializeArbOS(
 	addressTableContents []common.Address,
 	sendPartials []common.Hash,
 	defaultAggregator common.Address,
-	retryableData []InitializationDataForRetryable,
-	accounts []AccountInitializationInfo,
+	retryableData []statetransfer.InitializationDataForRetryable,
+	accounts []statetransfer.AccountInitializationInfo,
 ) {
 	arbosState := OpenArbosState(stateDB)
 
@@ -52,49 +52,13 @@ func initializeArbOS(
 	}
 }
 
-type ArbosInitializationInfo struct {
-	AddressTableContents []common.Address
-	SendPartials         []common.Hash
-	DefaultAggregator    common.Address
-	RetryableData        []InitializationDataForRetryable
-	Accounts             []AccountInitializationInfo
-}
-
-type InitializationDataForRetryable struct {
-	Id        common.Hash
-	Timeout   uint64
-	From      common.Address
-	To        common.Address
-	Callvalue *big.Int
-	Calldata  []byte
-}
-
-func initializeRetryables(rs *retryables.RetryableState, data []InitializationDataForRetryable, currentTimestampToUse uint64) {
+func initializeRetryables(rs *retryables.RetryableState, data []statetransfer.InitializationDataForRetryable, currentTimestampToUse uint64) {
 	for _, r := range data {
 		rs.CreateRetryable(0, r.Id, r.Timeout, r.From, r.To, r.Callvalue, r.Calldata)
 	}
 }
 
-type AccountInitializationInfo struct {
-	Addr            common.Address
-	Nonce           uint64
-	EthBalance      *big.Int
-	ContractInfo    *AccountInitContractInfo
-	AggregatorInfo  *AccountInitAggregatorInfo
-	AggregatorToPay *common.Address
-}
-
-type AccountInitContractInfo struct {
-	Code            []byte
-	ContractStorage map[common.Hash]common.Hash
-}
-
-type AccountInitAggregatorInfo struct {
-	FeeCollector common.Address
-	BaseFeeL1Gas *big.Int
-}
-
-func initializeAccount(statedb *state.StateDB, arbosState *ArbosState, account AccountInitializationInfo) {
+func initializeAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) {
 	l1pState := arbosState.L1PricingState()
 	statedb.CreateAccount(account.Addr)
 	statedb.SetNonce(account.Addr, account.Nonce)
