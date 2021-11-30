@@ -14,9 +14,9 @@ async function sendTestMessages(deployment) {
   for (let msgNum = 0;  msgNum < 2; msgNum++) {
     let path = msgRoot + "msg" + String(msgNum) +".bin";
     buf = fs.readFileSync(path);
-    inbox.sendL2MessageFromOrigin(buf, gasOpts);
-    seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, "0", "0", gasOpts);
-  } 
+    await inbox.sendL2MessageFromOrigin(buf, gasOpts);
+    await seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, "0", "0", gasOpts);
+  }
 }
 
 describe("OneStepProof", function () {
