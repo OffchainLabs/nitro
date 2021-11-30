@@ -228,7 +228,7 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
-	newbuilder, err := arbstate.CreateBlockBuilder(s.bc, block.Hash(), false)
+	newbuilder, err := arbstate.CreateBlockBuilder(s.bc, block.Hash(), lastMessage, false)
 	if err != nil {
 		return err
 	}
@@ -504,7 +504,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
 	}
-	blockBuilder, err := arbstate.CreateBlockBuilder(s.bc, lastBlockHeader.Hash(), false)
+	blockBuilder, err := arbstate.CreateBlockBuilder(s.bc, lastBlockHeader.Hash(), pos, false)
 	if err != nil {
 		return err
 	}

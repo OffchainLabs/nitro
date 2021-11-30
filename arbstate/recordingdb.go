@@ -156,7 +156,7 @@ func (r *RecordingChainContext) GetMinBlockNumberAccessed() uint64 {
 	return r.minBlockNumberAccessed
 }
 
-func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, recording bool) (*arbos.BlockBuilder, error) {
+func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, pos uint64, recording bool) (*arbos.BlockBuilder, error) {
 	lastBlockHeader := blockchain.GetHeaderByHash(lastblockHash)
 	if lastBlockHeader == nil {
 		return nil, errors.New("block header not found")
@@ -166,7 +166,7 @@ func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, 
 		return nil, err
 	}
 	if !recording {
-		return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain, nil, nil, nil), nil
+		return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain), nil
 	}
 	rawKeyValue := blockchain.StateCache().TrieDB().DiskDB()
 	recordingKeyValue := NewRecordingDb(rawKeyValue)
@@ -179,28 +179,28 @@ func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, 
 		return nil, errors.New("block number not uint64")
 	}
 	recordingChainContext := NewRecordingChainContext(blockchain, lastBlockHeader.Number.Uint64())
-	return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain, recordingStateDb, recordingChainContext, recordingKeyValue), nil
+	return arbos.NewRecordingBlockBuilder(lastBlockHeader, statedb, blockchain, pos, recordingStateDb, recordingChainContext, recordingKeyValue), nil
 }
 
-func GetRecordsFromBuilder(builder *arbos.BlockBuilder) (map[common.Hash][]byte, error) {
+func GetRecordsFromBuilder(builder *arbos.BlockBuilder) (map[common.Hash][]byte, uint64, error) {
 	recordingStateDb := builder.RecordingStateDB()
 	if recordingStateDb == nil {
-		return nil, errors.New("no recording statedb")
+		return nil, 0, errors.New("no recording statedb")
 	}
 	recordingKeyValue := builder.RecordingKeyValue()
 	recordingDb, ok := recordingKeyValue.(*RecordingDb)
 	if !ok {
-		return nil, errors.New("statedb does not have valid records")
+		return nil, 0, errors.New("statedb does not have valid records")
 	}
 	entries := recordingDb.GetRecordedEntries()
 	chainContextIf := builder.RecordingChainContext()
 	recordingChainContext, ok := chainContextIf.(*RecordingChainContext)
 	if (recordingChainContext == nil) || (!ok) {
-		return nil, errors.New("recordingChainContext invalid")
+		return nil, 0, errors.New("recordingChainContext invalid")
 	}
 	blockchain, ok := recordingChainContext.bc.(*core.BlockChain)
 	if (blockchain == nil) || (!ok) {
-		return nil, errors.New("blockchain invalid")
+		return nil, 0, errors.New("blockchain invalid")
 	}
 	for i := recordingChainContext.GetMinBlockNumberAccessed(); i <= recordingChainContext.initialBlockNumber; i++ {
 		header := blockchain.GetHeaderByNumber(i)
@@ -211,5 +211,5 @@ func GetRecordsFromBuilder(builder *arbos.BlockBuilder) (map[common.Hash][]byte,
 		}
 		entries[hash] = bytes
 	}
-	return entries, nil
+	return entries, builder.StartPos(), nil
 }

@@ -55,6 +55,7 @@ type BlockBuilder struct {
 	recordingGasPool      core.GasPool
 	recordingHeader       *types.Header
 	recordingKeyValue     ethdb.KeyValueStore
+	startPos              uint64 //recorded and not used
 
 	// Setup based on first segment
 	blockInfo *L1Info
@@ -72,7 +73,7 @@ type BlockData struct {
 	Header *types.Header
 }
 
-func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext, recordingstateDb *state.StateDB, recordingChainContext core.ChainContext, recordingKeyValue ethdb.KeyValueStore) *BlockBuilder {
+func NewRecordingBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext, startPos uint64, recordingstateDb *state.StateDB, recordingChainContext core.ChainContext, recordingKeyValue ethdb.KeyValueStore) *BlockBuilder {
 	return &BlockBuilder{
 		statedb:               statedb,
 		lastBlockHeader:       lastBlockHeader,
@@ -80,7 +81,12 @@ func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chai
 		recordingStatedb:      recordingstateDb,
 		recordingChainContext: recordingChainContext,
 		recordingKeyValue:     recordingKeyValue,
+		startPos:              startPos,
 	}
+}
+
+func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext) *BlockBuilder {
+	return NewRecordingBlockBuilder(lastBlockHeader, statedb, chainContext, 0, nil, nil, nil)
 }
 
 // Must always return true if the block is empty
@@ -263,6 +269,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
+}
+
+func (b *BlockBuilder) StartPos() uint64 {
+	return b.startPos
 }
 
 func (b *BlockBuilder) RecordingStateDB() *state.StateDB {

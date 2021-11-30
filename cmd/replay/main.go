@@ -87,7 +87,7 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
-	blockBuilder := arbos.NewBlockBuilder(lastBlockHeader, statedb, chainContext, nil, nil, nil)
+	blockBuilder := arbos.NewBlockBuilder(lastBlockHeader, statedb, chainContext)
 	for {
 		message, err := inboxMultiplexer.Peek()
 		if err != nil {
