@@ -3,11 +3,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"fmt"
 	"math/big"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -37,7 +33,6 @@ type BatchPosterConfig struct {
 	BatchPollDelay      time.Duration
 	SubmissionSyncDelay time.Duration
 	CompressionLevel    int
-	OutputPath          string
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
@@ -370,41 +365,6 @@ func (b *BatchPoster) postSequencerBatch() error {
 	if err == nil {
 		b.sequencesPosted++
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
-		if b.config.OutputPath != "" {
-			outfile, err := os.Create(b.config.OutputPath + "/sequencer_" + strconv.Itoa(int(b.sequencesPosted)))
-			if err != nil {
-				return err
-			}
-			err = binary.Write(outfile, binary.LittleEndian, uint64(len(sequencerMsg)+40))
-			if err != nil {
-				panic(fmt.Sprintf("Error writing to db record output: %v\n", err))
-			}
-			err = binary.Write(outfile, binary.BigEndian, uint64(0)) // mintimestamp
-			if err != nil {
-				return err
-			}
-			err = binary.Write(outfile, binary.BigEndian, uint64(segments.timestamp+0x100000)) // maxtimestamp
-			if err != nil {
-				return err
-			}
-			err = binary.Write(outfile, binary.BigEndian, uint64(0)) // minl1block
-			if err != nil {
-				return err
-			}
-			err = binary.Write(outfile, binary.BigEndian, uint64(segments.blockNum+10)) // maxl1block
-			if err != nil {
-				return err
-			}
-			err = binary.Write(outfile, binary.BigEndian, uint64(segments.delayedMsg)) // afterdelayedmsg
-			if err != nil {
-				return err
-			}
-			_, err = outfile.Write(sequencerMsg)
-			if err != nil {
-				return err
-			}
-			outfile.Close()
-		}
 	}
 	return err
 }
