@@ -627,14 +627,16 @@ impl InboxReaderCached {
         }
     }
 
-    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &Vec<u8> {
+    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &[u8] {
         let inbox_reader = self.inbox_reader.clone();
         self.inbox_cache
             .entry((inbox_identifier, msg_num))
-            .or_insert_with(|| (inbox_reader)(inbox_identifier as u64, msg_num))
+            .or_insert_with(|| inbox_reader(inbox_identifier as u64, msg_num))
     }
 
-    pub fn get_inbox_msg_immutable(
+    // gets inbox msg as a copy, without updating cache
+    // can be called on immutable object
+    pub fn get_inbox_msg_owned(
         &self,
         inbox_identifier: InboxIdentifier,
         msg_num: u64,
@@ -1876,7 +1878,7 @@ impl Machine {
                             argument_data_to_inbox(next_inst.argument_data).unwrap();
                         let msg_data = self
                             .inbox_reader
-                            .get_inbox_msg_immutable(inbox_identifier, msg_idx);
+                            .get_inbox_msg_owned(inbox_identifier, msg_idx);
                         data.extend(msg_data);
                     } else {
                         panic!("Should never ever get here");

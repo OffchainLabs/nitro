@@ -46,20 +46,20 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CBytes {
+pub struct CByteArray {
     pub ptr: *const u8,
     pub len: usize,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct CBytesArray {
-    pub ptr: *const CBytes,
+pub struct CMultipleByteArrays {
+    pub ptr: *const CByteArray,
     pub len: usize,
 }
 
 /// Note: the returned memory will not be freed by Arbitrator
-type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CBytes;
+type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CByteArray;
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_machine(
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn arbitrator_load_machine(
     library_paths: *const *const c_char,
     library_paths_size: isize,
     global_state: GlobalState,
-    c_preimages: CBytesArray,
+    c_preimages: CMultipleByteArrays,
     c_inbox_reader: CInboxReaderFn,
 ) -> *mut Machine {
     match arbitrator_load_machine_impl(
@@ -91,7 +91,7 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths: *const *const c_char,
     library_paths_size: isize,
     global_state: GlobalState,
-    c_preimages: CBytesArray,
+    c_preimages: CMultipleByteArrays,
     c_inbox_reader: CInboxReaderFn,
 ) -> Result<*mut Machine> {
     let main_mod = {
