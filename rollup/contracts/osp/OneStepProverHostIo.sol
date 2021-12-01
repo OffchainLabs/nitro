@@ -188,13 +188,6 @@ contract OneStepProverHostIo is IOneStepProver {
         }
         require (message.length >= 161, "BAD_DELAYED_PROOF");
 
-// TODO: do we want to validate requestId? requires modifications in testing
-//        {
-//            uint requestId;
-//            (requestId, ) = Deserialize.u256(message, 96);
-//            require (requestId == msgIndex, "BAD_DELAYED_MSG_REQID");
-//        }
-
         bytes32 beforeAcc;
 
         if (msgIndex > 0) {
@@ -202,8 +195,11 @@ contract OneStepProverHostIo is IOneStepProver {
         }
 
         bytes32 messageDataHash = keccak256(message[161:]);
+        bytes1 kind = message[0];
+        uint256 sender;
+        (sender, ) = Deserialize.u256(message,1);
 
-        bytes32 messageHash = keccak256(abi.encodePacked(message[:161], messageDataHash));
+        bytes32 messageHash = keccak256(abi.encodePacked(kind, uint160(sender), message[33:161], messageDataHash));
         bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
 
         require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
