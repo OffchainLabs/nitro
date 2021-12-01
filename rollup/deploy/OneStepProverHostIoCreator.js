@@ -8,15 +8,15 @@ module.exports = async (hre) => {
   await deploy("Bridge", {from: deployer, args: []})
   await deploy("Inbox", {from: deployer, args: []})
 
-  bridge = await ethers.getContract("Bridge", deployer)
-  inbox = await ethers.getContract("Inbox", deployer)
+  const bridge = await ethers.getContract("Bridge", deployer)
+  const inbox = await ethers.getContract("Inbox", deployer)
 
   await deploy("SequencerInbox", {from: deployer, args: [bridge.address, deployer]})
 
   await bridge.setInbox(inbox.address, true, gasOpts);
   await inbox.initialize(bridge.address, gasOpts);
 
-  seqInbox = await ethers.getContract("SequencerInbox", deployer)
+  const seqInbox = await ethers.getContract("SequencerInbox", deployer)
 
   await deploy("OneStepProverHostIo", {
     from: deployer,
