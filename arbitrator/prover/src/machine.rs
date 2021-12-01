@@ -1965,6 +1965,10 @@ impl Machine {
         &self.value_stack
     }
 
+    pub fn get_global_state(&self) -> GlobalState {
+        self.global_state.clone()
+    }
+
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
         let mut res = Vec::new();
         let mut push_pc = |pc: ProgramCounter| {

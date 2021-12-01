@@ -187,6 +187,16 @@ pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> CMachine
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn arbitrator_is_halted(mach: *mut Machine) -> bool {
+    return (*mach).is_halted();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
+    return (*mach).get_global_state();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
     (*mach).hash()
 }
