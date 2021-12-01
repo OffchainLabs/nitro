@@ -5,9 +5,24 @@ import "../state/Values.sol";
 import "../state/Machines.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
+import "../bridge/Messages.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/ISequencerInbox.sol";
 
 contract OneStepProverHostIo is IOneStepProver {
     uint256 constant LEAF_SIZE = 32;
+    uint256 constant INBOX_NUM = 2;
+
+    ISequencerInbox seqInbox;
+    IBridge delayedInbox;
+
+    constructor(
+        ISequencerInbox _seqInbox,
+        IBridge _delayedInbox
+    ) {
+        seqInbox = _seqInbox;
+        delayedInbox = _delayedInbox;
+    }
 
     function setLeafByte(
         bytes32 oldLeaf,
@@ -23,7 +38,7 @@ contract OneStepProverHostIo is IOneStepProver {
         return bytes32(newLeaf);
     }
 
-    function executeGetOrSetLastBlockHash(
+    function executeGetOrSetBytes32(
         Machine memory mach,
         Module memory mod,
         GlobalState memory state,
@@ -31,6 +46,12 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes calldata proof
     ) internal pure {
         uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
+        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+        if (idx >= GlobalStates.BYTES32_VALS_NUM) {
+            mach.halted = true;
+            return;
+        }
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.halted = true;
             return;
@@ -43,31 +64,48 @@ contract OneStepProverHostIo is IOneStepProver {
         (startLeafContents, proofOffset, merkleProof) = ModuleMemories
             .proveLeaf(mod.moduleMemory, leafIdx, proof, proofOffset);
 
-        if (inst.opcode == Instructions.GET_LAST_BLOCK_HASH) {
+        if (inst.opcode == Instructions.GET_GLOBAL_STATE_BYTES32) {
             mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
                 merkleProof,
                 leafIdx,
-                state.lastBlockHash
+                state.bytes32_vals[idx]
             );
-        } else if (inst.opcode == Instructions.SET_LAST_BLOCK_HASH) {
-            state.lastBlockHash = startLeafContents;
+        } else if (inst.opcode == Instructions.SET_GLOBAL_STATE_BYTES32) {
+            state.bytes32_vals[idx] = startLeafContents;
         } else {
-            revert("BAD_BLOCK_HASH_OPCODE");
+            revert("BAD_GLOBAL_STATE_OPCODE");
         }
     }
 
-    function executeAdvanceInboxPosition(
+    function executeGetU64(
         Machine memory mach,
-        Module memory,
-        GlobalState memory state,
-        Instruction calldata,
-        bytes calldata
+        GlobalState memory state
     ) internal pure {
-        if (state.inboxPosition == ~uint64(0)) {
+        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+        if (idx >= GlobalStates.U64_VALS_NUM) {
             mach.halted = true;
-        } else {
-            state.inboxPosition += 1;
+            return;
         }
+
+        ValueStacks.push(
+            mach.valueStack,
+            Values.newI64(state.u64_vals[idx])
+        );
+    }
+
+    function executeSetU64(
+        Machine memory mach,
+        GlobalState memory state
+    ) internal pure {
+        uint64 val = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+
+        if (idx >= GlobalStates.U64_VALS_NUM) {
+            mach.halted = true;
+            return;
+        }
+        state.u64_vals[idx] = val;
     }
 
     function executeReadPreImage(
@@ -115,172 +153,130 @@ contract OneStepProverHostIo is IOneStepProver {
         ValueStacks.push(mach.valueStack, Values.newI32(i));
     }
 
+    function validateSequencerInbox(
+        uint64 msgIndex,
+        bytes calldata message
+    ) internal view returns (bool) {
+        require (message.length >= 40, "BAD_SEQINBOX_PROOF");
+
+        uint64 afterDelayedMsg;
+        (afterDelayedMsg, ) = Deserialize.u64(message, 32);
+        bytes32 messageHash = keccak256(message);
+        bytes32 beforeAcc;
+        bytes32 delayedAcc;
+
+        if (msgIndex > seqInbox.batchCount()) {
+            return false;
+        }
+        if (msgIndex > 0) {
+            beforeAcc =  seqInbox.inboxAccs(msgIndex - 1);
+        }
+        if (afterDelayedMsg > 0) {
+            delayedAcc = delayedInbox.inboxAccs(afterDelayedMsg - 1);
+        }
+        bytes32 acc = keccak256(abi.encodePacked(beforeAcc, messageHash, delayedAcc));
+        require(acc == seqInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
+        return true;
+    }
+
+    function validateDelayedInbox(
+        uint64 msgIndex,
+        bytes calldata message
+    ) internal view returns (bool) {
+        if (msgIndex > delayedInbox.messageCount()) {
+            return false;
+        }
+        require (message.length >= 161, "BAD_DELAYED_PROOF");
+
+        bytes32 beforeAcc;
+
+        if (msgIndex > 0) {
+            beforeAcc =  delayedInbox.inboxAccs(msgIndex - 1);
+        }
+
+        bytes32 messageDataHash = keccak256(message[161:]);
+        bytes1 kind = message[0];
+        uint256 sender;
+        (sender, ) = Deserialize.u256(message,1);
+
+        bytes32 messageHash = keccak256(abi.encodePacked(kind, uint160(sender), message[33:161], messageDataHash));
+        bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
+
+        require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
+        return true;
+    }
+
     function executeReadInboxMessage(
         Machine memory mach,
         Module memory mod,
-        GlobalState memory state,
-        Instruction calldata,
-        bytes calldata proof
-    ) internal pure {
-        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
-            return;
-        }
-
-        uint256 leafIdx = ptr / LEAF_SIZE;
-        uint256 proofOffset = 0;
-        bytes32 leafContents;
-        MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-            mod.moduleMemory,
-            leafIdx,
-            proof,
-            proofOffset
-        );
-
-        revert("TODO: proper inbox API");
-        bytes memory message; // TODO
-        uint32 i = 0;
-        for (; i < 32 && messageOffset + i < message.length; i++) {
-            leafContents = setLeafByte(
-                leafContents,
-                i,
-                uint8(message[messageOffset + i])
-            );
-        }
-
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            merkleProof,
-            leafIdx,
-            leafContents
-        );
-        ValueStacks.push(mach.valueStack, Values.newI32(i));
-    }
-
-    function executeGetPositionWithinMessage(
-        Machine memory mach,
-        Module memory,
-        GlobalState memory state,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        ValueStacks.push(
-            mach.valueStack,
-            Values.newI64(state.positionWithinMessage)
-        );
-    }
-
-    function executeSetPositionWithinMessage(
-        Machine memory mach,
-        Module memory,
-        GlobalState memory state,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        state.positionWithinMessage = Values.assumeI64(
-            ValueStacks.pop(mach.valueStack)
-        );
-    }
-
-    function executeReadDelayedInboxMessage(
-        Machine memory mach,
-        Module memory mod,
-        Instruction calldata,
-        bytes calldata proof
-    ) internal pure {
-        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
-            return;
-        }
-
-        uint256 leafIdx = ptr / LEAF_SIZE;
-        uint256 proofOffset = 0;
-        bytes32 leafContents;
-        MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-            mod.moduleMemory,
-            leafIdx,
-            proof,
-            proofOffset
-        );
-
-        revert("TODO: proper inbox API");
-        bytes memory message; // TODO
-        uint32 i = 0;
-        for (; i < 32 && messageOffset + i < message.length; i++) {
-            leafContents = setLeafByte(
-                leafContents,
-                i,
-                uint8(message[messageOffset + i])
-            );
-        }
-
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            merkleProof,
-            leafIdx,
-            leafContents
-        );
-        ValueStacks.push(mach.valueStack, Values.newI32(i));
-    }
-
-    function executeGetInboxPosition(
-        Machine memory mach,
-        Module memory,
-        GlobalState memory state,
-        Instruction calldata,
-        bytes calldata
-    ) internal pure {
-        ValueStacks.push(mach.valueStack, Values.newI64(state.inboxPosition));
-    }
-
-    function executeOneStep(
-        Machine calldata startMach,
-        Module calldata startMod,
         Instruction calldata inst,
         bytes calldata proof
-    ) external pure override returns (Machine memory mach, Module memory mod) {
-        mach = startMach;
-        mod = startMod;
-
-        uint16 opcode = inst.opcode;
-
-        function(
-            Machine memory,
-            Module memory,
-            GlobalState memory,
-            Instruction calldata,
-            bytes calldata
-        ) internal pure impl;
-        if (
-            opcode == Instructions.GET_LAST_BLOCK_HASH ||
-            opcode == Instructions.SET_LAST_BLOCK_HASH
-        ) {
-            impl = executeGetOrSetLastBlockHash;
-        } else if (opcode == Instructions.ADVANCE_INBOX_POSITION) {
-            impl = executeAdvanceInboxPosition;
-        } else if (opcode == Instructions.READ_PRE_IMAGE) {
-            // Doesn't use global state
-            executeReadPreImage(mach, mod, inst, proof);
-            return (mach, mod);
-        } else if (opcode == Instructions.READ_INBOX_MESSAGE) {
-            impl = executeReadInboxMessage;
-        } else if (opcode == Instructions.GET_POSITION_WITHIN_MESSAGE) {
-            impl = executeGetPositionWithinMessage;
-        } else if (opcode == Instructions.SET_POSITION_WITHIN_MESSAGE) {
-            impl = executeSetPositionWithinMessage;
-        } else if (opcode == Instructions.READ_DELAYED_INBOX_MESSAGE) {
-            // Doesn't use global state
-            executeReadDelayedInboxMessage(mach, mod, inst, proof);
-            return (mach, mod);
-        } else if (opcode == Instructions.GET_INBOX_POSITION) {
-            impl = executeGetInboxPosition;
-        } else {
-            revert("INVALID_MEMORY_OPCODE");
+    ) internal view {
+        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
+        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
+        uint256 msgIndex = ValueStacks.pop(mach.valueStack).contents;
+        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
+            mach.halted = true;
+            return;
         }
+
+        uint256 leafIdx = ptr / LEAF_SIZE;
+        uint256 proofOffset = 0;
+        bytes32 leafContents;
+        MerkleProof memory merkleProof;
+        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
+            mod.moduleMemory,
+            leafIdx,
+            proof,
+            proofOffset
+        );
+
+        {
+            function(uint64, bytes calldata) internal view returns (bool) inboxValidate;
+
+            bool success;
+            if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER) {
+                inboxValidate = validateSequencerInbox;
+            } else if (inst.argumentData == Instructions.INBOX_INDEX_DELAYED) {
+                inboxValidate = validateDelayedInbox;
+            } else {
+                mach.halted = true;
+                return;
+            }
+            success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
+            if (! success) {
+                mach.halted = true;
+                return;
+            }
+        }
+
+        require(proof.length >= proofOffset, "BAD_MESSAGE_PROOF");
+        uint messageLength = proof.length - proofOffset;
+
+        uint32 i = 0;
+        for (; i < 32 && messageOffset + i < messageLength; i++) {
+            leafContents = setLeafByte(
+                leafContents,
+                i,
+                uint8(proof[proofOffset + messageOffset + i])
+            );
+        }
+
+        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
+            merkleProof,
+            leafIdx,
+            leafContents
+        );
+        ValueStacks.push(mach.valueStack, Values.newI32(i));
+    }
+
+    function executeGlobalStateAccess(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) internal pure {
+        uint16 opcode = inst.opcode;
 
         GlobalState memory state;
         uint256 proofOffset = 0;
@@ -290,8 +286,48 @@ contract OneStepProverHostIo is IOneStepProver {
             "BAD_GLOBAL_STATE"
         );
 
-        impl(mach, mod, state, inst, proof[proofOffset:]);
+        if (opcode == Instructions.GET_GLOBAL_STATE_BYTES32 ||
+            opcode == Instructions.SET_GLOBAL_STATE_BYTES32) {
+            executeGetOrSetBytes32(mach, mod, state, inst, proof[proofOffset:]);
+        } else if (opcode == Instructions.GET_GLOBAL_STATE_U64) {
+            executeGetU64(mach, state);
+        } else if (opcode == Instructions.SET_GLOBAL_STATE_U64) {
+            executeSetU64(mach, state);
+        } else {
+            revert("INVALID_GLOBALSTATE_OPCODE");
+        }
 
         mach.globalStateHash = GlobalStates.hash(state);
+
+    }
+
+    function executeOneStep(
+        Machine calldata startMach,
+        Module calldata startMod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) external view override returns (Machine memory mach, Module memory mod) {
+        mach = startMach;
+        mod = startMod;
+
+        uint16 opcode = inst.opcode;
+
+        function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal view impl;
+
+        if (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
+            opcode <= Instructions.SET_GLOBAL_STATE_U64)
+        {
+            impl = executeGlobalStateAccess;
+        } else if (opcode == Instructions.READ_PRE_IMAGE) {
+            impl = executeReadPreImage;
+        } else if (opcode == Instructions.READ_INBOX_MESSAGE) {
+            impl = executeReadInboxMessage;
+        } else {
+            revert("INVALID_MEMORY_OPCODE");
+        }
+
+
+        impl(mach, mod, inst, proof);
+
     }
 }

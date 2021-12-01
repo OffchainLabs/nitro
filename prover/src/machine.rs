@@ -21,6 +21,7 @@ use std::{
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
+    sync::Arc,
 };
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
@@ -29,6 +30,20 @@ fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     h.update(&(table as u64).to_be_bytes());
     h.update(ty.hash());
     h.finalize().into()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum InboxIdentifier {
+    Sequencer = 0,
+    Delayed,
+}
+
+pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()> {
+    match argument_data {
+        0x0 => Ok(InboxIdentifier::Sequencer),
+        0x1 => Ok(InboxIdentifier::Delayed),
+        _ => Err(()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -255,7 +270,7 @@ impl Module {
         bin: WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
-        is_library: bool,
+        allow_hostapi: bool,
     ) -> Module {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
@@ -292,8 +307,8 @@ impl Module {
                         "Import has different function signature than host function",
                     );
                     assert!(
-                        is_library,
-                        "Only libraries are allowed to use host function {}",
+                        allow_hostapi,
+                        "Calling hostapi directly is not allowed. Function {}",
                         import.name,
                     );
                 }
@@ -530,28 +545,41 @@ impl Module {
     }
 }
 
-#[derive(Clone, Debug)]
+// Globalstate holds:
+// bytes32 - lastblockhash
+// uint64 - inbox_position
+// uint64 - position_within_message
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
+pub const GLOBAL_STATE_U64_NUM: usize = 2;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[repr(C)]
 pub struct GlobalState {
-    pub last_block_hash: Bytes32,
-    pub inbox_position: u64,
-    pub position_within_message: u64,
+    pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
+    pub u64_vals: [u64; GLOBAL_STATE_U64_NUM],
 }
 
 impl GlobalState {
     fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Global state:");
-        h.update(self.last_block_hash);
-        h.update(self.inbox_position.to_be_bytes());
-        h.update(self.position_within_message.to_be_bytes());
+        for item in self.bytes32_vals {
+            h.update(item)
+        }
+        for item in self.u64_vals {
+            h.update(item.to_be_bytes())
+        }
         h.finalize().into()
     }
 
     fn serialize(&self) -> Vec<u8> {
         let mut data = Vec::new();
-        data.extend(self.last_block_hash);
-        data.extend(self.inbox_position.to_be_bytes());
-        data.extend(&self.position_within_message.to_be_bytes());
+        for item in self.bytes32_vals {
+            data.extend(item)
+        }
+        for item in self.u64_vals {
+            data.extend(item.to_be_bytes())
+        }
         data
     }
 }
@@ -580,7 +608,43 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-#[derive(Clone, Debug)]
+pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
+
+#[derive(Clone)]
+pub struct InboxReaderCached {
+    inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+    inbox_reader: Arc<InboxReaderFn>,
+}
+
+impl InboxReaderCached {
+    pub fn create(
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+        inbox_reader_fn: InboxReaderFn,
+    ) -> InboxReaderCached {
+        InboxReaderCached {
+            inbox_cache: inbox_cache,
+            inbox_reader: Arc::new(inbox_reader_fn),
+        }
+    }
+
+    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &[u8] {
+        let inbox_reader = self.inbox_reader.clone();
+        self.inbox_cache
+            .entry((inbox_identifier, msg_num))
+            .or_insert_with(|| inbox_reader(inbox_identifier as u64, msg_num))
+    }
+
+    // gets inbox msg as a copy, without updating cache
+    // can be called on immutable object
+    pub fn get_inbox_msg_owned(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
+        match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
+            Some(val) => val.to_vec(),
+            None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
@@ -592,8 +656,7 @@ pub struct Machine {
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
-    inbox: HashMap<u64, Vec<u8>>,
-    delayed_inbox: HashMap<u64, Vec<u8>>,
+    inbox_reader: InboxReaderCached,
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -738,9 +801,10 @@ impl Machine {
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
         always_merkleize: bool,
+        allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox: HashMap<u64, Vec<u8>>,
-        delayed_inbox: HashMap<u64, Vec<u8>>,
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+        inbox_reader_fn: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
@@ -802,7 +866,7 @@ impl Machine {
             bin,
             &available_imports,
             &floating_point_impls,
-            false,
+            allow_hostapi_from_main,
         ));
 
         // Build the entrypoint module
@@ -938,8 +1002,7 @@ impl Machine {
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
-            inbox,
-            delayed_inbox,
+            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn),
             preimages,
         }
     }
@@ -970,7 +1033,7 @@ impl Machine {
                 .cloned()
                 .and_then(|x| x)
             {
-                if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
+                if let Err(err) = &self.host_call_hook(&hook.0, &hook.1) {
                     eprintln!(
                         "Failed to process host call hook for host call {:?} {:?}: {}",
                         hook.0, hook.1, err,
@@ -1411,28 +1474,45 @@ impl Machine {
                 let val = self.value_stack.last().cloned().unwrap();
                 self.value_stack.push(val);
             }
-            Opcode::GetLastBlockHash => {
+            Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
-                if !module
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.bytes32_vals.len() {
+                    self.halted = true;
+                } else if !module
                     .memory
-                    .store_slice_aligned(ptr.into(), &*self.global_state.last_block_hash)
+                    .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                 {
                     self.halted = true;
                 }
             }
-            Opcode::SetLastBlockHash => {
+            Opcode::SetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
-                if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                    self.global_state.last_block_hash = hash;
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.bytes32_vals.len() {
+                    self.halted = true;
+                } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
+                    self.global_state.bytes32_vals[idx] = hash;
                 } else {
                     self.halted = true;
                 }
             }
-            Opcode::AdvanceInboxPosition => {
-                if let Some(new_pos) = self.global_state.inbox_position.checked_add(1) {
-                    self.global_state.inbox_position = new_pos;
-                } else {
+            Opcode::GetGlobalStateU64 => {
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.u64_vals.len() {
                     self.halted = true;
+                } else {
+                    self.value_stack
+                        .push(Value::I64(self.global_state.u64_vals[idx]));
+                }
+            }
+            Opcode::SetGlobalStateU64 => {
+                let val = self.value_stack.pop().unwrap().assume_u64();
+                let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                if idx > self.global_state.u64_vals.len() {
+                    self.halted = true;
+                } else {
+                    self.global_state.u64_vals[idx] = val
                 }
             }
             Opcode::ReadPreImage => {
@@ -1456,16 +1536,16 @@ impl Machine {
             Opcode::ReadInboxMessage => {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
+                let msg_num = self.value_stack.pop().unwrap().assume_u64();
                 if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    let message = match self.inbox.get(&self.global_state.inbox_position) {
-                        Some(b) => b,
-                        None => panic!(
-                            "Missing requested inbox message {}",
-                            self.global_state.inbox_position
-                        ),
-                    };
+                    assert!(
+                        inst.argument_data <= (InboxIdentifier::Delayed as u64),
+                        "Bad inbox identifier"
+                    );
+                    let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
+                    let message = self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num);
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));
                     let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -1475,40 +1555,6 @@ impl Machine {
                         self.halted = true;
                     }
                 }
-            }
-            Opcode::GetPositionWithinMessage => {
-                self.value_stack
-                    .push(Value::I64(self.global_state.position_within_message));
-            }
-            Opcode::SetPositionWithinMessage => {
-                self.global_state.position_within_message =
-                    self.value_stack.pop().unwrap().assume_u64();
-            }
-            Opcode::ReadDelayedInboxMessage => {
-                let offset = self.value_stack.pop().unwrap().assume_u32();
-                let ptr = self.value_stack.pop().unwrap().assume_u32();
-                let seq_num = self.value_stack.pop().unwrap().assume_u64();
-                if ptr as u64 + 32 > module.memory.size() {
-                    self.halted = true;
-                } else {
-                    if let Some(message) = self.delayed_inbox.get(&seq_num) {
-                        let offset = usize::try_from(offset).unwrap();
-                        let len = std::cmp::min(32, message.len().saturating_sub(offset));
-                        let read = message.get(offset..(offset + len)).unwrap_or_default();
-                        if module.memory.store_slice_aligned(ptr.into(), read) {
-                            self.value_stack.push(Value::I32(len as u32));
-                        } else {
-                            self.halted = true;
-                        }
-                    } else {
-                        eprintln!("Missing requested delayed inbox message {}", seq_num);
-                        self.halted = true;
-                    }
-                }
-            }
-            Opcode::GetInboxPosition => {
-                self.value_stack
-                    .push(Value::I64(self.global_state.inbox_position));
             }
         }
     }
@@ -1683,12 +1729,10 @@ impl Machine {
         if let Some(next_inst) = func.code.get(self.pc.inst) {
             if matches!(
                 next_inst.opcode,
-                Opcode::AdvanceInboxPosition
-                    | Opcode::ReadInboxMessage
-                    | Opcode::SetLastBlockHash
-                    | Opcode::GetLastBlockHash
-                    | Opcode::GetPositionWithinMessage
-                    | Opcode::SetPositionWithinMessage
+                Opcode::GetGlobalStateBytes32
+                    | Opcode::SetGlobalStateBytes32
+                    | Opcode::GetGlobalStateU64
+                    | Opcode::SetGlobalStateU64
             ) {
                 data.extend(self.global_state.serialize());
             }
@@ -1789,7 +1833,7 @@ impl Machine {
                 }
             } else if matches!(
                 next_inst.opcode,
-                Opcode::GetLastBlockHash | Opcode::SetLastBlockHash,
+                Opcode::GetGlobalStateBytes32 | Opcode::SetGlobalStateBytes32,
             ) {
                 let ptr = self.value_stack.last().unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
@@ -1820,6 +1864,20 @@ impl Machine {
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
                         data.extend(preimage);
+                    } else if next_inst.opcode == Opcode::ReadInboxMessage {
+                        let msg_idx = self
+                            .value_stack
+                            .get(self.value_stack.len() - 3)
+                            .unwrap()
+                            .assume_u64();
+                        let inbox_identifier =
+                            argument_data_to_inbox(next_inst.argument_data).unwrap();
+                        let msg_data = self
+                            .inbox_reader
+                            .get_inbox_msg_owned(inbox_identifier, msg_idx);
+                        data.extend(msg_data);
+                    } else {
+                        panic!("Should never ever get here");
                     }
                 }
             }

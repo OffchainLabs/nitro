@@ -1,6 +1,6 @@
 use crate::{
     binary::{BlockType, Code, HirInstruction},
-    machine::Function,
+    machine::{Function, InboxIdentifier},
     value::{FunctionType, ValueType},
     wavm::{FloatingPointImpls, Opcode},
 };
@@ -43,29 +43,40 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 3));
         }
-
-        ("env", "wavm_get_last_block_hash") => {
+        ("env", "wavm_get_globalstate_bytes32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32],
+                inputs: vec![ValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
-            insts.push(HirInstruction::Simple(Opcode::GetLastBlockHash));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::Simple(Opcode::GetGlobalStateBytes32));
         }
-        ("env", "wavm_set_last_block_hash") => {
+        ("env", "wavm_set_globalstate_bytes32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32],
+                inputs: vec![ValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
-            insts.push(HirInstruction::Simple(Opcode::SetLastBlockHash));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::Simple(Opcode::SetGlobalStateBytes32));
         }
-        ("env", "wavm_advance_inbox_position") => {
+        ("env", "wavm_get_globalstate_u64") => {
             ty = FunctionType {
-                inputs: vec![],
+                inputs: vec![ValueType::I32],
+                outputs: vec![ValueType::I64],
+            };
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::Simple(Opcode::GetGlobalStateU64));
+        }
+        ("env", "wavm_set_globalstate_u64") => {
+            ty = FunctionType {
+                inputs: vec![ValueType::I32, ValueType::I64],
                 outputs: vec![],
             };
-            insts.push(HirInstruction::Simple(Opcode::AdvanceInboxPosition));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
+            insts.push(HirInstruction::Simple(Opcode::SetGlobalStateU64));
         }
         ("env", "wavm_read_pre_image") => {
             ty = FunctionType {
@@ -78,27 +89,16 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
         }
         ("env", "wavm_read_inbox_message") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ValueType::I64, ValueType::I32, ValueType::I32],
                 outputs: vec![ValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
-            insts.push(HirInstruction::Simple(Opcode::ReadInboxMessage));
-        }
-        ("env", "wavm_get_position_within_message") => {
-            ty = FunctionType {
-                inputs: vec![],
-                outputs: vec![ValueType::I64],
-            };
-            insts.push(HirInstruction::Simple(Opcode::GetPositionWithinMessage));
-        }
-        ("env", "wavm_set_position_within_message") => {
-            ty = FunctionType {
-                inputs: vec![ValueType::I64],
-                outputs: vec![],
-            };
-            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
-            insts.push(HirInstruction::Simple(Opcode::SetPositionWithinMessage));
+            insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
+            insts.push(HirInstruction::WithIdx(
+                Opcode::ReadInboxMessage,
+                InboxIdentifier::Sequencer as u32,
+            ));
         }
         ("env", "wavm_read_delayed_inbox_message") => {
             ty = FunctionType {
@@ -108,14 +108,10 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 2));
-            insts.push(HirInstruction::Simple(Opcode::ReadDelayedInboxMessage));
-        }
-        ("env", "wavm_get_inbox_position") => {
-            ty = FunctionType {
-                inputs: vec![],
-                outputs: vec![ValueType::I64],
-            };
-            insts.push(HirInstruction::Simple(Opcode::GetInboxPosition));
+            insts.push(HirInstruction::WithIdx(
+                Opcode::ReadInboxMessage,
+                InboxIdentifier::Delayed as u32,
+            ));
         }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
