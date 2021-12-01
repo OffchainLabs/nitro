@@ -1,0 +1,17 @@
+{
+  "name": "precompiles",
+  "version": "1.0.0",
+  "description": "Layer 2 precompiles for Arbitrum Nitro",
+  "main": "index.js",
+  "author": "Offchain Labs, Inc.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "hardhat compile"
+  },
+  "dependencies": {
+    "hardhat": "^2.6.6",
+    "@openzeppelin/contracts": "^3.4.2",
+    "@openzeppelin/contracts-upgradeable": "^3.4.2"
+  },
+  "private": true
+}

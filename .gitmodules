@@ -1,0 +1,6 @@
+[submodule "go-ethereum"]
+	path = go-ethereum
+	url = git@github.com:OffchainLabs/go-ethereum.git
+[submodule "fastcache"]
+	path = fastcache
+	url = git@github.com:OffchainLabs/fastcache.git
