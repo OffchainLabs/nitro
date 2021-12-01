@@ -636,11 +636,7 @@ impl InboxReaderCached {
 
     // gets inbox msg as a copy, without updating cache
     // can be called on immutable object
-    pub fn get_inbox_msg_owned(
-        &self,
-        inbox_identifier: InboxIdentifier,
-        msg_num: u64,
-    ) -> Vec<u8> {
+    pub fn get_inbox_msg_owned(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
             Some(val) => val.to_vec(),
             None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
