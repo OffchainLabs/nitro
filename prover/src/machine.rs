@@ -18,7 +18,6 @@ use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
-    collections::hash_map,
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
@@ -31,6 +30,20 @@ fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     h.update(&(table as u64).to_be_bytes());
     h.update(ty.hash());
     h.finalize().into()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum InboxIdentifier {
+    Sequencer = 0,
+    Delayed,
+}
+
+pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()> {
+    match argument_data {
+        0x0 => Ok(InboxIdentifier::Sequencer),
+        0x1 => Ok(InboxIdentifier::Delayed),
+        _ => Err(()),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -598,6 +611,40 @@ impl Drop for LazyModuleMerkle<'_> {
 pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
 
 #[derive(Clone)]
+pub struct InboxReaderCached {
+    inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+    inbox_reader: Arc<InboxReaderFn>,
+}
+
+impl InboxReaderCached {
+    pub fn create(
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+        inbox_reader_fn: InboxReaderFn,
+    ) -> InboxReaderCached {
+        InboxReaderCached {
+            inbox_cache: inbox_cache,
+            inbox_reader: Arc::new(inbox_reader_fn),
+        }
+    }
+
+    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &[u8] {
+        let inbox_reader = self.inbox_reader.clone();
+        self.inbox_cache
+            .entry((inbox_identifier, msg_num))
+            .or_insert_with(|| inbox_reader(inbox_identifier as u64, msg_num))
+    }
+
+    // gets inbox msg as a copy, without updating cache
+    // can be called on immutable object
+    pub fn get_inbox_msg_owned(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
+        match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
+            Some(val) => val.to_vec(),
+            None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Machine {
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
@@ -609,8 +656,7 @@ pub struct Machine {
     pc: ProgramCounter,
     halted: bool,
     stdio_output: Vec<u8>,
-    inbox_cache: HashMap<(u64, u64), Vec<u8>>,
-    inbox_reader: Arc<InboxReaderFn>,
+    inbox_reader: InboxReaderCached,
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -757,8 +803,8 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox_cache: HashMap<(u64, u64), Vec<u8>>,
-        inbox_reader: InboxReaderFn,
+        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
+        inbox_reader_fn: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         let mut modules = Vec::new();
@@ -956,8 +1002,7 @@ impl Machine {
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             halted: false,
             stdio_output: Vec::new(),
-            inbox_cache,
-            inbox_reader: Arc::new(inbox_reader),
+            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn),
             preimages,
         }
     }
@@ -988,7 +1033,7 @@ impl Machine {
                 .cloned()
                 .and_then(|x| x)
             {
-                if let Err(err) = self.host_call_hook(&hook.0, &hook.1) {
+                if let Err(err) = &self.host_call_hook(&hook.0, &hook.1) {
                     eprintln!(
                         "Failed to process host call hook for host call {:?} {:?}: {}",
                         hook.0, hook.1, err,
@@ -1495,14 +1540,12 @@ impl Machine {
                 if ptr as u64 + 32 > module.memory.size() {
                     self.halted = true;
                 } else {
-                    let entry = self.inbox_cache.entry((inst.argument_data, msg_num));
-                    let message: &[u8] = match entry {
-                        hash_map::Entry::Occupied(e) => e.into_mut(),
-                        hash_map::Entry::Vacant(e) => {
-                            let msg = (self.inbox_reader)(inst.argument_data, msg_num);
-                            e.insert(msg)
-                        }
-                    };
+                    assert!(
+                        inst.argument_data <= (InboxIdentifier::Delayed as u64),
+                        "Bad inbox identifier"
+                    );
+                    let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
+                    let message = self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num);
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, message.len().saturating_sub(offset));
                     let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -1821,6 +1864,20 @@ impl Machine {
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
                         data.extend(preimage);
+                    } else if next_inst.opcode == Opcode::ReadInboxMessage {
+                        let msg_idx = self
+                            .value_stack
+                            .get(self.value_stack.len() - 3)
+                            .unwrap()
+                            .assume_u64();
+                        let inbox_identifier =
+                            argument_data_to_inbox(next_inst.argument_data).unwrap();
+                        let msg_data = self
+                            .inbox_reader
+                            .get_inbox_msg_owned(inbox_identifier, msg_idx);
+                        data.extend(msg_data);
+                    } else {
+                        panic!("Should never ever get here");
                     }
                 }
             }

@@ -132,7 +132,7 @@ rollup/test/proofs/rust-%.json: \
 		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi
+	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox prover/test-cases/rust/messages/msg0.bin --inbox prover/test-cases/rust/messages/msg1.bin --delayed-inbox prover/test-cases/rust/messages/msg0.bin --delayed-inbox prover/test-cases/rust/messages/msg1.bin
 
 rollup/test/proofs/go.json: \
 		prover/test-cases/go/main \
