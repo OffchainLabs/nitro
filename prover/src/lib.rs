@@ -15,7 +15,7 @@ use crate::{
 };
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
-use machine::GlobalState;
+use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use std::{
     ffi::{CStr, CString},
@@ -152,13 +152,18 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: isize) {
+pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
     for _ in 0..num_steps {
-        (*mach).step();
         if (*mach).is_halted() {
             break;
         }
+        (*mach).step();
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> MachineStatus {
+    (*mach).get_status()
 }
 
 #[no_mangle]
@@ -176,5 +181,5 @@ pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> *mut c_char
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_free_proof(proof: *mut c_char) {
-    CString::from_raw(proof);
+    drop(CString::from_raw(proof));
 }

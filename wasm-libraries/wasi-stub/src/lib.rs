@@ -9,6 +9,7 @@ extern "C" {
     fn wavm_caller_load32(ptr: usize) -> u32;
     fn wavm_caller_store8(ptr: usize, val: u8);
     fn wavm_caller_store32(ptr: usize, val: u32);
+    fn wavm_halt_and_set_finished() -> !;
 }
 
 #[panic_handler]
@@ -17,8 +18,12 @@ unsafe fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(_: u32) {
-    core::arch::wasm32::unreachable()
+pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
+    if code == 0 {
+        wavm_halt_and_set_finished()
+    } else {
+        core::arch::wasm32::unreachable()
+    }
 }
 
 #[no_mangle]

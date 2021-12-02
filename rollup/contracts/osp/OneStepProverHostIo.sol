@@ -49,11 +49,11 @@ contract OneStepProverHostIo is IOneStepProver {
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
         if (idx >= GlobalStates.BYTES32_VALS_NUM) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
@@ -84,7 +84,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
         if (idx >= GlobalStates.U64_VALS_NUM) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
@@ -102,7 +102,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
         if (idx >= GlobalStates.U64_VALS_NUM) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
         state.u64_vals[idx] = val;
@@ -117,7 +117,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 preimageOffset = ValueStacks.pop(mach.valueStack).contents;
         uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
@@ -216,7 +216,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
         uint256 msgIndex = ValueStacks.pop(mach.valueStack).contents;
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
@@ -240,12 +240,12 @@ contract OneStepProverHostIo is IOneStepProver {
             } else if (inst.argumentData == Instructions.INBOX_INDEX_DELAYED) {
                 inboxValidate = validateDelayedInbox;
             } else {
-                mach.halted = true;
+                mach.status = MachineStatus.ERRORED;
                 return;
             }
             success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
             if (! success) {
-                mach.halted = true;
+                mach.status = MachineStatus.ERRORED;
                 return;
             }
         }
@@ -268,6 +268,15 @@ contract OneStepProverHostIo is IOneStepProver {
             leafContents
         );
         ValueStacks.push(mach.valueStack, Values.newI32(i));
+    }
+
+    function executeHaltAndSetFinished(
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        mach.status = MachineStatus.FINISHED;
     }
 
     function executeGlobalStateAccess(
@@ -322,6 +331,8 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeReadPreImage;
         } else if (opcode == Instructions.READ_INBOX_MESSAGE) {
             impl = executeReadInboxMessage;
+        } else if (opcode == Instructions.HALT_AND_SET_FINISHED) {
+            impl = executeHaltAndSetFinished;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
