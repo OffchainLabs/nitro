@@ -14,13 +14,13 @@ use crate::{
 };
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
-use num::{traits::PrimInt, Zero};
+use num::{traits::PrimInt, BigUint, One, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
     convert::TryFrom,
     num::Wrapping,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut, AddAssign},
     sync::Arc,
 };
 
@@ -644,6 +644,7 @@ impl InboxReaderCached {
     }
 }
 
+/// cbindgen:ignore
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MachineStatus {
@@ -653,7 +654,39 @@ pub enum MachineStatus {
 }
 
 #[derive(Clone)]
+enum SmallOrBigUint {
+    Small(u128),
+    Big(BigUint),
+}
+
+impl SmallOrBigUint {
+    fn increment(&mut self) {
+        match self {
+            SmallOrBigUint::Small(x) => match x.checked_add(1) {
+                Some(new) => *x = new,
+                None => *self = SmallOrBigUint::Big(BigUint::from(*x) + BigUint::one()),
+            },
+            SmallOrBigUint::Big(x) => *x += BigUint::one(),
+        }
+    }
+}
+
+impl AddAssign<u128> for SmallOrBigUint {
+    fn add_assign(&mut self, rhs: u128) {
+        match self {
+            SmallOrBigUint::Small(x) => match x.checked_add(rhs) {
+                Some(new) => *x = new,
+                None => *self = SmallOrBigUint::Big(BigUint::from(*x) + BigUint::from(rhs)),
+            }
+            SmallOrBigUint::Big(x) => *x += BigUint::from(rhs),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct Machine {
+    // Not part of machine hash
+    steps: SmallOrBigUint,
     status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
@@ -1001,6 +1034,7 @@ impl Machine {
 
         Machine {
             status: MachineStatus::Running,
+            steps: SmallOrBigUint::Small(0),
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -1029,7 +1063,33 @@ impl Machine {
         assert!(module.funcs[pc.func].code.len() > pc.inst);
     }
 
+    pub fn get_steps_bytes_be(&self) -> Vec<u8> {
+        match &self.steps {
+            SmallOrBigUint::Small(x) => x.to_be_bytes().to_vec(),
+            SmallOrBigUint::Big(x) => x.to_bytes_be(),
+        }
+    }
+
+    pub fn get_steps_string(&self) -> String {
+        match &self.steps {
+            SmallOrBigUint::Small(x) => x.to_string(),
+            SmallOrBigUint::Big(x) => x.to_string(),
+        }
+    }
+
+    pub fn step_n(&mut self, n: u128) {
+        for x in 0..n {
+            if self.is_halted() {
+                let remaining = n - x;
+                self.steps += remaining;
+                break;
+            }
+            self.step();
+        }
+    }
+
     pub fn step(&mut self) {
+        self.steps.increment();
         if self.is_halted() {
             return;
         }

@@ -168,9 +168,9 @@ fn main() -> Result<()> {
             *count_entry += 1;
             let count = *count_entry;
             // Apply an exponential backoff to how often to prove an instruction;
-            let prove = count < 10
-                || (count < 100 && count % 10 == 0)
-                || (count < 1000 && count % 100 == 0);
+            let prove = count < 5
+                || (count < 25 && count % 5 == 0)
+                || (count < 125 && count % 25 == 0);
             if !prove {
                 mach.step();
                 continue;
@@ -178,8 +178,9 @@ fn main() -> Result<()> {
         }
         println!("Machine stack: {:?}", mach.get_data_stack());
         print!(
-            "Generating proof \x1b[36m#{}\x1b[0m of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
+            "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
             proofs.len(),
+            mach.get_steps_string(),
             next_opcode,
             next_inst.argument_data,
         );

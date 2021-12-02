@@ -153,17 +153,50 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
-    for _ in 0..num_steps {
-        if (*mach).is_halted() {
-            break;
-        }
-        (*mach).step();
-    }
+    (*mach).step_n(num_steps.into());
+}
+
+#[repr(C)]
+pub struct RustBytes {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub capacity: usize,
+}
+
+/// The returned bytes must be freed with `arbitrator_free_bytes`
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_num_steps_be(mach: *const Machine) -> RustBytes {
+    let mut v = (*mach).get_steps_bytes_be();
+    let bytes = RustBytes {
+        ptr: v.as_mut_ptr(),
+        len: v.len(),
+        capacity: v.capacity(),
+    };
+    std::mem::forget(v);
+    bytes
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> MachineStatus {
-    (*mach).get_status()
+pub unsafe extern "C" fn arbitrator_free_bytes(bytes: RustBytes) {
+    drop(Vec::from_raw_parts(bytes.ptr, bytes.len, bytes.capacity));
+}
+
+// C requires enums be represented as `int`s, so we need a new type for this :/
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(C)]
+pub enum CMachineStatus {
+    Running,
+    Finished,
+    Errored,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> CMachineStatus {
+    match (*mach).get_status() {
+        MachineStatus::Running => CMachineStatus::Running,
+        MachineStatus::Finished => CMachineStatus::Finished,
+        MachineStatus::Errored => CMachineStatus::Errored,
+    }
 }
 
 #[no_mangle]
