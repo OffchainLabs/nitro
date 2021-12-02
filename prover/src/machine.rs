@@ -20,7 +20,7 @@ use std::{
     borrow::Cow,
     convert::TryFrom,
     num::Wrapping,
-    ops::{Deref, DerefMut, AddAssign},
+    ops::{AddAssign, Deref, DerefMut},
     sync::Arc,
 };
 
@@ -677,7 +677,7 @@ impl AddAssign<u128> for SmallOrBigUint {
             SmallOrBigUint::Small(x) => match x.checked_add(rhs) {
                 Some(new) => *x = new,
                 None => *self = SmallOrBigUint::Big(BigUint::from(*x) + BigUint::from(rhs)),
-            }
+            },
             SmallOrBigUint::Big(x) => *x += BigUint::from(rhs),
         }
     }
