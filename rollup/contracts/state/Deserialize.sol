@@ -220,6 +220,8 @@ library Deserialize {
 				status = MachineStatus.FINISHED;
 			} else if (status_u8 == 2) {
 				status = MachineStatus.ERRORED;
+			} else if (status_u8 == 3) {
+				status = MachineStatus.TOO_FAR;
 			} else {
 				revert("UNKNOWN_MACH_STATUS");
 			}

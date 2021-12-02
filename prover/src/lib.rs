@@ -58,7 +58,8 @@ pub struct CMultipleByteArrays {
     pub len: usize,
 }
 
-/// Note: the returned memory will not be freed by Arbitrator
+/// Note: the returned memory will not be freed by Arbitrator.
+/// To indicate "not found", set len to non-zero and ptr to null.
 type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CByteArray;
 
 #[no_mangle]
@@ -107,11 +108,15 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Vec<u8> {
+    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
         unsafe {
             let res = c_inbox_reader(inbox_idx, seq_num);
-            let slice = std::slice::from_raw_parts(res.ptr, res.len);
-            slice.to_vec()
+            if res.len > 0 && res.ptr.is_null() {
+                None
+            } else {
+                let slice = std::slice::from_raw_parts(res.ptr, res.len);
+                Some(slice.to_vec())
+            }
         }
     }) as InboxReaderFn;
     let mut preimages = HashMap::default();
@@ -188,6 +193,7 @@ pub enum CMachineStatus {
     Running,
     Finished,
     Errored,
+    TooFar,
 }
 
 #[no_mangle]
@@ -196,6 +202,7 @@ pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> CMachine
         MachineStatus::Running => CMachineStatus::Running,
         MachineStatus::Finished => CMachineStatus::Finished,
         MachineStatus::Errored => CMachineStatus::Errored,
+        MachineStatus::TooFar => CMachineStatus::TooFar,
     }
 }
 

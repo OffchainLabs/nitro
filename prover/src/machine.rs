@@ -18,6 +18,7 @@ use num::{traits::PrimInt, BigUint, One, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
+    collections::hash_map,
     convert::TryFrom,
     num::Wrapping,
     ops::{AddAssign, Deref, DerefMut},
@@ -608,7 +609,7 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
+pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Option<Vec<u8>>>;
 
 #[derive(Clone)]
 pub struct InboxReaderCached {
@@ -627,18 +628,29 @@ impl InboxReaderCached {
         }
     }
 
-    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &[u8] {
-        let inbox_reader = self.inbox_reader.clone();
-        self.inbox_cache
-            .entry((inbox_identifier, msg_num))
-            .or_insert_with(|| inbox_reader(inbox_identifier as u64, msg_num))
+    pub fn get_inbox_msg(
+        &mut self,
+        inbox_identifier: InboxIdentifier,
+        msg_num: u64,
+    ) -> Option<&[u8]> {
+        match self.inbox_cache.entry((inbox_identifier, msg_num)) {
+            hash_map::Entry::Vacant(entry) => {
+                let message = (self.inbox_reader)(inbox_identifier as u64, msg_num)?;
+                Some(entry.insert(message))
+            }
+            hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
+        }
     }
 
     // gets inbox msg as a copy, without updating cache
     // can be called on immutable object
-    pub fn get_inbox_msg_owned(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
+    pub fn get_inbox_msg_owned(
+        &self,
+        inbox_identifier: InboxIdentifier,
+        msg_num: u64,
+    ) -> Option<Vec<u8>> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
-            Some(val) => val.to_vec(),
+            Some(val) => Some(val.to_vec()),
             None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
         }
     }
@@ -651,6 +663,7 @@ pub enum MachineStatus {
     Running,
     Finished,
     Errored,
+    TooFar,
 }
 
 #[derive(Clone)]
@@ -1613,14 +1626,19 @@ impl Machine {
                         "Bad inbox identifier"
                     );
                     let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
-                    let message = self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num);
-                    let offset = usize::try_from(offset).unwrap();
-                    let len = std::cmp::min(32, message.len().saturating_sub(offset));
-                    let read = message.get(offset..(offset + len)).unwrap_or_default();
-                    if module.memory.store_slice_aligned(ptr.into(), read) {
-                        self.value_stack.push(Value::I32(len as u32));
+                    if let Some(message) =
+                        self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num)
+                    {
+                        let offset = usize::try_from(offset).unwrap();
+                        let len = std::cmp::min(32, message.len().saturating_sub(offset));
+                        let read = message.get(offset..(offset + len)).unwrap_or_default();
+                        if module.memory.store_slice_aligned(ptr.into(), read) {
+                            self.value_stack.push(Value::I32(len as u32));
+                        } else {
+                            self.status = MachineStatus::Errored;
+                        }
                     } else {
-                        self.status = MachineStatus::Errored;
+                        self.status = MachineStatus::TooFar;
                     }
                 }
             }
@@ -1734,6 +1752,9 @@ impl Machine {
             }
             MachineStatus::Errored => {
                 h.update("Machine errored:");
+            }
+            MachineStatus::TooFar => {
+                h.update("Machine too far:");
             }
         }
         h.finalize().into()
@@ -1957,10 +1978,12 @@ impl Machine {
                             .assume_u64();
                         let inbox_identifier =
                             argument_data_to_inbox(next_inst.argument_data).unwrap();
-                        let msg_data = self
+                        if let Some(msg_data) = self
                             .inbox_reader
-                            .get_inbox_msg_owned(inbox_identifier, msg_idx);
-                        data.extend(msg_data);
+                            .get_inbox_msg_owned(inbox_identifier, msg_idx)
+                        {
+                            data.extend(msg_data);
+                        }
                     } else {
                         panic!("Should never ever get here");
                     }

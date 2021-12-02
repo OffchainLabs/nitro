@@ -220,6 +220,8 @@ contract OneStepProverHostIo is IOneStepProver {
             return;
         }
 
+        // TODO: if msgIndex is after the assertion's endpoint, enter the TOO_FAR state
+
         uint256 leafIdx = ptr / LEAF_SIZE;
         uint256 proofOffset = 0;
         bytes32 leafContents;

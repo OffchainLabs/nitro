@@ -151,8 +151,7 @@ fn main() -> Result<()> {
         opts.allow_hostapi,
         global_state,
         inbox_cache,
-        Box::new(|a: u64, b: u64| -> Vec<u8> { panic!("Inbox message not found {}, {}", a, b) })
-            as InboxReaderFn,
+        Box::new(|_: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());
@@ -202,6 +201,7 @@ fn main() -> Result<()> {
         }
     }
 
+    println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
     println!("End machine backtrace:");

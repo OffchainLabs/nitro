@@ -9,7 +9,8 @@ import "./StackFrames.sol";
 enum MachineStatus {
 	RUNNING,
 	FINISHED,
-	ERRORED
+	ERRORED,
+	TOO_FAR
 }
 
 struct Machine {
@@ -47,6 +48,8 @@ library Machines {
 			));
 		} else if (mach.status == MachineStatus.ERRORED) {
 			return keccak256(abi.encodePacked("Machine errored:"));
+		} else if (mach.status == MachineStatus.TOO_FAR) {
+			return keccak256(abi.encodePacked("Machine too far:"));
 		} else {
 			revert("BAD_MACH_STATUS");
 		}
