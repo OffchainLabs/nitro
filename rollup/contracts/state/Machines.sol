@@ -11,6 +11,7 @@ struct Machine {
 	ValueStack internalStack;
 	PcStack blockStack;
 	StackFrameWindow frameStack;
+	bytes32 globalStateHash;
 	uint32 moduleIdx;
 	uint32 functionIdx;
 	uint32 functionPc;
@@ -29,6 +30,7 @@ library Machines {
 			ValueStacks.hash(mach.internalStack),
 			PcStacks.hash(mach.blockStack),
 			StackFrames.hash(mach.frameStack),
+			mach.globalStateHash,
 			mach.moduleIdx,
 			mach.functionIdx,
 			mach.functionPc,

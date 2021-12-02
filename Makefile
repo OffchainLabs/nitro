@@ -116,6 +116,9 @@ wasm-libraries/soft-float/soft-float.wasm: \
 wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: wasm-libraries/go-stub/src/**
 	cd wasm-libraries && cargo build --target wasm32-wasi --package go-stub
 
+wasm-libraries/target/wasm32-wasi/debug/host_io.wasm: wasm-libraries/host-io/src/**
+	cd wasm-libraries && cargo build --target wasm32-wasi --package host-io
+
 prover/test-cases/%.wasm: prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
@@ -129,13 +132,14 @@ rollup/test/proofs/rust-%.json: \
 		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
+	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox prover/test-cases/rust/messages/msg0.bin --inbox prover/test-cases/rust/messages/msg1.bin --delayed-inbox prover/test-cases/rust/messages/msg0.bin --delayed-inbox prover/test-cases/rust/messages/msg1.bin
 
 rollup/test/proofs/go.json: \
 		prover/test-cases/go/main \
 		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
 		wasm-libraries/soft-float/soft-float.wasm prover/src/** \
-		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm
+		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm \
+		wasm-libraries/target/wasm32-wasi/debug/host_io.wasm
 	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -l wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm -o $@ -i 5000000
 
 .DELETE_ON_ERROR: # causes a failure to delete its target

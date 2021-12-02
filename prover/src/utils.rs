@@ -1,4 +1,8 @@
-use std::{borrow::Borrow, fmt, ops::Deref};
+use std::{
+    borrow::Borrow,
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
@@ -10,6 +14,12 @@ impl Deref for Bytes32 {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for Bytes32 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

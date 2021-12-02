@@ -5,12 +5,18 @@ pub mod machine;
 mod memory;
 mod merkle;
 mod reinterpret;
-mod utils;
+pub mod utils;
 mod value;
 pub mod wavm;
 
-use crate::{binary::WasmBinary, machine::Machine};
+use crate::{
+    binary::WasmBinary,
+    machine::{InboxReaderFn, Machine},
+};
 use eyre::{bail, Result};
+use fnv::FnvHashMap as HashMap;
+use machine::GlobalState;
+use sha3::{Digest, Keccak256};
 use std::{
     ffi::{CStr, CString},
     fs::File,
@@ -38,18 +44,39 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     Ok(bin)
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CByteArray {
+    pub ptr: *const u8,
+    pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CMultipleByteArrays {
+    pub ptr: *const CByteArray,
+    pub len: usize,
+}
+
+/// Note: the returned memory will not be freed by Arbitrator
+type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CByteArray;
+
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
-    always_merkelize: bool,
+    global_state: GlobalState,
+    c_preimages: CMultipleByteArrays,
+    c_inbox_reader: CInboxReaderFn,
 ) -> *mut Machine {
     match arbitrator_load_machine_impl(
         binary_path,
         library_paths,
         library_paths_size,
-        always_merkelize,
+        global_state,
+        c_preimages,
+        c_inbox_reader,
     ) {
         Ok(mach) => mach,
         Err(err) => {
@@ -63,7 +90,9 @@ unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
-    always_merkelize: bool,
+    global_state: GlobalState,
+    c_preimages: CMultipleByteArrays,
+    c_inbox_reader: CInboxReaderFn,
 ) -> Result<*mut Machine> {
     let main_mod = {
         let binary_path = cstr_to_string(binary_path);
@@ -78,7 +107,32 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let mach = Machine::from_binary(libraries, main_mod, always_merkelize);
+    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Vec<u8> {
+        unsafe {
+            let res = c_inbox_reader(inbox_idx, seq_num);
+            let slice = std::slice::from_raw_parts(res.ptr, res.len);
+            slice.to_vec()
+        }
+    }) as InboxReaderFn;
+    let mut preimages = HashMap::default();
+    for i in 0..c_preimages.len {
+        let c_bytes = *c_preimages.ptr.add(i);
+        let slice = std::slice::from_raw_parts(c_bytes.ptr, c_bytes.len);
+        let data = slice.to_vec();
+        let hash = Keccak256::digest(&data);
+        preimages.insert(hash.into(), data);
+    }
+
+    let mach = Machine::from_binary(
+        libraries,
+        main_mod,
+        false,
+        false,
+        global_state,
+        HashMap::default(),
+        inbox_reader,
+        preimages,
+    );
     Ok(Box::into_raw(Box::new(mach)))
 }
 

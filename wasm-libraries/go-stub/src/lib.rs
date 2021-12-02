@@ -2,61 +2,10 @@ mod value;
 
 use crate::value::*;
 use fnv::FnvHashSet as HashSet;
+use go_abi::*;
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{collections::BinaryHeap, convert::TryFrom, io::Write};
-
-#[allow(dead_code)]
-extern "C" {
-    fn wavm_caller_module_memory_load8(ptr: usize) -> u8;
-    fn wavm_caller_module_memory_load32(ptr: usize) -> u32;
-    fn wavm_caller_module_memory_store8(ptr: usize, val: u8);
-    fn wavm_caller_module_memory_store32(ptr: usize, val: u32);
-
-    fn wavm_guest_call__getsp() -> usize;
-    fn wavm_guest_call__resume();
-}
-
-unsafe fn wavm_caller_module_memory_load64(ptr: usize) -> u64 {
-    let lower = wavm_caller_module_memory_load32(ptr);
-    let upper = wavm_caller_module_memory_load32(ptr + 4);
-    lower as u64 | ((upper as u64) << 32)
-}
-
-unsafe fn wavm_caller_module_memory_store64(ptr: usize, val: u64) {
-    wavm_caller_module_memory_store32(ptr, val as u32);
-    wavm_caller_module_memory_store32(ptr + 4, (val >> 32) as u32);
-}
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct GoStack(usize);
-
-impl GoStack {
-    unsafe fn read_u32(self, offset: usize) -> u32 {
-        wavm_caller_module_memory_load32(self.0 + (offset + 1) * 8)
-    }
-
-    unsafe fn read_i32(self, offset: usize) -> i32 {
-        self.read_u32(offset) as i32
-    }
-
-    unsafe fn read_u64(self, offset: usize) -> u64 {
-        wavm_caller_module_memory_load64(self.0 + (offset + 1) * 8)
-    }
-
-    unsafe fn write_u8(self, offset: usize, x: u8) {
-        wavm_caller_module_memory_store8(self.0 + (offset + 1) * 8, x);
-    }
-
-    unsafe fn write_u32(self, offset: usize, x: u32) {
-        wavm_caller_module_memory_store32(self.0 + (offset + 1) * 8, x);
-    }
-
-    unsafe fn write_u64(self, offset: usize, x: u64) {
-        wavm_caller_module_memory_store64(self.0 + (offset + 1) * 8, x);
-    }
-}
 
 fn interpret_value(repr: u64) -> InterpValue {
     if repr == 0 {
@@ -77,46 +26,10 @@ unsafe fn read_value_slice(mut ptr: u64, len: u64) -> Vec<InterpValue> {
     let mut values = Vec::new();
     for _ in 0..len {
         let p = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-        values.push(interpret_value(wavm_caller_module_memory_load64(p)));
+        values.push(interpret_value(wavm_caller_load64(p)));
         ptr += 8;
     }
     values
-}
-
-unsafe fn read_slice(ptr: u64, mut len: u64) -> Vec<u8> {
-    let mut data = Vec::with_capacity(len as usize);
-    if len == 0 {
-        return data;
-    }
-    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-    while len >= 4 {
-        data.extend(wavm_caller_module_memory_load32(ptr).to_le_bytes());
-        ptr += 4;
-        len -= 4;
-    }
-    for _ in 0..len {
-        data.push(wavm_caller_module_memory_load8(ptr));
-        ptr += 1;
-    }
-    data
-}
-
-unsafe fn write_slice(mut src: &[u8], ptr: u64) {
-    if src.len() == 0 {
-        return;
-    }
-    let mut ptr = usize::try_from(ptr).expect("Go pointer didn't fit in usize");
-    while src.len() >= 4 {
-        let mut arr = [0u8; 4];
-        arr.copy_from_slice(&src[..4]);
-        wavm_caller_module_memory_store32(ptr, u32::from_le_bytes(arr));
-        ptr += 4;
-        src = &src[4..];
-    }
-    for &byte in src {
-        wavm_caller_module_memory_store8(ptr, byte);
-        ptr += 1;
-    }
 }
 
 #[no_mangle]
@@ -129,7 +42,7 @@ pub unsafe extern "C" fn go__runtime_resetMemoryDataView(_: GoStack) {}
 
 #[no_mangle]
 pub unsafe extern "C" fn go__runtime_wasmExit(sp: GoStack) {
-    std::process::exit(sp.read_i32(0));
+    std::process::exit(sp.read_u32(0) as i32);
 }
 
 #[no_mangle]
@@ -187,14 +100,14 @@ pub unsafe extern "C" fn go__runtime_getRandomData(sp: GoStack) {
         usize::try_from(sp.read_u64(0)).expect("Go getRandomData pointer didn't fit in usize");
     let mut len = sp.read_u64(1);
     while len >= 4 {
-        wavm_caller_module_memory_store32(ptr, rng.next_u32());
+        wavm_caller_store32(ptr, rng.next_u32());
         ptr += 4;
         len -= 4;
     }
     if len > 0 {
         let mut rem = rng.next_u32();
         for _ in 0..len {
-            wavm_caller_module_memory_store8(ptr, rem as u8);
+            wavm_caller_store8(ptr, rem as u8);
             ptr += 1;
             rem >>= 8;
         }
@@ -273,6 +186,9 @@ unimpl_js!(
     go__syscall_js_valueSetIndex,
     go__syscall_js_valuePrepareString,
     go__syscall_js_valueLoadString,
+    go__syscall_js_valueDelete,
+    go__syscall_js_valueInvoke,
+    go__syscall_js_valueInstanceOf,
 );
 
 #[no_mangle]
@@ -314,6 +230,12 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
                 args,
             );
         }
+    } else if class == DATE_ID {
+        let id = DynamicObjectPool::singleton()
+            .insert(DynamicObject::Date);
+        sp.write_u64(4, GoValue::Object(id).encode());
+        sp.write_u8(5, 1);
+        return;
     } else {
         eprintln!(
             "Go attempting to construct unimplemented JS value {}",
@@ -511,6 +433,24 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
             }
         }
         Ok(GoValue::Undefined)
+    } else if let InterpValue::Ref(obj_id) = object {
+        let val = DynamicObjectPool::singleton().get(obj_id);
+        if let Some(DynamicObject::Date) = val {
+            if &method_name == b"getTimezoneOffset" {
+                return Ok(GoValue::Number(0.0));
+            } else {
+                return Err(format!(
+                    "Go attempting to call unknown method {} for date object",
+                    String::from_utf8_lossy(&method_name),
+                ));
+            }
+        } else {
+            return Err(format!(
+                "Go attempting to call method {} for unknown object - id {}",
+                String::from_utf8_lossy(&method_name),
+                obj_id,
+            ));
+        }
     } else {
         Err(format!(
             "Go attempting to call unknown method {:?} . {}",

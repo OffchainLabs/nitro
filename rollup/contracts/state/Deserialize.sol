@@ -10,6 +10,7 @@ import "./StackFrames.sol";
 import "./MerkleProofs.sol";
 import "./ModuleMemories.sol";
 import "./Modules.sol";
+import "./GlobalStates.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -188,11 +189,31 @@ library Deserialize {
 		});
 	}
 
+	function globalState(bytes calldata proof, uint256 startOffset) internal pure returns (GlobalState memory state, uint256 offset) {
+		offset = startOffset;
+
+		// using constant ints for array size requires newer solidity
+		bytes32[1] memory bytes32_vals;
+		uint64[2] memory u64_vals;
+
+		for (uint8 i = 0; i< GlobalStates.BYTES32_VALS_NUM; i++) {
+			(bytes32_vals[i], offset) = b32(proof, offset);
+		}
+		for (uint8 i = 0; i< GlobalStates.U64_VALS_NUM; i++) {
+			(u64_vals[i], offset) = u64(proof, offset);
+		}
+		state = GlobalState({
+			bytes32_vals: bytes32_vals,
+			u64_vals: u64_vals
+		});
+	}
+
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
+		bytes32 globalStateHash;
 		uint32 moduleIdx;
 		uint32 functionIdx;
 		uint32 functionPc;
@@ -202,6 +223,7 @@ library Deserialize {
 		(internalStack, offset) = valueStack(proof, offset);
 		(blocks, offset) = pcStack(proof, offset);
 		(frameStack, offset) = stackFrameWindow(proof, offset);
+		(globalStateHash, offset) = b32(proof, offset);
 		(moduleIdx, offset) = u32(proof, offset);
 		(functionIdx, offset) = u32(proof, offset);
 		(functionPc, offset) = u32(proof, offset);
@@ -211,6 +233,7 @@ library Deserialize {
 			internalStack: internalStack,
 			blockStack: blocks,
 			frameStack: frameStack,
+			globalStateHash: globalStateHash,
 			moduleIdx: moduleIdx,
 			functionIdx: functionIdx,
 			functionPc: functionPc,

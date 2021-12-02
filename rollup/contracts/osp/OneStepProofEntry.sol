@@ -9,10 +9,19 @@ import "./IOneStepProver.sol";
 contract OneStepProofEntry {
     IOneStepProver prover0;
     IOneStepProver proverMem;
+    IOneStepProver proverMath;
+    IOneStepProver proverHostIo;
 
-    constructor(IOneStepProver prover0_, IOneStepProver proverMem_) {
+    constructor(
+        IOneStepProver prover0_,
+        IOneStepProver proverMem_,
+        IOneStepProver proverMath_,
+        IOneStepProver proverHostIo_
+    ) {
         prover0 = prover0_;
         proverMem = proverMem_;
+        proverMath = proverMath_;
+        proverHostIo = proverHostIo_;
     }
 
     function proveOneStep(bytes32 beforeHash, bytes calldata proof)
@@ -69,12 +78,71 @@ contract OneStepProofEntry {
             opcode == Instructions.MEMORY_SIZE ||
             opcode == Instructions.MEMORY_GROW
         ) {
-            (mach, mod) = proverMem.executeOneStep(mach, mod, inst, proof[offset:]);
+            (mach, mod) = proverMem.executeOneStep(
+                mach,
+                mod,
+                inst,
+                proof[offset:]
+            );
+        } else if (
+            (opcode == Instructions.I32_EQZ ||
+                opcode == Instructions.I64_EQZ) ||
+            (opcode >= Instructions.I32_RELOP_BASE &&
+                opcode <=
+                Instructions.I32_RELOP_BASE + Instructions.IRELOP_LAST) ||
+            (opcode >= Instructions.I32_UNOP_BASE &&
+                opcode <=
+                Instructions.I32_UNOP_BASE + Instructions.IUNOP_LAST) ||
+            (opcode >= Instructions.I32_ADD &&
+                opcode <= Instructions.I32_ROTR) ||
+            (opcode >= Instructions.I64_RELOP_BASE &&
+                opcode <=
+                Instructions.I64_RELOP_BASE + Instructions.IRELOP_LAST) ||
+            (opcode >= Instructions.I64_UNOP_BASE &&
+                opcode <=
+                Instructions.I64_UNOP_BASE + Instructions.IUNOP_LAST) ||
+            (opcode >= Instructions.I64_ADD &&
+                opcode <= Instructions.I64_ROTR) ||
+            (opcode == Instructions.I32_WRAP_I64) ||
+            (opcode == Instructions.I64_EXTEND_I32_S ||
+                opcode == Instructions.I64_EXTEND_I32_U) ||
+            (opcode >= Instructions.I32_EXTEND_8S &&
+                opcode <= Instructions.I64_EXTEND_32S) ||
+            (opcode >= Instructions.I32_REINTERPRET_F32 &&
+                opcode <= Instructions.F64_REINTERPRET_I64)
+        ) {
+            (mach, mod) = proverMath.executeOneStep(
+                mach,
+                mod,
+                inst,
+                proof[offset:]
+            );
+        } else if (
+            (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
+                opcode <= Instructions.SET_GLOBAL_STATE_U64) ||
+            opcode == Instructions.READ_PRE_IMAGE ||
+            opcode == Instructions.READ_INBOX_MESSAGE
+        ) {
+            (mach, mod) = proverHostIo.executeOneStep(
+                mach,
+                mod,
+                inst,
+                proof[offset:]
+            );
         } else {
-            (mach, mod) = prover0.executeOneStep(mach, mod, inst, proof[offset:]);
+            (mach, mod) = prover0.executeOneStep(
+                mach,
+                mod,
+                inst,
+                proof[offset:]
+            );
         }
 
-        mach.modulesRoot = MerkleProofs.computeRootFromModule(modProof, oldModIdx, mod);
+        mach.modulesRoot = MerkleProofs.computeRootFromModule(
+            modProof,
+            oldModIdx,
+            mod
+        );
 
         return Machines.hash(mach);
     }

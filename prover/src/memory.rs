@@ -4,8 +4,9 @@ use crate::{
     value::{Value, ValueType},
 };
 use digest::Digest;
+use rayon::prelude::*;
 use sha3::Keccak256;
-use std::borrow::Cow;
+use std::{borrow::Cow, convert::TryFrom};
 
 #[derive(PartialEq, Eq, Clone, Debug, Default)]
 pub struct Memory {
@@ -64,14 +65,18 @@ impl Memory {
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
-        let mut leaf_hashes = Vec::with_capacity(leaves);
-        let mut remaining_buf = self.buffer.as_slice();
-        for _ in 0..leaves {
-            let mut leaf = [0u8; Self::LEAF_SIZE];
-            let taking_len = std::cmp::min(Self::LEAF_SIZE, remaining_buf.len());
-            leaf[..taking_len].copy_from_slice(&remaining_buf[..taking_len]);
-            leaf_hashes.push(hash_leaf(leaf));
-            remaining_buf = &remaining_buf[taking_len..];
+        let mut leaf_hashes: Vec<Bytes32> = self
+            .buffer
+            .par_chunks(Self::LEAF_SIZE)
+            .map(|leaf| {
+                let mut full_leaf = [0u8; 32];
+                full_leaf[..leaf.len()].copy_from_slice(leaf);
+                hash_leaf(full_leaf)
+            })
+            .collect();
+        if leaf_hashes.len() < leaves {
+            let empty_hash = hash_leaf([0u8; 32]);
+            leaf_hashes.resize(leaves, empty_hash);
         }
         Cow::Owned(Merkle::new_advanced(
             MerkleType::Memory,
@@ -196,6 +201,48 @@ impl Memory {
         }
 
         true
+    }
+
+    #[must_use]
+    pub fn store_slice_aligned(&mut self, idx: u64, value: &[u8]) -> bool {
+        if idx % Self::LEAF_SIZE as u64 != 0 {
+            return false;
+        }
+        let end_idx = match idx.checked_add(value.len() as u64) {
+            Some(x) => x,
+            None => return false,
+        };
+        if end_idx > self.buffer.len() as u64 {
+            return false;
+        }
+        let idx = idx as usize;
+        let end_idx = end_idx as usize;
+        self.buffer[idx..end_idx].copy_from_slice(&*value);
+
+        if let Some(mut merkle) = self.merkle.take() {
+            let start_leaf = idx / Self::LEAF_SIZE;
+            merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
+            // No need for second merkle
+            assert!(value.len() <= Self::LEAF_SIZE);
+        }
+
+        true
+    }
+
+    #[must_use]
+    pub fn load_32_byte_aligned(&self, idx: u64) -> Option<Bytes32> {
+        if idx % Self::LEAF_SIZE as u64 != 0 {
+            return None;
+        }
+        let idx = match usize::try_from(idx) {
+            Ok(x) => x,
+            Err(_) => return None,
+        };
+
+        let slice = self.get_range(idx, 32)?;
+        let mut bytes = Bytes32::default();
+        bytes.copy_from_slice(slice);
+        Some(bytes)
     }
 
     pub fn get_range(&self, offset: usize, len: usize) -> Option<&[u8]> {

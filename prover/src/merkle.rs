@@ -1,5 +1,6 @@
 use crate::utils::Bytes32;
 use digest::Digest;
+use rayon::prelude::*;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
@@ -71,14 +72,14 @@ impl Merkle {
         empty_layers.push(empty_hash);
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
-            let mut new_layer = Vec::new();
-            for window in layers.last().unwrap().chunks(2) {
-                new_layer.push(hash_node(
-                    ty,
-                    window[0],
-                    window.get(1).cloned().unwrap_or(empty_layer),
-                ));
-            }
+            let new_layer = layers
+                .last()
+                .unwrap()
+                .par_chunks(2)
+                .map(|window| {
+                    hash_node(ty, window[0], window.get(1).cloned().unwrap_or(empty_layer))
+                })
+                .collect();
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             layers.push(new_layer);
         }
