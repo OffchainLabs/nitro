@@ -86,7 +86,10 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
-	bm := bmi.(BroadcastMessage)
+	bm, ok := bmi.(BroadcastMessage)
+	if !ok {
+		logger.Fatal().Msg("Requested to broadcast unknown message type")
+	}
 	if confirmMsg := bm.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		latestConfirmedIndex := -1
 		for i, storedMsg := range b.messages {

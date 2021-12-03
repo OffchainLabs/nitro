@@ -17,7 +17,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 	msg := BroadcastMessage{
 		Version: 1,
 		Messages: []*BroadcastFeedMessage{
-			&BroadcastFeedMessage{
+			{
 				SequenceNumber: 12345,
 				Message: arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
@@ -39,7 +39,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 	}
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
-	encoder.Encode(msg)
+	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
 	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":"0x0000000000000000000000000000000000000000000000000000000000000000","timestamp":"0x0000000000000000000000000000000000000000000000000000000000000000","requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","gasPriceL1":"0x0000000000000000000000000000000000000000000000000000000000000000"},"l2Msg":"3q2+7w=="},"mustEndBlock":true,"delayedMessagesRead":3333}}]}
 }
@@ -50,7 +50,7 @@ func ExampleBroadcastMessage_emptymessage() {
 	}
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
-	encoder.Encode(msg)
+	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
 	// Output: {"version":1}
 }
@@ -64,7 +64,7 @@ func ExampleBroadcastMessage_confirmedseqnum() {
 	}
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
-	encoder.Encode(msg)
+	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
 	// Output: {"version":1,"confirmedSequenceNumberMessage":{"sequenceNumber":1234}}
 }
