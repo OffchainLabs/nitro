@@ -8,7 +8,7 @@ replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
 	github.com/andybalholm/brotli v1.0.3
-	github.com/ethereum/go-ethereum v0.0.0-00010101000000-000000000000
+	github.com/ethereum/go-ethereum v1.10.13-0.20211112145008-abc74a5ffeb7
 	github.com/miguelmota/go-solidity-sha3 v0.1.1
 )
 
@@ -56,7 +56,7 @@ require (
 	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/mattn/go-isatty v0.0.12 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
-	github.com/mitchellh/mapstructure v1.4.1 // indirect
+	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
 	github.com/offchainlabs/arbitrum/packages/arb-util v0.8.1-0.20211124002622-922b29a8e3b6
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
@@ -64,7 +64,7 @@ require (
 	github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/tsdb v0.7.1 // indirect
-	github.com/rjeczalik/notify v0.9.1 // indirect
+	github.com/rjeczalik/notify v0.9.2 // indirect
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/status-im/keycard-go v0.0.0-20190316090335-8537d3370df4 // indirect
