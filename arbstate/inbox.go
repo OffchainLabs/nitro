@@ -33,9 +33,9 @@ type InboxBackend interface {
 }
 
 type MessageWithMetadata struct {
-	Message             *arbos.L1IncomingMessage
-	MustEndBlock        bool
-	DelayedMessagesRead uint64
+	Message             *arbos.L1IncomingMessage `json:"message"`
+	MustEndBlock        bool                     `json:"mustEndBlock"`
+	DelayedMessagesRead uint64                   `json:"delayedMessagesRead"`
 }
 
 type InboxMultiplexer interface {

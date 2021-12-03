@@ -291,6 +291,12 @@ github.com/naoina/go-stringutil v0.1.0/go.mod h1:XJ2SJL9jCtBh+P9q5btrd/Ylo8XwT/h
 github.com/naoina/toml v0.1.2-0.20170918210437-9fafd6967416/go.mod h1:NBIhNtsFMo3G2szEBne+bO4gS192HuIYRqfvOWb4i1E=
 github.com/nxadm/tail v1.4.4 h1:DQuhQpB1tVlglWS2hLQ5OV6B5r8aGxSrPc5Qo6uTN78=
 github.com/nxadm/tail v1.4.4/go.mod h1:kenIhsEOeOJmVchQTgglprH7qJGnHDVpk1VPCcaMI8A=
+github.com/offchainlabs/arbitrum/packages/arb-avm-cpp v0.8.0/go.mod h1:wBHQxDodVE8WI12EQ/28yuLyYDilBojtrkjmtGoxnnQ=
+github.com/offchainlabs/arbitrum/packages/arb-evm v0.8.0/go.mod h1:h00AAlKchCo+IcKa/CTdWeO+olxqP9xDBr+nDYh0pEQ=
+github.com/offchainlabs/arbitrum/packages/arb-node-core v0.8.0/go.mod h1:iZ291yvH0+hwTuPBuRkYvV7wivRVTnsGTEaYdEFKMlM=
+github.com/offchainlabs/arbitrum/packages/arb-util v0.8.0/go.mod h1:acXMqKhdVVUuJvhyRJjAlTxFCqd/cDx+GVlrsIaCbZw=
+github.com/offchainlabs/arbitrum/packages/arb-util v0.8.1-0.20211124002622-922b29a8e3b6 h1:QuxaqzK3Msx3mCDs2+ao7BS7907vTYshZr4QGfQ/Ot8=
+github.com/offchainlabs/arbitrum/packages/arb-util v0.8.1-0.20211124002622-922b29a8e3b6/go.mod h1:q9pK7+7ik6ZiEvAJWl/Sg5HVSwYF3iUzV7npUZ7LmdA=
 github.com/oklog/ulid v1.3.1/go.mod h1:CirwcVhetQ6Lv90oh/F+FBtV6XMibvdAFo93nm5qn4U=
 github.com/olekukonko/tablewriter v0.0.5 h1:P2Ga83D34wi1o9J6Wh1mRuqd4mF/x/lgBS7N7AbDhec=
 github.com/olekukonko/tablewriter v0.0.5/go.mod h1:hPp6KlRPjbx+hW8ykQs1w3UBbZlj6HuIJcUGPhkA7kY=
