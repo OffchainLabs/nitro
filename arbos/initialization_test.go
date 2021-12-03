@@ -91,7 +91,8 @@ func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) statetrans
 		pseudorandomAddressForTesting(salt, 2),
 		pseudorandomAddressForTesting(salt, 3),
 		pseudorandomHashForTesting(salt, 4).Big(),
-		pseudorandomDataForTesting(salt, 5, 256),
+		pseudorandomAddressForTesting(salt, 5),
+		pseudorandomDataForTesting(salt, 6, 256),
 	}
 }
 

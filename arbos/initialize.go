@@ -54,7 +54,7 @@ func initializeArbOS(
 
 func initializeRetryables(rs *retryables.RetryableState, data []statetransfer.InitializationDataForRetryable, currentTimestampToUse uint64) {
 	for _, r := range data {
-		rs.CreateRetryable(0, r.Id, r.Timeout, r.From, r.To, r.Callvalue, r.Calldata)
+		rs.CreateRetryable(nil, r.Id, r.Timeout, r.From, r.To, r.Callvalue, r.Beneficiary, r.Calldata)
 	}
 }
 

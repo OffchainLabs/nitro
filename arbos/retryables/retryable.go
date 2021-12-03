@@ -31,25 +31,29 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 }
 
 type Retryable struct {
-	id        common.Hash // the retryable's ID is also the key that determines where it lives in storage
-	numTries  *big.Int
-	timeout   uint64
-	from      common.Address
-	to        common.Address
-	callvalue *big.Int
-	calldata  []byte
+	id          common.Hash // the retryable's ID is also the key that determines where it lives in storage
+	numTries    *big.Int
+	timeout     uint64
+	from        common.Address
+	to          common.Address
+	callvalue   *big.Int
+	beneficiary common.Address
+	calldata    []byte
 }
 
 func (rs *RetryableState) CreateRetryable(
-	currentTimestamp uint64,
+	currentTimestamp *uint64,
 	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,
 	to common.Address,
 	callvalue *big.Int,
+	beneficiary common.Address,
 	calldata []byte,
 ) *Retryable {
-	rs.TryToReapOneRetryable(currentTimestamp)
+	if currentTimestamp != nil {
+		rs.TryToReapOneRetryable(*currentTimestamp)
+	}
 	ret := &Retryable{
 		id,
 		big.NewInt(0),
@@ -57,6 +61,7 @@ func (rs *RetryableState) CreateRetryable(
 		from,
 		to,
 		callvalue,
+		beneficiary,
 		calldata,
 	}
 	buf := bytes.Buffer{}
@@ -117,6 +122,10 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 	if err != nil {
 		return nil, err
 	}
+	beneficiary, err := util.AddressFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
 	sizeBuf := make([]byte, 8)
 	if _, err := io.ReadFull(rd, sizeBuf); err != nil {
 		return nil, err
@@ -134,6 +143,7 @@ func NewRetryableFromReader(rd io.Reader, id common.Hash) (*Retryable, error) {
 		from,
 		to,
 		callvalue.Big(),
+		beneficiary,
 		calldata,
 	}, nil
 }
@@ -152,6 +162,9 @@ func (retryable *Retryable) serialize(wr io.Writer) error {
 		return err
 	}
 	if _, err := wr.Write(common.BigToHash(retryable.callvalue).Bytes()); err != nil {
+		return err
+	}
+	if _, err := wr.Write(retryable.beneficiary[:]); err != nil {
 		return err
 	}
 	b := make([]byte, 8)
@@ -179,6 +192,9 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 		return false
 	}
 	if retryable.callvalue.Cmp(other.callvalue) != 0 {
+		return false
+	}
+	if retryable.beneficiary != other.beneficiary {
 		return false
 	}
 	return bytes.Equal(retryable.calldata, other.calldata)

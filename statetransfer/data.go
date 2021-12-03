@@ -18,12 +18,13 @@ type ArbosInitializationInfo struct {
 }
 
 type InitializationDataForRetryable struct {
-	Id        common.Hash
-	Timeout   uint64
-	From      common.Address
-	To        common.Address
-	Callvalue *big.Int
-	Calldata  []byte
+	Id          common.Hash
+	Timeout     uint64
+	From        common.Address
+	To          common.Address
+	Callvalue   *big.Int
+	Beneficiary common.Address
+	Calldata    []byte
 }
 
 type AccountInitializationInfo struct {
