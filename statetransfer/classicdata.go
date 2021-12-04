@@ -12,17 +12,18 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/classicgen"
 	"io"
 	"math/big"
+	"math/rand"
 )
 
-func getDataFromClassicAsJson(maybeUrl *string) ([]byte, error) {
-	data, err := getDataFromClassic(maybeUrl)
+func GetDataFromClassicAsJson(maybeUrl *string, sampleRate *float64) ([]byte, error) {
+	data, err := getDataFromClassic(maybeUrl, sampleRate)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(data)
 }
 
-func getDataFromClassic(maybeUrl *string) (*ArbosInitializationInfo, error) {
+func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializationInfo, error) {
 	ctx := context.Background()
 	client, err := openClassicClient(maybeUrl)
 
@@ -54,11 +55,13 @@ func getDataFromClassic(maybeUrl *string) (*ArbosInitializationInfo, error) {
 
 	accounts := []AccountInitializationInfo{}
 	for _, addr := range accountAddresses {
-		acctInfo, err := getAccountInfo(classicArbosTest, callopts, addr)
-		if err != nil {
-			return nil, err
+		if sampleRate == nil || rand.Float64() < *sampleRate {
+			acctInfo, err := getAccountInfo(classicArbosTest, callopts, addr)
+			if err != nil {
+				return nil, err
+			}
+			accounts = append(accounts, acctInfo)
 		}
-		accounts = append(accounts, acctInfo)
 	}
 
 	classicArbRetryableTx, err := openClassicArbRetryableTx(client)
