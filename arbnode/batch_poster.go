@@ -358,7 +358,7 @@ func (b *BatchPoster) postSequencerBatch() error {
 		return err
 	}
 	if sequencerMsg == nil {
-		log.Info("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "prev delayed", prevDelayedMsg)
+		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "prev delayed", prevDelayedMsg)
 		return nil
 	}
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)

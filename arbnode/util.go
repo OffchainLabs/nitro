@@ -46,7 +46,7 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 }
 
 func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transaction) (*types.Receipt, error) {
-	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second)
+	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Minute*5)
 }
 
 func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
