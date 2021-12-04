@@ -48,7 +48,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err :=ioutil.WriteFile("deploy.json", deployData, 0777); err != nil {
+	if err := ioutil.WriteFile("deploy.json", deployData, 0600); err != nil {
 		panic(err)
 	}
 }
