@@ -30,7 +30,7 @@ struct Opts {
     #[structopt(long)]
     always_merkleize: bool,
     #[structopt(short = "i", long, default_value = "1")]
-    proving_interval: usize,
+    proving_interval: u64,
     #[structopt(long, default_value = "0")]
     delayed_inbox_position: u64,
     #[structopt(long, default_value = "0")]
@@ -178,7 +178,7 @@ fn main() -> Result<()> {
         print!(
             "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
             proofs.len(),
-            mach.get_steps_string(),
+            mach.get_steps(),
             next_opcode,
             next_inst.argument_data,
         );
@@ -196,9 +196,7 @@ fn main() -> Result<()> {
             proof: hex::encode(proof),
             after: after.to_string(),
         });
-        for _ in 1..opts.proving_interval {
-            mach.step();
-        }
+        mach.step_n(opts.proving_interval.saturating_sub(1));
     }
 
     println!("End machine status: {:?}", mach.get_status());

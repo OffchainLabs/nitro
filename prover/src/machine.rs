@@ -14,14 +14,14 @@ use crate::{
 };
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
-use num::{traits::PrimInt, BigUint, One, Zero};
+use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
     collections::hash_map,
     convert::TryFrom,
     num::Wrapping,
-    ops::{AddAssign, Deref, DerefMut},
+    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
@@ -667,39 +667,8 @@ pub enum MachineStatus {
 }
 
 #[derive(Clone)]
-enum SmallOrBigUint {
-    Small(u128),
-    Big(BigUint),
-}
-
-impl SmallOrBigUint {
-    fn increment(&mut self) {
-        match self {
-            SmallOrBigUint::Small(x) => match x.checked_add(1) {
-                Some(new) => *x = new,
-                None => *self = SmallOrBigUint::Big(BigUint::from(*x) + BigUint::one()),
-            },
-            SmallOrBigUint::Big(x) => *x += BigUint::one(),
-        }
-    }
-}
-
-impl AddAssign<u128> for SmallOrBigUint {
-    fn add_assign(&mut self, rhs: u128) {
-        match self {
-            SmallOrBigUint::Small(x) => match x.checked_add(rhs) {
-                Some(new) => *x = new,
-                None => *self = SmallOrBigUint::Big(BigUint::from(*x) + BigUint::from(rhs)),
-            },
-            SmallOrBigUint::Big(x) => *x += BigUint::from(rhs),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct Machine {
-    // Not part of machine hash
-    steps: SmallOrBigUint,
+    steps: u64, // Not part of machine hash
     status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
@@ -1047,7 +1016,7 @@ impl Machine {
 
         Machine {
             status: MachineStatus::Running,
-            steps: SmallOrBigUint::Small(0),
+            steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -1076,25 +1045,18 @@ impl Machine {
         assert!(module.funcs[pc.func].code.len() > pc.inst);
     }
 
-    pub fn get_steps_bytes_be(&self) -> Vec<u8> {
-        match &self.steps {
-            SmallOrBigUint::Small(x) => x.to_be_bytes().to_vec(),
-            SmallOrBigUint::Big(x) => x.to_bytes_be(),
-        }
+    pub fn get_steps(&self) -> u64 {
+        self.steps
     }
 
-    pub fn get_steps_string(&self) -> String {
-        match &self.steps {
-            SmallOrBigUint::Small(x) => x.to_string(),
-            SmallOrBigUint::Big(x) => x.to_string(),
-        }
-    }
-
-    pub fn step_n(&mut self, n: u128) {
+    pub fn step_n(&mut self, n: u64) {
         for x in 0..n {
             if self.is_halted() {
                 let remaining = n - x;
-                self.steps += remaining;
+                self.steps = self
+                    .steps
+                    .checked_add(remaining)
+                    .expect("Exceeded max uint64 steps");
                 break;
             }
             self.step();
@@ -1102,10 +1064,15 @@ impl Machine {
     }
 
     pub fn step(&mut self) {
-        self.steps.increment();
         if self.is_halted() {
+            self.steps = self
+                .steps
+                .checked_add(1)
+                .expect("Exceeded max uint64 steps");
             return;
         }
+        // It's infeasible to overflow steps without halting
+        self.steps += 1;
 
         if self.pc.inst == 1 {
             if let Some(hook) = self.modules[self.pc.module]

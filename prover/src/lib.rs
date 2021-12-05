@@ -158,32 +158,12 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
-    (*mach).step_n(num_steps.into());
-}
-
-#[repr(C)]
-pub struct RustBytes {
-    pub ptr: *mut u8,
-    pub len: usize,
-    pub capacity: usize,
-}
-
-/// The returned bytes must be freed with `arbitrator_free_bytes`
-#[no_mangle]
-pub unsafe extern "C" fn arbitrator_get_num_steps_be(mach: *const Machine) -> RustBytes {
-    let mut v = (*mach).get_steps_bytes_be();
-    let bytes = RustBytes {
-        ptr: v.as_mut_ptr(),
-        len: v.len(),
-        capacity: v.capacity(),
-    };
-    std::mem::forget(v);
-    bytes
+    (*mach).step_n(num_steps);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_free_bytes(bytes: RustBytes) {
-    drop(Vec::from_raw_parts(bytes.ptr, bytes.len, bytes.capacity));
+pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
+    (*mach).get_steps()
 }
 
 // C requires enums be represented as `int`s, so we need a new type for this :/
