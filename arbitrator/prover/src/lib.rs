@@ -60,7 +60,8 @@ pub struct CMultipleByteArrays {
 
 /// Note: the returned memory will not be freed by Arbitrator.
 /// To indicate "not found", set len to non-zero and ptr to null.
-type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CByteArray;
+/// context is copied from the machine, to be used by the function
+type CInboxReaderFn = extern "C" fn(context: u64, inbox_idx: u64, seq_num: u64) -> CByteArray;
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_machine(
@@ -108,9 +109,9 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
+    let inbox_reader = Box::new(move |context: u64, inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
         unsafe {
-            let res = c_inbox_reader(inbox_idx, seq_num);
+            let res = c_inbox_reader(context, inbox_idx, seq_num);
             if res.len > 0 && res.ptr.is_null() {
                 None
             } else {
@@ -194,6 +195,27 @@ pub unsafe extern "C" fn arbitrator_is_halted(mach: *mut Machine) -> bool {
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_global_state(mach: *mut Machine) -> GlobalState {
     return (*mach).get_global_state();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: GlobalState) {
+    (*mach).set_global_state(gs);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_set_inbox_reader_context(mach: *mut Machine, context: u64) {
+    (*mach).set_inbox_reader_context(context);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_add_preimages(mach: *mut Machine, c_preimages: CMultipleByteArrays) {
+    for i in 0..c_preimages.len {
+        let c_bytes = *c_preimages.ptr.add(i);
+        let slice = std::slice::from_raw_parts(c_bytes.ptr, c_bytes.len);
+        let data = slice.to_vec();
+        let hash = Keccak256::digest(&data);
+        (*mach).add_preimage(hash.into(), data)
+    }
 }
 
 #[no_mangle]
