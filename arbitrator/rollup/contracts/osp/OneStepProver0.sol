@@ -9,7 +9,7 @@ import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
 	function executeUnreachable(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
-		mach.halted = true;
+		mach.status = MachineStatus.ERRORED;
 	}
 
 	function executeNop(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
@@ -76,7 +76,7 @@ contract OneStepProver0 is IOneStepProver {
 	function executeReturn(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		StackFrame memory frame = StackFrames.pop(mach.frameStack);
 		if (frame.returnPc.valueType == ValueType.REF_NULL) {
-			mach.halted = true;
+			mach.status = MachineStatus.ERRORED;
 			return;
 		} else if (frame.returnPc.valueType != ValueType.INTERNAL_REF) {
 			revert("INVALID_RETURN_PC_TYPE");
@@ -146,7 +146,7 @@ contract OneStepProver0 is IOneStepProver {
 		StackFrame memory frame = StackFrames.peek(mach.frameStack);
 		if (frame.callerModuleInternals == 0) {
 			// The caller module has no internals
-			mach.halted = true;
+			mach.status = MachineStatus.ERRORED;
 			return;
 		}
 
@@ -187,7 +187,7 @@ contract OneStepProver0 is IOneStepProver {
 
 				// Check if the table access is out of bounds
 				if (elementIdx >= tableSize) {
-					mach.halted = true;
+					mach.status = MachineStatus.ERRORED;
 					return;
 				}
 			}
@@ -202,12 +202,12 @@ contract OneStepProver0 is IOneStepProver {
 			require(recomputedElemRoot == elemsRoot, "BAD_ELEMENTS_ROOT");
 
 			if (elemFuncTypeHash != wantedFuncTypeHash) {
-				mach.halted = true;
+				mach.status = MachineStatus.ERRORED;
 				return;
 			}
 
 			if (functionPointer.valueType == ValueType.REF_NULL) {
-				mach.halted = true;
+				mach.status = MachineStatus.ERRORED;
 				return;
 			} else if (functionPointer.valueType == ValueType.FUNC_REF) {
 				funcIdx = uint32(functionPointer.contents);
@@ -339,7 +339,7 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function handleTrap(Machine memory mach) internal pure {
-		mach.halted = true;
+		mach.status = MachineStatus.ERRORED;
 	}
 
 	function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {

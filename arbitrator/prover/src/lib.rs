@@ -15,7 +15,7 @@ use crate::{
 };
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
-use machine::GlobalState;
+use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use std::{
     ffi::{CStr, CString},
@@ -58,7 +58,8 @@ pub struct CMultipleByteArrays {
     pub len: usize,
 }
 
-/// Note: the returned memory will not be freed by Arbitrator
+/// Note: the returned memory will not be freed by Arbitrator.
+/// To indicate "not found", set len to non-zero and ptr to null.
 type CInboxReaderFn = extern "C" fn(inbox_idx: u64, seq_num: u64) -> CByteArray;
 
 #[no_mangle]
@@ -107,11 +108,15 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Vec<u8> {
+    let inbox_reader = Box::new(move |inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
         unsafe {
             let res = c_inbox_reader(inbox_idx, seq_num);
-            let slice = std::slice::from_raw_parts(res.ptr, res.len);
-            slice.to_vec()
+            if res.len > 0 && res.ptr.is_null() {
+                None
+            } else {
+                let slice = std::slice::from_raw_parts(res.ptr, res.len);
+                Some(slice.to_vec())
+            }
         }
     }) as InboxReaderFn;
     let mut preimages = HashMap::default();
@@ -152,12 +157,32 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: isize) {
-    for _ in 0..num_steps {
-        (*mach).step();
-        if (*mach).is_halted() {
-            break;
-        }
+pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
+    (*mach).step_n(num_steps);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
+    (*mach).get_steps()
+}
+
+// C requires enums be represented as `int`s, so we need a new type for this :/
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(C)]
+pub enum CMachineStatus {
+    Running,
+    Finished,
+    Errored,
+    TooFar,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_status(mach: *const Machine) -> CMachineStatus {
+    match (*mach).get_status() {
+        MachineStatus::Running => CMachineStatus::Running,
+        MachineStatus::Finished => CMachineStatus::Finished,
+        MachineStatus::Errored => CMachineStatus::Errored,
+        MachineStatus::TooFar => CMachineStatus::TooFar,
     }
 }
 
@@ -176,5 +201,5 @@ pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> *mut c_char
 
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_free_proof(proof: *mut c_char) {
-    CString::from_raw(proof);
+    drop(CString::from_raw(proof));
 }

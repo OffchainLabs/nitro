@@ -210,6 +210,22 @@ library Deserialize {
 
 	function machine(bytes calldata proof, uint256 startOffset) internal pure returns (Machine memory mach, uint256 offset) {
 		offset = startOffset;
+		MachineStatus status;
+		{
+			uint8 status_u8;
+			(status_u8, offset) = u8(proof, offset);
+			if (status_u8 == 0) {
+				status = MachineStatus.RUNNING;
+			} else if (status_u8 == 1) {
+				status = MachineStatus.FINISHED;
+			} else if (status_u8 == 2) {
+				status = MachineStatus.ERRORED;
+			} else if (status_u8 == 3) {
+				status = MachineStatus.TOO_FAR;
+			} else {
+				revert("UNKNOWN_MACH_STATUS");
+			}
+		}
 		ValueStack memory values;
 		ValueStack memory internalStack;
 		PcStack memory blocks;
@@ -229,6 +245,7 @@ library Deserialize {
 		(functionPc, offset) = u32(proof, offset);
 		(modulesRoot, offset) = b32(proof, offset);
 		mach = Machine({
+			status: status,
 			valueStack: values,
 			internalStack: internalStack,
 			blockStack: blocks,
@@ -237,8 +254,7 @@ library Deserialize {
 			moduleIdx: moduleIdx,
 			functionIdx: functionIdx,
 			functionPc: functionPc,
-			modulesRoot: modulesRoot,
-			halted: false
+			modulesRoot: modulesRoot
 		});
 	}
 

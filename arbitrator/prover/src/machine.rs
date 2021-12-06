@@ -18,6 +18,7 @@ use num::{traits::PrimInt, Zero};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
+    collections::hash_map,
     convert::TryFrom,
     num::Wrapping,
     ops::{Deref, DerefMut},
@@ -608,7 +609,7 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Vec<u8>>;
+pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Option<Vec<u8>>>;
 
 #[derive(Clone)]
 pub struct InboxReaderCached {
@@ -627,25 +628,48 @@ impl InboxReaderCached {
         }
     }
 
-    pub fn get_inbox_msg(&mut self, inbox_identifier: InboxIdentifier, msg_num: u64) -> &[u8] {
-        let inbox_reader = self.inbox_reader.clone();
-        self.inbox_cache
-            .entry((inbox_identifier, msg_num))
-            .or_insert_with(|| inbox_reader(inbox_identifier as u64, msg_num))
+    pub fn get_inbox_msg(
+        &mut self,
+        inbox_identifier: InboxIdentifier,
+        msg_num: u64,
+    ) -> Option<&[u8]> {
+        match self.inbox_cache.entry((inbox_identifier, msg_num)) {
+            hash_map::Entry::Vacant(entry) => {
+                let message = (self.inbox_reader)(inbox_identifier as u64, msg_num)?;
+                Some(entry.insert(message))
+            }
+            hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
+        }
     }
 
     // gets inbox msg as a copy, without updating cache
     // can be called on immutable object
-    pub fn get_inbox_msg_owned(&self, inbox_identifier: InboxIdentifier, msg_num: u64) -> Vec<u8> {
+    pub fn get_inbox_msg_owned(
+        &self,
+        inbox_identifier: InboxIdentifier,
+        msg_num: u64,
+    ) -> Option<Vec<u8>> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
-            Some(val) => val.to_vec(),
+            Some(val) => Some(val.to_vec()),
             None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
         }
     }
 }
 
+/// cbindgen:ignore
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MachineStatus {
+    Running,
+    Finished,
+    Errored,
+    TooFar,
+}
+
 #[derive(Clone)]
 pub struct Machine {
+    steps: u64, // Not part of machine hash
+    status: MachineStatus,
     value_stack: Vec<Value>,
     internal_stack: Vec<Value>,
     block_stack: Vec<usize>,
@@ -654,7 +678,6 @@ pub struct Machine {
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
     pc: ProgramCounter,
-    halted: bool,
     stdio_output: Vec<u8>,
     inbox_reader: InboxReaderCached,
     preimages: HashMap<Bytes32, Vec<u8>>,
@@ -992,6 +1015,8 @@ impl Machine {
         }
 
         Machine {
+            status: MachineStatus::Running,
+            steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
             internal_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -1000,7 +1025,6 @@ impl Machine {
             modules_merkle,
             global_state,
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
-            halted: false,
             stdio_output: Vec::new(),
             inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn),
             preimages,
@@ -1008,7 +1032,7 @@ impl Machine {
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
-        if self.halted {
+        if self.is_halted() {
             return None;
         }
         self.modules[self.pc.module].funcs[self.pc.func]
@@ -1021,10 +1045,34 @@ impl Machine {
         assert!(module.funcs[pc.func].code.len() > pc.inst);
     }
 
+    pub fn get_steps(&self) -> u64 {
+        self.steps
+    }
+
+    pub fn step_n(&mut self, n: u64) {
+        for x in 0..n {
+            if self.is_halted() {
+                let remaining = n - x;
+                self.steps = self
+                    .steps
+                    .checked_add(remaining)
+                    .expect("Exceeded max uint64 steps");
+                break;
+            }
+            self.step();
+        }
+    }
+
     pub fn step(&mut self) {
-        if self.halted {
+        if self.is_halted() {
+            self.steps = self
+                .steps
+                .checked_add(1)
+                .expect("Exceeded max uint64 steps");
             return;
         }
+        // It's infeasible to overflow steps without halting
+        self.steps += 1;
 
         if self.pc.inst == 1 {
             if let Some(hook) = self.modules[self.pc.module]
@@ -1054,7 +1102,7 @@ impl Machine {
         self.pc.inst += 1;
         match inst.opcode {
             Opcode::Unreachable => {
-                self.halted = true;
+                self.status = MachineStatus::Errored;
             }
             Opcode::Nop => {}
             Opcode::Block => {
@@ -1118,7 +1166,7 @@ impl Machine {
                 let frame = self.frame_stack.pop().unwrap();
                 match frame.return_ref {
                     Value::RefNull => {
-                        self.halted = true;
+                        self.status = MachineStatus::Errored;
                     }
                     Value::InternalRef(pc) => self.pc = pc,
                     v => panic!("Attempted to return into an invalid reference: {:?}", v),
@@ -1162,7 +1210,7 @@ impl Machine {
                     self.pc.block_depth = 0;
                 } else {
                     // The caller module has no internals
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::CallIndirect => {
@@ -1190,12 +1238,12 @@ impl Machine {
                             self.pc.block_depth = 0;
                         }
                         Value::RefNull => {
-                            self.halted = true;
+                            self.status = MachineStatus::Errored;
                         }
                         v => panic!("Invalid table element value {:?}", v),
                     }
                 } else {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::LocalGet => {
@@ -1227,10 +1275,10 @@ impl Machine {
                     if let Some(val) = val {
                         self.value_stack.push(val);
                     } else {
-                        self.halted = true;
+                        self.status = MachineStatus::Errored;
                     }
                 } else {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::MemoryStore { ty: _, bytes } => {
@@ -1253,10 +1301,10 @@ impl Machine {
                 };
                 if let Some(idx) = inst.argument_data.checked_add(base.into()) {
                     if !module.memory.store_value(idx, val, bytes) {
-                        self.halted = true;
+                        self.status = MachineStatus::Errored;
                     }
                 } else {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::I32Const => {
@@ -1478,29 +1526,29 @@ impl Machine {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                 if idx > self.global_state.bytes32_vals.len() {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 } else if !module
                     .memory
                     .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                 {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::SetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                 if idx > self.global_state.bytes32_vals.len() {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                     self.global_state.bytes32_vals[idx] = hash;
                 } else {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::GetGlobalStateU64 => {
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                 if idx > self.global_state.u64_vals.len() {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 } else {
                     self.value_stack
                         .push(Value::I64(self.global_state.u64_vals[idx]));
@@ -1510,7 +1558,7 @@ impl Machine {
                 let val = self.value_stack.pop().unwrap().assume_u64();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
                 if idx > self.global_state.u64_vals.len() {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 } else {
                     self.global_state.u64_vals[idx] = val
                 }
@@ -1530,7 +1578,7 @@ impl Machine {
                     assert!(success, "Failed to write to previously read memory");
                     self.value_stack.push(Value::I32(len as u32));
                 } else {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 }
             }
             Opcode::ReadInboxMessage => {
@@ -1538,23 +1586,31 @@ impl Machine {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let msg_num = self.value_stack.pop().unwrap().assume_u64();
                 if ptr as u64 + 32 > module.memory.size() {
-                    self.halted = true;
+                    self.status = MachineStatus::Errored;
                 } else {
                     assert!(
                         inst.argument_data <= (InboxIdentifier::Delayed as u64),
                         "Bad inbox identifier"
                     );
                     let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
-                    let message = self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num);
-                    let offset = usize::try_from(offset).unwrap();
-                    let len = std::cmp::min(32, message.len().saturating_sub(offset));
-                    let read = message.get(offset..(offset + len)).unwrap_or_default();
-                    if module.memory.store_slice_aligned(ptr.into(), read) {
-                        self.value_stack.push(Value::I32(len as u32));
+                    if let Some(message) =
+                        self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num)
+                    {
+                        let offset = usize::try_from(offset).unwrap();
+                        let len = std::cmp::min(32, message.len().saturating_sub(offset));
+                        let read = message.get(offset..(offset + len)).unwrap_or_default();
+                        if module.memory.store_slice_aligned(ptr.into(), read) {
+                            self.value_stack.push(Value::I32(len as u32));
+                        } else {
+                            self.status = MachineStatus::Errored;
+                        }
                     } else {
-                        self.halted = true;
+                        self.status = MachineStatus::TooFar;
                     }
                 }
+            }
+            Opcode::HaltAndSetFinished => {
+                self.status = MachineStatus::Finished;
             }
         }
     }
@@ -1624,7 +1680,11 @@ impl Machine {
     }
 
     pub fn is_halted(&self) -> bool {
-        self.halted
+        self.status != MachineStatus::Running
+    }
+
+    pub fn get_status(&self) -> MachineStatus {
+        self.status
     }
 
     fn get_modules_merkle(&self) -> Cow<Merkle> {
@@ -1639,20 +1699,31 @@ impl Machine {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        if self.halted {
-            return Bytes32::default();
-        }
         let mut h = Keccak256::new();
-        h.update(b"Machine:");
-        h.update(&hash_value_stack(&self.value_stack));
-        h.update(&hash_value_stack(&self.internal_stack));
-        h.update(&hash_pc_stack(&self.block_stack));
-        h.update(hash_stack_frame_stack(&self.frame_stack));
-        h.update(self.global_state.hash());
-        h.update(&(self.pc.module as u32).to_be_bytes());
-        h.update(&(self.pc.func as u32).to_be_bytes());
-        h.update(&(self.pc.inst as u32).to_be_bytes());
-        h.update(self.get_modules_merkle().root());
+        match self.status {
+            MachineStatus::Running => {
+                h.update(b"Machine running:");
+                h.update(&hash_value_stack(&self.value_stack));
+                h.update(&hash_value_stack(&self.internal_stack));
+                h.update(&hash_pc_stack(&self.block_stack));
+                h.update(hash_stack_frame_stack(&self.frame_stack));
+                h.update(self.global_state.hash());
+                h.update(&(self.pc.module as u32).to_be_bytes());
+                h.update(&(self.pc.func as u32).to_be_bytes());
+                h.update(&(self.pc.inst as u32).to_be_bytes());
+                h.update(self.get_modules_merkle().root());
+            }
+            MachineStatus::Finished => {
+                h.update("Machine finished:");
+                h.update(self.global_state.hash());
+            }
+            MachineStatus::Errored => {
+                h.update("Machine errored:");
+            }
+            MachineStatus::TooFar => {
+                h.update("Machine too far:");
+            }
+        }
         h.finalize().into()
     }
 
@@ -1661,6 +1732,8 @@ impl Machine {
         const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = Vec::new();
+
+        data.push(self.status as u8);
 
         data.extend(prove_stack(
             &self.value_stack,
@@ -1872,10 +1945,12 @@ impl Machine {
                             .assume_u64();
                         let inbox_identifier =
                             argument_data_to_inbox(next_inst.argument_data).unwrap();
-                        let msg_data = self
+                        if let Some(msg_data) = self
                             .inbox_reader
-                            .get_inbox_msg_owned(inbox_identifier, msg_idx);
-                        data.extend(msg_data);
+                            .get_inbox_msg_owned(inbox_identifier, msg_idx)
+                        {
+                            data.extend(msg_data);
+                        }
                     } else {
                         panic!("Should never ever get here");
                     }
