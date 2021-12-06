@@ -34,7 +34,7 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 }
 
 func isAggregated(l1Address, l2Address common.Address) bool {
-	return true
+	return true // TODO
 }
 
 func (p *TxProcessor) getAggregator() *common.Address {
@@ -50,7 +50,6 @@ func (p *TxProcessor) getExtraGasChargeWei() *big.Int { // returns wei to charge
 		p.msg.From(),
 		p.getAggregator(),
 		p.msg.Data(),
-		false, //TODO: should be true iff message was compressed
 	)
 }
 
@@ -58,7 +57,10 @@ func (p *TxProcessor) getL1GasCharge() uint64 {
 	extraGasChargeWei := p.getExtraGasChargeWei()
 	gasPrice := p.msg.GasPrice()
 	if gasPrice.Cmp(big.NewInt(0)) == 0 {
-		return 0
+		// suggest the amount of gas needed for a given amount of ETH is higher in case of congestion
+		adjustedPrice := new(big.Int).Mul(p.blockContext.BaseFee, big.NewInt(15))
+		adjustedPrice = new(big.Int).Mul(adjustedPrice, big.NewInt(16))
+		gasPrice = adjustedPrice
 	}
 	l1ChargesBig := new(big.Int).Div(extraGasChargeWei, gasPrice)
 	if !l1ChargesBig.IsUint64() {
@@ -80,17 +82,16 @@ func (p *TxProcessor) InterceptMessage() (*core.ExecutionResult, error) {
 	}, nil
 }
 
-func (p *TxProcessor) ExtraGasChargingHook(gasRemaining *uint64, gasPool *core.GasPool) error {
+func (p *TxProcessor) ExtraGasChargingHook(gasRemaining *uint64) error {
 	l1Charges := p.getL1GasCharge()
 	if *gasRemaining < l1Charges {
 		return vm.ErrOutOfGas
 	}
 	*gasRemaining -= l1Charges
-	*gasPool = *gasPool.AddGas(l1Charges)
 	return nil
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, gasPool *core.GasPool, success bool) error {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 	totalPaid := new(big.Int).Mul(gasUsed, p.msg.GasPrice())
 	l1ChargeWei := p.getExtraGasChargeWei()

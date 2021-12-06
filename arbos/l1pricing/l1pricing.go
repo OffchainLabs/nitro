@@ -5,11 +5,11 @@
 package l1pricing
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"math/big"
 )
 
 type L1PricingState struct {
@@ -146,7 +146,6 @@ func (ps *L1PricingState) GetL1Charges(
 	sender common.Address,
 	aggregator *common.Address,
 	data []byte,
-	wasCompressed bool,
 ) *big.Int {
 	if aggregator == nil {
 		return big.NewInt(0)
@@ -156,18 +155,7 @@ func (ps *L1PricingState) GetL1Charges(
 		return big.NewInt(0)
 	}
 
-	var dataGas uint64
-	if wasCompressed {
-		dataGas = 16 * uint64(len(data)) * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
-	} else {
-		var err error
-		dataGas, err = core.IntrinsicGas(data, nil, false, true, true)
-		if err == nil {
-			dataGas -= params.TxGas
-		} else {
-			dataGas = 16 * uint64(len(data))
-		}
-	}
+	dataGas := 16 * uint64(len(data)) * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
 
 	// add 5% to protect the aggregator bad price fluctuation luck
 	dataGas = dataGas * 21 / 20

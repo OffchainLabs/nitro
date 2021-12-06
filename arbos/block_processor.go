@@ -7,6 +7,7 @@ package arbos
 import (
 	"encoding/binary"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,10 +52,11 @@ type BlockBuilder struct {
 	// Setup based on first segment
 	blockInfo *L1Info
 	header    *types.Header
-	gasPool   core.GasPool
 
 	txes     types.Transactions
 	receipts types.Receipts
+	gasLeft  uint64
+	gasLimit uint64
 }
 
 type BlockData struct {
@@ -67,6 +69,8 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
 		chainContext:    chainContext,
+		gasLeft:         PerBlockGasLimit,
+		gasLimit:        PerBlockGasLimit,
 	}
 }
 
@@ -93,15 +97,15 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 	if b.blockInfo == nil {
 		return true
 	}
-	newGasUsed := b.header.GasUsed
+
+	gasLeft := b.gasLeft
 	for _, tx := range segment.Txes {
-		oldGasUsed := newGasUsed
-		newGasUsed += tx.Gas()
-		if newGasUsed < oldGasUsed {
-			newGasUsed = ^uint64(0)
+		if gasLeft < tx.Gas() {
+			return false
 		}
+		gasLeft -= tx.Gas()
 	}
-	return newGasUsed <= PerBlockGasLimit
+	return true
 }
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
@@ -147,6 +151,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		log.Warn("attempted to add incompatible message to block")
 		return
 	}
+
 	if b.blockInfo == nil {
 		l1Info := segment.L1Info
 		b.blockInfo = &L1Info{
@@ -156,21 +161,51 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		}
 
 		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
-		b.gasPool = core.GasPool(b.header.GasLimit)
 	}
 
+	signer := types.MakeSigner(ChainConfig, b.header.Number)
+
 	for _, tx := range segment.Txes {
-		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
-			// Ignore and transactions with higher than the max possible gas
+
+		sender, err := signer.Sender(tx)
+		if err != nil {
 			continue
 		}
+
+		aggregator := &segment.L1Info.l1Sender
+
+		if !isAggregated(*aggregator, sender) {
+			aggregator = nil
+		}
+
+		pricing := OpenArbosState(b.statedb).L1PricingState()
+		dataGas := pricing.GetL1Charges(sender, aggregator, tx.Data()).Uint64()
+
+		if dataGas > tx.Gas() {
+			// this txn is going to be rejected later
+			dataGas = 0
+		}
+
+		computeGas := tx.Gas() - dataGas
+
+		if computeGas > b.gasLeft {
+			continue
+		}
+
+		b.gasLeft -= computeGas
+
 		snap := b.statedb.Snapshot()
 		b.statedb.Prepare(tx.Hash(), len(b.txes))
+
+		// We've checked that the block can fit this message, so we'll use a pool that won't run out
+		gethGas := core.GasPool(1 << 63)
+		gasPool := gethGas
+
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
 			b.chainContext,
 			&b.header.Coinbase,
-			&b.gasPool,
+			&gasPool,
 			b.statedb,
 			b.header,
 			tx,
@@ -182,8 +217,22 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			b.statedb.RevertToSnapshot(snap)
 			continue
 		}
+
+		if gasPool > gethGas {
+			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
+			panic("ApplyTransaction() gave back " + delta + " gas")
+		}
+
+		gasUsed := gethGas.Gas() - gasPool.Gas()
+
+		if gasUsed > computeGas {
+			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		}
+
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
+		b.gasLeft -= gasUsed
 	}
 }
 
