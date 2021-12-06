@@ -6,7 +6,15 @@ import "./PcStacks.sol";
 import "./Instructions.sol";
 import "./StackFrames.sol";
 
+enum MachineStatus {
+	RUNNING,
+	FINISHED,
+	ERRORED,
+	TOO_FAR
+}
+
 struct Machine {
+	MachineStatus status;
 	ValueStack valueStack;
 	ValueStack internalStack;
 	PcStack blockStack;
@@ -16,25 +24,34 @@ struct Machine {
 	uint32 functionIdx;
 	uint32 functionPc;
 	bytes32 modulesRoot;
-	bool halted;
 }
 
 library Machines {
 	function hash(Machine memory mach) internal pure returns (bytes32) {
-		if (mach.halted) {
-			return bytes32(0);
+		if (mach.status == MachineStatus.RUNNING) {
+			return keccak256(abi.encodePacked(
+				"Machine running:",
+				ValueStacks.hash(mach.valueStack),
+				ValueStacks.hash(mach.internalStack),
+				PcStacks.hash(mach.blockStack),
+				StackFrames.hash(mach.frameStack),
+				mach.globalStateHash,
+				mach.moduleIdx,
+				mach.functionIdx,
+				mach.functionPc,
+				mach.modulesRoot
+			));
+		} else if (mach.status == MachineStatus.FINISHED) {
+			return keccak256(abi.encodePacked(
+				"Machine finished:",
+				mach.globalStateHash
+			));
+		} else if (mach.status == MachineStatus.ERRORED) {
+			return keccak256(abi.encodePacked("Machine errored:"));
+		} else if (mach.status == MachineStatus.TOO_FAR) {
+			return keccak256(abi.encodePacked("Machine too far:"));
+		} else {
+			revert("BAD_MACH_STATUS");
 		}
-		return keccak256(abi.encodePacked(
-			"Machine:",
-			ValueStacks.hash(mach.valueStack),
-			ValueStacks.hash(mach.internalStack),
-			PcStacks.hash(mach.blockStack),
-			StackFrames.hash(mach.frameStack),
-			mach.globalStateHash,
-			mach.moduleIdx,
-			mach.functionIdx,
-			mach.functionPc,
-			mach.modulesRoot
-		));
 	}
 }

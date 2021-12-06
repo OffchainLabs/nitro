@@ -108,7 +108,7 @@ contract OneStepProverMemory is IOneStepProver {
         uint256 startIdx = inst.argumentData +
             ValueStacks.pop(mach.valueStack).contents;
         if (startIdx + readBytes > mod.moduleMemory.size) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
@@ -206,7 +206,7 @@ contract OneStepProverMemory is IOneStepProver {
         uint256 startIdx = inst.argumentData +
             ValueStacks.pop(mach.valueStack).contents;
         if (startIdx + writeBytes > mod.moduleMemory.size) {
-            mach.halted = true;
+            mach.status = MachineStatus.ERRORED;
             return;
         }
 
