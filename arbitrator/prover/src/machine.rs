@@ -249,7 +249,7 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
@@ -830,7 +830,8 @@ impl Machine {
         inbox_reader_fn: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
-        let mut modules = Vec::new();
+        // `modules` starts out with the entrypoint module, which will be initialized later
+        let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
 
@@ -842,7 +843,7 @@ impl Machine {
                     .unwrap();
                 let ty = bin.functions[ty_idx];
                 let ty = &bin.types[usize::try_from(ty).unwrap()];
-                let module = u32::try_from(libraries.len()).unwrap();
+                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
                 available_imports.insert(
                     format!("env__wavm_guest_call__{}", export.name),
                     AvailableImport {
@@ -986,8 +987,7 @@ impl Machine {
             func_types: vec![FunctionType::default()],
             exports: HashMap::default(),
         };
-        let entrypoint_idx = modules.len();
-        modules.push(entrypoint);
+        modules[0] = entrypoint;
 
         // Merkleize things if requested
         for module in &mut modules {
@@ -1024,7 +1024,7 @@ impl Machine {
             modules,
             modules_merkle,
             global_state,
-            pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
+            pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn),
             preimages,

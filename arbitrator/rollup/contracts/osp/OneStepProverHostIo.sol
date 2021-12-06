@@ -16,10 +16,7 @@ contract OneStepProverHostIo is IOneStepProver {
     ISequencerInbox seqInbox;
     IBridge delayedInbox;
 
-    constructor(
-        ISequencerInbox _seqInbox,
-        IBridge _delayedInbox
-    ) {
+    constructor(ISequencerInbox _seqInbox, IBridge _delayedInbox) {
         seqInbox = _seqInbox;
         delayedInbox = _delayedInbox;
     }
@@ -77,10 +74,10 @@ contract OneStepProverHostIo is IOneStepProver {
         }
     }
 
-    function executeGetU64(
-        Machine memory mach,
-        GlobalState memory state
-    ) internal pure {
+    function executeGetU64(Machine memory mach, GlobalState memory state)
+        internal
+        pure
+    {
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
         if (idx >= GlobalStates.U64_VALS_NUM) {
@@ -88,16 +85,13 @@ contract OneStepProverHostIo is IOneStepProver {
             return;
         }
 
-        ValueStacks.push(
-            mach.valueStack,
-            Values.newI64(state.u64_vals[idx])
-        );
+        ValueStacks.push(mach.valueStack, Values.newI64(state.u64_vals[idx]));
     }
 
-    function executeSetU64(
-        Machine memory mach,
-        GlobalState memory state
-    ) internal pure {
+    function executeSetU64(Machine memory mach, GlobalState memory state)
+        internal
+        pure
+    {
         uint64 val = Values.assumeI64(ValueStacks.pop(mach.valueStack));
         uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
 
@@ -109,6 +103,7 @@ contract OneStepProverHostIo is IOneStepProver {
     }
 
     function executeReadPreImage(
+        ExecutionContext calldata,
         Machine memory mach,
         Module memory mod,
         Instruction calldata,
@@ -153,11 +148,12 @@ contract OneStepProverHostIo is IOneStepProver {
         ValueStacks.push(mach.valueStack, Values.newI32(i));
     }
 
-    function validateSequencerInbox(
-        uint64 msgIndex,
-        bytes calldata message
-    ) internal view returns (bool) {
-        require (message.length >= 40, "BAD_SEQINBOX_PROOF");
+    function validateSequencerInbox(uint64 msgIndex, bytes calldata message)
+        internal
+        view
+        returns (bool)
+    {
+        require(message.length >= 40, "BAD_SEQINBOX_PROOF");
 
         uint64 afterDelayedMsg;
         (afterDelayedMsg, ) = Deserialize.u64(message, 32);
@@ -169,37 +165,47 @@ contract OneStepProverHostIo is IOneStepProver {
             return false;
         }
         if (msgIndex > 0) {
-            beforeAcc =  seqInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = seqInbox.inboxAccs(msgIndex - 1);
         }
         if (afterDelayedMsg > 0) {
             delayedAcc = delayedInbox.inboxAccs(afterDelayedMsg - 1);
         }
-        bytes32 acc = keccak256(abi.encodePacked(beforeAcc, messageHash, delayedAcc));
+        bytes32 acc = keccak256(
+            abi.encodePacked(beforeAcc, messageHash, delayedAcc)
+        );
         require(acc == seqInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
         return true;
     }
 
-    function validateDelayedInbox(
-        uint64 msgIndex,
-        bytes calldata message
-    ) internal view returns (bool) {
+    function validateDelayedInbox(uint64 msgIndex, bytes calldata message)
+        internal
+        view
+        returns (bool)
+    {
         if (msgIndex > delayedInbox.messageCount()) {
             return false;
         }
-        require (message.length >= 161, "BAD_DELAYED_PROOF");
+        require(message.length >= 161, "BAD_DELAYED_PROOF");
 
         bytes32 beforeAcc;
 
         if (msgIndex > 0) {
-            beforeAcc =  delayedInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = delayedInbox.inboxAccs(msgIndex - 1);
         }
 
         bytes32 messageDataHash = keccak256(message[161:]);
         bytes1 kind = message[0];
         uint256 sender;
-        (sender, ) = Deserialize.u256(message,1);
+        (sender, ) = Deserialize.u256(message, 1);
 
-        bytes32 messageHash = keccak256(abi.encodePacked(kind, uint160(sender), message[33:161], messageDataHash));
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                kind,
+                uint160(sender),
+                message[33:161],
+                messageDataHash
+            )
+        );
         bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
 
         require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
@@ -207,6 +213,7 @@ contract OneStepProverHostIo is IOneStepProver {
     }
 
     function executeReadInboxMessage(
+        ExecutionContext calldata execCtx,
         Machine memory mach,
         Module memory mod,
         Instruction calldata inst,
@@ -215,12 +222,15 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
         uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
         uint256 msgIndex = ValueStacks.pop(mach.valueStack).contents;
+        if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER && msgIndex >= execCtx.maxInboxMessagesRead) {
+            mach.status = MachineStatus.TOO_FAR;
+            return;
+        }
+
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
-
-        // TODO: if msgIndex is after the assertion's endpoint, enter the TOO_FAR state
 
         uint256 leafIdx = ptr / LEAF_SIZE;
         uint256 proofOffset = 0;
@@ -234,7 +244,10 @@ contract OneStepProverHostIo is IOneStepProver {
         );
 
         {
-            function(uint64, bytes calldata) internal view returns (bool) inboxValidate;
+            function(uint64, bytes calldata)
+                internal
+                view
+                returns (bool) inboxValidate;
 
             bool success;
             if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER) {
@@ -246,14 +259,14 @@ contract OneStepProverHostIo is IOneStepProver {
                 return;
             }
             success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
-            if (! success) {
+            if (!success) {
                 mach.status = MachineStatus.ERRORED;
                 return;
             }
         }
 
         require(proof.length >= proofOffset, "BAD_MESSAGE_PROOF");
-        uint messageLength = proof.length - proofOffset;
+        uint256 messageLength = proof.length - proofOffset;
 
         uint32 i = 0;
         for (; i < 32 && messageOffset + i < messageLength; i++) {
@@ -273,6 +286,7 @@ contract OneStepProverHostIo is IOneStepProver {
     }
 
     function executeHaltAndSetFinished(
+        ExecutionContext calldata,
         Machine memory mach,
         Module memory,
         Instruction calldata,
@@ -282,6 +296,7 @@ contract OneStepProverHostIo is IOneStepProver {
     }
 
     function executeGlobalStateAccess(
+        ExecutionContext calldata,
         Machine memory mach,
         Module memory mod,
         Instruction calldata inst,
@@ -297,8 +312,10 @@ contract OneStepProverHostIo is IOneStepProver {
             "BAD_GLOBAL_STATE"
         );
 
-        if (opcode == Instructions.GET_GLOBAL_STATE_BYTES32 ||
-            opcode == Instructions.SET_GLOBAL_STATE_BYTES32) {
+        if (
+            opcode == Instructions.GET_GLOBAL_STATE_BYTES32 ||
+            opcode == Instructions.SET_GLOBAL_STATE_BYTES32
+        ) {
             executeGetOrSetBytes32(mach, mod, state, inst, proof[proofOffset:]);
         } else if (opcode == Instructions.GET_GLOBAL_STATE_U64) {
             executeGetU64(mach, state);
@@ -309,10 +326,10 @@ contract OneStepProverHostIo is IOneStepProver {
         }
 
         mach.globalStateHash = GlobalStates.hash(state);
-
     }
 
     function executeOneStep(
+        ExecutionContext calldata execCtx,
         Machine calldata startMach,
         Module calldata startMod,
         Instruction calldata inst,
@@ -323,11 +340,18 @@ contract OneStepProverHostIo is IOneStepProver {
 
         uint16 opcode = inst.opcode;
 
-        function(Machine memory, Module memory, Instruction calldata, bytes calldata) internal view impl;
+        function(
+            ExecutionContext calldata,
+            Machine memory,
+            Module memory,
+            Instruction calldata,
+            bytes calldata
+        ) internal view impl;
 
-        if (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
-            opcode <= Instructions.SET_GLOBAL_STATE_U64)
-        {
+        if (
+            opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
+            opcode <= Instructions.SET_GLOBAL_STATE_U64
+        ) {
             impl = executeGlobalStateAccess;
         } else if (opcode == Instructions.READ_PRE_IMAGE) {
             impl = executeReadPreImage;
@@ -339,8 +363,6 @@ contract OneStepProverHostIo is IOneStepProver {
             revert("INVALID_MEMORY_OPCODE");
         }
 
-
-        impl(mach, mod, inst, proof);
-
+        impl(execCtx, mach, mod, inst, proof);
     }
 }

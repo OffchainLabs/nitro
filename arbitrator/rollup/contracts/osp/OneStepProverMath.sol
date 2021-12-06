@@ -369,7 +369,7 @@ contract OneStepProverMath is IOneStepProver {
 		ValueStacks.push(mach.valueStack, val);
 	}
 
-	function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {
+	function executeOneStep(ExecutionContext calldata, Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {
 		mach = startMach;
 		mod = startMod;
 

@@ -273,7 +273,7 @@ contract OneStepProverMemory is IOneStepProver {
         }
     }
 
-    function executeOneStep(Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof)
+    function executeOneStep(ExecutionContext calldata, Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof)
         external
         pure
         override

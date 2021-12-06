@@ -48,6 +48,13 @@ library Values {
 		return uint64(uintval);
 	}
 
+	function newRefNull() internal pure returns (Value memory) {
+		return Value({
+			valueType: ValueType.REF_NULL,
+			contents: 0
+		});
+	}
+
 	function newI32(uint32 x) internal pure returns (Value memory) {
 		return Value({
 			valueType: ValueType.I32,
