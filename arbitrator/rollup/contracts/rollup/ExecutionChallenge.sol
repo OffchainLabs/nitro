@@ -29,7 +29,6 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
     event ContinuedExecutionProven();
 
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
-    uint256 constant MAX_STEPS = ~uint64(0) - 1;
 
     string constant NO_TURN = "NO_TURN";
 
