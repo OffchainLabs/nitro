@@ -28,6 +28,7 @@ struct Machine {
 
 library Machines {
 	function hash(Machine memory mach) internal pure returns (bytes32) {
+		// Warning: the non-running hashes are replicated in BlockChallenge
 		if (mach.status == MachineStatus.RUNNING) {
 			return keccak256(abi.encodePacked(
 				"Machine running:",

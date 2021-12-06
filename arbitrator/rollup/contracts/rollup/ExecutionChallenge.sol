@@ -29,6 +29,7 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
     event ContinuedExecutionProven();
 
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
+    uint256 constant MAX_STEPS = ~uint64(0) - 1;
 
     string constant NO_TURN = "NO_TURN";
 
@@ -171,7 +172,7 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
         uint256 challengePosition,
         bytes calldata proof
     ) external takeTurn {
-        (, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
 			challengeStateHash,
             oldSegmentsStart,
             oldSegmentsLength,
@@ -182,12 +183,13 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
 
         bytes32 afterHash = osp.proveOneStep(
             execCtx,
+            challengeStart,
             oldSegments[challengePosition],
             proof
         );
         require(
             afterHash != oldSegments[challengePosition + 1],
-            "WRONG_OSP_END"
+            "SAME_OSP_END"
         );
 
         emit OneStepProofCompleted();

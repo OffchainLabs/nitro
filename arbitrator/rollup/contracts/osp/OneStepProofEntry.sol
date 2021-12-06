@@ -13,6 +13,8 @@ contract OneStepProofEntry is IOneStepProofEntry {
     IOneStepProver proverMath;
     IOneStepProver proverHostIo;
 
+    uint256 constant MAX_STEPS = ~uint64(0) - 1;
+
     constructor(
         IOneStepProver prover0_,
         IOneStepProver proverMem_,
@@ -27,6 +29,7 @@ contract OneStepProofEntry is IOneStepProofEntry {
 
     function proveOneStep(
         ExecutionContext calldata execCtx,
+        uint256 machineStep,
         bytes32 beforeHash,
         bytes calldata proof
     ) external view override returns (bytes32 afterHash) {
@@ -42,6 +45,11 @@ contract OneStepProofEntry is IOneStepProofEntry {
             if (mach.status != MachineStatus.RUNNING) {
                 // Machine is halted.
                 // WARNING: at this point, most machine fields are unconstrained.
+                return Machines.hash(mach);
+            }
+
+            if (machineStep + 1 == MAX_STEPS) {
+                mach.status = MachineStatus.ERRORED;
                 return Machines.hash(mach);
             }
 
