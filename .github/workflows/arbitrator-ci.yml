@@ -31,7 +31,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: fmt
-          args: --all -- --check
+          args: --all --manifest-path arbitrator/Cargo.toml -- --check
 
   tests:
     name: Run tests
@@ -72,10 +72,10 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all
+          args: --all --manifest-path arbitrator/Cargo.toml
 
       - name: Make proofs from test cases
-        run: make -j
+        run: cd arbitrator && make -j
 
       - name: Start geth server
         run: |
@@ -85,6 +85,6 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd rollup
+          cd arbitrator/rollup
           yarn install
           yarn hardhat test --network localhost
