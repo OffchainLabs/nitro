@@ -231,6 +231,11 @@ contract BlockChallenge is IChallengeResultReceiver, Cloneable {
             return;
         }
 
+        if (machineStatuses[1] == MachineStatus.ERRORED) {
+            // If the machine errors, it must return to the previous global state
+            require(globalStateHashes[0] == globalStateHashes[1], "ERROR_CHANGE");
+        }
+
         bytes32 execChallengeStateHash;
         {
             bytes32 startMachineHash = getStartMachineHash(
