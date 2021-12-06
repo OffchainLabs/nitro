@@ -255,15 +255,15 @@ struct Module {
     memory: Memory,
     tables: Vec<Table>,
     tables_merkle: Merkle,
-    funcs: Vec<Function>,
-    funcs_merkle: Merkle,
-    types: Vec<FunctionType>,
+    funcs: Arc<Vec<Function>>,
+    funcs_merkle: Arc<Merkle>,
+    types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
-    names: NameCustomSection,
-    host_call_hooks: Vec<Option<(String, String)>>,
+    names: Arc<NameCustomSection>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
-    func_types: Vec<FunctionType>,
-    exports: HashMap<String, u32>,
+    func_types: Arc<Vec<FunctionType>>,
+    exports: Arc<HashMap<String, u32>>,
 }
 
 impl Module {
@@ -491,18 +491,18 @@ impl Module {
             globals,
             tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
             tables,
-            funcs_merkle: Merkle::new(
+            funcs_merkle: Arc::new(Merkle::new(
                 MerkleType::Function,
                 code.iter().map(|f| f.hash()).collect(),
-            ),
-            funcs: code,
-            types: bin.types,
+            )),
+            funcs: Arc::new(code),
+            types: Arc::new(bin.types),
             internals_offset,
-            names: bin.names,
-            host_call_hooks,
+            names: Arc::new(bin.names),
+            host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
-            func_types,
-            exports,
+            func_types: Arc::new(func_types),
+            exports: Arc::new(exports),
         }
     }
 
@@ -856,7 +856,7 @@ impl Machine {
 
         for lib in libraries {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true);
-            for (name, &func) in &module.exports {
+            for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
                     name.clone(),
@@ -973,18 +973,18 @@ impl Machine {
             memory: Memory::default(),
             tables: Vec::new(),
             tables_merkle: Merkle::default(),
-            funcs_merkle: Merkle::new(
+            funcs_merkle: Arc::new(Merkle::new(
                 MerkleType::Function,
                 entrypoint_funcs.iter().map(Function::hash).collect(),
-            ),
-            funcs: entrypoint_funcs,
-            types: entrypoint_types,
-            names: entrypoint_names,
+            )),
+            funcs: Arc::new(entrypoint_funcs),
+            types: Arc::new(entrypoint_types),
+            names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: vec![None],
+            host_call_hooks: Arc::new(vec![None]),
             start_function: None,
-            func_types: vec![FunctionType::default()],
-            exports: HashMap::default(),
+            func_types: Arc::new(vec![FunctionType::default()]),
+            exports: Arc::new(HashMap::default()),
         };
         let entrypoint_idx = modules.len();
         modules.push(entrypoint);
