@@ -113,6 +113,10 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
                 InboxIdentifier::Delayed as u32,
             ));
         }
+        ("env", "wavm_halt_and_set_finished") => {
+            ty = FunctionType::default();
+            insts.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
+        }
         _ => panic!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {

@@ -2,3 +2,6 @@
 members = [
 	"prover",
 ]
+
+[profile.release]
+debug = true

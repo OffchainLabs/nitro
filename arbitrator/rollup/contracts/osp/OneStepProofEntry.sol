@@ -33,6 +33,11 @@ contract OneStepProofEntry {
         uint256 offset = 0;
         (mach, offset) = Deserialize.machine(proof, offset);
         require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
+        if (mach.status != MachineStatus.RUNNING) {
+            // Machine is halted.
+            // WARNING: at this point, most machine fields are unconstrained.
+            return Machines.hash(mach);
+        }
 
         Module memory mod;
         MerkleProof memory modProof;
@@ -120,8 +125,8 @@ contract OneStepProofEntry {
         } else if (
             (opcode >= Instructions.GET_GLOBAL_STATE_BYTES32 &&
                 opcode <= Instructions.SET_GLOBAL_STATE_U64) ||
-            opcode == Instructions.READ_PRE_IMAGE ||
-            opcode == Instructions.READ_INBOX_MESSAGE
+            (opcode >= Instructions.READ_PRE_IMAGE &&
+            opcode <= Instructions.HALT_AND_SET_FINISHED)
         ) {
             (mach, mod) = proverHostIo.executeOneStep(
                 mach,
