@@ -9,14 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
+
 	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbitrum/packages/arb-util/wsbroadcastserver"
 	"github.com/offchainlabs/arbstate/arbstate"
-
-	"github.com/rs/zerolog/log"
 )
-
-var logger = log.With().Caller().Str("component", "broadcaster").Logger()
 
 type Broadcaster struct {
 	server        *wsbroadcastserver.WSBroadcastServer
@@ -75,12 +73,12 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 
 		err := clientConnection.Write(bm)
 		if err != nil {
-			logger.Error().Err(err).Str("client", clientConnection.Name).Str("elapsed", time.Since(start).String()).Msg("error sending client cached messages")
+			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
 			return err
 		}
 	}
 
-	logger.Info().Str("client", clientConnection.Name).Str("elapsed", time.Since(start).String()).Msg("client registered")
+	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start))
 
 	return nil
 }
@@ -88,7 +86,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 	bm, ok := bmi.(BroadcastMessage)
 	if !ok {
-		logger.Fatal().Msg("Requested to broadcast unknown message type")
+		log.Crit("Requested to broadcast messasge of unknown type")
 	}
 	if confirmMsg := bm.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		latestConfirmedIndex := -1
@@ -110,7 +108,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			b.messages = append(b.messages, bm.Messages...)
 		} else {
 			// TODO Should this be fatal?
-			logger.Fatal().Uint64("last SequenceNumber", b.messages[len(b.messages)-1].SequenceNumber).Uint64("current SequenceNumber", bm.Messages[0].SequenceNumber).Msg("broadcaster reorg not supported")
+			log.Crit("broadcaster reorg not supported", "last SequenceNumber", b.messages[len(b.messages)-1].SequenceNumber, "current SequenceNumber", bm.Messages[0].SequenceNumber)
 		}
 	}
 
