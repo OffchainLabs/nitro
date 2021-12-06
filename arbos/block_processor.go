@@ -180,7 +180,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
 		b.gasPool = core.GasPool(b.header.GasLimit)
 		if b.recordingStatedb != nil {
-			b.recordingHeader = createNewHeader(b.lastBlockHeader, b.blockInfo)
+			b.recordingHeader = types.CopyHeader(b.header)
 			b.recordingGasPool = b.gasPool
 		}
 	}
@@ -254,6 +254,9 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 
 	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
+	if b.recordingStatedb != nil {
+		FinalizeBlock(b.recordingHeader, b.txes, b.receipts, b.recordingStatedb)
+	}
 	b.isDone = true
 	// Reset the block builder for the next block
 	receipts := b.receipts

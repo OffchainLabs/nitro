@@ -13,7 +13,7 @@ const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
 
 const IDX_LAST_BLOCKHASH = 0
-const IDX_INBOX_POSITION = 1
+const IDX_INBOX_POSITION = 0
 const IDX_POSITION_WITHIN_MESSAGE = 1
 
 func readBuffer(f func(uint32, []byte) uint32) []byte {
@@ -50,8 +50,8 @@ func ReadDelayedInboxMessage(seqNum uint64) []byte {
 }
 
 func AdvanceInboxMessage() {
-	pos := getGlobalStateU64(IDX_POSITION_WITHIN_MESSAGE)
-	setGlobalStateU64(IDX_POSITION_WITHIN_MESSAGE, pos+1)
+	pos := getGlobalStateU64(IDX_INBOX_POSITION)
+	setGlobalStateU64(IDX_INBOX_POSITION, pos+1)
 }
 
 func ResolvePreImage(hash common.Hash) []byte {

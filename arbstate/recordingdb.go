@@ -18,15 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type RecordingDb struct {
-	inner         ethdb.KeyValueStore
+	inner         *trie.Database
 	readDbEntries map[common.Hash][]byte
 }
 
-func NewRecordingDb(inner ethdb.KeyValueStore) *RecordingDb {
+func NewRecordingDb(inner *trie.Database) *RecordingDb {
 	return &RecordingDb{inner, make(map[common.Hash][]byte)}
 }
 
@@ -43,7 +44,7 @@ func (db RecordingDb) Get(key []byte) ([]byte, error) {
 	}
 	var hash common.Hash
 	copy(hash[:], key)
-	res, err := db.inner.Get(key)
+	res, err := db.inner.Node(hash)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +169,12 @@ func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, 
 	if !recording {
 		return arbos.NewBlockBuilder(lastBlockHeader, statedb, blockchain), nil
 	}
-	rawKeyValue := blockchain.StateCache().TrieDB().DiskDB()
-	recordingKeyValue := NewRecordingDb(rawKeyValue)
+	rawTrie := blockchain.StateCache().TrieDB()
+	recordingKeyValue := NewRecordingDb(rawTrie)
 	recordingStateDatabase := state.NewDatabase(rawdb.NewDatabase(recordingKeyValue))
 	recordingStateDb, err := state.New(lastBlockHeader.Root, recordingStateDatabase, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create recordingStateDb: %s pos: %d", err, pos)
 	}
 	if !lastBlockHeader.Number.IsUint64() {
 		return nil, errors.New("block number not uint64")
