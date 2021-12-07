@@ -10,6 +10,9 @@ struct CByteArray InboxReaderWrapper(uint64_t inbox_idx, uint64_t seq_num);
 import "C"
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"sync"
@@ -46,14 +49,18 @@ type BlockValidatorConfig struct {
 	RootPath            string // prepends all other paths
 	ProverBinPath       string
 	ModulePaths         []string
+	OutputPath          string
 	ConcurrentRunsLimit int // 0 - default (CPU# * 2)
+	BlocksToRecord      []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	RootPath:            "/home/tsahee/src/nitro/prover-env/",
 	ProverBinPath:       "replay.wasm",
 	ModulePaths:         []string{"wasi_stub.wasm", "soft-float.wasm", "go_stub.wasm", "host_io.wasm"},
+	OutputPath:          "output",
 	ConcurrentRunsLimit: 0,
+	BlocksToRecord:      []uint64{},
 }
 
 type PosInSequencer struct {
@@ -83,6 +90,11 @@ type blockValidatorGlobals struct {
 
 var validatorStatic blockValidatorGlobals
 
+type delayedMsgInfo struct {
+	data C.CByteArray
+	seq  uint64
+}
+
 type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
@@ -92,7 +104,7 @@ type validationEntry struct {
 	EndPos        uint64
 	Running       bool
 	StartBatchNr  uint64
-	MsgsAllocated []C.CByteArray
+	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
@@ -133,10 +145,10 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegistrer, config *BlockValidatorConfig) *BlockValidator {
 	moduleList := []string{}
 	for _, module := range config.ModulePaths {
-		moduleList = append(moduleList, config.RootPath+module)
+		moduleList = append(moduleList, filepath.Join(config.RootPath, module))
 	}
 	cModuleList := CreateCStringList(moduleList)
-	cBinPath := C.CString(config.RootPath + config.ProverBinPath)
+	cBinPath := C.CString(filepath.Join(config.RootPath, config.ProverBinPath))
 
 	cZeroPreimages := C.CMultipleByteArrays{}
 	cZeroPreimages.len = 0
@@ -206,13 +218,68 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 			runtime.Goexit()
 		}
 		cByte := CreateCByteArray(msg)
-		validationEntry.MsgsAllocated = append(validationEntry.MsgsAllocated, cByte)
+		validationEntry.MsgsAllocated = append(validationEntry.MsgsAllocated, delayedMsgInfo{cByte, uint64(c_seq_num)})
 		return cByte
 	} else {
 		log.Error("bad inbox index while proving", "index", index, "pos", startPos)
 		runtime.Goexit()
 	}
 	return C.CByteArray{} //will never get here, parsers don't realise Goexit is dead end
+}
+
+var launchTime = time.Now().Format("2006_01_02__15_04")
+
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end PosInSequencer, c_preimages C.CMultipleByteArrays) error {
+	outDirPath := filepath.Join(v.config.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	os.MkdirAll(outDirPath, 0777)
+
+	cmdFile, err := os.Create(filepath.Join(outDirPath, "run-prover.sh"))
+	if err != nil {
+		return err
+	}
+	defer cmdFile.Close()
+	cmdFile.WriteString("#!/bin/bash\n")
+	cmdFile.WriteString(fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchAfter, end.PosAfter, validationEntry.BlockHash))
+	cmdFile.WriteString("ROOTPATH=\"" + v.config.RootPath + "\"\n")
+
+	cmdFile.WriteString("if (( $# > 0 )); then\n" +
+		"	ROOTPATH=$1\n" +
+		"	shift\n" +
+		"fi\n")
+	cmdFile.WriteString("${ROOTPATH}/prover ${ROOTPATH}\\" + v.config.ProverBinPath)
+	for _, module := range v.config.ModulePaths {
+		cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
+	}
+	cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNum, start.PosInSequence, validationEntry.PrevBlockHash))
+
+	sequencerCByte := InboxReaderFunc(C.uint64_t(0xffffffffffffffff), C.uint64_t(0), C.uint64_t(start.BatchNum))
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNum)
+	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
+	if err != nil {
+		return err
+	}
+	cmdFile.WriteString(" --inbox " + sequencerFileName)
+
+	err = CMultipleByteArrayToFile(c_preimages, filepath.Join(outDirPath, "preimages.bin"))
+	if err != nil {
+		return err
+	}
+	cmdFile.WriteString(" --preimages preimages.bin")
+
+	if len(validationEntry.MsgsAllocated) > 0 {
+		cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.MsgsAllocated[0].seq))
+	}
+	for _, msg := range validationEntry.MsgsAllocated {
+		filename := fmt.Sprintf("delayed_%d.bin", msg.seq)
+		err = CByteToFile(msg.data, filepath.Join(outDirPath, filename))
+		if err != nil {
+			return err
+		}
+		cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
+	}
+	cmdFile.WriteString(" \"$@\"\n")
+	cmdFile.Chmod(0777)
+	return nil
 }
 
 func (v *BlockValidator) validate(validationEntry *validationEntry, start, end PosInSequencer) {
@@ -248,14 +315,27 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 
 	resBatch, resPosInSequence, resHash := ParseGlobalState(gsEnd)
 
-	if (resBatch != end.BatchAfter) || (resPosInSequence != end.PosAfter) || (resHash != validationEntry.BlockHash) {
+	resultValid := (resBatch == end.BatchAfter) && (resPosInSequence == end.PosAfter) && (resHash == validationEntry.BlockHash)
+
+	if !resultValid {
 		log.Error("validation failed", "startPos", start.Pos, "batch_exp", end.BatchAfter, "batch_actual", resBatch, "pos_exp", end.PosAfter, "pos_actual", resPosInSequence, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
 		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
+		v.writeToFile(validationEntry, start, end, c_preimages)
 		panic("validation failed. quitting..")
+	}
+	// stupid search for now, assuming the list will always be empty or very mall
+	for _, blockNr := range v.config.BlocksToRecord {
+		if blockNr > validationEntry.BlockNumber {
+			break
+		}
+		if blockNr == validationEntry.BlockNumber {
+			v.writeToFile(validationEntry, start, end, c_preimages)
+			break
+		}
 	}
 	v.preimageCache.RemoveFromCache(validationEntry.Preimages)
 	for _, cbyte := range validationEntry.MsgsAllocated {
-		DestroyCByteArray(cbyte)
+		DestroyCByteArray(cbyte.data)
 	}
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
 	validationEntry.MsgsAllocated = nil
@@ -350,7 +430,7 @@ func (v *BlockValidator) ProgressValidated() {
 			DestroyCByteArray(cbyte)
 		}
 		v.posNext = validationEntry.EndPos + 1
-		v.blocksValidated = validationEntry.BlockNumber + 1
+		v.blocksValidated = validationEntry.BlockNumber
 		v.progressChan <- v.blocksValidated
 	}
 }

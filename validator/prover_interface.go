@@ -39,6 +39,22 @@ int CopyCByteToMultiple(CMultipleByteArrays multiple, uintptr_t index, CByteArra
 	return 0;
 }
 
+struct TempByteArray TempByteFromMultiple(CMultipleByteArrays multiple, uintptr_t index) {
+	struct TempByteArray res;
+	res.len = 0;
+
+	if (multiple.len < index) {
+		return res;
+	}
+	if (!multiple.ptr) {
+		return res;
+	}
+	struct TempByteArray *tempPtr = (struct TempByteArray *)&multiple.ptr[index];
+	res.ptr = tempPtr->ptr;
+	res.len = tempPtr->len;
+	return res;
+}
+
 char **PrepareStringList(intptr_t num) {
 	char** res = malloc(sizeof(char*) * num);
 	if (! res) {
@@ -82,6 +98,8 @@ struct CByteArray InboxReaderWrapper(uint64_t context, uint64_t inbox_idx, uint6
 */
 import "C"
 import (
+	"encoding/binary"
+	"os"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -119,11 +137,42 @@ func ParseGlobalState(gs C.GlobalState) (batch uint64, posinBatch uint64, blockH
 	return
 }
 
-//creates a list of strings, does take ownership, should be freed
+// creates a list of strings, does take ownership, should be freed
 func CreateCStringList(input []string) **C.char {
 	res := C.PrepareStringList(C.intptr_t(len(input)))
 	for i, str := range input {
 		C.AddToStringList(res, C.int(i), C.CString(str))
 	}
 	return res
+}
+
+// single file with the binary blob
+func CByteToFile(cData C.CByteArray, path string) error {
+	data := C.GoBytes(unsafe.Pointer(cData.ptr), C.int(cData.len))
+	return os.WriteFile(path, data, 0644)
+}
+
+// single file with multiple values, each prefixed with it's size
+func CMultipleByteArrayToFile(cMulti C.CMultipleByteArrays, path string) error {
+	bufNum := int(cMulti.len)
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	for i := 0; i < bufNum; i++ {
+		cTempByte := C.TempByteFromMultiple(cMulti, C.uintptr_t(i))
+		data := C.GoBytes(unsafe.Pointer(cTempByte.ptr), C.int(cTempByte.len))
+		lenbytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(lenbytes, uint64(cTempByte.len))
+		_, err := file.Write(lenbytes)
+		if err != nil {
+			return err
+		}
+		_, err = file.Write(data)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
