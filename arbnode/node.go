@@ -101,10 +101,11 @@ type NodeConfig struct {
 	BatchPosterConfig      BatchPosterConfig
 	ForwardingTarget       string // "" if not forwarding
 	BlockValidator         bool
+	BlockValidatorConfig   validator.BlockValidatorConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -174,7 +175,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer)
+		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, &config.BlockValidatorConfig)
 	}
 
 	if !config.BatchPoster {

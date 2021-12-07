@@ -33,12 +33,27 @@ type BlockValidator struct {
 
 	baseMachine *C.struct_Machine
 
+	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
 
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
 	progressChan        chan uint64
+}
+
+type BlockValidatorConfig struct {
+	RootPath            string // prepends all other paths
+	ProverBinPath       string
+	ModulePaths         []string
+	ConcurrentRunsLimit int // 0 - default (CPU# * 2)
+}
+
+var DefaultBlockValidatorConfig = BlockValidatorConfig{
+	RootPath:            "/home/tsahee/src/nitro/prover-env/",
+	ProverBinPath:       "replay.wasm",
+	ModulePaths:         []string{"wasi_stub.wasm", "soft-float.wasm", "go_stub.wasm", "host_io.wasm"},
+	ConcurrentRunsLimit: 0,
 }
 
 type PosInSequencer struct {
@@ -115,11 +130,13 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 	return idx
 }
 
-func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegistrer) *BlockValidator {
-	rootPath := "/home/tsahee/src/nitro/prover-env/"
-	moduleList := []string{rootPath + "wasi_stub.wasm", rootPath + "soft-float.wasm", rootPath + "go_stub.wasm", rootPath + "host_io.wasm"}
+func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegistrer, config *BlockValidatorConfig) *BlockValidator {
+	moduleList := []string{}
+	for _, module := range config.ModulePaths {
+		moduleList = append(moduleList, config.RootPath+module)
+	}
 	cModuleList := CreateCStringList(moduleList)
-	cBinPath := C.CString(rootPath + "replay.wasm")
+	cBinPath := C.CString(config.RootPath + config.ProverBinPath)
 
 	cZeroPreimages := C.CMultipleByteArrays{}
 	cZeroPreimages.len = 0
@@ -130,13 +147,18 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	validatorStatic.inboxTracker = inbox
 	validatorStatic.initialized = true
 
+	concurrent := config.ConcurrentRunsLimit
+	if concurrent == 0 {
+		concurrent = runtime.NumCPU() * 2
+	}
 	validator := &BlockValidator{
 		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
 		baseMachine:         baseMachine,
-		concurrentRunsLimit: 8,
+		concurrentRunsLimit: int32(concurrent),
+		config:              config,
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
