@@ -820,6 +820,8 @@ where
 }
 
 impl Machine {
+    pub const MAX_STEPS: u64 = 1 << 43;
+
     pub fn from_binary(
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
@@ -1073,6 +1075,10 @@ impl Machine {
         }
         // It's infeasible to overflow steps without halting
         self.steps += 1;
+        if self.steps == Self::MAX_STEPS {
+            self.status = MachineStatus::Errored;
+            return;
+        }
 
         if self.pc.inst == 1 {
             if let Some(hook) = self.modules[self.pc.module]

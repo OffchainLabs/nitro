@@ -13,7 +13,7 @@ contract OneStepProofEntry is IOneStepProofEntry {
     IOneStepProver proverMath;
     IOneStepProver proverHostIo;
 
-    uint256 constant MAX_STEPS = ~uint64(0) - 1;
+    uint256 constant MAX_STEPS = 1 << 43;
 
     constructor(
         IOneStepProver prover0_,
