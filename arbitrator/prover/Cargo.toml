@@ -1,0 +1,25 @@
+[package]
+name = "prover"
+version = "0.1.0"
+edition = "2018"
+publish = false
+
+[dependencies]
+digest = "0.9.0"
+eyre = "0.6.5"
+fnv = "1.0.7"
+hex = "0.4.3"
+libc = "0.2.108"
+nom = "7.0.0"
+nom-leb128 = "0.2.0"
+num = "0.4"
+rayon = "1.5.1"
+rustc-demangle = "0.1.21"
+serde = { version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.67"
+sha3 = "0.9.1"
+structopt = "0.3.23"
+
+[lib]
+name = "prover"
+crate-type = ["cdylib","lib"]
