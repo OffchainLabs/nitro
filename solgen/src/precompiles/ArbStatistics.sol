@@ -1,5 +1,5 @@
 
-pragma solidity >=0.4.21 <0.8.0;
+pragma solidity >=0.4.21 <0.9.0;
 
 interface ArbStatistics {
     // Get the following statistics for this chain:

@@ -10,7 +10,7 @@ async function sendTestMessages(deployment) {
   const { deployer } = await getNamedAccounts();
   const inbox = await ethers.getContract("Inbox", deployer);
   const seqInbox = await ethers.getContract("SequencerInbox", deployer);
-  const msgRoot = "../prover/test-cases/rust/messages/";
+  const msgRoot = "../arbitrator/prover/test-cases/rust/messages/";
   const gasOpts = { gasLimit: ethers.utils.hexlify(250000), gasPrice: ethers.utils.parseUnits('5', "gwei") };
   for (let msgNum = 0;  msgNum < 2; msgNum++) {
     const path = msgRoot + "msg" + String(msgNum) +".bin";

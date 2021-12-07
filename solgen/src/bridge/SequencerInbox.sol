@@ -3,14 +3,15 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.7.5;
+pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
+import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../utils/IGasRefunder.sol";
 
-contract SequencerInbox {
-	bytes32[] public inboxAccs;
+contract SequencerInbox is ISequencerInbox {
+	bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
@@ -78,7 +79,8 @@ contract SequencerInbox {
         uint256 inboxSeqNum,
         uint256 gasPriceL1,
         address sender,
-        bytes32 messageDataHash
+        bytes32 messageDataHash,
+        bytes calldata emptyData
     ) external {
         require(_totalDelayedMessagesRead > totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         {
@@ -107,7 +109,7 @@ contract SequencerInbox {
             );
         }
 
-        bytes calldata emptyData;
+        require(emptyData.length == 0, "NOT_EMPTY");
         (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
             emptyData,
             _totalDelayedMessagesRead
@@ -153,8 +155,8 @@ contract SequencerInbox {
             timeBounds
         );
 
-        if (gasRefunder != IGasRefunder(0)) {
-            gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
+        if (address(gasRefunder) != address(0)) {
+            gasRefunder.onGasSpent(payable(msg.sender), startGasLeft - gasleft(), calldataSize);
         }
     }
 
@@ -183,12 +185,12 @@ contract SequencerInbox {
             data
         );
 
-        if (gasRefunder != IGasRefunder(0)) {
+        if (address(gasRefunder) != address(0)) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
-            gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
+            gasRefunder.onGasSpent(payable(msg.sender), startGasLeft - gasleft(), calldataSize);
         }
     }
 
@@ -231,7 +233,7 @@ contract SequencerInbox {
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }
 
-    function batchCount() external view returns (uint256) {
+    function batchCount() external view override returns (uint256) {
         return inboxAccs.length;
     }
 }
