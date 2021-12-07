@@ -1,4 +1,4 @@
-package arbnode
+package validator
 
 /*
 #cgo CFLAGS: -g -Wall
@@ -41,12 +41,29 @@ type BlockValidator struct {
 	progressChan        chan uint64
 }
 
+type PosInSequencer struct {
+	Pos           uint64
+	BatchNum      uint64
+	PosInSequence uint64
+	BatchAfter    uint64
+	PosAfter      uint64
+}
+
+type BlockValidatorRegistrer interface {
+	SetBlockValidator(*BlockValidator)
+}
+
+type DelayedMessageReader interface {
+	BlockValidatorRegistrer
+	GetDelayedMessageBytes(uint64) ([]byte, error)
+}
+
 // block validator interacts with c, so some functions don't have specific conext and must use globals
 type blockValidatorGlobals struct {
 	initialized       bool
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
-	inboxTracker      *InboxTracker
+	inboxTracker      DelayedMessageReader
 }
 
 var validatorStatic blockValidatorGlobals
@@ -75,7 +92,7 @@ func newValidationEntry(header *types.Header, preimages []common.Hash, endPos ui
 	}
 }
 
-type posToValidateList []posInSequencer
+type posToValidateList []PosInSequencer
 
 func (l posToValidateList) Len() int {
 	return len(l)
@@ -98,7 +115,7 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 	return idx
 }
 
-func NewBlockValidator(inbox *InboxTracker, streamer *TransactionStreamer) *BlockValidator {
+func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegistrer) *BlockValidator {
 	rootPath := "/home/tsahee/src/nitro/prover-env/"
 	moduleList := []string{rootPath + "wasi_stub.wasm", rootPath + "soft-float.wasm", rootPath + "go_stub.wasm", rootPath + "host_io.wasm"}
 	cModuleList := CreateCStringList(moduleList)
@@ -161,7 +178,7 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 			runtime.Goexit()
 		}
 		validationEntry := entry.(*validationEntry)
-		msg, _, err := validatorStatic.inboxTracker.getDelayedMessageBytesAndAccumulator(msgNum)
+		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(msgNum)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", msgNum, "pos", startPos)
 			runtime.Goexit()
@@ -176,7 +193,7 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 	return C.CByteArray{} //will never get here, parsers don't realise Goexit is dead end
 }
 
-func (v *BlockValidator) validate(validationEntry *validationEntry, start, end posInSequencer) {
+func (v *BlockValidator) validate(validationEntry *validationEntry, start, end PosInSequencer) {
 	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber, "start", start, "end", end)
 	if !validatorStatic.initialized {
 		log.Error("validator: validatorStatic not initialized")
@@ -332,12 +349,12 @@ func (v *BlockValidator) BlocksValidated() uint64 {
 	return v.blocksValidated
 }
 
-func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, batchData []posInSequencer) {
+func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []PosInSequencer) {
 	for batchNr, msg := range batches {
 		validatorStatic.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
 	}
 	v.posToValidateMutex.Lock()
-	v.posToValidate = append(v.posToValidate, batchData...)
+	v.posToValidate = append(v.posToValidate, posData...)
 	v.posToValidateMutex.Unlock()
 	v.sendValidationsChan <- struct{}{}
 }

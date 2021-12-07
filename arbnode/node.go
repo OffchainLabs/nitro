@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/validator"
 )
 
 type RollupAddresses struct {
@@ -116,7 +117,7 @@ type Node struct {
 	InboxTracker     *InboxTracker
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
-	BlockValidator   *BlockValidator
+	BlockValidator   *validator.BlockValidator
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
@@ -171,9 +172,9 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		return nil, err
 	}
 
-	var blockValidator *BlockValidator
+	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator = NewBlockValidator(inboxTracker, txStreamer)
+		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer)
 	}
 
 	if !config.BatchPoster {

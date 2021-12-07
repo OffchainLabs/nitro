@@ -1,4 +1,4 @@
-package arbnode
+package validator
 
 /*
 #cgo CFLAGS: -g -Wall

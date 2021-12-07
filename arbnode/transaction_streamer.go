@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/validator"
 )
 
 type TransactionStreamer struct {
@@ -34,7 +35,7 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
-	validator *BlockValidator
+	validator *validator.BlockValidator
 }
 
 func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*TransactionStreamer, error) {
@@ -62,7 +63,7 @@ func bytesToUint64(b []byte) (uint64, error) {
 	return binary.BigEndian.Uint64(b), nil
 }
 
-func (s *TransactionStreamer) SetBlockValidator(validator *BlockValidator) {
+func (s *TransactionStreamer) SetBlockValidator(validator *validator.BlockValidator) {
 	s.validator = validator
 }
 
