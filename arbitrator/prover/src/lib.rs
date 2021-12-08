@@ -109,17 +109,19 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let inbox_reader = Box::new(move |context: u64, inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
-        unsafe {
-            let res = c_inbox_reader(context, inbox_idx, seq_num);
-            if res.len > 0 && res.ptr.is_null() {
-                None
-            } else {
-                let slice = std::slice::from_raw_parts(res.ptr, res.len);
-                Some(slice.to_vec())
+    let inbox_reader = Box::new(
+        move |context: u64, inbox_idx: u64, seq_num: u64| -> Option<Vec<u8>> {
+            unsafe {
+                let res = c_inbox_reader(context, inbox_idx, seq_num);
+                if res.len > 0 && res.ptr.is_null() {
+                    None
+                } else {
+                    let slice = std::slice::from_raw_parts(res.ptr, res.len);
+                    Some(slice.to_vec())
+                }
             }
-        }
-    }) as InboxReaderFn;
+        },
+    ) as InboxReaderFn;
     let mut preimages = HashMap::default();
     for i in 0..c_preimages.len {
         let c_bytes = *c_preimages.ptr.add(i);
@@ -203,7 +205,10 @@ pub unsafe extern "C" fn arbitrator_set_inbox_reader_context(mach: *mut Machine,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_add_preimages(mach: *mut Machine, c_preimages: CMultipleByteArrays) {
+pub unsafe extern "C" fn arbitrator_add_preimages(
+    mach: *mut Machine,
+    c_preimages: CMultipleByteArrays,
+) {
     for i in 0..c_preimages.len {
         let c_bytes = *c_preimages.ptr.add(i);
         let slice = std::slice::from_raw_parts(c_bytes.ptr, c_bytes.len);

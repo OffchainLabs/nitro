@@ -1977,7 +1977,7 @@ impl Machine {
     }
 
     pub fn add_preimage(&mut self, key: Bytes32, val: Vec<u8>) {
-        self.preimages.insert(key,val);
+        self.preimages.insert(key, val);
     }
 
     pub fn set_inbox_reader_context(&mut self, context: u64) {
