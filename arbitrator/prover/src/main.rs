@@ -151,7 +151,7 @@ fn main() -> Result<()> {
         opts.allow_hostapi,
         global_state,
         inbox_cache,
-        Box::new(|_: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
+        Box::new(|_: u64, _: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());

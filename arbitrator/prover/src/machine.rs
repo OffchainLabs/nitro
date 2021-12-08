@@ -255,15 +255,15 @@ struct Module {
     memory: Memory,
     tables: Vec<Table>,
     tables_merkle: Merkle,
-    funcs: Vec<Function>,
-    funcs_merkle: Merkle,
-    types: Vec<FunctionType>,
+    funcs: Arc<Vec<Function>>,
+    funcs_merkle: Arc<Merkle>,
+    types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
-    names: NameCustomSection,
-    host_call_hooks: Vec<Option<(String, String)>>,
+    names: Arc<NameCustomSection>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
     start_function: Option<u32>,
-    func_types: Vec<FunctionType>,
-    exports: HashMap<String, u32>,
+    func_types: Arc<Vec<FunctionType>>,
+    exports: Arc<HashMap<String, u32>>,
 }
 
 impl Module {
@@ -491,18 +491,18 @@ impl Module {
             globals,
             tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
             tables,
-            funcs_merkle: Merkle::new(
+            funcs_merkle: Arc::new(Merkle::new(
                 MerkleType::Function,
                 code.iter().map(|f| f.hash()).collect(),
-            ),
-            funcs: code,
-            types: bin.types,
+            )),
+            funcs: Arc::new(code),
+            types: Arc::new(bin.types),
             internals_offset,
-            names: bin.names,
-            host_call_hooks,
+            names: Arc::new(bin.names),
+            host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
-            func_types,
-            exports,
+            func_types: Arc::new(func_types),
+            exports: Arc::new(exports),
         }
     }
 
@@ -609,22 +609,25 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = Box<dyn Fn(u64, u64) -> Option<Vec<u8>>>;
+pub type InboxReaderFn = Box<dyn Fn(u64, u64, u64) -> Option<Vec<u8>>>;
 
 #[derive(Clone)]
 pub struct InboxReaderCached {
     inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     inbox_reader: Arc<InboxReaderFn>,
+    context: u64,
 }
 
 impl InboxReaderCached {
     pub fn create(
         inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         inbox_reader_fn: InboxReaderFn,
+        context: u64,
     ) -> InboxReaderCached {
         InboxReaderCached {
             inbox_cache: inbox_cache,
             inbox_reader: Arc::new(inbox_reader_fn),
+            context: context,
         }
     }
 
@@ -635,7 +638,7 @@ impl InboxReaderCached {
     ) -> Option<&[u8]> {
         match self.inbox_cache.entry((inbox_identifier, msg_num)) {
             hash_map::Entry::Vacant(entry) => {
-                let message = (self.inbox_reader)(inbox_identifier as u64, msg_num)?;
+                let message = (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num)?;
                 Some(entry.insert(message))
             }
             hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
@@ -651,7 +654,7 @@ impl InboxReaderCached {
     ) -> Option<Vec<u8>> {
         match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
             Some(val) => Some(val.to_vec()),
-            None => (self.inbox_reader)(inbox_identifier as u64, msg_num),
+            None => (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num),
         }
     }
 }
@@ -856,7 +859,7 @@ impl Machine {
 
         for lib in libraries {
             let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true);
-            for (name, &func) in &module.exports {
+            for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
                     name.clone(),
@@ -973,18 +976,18 @@ impl Machine {
             memory: Memory::default(),
             tables: Vec::new(),
             tables_merkle: Merkle::default(),
-            funcs_merkle: Merkle::new(
+            funcs_merkle: Arc::new(Merkle::new(
                 MerkleType::Function,
                 entrypoint_funcs.iter().map(Function::hash).collect(),
-            ),
-            funcs: entrypoint_funcs,
-            types: entrypoint_types,
-            names: entrypoint_names,
+            )),
+            funcs: Arc::new(entrypoint_funcs),
+            types: Arc::new(entrypoint_types),
+            names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: vec![None],
+            host_call_hooks: Arc::new(vec![None]),
             start_function: None,
-            func_types: vec![FunctionType::default()],
-            exports: HashMap::default(),
+            func_types: Arc::new(vec![FunctionType::default()]),
+            exports: Arc::new(HashMap::default()),
         };
         let entrypoint_idx = modules.len();
         modules.push(entrypoint);
@@ -1026,7 +1029,7 @@ impl Machine {
             global_state,
             pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
             stdio_output: Vec::new(),
-            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn),
+            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
             preimages,
         }
     }
@@ -1567,16 +1570,16 @@ impl Machine {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                    let preimage = match self.preimages.get(&hash) {
-                        Some(b) => b,
-                        None => panic!("Missing requested preimage for hash {}", hash),
-                    };
-                    let offset = usize::try_from(offset).unwrap();
-                    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
-                    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-                    let success = module.memory.store_slice_aligned(ptr.into(), read);
-                    assert!(success, "Failed to write to previously read memory");
-                    self.value_stack.push(Value::I32(len as u32));
+                    if let Some(preimage) = self.preimages.get(&hash) {
+                        let offset = usize::try_from(offset).unwrap();
+                        let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                        let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                        let success = module.memory.store_slice_aligned(ptr.into(), read);
+                        assert!(success, "Failed to write to previously read memory");
+                        self.value_stack.push(Value::I32(len as u32));
+                    } else {
+                        panic!("Missing requested preimage for hash {}", hash);
+                    }
                 } else {
                     self.status = MachineStatus::Errored;
                 }
@@ -1963,6 +1966,22 @@ impl Machine {
 
     pub fn get_data_stack(&self) -> &[Value] {
         &self.value_stack
+    }
+
+    pub fn get_global_state(&self) -> GlobalState {
+        self.global_state.clone()
+    }
+
+    pub fn set_global_state(&mut self, gs: GlobalState) {
+        self.global_state = gs;
+    }
+
+    pub fn add_preimage(&mut self, key: Bytes32, val: Vec<u8>) {
+        self.preimages.insert(key,val);
+    }
+
+    pub fn set_inbox_reader_context(&mut self, context: u64) {
+        self.inbox_reader.context = context;
     }
 
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {

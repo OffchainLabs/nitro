@@ -107,7 +107,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readDelayed
     let read = wavm_read_delayed_inbox_message(seq_num, our_ptr, offset as usize);
     assert!(read <= 32);
     write_slice(&our_buf.0[..read], out_ptr);
-    sp.write_u64(4, read as u64);
+    sp.write_u64(5, read as u64);
 }
 
 #[no_mangle]
