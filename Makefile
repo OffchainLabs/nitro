@@ -52,6 +52,9 @@ docker:
 
 
 # strategic rules to minimize dependency building
+.make/arbitrator: .make arbitrator/prover/** arbitrator/Makefile | .make
+	${MAKE} -C arbitrator/ build-env
+	@touch .make/arbitrator
 
 .make/push: .make/lint | .make
 	make $(MAKEFLAGS) .make/test
@@ -65,7 +68,8 @@ docker:
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/test: $(go_source) .make/solgen .make/solidity | .make
+.make/test: $(go_source) .make/arbitrator .make/solgen .make/solidity | .make
+	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/arbitrator/target/env/lib; \
 	gotestsum --format short-verbose
 	@touch .make/test
 
