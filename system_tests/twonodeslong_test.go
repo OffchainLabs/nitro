@@ -40,7 +40,7 @@ func TestTwoNodesLong(t *testing.T) {
 	l2info, node1, l1info, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -153,5 +153,21 @@ func TestTwoNodesLong(t *testing.T) {
 		delayedFaucetBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		t.Fatal("Unexpected balance")
+	}
+	if nodeB.BlockValidator != nil {
+		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testDeadLine, deadlineExist := t.Deadline()
+		var timeout time.Duration
+		if deadlineExist {
+			timeout = time.Until(testDeadLine) - (time.Second * 10)
+		} else {
+			timeout = time.Hour * 12
+		}
+		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
+			t.Fatal("did not validate all blocks")
+		}
 	}
 }
