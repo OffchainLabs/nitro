@@ -42,6 +42,7 @@ func main() {
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
+	datadir := flag.String("datadir", "", "directory to store chain state")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
 	httphost := flag.String("httphost", "localhost", "http host")
@@ -131,7 +132,7 @@ func main() {
 	}
 
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = "" // TODO: parametrise. Support resuming after shutdown..
+	stackConf.DataDir = *datadir
 	stackConf.HTTPHost = *httphost
 	stackConf.HTTPPort = *httpPort
 	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
@@ -183,7 +184,7 @@ func main() {
 
 	genesisAlloc := make(core.GenesisAlloc)
 	genesisAlloc[devAddr] = core.GenesisAccount{
-		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 		Nonce:      0,
 		PrivateKey: nil,
 	}
