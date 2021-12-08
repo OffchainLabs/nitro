@@ -1,9 +1,9 @@
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall
-#cgo LDFLAGS: -L./c-api/ -lprover
-#include "c-api/arbitrator.h"
+#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
+#cgo LDFLAGS: -L../arbitrator/target/env/lib/ -lprover
+#include "arbitrator.h"
 #include <stdlib.h>
 
 // same as arbitrator defines, but without constant pointers

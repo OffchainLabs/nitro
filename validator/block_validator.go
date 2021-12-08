@@ -1,8 +1,8 @@
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall
-#include "c-api/arbitrator.h"
+#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
+#include "arbitrator.h"
 #include <stdlib.h>
 
 struct CByteArray InboxReaderWrapper(uint64_t inbox_idx, uint64_t seq_num);
@@ -50,17 +50,23 @@ type BlockValidatorConfig struct {
 	ProverBinPath       string
 	ModulePaths         []string
 	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU# * 2)
+	ConcurrentRunsLimit int // 0 - default (CPU#)
 	BlocksToRecord      []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	RootPath:            "/home/tsahee/src/nitro/prover-env/",
-	ProverBinPath:       "replay.wasm",
-	ModulePaths:         []string{"wasi_stub.wasm", "soft-float.wasm", "go_stub.wasm", "host_io.wasm"},
+	RootPath:            "./arbitrator/target/env/",
+	ProverBinPath:       "lib/replay.wasm",
+	ModulePaths:         []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
 	OutputPath:          "output",
 	ConcurrentRunsLimit: 0,
 	BlocksToRecord:      []uint64{},
+}
+
+func init() {
+	_, thisfile, _, _ := runtime.Caller(0)
+	projectDir := filepath.Base(filepath.Base(thisfile))
+	DefaultBlockValidatorConfig.RootPath = filepath.Join(projectDir, "arbitrator", "target", "env")
 }
 
 type PosInSequencer struct {
@@ -161,7 +167,7 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
-		concurrent = runtime.NumCPU() * 2
+		concurrent = runtime.NumCPU()
 	}
 	validator := &BlockValidator{
 		posNextSend:         0,
@@ -242,9 +248,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	cmdFile.WriteString(fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchAfter, end.PosAfter, validationEntry.BlockHash))
 	cmdFile.WriteString("ROOTPATH=\"" + v.config.RootPath + "\"\n")
 
-	cmdFile.WriteString("if (( $# > 0 )); then\n" +
-		"	ROOTPATH=$1\n" +
-		"	shift\n" +
+	cmdFile.WriteString("if (( $# > 1 )); then\n" +
+		"	if [[ $1 == \"-r\" ]]; then\n" +
+		"		ROOTPATH=$2\n" +
+		"		shift\n" +
+		"		shift\n" +
+		"	fi\n" +
 		"fi\n")
 	cmdFile.WriteString("${ROOTPATH}/prover ${ROOTPATH}\\" + v.config.ProverBinPath)
 	for _, module := range v.config.ModulePaths {
@@ -306,8 +315,8 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	C.arbitrator_set_inbox_reader_context(mach, C.uint64_t(start.Pos))
 	C.arbitrator_set_global_state(mach, gsStart)
 	steps := 0
-	for !C.arbitrator_is_halted(mach) {
-		C.arbitrator_step(mach, C.intptr_t(100000000))
+	for C.arbitrator_get_status(mach) == C.Running {
+		C.arbitrator_step(mach, C.uintptr_t(100000000))
 		steps += 100000000
 		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}
