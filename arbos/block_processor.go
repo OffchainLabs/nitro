@@ -55,7 +55,7 @@ type BlockBuilder struct {
 	recordingGasPool      core.GasPool
 	recordingHeader       *types.Header
 	recordingKeyValue     ethdb.KeyValueStore
-	startPos              uint64 //recorded and not used
+	startPos              uint64 // recorded and not used
 
 	// Setup based on first segment
 	blockInfo *L1Info

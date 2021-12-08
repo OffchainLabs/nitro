@@ -240,7 +240,7 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 	if s.validator != nil {
 		preimages, startPos, err := arbstate.GetRecordsFromBuilder(blockBuilder)
 		if err != nil {
-			return nil, fmt.Errorf("failed getting records: %s", err)
+			return nil, fmt.Errorf("failed getting records: %w", err)
 		}
 		s.validator.NewBlock(block, preimages, startPos, lastMessage)
 	}

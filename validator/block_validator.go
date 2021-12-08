@@ -70,11 +70,11 @@ func init() {
 }
 
 type PosInSequencer struct {
-	Pos           uint64
-	BatchNum      uint64
-	PosInSequence uint64
-	BatchAfter    uint64
-	PosAfter      uint64
+	Pos        uint64
+	BatchNum   uint64
+	PosInBatch uint64
+	BatchAfter uint64
+	PosAfter   uint64
 }
 
 type BlockValidatorRegistrer interface {
@@ -217,7 +217,11 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 			log.Error("error while trying to read validation entry", "pos", startPos)
 			runtime.Goexit()
 		}
-		validationEntry := entry.(*validationEntry)
+		validationEntry, ok := entry.(*validationEntry)
+		if !ok {
+			log.Error("illegal validation entry", "pos", startPos)
+			runtime.Goexit()
+		}
 		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(msgNum)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", msgNum, "pos", startPos)
@@ -230,36 +234,48 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 		log.Error("bad inbox index while proving", "index", index, "pos", startPos)
 		runtime.Goexit()
 	}
-	return C.CByteArray{} //will never get here, parsers don't realise Goexit is dead end
+	return C.CByteArray{} // will never get here, parsers don't realise Goexit is dead end
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end PosInSequencer, c_preimages C.CMultipleByteArrays) error {
 	outDirPath := filepath.Join(v.config.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
-	os.MkdirAll(outDirPath, 0777)
+	err := os.MkdirAll(outDirPath, 0777)
+	if err != nil {
+		return err
+	}
 
 	cmdFile, err := os.Create(filepath.Join(outDirPath, "run-prover.sh"))
 	if err != nil {
 		return err
 	}
 	defer cmdFile.Close()
-	cmdFile.WriteString("#!/bin/bash\n")
-	cmdFile.WriteString(fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchAfter, end.PosAfter, validationEntry.BlockHash))
-	cmdFile.WriteString("ROOTPATH=\"" + v.config.RootPath + "\"\n")
-
-	cmdFile.WriteString("if (( $# > 1 )); then\n" +
+	_, err = cmdFile.WriteString("#!/bin/bash\n" +
+		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchAfter, end.PosAfter, validationEntry.BlockHash) +
+		"ROOTPATH=\"" + v.config.RootPath + "\"\n" +
+		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
 		"		ROOTPATH=$2\n" +
 		"		shift\n" +
 		"		shift\n" +
 		"	fi\n" +
-		"fi\n")
-	cmdFile.WriteString("${ROOTPATH}/prover ${ROOTPATH}\\" + v.config.ProverBinPath)
-	for _, module := range v.config.ModulePaths {
-		cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
+		"fi\n" +
+		"${ROOTPATH}/prover ${ROOTPATH}\\" + v.config.ProverBinPath)
+	if err != nil {
+		return err
 	}
-	cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNum, start.PosInSequence, validationEntry.PrevBlockHash))
+
+	for _, module := range v.config.ModulePaths {
+		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash))
+	if err != nil {
+		return err
+	}
 
 	sequencerCByte := InboxReaderFunc(C.uint64_t(0xffffffffffffffff), C.uint64_t(0), C.uint64_t(start.BatchNum))
 	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNum)
@@ -267,16 +283,25 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	if err != nil {
 		return err
 	}
-	cmdFile.WriteString(" --inbox " + sequencerFileName)
+	_, err = cmdFile.WriteString(" --inbox " + sequencerFileName)
+	if err != nil {
+		return err
+	}
 
 	err = CMultipleByteArrayToFile(c_preimages, filepath.Join(outDirPath, "preimages.bin"))
 	if err != nil {
 		return err
 	}
-	cmdFile.WriteString(" --preimages preimages.bin")
+	_, err = cmdFile.WriteString(" --preimages preimages.bin")
+	if err != nil {
+		return err
+	}
 
 	if len(validationEntry.MsgsAllocated) > 0 {
-		cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.MsgsAllocated[0].seq))
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.MsgsAllocated[0].seq))
+		if err != nil {
+			return err
+		}
 	}
 	for _, msg := range validationEntry.MsgsAllocated {
 		filename := fmt.Sprintf("delayed_%d.bin", msg.seq)
@@ -284,10 +309,19 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		if err != nil {
 			return err
 		}
-		cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox %s", filename))
+		if err != nil {
+			return err
+		}
 	}
-	cmdFile.WriteString(" \"$@\"\n")
-	cmdFile.Chmod(0777)
+	_, err = cmdFile.WriteString(" \"$@\"\n")
+	if err != nil {
+		return err
+	}
+	err = cmdFile.Chmod(0777)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -308,7 +342,7 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	}
 	validationEntry.Running = true
 	validationEntry.StartBatchNr = start.BatchNum
-	gsStart := CreateGlobalState(start.BatchNum, start.PosInSequence, validationEntry.PrevBlockHash)
+	gsStart := CreateGlobalState(start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash)
 
 	mach := C.arbitrator_clone_machine(v.baseMachine)
 	C.arbitrator_add_preimages(mach, c_preimages)
@@ -322,15 +356,14 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	}
 	gsEnd := C.arbitrator_global_state(mach)
 
-	resBatch, resPosInSequence, resHash := ParseGlobalState(gsEnd)
+	resBatch, resPosInBatch, resHash := ParseGlobalState(gsEnd)
 
-	resultValid := (resBatch == end.BatchAfter) && (resPosInSequence == end.PosAfter) && (resHash == validationEntry.BlockHash)
+	writeThisBlock := false
+
+	resultValid := (resBatch == end.BatchAfter) && (resPosInBatch == end.PosAfter) && (resHash == validationEntry.BlockHash)
 
 	if !resultValid {
-		log.Error("validation failed", "startPos", start.Pos, "batch_exp", end.BatchAfter, "batch_actual", resBatch, "pos_exp", end.PosAfter, "pos_actual", resPosInSequence, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
-		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
-		v.writeToFile(validationEntry, start, end, c_preimages)
-		panic("validation failed. quitting..")
+		writeThisBlock = true
 	}
 	// stupid search for now, assuming the list will always be empty or very mall
 	for _, blockNr := range v.config.BlocksToRecord {
@@ -338,18 +371,35 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 			break
 		}
 		if blockNr == validationEntry.BlockNumber {
-			v.writeToFile(validationEntry, start, end, c_preimages)
+			writeThisBlock = true
 			break
 		}
 	}
-	v.preimageCache.RemoveFromCache(validationEntry.Preimages)
+
+	if writeThisBlock {
+		err = v.writeToFile(validationEntry, start, end, c_preimages)
+		if err != nil {
+			log.Error("failed to write file", "err", err)
+		}
+	}
+
+	if !resultValid {
+		log.Error("validation failed", "startPos", start.Pos, "batch_exp", end.BatchAfter, "batch_actual", resBatch, "pos_exp", end.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
+		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
+		panic("validation failed. quitting..")
+	}
+
+	err = v.preimageCache.RemoveFromCache(validationEntry.Preimages)
+	if err != nil {
+		log.Error("validator failed to remove from cache", "err", err)
+	}
 	for _, cbyte := range validationEntry.MsgsAllocated {
 		DestroyCByteArray(cbyte.data)
 	}
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
 	validationEntry.MsgsAllocated = nil
 	validationEntry.Preimages = nil
-	validationEntry.Valid = true //after that - validation entry could be deleted from map
+	validationEntry.Valid = true // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
 	v.sendValidationsChan <- struct{}{}
@@ -408,7 +458,6 @@ func (v *BlockValidator) ProgressValidated() {
 	for {
 		entry, found := validatorStatic.validationEntries.Load(v.posNext)
 		if !found {
-			log.Info("validator progress: not in db:", "pos", v.posNext) //TEMP
 			return
 		}
 		validationEntry, ok := entry.(*validationEntry)
@@ -417,7 +466,6 @@ func (v *BlockValidator) ProgressValidated() {
 			return
 		}
 		if !validationEntry.Valid {
-			log.Info("validator progress: not valid:", "pos", v.posNext) //TEMP
 			return
 		}
 		if validationEntry.BlockNumber != v.blocksValidated+1 {
@@ -475,7 +523,7 @@ func (v *BlockValidator) Start(_ context.Context) {
 	v.startValidationLoop()
 }
 
-//can only be used from One thread
+// can only be used from One thread
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
 	timeoutChan := time.After(timeout)
 	for {

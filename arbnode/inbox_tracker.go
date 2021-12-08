@@ -445,7 +445,14 @@ func (t *InboxTracker) addSequencerBatches(ctx context.Context, client L1Interfa
 		}
 		posInBatch := backend.positionWithinMessage
 		err = multiplexer.Advance()
-		positions = append(positions, validator.PosInSequencer{currentpos - 1, batchSeqNum, posInBatch, backend.batchSeqNum, backend.positionWithinMessage})
+		position := validator.PosInSequencer{
+			Pos:        currentpos - 1,
+			BatchNum:   batchSeqNum,
+			PosInBatch: posInBatch,
+			BatchAfter: backend.batchSeqNum,
+			PosAfter:   backend.positionWithinMessage,
+		}
+		positions = append(positions, position)
 
 		if err != nil {
 			return err

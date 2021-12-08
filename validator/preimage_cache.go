@@ -37,7 +37,13 @@ func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.H
 		actual, found := p.cacheMap.LoadOrStore(hash, newEntry)
 		var curEntry *preimageEntry
 		if found {
-			curEntry = actual.(*preimageEntry)
+			ok := true
+			curEntry, ok = actual.(*preimageEntry)
+			if !ok {
+				p.cacheMap.Store(hash, newEntry)
+				curEntry = newEntry
+				newEntry = nil
+			}
 		} else {
 			curEntry = newEntry
 			newEntry = nil
@@ -103,7 +109,10 @@ func (p *preimageCache) PrepareMultByteArrays(hashlist []common.Hash) (C.CMultip
 		if !found {
 			return C.CMultipleByteArrays{}, errors.New("preimage not in cache")
 		}
-		curEntry := actual.(*preimageEntry)
+		curEntry, ok := actual.(*preimageEntry)
+		if !ok {
+			return C.CMultipleByteArrays{}, errors.New("preimage malformed in cache")
+		}
 
 		curEntry.Mutex.Lock()
 		curData := curEntry.Data

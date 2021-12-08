@@ -174,7 +174,7 @@ func CreateBlockBuilder(blockchain *core.BlockChain, lastblockHash common.Hash, 
 	recordingStateDatabase := state.NewDatabase(rawdb.NewDatabase(recordingKeyValue))
 	recordingStateDb, err := state.New(lastBlockHeader.Root, recordingStateDatabase, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create recordingStateDb: %s pos: %d", err, pos)
+		return nil, fmt.Errorf("failed to create recordingStateDb: %w pos: %d", err, pos)
 	}
 	if !lastBlockHeader.Number.IsUint64() {
 		return nil, errors.New("block number not uint64")
