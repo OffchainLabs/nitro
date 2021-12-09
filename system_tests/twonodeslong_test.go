@@ -46,6 +46,12 @@ func TestTwoNodesLong(t *testing.T) {
 	l2info.GenerateAccount("DelayedReceiver")
 	l2info.GenerateAccount("DirectReceiver")
 
+	l2info.GenerateAccount("ErrorTxSender")
+
+	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
+		l2info.PrepareTx("Faucet", "ErrorTxSender", 30000, big.NewInt(params.InitialBaseFee*30000), nil),
+	})
+
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
@@ -99,6 +105,12 @@ func TestTwoNodesLong(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		// create bad tx on delayed inbox
+		l2info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
+		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+			WrapL2ForDelayed(t, l2info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), l1info, "User", 100000),
+		})
+
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
 			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
