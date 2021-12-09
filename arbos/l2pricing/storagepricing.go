@@ -1,7 +1,6 @@
 package l2pricing
 
 import (
-	"fmt"
 	"github.com/ethereum/go-ethereum/common/math"
 	"math/big"
 )
@@ -37,7 +36,6 @@ func (pricingState *L2PricingState) updateStorageComponentForElapsedTime(seconds
 
 		fastRatio := fastAvg / (TargetAllocRateCells * FastAvgSeconds)
 		slowRatio := slowAvg / (TargetAllocRateCells * SlowAvgSeconds)
-		fmt.Println("fastRatio=", fastRatio, ", slowRatio=", slowRatio)
 		ratio := (fastRatio + slowRatio) / 2
 		if ratio > 2*UnitsPerStorage {
 			ratio = 2 * UnitsPerStorage
