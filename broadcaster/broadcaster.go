@@ -6,6 +6,7 @@ package broadcaster
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -84,35 +85,64 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
-	bm, ok := bmi.(BroadcastMessage)
+	broadcastMessage, ok := bmi.(BroadcastMessage)
 	if !ok {
 		log.Crit("Requested to broadcast messasge of unknown type")
 	}
-	if confirmMsg := bm.ConfirmedSequenceNumberMessage; confirmMsg != nil {
-		latestConfirmedIndex := -1
-		for i, storedMsg := range b.messages {
-			if storedMsg.SequenceNumber <= confirmMsg.SequenceNumber {
-				latestConfirmedIndex = i
-			} else {
-				break
-			}
-		}
-		b.messages = b.messages[latestConfirmedIndex+1:]
-	} else if len(bm.Messages) > 0 {
-		// Add to cache to send to new clients
+	defer func() { atomic.StoreInt32(&b.messageCount, int32(len(b.messages))) }()
+
+	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		if len(b.messages) == 0 {
-			// Current list is empty
-			b.messages = append(b.messages, bm.Messages...)
-		} else if b.messages[len(b.messages)-1].SequenceNumber < bm.Messages[0].SequenceNumber {
-			// TODO what about skipped sequence numbers?
-			b.messages = append(b.messages, bm.Messages...)
-		} else {
-			// TODO Should this be fatal?
-			log.Crit("broadcaster reorg not supported", "last SequenceNumber", b.messages[len(b.messages)-1].SequenceNumber, "current SequenceNumber", bm.Messages[0].SequenceNumber)
+			return nil
 		}
+
+		// If new sequence number is less than the earliest in the buffer,
+		// and this was not due to an overflow, then do nothing.
+		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber &&
+			!(confirmMsg.SequenceNumber < math.MaxUint64/2 &&
+				b.messages[0].SequenceNumber > math.MaxUint64/2) {
+			return nil
+		}
+
+		// If sequence number overflowed uint64, the subtraction will wrap around
+		// and still gives the correct index.
+		confirmedIndex := confirmMsg.SequenceNumber - b.messages[0].SequenceNumber
+
+		if uint64(len(b.messages)) <= confirmedIndex {
+			log.Error("ConfirmedSequenceNumber message ", confirmMsg.SequenceNumber, " is past the end of stored messages. Clearing buffer. Final stored sequence number was ", b.messages[len(b.messages)-1])
+			b.messages = nil
+			return nil
+		}
+
+		if b.messages[confirmedIndex].SequenceNumber != confirmMsg.SequenceNumber {
+			// Log instead of returning error here so that the message will be sent to downstream
+			// relays to also cause them to be cleared.
+			log.Error("Invariant violation: Non-sequential messages stored in SequenceNumberCatchupBuffer. Found ", b.messages[confirmedIndex].SequenceNumber, " expected ", confirmMsg.SequenceNumber, ". Clearing buffer.")
+			b.messages = nil
+			return nil
+		}
+
+		b.messages = b.messages[confirmedIndex+1:]
+		return nil
 	}
 
-	atomic.StoreInt32(&b.messageCount, int32(len(b.messages)))
+	for _, newMsg := range broadcastMessage.Messages {
+		if len(b.messages) == 0 {
+			b.messages = append(b.messages, newMsg)
+		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
+			b.messages = append(b.messages, newMsg)
+		} else if newMsg.SequenceNumber > expectedSequenceNumber {
+			log.Warn("Message with sequence number ",
+				newMsg.SequenceNumber, " requested to be broadcast, ",
+				"expected ", expectedSequenceNumber,
+				", discarding up to ", newMsg.SequenceNumber,
+				" from catchup buffer")
+			b.messages = nil
+			b.messages = append(b.messages, newMsg)
+		} else {
+			log.Info("Skipping already seen message with sequence number: ", newMsg.SequenceNumber)
+		}
+	}
 
 	return nil
 
