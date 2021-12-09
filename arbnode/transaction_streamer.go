@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -211,7 +211,7 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastMessage uint64, delayedMessageCount uint64) (*types.Block, error) {
+func (s *TransactionStreamer) closeBlock(blockBuilder *arbos.BlockBuilder, firstMessage uint64, lastMessage uint64, delayedMessageCount uint64, recordingBlockBuilder *arbos.BlockBuilder, recordingKV *arbitrum.RecordingKV) (*types.Block, error) {
 	messageCount := lastMessage + 1
 	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
 	if len(block.Transactions()) != len(receipts) {
@@ -238,17 +238,31 @@ func (s *TransactionStreamer) writeBlock(blockBuilder *arbos.BlockBuilder, lastM
 		return nil, errors.New("geth rejected block as non-canonical")
 	}
 	if s.validator != nil {
-		preimages, startPos, err := arbstate.GetRecordsFromBuilder(blockBuilder)
+		recordingBlockBuilder.ConstructBlock(delayedMessageCount)
+		preimages, err := arbitrum.PreimagesFromRecording(recordingBlockBuilder.ChainContext(), recordingKV)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting records: %w", err)
 		}
-		s.validator.NewBlock(block, preimages, startPos, lastMessage)
+		s.validator.NewBlock(block, preimages, firstMessage, lastMessage)
 	}
 	return block, nil
 }
 
-func (s *TransactionStreamer) createBlockBuilder(prevHash common.Hash, startPos uint64) (*arbos.BlockBuilder, error) {
-	return arbstate.CreateBlockBuilder(s.bc, prevHash, startPos, (s.validator != nil))
+// we don't use startpos - just passing it from input to output, so it'd be updated with blockbuilder
+func (s *TransactionStreamer) startNewBlock(lastHeader *types.Header, startPos uint64) (*arbos.BlockBuilder, uint64, *arbos.BlockBuilder, *arbitrum.RecordingKV, error) {
+	statedb, err := s.bc.StateAt(lastHeader.Root)
+	if err != nil {
+		return nil, startPos, nil, nil, err
+	}
+	blockbuilder := arbos.NewBlockBuilder(lastHeader, statedb, s.bc)
+	if s.validator == nil {
+		return blockbuilder, startPos, nil, nil, nil
+	}
+	statedb, chaincontext, recordingkv, err := arbitrum.PrepareRecording(s.bc, lastHeader)
+	if err != nil {
+		return nil, startPos, nil, nil, err
+	}
+	return blockbuilder, startPos, arbos.NewBlockBuilder(lastHeader, statedb, chaincontext), recordingkv, nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -519,7 +533,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
 	}
-	blockBuilder, err := s.createBlockBuilder(lastBlockHeader.Hash(), pos)
+	blockBuilder, startPos, recordingbuilder, recordingKV, err := s.startNewBlock(lastBlockHeader, pos)
 	if err != nil {
 		return err
 	}
@@ -541,29 +555,29 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		segment, err := arbos.IncomingMessageToSegment(msg.Message, arbos.ChainConfig.ChainID)
 		if err != nil {
 			// If we've failed to parse the incoming message, make a new block and move on to the next message
-			block, err := s.writeBlock(blockBuilder, pos, msg.DelayedMessagesRead)
+			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
 			if err != nil {
 				return err
 			}
 			log.Warn("TransactionStreamer: closeblock and skipping message", "pos", pos)
 			// Skip this invalid message
-			blockBuilder, err = s.createBlockBuilder(block.Header().Hash(), pos+1)
+			pos++
+			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
 			if err != nil {
 				return err
 			}
-			pos++
 			continue
 		}
 
 		// If we shouldn't put the next message in the current block,
 		// make a new block before adding the next message.
 		if !blockBuilder.ShouldAddMessage(segment) {
-			block, err := s.writeBlock(blockBuilder, pos-1, msg.DelayedMessagesRead)
+			block, err := s.closeBlock(blockBuilder, startPos, pos-1, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
 			if err != nil {
 				return err
 			}
 			log.Info("TransactionStreamer: closed block - should not add message", "pos", pos)
-			blockBuilder, err = s.createBlockBuilder(block.Header().Hash(), pos)
+			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
 			if err != nil {
 				return err
 			}
@@ -572,15 +586,18 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 		// Add the message to the block
 		blockBuilder.AddMessage(segment)
+		if recordingbuilder != nil {
+			recordingbuilder.AddMessage(segment)
+		}
 
 		if msg.MustEndBlock {
 			// If this message must end the block, end it now
-			block, err := s.writeBlock(blockBuilder, pos, msg.DelayedMessagesRead)
+			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
 			if err != nil {
 				return err
 			}
 			log.Info("TransactionStreamer: closed block - must end block", "pos", pos)
-			blockBuilder, err = s.createBlockBuilder(block.Header().Hash(), pos+1)
+			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos+1)
 			if err != nil {
 				return err
 			}

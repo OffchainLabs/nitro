@@ -7,7 +7,6 @@ package arbos
 import (
 	"encoding/binary"
 	"math/big"
-	"reflect"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -15,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -50,13 +48,6 @@ type BlockBuilder struct {
 	lastBlockHeader *types.Header
 	chainContext    core.ChainContext
 
-	recordingStatedb      *state.StateDB
-	recordingChainContext core.ChainContext
-	recordingGasPool      core.GasPool
-	recordingHeader       *types.Header
-	recordingKeyValue     ethdb.KeyValueStore
-	startPos              uint64 // recorded and not used
-
 	// Setup based on first segment
 	blockInfo *L1Info
 	header    *types.Header
@@ -73,20 +64,12 @@ type BlockData struct {
 	Header *types.Header
 }
 
-func NewRecordingBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext, startPos uint64, recordingstateDb *state.StateDB, recordingChainContext core.ChainContext, recordingKeyValue ethdb.KeyValueStore) *BlockBuilder {
-	return &BlockBuilder{
-		statedb:               statedb,
-		lastBlockHeader:       lastBlockHeader,
-		chainContext:          chainContext,
-		recordingStatedb:      recordingstateDb,
-		recordingChainContext: recordingChainContext,
-		recordingKeyValue:     recordingKeyValue,
-		startPos:              startPos,
-	}
-}
-
 func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext) *BlockBuilder {
-	return NewRecordingBlockBuilder(lastBlockHeader, statedb, chainContext, 0, nil, nil, nil)
+	return &BlockBuilder{
+		statedb:         statedb,
+		lastBlockHeader: lastBlockHeader,
+		chainContext:    chainContext,
+	}
 }
 
 // Must always return true if the block is empty
@@ -179,10 +162,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 
 		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
 		b.gasPool = core.GasPool(b.header.GasLimit)
-		if b.recordingStatedb != nil {
-			b.recordingHeader = types.CopyHeader(b.header)
-			b.recordingGasPool = b.gasPool
-		}
 	}
 
 	for _, tx := range segment.Txes {
@@ -207,24 +186,6 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			b.statedb.RevertToSnapshot(snap)
 			continue
-		}
-		if b.recordingStatedb != nil {
-			recReciept, err := core.ApplyTransaction(
-				ChainConfig,
-				b.recordingChainContext,
-				&b.recordingHeader.Coinbase,
-				&b.recordingGasPool,
-				b.recordingStatedb,
-				b.recordingHeader,
-				tx,
-				&b.recordingHeader.GasUsed,
-				vm.Config{},
-			)
-			if (err != nil) || !reflect.DeepEqual(recReciept.Logs, receipt.Logs) || !reflect.DeepEqual(b.header, b.recordingHeader) {
-				log.Error("recording transaction failed", "txhash", tx.Hash())
-				b.recordingChainContext = nil
-				b.recordingStatedb = nil
-			}
 		}
 		b.txes = append(b.txes, tx)
 		b.receipts = append(b.receipts, receipt)
@@ -254,9 +215,6 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 
 	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
-	if b.recordingStatedb != nil {
-		FinalizeBlock(b.recordingHeader, b.txes, b.receipts, b.recordingStatedb)
-	}
 	b.isDone = true
 	// Reset the block builder for the next block
 	receipts := b.receipts
@@ -274,18 +232,6 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 	}
 }
 
-func (b *BlockBuilder) StartPos() uint64 {
-	return b.startPos
-}
-
-func (b *BlockBuilder) RecordingStateDB() *state.StateDB {
-	return b.recordingStatedb
-}
-
-func (b *BlockBuilder) RecordingChainContext() core.ChainContext {
-	return b.recordingChainContext
-}
-
-func (b *BlockBuilder) RecordingKeyValue() ethdb.KeyValueStore {
-	return b.recordingKeyValue
+func (b *BlockBuilder) ChainContext() core.ChainContext {
+	return b.chainContext
 }
