@@ -75,7 +75,7 @@ jobs:
           args: --all --manifest-path arbitrator/Cargo.toml
 
       - name: Make proofs from test cases
-        run: cd arbitrator && make -j
+        run: make -j
 
       - name: Start geth server
         run: |
@@ -85,6 +85,6 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd arbitrator/rollup
+          cd solgen
           yarn install
           yarn hardhat test --network localhost

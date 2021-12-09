@@ -13,11 +13,11 @@ color_reset = "\e[0;0m"
 
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
-arbitrator_inputs=$(wildcard prover/test-cases/*.wat)
-arbitrator_rust_bin_sources=$(wildcard prover/test-cases/rust/src/bin/*.rs)
-arbitrator_generated_arbitrator_header=prover/generated-inc/arbitrator.h
-arbitrator_outputs=$(patsubst prover/test-cases/%.wat,rollup/test/proofs/%.json, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,rollup/test/proofs/rust-%.json, $(rust_bin_sources)) rollup/test/proofs/go.json $(generated_arbitrator_header)
-arbitrator_wasms=$(patsubst %.wat,%.wasm, $(inputs)) $(patsubst prover/test-cases/rust/src/bin/%.rs,prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(rust_bin_sources)) prover/test-cases/go/main
+arbitrator_inputs=$(wildcard arbitrator/prover/test-cases/*.wat)
+arbitrator_rust_bin_sources=$(wildcard arbitrator/prover/test-cases/rust/src/bin/*.rs)
+arbitrator_generated_header=arbitrator/prover/generated-inc/arbitrator.h
+arbitrator_outputs=$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_inputs)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_rust_bin_sources)) solgen/test/proofs/go.json $(arbitrator_generated_header)
+arbitrator_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_inputs)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(arbitrator_rust_bin_sources)) arbitrator/prover/test-cases/go/main
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
@@ -52,16 +52,16 @@ push: .make/push
 
 clean:
 	go clean -testcache
-	rm -rf prover/test-cases/rust/target
-	rm -f prover/test-cases/*.wasm
-	rm -f prover/test-cases/go/main
-	rm -rf `dirname $(arbitrator_generated_arbitrator_header)`
-	rm -f rollup/test/proofs/*.json
-	rm -rf wasm-libraries/target
-	rm -f wasm-libraries/soft-float/soft-float.wasm
-	rm -f wasm-libraries/soft-float/*.o
-	rm -f wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
-	rm -f wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
+	rm -rf arbitrator/prover/test-cases/rust/target
+	rm -f arbitrator/prover/test-cases/*.wasm
+	rm -f arbitrator/prover/test-cases/go/main
+	rm -rf `dirname $(arbitrator_generated_header)`
+	rm -f solgen/test/proofs/*.json
+	rm -rf arbitrator/wasm-libraries/target
+	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
+	rm -f arbitrator/wasm-libraries/soft-float/*.o
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
 	@rm -rf solgen/artifacts solgen/cache solgen/go/
 	@rm -f .make/*
 
@@ -70,39 +70,39 @@ docker:
 
 # regular build rules
 
-arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: prover/test-cases/rust/src/bin/%.rs prover/test-cases/rust/src/lib.rs
-	cd prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
+arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
+	cd arbitrator/prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
 
-arbitrator/prover/test-cases/go/main: prover/test-cases/go/main.go prover/test-cases/go/go.mod prover/test-cases/go/go.sum
-	cd prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
+arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go arbitrator/prover/test-cases/go/go.mod arbitrator/prover/test-cases/go/go.sum
+	cd arbitrator/prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
-arbitrator/$(arbitrator_generated_arbitrator_header): prover/src/lib.rs prover/src/utils.rs
-	cbindgen --config cbindgen.toml --crate prover --output $(arbitrator_generated_arbitrator_header)
+$(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
+	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output prover/generated-inc/arbitrator.h
 
-arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: wasm-libraries/wasi-stub/src/**
-	cd wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
+arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+	cd arbitrator/wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
 
 arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
-		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
-		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/platform.h \
-		wasm-libraries/soft-float/SoftFloat-3e/source/*.c \
-		wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
-		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
-		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
-	cd wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/platform.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
+	cd arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
 
-arbitrator/wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
+arbitrator/wasm-libraries/soft-float/bindings%.o: arbitrator/wasm-libraries/soft-float/bindings%.c
+	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
 
 arbitrator/wasm-libraries/soft-float/soft-float.wasm: \
-		wasm-libraries/soft-float/bindings32.o \
-		wasm-libraries/soft-float/bindings64.o \
-		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
+		arbitrator/wasm-libraries/soft-float/bindings32.o \
+		arbitrator/wasm-libraries/soft-float/bindings64.o \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
 	wasm-ld \
-		wasm-libraries/soft-float/bindings32.o \
-		wasm-libraries/soft-float/bindings64.o \
-		wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o \
-		--no-entry -o wasm-libraries/soft-float/soft-float.wasm \
+		arbitrator/wasm-libraries/soft-float/bindings32.o \
+		arbitrator/wasm-libraries/soft-float/bindings64.o \
+		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o \
+		--no-entry -o arbitrator/wasm-libraries/soft-float/soft-float.wasm \
 		--export wavm__f32_abs \
 		--export wavm__f32_neg \
 		--export wavm__f32_ceil \
@@ -162,34 +162,34 @@ arbitrator/wasm-libraries/soft-float/soft-float.wasm: \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-arbitrator/wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: wasm-libraries/go-stub/src/**
-	cd wasm-libraries && cargo build --target wasm32-wasi --package go-stub
+arbitrator/wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+	cd arbitrator/wasm-libraries && cargo build --target wasm32-wasi --package go-stub
 
-arbitrator/wasm-libraries/target/wasm32-wasi/debug/host_io.wasm: wasm-libraries/host-io/src/**
-	cd wasm-libraries && cargo build --target wasm32-wasi --package host-io
+arbitrator/wasm-libraries/target/wasm32-wasi/debug/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+	cd arbitrator/wasm-libraries && cargo build --target wasm32-wasi --package host-io
 
-arbitrator/prover/test-cases/%.wasm: prover/test-cases/%.wat
+arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
-arbitrator/rollup/test/proofs/%.json: prover/test-cases/%.wasm prover/src/**
-	cargo run -p prover -- $< -o $@ --always-merkleize
+solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm arbitrator/prover/src/**
+	cargo run --manifest-path arbitrator/Cargo.toml -p prover -- $< -o $@ --always-merkleize
 
-arbitrator/rollup/test/proofs/float%.json: prover/test-cases/float%.wasm wasm-libraries/soft-float/soft-float.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
+solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm arbitrator/wasm-libraries/soft-float/soft-float.wasm arbitrator/prover/src/**
+	cargo run --manifest-path arbitrator/Cargo.toml --release -p prover -- $< -l arbitrator/wasm-libraries/soft-float/soft-float.wasm -o $@ -b --always-merkleize
 
-arbitrator/rollup/test/proofs/rust-%.json: \
-		prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
-		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
-		wasm-libraries/soft-float/soft-float.wasm prover/src/**
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox prover/test-cases/rust/messages/msg0.bin --inbox prover/test-cases/rust/messages/msg1.bin --delayed-inbox prover/test-cases/rust/messages/msg0.bin --delayed-inbox prover/test-cases/rust/messages/msg1.bin
+solgen/test/proofs/rust-%.json: \
+		arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm \
+		arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
+		arbitrator/wasm-libraries/soft-float/soft-float.wasm arbitrator/prover/src/**
+	cargo run --manifest-path arbitrator/Cargo.toml --release -p prover -- $< -l arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l arbitrator/wasm-libraries/soft-float/soft-float.wasm -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --inbox arbitrator/prover/test-cases/rust/messages/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg1.bin
 
-arbitrator/rollup/test/proofs/go.json: \
-		prover/test-cases/go/main \
-		wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
-		wasm-libraries/soft-float/soft-float.wasm prover/src/** \
-		wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm \
-		wasm-libraries/target/wasm32-wasi/debug/host_io.wasm
-	cargo run --release -p prover -- $< -l wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l wasm-libraries/soft-float/soft-float.wasm -l wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm -o $@ -i 5000000
+solgen/test/proofs/go.json: \
+		arbitrator/prover/test-cases/go/main \
+		arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm \
+		arbitrator/wasm-libraries/soft-float/soft-float.wasm arbitrator/prover/src/** \
+		arbitrator/wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm \
+		arbitrator/wasm-libraries/target/wasm32-wasi/debug/host_io.wasm
+	cargo run --manifest-path arbitrator/Cargo.toml --release -p prover -- $< -l arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm -l arbitrator/wasm-libraries/soft-float/soft-float.wasm -l arbitrator/wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm -o $@ -i 5000000
 
 
 # strategic rules to minimize dependency building
