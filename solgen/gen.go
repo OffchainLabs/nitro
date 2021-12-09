@@ -27,8 +27,8 @@ type HardHatArtifact struct {
 
 type moduleInfo struct {
 	contractNames []string
-	abis []string
-	bytecodes []string
+	abis          []string
+	bytecodes     []string
 }
 
 func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
