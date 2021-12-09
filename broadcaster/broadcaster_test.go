@@ -169,6 +169,6 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	b.BroadcastSingle(dummyMessage, 1)
 	b.BroadcastSingle(dummyMessage, 2)
 	waitUntilUpdated(t, expectMessageCount(1,
-		"1 message after missed message around overflow"))
+		"1 message after duplicates and already seen messages"))
 
 }
