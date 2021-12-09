@@ -28,7 +28,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint256[4] timeBounds,
+        uint64[4] timeBounds,
         bytes data
     );
 
@@ -38,7 +38,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint256[4] timeBounds
+        uint64[4] timeBounds
     );
 
     constructor(
@@ -55,20 +55,20 @@ contract SequencerInbox is ISequencerInbox {
 		maxFutureBlocks = 12;
     }
 
-    function getTimeBounds() internal view returns (uint256[4] memory) {
-        uint256[4] memory bounds;
+    function getTimeBounds() internal view returns (uint64[4] memory) {
+        uint64[4] memory bounds;
         if (block.timestamp > maxDelaySeconds) {
-            bounds[0] = block.timestamp - maxDelaySeconds;
+            bounds[0] = uint64(block.timestamp - maxDelaySeconds);
         } else {
             bounds[0] = 0;
         }
-        bounds[1] = block.timestamp + maxFutureSeconds;
+        bounds[1] = uint64(block.timestamp + maxFutureSeconds);
         if (block.number > maxDelayBlocks) {
-            bounds[2] = block.number - maxDelayBlocks;
+            bounds[2] = uint64(block.number - maxDelayBlocks);
         } else {
             bounds[2] = 0;
         }
-        bounds[3] = block.number + maxFutureBlocks;
+        bounds[3] = uint64(block.number + maxFutureBlocks);
         return bounds;
     }
 
@@ -110,7 +110,7 @@ contract SequencerInbox is ISequencerInbox {
         }
 
         require(emptyData.length == 0, "NOT_EMPTY");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             emptyData,
             _totalDelayedMessagesRead
         );
@@ -142,7 +142,7 @@ contract SequencerInbox is ISequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -171,7 +171,7 @@ contract SequencerInbox is ISequencerInbox {
         uint256 startGasLeft = gasleft();
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -197,18 +197,19 @@ contract SequencerInbox is ISequencerInbox {
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
-    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint256[4] memory timeBounds) {
+    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint64[4] memory timeBounds) {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
 
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
         bytes memory fullData = new bytes(fullDataLen);
+        timeBounds = getTimeBounds();
         bytes memory header = abi.encodePacked(
-            uint64(block.timestamp - maxDelaySeconds),
-            uint64(block.timestamp + maxFutureSeconds),
-            uint64(block.number - maxDelayBlocks),
-            uint64(block.number + maxFutureBlocks),
+            timeBounds[0],
+            timeBounds[1],
+            timeBounds[2],
+            timeBounds[3],
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");
@@ -226,7 +227,6 @@ contract SequencerInbox is ISequencerInbox {
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
-        timeBounds = getTimeBounds();
         bytes32 fullDataHash = keccak256(fullData);
         acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
         inboxAccs.push(acc);

@@ -166,12 +166,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
 				dataIfAvailable:   &parsedLog.Data,
 				txIndexInBlock:    log.TxIndex,
-			}
-			for i, bound := range parsedLog.TimeBounds {
-				if !bound.IsUint64() {
-					return nil, errors.New("sequencer inbox event has non-uint64 time bound")
-				}
-				batch.TimeBounds[i] = bound.Uint64()
+				TimeBounds:        parsedLog.TimeBounds,
 			}
 			messages = append(messages, batch)
 		} else if log.Topics[0] == batchDeliveredFromOriginID {
@@ -194,12 +189,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
 				dataIfAvailable:   nil,
 				txIndexInBlock:    log.TxIndex,
-			}
-			for i, bound := range parsedLog.TimeBounds {
-				if !bound.IsUint64() {
-					return nil, errors.New("sequencer inbox event has non-uint64 time bound")
-				}
-				batch.TimeBounds[i] = bound.Uint64()
+				TimeBounds:        parsedLog.TimeBounds,
 			}
 			messages = append(messages, batch)
 		} else {
