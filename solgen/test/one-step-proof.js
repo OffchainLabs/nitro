@@ -8,20 +8,20 @@ const PARALLEL = 128;
 async function sendTestMessages(deployment) {
   await deployment;
   const { deployer } = await getNamedAccounts();
-  const inbox = await ethers.getContract("Inbox", deployer);
-  const seqInbox = await ethers.getContract("SequencerInbox", deployer);
+  const inbox = await ethers.getContract("InboxStub", deployer);
+  const seqInbox = await ethers.getContract("SequencerInboxStub", deployer);
   const msgRoot = "../arbitrator/prover/test-cases/rust/messages/";
   const gasOpts = { gasLimit: ethers.utils.hexlify(250000), gasPrice: ethers.utils.parseUnits('5', "gwei") };
-  for (let msgNum = 0;  msgNum < 2; msgNum++) {
-    const path = msgRoot + "msg" + String(msgNum) +".bin";
+  for (let msgNum = 0; msgNum < 2; msgNum++) {
+    const path = msgRoot + "msg" + String(msgNum) + ".bin";
     const buf = fs.readFileSync(path);
     await inbox.sendL2MessageFromOrigin(buf, gasOpts);
-    await seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, "0", "0", gasOpts);
+    await seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, 0, ethers.constants.AddressZero, gasOpts);
   }
 }
 
 describe("OneStepProof", function () {
-  const deployment = run("deploy", { "tags": "OneStepProofEntry" });
+  const deployment = run("deploy", { "tags": "OneStepProofEntryStubbedInbox" });
   const root = "./test/proofs/";
   const dir = fs.readdirSync(root);
 

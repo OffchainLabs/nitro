@@ -10,4 +10,4 @@ module.exports = async (hre) => {
 };
 
 module.exports.tags = ["ValueArrayTester", "test"];
-module.exports.dependencies = ["Values", "ValueArrays"];
+module.exports.dependencies = [];

@@ -228,7 +228,7 @@ contract SequencerInbox is ISequencerInbox {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
         bytes32 fullDataHash = keccak256(fullData);
-        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
+        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }

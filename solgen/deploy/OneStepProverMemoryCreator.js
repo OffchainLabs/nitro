@@ -10,5 +10,5 @@ module.exports = async (hre) => {
 };
 
 module.exports.tags = ["OneStepProverMemory", "live", "test"];
-module.exports.dependencies = ["Machines"];
+module.exports.dependencies = [];
 
