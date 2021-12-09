@@ -62,26 +62,50 @@ func TestGasPricingPoolPrice(t *testing.T) {
 	arbosState := OpenArbosStateForTest(t)
 	st := arbosState.L2PricingState()
 
-	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("wrong initial gas price")
 	}
 
 	initialSub := int64(l2pricing.SmallGasPoolMax * 4)
 	st.NotifyGasUsed(uint64(initialSub))
 
-	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should not be changed")
 	}
 
 	st.NotifyGasPricerThatTimeElapsed(20)
 
-	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) <= 0 {
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) <= 0 {
 		t.Fatal("price should be above minimum")
 	}
 
 	st.NotifyGasPricerThatTimeElapsed(500)
 
-	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
+		t.Fatal("price should return to minimum")
+	}
+}
+
+func TestStoragePricing(t *testing.T) {
+	arbosState := OpenArbosStateForTest(t)
+	st := arbosState.L2PricingState()
+
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
+		t.Fatal("wrong initial gas price")
+	}
+
+	initialSub := int64(2 * l2pricing.TargetAllocRateCells * l2pricing.FastAvgSeconds)
+	st.NotifyStorageUsageChange(initialSub)
+
+	st.NotifyGasPricerThatTimeElapsed(1)
+
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) <= 0 {
+		t.Fatal("price should be above minimum")
+	}
+
+	st.NotifyGasPricerThatTimeElapsed(10 * l2pricing.FastAvgSeconds)
+
+	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should return to minimum")
 	}
 }

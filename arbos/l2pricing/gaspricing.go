@@ -7,9 +7,9 @@ import (
 )
 
 const SpeedLimitPerSecond = 1000000
-const GasPoolMax = SpeedLimitPerSecond * 10 * 60
 const SmallGasPoolSeconds = 60
 const SmallGasPoolMax = SpeedLimitPerSecond * SmallGasPoolSeconds
+const GasPoolMax = 10 * SmallGasPoolMax
 
 const PerBlockGasLimit uint64 = 20 * 1000000
 
@@ -22,10 +22,9 @@ func (pricingState *L2PricingState) NotifyGasUsed(gas uint64) {
 	pricingState.smallGasPool.Set(pricingState.smallGasPool.Get() - gasInt)
 }
 
-func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
+func (pricingState *L2PricingState) updateGasComponentForElapsedTime(secondsElapsed uint64, price *big.Int) *big.Int {
 	gasPool := pricingState.gasPool.Get()
 	smallGasPool := pricingState.smallGasPool.Get()
-	price := pricingState.gasPriceWei
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -40,8 +39,7 @@ func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapse
 			if price.Cmp(minPrice) <= 0 {
 				pricingState.gasPool.Set(GasPoolMax)
 				pricingState.smallGasPool.Set(SmallGasPoolMax)
-				pricingState.SetGasPriceWei(minPrice)
-				return
+				return minPrice
 			} else {
 				if secondsLeft >= 83 {
 					// price is cut in half every 83 seconds, when both gas pools are full
@@ -94,7 +92,7 @@ func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapse
 	}
 	pricingState.gasPool.Set(gasPool)
 	pricingState.smallGasPool.Set(smallGasPool)
-	pricingState.SetGasPriceWei(price)
+	return price
 }
 
 func (pricingState *L2PricingState) CurrentPerBlockGasLimit() uint64 {
