@@ -1,14 +1,16 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"math/big"
 	"testing"
 )
 
 func TestGasPricingGasPool(t *testing.T) {
-	st := OpenArbosStateForTest(t)
-	expectedSmallGasPool := int64(SmallGasPoolMax)
-	expectedGasPool := int64(GasPoolMax)
+	arbosState := OpenArbosStateForTest(t)
+	st := arbosState.L2PricingState()
+	expectedSmallGasPool := int64(l2pricing.SmallGasPoolMax)
+	expectedGasPool := int64(l2pricing.GasPoolMax)
 
 	checkGasPools := func() {
 		t.Helper()
@@ -23,8 +25,8 @@ func TestGasPricingGasPool(t *testing.T) {
 
 	checkGasPools()
 
-	initialSub := int64(SmallGasPoolMax / 2)
-	st.notifyGasUsed(uint64(initialSub))
+	initialSub := int64(l2pricing.SmallGasPoolMax / 2)
+	st.NotifyGasUsed(uint64(initialSub))
 
 	expectedSmallGasPool -= initialSub
 	expectedGasPool -= initialSub
@@ -36,49 +38,50 @@ func TestGasPricingGasPool(t *testing.T) {
 	for _, t := range elapseTimesToCheck {
 		totalTime += t
 	}
-	if totalTime > (SmallGasPoolMax-expectedSmallGasPool)/SpeedLimitPerSecond {
+	if totalTime > (l2pricing.SmallGasPoolMax-expectedSmallGasPool)/l2pricing.SpeedLimitPerSecond {
 		t.Fatal("should only test within small gas pool size")
 	}
 
 	for _, t := range elapseTimesToCheck {
-		st.notifyGasPricerThatTimeElapsed(uint64(t))
-		expectedSmallGasPool += SpeedLimitPerSecond * t
-		expectedGasPool += SpeedLimitPerSecond * t
+		st.NotifyGasPricerThatTimeElapsed(uint64(t))
+		expectedSmallGasPool += l2pricing.SpeedLimitPerSecond * t
+		expectedGasPool += l2pricing.SpeedLimitPerSecond * t
 
 		checkGasPools()
 	}
 
-	st.notifyGasPricerThatTimeElapsed(10000000)
+	st.NotifyGasPricerThatTimeElapsed(10000000)
 
-	expectedSmallGasPool = int64(SmallGasPoolMax)
-	expectedGasPool = int64(GasPoolMax)
+	expectedSmallGasPool = int64(l2pricing.SmallGasPoolMax)
+	expectedGasPool = int64(l2pricing.GasPoolMax)
 
 	checkGasPools()
 }
 
 func TestGasPricingPoolPrice(t *testing.T) {
-	st := OpenArbosStateForTest(t)
+	arbosState := OpenArbosStateForTest(t)
+	st := arbosState.L2PricingState()
 
-	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("wrong initial gas price")
 	}
 
-	initialSub := int64(SmallGasPoolMax * 4)
-	st.notifyGasUsed(uint64(initialSub))
+	initialSub := int64(l2pricing.SmallGasPoolMax * 4)
+	st.NotifyGasUsed(uint64(initialSub))
 
-	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should not be changed")
 	}
 
-	st.notifyGasPricerThatTimeElapsed(20)
+	st.NotifyGasPricerThatTimeElapsed(20)
 
-	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) <= 0 {
+	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) <= 0 {
 		t.Fatal("price should be above minimum")
 	}
 
-	st.notifyGasPricerThatTimeElapsed(500)
+	st.NotifyGasPricerThatTimeElapsed(500)
 
-	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should return to minimum")
 	}
 }

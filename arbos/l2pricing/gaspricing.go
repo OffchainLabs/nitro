@@ -1,4 +1,4 @@
-package arbos
+package l2pricing
 
 import (
 	"math/big"
@@ -16,16 +16,16 @@ const PerBlockGasLimit uint64 = 20 * 1000000
 const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
 
-func (state *ArbosState) notifyGasUsed(gas uint64) {
+func (pricingState *L2PricingState) NotifyGasUsed(gas uint64) {
 	gasInt := int64(gas)
-	state.SetGasPool(state.GasPool() - gasInt)
-	state.SetSmallGasPool(state.SmallGasPool() - gasInt)
+	pricingState.gasPool.Set(pricingState.gasPool.Get() - gasInt)
+	pricingState.smallGasPool.Set(pricingState.smallGasPool.Get() - gasInt)
 }
 
-func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
-	gasPool := state.GasPool()
-	smallGasPool := state.SmallGasPool()
-	price := state.GasPriceWei()
+func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
+	gasPool := pricingState.gasPool.Get()
+	smallGasPool := pricingState.smallGasPool.Get()
+	price := pricingState.gasPriceWei
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -38,9 +38,9 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	for secondsLeft > 0 {
 		if (gasPool == GasPoolMax) && (smallGasPool == SmallGasPoolMax) {
 			if price.Cmp(minPrice) <= 0 {
-				state.SetGasPool(GasPoolMax)
-				state.SetSmallGasPool(SmallGasPoolMax)
-				state.SetGasPriceWei(minPrice)
+				pricingState.gasPool.Set(GasPoolMax)
+				pricingState.smallGasPool.Set(SmallGasPoolMax)
+				pricingState.SetGasPriceWei(minPrice)
 				return
 			} else {
 				if secondsLeft >= 83 {
@@ -92,13 +92,13 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	if price.Cmp(minPrice) < 0 {
 		price = minPrice
 	}
-	state.SetGasPool(gasPool)
-	state.SetSmallGasPool(smallGasPool)
-	state.SetGasPriceWei(price)
+	pricingState.gasPool.Set(gasPool)
+	pricingState.smallGasPool.Set(smallGasPool)
+	pricingState.SetGasPriceWei(price)
 }
 
-func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
-	pool := state.GasPool()
+func (pricingState *L2PricingState) CurrentPerBlockGasLimit() uint64 {
+	pool := pricingState.gasPool.Get()
 	if pool < 0 {
 		return 0
 	} else if pool > int64(PerBlockGasLimit) {

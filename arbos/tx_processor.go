@@ -100,7 +100,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, gasPool *core.GasPool, success b
 	//	p.stateDB.AddBalance(networkFeeCollector, l2ChargeWei)
 	if p.msg.GasPrice().Sign() > 0 {
 		// in tests, gasprice coud be 0
-		p.state.notifyGasUsed(new(big.Int).Div(l2ChargeWei, p.msg.GasPrice()).Uint64())
+		p.state.L2PricingState().NotifyGasUsed(new(big.Int).Div(l2ChargeWei, p.msg.GasPrice()).Uint64())
 	}
 	return nil
 }

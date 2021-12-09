@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"math/big"
 	"time"
 
@@ -101,7 +102,7 @@ func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
 			newGasUsed = ^uint64(0)
 		}
 	}
-	return newGasUsed <= PerBlockGasLimit
+	return newGasUsed <= l2pricing.PerBlockGasLimit
 }
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
@@ -132,7 +133,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    PerBlockGasLimit,
+		GasLimit:    l2pricing.PerBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -160,7 +161,7 @@ func (b *BlockBuilder) AddMessage(segment MessageSegment) {
 	}
 
 	for _, tx := range segment.Txes {
-		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
+		if tx.Gas() > l2pricing.PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
 			// Ignore and transactions with higher than the max possible gas
 			continue
 		}
