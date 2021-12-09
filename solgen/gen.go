@@ -25,6 +25,22 @@ type HardHatArtifact struct {
 	Bytecode     string        `json:"bytecode"`
 }
 
+type moduleInfo struct {
+	contractNames []string
+	abis          []string
+	bytecodes     []string
+}
+
+func (m *moduleInfo) addArtifact(artifact HardHatArtifact) {
+	abi, err := json.Marshal(artifact.Abi)
+	if err != nil {
+		log.Fatal(err)
+	}
+	m.contractNames = append(m.contractNames, artifact.ContractName)
+	m.abis = append(m.abis, string(abi))
+	m.bytecodes = append(m.bytecodes, artifact.Bytecode)
+}
+
 func main() {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -35,6 +51,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	modules := make(map[string]*moduleInfo)
 
 	for _, path := range filePaths {
 		if strings.Contains(path, ".dbg.json") {
@@ -57,15 +75,19 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
-		abi, err := json.Marshal(artifact.Abi)
-		if err != nil {
-			log.Fatal(err)
+		modInfo := modules[module]
+		if modInfo == nil {
+			modInfo = &moduleInfo{}
+			modules[module] = modInfo
 		}
+		modInfo.addArtifact(artifact)
+	}
 
+	for module, info := range modules {
 		code, err := bind.Bind(
-			[]string{artifact.ContractName},
-			[]string{string(abi)},
-			[]string{artifact.Bytecode},
+			info.contractNames,
+			info.abis,
+			info.bytecodes,
 			nil,
 			module,
 			bind.LangGo,
@@ -87,11 +109,11 @@ func main() {
 			#nosec G306
 			This file contains no private information so the permissions can be lenient
 		*/
-		err = ioutil.WriteFile(filepath.Join(folder, name+".go"), []byte(code), 0o644)
+		err = ioutil.WriteFile(filepath.Join(folder, module+".go"), []byte(code), 0o644)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	fmt.Println("successfully generated", len(filePaths)/2, "precompiles")
+	fmt.Println("successfully generated go abi files")
 }
