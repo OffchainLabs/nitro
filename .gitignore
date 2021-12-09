@@ -11,4 +11,5 @@ solgen/artifacts
 solgen/cache/
 solgen/go/
 solgen/node_modules/
+solgen/deployments/localhost
 .make/
