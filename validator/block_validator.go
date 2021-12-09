@@ -65,7 +65,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 
 func init() {
 	_, thisfile, _, _ := runtime.Caller(0)
-	projectDir := filepath.Base(filepath.Base(thisfile))
+	projectDir := filepath.Dir(filepath.Dir(thisfile))
 	DefaultBlockValidatorConfig.RootPath = filepath.Join(projectDir, "arbitrator", "target", "env")
 }
 

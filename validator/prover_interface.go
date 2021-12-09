@@ -2,7 +2,7 @@ package validator
 
 /*
 #cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
-#cgo LDFLAGS: -L../arbitrator/target/env/lib/ -lprover
+#cgo LDFLAGS: ${SRCDIR}/../arbitrator/target/env/lib/libprover.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
 

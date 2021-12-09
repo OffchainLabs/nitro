@@ -48,7 +48,7 @@ wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
 		wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
 		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
 		wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
-	cd wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
+	cd wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && $(MAKE)
 
 wasm-libraries/soft-float/bindings%.o: wasm-libraries/soft-float/bindings%.c
 	clang $< --sysroot $(WASI_SYSROOT) -I wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
@@ -140,13 +140,13 @@ target/release/prover: prover/src/** prover/Cargo.toml
 $(prover_bin): target/release/prover
 	install -D $< $@
 
-target/release/libprover.so: prover/src/** prover/Cargo.toml
+target/release/libprover.a: prover/src/** prover/Cargo.toml
 	cargo build --release --lib
 
-$(output_root)/lib/libprover.so: target/release/libprover.so
+$(output_root)/lib/libprover.a: target/release/libprover.a
 	install -D $< $@
 
-build-env: $(output_root)/lib/libprover.so $(generated_arbitrator_header)
+build-env: $(output_root)/lib/libprover.a $(generated_arbitrator_header)
 
 exec-env: build-env $(prover_bin) $(wasm_libs)
 

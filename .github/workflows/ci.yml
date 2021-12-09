@@ -43,12 +43,6 @@ jobs:
           cd arbitrator
           make build-env
 
-      - name: Install arbitrator
-        run: |
-          cd arbitrator
-          sudo cp -r target/env/* /usr/local/
-          sudo ldconfig
-
       - name: Cache Build Products
         uses: actions/cache@v2
         with:
@@ -104,12 +98,6 @@ jobs:
         run: |
           cd arbitrator
           make build-env
-
-      - name: Install arbitrator
-        run: |
-          cd arbitrator
-          sudo cp -r target/env/* /usr/local/
-          sudo ldconfig
 
       - name: Cache Build Products
         uses: actions/cache@v2

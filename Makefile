@@ -16,11 +16,11 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 # user targets
 
-.make/all: always .make/solgen .make/solidity .make/test
+.make/all: always .make/solgen .make/solidity .make/test .make/arbitrator-exec
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
-build: $(go_source) .make/solgen .make/solidity
+build: $(go_source) .make/solgen .make/solidity .make/arbitrator-build
 	@printf $(done)
 
 contracts: .make/solgen
@@ -36,6 +36,9 @@ test: .make/test
 	gotestsum --format short-verbose
 	@printf $(done)
 
+validation: arbitrator/target/env/lib/replay.wasm .make/arbitrator-exec
+	@printf $(done)
+
 push: .make/push
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
@@ -49,15 +52,19 @@ docker:
 
 # regular build rules
 
-
+arbitrator/target/env/lib/replay.wasm: $(go_source)
+	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 # strategic rules to minimize dependency building
-.make/arbitrator: .make arbitrator/prover/** arbitrator/Makefile | .make
-	${MAKE} -C arbitrator/ build-env
+.make/arbitrator-build: .make arbitrator/prover/** arbitrator/Makefile | .make
+	$(MAKE) -C arbitrator/ build-env
 	@touch .make/arbitrator
 
-.make/push: .make/lint | .make
-	make $(MAKEFLAGS) .make/test
+.make/arbitrator-exec: .make .make/arbitrator-build arbitrator/wasm-libraries/** | .make
+	$(MAKE) -C arbitrator/ exec-env
+	@touch .make/arbitrator
+
+.make/push: .make/lint .make/test | .make
 	@touch .make/push
 
 .make/lint: .golangci.yml $(go_source) .make/solgen | .make
@@ -68,7 +75,7 @@ docker:
 	golangci-lint run --disable-all -E gofmt --fix
 	@touch .make/fmt
 
-.make/test: $(go_source) .make/arbitrator .make/solgen .make/solidity | .make
+.make/test: $(go_source) .make/arbitrator-build .make/solgen .make/solidity | .make
 	export LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:${PWD}/arbitrator/target/env/lib; \
 	gotestsum --format short-verbose
 	@touch .make/test

@@ -22,4 +22,4 @@ structopt = "0.3.23"
 
 [lib]
 name = "prover"
-crate-type = ["cdylib","lib"]
+crate-type = ["staticlib","lib"]
