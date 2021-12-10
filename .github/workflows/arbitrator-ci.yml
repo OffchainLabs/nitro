@@ -75,7 +75,7 @@ jobs:
           args: --all --manifest-path arbitrator/Cargo.toml
 
       - name: Make proofs from test cases
-        run: make -j
+        run: make -j .make/arbitrator
 
       - name: Start geth server
         run: |

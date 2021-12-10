@@ -16,7 +16,6 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 arbitrator_inputs=$(wildcard arbitrator/prover/test-cases/*.wat)
 arbitrator_rust_bin_sources=$(wildcard arbitrator/prover/test-cases/rust/src/bin/*.rs)
 arbitrator_generated_header=arbitrator/prover/generated-inc/arbitrator.h
-arbitrator_outputs=$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_inputs)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_rust_bin_sources)) solgen/test/proofs/go.json $(arbitrator_generated_header)
 arbitrator_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_inputs)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(arbitrator_rust_bin_sources)) arbitrator/prover/test-cases/go/main
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
@@ -27,7 +26,7 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 .DELETE_ON_ERROR: # causes a failure to delete its target
 .PHONY: all clean
 
-.make/all: always .make/solgen .make/solidity .make/test $(arbitrator_wasms) $(arbitrator_outputs)
+.make/all: always .make/solgen .make/solidity .make/test $(arbitrator_wasms) .make/arbitrator
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@touch .make/all
 
@@ -222,6 +221,14 @@ solgen/test/proofs/go.json: \
 .make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
 	@touch .make/yarndeps
+
+.make/arbitrator: \
+	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_inputs)) \
+	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_rust_bin_sources)) \
+	solgen/test/proofs/go.json \
+	$(arbitrator_generated_header) \
+	| .make
+	@touch .make/arbitrator
 
 .make:
 	mkdir .make
