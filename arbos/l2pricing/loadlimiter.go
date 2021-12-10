@@ -8,23 +8,23 @@ import (
 )
 
 type LoadLimiter struct {
-	sto     *storage.Storage
-	fastAvg *storage.StorageBackedUint64
-	slowAvg *storage.StorageBackedUint64
-	params  *loadLimiterParams
+	sto         *storage.Storage
+	fastAvg     *storage.StorageBackedUint64
+	slowAvg     *storage.StorageBackedUint64
+	constParams *loadLimiterConstParams // these must be constants (because they're not stored in the statedb)
 }
 
-type loadLimiterParams struct {
+type loadLimiterConstParams struct {
 	fixedPointMul uint64
 	FastSeconds   uint64
 	SlowSeconds   uint64
 	TargetRate    uint64
 }
 
-var StorageLimiterParams *loadLimiterParams
+var StorageLimiterParams *loadLimiterConstParams
 
 func init() {
-	StorageLimiterParams = &loadLimiterParams{
+	StorageLimiterParams = &loadLimiterConstParams{
 		fixedPointMul: 1000000,
 		FastSeconds:   5 * 60,
 		SlowSeconds:   12 * 60 * 60,
@@ -37,23 +37,23 @@ const (
 	slowOffset
 )
 
-func OpenLoadLimiter(sto *storage.Storage, params *loadLimiterParams) *LoadLimiter {
+func OpenLoadLimiter(sto *storage.Storage, constParams *loadLimiterConstParams) *LoadLimiter {
 	return &LoadLimiter{
-		sto:     sto,
-		fastAvg: sto.OpenStorageBackedUint64(util.UintToHash(fastOffset)),
-		slowAvg: sto.OpenStorageBackedUint64(util.UintToHash(slowOffset)),
-		params:  params,
+		sto:         sto,
+		fastAvg:     sto.OpenStorageBackedUint64(util.UintToHash(fastOffset)),
+		slowAvg:     sto.OpenStorageBackedUint64(util.UintToHash(slowOffset)),
+		constParams: constParams,
 	}
 }
 
 func (limiter *LoadLimiter) NotifyUsageChange(delta int64) {
-	fpmul := StorageLimiterParams.fixedPointMul
+	fpmul := limiter.constParams.fixedPointMul
 	limiter.fastAvg.Set(clippedAdd(limiter.fastAvg.Get(), delta*int64(fpmul)))
 	limiter.slowAvg.Set(clippedAdd(limiter.slowAvg.Get(), delta*int64(fpmul)))
 }
 
 func (limiter *LoadLimiter) updateStorageComponentForElapsedTime(secondsElapsed uint64, price *big.Int, minPrice *big.Int) *big.Int {
-	fpmul := StorageLimiterParams.fixedPointMul
+	fpmul := limiter.constParams.fixedPointMul
 	fastAvg := limiter.fastAvg.Get()
 	slowAvg := limiter.slowAvg.Get()
 	numeratorBase := big.NewInt(int64(119 * fpmul))
@@ -66,11 +66,11 @@ func (limiter *LoadLimiter) updateStorageComponentForElapsedTime(secondsElapsed 
 			return minPrice
 		}
 
-		fastAvg = fastAvg * (StorageLimiterParams.FastSeconds - 1) / StorageLimiterParams.FastSeconds
-		slowAvg = slowAvg * (StorageLimiterParams.SlowSeconds - 1) / StorageLimiterParams.SlowSeconds
+		fastAvg = fastAvg * (limiter.constParams.FastSeconds - 1) / limiter.constParams.FastSeconds
+		slowAvg = slowAvg * (limiter.constParams.SlowSeconds - 1) / limiter.constParams.SlowSeconds
 
-		fastRatio := fastAvg / (StorageLimiterParams.TargetRate * StorageLimiterParams.FastSeconds)
-		slowRatio := slowAvg / (StorageLimiterParams.TargetRate * StorageLimiterParams.SlowSeconds)
+		fastRatio := fastAvg / (limiter.constParams.TargetRate * limiter.constParams.FastSeconds)
+		slowRatio := slowAvg / (limiter.constParams.TargetRate * limiter.constParams.SlowSeconds)
 		ratio := (fastRatio + slowRatio) / 2
 		if ratio > 2*fpmul {
 			ratio = 2 * fpmul
