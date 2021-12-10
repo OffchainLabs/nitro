@@ -5,7 +5,6 @@
 package l2pricing
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
@@ -13,7 +12,7 @@ import (
 
 type L2PricingState struct {
 	storage        *storage.Storage
-	price          *big.Int
+	price          *storage.StorageBackedUbig
 	gasPool        *storage.StorageBackedInt64
 	smallGasPool   *storage.StorageBackedInt64
 	fastStorageAvg *storage.StorageBackedUint64
@@ -29,7 +28,7 @@ const (
 )
 
 func InitializeL2PricingState(sto *storage.Storage) {
-	sto.SetByUint64(priceOffset, common.BigToHash(big.NewInt(InitialGasPriceWei)))
+	sto.OpenStorageBackedUbig(util.UintToHash(priceOffset)).Set(big.NewInt(InitialGasPriceWei))
 	sto.OpenStorageBackedInt64(util.UintToHash(gasPoolOffset)).Set(GasPoolMax)
 	sto.OpenStorageBackedInt64(util.UintToHash(smallGasPoolOffset)).Set(SmallGasPoolMax)
 	sto.OpenStorageBackedUint64(util.UintToHash(fastStorageOffset)).Set(0)
@@ -39,7 +38,7 @@ func InitializeL2PricingState(sto *storage.Storage) {
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	return &L2PricingState{
 		sto,
-		sto.GetByUint64(priceOffset).Big(),
+		sto.OpenStorageBackedUbig(util.UintToHash(priceOffset)),
 		sto.OpenStorageBackedInt64(util.UintToHash(gasPoolOffset)),
 		sto.OpenStorageBackedInt64(util.UintToHash(smallGasPoolOffset)),
 		sto.OpenStorageBackedUint64(util.UintToHash(fastStorageOffset)),
@@ -75,10 +74,9 @@ func (pricingState *L2PricingState) SetSmallGasPool(val int64) {
 }
 
 func (pricingState *L2PricingState) Price() *big.Int {
-	return pricingState.price
+	return pricingState.price.Get()
 }
 
 func (pricingState *L2PricingState) SetPrice(value *big.Int) {
-	pricingState.price = value
-	pricingState.storage.SetByUint64(priceOffset, common.BigToHash(value))
+	pricingState.price.Set(value)
 }

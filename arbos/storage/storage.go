@@ -184,3 +184,25 @@ func (sbu *StorageBackedUint64) Set(value uint64) {
 	bigValue := new(big.Int).SetUint64(value)
 	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
 }
+
+type StorageBackedUbig struct {
+	sto    *Storage
+	offset common.Hash
+	cache  *big.Int
+}
+
+func (sto *Storage) OpenStorageBackedUbig(offset common.Hash) *StorageBackedUbig {
+	return &StorageBackedUbig{sto, offset, nil}
+}
+
+func (sbub *StorageBackedUbig) Get() *big.Int {
+	if sbub.cache == nil {
+		sbub.cache = sbub.sto.Get(sbub.offset).Big()
+	}
+	return sbub.cache
+}
+
+func (sbub *StorageBackedUbig) Set(value *big.Int) {
+	sbub.cache = value
+	sbub.sto.Set(sbub.offset, common.BigToHash(value))
+}
