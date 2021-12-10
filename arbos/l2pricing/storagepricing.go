@@ -17,10 +17,9 @@ func (pricingState *L2PricingState) NotifyStorageUsageChange(delta int64) {
 	pricingState.slowStorageAvg.Set(clippedAdd(pricingState.slowStorageAvg.Get(), delta*UnitsPerStorage))
 }
 
-func (pricingState *L2PricingState) updateStorageComponentForElapsedTime(secondsElapsed uint64, price *big.Int) *big.Int {
+func (pricingState *L2PricingState) updateStorageComponentForElapsedTime(secondsElapsed uint64, price *big.Int, minPrice *big.Int) *big.Int {
 	fastAvg := pricingState.fastStorageAvg.Get()
 	slowAvg := pricingState.slowStorageAvg.Get()
-	minPrice := big.NewInt(MinimumGasPriceWei)
 	numeratorBase := big.NewInt(119 * UnitsPerStorage)
 	denominator := big.NewInt(120 * UnitsPerStorage)
 

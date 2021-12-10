@@ -50,7 +50,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	startPrice := pricingState.Price()
 	gasResult := pricingState.updateGasComponentForElapsedTime(secondsElapsed, startPrice)
-	storageResult := pricingState.updateStorageComponentForElapsedTime(secondsElapsed, startPrice)
+	storageResult := pricingState.updateStorageComponentForElapsedTime(secondsElapsed, startPrice, gasResult)
 	if gasResult.Cmp(storageResult) >= 0 {
 		pricingState.SetPrice(gasResult)
 	} else {
