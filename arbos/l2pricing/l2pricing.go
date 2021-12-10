@@ -11,28 +11,25 @@ import (
 )
 
 type L2PricingState struct {
-	storage        *storage.Storage
-	price          *storage.StorageBackedUbig
-	gasPool        *storage.StorageBackedInt64
-	smallGasPool   *storage.StorageBackedInt64
-	fastStorageAvg *storage.StorageBackedUint64
-	slowStorageAvg *storage.StorageBackedUint64
+	storage            *storage.Storage
+	price              *storage.StorageBackedUbig
+	gasPool            *storage.StorageBackedInt64
+	smallGasPool       *storage.StorageBackedInt64
+	storageLoadLimiter *LoadLimiter
 }
 
 const (
 	gasPoolOffset uint64 = iota
 	priceOffset
 	smallGasPoolOffset
-	fastStorageOffset
-	slowStorageOffset
 )
+
+var storageLimiterKey = []byte{0}
 
 func InitializeL2PricingState(sto *storage.Storage) {
 	sto.OpenStorageBackedUbig(util.UintToHash(priceOffset)).Set(big.NewInt(InitialGasPriceWei))
 	sto.OpenStorageBackedInt64(util.UintToHash(gasPoolOffset)).Set(GasPoolMax)
 	sto.OpenStorageBackedInt64(util.UintToHash(smallGasPoolOffset)).Set(SmallGasPoolMax)
-	sto.OpenStorageBackedUint64(util.UintToHash(fastStorageOffset)).Set(0)
-	sto.OpenStorageBackedUint64(util.UintToHash(slowStorageOffset)).Set(0)
 }
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
@@ -41,20 +38,23 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUbig(util.UintToHash(priceOffset)),
 		sto.OpenStorageBackedInt64(util.UintToHash(gasPoolOffset)),
 		sto.OpenStorageBackedInt64(util.UintToHash(smallGasPoolOffset)),
-		sto.OpenStorageBackedUint64(util.UintToHash(fastStorageOffset)),
-		sto.OpenStorageBackedUint64(util.UintToHash(slowStorageOffset)),
+		OpenLoadLimiter(sto.OpenSubStorage(storageLimiterKey), StorageLimiterParams),
 	}
 }
 
 func (pricingState *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	startPrice := pricingState.Price()
 	gasResult := pricingState.updateGasComponentForElapsedTime(secondsElapsed, startPrice)
-	storageResult := pricingState.updateStorageComponentForElapsedTime(secondsElapsed, startPrice, gasResult)
+	storageResult := pricingState.storageLoadLimiter.updateStorageComponentForElapsedTime(secondsElapsed, startPrice, gasResult)
 	if gasResult.Cmp(storageResult) >= 0 {
 		pricingState.SetPrice(gasResult)
 	} else {
 		pricingState.SetPrice(storageResult)
 	}
+}
+
+func (pricingState *L2PricingState) NotifyStorageUsageChange(delta int64) {
+	pricingState.storageLoadLimiter.NotifyUsageChange(delta)
 }
 
 func (pricingState *L2PricingState) GasPool() int64 {

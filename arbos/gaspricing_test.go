@@ -94,7 +94,7 @@ func TestStoragePricing(t *testing.T) {
 		t.Fatal("wrong initial gas price")
 	}
 
-	initialSub := int64(2 * l2pricing.TargetAllocRateCells * l2pricing.FastAvgSeconds)
+	initialSub := int64(2 * l2pricing.StorageLimiterParams.TargetRate * l2pricing.StorageLimiterParams.FastSeconds)
 	st.NotifyStorageUsageChange(initialSub)
 
 	st.NotifyGasPricerThatTimeElapsed(1)
@@ -103,7 +103,7 @@ func TestStoragePricing(t *testing.T) {
 		t.Fatal("price should be above minimum")
 	}
 
-	st.NotifyGasPricerThatTimeElapsed(10 * l2pricing.FastAvgSeconds)
+	st.NotifyGasPricerThatTimeElapsed(10 * l2pricing.StorageLimiterParams.FastSeconds)
 
 	if st.Price().Cmp(big.NewInt(l2pricing.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should return to minimum")
