@@ -6,7 +6,6 @@ package broadcaster
 
 import (
 	"context"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -91,31 +90,16 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 	}
 	defer func() { atomic.StoreInt32(&b.messageCount, int32(len(b.messages))) }()
 
-	// SequenceNumber is supposed to be monotonically increasing in a single
-	// feed but we want to handle out of order messages in case of lost
-	// messages or duplicates from multiple feeds. We need a way to detect
-	// out-of-order vs overflowed that is robust to missed messages.
-	likelyOverflow := func(newSeq uint64, oldSeq uint64) bool {
-		return newSeq < math.MaxUint64/4 &&
-			oldSeq > (math.MaxUint64/4)*3
-	}
-
 	if confirmMsg := broadcastMessage.ConfirmedSequenceNumberMessage; confirmMsg != nil {
 		if len(b.messages) == 0 {
 			return nil
 		}
 
 		// If new sequence number is less than the earliest in the buffer,
-		// and this was not due to an overflow, then do nothing, as this
-		// message was probably already confirmed.
-		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber &&
-			!likelyOverflow(confirmMsg.SequenceNumber,
-				b.messages[0].SequenceNumber) {
+		// then do nothing, as this message was probably already confirmed.
+		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber {
 			return nil
 		}
-
-		// If sequence number overflowed uint64, the subtraction will wrap around
-		// and still gives the correct index.
 		confirmedIndex := confirmMsg.SequenceNumber - b.messages[0].SequenceNumber
 
 		if uint64(len(b.messages)) <= confirmedIndex {
@@ -141,8 +125,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			b.messages = append(b.messages, newMsg)
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			b.messages = append(b.messages, newMsg)
-		} else if newMsg.SequenceNumber > expectedSequenceNumber ||
-			likelyOverflow(newMsg.SequenceNumber, expectedSequenceNumber) {
+		} else if newMsg.SequenceNumber > expectedSequenceNumber {
 			log.Warn("Message with sequence number ",
 				newMsg.SequenceNumber, " requested to be broadcast, ",
 				"expected ", expectedSequenceNumber,

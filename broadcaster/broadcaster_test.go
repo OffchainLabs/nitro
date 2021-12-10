@@ -7,7 +7,6 @@ package broadcaster
 import (
 	"context"
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
@@ -119,51 +118,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(0,
 		"clear all messages after confirmed 3 beyond latest"))
 
-	// Overflow handling
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-3)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-2)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-1)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64)
-	b.BroadcastSingle(dummyMessage, 0)
-	b.BroadcastSingle(dummyMessage, 1)
-	b.BroadcastSingle(dummyMessage, 2)
-	b.BroadcastSingle(dummyMessage, 3)
-	waitUntilUpdated(t, expectMessageCount(8,
-		"8 messages after sequence number overflow"))
-
-	b.Confirm(math.MaxUint64 - 2)
-	waitUntilUpdated(t, expectMessageCount(6,
-		"6 messages after confirming some pre-overflow"))
-
-	b.Confirm(1)
-	waitUntilUpdated(t, expectMessageCount(2,
-		"2 messages after confirming some post-overflow"))
-
-	// Handling holes in sequence number
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-3)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-2)
-	// missing b.BroadcastSingle(dummyMessage, math.MaxUint64-1)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64)
-	b.BroadcastSingle(dummyMessage, 0)
-	b.BroadcastSingle(dummyMessage, 1)
-	b.BroadcastSingle(dummyMessage, 2)
-	b.BroadcastSingle(dummyMessage, 3)
-	waitUntilUpdated(t, expectMessageCount(5,
-		"5 messages after hole"))
-
-	// Handling skipped messages around overflow
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-2)
-	b.BroadcastSingle(dummyMessage, math.MaxUint64-1)
-	waitUntilUpdated(t, expectMessageCount(2, "2 messages"))
-	b.BroadcastSingle(dummyMessage, 2)
-	b.BroadcastSingle(dummyMessage, 3)
-	b.BroadcastSingle(dummyMessage, 4)
-
-	waitUntilUpdated(t, expectMessageCount(3,
-		"3 message after missed message around overflow"))
-
 	// Duplicates and messages already seen
-	b.Confirm(4)
 	b.BroadcastSingle(dummyMessage, 2)
 	b.BroadcastSingle(dummyMessage, 0)
 	b.BroadcastSingle(dummyMessage, 1)
