@@ -56,11 +56,11 @@ arbitrator/target/env/lib/replay.wasm: $(go_source)
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 # strategic rules to minimize dependency building
-.make/arbitrator-build: .make arbitrator/prover/** arbitrator/Makefile | .make
+.make/arbitrator-build: .make arbitrator/prover/src/*.rs arbitrator/Makefile | .make
 	$(MAKE) -C arbitrator/ build-env
 	@touch .make/arbitrator
 
-.make/arbitrator-exec: .make .make/arbitrator-build arbitrator/wasm-libraries/** | .make
+.make/arbitrator-exec: .make .make/arbitrator-build arbitrator/wasm-libraries/*/Cargo.toml arbitrator/wasm-libraries/*/src/*.rs | .make
 	$(MAKE) -C arbitrator/ exec-env
 	@touch .make/arbitrator
 

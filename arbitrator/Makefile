@@ -134,13 +134,13 @@ wasm-libraries/target/wasm32-wasi/release/host_io.wasm: wasm-libraries/host-io/s
 $(output_root)/lib/host_io.wasm: wasm-libraries/target/wasm32-wasi/release/host_io.wasm
 	install -D $< $@
 
-target/release/prover: prover/src/** prover/Cargo.toml
+target/release/prover: prover/src/*.rs prover/Cargo.toml
 	cargo build --release --bin prover
 
 $(prover_bin): target/release/prover
 	install -D $< $@
 
-target/release/libprover.a: prover/src/** prover/Cargo.toml
+target/release/libprover.a: prover/src/*.rs prover/Cargo.toml
 	cargo build --release --lib
 
 $(output_root)/lib/libprover.a: target/release/libprover.a
