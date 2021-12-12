@@ -199,7 +199,20 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 	index := uint64(c_inbox_idx)
 	msgNum := uint64(c_seq_num)
 	startPos := uint64(c_context)
+	entry, found := validatorStatic.validationEntries.Load(startPos)
+	if !found {
+		log.Error("error while trying to read validation entry", "pos", startPos)
+		runtime.Goexit()
+	}
+	validationEntry, ok := entry.(*validationEntry)
+	if !ok {
+		log.Error("illegal validation entry", "pos", startPos)
+		runtime.Goexit()
+	}
 	if index == 0 {
+		if validationEntry.StartBatchNr != msgNum {
+			return cbyteError
+		}
 		entry, found := validatorStatic.sequencerBatches.Load(msgNum)
 		if !found {
 			log.Error("didn't find sequencer message", "pos", startPos, "msgNum", msgNum)
@@ -212,16 +225,6 @@ func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.u
 		}
 		return cbyte
 	} else if index == 1 {
-		entry, found := validatorStatic.validationEntries.Load(startPos)
-		if !found {
-			log.Error("error while trying to read validation entry", "pos", startPos)
-			runtime.Goexit()
-		}
-		validationEntry, ok := entry.(*validationEntry)
-		if !ok {
-			log.Error("illegal validation entry", "pos", startPos)
-			runtime.Goexit()
-		}
 		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(msgNum)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", msgNum, "pos", startPos)
@@ -440,11 +443,15 @@ func (v *BlockValidator) sendValidations() {
 	}
 }
 
-func (v *BlockValidator) startValidationLoop() {
+func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 	go (func() {
 		for {
-			_, ok := <-v.sendValidationsChan
-			if !ok {
+			select {
+			case _, ok := <-v.sendValidationsChan:
+				if !ok {
+					return
+				}
+			case <-ctx.Done():
 				return
 			}
 			v.sendValidations()
@@ -488,15 +495,22 @@ func (v *BlockValidator) ProgressValidated() {
 		}
 		v.posNext = validationEntry.EndPos + 1
 		v.blocksValidated = validationEntry.BlockNumber
-		v.progressChan <- v.blocksValidated
+		select {
+		case v.progressChan <- v.blocksValidated:
+		default:
+		}
 	}
 }
 
-func (v *BlockValidator) startProgressLoop() {
+func (v *BlockValidator) startProgressLoop(ctx context.Context) {
 	go (func() {
 		for {
-			_, ok := <-v.checkProgressChan
-			if !ok {
+			select {
+			case _, ok := <-v.checkProgressChan:
+				if !ok {
+					return
+				}
+			case <-ctx.Done():
 				return
 			}
 			v.ProgressValidated()
@@ -515,12 +529,15 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	v.posToValidateMutex.Lock()
 	v.posToValidate = append(v.posToValidate, posData...)
 	v.posToValidateMutex.Unlock()
-	v.sendValidationsChan <- struct{}{}
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
 }
 
-func (v *BlockValidator) Start(_ context.Context) {
-	v.startProgressLoop()
-	v.startValidationLoop()
+func (v *BlockValidator) Start(ctx context.Context) {
+	v.startProgressLoop(ctx)
+	v.startValidationLoop(ctx)
 }
 
 // can only be used from One thread
@@ -530,9 +547,12 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration)
 		select {
 		case <-timeoutChan:
 			return false
-		case block := <-v.progressChan:
+		case block, ok := <-v.progressChan:
 			if block >= blockNumber {
 				return true
+			}
+			if !ok {
+				return false
 			}
 		}
 	}
