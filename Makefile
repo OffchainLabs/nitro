@@ -116,7 +116,7 @@ arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go ar
 $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
-	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output $(arbitrator_generated_header)
+	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
 
 $(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
 	mkdir -p $(arbitrator_output_root)/lib
