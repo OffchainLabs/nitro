@@ -26,7 +26,7 @@ arbitrator_prover_bin=$(arbitrator_output_root)/bin/prover
 arbitrator_tests_wat=$(wildcard arbitrator/prover/test-cases/*.wat)
 arbitrator_tests_rust=$(wildcard arbitrator/prover/test-cases/rust/src/bin/*.rs)
 
-arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm, $(arbitrator_tests_rust)) arbitrator/prover/test-cases/go/main
+arbitrator_test_wasms=$(patsubst %.wat,%.wasm, $(arbitrator_tests_wat)) $(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm, $(arbitrator_tests_rust)) arbitrator/prover/test-cases/go/main
 
 WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
@@ -35,16 +35,19 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: all clean
+.PHONY: push all build build-node-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
 
-.make/all: always .make/solgen .make/solidity .make/test $(arbitrator_test_wasms) .make/arbitrator-test .make/arbitrator-exec
+push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
+	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
+
+all: node build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(go_source) .make/solgen .make/solidity .make/arbitrator-build
+build: node
 	@printf $(done)
 
-build-arbitrator-deps: $(arbitrator_generated_header) $(arbitrator_prover_lib)
+build-node-deps: $(go_source) $(arbitrator_generated_header) $(arbitrator_prover_lib) .make/solgen
 
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 
@@ -57,15 +60,13 @@ format fmt: .make/fmt
 lint: .make/lint
 	@printf $(done)
 
-test: .make/test
-	gotestsum --format short-verbose
+test-go: .make/test-go
 	@printf $(done)
 
-validation: arbitrator/target/env/lib/replay.wasm .make/arbitrator-exec
-	@printf $(done)
-
-push: .make/push
-	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
+test-gen-proofs: \
+	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_tests_wat)) \
+	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
+	solgen/test/proofs/go.json
 
 clean:
 	go clean -testcache
@@ -74,6 +75,7 @@ clean:
 	rm -f arbitrator/prover/test-cases/go/main
 	rm -rf $(arbitrator_output_root)
 	rm -f solgen/test/proofs/*.json
+	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
@@ -87,6 +89,12 @@ docker:
 
 # regular build rules
 
+node: build-node-deps
+	go build ./cmd/node
+
+$(replay_wasm): build-node-deps
+	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
+
 arbitrator/target/release/prover: arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
 
@@ -99,17 +107,17 @@ arbitrator/target/release/libprover.a: arbitrator/prover/src/*.rs arbitrator/pro
 $(arbitrator_prover_lib): arbitrator/target/release/libprover.a
 	install -D $< $@
 
-arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
-	cd arbitrator/prover/test-cases/rust && cargo build --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm,%, $@)
+arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
+	cd arbitrator/prover/test-cases/rust && cargo build --release --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm,%, $@)
 
 arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go arbitrator/prover/test-cases/go/go.mod arbitrator/prover/test-cases/go/go.sum
 	cd arbitrator/prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
 $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
-	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output prover/generated-inc/arbitrator.h
+	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output $(arbitrator_generated_header)
 
-arbitrator/wasm-libraries/target/wasm32-unknown-unknown/debug/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
-	cd arbitrator/wasm-libraries && cargo build --target wasm32-unknown-unknown --package wasi-stub
+arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-unknown-unknown --package wasi-stub
 
 $(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm
 	install -D $< $@
@@ -194,14 +202,14 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-arbitrator/wasm-libraries/target/wasm32-wasi/debug/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
-	cd arbitrator/wasm-libraries && cargo build --target wasm32-wasi --package go-stub
+arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package go-stub
 
 $(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm
 	install -D $< $@
 
-arbitrator/wasm-libraries/target/wasm32-wasi/debug/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
-	cd arbitrator/wasm-libraries && cargo build --target wasm32-wasi --package host-io
+arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package host-io
 
 $(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm
 	install -D $< $@
@@ -215,55 +223,38 @@ solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prov
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(arbitrator_output_root)/lib/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --always-merkleize
 
-solgen/test/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/debug/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
+solgen/test/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --inbox arbitrator/prover/test-cases/rust/messages/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg1.bin
 
 solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
 
-$(replay_wasm): $(go_source)
-	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
-
 # strategic rules to minimize dependency building
-.make/arbitrator-build: $(arbitrator_generated_header) $(arbitrator_prover_lib) | .make
-	@touch $@
 
-.make/arbitrator-exec: .make/arbitrator-build $(arbitrator_prover_bin) $(arbitrator_wasm_libs) | .make
-	@touch $@
-
-.make/push: .make/lint .make/test | .make
-	@touch .make/push
-
-.make/lint: .golangci.yml $(go_source) .make/solgen | .make
+.make/lint: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen | .make
 	golangci-lint run --fix
-	@touch .make/lint
+	@touch $@
 
-.make/fmt: .golangci.yml $(go_source) .make/solgen | .make
+.make/fmt: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen | .make
 	golangci-lint run --disable-all -E gofmt --fix
-	@touch .make/fmt
+	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
+	@touch $@
 
-.make/test: $(go_source) .make/arbitrator-build .make/solgen .make/solidity | .make
+.make/test-go: $(go_source) build-node-deps | .make
 	gotestsum --format short-verbose
-	@touch .make/test
+	@touch $@
 
 .make/solgen: solgen/gen.go .make/solidity | .make
 	mkdir -p solgen/go/
 	go run solgen/gen.go
-	@touch .make/solgen
+	@touch $@
 
 .make/solidity: solgen/src/*/*.sol .make/yarndeps | .make
 	yarn --cwd solgen build
-	@touch .make/solidity
+	@touch $@
 
 .make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
-	@touch .make/yarndeps
-
-.make/arbitrator-test: \
-	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_tests_wat)) \
-	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
-	solgen/test/proofs/go.json \
-	| .make
 	@touch $@
 
 .make:

@@ -38,11 +38,6 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build arbitrator
-        run: |
-          cd arbitrator
-          make build-env
-
       - name: Cache Build Products
         uses: actions/cache@v2
         with:
@@ -52,8 +47,8 @@ jobs:
           key: ${{ runner.os }}-lint-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Solgen
-        run: make -j contracts
+      - name: Lint with Make - to build all dependencies
+        run: make -j lint
 
       - name: Lint
         uses: golangci/golangci-lint-action@v2
@@ -93,11 +88,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-
-      - name: Build arbitrator
-        run: |
-          cd arbitrator
-          make build-env
 
       - name: Cache Build Products
         uses: actions/cache@v2
