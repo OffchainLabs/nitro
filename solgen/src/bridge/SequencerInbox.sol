@@ -201,6 +201,8 @@ contract SequencerInbox is ISequencerInbox {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
 
+        timeBounds = getTimeBounds();
+
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
         bytes memory fullData = new bytes(fullDataLen);
@@ -213,6 +215,7 @@ contract SequencerInbox is ISequencerInbox {
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");
+
         for (uint256 i = 0; i < 40; i++) {
             fullData[i] = header[i];
         }
