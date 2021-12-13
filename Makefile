@@ -35,7 +35,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps build-replay-env golangci-deps contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -50,8 +50,6 @@ build: node
 build-node-deps: $(go_source) $(arbitrator_generated_header) $(arbitrator_prover_lib) .make/solgen
 
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-
-golangci-deps: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen
 
 contracts: .make/solgen
 	@printf $(done)
@@ -108,7 +106,7 @@ $(arbitrator_prover_lib): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.tom
 	install -D arbitrator/target/release/libprover.a $@
 
 arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
-	cd arbitrator/prover/test-cases/rust && cargo build --release --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm,%, $@)
+	cargo build --manifest-path arbitrator/prover/test-cases/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm,%, $@)
 
 arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go arbitrator/prover/test-cases/go/go.mod arbitrator/prover/test-cases/go/go.sum
 	cd arbitrator/prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
@@ -120,7 +118,7 @@ $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/s
 
 $(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
 	mkdir -p $(arbitrator_output_root)/lib
-	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-unknown-unknown --package wasi-stub && cd ../..
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install -D arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
@@ -207,12 +205,12 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 
 $(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
 	mkdir -p $(arbitrator_output_root)/lib
-	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package go-stub
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
 $(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	mkdir -p $(arbitrator_output_root)/lib
-	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package host-io && cd ../..
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
@@ -232,11 +230,11 @@ solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_pr
 
 # strategic rules to minimize dependency building
 
-.make/lint: golangci-deps | .make
+.make/lint: build-node-deps | .make
 	golangci-lint run --fix
 	@touch $@
 
-.make/fmt: golangci-deps | .make
+.make/fmt: build-node-deps | .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	@touch $@

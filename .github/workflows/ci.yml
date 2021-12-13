@@ -48,7 +48,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Build all lint dependencies
-        run: make -j golangci-deps
+        run: make -j build-node-deps
 
       - name: Lint
         uses: golangci/golangci-lint-action@v2
