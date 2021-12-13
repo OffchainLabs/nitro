@@ -199,17 +199,20 @@ contract SequencerInbox {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
 
+        timeBounds = getTimeBounds();
+
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
         bytes memory fullData = new bytes(fullDataLen);
         bytes memory header = abi.encodePacked(
-            uint64(block.timestamp - maxDelaySeconds),
-            uint64(block.timestamp + maxFutureSeconds),
-            uint64(block.number - maxDelayBlocks),
-            uint64(block.number + maxFutureBlocks),
+            uint64(timeBounds[0]),
+            uint64(timeBounds[1]),
+            uint64(timeBounds[2]),
+            uint64(timeBounds[3]),
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");
+
         for (uint256 i = 0; i < 40; i++) {
             fullData[i] = header[i];
         }
@@ -224,9 +227,8 @@ contract SequencerInbox {
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
-        timeBounds = getTimeBounds();
         bytes32 fullDataHash = keccak256(fullData);
-        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc, timeBounds));
+        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }
