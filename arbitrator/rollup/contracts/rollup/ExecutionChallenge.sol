@@ -139,16 +139,15 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
             if (expectedDegree > MAX_CHALLENGE_DEGREE) {
                 expectedDegree = MAX_CHALLENGE_DEGREE;
             }
-            require(expectedDegree >= 1, "BAD_DEGREE");
             require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
         }
         require(
             newSegments[newSegments.length - 1] !=
-                oldSegments[oldSegments.length - 1],
+                oldSegments[challengePosition + 1],
             "SAME_END"
         );
 
-        require(oldSegments[0] == newSegments[0], "DIFF_START");
+        require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
 
         challengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
