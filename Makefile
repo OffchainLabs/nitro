@@ -95,17 +95,13 @@ node: build-node-deps
 $(replay_wasm): build-node-deps
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
-arbitrator/target/release/prover: arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
+	install -D arbitrator/target/release/prover $@
 
-$(arbitrator_prover_bin): arbitrator/target/release/prover
-	install -D $< $@
-
-arbitrator/target/release/libprover.a: arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib
-
-$(arbitrator_prover_lib): arbitrator/target/release/libprover.a
-	install -D $< $@
+	install -D arbitrator/target/release/libprover.a $@
 
 arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
 	cd arbitrator/prover/test-cases/rust && cargo build --release --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm,%, $@)
@@ -116,11 +112,9 @@ arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go ar
 $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output $(arbitrator_generated_header)
 
-arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
-	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-unknown-unknown --package wasi-stub
-
-$(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm
-	install -D $< $@
+$(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-unknown-unknown --package wasi-stub && cd ../..
+	install -D arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
 		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
@@ -202,17 +196,14 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+
+$(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
 	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package go-stub
+	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
-$(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm
-	install -D $< $@
-
-arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
-	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package host-io
-
-$(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm
-	install -D $< $@
+$(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package host-io && cd ../..
+	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
