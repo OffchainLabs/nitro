@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -34,54 +35,54 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, txTimeout time.Duration) (*RollupAddresses, error) {
 	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error submitting bridge deploy tx: %w", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
-		return nil, err
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing bridge deploy tx: %w", err)
 	}
 
 	inboxAddr, tx, inboxContract, err := bridgegen.DeployInbox(deployAuth, l1client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
-		return nil, err
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
 	}
 
 	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
-		return nil, err
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
 	}
 
 	tx, err = bridgeContract.Initialize(deployAuth)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error submitting bridge initialize tx: %w", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
-		return nil, err
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing bridge initialize tx: %w", err)
 	}
 
 	tx, err = bridgeContract.SetInbox(deployAuth, inboxAddr, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error submitting set inbox tx: %w", err)
 	}
-	if _, err := EnsureTxSucceeded(ctx, l1client, tx); err != nil {
-		return nil, err
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing set inbox tx: %w", err)
 	}
 
 	sequencerInboxAddr, tx, _, err := bridgegen.DeploySequencerInbox(deployAuth, l1client, bridgeAddr, sequencer)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error submitting sequencer inbox deploy tx: %w", err)
 	}
-	txRes, err := EnsureTxSucceeded(ctx, l1client, tx)
+	txRes, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error executing sequencer inbox deploy tx: %w", err)
 	}
 
 	return &RollupAddresses{
