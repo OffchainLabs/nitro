@@ -47,8 +47,8 @@ jobs:
           key: ${{ runner.os }}-lint-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Lint with Make - to build all dependencies
-        run: make -j lint
+      - name: Build all lint dependencies
+        run: make -j golangci-deps
 
       - name: Lint
         uses: golangci/golangci-lint-action@v2

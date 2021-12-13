@@ -35,7 +35,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps build-replay-env golangci-deps contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -50,6 +50,8 @@ build: node
 build-node-deps: $(go_source) $(arbitrator_generated_header) $(arbitrator_prover_lib) .make/solgen
 
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+
+golangci-deps: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen
 
 contracts: .make/solgen
 	@printf $(done)
@@ -222,11 +224,11 @@ solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_pr
 
 # strategic rules to minimize dependency building
 
-.make/lint: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen | .make
+.make/lint: golangci-deps | .make
 	golangci-lint run --fix
 	@touch $@
 
-.make/fmt: .golangci.yml $(go_source) $(arbitrator_generated_header) .make/solgen | .make
+.make/fmt: golangci-deps | .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	@touch $@
