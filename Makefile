@@ -7,7 +7,7 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
 arbitrator_output_root=arbitrator/target/env
 
-repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests wavmio
+repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
 color_pink = "\e[38;5;161;1m"
@@ -98,10 +98,12 @@ $(replay_wasm): build-node-deps
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
 	install -D arbitrator/target/release/prover $@
 
 $(arbitrator_prover_lib): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib
 	install -D arbitrator/target/release/libprover.a $@
 
@@ -112,9 +114,12 @@ arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go ar
 	cd arbitrator/prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
 $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
+	@echo creating ${PWD}/$(arbitrator_generated_header)
+	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output $(arbitrator_generated_header)
 
 $(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+	mkdir -p $(arbitrator_output_root)/lib
 	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-unknown-unknown --package wasi-stub && cd ../..
 	install -D arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
@@ -134,6 +139,7 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
+	mkdir -p $(arbitrator_output_root)/lib
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
@@ -200,10 +206,12 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 
 
 $(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+	mkdir -p $(arbitrator_output_root)/lib
 	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package go-stub
 	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
 $(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+	mkdir -p $(arbitrator_output_root)/lib
 	cd arbitrator/wasm-libraries && cargo build --release --target wasm32-wasi --package host-io && cd ../..
 	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
