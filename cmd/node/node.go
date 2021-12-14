@@ -6,9 +6,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
+	"io/ioutil"
 	"math/big"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -36,19 +39,19 @@ func main() {
 	l1keyfile := flag.String("l1keyfile", "", "l1 private key file (required if l1role == sequencer)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
-	l1bridge := flag.String("l1bridge", "", "l1 bridge address (required if using l1 and !l1deploy)")
-	l1inbox := flag.String("l1inbox", "", "l1 inbox address (required if using l1 and !l1deploy)")
-	l1seqinbox := flag.String("l1seqinbox", "", "l1 sequencer inbox address (required if using l1 and !l1deploy)")
-	l1deployedAt := flag.Uint64("l1deployedat", 0, "l1 deployed at (required if using l1 and !l1deploy)")
+	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
+	datadir := flag.String("datadir", "", "directory to store chain state")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
 	httphost := flag.String("httphost", "localhost", "http host")
 	httpPort := flag.Int("httpport", 7545, "http port")
+	httpvhosts := flag.String("httpvhosts", "localhost", "list of virtual hosts to accept requests from")
 	wshost := flag.String("wshost", "localhost", "websocket host")
 	wsport := flag.Int("wsport", 7546, "websocket port")
+	wsorigins := flag.String("wsorigins", "localhost", "list of origins to accept requests from")
 	wsexposeall := flag.Bool("wsexposeall", false, "expose private api via websocket")
 	flag.Parse()
 
@@ -56,6 +59,7 @@ func main() {
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
+	log.Info("Running with", "role", *l1role)
 	if *l1role == "none" {
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
@@ -105,34 +109,38 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr)
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
 			}
 			deployInfo = *deployPtr
 		} else {
-			paramsOk := common.IsHexAddress(*l1inbox) && common.IsHexAddress(*l1bridge) && common.IsHexAddress(*l1seqinbox) && (*l1deployedAt != 0)
-			if !paramsOk {
+			if *l1deployment == "" {
 				flag.Usage()
-				panic("not deploying, and missing required deploy info")
+				panic("not deploying, but no deployment specified")
 			}
-			deployInfo.Bridge = common.HexToAddress(*l1bridge)
-			deployInfo.Inbox = common.HexToAddress(*l1inbox)
-			deployInfo.SequencerInbox = common.HexToAddress(*l1seqinbox)
-			deployInfo.DeployedAt = *l1deployedAt
+			rawDeployment, err := ioutil.ReadFile(*l1deployment)
+			if err != nil {
+				panic(err)
+			}
+			if err := json.Unmarshal(rawDeployment, &deployInfo); err != nil {
+				panic(err)
+			}
 		}
 	} else {
 		*l1deploy = false
 	}
 
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = "" // TODO: parametrise. Support resuming after shutdown..
+	stackConf.DataDir = *datadir
 	stackConf.HTTPHost = *httphost
 	stackConf.HTTPPort = *httpPort
+	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
 	stackConf.WSHost = *wshost
 	stackConf.WSPort = *wsport
+	stackConf.WSOrigins = utils.SplitAndTrim(*wsorigins)
 	stackConf.WSModules = append(stackConf.WSModules, "eth")
 	stackConf.WSExposeAll = *wsexposeall
 	if *wsexposeall {
@@ -177,7 +185,7 @@ func main() {
 
 	genesisAlloc := make(core.GenesisAlloc)
 	genesisAlloc[devAddr] = core.GenesisAccount{
-		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
 		Nonce:      0,
 		PrivateKey: nil,
 	}

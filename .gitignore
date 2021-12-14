@@ -11,4 +11,6 @@ solgen/artifacts
 solgen/cache/
 solgen/go/
 solgen/node_modules/
+solgen/deployments/localhost
+solgen/test/proofs/*.json
 .make/

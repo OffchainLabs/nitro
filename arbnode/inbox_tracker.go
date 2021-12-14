@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +24,7 @@ type InboxTracker struct {
 	db         ethdb.Database
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
+	validator  *validator.BlockValidator
 }
 
 func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*InboxTracker, error) {
@@ -31,6 +33,10 @@ func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*Inbo
 		txStreamer: txStreamer,
 	}
 	return db, nil
+}
+
+func (t *InboxTracker) SetBlockValidator(validator *validator.BlockValidator) {
+	t.validator = validator
 }
 
 func (t *InboxTracker) Initialize() error {
@@ -175,6 +181,11 @@ func (t *InboxTracker) GetDelayedMessageAndAccumulator(seqNum uint64) (*arbos.L1
 func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbos.L1IncomingMessage, error) {
 	msg, _, err := t.GetDelayedMessageAndAccumulator(seqNum)
 	return msg, err
+}
+
+func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
+	data, _, err := t.getDelayedMessageBytesAndAccumulator(seqNum)
+	return data, err
 }
 
 func (t *InboxTracker) addDelayedMessages(messages []*DelayedInboxMessage) error {
@@ -411,6 +422,7 @@ func (t *InboxTracker) addSequencerBatches(ctx context.Context, client L1Interfa
 	}
 
 	var messages []arbstate.MessageWithMetadata
+	var positions []validator.PosInSequencer
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -421,6 +433,7 @@ func (t *InboxTracker) addSequencerBatches(ctx context.Context, client L1Interfa
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevDelayedMessages)
 	batchMessageCounts := make(map[uint64]uint64)
+	currentpos := startMessagePos + 1
 	for {
 		if len(backend.batches) == 0 {
 			break
@@ -430,12 +443,23 @@ func (t *InboxTracker) addSequencerBatches(ctx context.Context, client L1Interfa
 		if err != nil {
 			return err
 		}
+		posInBatch := backend.positionWithinMessage
 		err = multiplexer.Advance()
+		position := validator.PosInSequencer{
+			Pos:        currentpos - 1,
+			BatchNum:   batchSeqNum,
+			PosInBatch: posInBatch,
+			BatchAfter: backend.batchSeqNum,
+			PosAfter:   backend.positionWithinMessage,
+		}
+		positions = append(positions, position)
+
 		if err != nil {
 			return err
 		}
 		messages = append(messages, *msg)
-		batchMessageCounts[batchSeqNum] = startMessagePos + uint64(len(messages))
+		batchMessageCounts[batchSeqNum] = currentpos
+		currentpos += 1
 	}
 
 	for _, batch := range batches {
@@ -477,7 +501,19 @@ func (t *InboxTracker) addSequencerBatches(ctx context.Context, client L1Interfa
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", pos)
 	// This also writes the batch
-	return t.txStreamer.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
+	if t.validator != nil {
+		batchMap := make(map[uint64][]byte, len(batches))
+		for _, batch := range batches {
+			msg, err := batch.Serialize(ctx, client)
+			if err != nil {
+				return err
+			}
+			batchMap[batch.SequenceNumber] = msg
+		}
+		t.validator.ProcessBatches(batchMap, positions)
+	}
+	err = t.txStreamer.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
+	return err
 }
 
 func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
