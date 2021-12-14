@@ -213,6 +213,7 @@ contract SequencerInbox is ISequencerInbox {
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");
+
         for (uint256 i = 0; i < 40; i++) {
             fullData[i] = header[i];
         }

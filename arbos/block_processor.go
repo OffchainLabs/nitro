@@ -55,6 +55,8 @@ type BlockBuilder struct {
 
 	txes     types.Transactions
 	receipts types.Receipts
+
+	isDone bool
 }
 
 type BlockData struct {
@@ -62,7 +64,7 @@ type BlockData struct {
 	Header *types.Header
 }
 
-func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext) *BlockBuilder {
+func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext) *BlockBuilder {
 	return &BlockBuilder{
 		statedb:         statedb,
 		lastBlockHeader: lastBlockHeader,
@@ -72,6 +74,9 @@ func NewBlockBuilder(statedb *state.StateDB, lastBlockHeader *types.Header, chai
 
 // Must always return true if the block is empty
 func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
+	if b.isDone {
+		return false
+	}
 	if b.blockInfo == nil {
 		return true
 	}
@@ -210,9 +215,9 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 
 	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
 
+	b.isDone = true
 	// Reset the block builder for the next block
 	receipts := b.receipts
-	*b = *NewBlockBuilder(b.statedb, block.Header(), b.chainContext)
 	return block, receipts, b.statedb
 }
 
@@ -225,4 +230,8 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
+}
+
+func (b *BlockBuilder) ChainContext() core.ChainContext {
+	return b.chainContext
 }
