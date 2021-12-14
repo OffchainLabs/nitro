@@ -1055,13 +1055,8 @@ impl Machine {
     }
 
     pub fn step_n(&mut self, n: u64) {
-        for x in 0..n {
+        for _ in 0..n {
             if self.is_halted() {
-                let remaining = n - x;
-                self.steps = self
-                    .steps
-                    .checked_add(remaining)
-                    .expect("Exceeded max uint64 steps");
                 break;
             }
             self.step();
@@ -1070,10 +1065,6 @@ impl Machine {
 
     pub fn step(&mut self) {
         if self.is_halted() {
-            self.steps = self
-                .steps
-                .checked_add(1)
-                .expect("Exceeded max uint64 steps");
             return;
         }
         // It's infeasible to overflow steps without halting

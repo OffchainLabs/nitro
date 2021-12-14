@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package validator
 
 /*
@@ -34,7 +38,7 @@ type BlockValidator struct {
 	posValidatedMutex  sync.Mutex
 	posNextSend        uint64
 
-	baseMachine *C.struct_Machine
+	baseMachine *ArbitratorMachine
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -174,7 +178,7 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
-		baseMachine:         baseMachine,
+		baseMachine:         machineFromPointer(baseMachine),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
 	}
@@ -328,7 +332,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	return nil
 }
 
-func (v *BlockValidator) validate(validationEntry *validationEntry, start, end PosInSequencer) {
+func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, start, end PosInSequencer) {
 	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber, "start", start, "end", end)
 	if !validatorStatic.initialized {
 		log.Error("validator: validatorStatic not initialized")
@@ -347,17 +351,18 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	validationEntry.StartBatchNr = start.BatchNum
 	gsStart := CreateGlobalState(start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash)
 
-	mach := C.arbitrator_clone_machine(v.baseMachine)
-	C.arbitrator_add_preimages(mach, c_preimages)
-	C.arbitrator_set_inbox_reader_context(mach, C.uint64_t(start.Pos))
-	C.arbitrator_set_global_state(mach, gsStart)
-	steps := 0
-	for C.arbitrator_get_status(mach) == C.Running {
-		C.arbitrator_step(mach, C.uint64_t(100000000))
-		steps += 100000000
+	mach := v.baseMachine.Clone()
+	C.arbitrator_add_preimages(mach.ptr, c_preimages)
+	C.arbitrator_set_inbox_reader_context(mach.ptr, C.uint64_t(start.Pos))
+	mach.SetGlobalState(gsStart)
+	var steps uint64
+	for mach.IsRunning() {
+		var count uint64 = 100000000
+		mach.Step(ctx, count)
+		steps += count
 		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}
-	gsEnd := C.arbitrator_global_state(mach)
+	gsEnd := mach.GetGlobalState()
 
 	resBatch, resPosInBatch, resHash := ParseGlobalState(gsEnd)
 
@@ -408,7 +413,7 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) sendValidations() {
+func (v *BlockValidator) sendValidations(ctx context.Context) {
 	v.posToValidateMutex.Lock()
 	defer v.posToValidateMutex.Unlock()
 	sort.Sort(v.posToValidate)
@@ -437,7 +442,7 @@ func (v *BlockValidator) sendValidations() {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		go v.validate(validationEntry, v.posToValidate[0], v.posToValidate[idx])
+		go v.validate(ctx, validationEntry, v.posToValidate[0], v.posToValidate[idx])
 		v.posNextSend = validationEntry.EndPos + 1
 		v.posToValidate = v.posToValidate[idx+1:]
 	}
@@ -454,7 +459,7 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			}
-			v.sendValidations()
+			v.sendValidations(ctx)
 		}
 	})()
 }

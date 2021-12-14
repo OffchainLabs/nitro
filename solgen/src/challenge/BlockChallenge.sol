@@ -4,11 +4,12 @@ pragma solidity ^0.8.0;
 import "../osp/IOneStepProofEntry.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
+import "./ChallengeCore.sol";
 import "./IExecutionChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 import "./Cloneable.sol";
 
-contract BlockChallenge is IChallengeResultReceiver, Cloneable {
+contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
     enum Turn {
         NO_CHALLENGE,
         ASSERTER,
@@ -35,8 +36,6 @@ contract BlockChallenge is IChallengeResultReceiver, Cloneable {
 
     ExecutionContext public execCtx;
     bytes32 public wasmModuleRoot;
-
-    bytes32 public challengeStateHash;
 
     address public asserter;
     address public challenger;
@@ -127,9 +126,7 @@ contract BlockChallenge is IChallengeResultReceiver, Cloneable {
         uint256 challengePosition,
         bytes32[] calldata newSegments
     ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib
-            .extractChallengeSegment(
-                challengeStateHash,
+        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
                 oldSegmentsStart,
                 oldSegmentsLength,
                 oldSegments,
@@ -179,8 +176,7 @@ contract BlockChallenge is IChallengeResultReceiver, Cloneable {
             "EXEC_DEADLINE"
         );
 
-        (, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
-            challengeStateHash,
+        (, uint256 challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,

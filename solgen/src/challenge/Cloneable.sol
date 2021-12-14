@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 abstract contract Cloneable {
-	bool private isMasterCopy;
+	bool internal isMasterCopy;
 
 	constructor() {
 		isMasterCopy = true;

@@ -23,6 +23,7 @@ use std::{
     io::Read,
     os::raw::c_char,
     path::Path,
+    sync::atomic::{self, AtomicU8},
 };
 
 pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
@@ -159,9 +160,26 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
     Box::into_raw(Box::new(new_mach))
 }
 
+/// Go doesn't have this functionality builtin for whatever reason. Uses relaxed ordering.
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
-    (*mach).step_n(num_steps);
+pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
+    (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
+}
+
+/// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64, condition: *const u8) {
+    let mach = &mut *mach;
+    let condition = &*(condition as *const AtomicU8);
+    let mut remaining_steps = num_steps;
+    while condition.load(atomic::Ordering::Relaxed) == 0 {
+        if remaining_steps == 0 || mach.is_halted() {
+            break;
+        }
+        let stepping = std::cmp::min(remaining_steps, 1_000_000);
+        mach.step_n(stepping);
+        remaining_steps -= stepping;
+    }
 }
 
 #[no_mangle]
