@@ -26,6 +26,8 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
+// Singleton that manages the production and recording of blocks
+// The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
@@ -462,11 +464,12 @@ func (s *TransactionStreamer) getLastBlockPosition() (uint64, uint64, error) {
 	return startPos, lastBlockNumber, nil
 }
 
+// Produce and record blocks for all available messages
 func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	pos, lastBlockNumber, err := s.getLastBlockPosition()
+	pos, _, err := s.getLastBlockPosition()
 	if err != nil {
 		return err
 	}
@@ -477,11 +480,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 
 	for pos < msgCount {
 
-		pos, lastBlockNumber, err = s.getLastBlockPosition()
+		pos, lastBlockNumber, err := s.getLastBlockPosition()
 		if err != nil {
 			return err
 		}
-
 		lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
 		if lastBlockHeader == nil {
 			return errors.New("last block header not found")
@@ -512,9 +514,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return err
 		}
 
-		//messageCount := pos + 1
-		pos++
-
 		block, receipts := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -522,6 +521,9 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			statedb,
 			chaincontext,
 		)
+
+		// ProduceBlock advances one message
+		pos++
 
 		key := dbKey(messageCountToBlockPrefix, pos)
 		blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
