@@ -353,7 +353,7 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	C.arbitrator_set_global_state(mach, gsStart)
 	steps := 0
 	for C.arbitrator_get_status(mach) == C.Running {
-		C.arbitrator_step(mach, C.uintptr_t(100000000))
+		C.arbitrator_step(mach, C.uint64_t(100000000))
 		steps += 100000000
 		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}

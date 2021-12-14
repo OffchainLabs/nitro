@@ -35,7 +35,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps build-node-rust-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps build-prover-header build-prover-lib build-replay-env build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -47,15 +47,13 @@ all: node build-replay-env test-gen-proofs
 build: node
 	@printf $(done)
 
-build-node-deps: $(go_source) build-node-rust-deps .make/solgen
-
-build-node-rust-deps: $(arbitrator_generated_header) $(arbitrator_prover_lib)
+build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen
 
 build-prover-header: $(arbitrator_generated_header)
 
 build-prover-lib: $(arbitrator_prover_lib)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -106,12 +104,12 @@ $(replay_wasm): build-node-deps
 $(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
-	install -D arbitrator/target/release/prover $@
+	install arbitrator/target/release/prover $@
 
 $(arbitrator_prover_lib): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib
-	install -D arbitrator/target/release/libprover.a $@
+	install arbitrator/target/release/libprover.a $@
 
 arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm: arbitrator/prover/test-cases/rust/src/bin/%.rs arbitrator/prover/test-cases/rust/src/lib.rs
 	cargo build --manifest-path arbitrator/prover/test-cases/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm,%, $@)
@@ -127,7 +125,7 @@ $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/s
 $(arbitrator_output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
 	mkdir -p $(arbitrator_output_root)/lib
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
-	install -D arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
+	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
 arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
 		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
@@ -214,12 +212,12 @@ $(arbitrator_output_root)/lib/soft-float.wasm: \
 $(arbitrator_output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
 	mkdir -p $(arbitrator_output_root)/lib
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
-	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
 $(arbitrator_output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	mkdir -p $(arbitrator_output_root)/lib
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
-	install -D arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
