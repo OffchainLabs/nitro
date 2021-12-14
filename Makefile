@@ -35,7 +35,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps build-node-rust-deps build-replay-env contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -47,7 +47,9 @@ all: node build-replay-env test-gen-proofs
 build: node
 	@printf $(done)
 
-build-node-deps: $(go_source) $(arbitrator_generated_header) $(arbitrator_prover_lib) .make/solgen
+build-node-deps: $(go_source) build-node-rust-deps .make/solgen
+
+build-node-rust-deps: $(arbitrator_generated_header) $(arbitrator_prover_lib)
 
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 
