@@ -258,7 +258,7 @@ func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Dat
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
-	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideLondon)
+	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideArrowGlacier)
 	var configCompatError *params.ConfigCompatError
 	if errors.As(genesisErr, &configCompatError) {
 		return nil, nil, genesisErr
