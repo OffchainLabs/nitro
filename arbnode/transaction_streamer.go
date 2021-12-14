@@ -211,60 +211,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func (s *TransactionStreamer) closeBlock(blockBuilder *arbos.BlockBuilder, firstMessage uint64, lastMessage uint64, delayedMessageCount uint64, recordingBlockBuilder *arbos.BlockBuilder, recordingKV *arbitrum.RecordingKV) (*types.Block, error) {
-	messageCount := lastMessage + 1
-	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
-	if len(block.Transactions()) != len(receipts) {
-		return nil, errors.New("mismatch between number of transactions and number of receipts")
-	}
-	key := dbKey(messageCountToBlockPrefix, messageCount)
-	blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
-	if err != nil {
-		return nil, err
-	}
-	err = s.db.Put(key, blockNumBytes)
-	if err != nil {
-		return nil, err
-	}
-	var logs []*types.Log
-	for _, receipt := range receipts {
-		logs = append(logs, receipt.Logs...)
-	}
-	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
-	if err != nil {
-		return nil, err
-	}
-	if status == core.SideStatTy {
-		return nil, errors.New("geth rejected block as non-canonical")
-	}
-	if s.validator != nil {
-		recordingBlockBuilder.ConstructBlock(delayedMessageCount)
-		preimages, err := arbitrum.PreimagesFromRecording(recordingBlockBuilder.ChainContext(), recordingKV)
-		if err != nil {
-			return nil, fmt.Errorf("failed getting records: %w", err)
-		}
-		s.validator.NewBlock(block, preimages, firstMessage, lastMessage)
-	}
-	return block, nil
-}
-
-// we don't use startpos - just passing it from input to output, so it'd be updated with blockbuilder
-func (s *TransactionStreamer) startNewBlock(lastHeader *types.Header, startPos uint64) (*arbos.BlockBuilder, uint64, *arbos.BlockBuilder, *arbitrum.RecordingKV, error) {
-	statedb, err := s.bc.StateAt(lastHeader.Root)
-	if err != nil {
-		return nil, startPos, nil, nil, err
-	}
-	blockbuilder := arbos.NewBlockBuilder(lastHeader, statedb, s.bc)
-	if s.validator == nil {
-		return blockbuilder, startPos, nil, nil, nil
-	}
-	statedb, chaincontext, recordingkv, err := arbitrum.PrepareRecording(s.bc, lastHeader)
-	if err != nil {
-		return nil, startPos, nil, nil, err
-	}
-	return blockbuilder, startPos, arbos.NewBlockBuilder(lastHeader, statedb, chaincontext), recordingkv, nil
-}
-
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, seqNum)
@@ -533,10 +479,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("last block header not found")
 	}
-	blockBuilder, startPos, recordingbuilder, recordingKV, err := s.startNewBlock(lastBlockHeader, pos)
-	if err != nil {
-		return err
-	}
+
 	for pos < msgCount {
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
@@ -552,56 +495,55 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		segment, err := arbos.IncomingMessageToSegment(msg.Message, arbos.ChainConfig.ChainID)
+
+		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+
+		recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
+
+		messageCount := msg.DelayedMessagesRead + 1
+
+		block, receipts := arbos.ProduceBlock(
+			msg.Message,
+			messageCount,
+			lastBlockHeader,
+			statedb,
+			chaincontext,
+		)
+		key := dbKey(messageCountToBlockPrefix, messageCount)
+		blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
 		if err != nil {
-			// If we've failed to parse the incoming message, make a new block and move on to the next message
-			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
+			return err
+		}
+		err = s.db.Put(key, blockNumBytes)
+		if err != nil {
+			return err
+		}
+		var logs []*types.Log
+		for _, receipt := range receipts {
+			logs = append(logs, receipt.Logs...)
+		}
+		status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+		if err != nil {
+			return err
+		}
+		if status == core.SideStatTy {
+			return errors.New("geth rejected block as non-canonical")
+		}
+		if s.validator != nil {
+			block, _ = arbos.ProduceBlock(
+				msg.Message,
+				messageCount,
+				lastBlockHeader,
+				recordingdb,
+				chaincontext,
+			)
+			preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed getting records: %w", err)
 			}
-			log.Warn("TransactionStreamer: closeblock and skipping message", "pos", pos)
-			// Skip this invalid message
-			pos++
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
-			if err != nil {
-				return err
-			}
-			continue
+			s.validator.NewBlock(block, preimages, pos, pos)
 		}
 
-		// If we shouldn't put the next message in the current block,
-		// make a new block before adding the next message.
-		if !blockBuilder.ShouldAddMessage(segment) {
-			block, err := s.closeBlock(blockBuilder, startPos, pos-1, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
-			if err != nil {
-				return err
-			}
-			log.Info("TransactionStreamer: closed block - should not add message", "pos", pos)
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
-			if err != nil {
-				return err
-			}
-			// Notice we fall through here to the AddMessage call
-		}
-
-		// Add the message to the block
-		blockBuilder.AddMessage(segment)
-		if recordingbuilder != nil {
-			recordingbuilder.AddMessage(segment)
-		}
-
-		if msg.MustEndBlock {
-			// If this message must end the block, end it now
-			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
-			if err != nil {
-				return err
-			}
-			log.Info("TransactionStreamer: closed block - must end block", "pos", pos)
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos+1)
-			if err != nil {
-				return err
-			}
-		}
 		pos++
 	}
 
