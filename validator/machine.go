@@ -53,7 +53,7 @@ func (m *ArbitratorMachine) IsRunning() bool {
 	return C.arbitrator_get_status(m.ptr) == C.Running
 }
 
-func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) {
+func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	defer runtime.KeepAlive(m)
 
 	var zero C.uint8_t
@@ -75,4 +75,6 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) {
 	C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
 
 	close(doneEarlyChan)
+
+	return ctx.Err()
 }

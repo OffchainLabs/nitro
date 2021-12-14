@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
@@ -358,7 +359,14 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	var steps uint64
 	for mach.IsRunning() {
 		var count uint64 = 100000000
-		mach.Step(ctx, count)
+		err = mach.Step(ctx, count)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				log.Error("running machine failed", "err", err)
+				panic("Failed to run machine: " + err.Error())
+			}
+			return
+		}
 		steps += count
 		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}

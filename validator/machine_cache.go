@@ -20,17 +20,22 @@ type MachineCache struct {
 	targetNumMachines   int
 }
 
-func NewMachineCache(ctx context.Context, initialMachine *ArbitratorMachine, targetNumMachines int) *MachineCache {
+// `initialMachine` won't be mutated by this function.
+func NewMachineCache(ctx context.Context, initialMachine *ArbitratorMachine, targetNumMachines int) (*MachineCache, error) {
 	cache := &MachineCache{
 		machines:          []*ArbitratorMachine{initialMachine},
 		targetNumMachines: targetNumMachines,
 		firstMachineStep:  initialMachine.GetStepCount(),
 	}
-	cache.populateInitialCache(ctx)
-	return cache
+	err := cache.populateInitialCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return cache, nil
 }
 
 // `endSteps` should be the *total* step count at which the cache ends, not the number of steps from `initialMachine` to the end.
+// `initialMachine` may be mutated by this function.
 func NewMachineCacheWithEndSteps(ctx context.Context, initialMachine *ArbitratorMachine, targetNumMachines int, endSteps uint64) (*MachineCache, error) {
 	startSteps := initialMachine.GetStepCount()
 	if endSteps < startSteps {
@@ -46,15 +51,18 @@ func NewMachineCacheWithEndSteps(ctx context.Context, initialMachine *Arbitrator
 		if !initialMachine.IsRunning() {
 			break
 		}
-		initialMachine.Step(ctx, cache.machineStepInterval)
+		err := initialMachine.Step(ctx, cache.machineStepInterval)
+		if err != nil {
+			return nil, err
+		}
 		cache.machines = append(cache.machines, initialMachine.Clone())
 	}
 	return cache, nil
 }
 
-func (c *MachineCache) populateInitialCache(ctx context.Context) {
+func (c *MachineCache) populateInitialCache(ctx context.Context) error {
 	if c.targetNumMachines <= 1 {
-		return
+		return nil
 	}
 	for {
 		nextMachine := c.machines[len(c.machines)-1].Clone()
@@ -75,16 +83,25 @@ func (c *MachineCache) populateInitialCache(ctx context.Context) {
 		}
 		if c.machineStepInterval == 0 {
 			subCtx, cancel := context.WithTimeout(ctx, time.Minute)
-			nextMachine.Step(subCtx, ^uint64(0))
+			err := nextMachine.Step(subCtx, ^uint64(0))
+			if err != nil {
+				cancel()
+				return err
+			}
 			cancel() // frees resources
 			c.machineStepInterval = nextMachine.GetStepCount()
 		} else {
-			nextMachine.Step(ctx, c.machineStepInterval)
+			err := nextMachine.Step(ctx, c.machineStepInterval)
+			if err != nil {
+				return err
+			}
 		}
 		c.machines = append(c.machines, nextMachine)
 	}
+	return nil
 }
 
+// Warning: don't mutate the result of this!
 func (c *MachineCache) getClosestMachine(stepCount uint64) (*ArbitratorMachine, error) {
 	if stepCount < c.firstMachineStep {
 		return nil, errors.Errorf("requested step count %v but cache starts at %v", stepCount, c.firstMachineStep)
@@ -97,6 +114,7 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (*ArbitratorMachine, 
 	}
 }
 
+// Gets a machine at a given step count, optionally using a passed in machine if that's the best option.
 func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine *ArbitratorMachine, stepCount uint64) (*ArbitratorMachine, error) {
 	closestMachine, err := c.getClosestMachine(stepCount)
 	if err != nil {
@@ -107,6 +125,13 @@ func (c *MachineCache) GetMachineAt(ctx context.Context, haveMachine *Arbitrator
 	} else {
 		closestMachine = closestMachine.Clone()
 	}
-	closestMachine.Step(ctx, stepCount-closestMachine.GetStepCount())
+	err = closestMachine.Step(ctx, stepCount-closestMachine.GetStepCount())
+	if err != nil {
+		return nil, err
+	}
+	gotStepCount := closestMachine.GetStepCount()
+	if gotStepCount > stepCount || (gotStepCount < stepCount && closestMachine.IsRunning()) {
+		return nil, errors.Errorf("internal error: got machine with wrong step count %v looking for step count %v", gotStepCount, stepCount)
+	}
 	return closestMachine, nil
 }
