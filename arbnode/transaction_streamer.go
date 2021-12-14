@@ -475,12 +475,18 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		return err
 	}
 
-	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
-	if lastBlockHeader == nil {
-		return errors.New("last block header not found")
-	}
-
 	for pos < msgCount {
+
+		pos, lastBlockNumber, err = s.getLastBlockPosition()
+		if err != nil {
+			return err
+		}
+
+		lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
+		if lastBlockHeader == nil {
+			return errors.New("last block header not found")
+		}
+
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
 			return nil
@@ -497,19 +503,27 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+		if err != nil {
+			return err
+		}
 
 		recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
+		if err != nil {
+			return err
+		}
 
-		messageCount := msg.DelayedMessagesRead + 1
+		//messageCount := pos + 1
+		pos++
 
 		block, receipts := arbos.ProduceBlock(
 			msg.Message,
-			messageCount,
+			msg.DelayedMessagesRead,
 			lastBlockHeader,
 			statedb,
 			chaincontext,
 		)
-		key := dbKey(messageCountToBlockPrefix, messageCount)
+
+		key := dbKey(messageCountToBlockPrefix, pos)
 		blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
 		if err != nil {
 			return err
@@ -518,6 +532,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		var logs []*types.Log
 		for _, receipt := range receipts {
 			logs = append(logs, receipt.Logs...)
@@ -532,7 +547,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		if s.validator != nil {
 			block, _ = arbos.ProduceBlock(
 				msg.Message,
-				messageCount,
+				msg.DelayedMessagesRead,
 				lastBlockHeader,
 				recordingdb,
 				chaincontext,
@@ -543,8 +558,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			}
 			s.validator.NewBlock(block, preimages, pos, pos)
 		}
-
-		pos++
 	}
 
 	return nil
