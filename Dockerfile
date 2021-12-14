@@ -18,22 +18,31 @@ COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries/
 RUN make build-wasm-libs
 
-FROM rust:1.57-slim-bullseye as prover-builder
+FROM rust:1.57-slim-bullseye as prover-header-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make && \
+    cargo install --force cbindgen
+COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY ./Makefile ./
+COPY arbitrator/prover arbitrator/prover
+RUN make build-prover-header
+
+FROM rust:1.57-slim-bullseye as prover-lib-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make
-RUN cargo install --force cbindgen
-COPY arbitrator/Cargo.lock arbitrator/
-COPY arbitrator/Cargo.toml arbitrator/
+COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 RUN mkdir arbitrator/prover/src && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib
 COPY ./Makefile ./
-COPY arbitrator arbitrator/
+COPY arbitrator/prover arbitrator/prover
 RUN touch -a -m arbitrator/prover/src/lib.rs && \
-    make build-node-rust-deps
+    make build-prover-lib
 
 FROM golang:1.17-bullseye as node-builder
 COPY go.mod go.sum /workspace/
@@ -48,7 +57,8 @@ COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \
 	go run -v solgen/gen.go
 COPY . ./
-COPY --from=prover-builder /workspace/arbitrator/target/env arbitrator/target/env/
+COPY --from=prover-header-builder /workspace/arbitrator/target/env arbitrator/target/env/
+COPY --from=prover-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
 RUN mkdir res && \
     go build -v -o res ./cmd/node ./cmd/deploy && \
     GOOS=js GOARCH=wasm go build -o res/arbitrator/target/env/lib/replay.wasm ./cmd/replay/...

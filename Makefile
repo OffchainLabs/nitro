@@ -51,6 +51,10 @@ build-node-deps: $(go_source) build-node-rust-deps .make/solgen
 
 build-node-rust-deps: $(arbitrator_generated_header) $(arbitrator_prover_lib)
 
+build-prover-header: $(arbitrator_generated_header)
+
+build-prover-lib: $(arbitrator_prover_lib)
+
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
