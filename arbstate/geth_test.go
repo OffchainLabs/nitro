@@ -70,7 +70,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
-		Sender:      addr,
+		Poster:      addr,
 		BlockNumber: common.BigToHash(big.NewInt(864513)),
 		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
 		RequestId:   common.BigToHash(big.NewInt(3)),

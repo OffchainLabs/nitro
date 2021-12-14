@@ -35,7 +35,7 @@ const MaxL2MessageSize = 256 * 1024
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
-	Sender      common.Address `json:"sender"`
+	Poster      common.Address `json:"sender"`
 	BlockNumber common.Hash    `json:"blockNumber"`
 	Timestamp   common.Hash    `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
@@ -56,13 +56,13 @@ type L1IncomingMessage struct {
 }
 
 type L1Info struct {
-	l1Sender      common.Address
+	poster        common.Address
 	l1BlockNumber *big.Int
 	l1Timestamp   *big.Int
 }
 
 func (info *L1Info) Equals(o *L1Info) bool {
-	return info.l1Sender == o.l1Sender &&
+	return info.poster == o.poster &&
 		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
 		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
 }
@@ -80,7 +80,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.AddressTo256ToWriter(msg.Header.Sender, wr); err != nil {
+	if err := util.AddressTo256ToWriter(msg.Header.Poster, wr); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +113,7 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 
 func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
 	return (header.Kind == other.Kind) &&
-		(header.Sender.Hash().Big().Cmp(other.Sender.Hash().Big()) == 0) &&
+		(header.Poster.Hash().Big().Cmp(other.Poster.Hash().Big()) == 0) &&
 		(header.BlockNumber.Big().Cmp(other.BlockNumber.Big()) == 0) &&
 		(header.Timestamp.Big().Cmp(other.Timestamp.Big()) == 0) &&
 		(header.RequestId.Big().Cmp(other.RequestId.Big()) == 0) &&
@@ -177,7 +177,7 @@ func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (Message
 	}
 	return MessageSegment{
 		L1Info: L1Info{
-			l1Sender:      msg.Header.Sender,
+			poster:        msg.Header.Poster,
 			l1BlockNumber: msg.Header.BlockNumber.Big(),
 			l1Timestamp:   msg.Header.Timestamp.Big(),
 		},
@@ -193,7 +193,7 @@ func (msg *L1IncomingMessage) TypeSpecificParse(chainId *big.Int) (types.Transac
 	}
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Sender, msg.Header.RequestId, 0)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
 	case L1MessageType_SetChainParams:
 		panic("unimplemented")
 	case L1MessageType_EndOfBlock:
@@ -232,7 +232,7 @@ const (
 	L2MessageKind_BrotliCompressed = 9
 )
 
-func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -240,13 +240,13 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
-		tx, err := parseUnsignedTx(rd, l1Sender, requestId, true)
+		tx, err := parseUnsignedTx(rd, poster, requestId, true)
 		if err != nil {
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
-		tx, err := parseUnsignedTx(rd, l1Sender, requestId, false)
+		tx, err := parseUnsignedTx(rd, poster, requestId, false)
 		if err != nil {
 			return nil, err
 		}
@@ -268,7 +268,7 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
 			var nextRequestId common.Hash
 			copy(nextRequestId[:], nestedRequestIdSlice)
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), l1Sender, nextRequestId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, nextRequestId, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -296,14 +296,14 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 			return nil, errors.New("can only compress top level batch")
 		}
 		reader := io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize)
-		return parseL2Message(reader, l1Sender, requestId, depth+1)
+		return parseL2Message(reader, poster, requestId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, nil
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
+func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
 	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -347,7 +347,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 	if includesNonce {
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:  nil,
-			From:     util.RemapL1Address(l1Sender),
+			From:     util.RemapL1Address(poster),
 			Nonce:    nonce,
 			GasPrice: gasPrice.Big(),
 			Gas:      gasLimit.Big().Uint64(),
@@ -359,7 +359,7 @@ func parseUnsignedTx(rd io.Reader, l1Sender common.Address, requestId common.Has
 		inner = &types.ArbitrumContractTx{
 			ChainId:   nil,
 			RequestId: requestId,
-			From:      util.RemapL1Address(l1Sender),
+			From:      util.RemapL1Address(poster),
 			GasPrice:  gasPrice.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
@@ -379,7 +379,7 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: header.RequestId,
-		To:          header.Sender,
+		To:          header.Poster,
 		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil

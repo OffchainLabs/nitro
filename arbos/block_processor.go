@@ -52,7 +52,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp.Uint64()
-		coinbase = l1info.l1Sender
+		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
@@ -96,10 +96,10 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	poster := message.Header.Sender
+	poster := message.Header.Poster
 
 	l1Info := &L1Info{
-		l1Sender:      poster,
+		poster:        poster,
 		l1BlockNumber: message.Header.BlockNumber.Big(),
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}

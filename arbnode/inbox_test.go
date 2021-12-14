@@ -136,7 +136,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,
-							Sender: util.InverseRemapL1Address(source),
+							Poster: util.InverseRemapL1Address(source),
 						},
 						L2msg: l2Message,
 					},
