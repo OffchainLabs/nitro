@@ -38,8 +38,8 @@ RUN mkdir -p solgen/go/ && \
 	go run -v solgen/gen.go
 COPY . ./
 COPY --from=arbitrator-builder /workspace/arbitrator/target/env arbitrator/target/env/
-RUN go build -v ./cmd/node
-
+RUN go build -v -o bin ./cmd/node ./cmd/deploy
+#
 FROM debian:bullseye-slim
-COPY --from=node-builder /workspace/node .
+COPY --from=node-builder /workspace/bin .
 ENTRYPOINT [ "./node" ]
