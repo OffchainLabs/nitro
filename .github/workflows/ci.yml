@@ -31,6 +31,18 @@ jobs:
         with:
           go-version: 1.17.x
 
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build arbitrator
+        run: |
+          cd arbitrator
+          make build-env
+
       - name: Cache Build Products
         uses: actions/cache@v2
         with:
@@ -74,6 +86,18 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: 1.17.x
+
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Build arbitrator
+        run: |
+          cd arbitrator
+          make build-env
 
       - name: Cache Build Products
         uses: actions/cache@v2

@@ -7,7 +7,19 @@
 
 #include "textflag.h"
 
-TEXT ·getLastBlockHash(SB), NOSPLIT, $0
+TEXT ·getGlobalStateBytes32(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·setGlobalStateBytes32(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·getGlobalStateU64(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·setGlobalStateU64(SB), NOSPLIT, $0
   CallImport
   RET
 
@@ -19,26 +31,6 @@ TEXT ·readDelayedInboxMessage(SB), NOSPLIT, $0
   CallImport
   RET
 
-TEXT ·advanceInboxMessage(SB), NOSPLIT, $0
-  CallImport
-  RET
-
 TEXT ·resolvePreImage(SB), NOSPLIT, $0
-  CallImport
-  RET
-
-TEXT ·setLastBlockHash(SB), NOSPLIT, $0
-  CallImport
-  RET
-
-TEXT ·getPositionWithinMessage(SB), NOSPLIT, $0
-  CallImport
-  RET
-
-TEXT ·setPositionWithinMessage(SB), NOSPLIT, $0
-  CallImport
-  RET
-
-TEXT ·getInboxPosition(SB), NOSPLIT, $0
   CallImport
   RET

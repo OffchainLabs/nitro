@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -46,11 +45,7 @@ type InboxReader struct {
 	client         L1Interface
 }
 
-func NewInboxReader(rawDb ethdb.Database, txStreamer *TransactionStreamer, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
-	tracker, err := NewInboxTracker(rawDb, txStreamer)
-	if err != nil {
-		return nil, err
-	}
+func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,

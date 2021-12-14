@@ -7,12 +7,10 @@
 
 package wavmio
 
-func getLastBlockHash(output []byte)
-func readInboxMessage(offset uint32, output []byte) uint32
+func getGlobalStateBytes32(idx uint64, output []byte)
+func setGlobalStateBytes32(idx uint64, val []byte)
+func getGlobalStateU64(idx uint64) uint64
+func setGlobalStateU64(idx uint64, val uint64)
+func readInboxMessage(msgNum uint64, offset uint32, output []byte) uint32
 func readDelayedInboxMessage(seqNum uint64, offset uint32, output []byte) uint32
-func advanceInboxMessage()
 func resolvePreImage(hash []byte, offset uint32, output []byte) uint32
-func setLastBlockHash([]byte)
-func getPositionWithinMessage() uint64
-func setPositionWithinMessage(pos uint64)
-func getInboxPosition() uint64
