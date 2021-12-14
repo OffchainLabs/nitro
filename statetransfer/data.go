@@ -45,4 +45,3 @@ type AccountInitAggregatorInfo struct {
 	FeeCollector common.Address
 	BaseFeeL1Gas *big.Int
 }
-

@@ -9,7 +9,6 @@ import (
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-
 const SampleRate = 0.00001
 
 func main() {

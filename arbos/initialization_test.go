@@ -20,11 +20,11 @@ import (
 func TestJsonMarshalUnmarshal(t *testing.T) {
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
-			[]common.Address{pseudorandomAddressForTesting(nil, 0)},
-			[]common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
-			pseudorandomAddressForTesting(nil, 3),
-			[]statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
-			[]statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
+			AddressTableContents: []common.Address{pseudorandomAddressForTesting(nil, 0)},
+			SendPartials:         []common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
+			DefaultAggregator:    pseudorandomAddressForTesting(nil, 3),
+			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
+			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
 		},
 		t,
 	)
@@ -86,13 +86,13 @@ func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) statetrans
 	newSalt := pseudorandomHashForTesting(salt, x)
 	salt = &newSalt
 	return statetransfer.InitializationDataForRetryable{
-		pseudorandomHashForTesting(salt, 0),
-		pseudorandomUint64ForTesting(salt, 1),
-		pseudorandomAddressForTesting(salt, 2),
-		pseudorandomAddressForTesting(salt, 3),
-		pseudorandomHashForTesting(salt, 4).Big(),
-		pseudorandomAddressForTesting(salt, 5),
-		pseudorandomDataForTesting(salt, 6, 256),
+		Id:          pseudorandomHashForTesting(salt, 0),
+		Timeout:     pseudorandomUint64ForTesting(salt, 1),
+		From:        pseudorandomAddressForTesting(salt, 2),
+		To:          pseudorandomAddressForTesting(salt, 3),
+		Callvalue:   pseudorandomHashForTesting(salt, 4).Big(),
+		Beneficiary: pseudorandomAddressForTesting(salt, 5),
+		Calldata:    pseudorandomDataForTesting(salt, 6, 256),
 	}
 }
 
@@ -101,18 +101,18 @@ func pseudorandomAccountInitInfoForTesting(salt *common.Hash, x uint64) statetra
 	salt = &newSalt
 	aggToPay := pseudorandomAddressForTesting(salt, 7)
 	return statetransfer.AccountInitializationInfo{
-		pseudorandomAddressForTesting(salt, 0),
-		pseudorandomUint64ForTesting(salt, 1),
-		pseudorandomHashForTesting(salt, 2).Big(),
-		&statetransfer.AccountInitContractInfo{
-			pseudorandomDataForTesting(salt, 3, 256),
-			pseudorandomHashHashMapForTesting(salt, 4, 16),
+		Addr:       pseudorandomAddressForTesting(salt, 0),
+		Nonce:      pseudorandomUint64ForTesting(salt, 1),
+		EthBalance: pseudorandomHashForTesting(salt, 2).Big(),
+		ContractInfo: &statetransfer.AccountInitContractInfo{
+			Code:            pseudorandomDataForTesting(salt, 3, 256),
+			ContractStorage: pseudorandomHashHashMapForTesting(salt, 4, 16),
 		},
-		&statetransfer.AccountInitAggregatorInfo{
-			pseudorandomAddressForTesting(salt, 5),
-			pseudorandomHashForTesting(salt, 6).Big(),
+		AggregatorInfo: &statetransfer.AccountInitAggregatorInfo{
+			FeeCollector: pseudorandomAddressForTesting(salt, 5),
+			BaseFeeL1Gas: pseudorandomHashForTesting(salt, 6).Big(),
 		},
-		&aggToPay,
+		AggregatorToPay: &aggToPay,
 	}
 }
 

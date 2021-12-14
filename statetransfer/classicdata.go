@@ -26,6 +26,9 @@ func GetDataFromClassicAsJson(maybeUrl *string, sampleRate *float64) ([]byte, er
 func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializationInfo, error) {
 	ctx := context.Background()
 	client, err := openClassicClient(maybeUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	callopts := &bind.CallOpts{
 		Pending:     false,
@@ -65,6 +68,9 @@ func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializa
 	}
 
 	classicArbRetryableTx, err := openClassicArbRetryableTx(client)
+	if err != nil {
+		return nil, err
+	}
 	retryables, err := getRetryables(classicArbRetryableTx, callopts)
 	if err != nil {
 		return nil, err
@@ -284,27 +290,27 @@ func getRetryables(caller *classicgen.ArbRetryableTxCaller, callopts *bind.CallO
 func getRetryable(rd io.Reader) (InitializationDataForRetryable, error) {
 	txId, err := util.HashFromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	sender, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	destination, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	beneficiary, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	expiryTimeHash, err := util.HashFromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	expiryTimeBig := expiryTimeHash.Big()
 	if !expiryTimeBig.IsUint64() {
@@ -312,7 +318,7 @@ func getRetryable(rd io.Reader) (InitializationDataForRetryable, error) {
 	}
 	calldataSizeHash, err := util.HashFromReader(rd)
 	if err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 	calldataSizeBig := calldataSizeHash.Big()
 	if !calldataSizeBig.IsUint64() {
@@ -320,16 +326,16 @@ func getRetryable(rd io.Reader) (InitializationDataForRetryable, error) {
 	}
 	calldata := make([]byte, calldataSizeBig.Uint64())
 	if _, err = rd.Read(calldata); err != nil {
-		return InitializationDataForRetryable{}, nil
+		return InitializationDataForRetryable{}, err
 	}
 
 	return InitializationDataForRetryable{
-		Id:        txId,
-		Timeout:   expiryTimeBig.Uint64(),
-		From:      sender,
-		To:        destination,
-		Callvalue: callvalue.Big(),
+		Id:          txId,
+		Timeout:     expiryTimeBig.Uint64(),
+		From:        sender,
+		To:          destination,
+		Callvalue:   callvalue.Big(),
 		Beneficiary: beneficiary,
-		Calldata:  calldata,
+		Calldata:    calldata,
 	}, nil
 }
