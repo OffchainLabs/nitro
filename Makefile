@@ -53,6 +53,8 @@ build-node-rust-deps: $(arbitrator_generated_header) $(arbitrator_prover_lib)
 
 build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 
+build-wasm-libs: $(arbitrator_wasm_libs)
+
 contracts: .make/solgen
 	@printf $(done)
 

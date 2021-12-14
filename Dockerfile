@@ -7,7 +7,18 @@ RUN cd solgen && yarn
 COPY solgen solgen/
 RUN cd solgen && yarn build
 
-FROM rust:1.57-slim-bullseye as arbitrator-builder
+FROM rust:1.57-slim-bullseye as wasm-lib-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make clang lld && \
+    rustup target add wasm32-unknown-unknown && \
+    rustup target add wasm32-wasi
+COPY ./Makefile ./
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries/
+RUN make build-wasm-libs
+
+FROM rust:1.57-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -37,9 +48,12 @@ COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \
 	go run -v solgen/gen.go
 COPY . ./
-COPY --from=arbitrator-builder /workspace/arbitrator/target/env arbitrator/target/env/
-RUN go build -v -o bin ./cmd/node ./cmd/deploy
-#
+COPY --from=prover-builder /workspace/arbitrator/target/env arbitrator/target/env/
+RUN mkdir res && \
+    go build -v -o res ./cmd/node ./cmd/deploy && \
+    GOOS=js GOARCH=wasm go build -o res/arbitrator/target/env/lib/replay.wasm ./cmd/replay/...
+
 FROM debian:bullseye-slim
-COPY --from=node-builder /workspace/bin .
+COPY --from=node-builder /workspace/res .
+COPY --from=wasm-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
 ENTRYPOINT [ "./node" ]
