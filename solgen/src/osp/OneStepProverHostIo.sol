@@ -120,22 +120,35 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 leafContents;
         MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-            mod.moduleMemory,
-            leafIdx,
-            proof,
-            proofOffset
-        );
+            (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
+                mod.moduleMemory,
+                leafIdx,
+                proof,
+                proofOffset
+            );
 
-        bytes memory preimage = proof[proofOffset:];
-        require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
+        bytes memory extracted;
+        uint8 proofType = uint8(proof[proofOffset]);
+        proofOffset++;
+        if (proofType == 0) {
+            bytes calldata preimage = proof[proofOffset:];
+            require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
 
-        uint32 i = 0;
-        for (; i < 32 && preimageOffset + i < preimage.length; i++) {
+            uint256 preimageEnd = preimageOffset + 32;
+            if (preimageEnd > preimage.length) {
+                preimageEnd = preimage.length;
+            }
+            extracted = preimage[preimageOffset:preimageEnd];
+        } else {
+            // TODO: support proving via an authenticated contract
+            revert("UNKNOWN_PREIMAGE_PROOF");
+        }
+
+        for (uint256 i = 0; i < extracted.length; i++) {
             leafContents = setLeafByte(
                 leafContents,
                 i,
-                uint8(preimage[preimageOffset + i])
+                uint8(extracted[i])
             );
         }
 
@@ -145,7 +158,7 @@ contract OneStepProverHostIo is IOneStepProver {
             leafContents
         );
 
-        ValueStacks.push(mach.valueStack, Values.newI32(i));
+        ValueStacks.push(mach.valueStack, Values.newI32(uint32(extracted.length)));
     }
 
     function validateSequencerInbox(uint64 msgIndex, bytes calldata message)
