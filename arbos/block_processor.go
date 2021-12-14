@@ -270,6 +270,126 @@ func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block,
 	return block, receipts, b.statedb
 }
 
+func ProduceBlock(
+	message *L1IncomingMessage,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+) (*types.Block, types.Receipts) {
+
+	txes, err := message.TypeSpecificParse(ChainConfig.ChainID)
+	if err != nil {
+		log.Warn("error parsing incoming message", "err", err)
+		txes = types.Transactions{}
+	}
+
+	poster := message.Header.Sender
+
+	l1Info := &L1Info{
+		l1Sender:      poster,
+		l1BlockNumber: message.Header.BlockNumber.Big(),
+		l1Timestamp:   message.Header.Timestamp.Big(),
+	}
+
+	header := createNewHeader(lastBlockHeader, l1Info)
+	signer := types.MakeSigner(ChainConfig, header.Number)
+
+	complete := types.Transactions{}
+	receipts := types.Receipts{}
+	gasLeft := PerBlockGasLimit
+
+	for _, tx := range txes {
+
+		sender, err := signer.Sender(tx)
+		if err != nil {
+			continue
+		}
+
+		aggregator := &poster
+
+		if !isAggregated(*aggregator, sender) {
+			aggregator = nil
+		}
+
+		pricing := OpenArbosState(statedb).L1PricingState()
+		dataGas := pricing.GetL1Charges(sender, aggregator, tx.Data()).Uint64()
+
+		if dataGas > tx.Gas() {
+			// this txn is going to be rejected later
+			dataGas = 0
+		}
+
+		computeGas := tx.Gas() - dataGas
+
+		if computeGas > gasLeft {
+			continue
+		}
+
+		gasLeft -= computeGas
+
+		snap := statedb.Snapshot()
+		statedb.Prepare(tx.Hash(), len(txes))
+
+		// We've checked that the block can fit this message, so we'll use a pool that won't run out
+		gethGas := core.GasPool(1 << 63)
+		gasPool := gethGas
+
+		receipt, err := core.ApplyTransaction(
+			ChainConfig,
+			chainContext,
+			&header.Coinbase,
+			&gasPool,
+			statedb,
+			header,
+			tx,
+			&header.GasUsed,
+			vm.Config{},
+		)
+		if err != nil {
+			// Ignore this transaction if it's invalid under our more lenient state transaction function
+			statedb.RevertToSnapshot(snap)
+			continue
+		}
+
+		if gasPool > gethGas {
+			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
+			panic("ApplyTransaction() gave back " + delta + " gas")
+		}
+
+		gasUsed := gethGas.Gas() - gasPool.Gas()
+
+		if gasUsed > computeGas {
+			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		}
+
+		complete = append(complete, tx)
+		receipts = append(receipts, receipt)
+		gasLeft -= gasUsed
+	}
+
+	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
+	header.Root = statedb.IntermediateRoot(true)
+
+	// Touch up the block hashes in receipts
+	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
+	blockHash := tmpBlock.Hash()
+
+	for _, receipt := range receipts {
+		receipt.BlockHash = blockHash
+		for _, txLog := range receipt.Logs {
+			txLog.BlockHash = blockHash
+		}
+	}
+
+	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
+
+	FinalizeBlock(header, complete, receipts, statedb)
+
+	return block, receipts
+}
+
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
 		state := OpenArbosState(statedb)

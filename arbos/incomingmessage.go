@@ -171,7 +171,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 }
 
 func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (MessageSegment, error) {
-	txes, err := msg.typeSpecificParse(chainId)
+	txes, err := msg.TypeSpecificParse(chainId)
 	if err != nil {
 		return MessageSegment{}, err
 	}
@@ -186,7 +186,7 @@ func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (Message
 	}, nil
 }
 
-func (msg *L1IncomingMessage) typeSpecificParse(chainId *big.Int) (types.Transactions, error) {
+func (msg *L1IncomingMessage) TypeSpecificParse(chainId *big.Int) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")
