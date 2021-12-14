@@ -13,7 +13,7 @@ func GetLastBlockHash() (hash common.Hash) {
 	return common.Hash{} // needed to avoid linter problems
 }
 
-func ReadInboxMessage() []byte {
+func ReadInboxMessage(msgNum uint64) []byte {
 	panic("not on wavm platform")
 }
 

@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/validator"
 )
 
 type RollupAddresses struct {
@@ -100,10 +101,12 @@ type NodeConfig struct {
 	BatchPoster            bool
 	BatchPosterConfig      BatchPosterConfig
 	ForwardingTarget       string // "" if not forwarding
+	BlockValidator         bool
+	BlockValidatorConfig   validator.BlockValidatorConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, ""}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, ""}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -116,6 +119,7 @@ type Node struct {
 	InboxTracker     *InboxTracker
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
+	BlockValidator   *validator.BlockValidator
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
@@ -147,7 +151,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil}, nil
 	}
 
 	if deployInfo == nil {
@@ -161,14 +165,22 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(chainDb, txStreamer, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReaderConfig))
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer)
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker := inboxReader.Tracker()
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReaderConfig))
+	if err != nil {
+		return nil, err
+	}
+
+	var blockValidator *validator.BlockValidator
+	if config.BlockValidator {
+		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, &config.BlockValidatorConfig)
+	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -182,7 +194,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -214,6 +226,9 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
+	}
+	if n.BlockValidator != nil {
+		n.BlockValidator.Start(ctx)
 	}
 	return nil
 }

@@ -12,6 +12,10 @@ import "github.com/ethereum/go-ethereum/common"
 const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
 
+const IDX_LAST_BLOCKHASH = 0
+const IDX_INBOX_POSITION = 0
+const IDX_POSITION_WITHIN_MESSAGE = 1
+
 func readBuffer(f func(uint32, []byte) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
 	offset := 0
@@ -29,13 +33,13 @@ func readBuffer(f func(uint32, []byte) uint32) []byte {
 }
 
 func GetLastBlockHash() (hash common.Hash) {
-	getLastBlockHash(hash[:])
+	getGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
 	return
 }
 
-func ReadInboxMessage() []byte {
+func ReadInboxMessage(msgNum uint64) []byte {
 	return readBuffer(func(offset uint32, buf []byte) uint32 {
-		return readInboxMessage(offset, buf)
+		return readInboxMessage(msgNum, offset, buf)
 	})
 }
 
@@ -46,7 +50,8 @@ func ReadDelayedInboxMessage(seqNum uint64) []byte {
 }
 
 func AdvanceInboxMessage() {
-	advanceInboxMessage()
+	pos := getGlobalStateU64(IDX_INBOX_POSITION)
+	setGlobalStateU64(IDX_INBOX_POSITION, pos+1)
 }
 
 func ResolvePreImage(hash common.Hash) []byte {
@@ -56,17 +61,17 @@ func ResolvePreImage(hash common.Hash) []byte {
 }
 
 func SetLastBlockHash(hash [32]byte) {
-	setLastBlockHash(hash[:])
+	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
 }
 
 func GetPositionWithinMessage() uint64 {
-	return getPositionWithinMessage()
+	return getGlobalStateU64(IDX_POSITION_WITHIN_MESSAGE)
 }
 
 func SetPositionWithinMessage(pos uint64) {
-	setPositionWithinMessage(pos)
+	setGlobalStateU64(IDX_POSITION_WITHIN_MESSAGE, pos)
 }
 
 func GetInboxPosition() uint64 {
-	return getInboxPosition()
+	return getGlobalStateU64(IDX_INBOX_POSITION)
 }
