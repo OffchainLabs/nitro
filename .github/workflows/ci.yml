@@ -110,6 +110,9 @@ jobs:
         with:
           test-results: test-output-withrace.json
 
+      - name: Build replay-env
+        run: make build-replay-env -j
+
       - name: run tests without race detection
         if: always()
         run: gotestsum --format short-verbose --jsonfile test-output.json -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...
