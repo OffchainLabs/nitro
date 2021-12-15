@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -164,6 +165,8 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	cZeroPreimages := C.CMultipleByteArrays{}
 	cZeroPreimages.len = 0
 	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages, (*[0]byte)(C.InboxReaderWrapper))
+	FreeCStringList(cModuleList, len(moduleList))
+	C.free(unsafe.Pointer(cBinPath))
 	if validatorStatic.initialized {
 		panic("creating block validator when one exists")
 	}
@@ -354,6 +357,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 
 	mach := v.baseMachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
+	C.free(unsafe.Pointer(c_preimages.ptr))
 	C.arbitrator_set_inbox_reader_context(mach.ptr, C.uint64_t(start.Pos))
 	mach.SetGlobalState(gsStart)
 	var steps uint64

@@ -67,7 +67,6 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 		select {
 		case <-ctx.Done():
 			C.atomic_u8_store(conditionByte, 1)
-			close(doneEarlyChan)
 		case <-doneEarlyChan:
 		}
 	})()
