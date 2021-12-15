@@ -1,4 +1,4 @@
-pragma solidity >=0.4.21 <0.8.0;
+pragma solidity >=0.4.21 <0.9.0;
 
 interface ArbosTest {
     function installAccount(address addr, bool isEOA, uint balance, uint nonce, bytes calldata code, bytes calldata initStorage) external;

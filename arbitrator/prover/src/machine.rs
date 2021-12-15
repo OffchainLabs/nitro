@@ -1945,6 +1945,7 @@ impl Machine {
                             Some(b) => b,
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
+                        data.push(0); // preimage proof type
                         data.extend(preimage);
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = self

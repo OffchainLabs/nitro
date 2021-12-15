@@ -1,4 +1,4 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
@@ -11,7 +11,7 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "./BridgeStub.sol";
 
-contract Inbox is IInbox {
+contract InboxStub is IInbox {
     uint8 internal constant ETH_TRANSFER = 0;
     uint8 internal constant L2_MSG = 3;
     uint8 internal constant L1MessageType_L2FundedByL1 = 7;
@@ -67,5 +67,62 @@ contract Inbox is IInbox {
         bytes32 messageDataHash
     ) internal returns (uint256) {
         return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+    }
+
+    function sendUnsignedTransaction(
+        uint256,
+        uint256,
+        uint256,
+        address,
+        uint256,
+        bytes calldata
+    ) external override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function sendContractTransaction(
+        uint256,
+        uint256,
+        address,
+        uint256,
+        bytes calldata
+    ) external override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function sendL1FundedUnsignedTransaction(
+        uint256,
+        uint256,
+        uint256,
+        address,
+        bytes calldata
+    ) external payable override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function sendL1FundedContractTransaction(
+        uint256,
+        uint256,
+        address,
+        bytes calldata
+    ) external payable override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function createRetryableTicket(
+        address,
+        uint256,
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) external payable override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function depositEth(uint256) external payable override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
     }
 }

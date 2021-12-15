@@ -1,4 +1,4 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
@@ -9,7 +9,7 @@ import "./InboxStub.sol";
 
 import "./IBridge.sol";
 
-contract Bridge is IBridge {
+contract BridgeStub is IBridge {
     struct InOutInfo {
         uint256 index;
         bool allowed;

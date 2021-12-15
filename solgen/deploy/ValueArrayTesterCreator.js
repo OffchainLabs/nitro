@@ -3,11 +3,11 @@ module.exports = async (hre) => {
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
 
-  await deploy("ValueStacks", {
+  await deploy("ValueArrayTester", {
     from: deployer,
     args: [],
   });
 };
 
-module.exports.tags = ["ValueStacks", "live", "test"];
-module.exports.dependencies = ["Values", "ValueArrays"];
+module.exports.tags = ["ValueArrayTester", "test"];
+module.exports.dependencies = [];

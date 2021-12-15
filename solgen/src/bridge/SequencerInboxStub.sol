@@ -9,7 +9,7 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "./ISequencerInbox.sol";
 
-contract SequencerInbox is ISequencerInbox {
+contract SequencerInboxStub is ISequencerInbox {
 	bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 

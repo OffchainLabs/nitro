@@ -3,12 +3,12 @@ module.exports = async (hre) => {
   const { deploy } = deployments;
   const { deployer } = await getNamedAccounts();
 
-  await deploy("OneStepProver0", {
+  await deploy("OneStepProverMemory", {
     from: deployer,
     args: [],
   });
 };
 
-module.exports.tags = ["OneStepProver0", "live", "test"];
-module.exports.dependencies = ["Machines"];
+module.exports.tags = ["OneStepProverMemory", "live", "test"];
+module.exports.dependencies = [];
 
