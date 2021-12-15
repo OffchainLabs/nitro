@@ -34,12 +34,12 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 type L1IncomingMessageHeader struct {
-	Kind        uint8
-	Sender      common.Address
-	BlockNumber common.Hash
-	Timestamp   common.Hash
-	RequestId   common.Hash
-	GasPriceL1  common.Hash
+	Kind        uint8          `json:"kind"`
+	Sender      common.Address `json:"sender"`
+	BlockNumber common.Hash    `json:"blockNumber"`
+	Timestamp   common.Hash    `json:"timestamp"`
+	RequestId   common.Hash    `json:"requestId"`
+	GasPriceL1  common.Hash    `json:"gasPriceL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -51,8 +51,8 @@ func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
 }
 
 type L1IncomingMessage struct {
-	Header *L1IncomingMessageHeader
-	L2msg  []byte
+	Header *L1IncomingMessageHeader `json:"header"`
+	L2msg  []byte                   `json:"l2Msg"`
 }
 
 type L1Info struct {

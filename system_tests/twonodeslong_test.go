@@ -40,11 +40,17 @@ func TestTwoNodesLong(t *testing.T) {
 	l2info, node1, l1info, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
 	l2info.GenerateAccount("DirectReceiver")
+
+	l2info.GenerateAccount("ErrorTxSender")
+
+	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
+		l2info.PrepareTx("Faucet", "ErrorTxSender", 30000, big.NewInt(params.InitialBaseFee*30000), nil),
+	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
@@ -99,6 +105,12 @@ func TestTwoNodesLong(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		// create bad tx on delayed inbox
+		l2info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
+		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+			WrapL2ForDelayed(t, l2info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), l1info, "User", 100000),
+		})
+
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
 			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
@@ -153,5 +165,21 @@ func TestTwoNodesLong(t *testing.T) {
 		delayedFaucetBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		t.Fatal("Unexpected balance")
+	}
+	if nodeB.BlockValidator != nil {
+		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testDeadLine, deadlineExist := t.Deadline()
+		var timeout time.Duration
+		if deadlineExist {
+			timeout = time.Until(testDeadLine) - (time.Second * 10)
+		} else {
+			timeout = time.Hour * 12
+		}
+		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
+			t.Fatal("did not validate all blocks")
+		}
 	}
 }
