@@ -12,12 +12,28 @@ import "C"
 import (
 	"context"
 	"runtime"
+	"unsafe"
+
+	"github.com/ethereum/go-ethereum/common"
 )
+
+type MachineInterface interface {
+	CloneMachineInterface() MachineInterface
+	GetStepCount() uint64
+	IsRunning() bool
+	ValidForStep(uint64) bool
+	Step(context.Context, uint64) error
+	Hash() common.Hash
+	ProveNextStep() []byte
+}
 
 // Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
 	ptr *C.struct_Machine
 }
+
+// Assert that ArbitratorMachine implements MachineInterface
+var _ MachineInterface = &ArbitratorMachine{}
 
 func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
@@ -32,6 +48,10 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
 	return machineFromPointer(C.arbitrator_clone_machine(m.ptr))
+}
+
+func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
+	return m.Clone()
 }
 
 func (m *ArbitratorMachine) SetGlobalState(globalState C.struct_GlobalState) {
@@ -51,6 +71,18 @@ func (m *ArbitratorMachine) GetStepCount() uint64 {
 func (m *ArbitratorMachine) IsRunning() bool {
 	defer runtime.KeepAlive(m)
 	return C.arbitrator_get_status(m.ptr) == C.Running
+}
+
+func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
+	haveStep := m.GetStepCount()
+	if haveStep > requestedStep {
+		return false
+	} else if haveStep == requestedStep {
+		return true
+	} else { // haveStep < requestedStep
+		// if the machine is halted, its state persists for future steps
+		return !m.IsRunning()
+	}
 }
 
 func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
@@ -76,4 +108,23 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	close(doneEarlyChan)
 
 	return ctx.Err()
+}
+
+func (m *ArbitratorMachine) Hash() (hash common.Hash) {
+	defer runtime.KeepAlive(m)
+	bytes := C.arbitrator_hash(m.ptr)
+	for i, b := range bytes.bytes {
+		hash[i] = byte(b)
+	}
+	return
+}
+
+func (m *ArbitratorMachine) ProveNextStep() []byte {
+	defer runtime.KeepAlive(m)
+
+	rustProof := C.arbitrator_gen_proof(m.ptr)
+	proofBytes := C.GoBytes(unsafe.Pointer(rustProof.ptr), C.int(rustProof.len))
+	C.arbitrator_free_proof(rustProof)
+
+	return proofBytes
 }

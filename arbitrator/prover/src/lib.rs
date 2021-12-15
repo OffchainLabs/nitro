@@ -18,7 +18,7 @@ use fnv::FnvHashMap as HashMap;
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     fs::File,
     io::Read,
     os::raw::c_char,
@@ -50,6 +50,14 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
 pub struct CByteArray {
     pub ptr: *const u8,
     pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustByteArray {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub capacity: usize,
 }
 
 #[repr(C)]
@@ -242,14 +250,18 @@ pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> *mut c_char {
-    let proof = (*mach).serialize_proof();
-    CString::new(hex::encode(proof))
-        .expect("CString new failed")
-        .into_raw()
+pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArray {
+    let mut proof = (*mach).serialize_proof();
+    let ret = RustByteArray {
+        ptr: proof.as_mut_ptr(),
+        len: proof.len(),
+        capacity: proof.capacity(),
+    };
+    std::mem::forget(proof);
+    ret
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_free_proof(proof: *mut c_char) {
-    drop(CString::from_raw(proof));
+pub unsafe extern "C" fn arbitrator_free_proof(proof: RustByteArray) {
+    drop(Vec::from_raw_parts(proof.ptr, proof.len, proof.capacity))
 }

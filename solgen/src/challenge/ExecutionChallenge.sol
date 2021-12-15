@@ -30,6 +30,7 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
     event ContinuedExecutionProven();
 
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
+    uint256 constant CHALLENGE_START_LENGTH = ~uint64(0);
 
     string constant NO_TURN = "NO_TURN";
 
@@ -51,7 +52,7 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
         IOneStepProofEntry osp_,
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
-        bytes32 challengeStateHash_,
+        bytes32[2] memory startAndEndHashes,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,
@@ -64,7 +65,10 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
         osp = osp_;
         resultReceiver = resultReceiver_;
         execCtx = execCtx_;
-        challengeStateHash = challengeStateHash_;
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = startAndEndHashes[0];
+        segments[1] = startAndEndHashes[1];
+        challengeStateHash = ChallengeLib.hashChallengeState(0, CHALLENGE_START_LENGTH, segments);
         asserter = asserter_;
         challenger = challenger_;
         asserterTimeLeft = asserterTimeLeft_;
@@ -73,6 +77,12 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
         turn = Turn.CHALLENGER;
 
         emit InitiatedChallenge();
+        emit Bisected(
+            challengeStateHash,
+            0,
+            CHALLENGE_START_LENGTH,
+            segments
+        );
     }
 
     modifier takeTurn() {

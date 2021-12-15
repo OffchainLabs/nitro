@@ -53,7 +53,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
         bytes32 wasmModuleRoot_,
-        bytes32 challengeStateHash_,
+        bytes32[2] memory startAndEndHashes,
+        uint64 numBlocks,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,
@@ -63,7 +64,10 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
         resultReceiver = resultReceiver_;
         execCtx = execCtx_;
         wasmModuleRoot = wasmModuleRoot_;
-        challengeStateHash = challengeStateHash_;
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = startAndEndHashes[0];
+        segments[1] = startAndEndHashes[1];
+        challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
         asserter = asserter_;
         challenger = challenger_;
         asserterTimeLeft = asserterTimeLeft_;
@@ -72,6 +76,12 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
         turn = Turn.CHALLENGER;
 
         emit InitiatedChallenge();
+        emit Bisected(
+            challengeStateHash,
+            0,
+            numBlocks,
+            segments
+        );
     }
 
     modifier takeTurn() {
@@ -132,12 +142,12 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
                 oldSegments,
                 challengePosition
             );
+        require(challengeLength > 1, "TOO_SHORT");
         {
             uint256 expectedDegree = challengeLength;
             if (expectedDegree > MAX_CHALLENGE_DEGREE) {
                 expectedDegree = MAX_CHALLENGE_DEGREE;
             }
-            require(expectedDegree >= 1, "BAD_DEGREE");
             require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
         }
         require(
@@ -232,29 +242,19 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
             require(globalStateHashes[0] == globalStateHashes[1], "ERROR_CHANGE");
         }
 
-        bytes32 execChallengeStateHash;
-        {
-            bytes32 startMachineHash = getStartMachineHash(
-                globalStateHashes[0]
-            );
-            bytes32 endMachineHash = getEndMachineHash(
-                machineStatuses[1],
-                globalStateHashes[1]
-            );
-            bytes32[] memory machineSegments = new bytes32[](2);
-            machineSegments[0] = startMachineHash;
-            machineSegments[1] = endMachineHash;
-            execChallengeStateHash = ChallengeLib.hashChallengeState(
-                0,
-                ~uint64(0), // Constrain max machine steps to max uint64
-                machineSegments
-            );
-        }
+        bytes32[2] memory startAndEndHashes;
+        startAndEndHashes[0] = getStartMachineHash(
+            globalStateHashes[0]
+        );
+        startAndEndHashes[1] = getEndMachineHash(
+            machineStatuses[1],
+            globalStateHashes[1]
+        );
 
         executionChallenge = executionChallengeFactory.createChallenge(
             this,
             execCtx,
-            execChallengeStateHash,
+            startAndEndHashes,
             newAsserter,
             newChallenger,
             newAsserterTimeLeft,

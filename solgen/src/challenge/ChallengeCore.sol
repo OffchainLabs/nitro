@@ -35,5 +35,4 @@ contract ChallengeCore {
             segmentLength += oldSegmentsLength % oldChallengeDegree;
         }
     }
-
 }

@@ -20,7 +20,7 @@ contract ExecutionChallengeFactory is IExecutionChallengeFactory {
     function createChallenge(
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
-        bytes32 challengeStateHash_,
+        bytes32[2] memory startAndEndHashes,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,
@@ -31,7 +31,7 @@ contract ExecutionChallengeFactory is IExecutionChallengeFactory {
             osp,
             resultReceiver_,
             execCtx_,
-            challengeStateHash_,
+            startAndEndHashes,
             asserter_,
             challenger_,
             asserterTimeLeft_,
