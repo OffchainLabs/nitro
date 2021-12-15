@@ -266,8 +266,8 @@ func parseL2Message(rd io.Reader, l1Sender common.Address, requestId common.Hash
 		for {
 			nextMsg, err := util.BytestringFromReader(rd, MaxL2MessageSize)
 			if err != nil {
-				//lint:ignore nilerr an error here means there are no further messages in the batch
-				return segments, nil
+				// an error here means there are no further messages in the batch
+				return segments, nil //nolint:nilerr
 			}
 			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
 			var nextRequestId common.Hash
