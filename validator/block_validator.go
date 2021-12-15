@@ -183,14 +183,14 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	return validator
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, startPos uint64, endPos uint64) {
+func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, pos uint64) {
 	hashlist := v.preimageCache.PourToCache(preimages)
-	validatorStatic.validationEntries.Store(startPos, newValidationEntry(header, hashlist, endPos))
+	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hashlist, pos))
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, startPos uint64, endPos uint64) {
-	go v.prepareBlock(block.Header(), preimages, startPos, endPos)
+func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, pos uint64) {
+	go v.prepareBlock(block.Header(), preimages, pos)
 }
 
 // this func cannot be in a file where the C premable has anything other than declarations
