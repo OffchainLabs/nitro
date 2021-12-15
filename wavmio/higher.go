@@ -32,6 +32,10 @@ func readBuffer(f func(uint32, []byte) uint32) []byte {
 	}
 }
 
+func StubInit() {}
+
+func StubFinal() {}
+
 func GetLastBlockHash() (hash common.Hash) {
 	getGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
 	return

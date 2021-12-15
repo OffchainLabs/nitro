@@ -120,6 +120,8 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 }
 
 func main() {
+	wavmio.StubInit()
+
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
 	lastBlockHash := wavmio.GetLastBlockHash()
@@ -156,4 +158,6 @@ func main() {
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	wavmio.SetLastBlockHash(newBlockHash)
+
+	wavmio.StubFinal()
 }
