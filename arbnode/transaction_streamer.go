@@ -509,17 +509,12 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return err
 		}
 
-		recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
-		if err != nil {
-			return err
-		}
-
 		block, receipts := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
 			lastBlockHeader,
 			statedb,
-			chaincontext,
+			s.bc,
 		)
 
 		// ProduceBlock advances one message
@@ -546,20 +541,28 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		if status == core.SideStatTy {
 			return errors.New("geth rejected block as non-canonical")
 		}
-		if s.validator != nil {
-			block, _ = arbos.ProduceBlock(
-				msg.Message,
-				msg.DelayedMessagesRead,
-				lastBlockHeader,
-				recordingdb,
-				chaincontext,
-			)
-			preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
-			if err != nil {
-				return fmt.Errorf("failed getting records: %w", err)
-			}
-			s.validator.NewBlock(block, preimages, pos)
+
+		if s.validator == nil {
+			continue
 		}
+
+		recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
+		if err != nil {
+			return err
+		}
+
+		block, _ = arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			lastBlockHeader,
+			recordingdb,
+			chaincontext,
+		)
+		preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+		if err != nil {
+			return fmt.Errorf("failed getting records: %w", err)
+		}
+		s.validator.NewBlock(block, preimages, pos)
 	}
 
 	return nil

@@ -107,21 +107,21 @@ type validationEntry struct {
 	BlockHash     common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
-	EndPos        uint64
+	Pos           uint64
 	Running       bool
 	StartBatchNr  uint64
 	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
-func newValidationEntry(header *types.Header, preimages []common.Hash, endPos uint64) *validationEntry {
+func newValidationEntry(header *types.Header, preimages []common.Hash, pos uint64) *validationEntry {
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
-		EndPos:        endPos,
+		Pos:           pos,
 	}
 }
 
@@ -334,8 +334,8 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 		log.Error("validator: validatorStatic not initialized")
 		return
 	}
-	if validationEntry.EndPos != end.Pos {
-		log.Error("validator: validate got bad args", "block.end", validationEntry.EndPos, "end", end.Pos)
+	if validationEntry.Pos != end.Pos {
+		log.Error("validator: validate got bad args", "block.end", validationEntry.Pos, "end", end.Pos)
 		return
 	}
 	c_preimages, err := v.preimageCache.PrepareMultByteArrays(validationEntry.Preimages)
@@ -432,13 +432,13 @@ func (v *BlockValidator) sendValidations() {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		idx = v.posToValidate.StupidSearchPos(validationEntry.EndPos)
-		if len(v.posToValidate) <= idx || v.posToValidate[idx].Pos != validationEntry.EndPos {
+		idx = v.posToValidate.StupidSearchPos(validationEntry.Pos)
+		if len(v.posToValidate) <= idx || v.posToValidate[idx].Pos != validationEntry.Pos {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		go v.validate(validationEntry, v.posToValidate[0], v.posToValidate[idx])
-		v.posNextSend = validationEntry.EndPos + 1
+		v.posNextSend = validationEntry.Pos + 1
 		v.posToValidate = v.posToValidate[idx+1:]
 	}
 }
@@ -493,7 +493,7 @@ func (v *BlockValidator) ProgressValidated() {
 			}
 			DestroyCByteArray(cbyte)
 		}
-		v.posNext = validationEntry.EndPos + 1
+		v.posNext = validationEntry.Pos + 1
 		v.blocksValidated = validationEntry.BlockNumber
 		select {
 		case v.progressChan <- v.blocksValidated:
