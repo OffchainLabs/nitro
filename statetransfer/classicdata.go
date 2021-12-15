@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package statetransfer
 
 import (
@@ -96,26 +100,6 @@ func openClassicClient(maybeUrl *string) (*ethclient.Client, error) {
 const ArbAddressTableAsInt = 102
 const ArbosTestAddressAsInt = 105
 const ArbosArbRetryableTxAddressAsInt = 110
-
-func openClassicArbAddressTable(client *ethclient.Client) (*classicgen.ArbAddressTableCaller, error) {
-	return classicgen.NewArbAddressTableCaller(common.BigToAddress(big.NewInt(ArbAddressTableAsInt)), client)
-}
-
-func getAddressTableContents(caller *classicgen.ArbAddressTableCaller, callopts *bind.CallOpts) ([]common.Address, error) {
-	ret := []common.Address{}
-	size, err := caller.Size(callopts)
-	if err != nil {
-		return nil, err
-	}
-	for i := int64(0); i < size.Int64(); i++ {
-		addr, err := caller.LookupIndex(callopts, big.NewInt(i))
-		if err != nil {
-			return nil, err
-		}
-		ret = append(ret, addr)
-	}
-	return ret, nil
-}
 
 func openClassicArbosTest(client *ethclient.Client) (*classicgen.ArbosTestCaller, error) {
 	return classicgen.NewArbosTestCaller(common.BigToAddress(big.NewInt(ArbosTestAddressAsInt)), client)
