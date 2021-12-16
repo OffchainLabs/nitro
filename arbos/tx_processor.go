@@ -21,7 +21,6 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
-	networkFee   *big.Int
 	posterFee    *big.Int
 }
 
@@ -33,7 +32,6 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
-		networkFee:   new(big.Int),
 		posterFee:    new(big.Int),
 	}
 }
@@ -63,7 +61,7 @@ func (p *TxProcessor) InterceptMessage() *core.ExecutionResult {
 	}
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	var gasNeededToStartEVM uint64
 
@@ -85,7 +83,6 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, intrinsicGas uint64)
 		gasNeededToStartEVM = posterCostInL2Gas.Uint64()
 	}
 
-	p.networkFee = new(big.Int).SetUint64(intrinsicGas)
 	p.posterFee = posterCost
 
 	if *gasRemaining < gasNeededToStartEVM {
@@ -110,9 +107,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 		panic("total cost < poster cost")
 	}
 
-	p.networkFee.Add(p.networkFee, computeCost)
-
-	p.stateDB.AddBalance(networkAddress, p.networkFee)
+	p.stateDB.AddBalance(networkAddress, computeCost)
 	p.stateDB.AddBalance(p.blockContext.Coinbase, p.posterFee)
 
 	if p.msg.GasPrice().Sign() > 0 {
