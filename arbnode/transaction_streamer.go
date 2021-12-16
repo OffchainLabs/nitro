@@ -623,6 +623,12 @@ func (s *TransactionStreamer) Initialize() error {
 }
 
 func (s *TransactionStreamer) Start(ctx context.Context) {
+	if s.broadcaster != nil {
+		if err := s.broadcaster.Start(ctx); err != nil {
+			panic("error starting broadcaster")
+		}
+	}
+
 	go (func() {
 		for {
 			err := s.createBlocks(ctx)
