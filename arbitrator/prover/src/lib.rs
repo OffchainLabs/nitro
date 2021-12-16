@@ -203,6 +203,28 @@ pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64, con
     }
 }
 
+/// Like arbitrator_step, but stops early if it hits a host io operation.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condition: *const u8) {
+    let mach = &mut *mach;
+    let condition = &*(condition as *const AtomicU8);
+    while condition.load(atomic::Ordering::Relaxed) == 0 {
+        for _ in 0..1_000_000 {
+            if mach.is_halted() {
+                return;
+            }
+            if mach
+                .get_next_instruction()
+                .map(|i| i.opcode.is_host_io())
+                .unwrap_or(true)
+            {
+                return;
+            }
+            mach.step();
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_get_num_steps(mach: *const Machine) -> u64 {
     (*mach).get_steps()
