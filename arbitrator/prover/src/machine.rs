@@ -1779,6 +1779,10 @@ impl Machine {
                 .expect("Failed to prove module"),
         );
 
+        if self.is_halted() {
+            return data;
+        }
+
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func];

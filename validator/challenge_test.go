@@ -113,7 +113,7 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 	return alloc
 }
 
-func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asserterIsCorrect bool) {
+func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, steps uint64, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlDebug)
 	log.Root().SetHandler(glogger)
@@ -159,7 +159,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asse
 
 	backend.Commit()
 
-	var asserterMachine MachineInterface = NewIncorrectMachine(machine.Clone(), 20)
+	var asserterMachine MachineInterface = NewIncorrectMachine(machine.Clone(), steps)
 	var challengerMachine MachineInterface = machine.Clone()
 	expectedWinner := challenger.From
 	if asserterIsCorrect {
@@ -213,14 +213,23 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asse
 	t.Fatal("challenge timed out without winner")
 }
 
-func TestChallengeToOSP(t *testing.T) {
+var wasmDir string = (func() string {
 	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, false)
+	return path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
+})()
+
+func TestChallengeToOSP(t *testing.T) {
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, false)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
-	_, filename, _, _ := runtime.Caller(0)
-	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, true)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, true)
+}
+
+func TestChallengeToErroredOSP(t *testing.T) {
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, false)
+}
+
+func TestChallengeToFailedErroredOSP(t *testing.T) {
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, true)
 }

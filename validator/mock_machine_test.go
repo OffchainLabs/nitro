@@ -13,6 +13,7 @@ import (
 type IncorrectMachine struct {
 	inner         MachineInterface
 	incorrectStep uint64
+	stepCount     uint64
 }
 
 var _ MachineInterface = &IncorrectMachine{}
@@ -34,15 +35,23 @@ func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
 	return &IncorrectMachine{
 		inner:         m.inner.CloneMachineInterface(),
 		incorrectStep: m.incorrectStep,
+		stepCount:     m.stepCount,
 	}
 }
 
 func (m *IncorrectMachine) GetStepCount() uint64 {
-	return m.inner.GetStepCount()
+	if !m.IsRunning() {
+		endStep := m.incorrectStep
+		if endStep < m.inner.GetStepCount() {
+			endStep = m.inner.GetStepCount()
+		}
+		return endStep
+	}
+	return m.stepCount
 }
 
 func (m *IncorrectMachine) IsRunning() bool {
-	return m.inner.IsRunning()
+	return m.inner.IsRunning() || m.stepCount < m.incorrectStep
 }
 
 func (m *IncorrectMachine) ValidForStep(step uint64) bool {
@@ -50,7 +59,17 @@ func (m *IncorrectMachine) ValidForStep(step uint64) bool {
 }
 
 func (m *IncorrectMachine) Step(ctx context.Context, count uint64) error {
-	return m.inner.Step(ctx, count)
+	err := m.inner.Step(ctx, count)
+	if err != nil {
+		return err
+	}
+	prevStepCount := m.stepCount
+	m.stepCount += count
+	if m.stepCount < prevStepCount {
+		// saturate on overflow instead of wrapping
+		m.stepCount = ^uint64(0)
+	}
+	return nil
 }
 
 func (m *IncorrectMachine) Hash() common.Hash {

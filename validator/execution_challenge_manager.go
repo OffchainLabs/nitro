@@ -96,16 +96,19 @@ func (m *ExecutionChallengeManager) resolveStateHash(ctx context.Context, stateH
 	}
 	state := challengeState{
 		start:       parsedLog.ChallengedSegmentStart,
-		end:         parsedLog.ChallengedSegmentLength,
+		end:         new(big.Int).Add(parsedLog.ChallengedSegmentStart, parsedLog.ChallengedSegmentLength),
 		segments:    make([]challengeSegment, len(parsedLog.ChainHashes)),
 		rawSegments: parsedLog.ChainHashes,
 	}
+	degree := len(parsedLog.ChainHashes) - 1
 	currentPosition := new(big.Int).Set(parsedLog.ChallengedSegmentStart)
-	normalSegmentLength := new(big.Int).Sub(state.end, state.start)
-	normalSegmentLength.Div(normalSegmentLength, big.NewInt(int64(len(parsedLog.ChainHashes))))
+	normalSegmentLength := new(big.Int).Div(parsedLog.ChallengedSegmentLength, big.NewInt(int64(degree)))
 	for i, h := range parsedLog.ChainHashes {
 		hash := common.Hash(h)
 		if i == len(parsedLog.ChainHashes)-1 {
+			if currentPosition.Cmp(state.end) > 0 {
+				return challengeState{}, errors.New("computed last segment position past end")
+			}
 			currentPosition.Set(state.end)
 		}
 		if !currentPosition.IsUint64() {
@@ -152,9 +155,12 @@ func (m *ExecutionChallengeManager) bisect(ctx context.Context, oldState challen
 	newSegments := make([][32]byte, int(bisectionDegree+1))
 	var mach MachineInterface
 	position := startSegmentPosition
-	normalSegmentLength := newChallengeLength / uint64(len(newSegments))
+	normalSegmentLength := newChallengeLength / bisectionDegree
 	for i := range newSegments {
 		if i == len(newSegments)-1 {
+			if position > endSegmentPosition {
+				return errors.New("computed last segment position past end when bisecting")
+			}
 			position = endSegmentPosition
 		}
 		mach, err = m.cache.GetMachineAt(ctx, mach, position)
