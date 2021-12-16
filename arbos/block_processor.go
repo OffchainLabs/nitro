@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"math"
 	"math/big"
 	"strconv"
 	"time"
@@ -110,6 +111,7 @@ func ProduceBlock(
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
 	gasLeft := PerBlockGasLimit
+	gasPrice := header.BaseFee
 
 	for _, tx := range txes {
 
@@ -124,8 +126,16 @@ func ProduceBlock(
 			aggregator = nil
 		}
 
-		pricing := OpenArbosState(statedb).L1PricingState()
-		dataGas := pricing.GetL1Charges(sender, aggregator, tx.Data()).Uint64()
+		var dataGas uint64 = 0
+		if gasPrice.Sign() > 0 {
+			dataGas = math.MaxUint64
+			pricing := OpenArbosState(statedb).L1PricingState()
+			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
+			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+			if posterCostInL2Gas.IsUint64() {
+				dataGas = posterCostInL2Gas.Uint64()
+			}
+		}
 
 		if dataGas > tx.Gas() {
 			// this txn is going to be rejected later

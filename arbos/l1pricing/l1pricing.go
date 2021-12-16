@@ -142,7 +142,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 
 const DataWasNotCompressed uint64 = 1000000
 
-func (ps *L1PricingState) GetL1Charges(
+func (ps *L1PricingState) PosterDataCost(
 	sender common.Address,
 	aggregator *common.Address,
 	data []byte,
