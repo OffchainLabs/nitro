@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -179,11 +180,19 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asse
 		if i%2 == 0 {
 			err = challengerManager.Act(ctx)
 			if err != nil {
+				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
+					t.Log("challenge completed! challenger hit expected error:", err)
+					return
+				}
 				t.Fatal(err)
 			}
 		} else {
 			err = asserterManager.Act(ctx)
 			if err != nil {
+				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
+					t.Log("challenge completed! asserter hit expected error:", err)
+					return
+				}
 				t.Fatal(err)
 			}
 		}
@@ -208,4 +217,10 @@ func TestChallengeToOSP(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
 	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, false)
+}
+
+func TestChallengeToFailedOSP(t *testing.T) {
+	_, filename, _, _ := runtime.Caller(0)
+	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, true)
 }
