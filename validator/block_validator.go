@@ -347,6 +347,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		return
 	}
 	c_preimages, err := v.preimageCache.PrepareMultByteArrays(validationEntry.Preimages)
+	defer C.free(unsafe.Pointer(c_preimages.ptr))
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
@@ -357,7 +358,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 
 	mach := v.baseMachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
-	C.free(unsafe.Pointer(c_preimages.ptr))
 	C.arbitrator_set_inbox_reader_context(mach.ptr, C.uint64_t(start.Pos))
 	mach.SetGlobalState(gsStart)
 	var steps uint64
