@@ -223,7 +223,7 @@ arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
-	$(arbitrator_prover_bin) $< -o $@ --always-merkleize
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(arbitrator_output_root)/lib/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --always-merkleize
@@ -245,7 +245,7 @@ solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_pr
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	@touch $@
 
-.make/test-go: $(go_source) build-node-deps | .make
+.make/test-go: $(go_source) build-node-deps arbitrator/prover/test-cases/global-state.wasm | .make
 	gotestsum --format short-verbose
 	@touch $@
 

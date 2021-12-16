@@ -57,7 +57,7 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external {
+    ) public {
         require(!isMasterCopy, "MASTER_INIT");
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");

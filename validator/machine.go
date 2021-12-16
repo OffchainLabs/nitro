@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
 )
 
 type MachineInterface interface {
@@ -43,6 +44,16 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	mach := &ArbitratorMachine{ptr: ptr}
 	runtime.SetFinalizer(mach, freeMachine)
 	return mach
+}
+
+func LoadSimpleMachine(wasm string) (*ArbitratorMachine, error) {
+	cWasm := C.CString(wasm)
+	mach := C.arbitrator_load_machine(cWasm, nil, 0, C.struct_GlobalState{}, C.struct_CMultipleByteArrays{}, nil)
+	C.free(unsafe.Pointer(cWasm))
+	if mach == nil {
+		return nil, errors.Errorf("failed to load simple machine at path %v", wasm)
+	}
+	return machineFromPointer(mach), nil
 }
 
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
