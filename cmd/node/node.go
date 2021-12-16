@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -24,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	legacyconfig "github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 )
@@ -53,6 +55,15 @@ func main() {
 	wsport := flag.Int("wsport", 7546, "websocket port")
 	wsorigins := flag.String("wsorigins", "localhost", "list of origins to accept requests from")
 	wsexposeall := flag.Bool("wsexposeall", false, "expose private api via websocket")
+
+	// TODO Should we be using spf13/pflag like in arbitrum pkg?
+	feedOutputAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
+	feedOutputIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
+	feedOutputPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
+	feedOutputPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
+	feedOutputClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	feedOutputWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+
 	flag.Parse()
 
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
@@ -183,6 +194,16 @@ func main() {
 		}
 	}
 
+	feedOutputConfig := legacyconfig.FeedOutput{
+		Addr:          *feedOutputAddr,
+		IOTimeout:     *feedOutputIOTimeout,
+		Port:          strconv.Itoa(*feedOutputPort),
+		Ping:          *feedOutputPing,
+		ClientTimeout: *feedOutputClientTimeout,
+		Queue:         100,
+		Workers:       *feedOutputWorkers,
+	}
+
 	genesisAlloc := make(core.GenesisAlloc)
 	genesisAlloc[devAddr] = core.GenesisAccount{
 		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
@@ -209,7 +230,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts, &feedOutputConfig)
 	if err != nil {
 		panic(err)
 	}
