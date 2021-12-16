@@ -403,7 +403,10 @@ fn main() -> Result<()> {
         for (&(module_num, func), profile) in func_vector {
             let (name, module_name) = format_pc(module_num, func);
             let percent = (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
-            println! {"module {}: function: {} {} steps: {} cycles: {} ({}%)", module_name, func, name, profile.count, profile.total_cycles, percent}
+            println!(
+                "module {}: function: {} {} steps: {} cycles: {} ({}%)",
+                module_name, func, name, profile.count, profile.total_cycles, percent,
+            );
             printed += 1;
             if printed > 20 && percent < 3.0 {
                 break;
