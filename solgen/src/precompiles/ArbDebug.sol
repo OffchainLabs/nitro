@@ -1,8 +1,8 @@
 
-pragma solidity >=0.4.21 <0.8.0;
+pragma solidity >=0.4.21 <0.9.0;
 
 /**
-* @title A test contract 
+* @title A test contract
 */
 interface ArbDebug {
     event Basic(bool flag, bytes32 indexed value);

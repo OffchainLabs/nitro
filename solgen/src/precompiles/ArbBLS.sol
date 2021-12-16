@@ -1,4 +1,4 @@
-pragma solidity >=0.4.21 <0.8.0;
+pragma solidity >=0.4.21 <0.9.0;
 
 //This functionality has been disabled for now.  Calls to these methods will revert.
 interface ArbBLS {

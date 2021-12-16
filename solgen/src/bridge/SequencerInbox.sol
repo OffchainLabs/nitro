@@ -3,14 +3,15 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.7.5;
+pragma solidity ^0.8.0;
 
 import "./IBridge.sol";
+import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../utils/IGasRefunder.sol";
 
-contract SequencerInbox {
-	bytes32[] public inboxAccs;
+contract SequencerInbox is ISequencerInbox {
+	bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
@@ -27,7 +28,7 @@ contract SequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint256[4] timeBounds,
+        uint64[4] timeBounds,
         bytes data
     );
 
@@ -37,7 +38,7 @@ contract SequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint256[4] timeBounds
+        uint64[4] timeBounds
     );
 
     constructor(
@@ -54,20 +55,20 @@ contract SequencerInbox {
 		maxFutureBlocks = 12;
     }
 
-    function getTimeBounds() internal view returns (uint256[4] memory) {
-        uint256[4] memory bounds;
+    function getTimeBounds() internal view returns (uint64[4] memory) {
+        uint64[4] memory bounds;
         if (block.timestamp > maxDelaySeconds) {
-            bounds[0] = block.timestamp - maxDelaySeconds;
+            bounds[0] = uint64(block.timestamp - maxDelaySeconds);
         } else {
             bounds[0] = 0;
         }
-        bounds[1] = block.timestamp + maxFutureSeconds;
+        bounds[1] = uint64(block.timestamp + maxFutureSeconds);
         if (block.number > maxDelayBlocks) {
-            bounds[2] = block.number - maxDelayBlocks;
+            bounds[2] = uint64(block.number - maxDelayBlocks);
         } else {
             bounds[2] = 0;
         }
-        bounds[3] = block.number + maxFutureBlocks;
+        bounds[3] = uint64(block.number + maxFutureBlocks);
         return bounds;
     }
 
@@ -78,7 +79,8 @@ contract SequencerInbox {
         uint256 inboxSeqNum,
         uint256 gasPriceL1,
         address sender,
-        bytes32 messageDataHash
+        bytes32 messageDataHash,
+        bytes calldata emptyData
     ) external {
         require(_totalDelayedMessagesRead > totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         {
@@ -107,8 +109,8 @@ contract SequencerInbox {
             );
         }
 
-        bytes calldata emptyData;
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        require(emptyData.length == 0, "NOT_EMPTY");
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             emptyData,
             _totalDelayedMessagesRead
         );
@@ -140,7 +142,7 @@ contract SequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -153,8 +155,8 @@ contract SequencerInbox {
             timeBounds
         );
 
-        if (gasRefunder != IGasRefunder(0)) {
-            gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
+        if (address(gasRefunder) != address(0)) {
+            gasRefunder.onGasSpent(payable(msg.sender), startGasLeft - gasleft(), calldataSize);
         }
     }
 
@@ -169,7 +171,7 @@ contract SequencerInbox {
         uint256 startGasLeft = gasleft();
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint256[4] memory timeBounds) = addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc, uint64[4] memory timeBounds) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
         );
@@ -183,32 +185,31 @@ contract SequencerInbox {
             data
         );
 
-        if (gasRefunder != IGasRefunder(0)) {
+        if (address(gasRefunder) != address(0)) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
-            gasRefunder.onGasSpent(msg.sender, startGasLeft - gasleft(), calldataSize);
+            gasRefunder.onGasSpent(payable(msg.sender), startGasLeft - gasleft(), calldataSize);
         }
     }
 
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
-    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint256[4] memory timeBounds) {
+    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc, uint64[4] memory timeBounds) {
         require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
         require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
-
-        timeBounds = getTimeBounds();
 
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
         bytes memory fullData = new bytes(fullDataLen);
+        timeBounds = getTimeBounds();
         bytes memory header = abi.encodePacked(
-            uint64(timeBounds[0]),
-            uint64(timeBounds[1]),
-            uint64(timeBounds[2]),
-            uint64(timeBounds[3]),
+            timeBounds[0],
+            timeBounds[1],
+            timeBounds[2],
+            timeBounds[3],
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");
@@ -233,7 +234,7 @@ contract SequencerInbox {
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }
 
-    function batchCount() external view returns (uint256) {
+    function batchCount() external view override returns (uint256) {
         return inboxAccs.length;
     }
 }

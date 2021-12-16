@@ -37,7 +37,7 @@ impl Into<ValueType> for IntegerValType {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProgramCounter {
     pub module: usize,
     pub func: usize,
