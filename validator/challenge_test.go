@@ -7,9 +7,9 @@ package validator
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"math/big"
+	"os"
 	"path"
 	"runtime"
 	"testing"
@@ -18,6 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 )
@@ -87,7 +89,7 @@ func CreateChallenge(
 }
 
 func createTransactOpts(t *testing.T) *bind.TransactOpts {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := ecdsa.GenerateKey(secp256k1.S256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,24 +113,20 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 }
 
 func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asserterIsCorrect bool) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlDebug)
+	log.Root().SetHandler(glogger)
+
 	ctx := context.Background()
 	deployer := createTransactOpts(t)
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
 	alloc := createGenesisAlloc(deployer, asserter, challenger)
-	backend := backends.NewSimulatedBackend(alloc, 15_000_000)
+	backend := backends.NewSimulatedBackend(alloc, 1_000_000_000)
 	backend.Commit()
 
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
-
 	backend.Commit()
-	ospEntryCode, err := backend.CodeAt(ctx, ospEntry, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ospEntryCode) == 0 {
-		t.Fatal("failed to deploy OneStepProofEntry")
-	}
 
 	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
 	if err != nil {
@@ -143,6 +141,9 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asse
 
 	startMachineHash := machine.Hash()
 	endMachineHash := endMachine.Hash()
+	if !asserterIsCorrect {
+		endMachineHash = IncorrectMachineHash(endMachineHash)
+	}
 
 	resultReceiver, challenge := CreateChallenge(
 		t,
@@ -186,18 +187,21 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asse
 				t.Fatal(err)
 			}
 		}
+		backend.Commit()
+
+		winner, err := resultReceiver.Winner(&bind.CallOpts{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if winner == (common.Address{}) {
+			continue
+		}
+		if winner != expectedWinner {
+			t.Fatal("wrong party won challenge")
+		}
 	}
 
-	winner, err := resultReceiver.Winner(&bind.CallOpts{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if winner == (common.Address{}) {
-		t.Fatal("challenge timed out without winner")
-	}
-	if winner != expectedWinner {
-		t.Fatal("wrong party won challenge")
-	}
+	t.Fatal("challenge timed out without winner")
 }
 
 func TestChallengeToOSP(t *testing.T) {

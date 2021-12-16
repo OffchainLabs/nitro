@@ -24,6 +24,12 @@ func NewIncorrectMachine(inner MachineInterface, incorrectStep uint64) *Incorrec
 	}
 }
 
+func IncorrectMachineHash(correctHash common.Hash) common.Hash {
+	correctHash[0] ^= 0xF0
+	correctHash[31] ^= 0x0F
+	return correctHash
+}
+
 func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
 	return &IncorrectMachine{
 		inner:         m.inner.CloneMachineInterface(),
@@ -50,8 +56,7 @@ func (m *IncorrectMachine) Step(ctx context.Context, count uint64) error {
 func (m *IncorrectMachine) Hash() common.Hash {
 	h := m.inner.Hash()
 	if m.GetStepCount() >= m.incorrectStep {
-		h[0] ^= 0xF0
-		h[31] ^= 0x0F
+		h = IncorrectMachineHash(h)
 	}
 	return h
 }

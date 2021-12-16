@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -187,6 +188,9 @@ func (m *ExecutionChallengeManager) Act(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if stateHash == (common.Hash{}) {
+		return errors.New("lost challenge (state hash 0)")
+	}
 	state, err := m.resolveStateHash(ctx, stateHash)
 	if err != nil {
 		return err
@@ -218,6 +222,7 @@ func (m *ExecutionChallengeManager) Act(ctx context.Context) error {
 			return err
 		}
 		machineHash := mach.Hash()
+		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.position, "ourHash", machineHash, "segmentHash", segment.hash)
 		if segment.hash != machineHash {
 			if i == 0 {
 				return errors.Errorf(
@@ -230,15 +235,19 @@ func (m *ExecutionChallengeManager) Act(ctx context.Context) error {
 				return errors.New("internal error: prevMach nil or at wrong step count")
 			}
 			if lastSegment.position+1 == segment.position {
+				log.Debug("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.position)
 				err = m.issueOneStepProof(ctx, state, i-1, prevMach.ProveNextStep())
 				if err != nil {
 					return err
 				}
+				return nil
 			} else {
+				log.Debug("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.position, "endPosition", segment.position)
 				err = m.bisect(ctx, state, i-1, prevMach)
 				if err != nil {
 					return err
 				}
+				return nil
 			}
 		}
 	}
