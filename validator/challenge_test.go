@@ -98,24 +98,37 @@ func createTransactOpts(t *testing.T) *bind.TransactOpts {
 	return opts
 }
 
-func createGenesisAlloc(accts []*bind.TransactOpts) core.GenesisAlloc {
+func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 	alloc := make(core.GenesisAlloc)
+	amount := big.NewInt(10)
+	amount.Exp(amount, big.NewInt(20), nil)
 	for _, opts := range accts {
 		alloc[opts.From] = core.GenesisAccount{
-			Balance: big.NewInt(10_000_000),
+			Balance: new(big.Int).Set(amount),
 		}
 	}
 	return alloc
 }
 
 func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asserterIsCorrect bool) {
+	ctx := context.Background()
 	deployer := createTransactOpts(t)
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
-	alloc := createGenesisAlloc([]*bind.TransactOpts{deployer, asserter, challenger})
+	alloc := createGenesisAlloc(deployer, asserter, challenger)
 	backend := backends.NewSimulatedBackend(alloc, 15_000_000)
+	backend.Commit()
+
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
-	ctx := context.Background()
+
+	backend.Commit()
+	ospEntryCode, err := backend.CodeAt(ctx, ospEntry, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ospEntryCode) == 0 {
+		t.Fatal("failed to deploy OneStepProofEntry")
+	}
 
 	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
 	if err != nil {
