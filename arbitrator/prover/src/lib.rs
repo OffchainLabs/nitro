@@ -32,7 +32,14 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
 
-    let status = Command::new("wasm-validate").arg("--").arg(path).status()?;
+    let mut cmd = Command::new("wasm-validate");
+    if path.starts_with("-") {
+        // Escape the path and ensure it isn't treated as a flag.
+        // Unfortunately, older versions of wasm-validate don't support this,
+        // so we only pass in this option if the path looks like a flag.
+        cmd.arg("--");
+    }
+    let status = cmd.arg(path).status()?;
     if !status.success() {
         bail!("failed to validate WASM binary at {:?}", path);
     }
