@@ -264,7 +264,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/prover ${ROOTPATH}\\" + v.config.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + v.config.ProverBinPath)
 	if err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		return err
 	}
 
-	sequencerCByte := InboxReaderFunc(C.uint64_t(0xffffffffffffffff), C.uint64_t(0), C.uint64_t(start.BatchNum))
+	sequencerCByte := InboxReaderFunc(C.uint64_t(start.Pos), C.uint64_t(0), C.uint64_t(start.BatchNum))
 	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNum)
 	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
 	if err != nil {
@@ -353,7 +353,7 @@ func (v *BlockValidator) validate(validationEntry *validationEntry, start, end P
 	C.arbitrator_set_global_state(mach, gsStart)
 	steps := 0
 	for C.arbitrator_get_status(mach) == C.Running {
-		C.arbitrator_step(mach, C.uintptr_t(100000000))
+		C.arbitrator_step(mach, C.uint64_t(100000000))
 		steps += 100000000
 		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}
