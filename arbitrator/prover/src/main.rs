@@ -348,7 +348,13 @@ fn main() -> Result<()> {
         ops_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
         let mut printed = 0;
         for (opcode, profile) in ops_vector {
-            println! {"Opcode {:?}: steps: {} cycles: {} ({}%)",opcode, profile.count, profile.total_cycles, (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64)}
+            println!(
+                "Opcode {:?}: steps: {} cycles: {} ({}%)",
+                opcode,
+                profile.count,
+                profile.total_cycles,
+                (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64),
+            );
             printed += 1;
             if printed > 20 {
                 break;
