@@ -67,13 +67,6 @@ func (info *L1Info) Equals(o *L1Info) bool {
 		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
 }
 
-type MessageSegment struct {
-	L1Info L1Info
-	// l1GasPrice may be null
-	l1GasPrice *big.Int
-	Txes       types.Transactions
-}
-
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 	wr := &bytes.Buffer{}
 	if err := wr.WriteByte(msg.Header.Kind); err != nil {
@@ -167,22 +160,6 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			gasPriceL1,
 		},
 		data,
-	}, nil
-}
-
-func IncomingMessageToSegment(msg *L1IncomingMessage, chainId *big.Int) (MessageSegment, error) {
-	txes, err := msg.TypeSpecificParse(chainId)
-	if err != nil {
-		return MessageSegment{}, err
-	}
-	return MessageSegment{
-		L1Info: L1Info{
-			poster:        msg.Header.Poster,
-			l1BlockNumber: msg.Header.BlockNumber.Big(),
-			l1Timestamp:   msg.Header.Timestamp.Big(),
-		},
-		l1GasPrice: msg.Header.GasPriceL1.Big(),
-		Txes:       txes,
 	}, nil
 }
 

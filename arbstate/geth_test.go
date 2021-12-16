@@ -119,7 +119,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		segment, err := arbos.IncomingMessageToSegment(msg, chainId)
+		txes, err := msg.TypeSpecificParse(chainId)
 		if err != nil {
 			t.Error(err)
 		}
@@ -129,7 +129,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			Difficulty: big.NewInt(1000),
 		}
 		gasPool := core.GasPool(100000)
-		for _, tx := range segment.Txes {
+		for _, tx := range txes {
 			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 			if err != nil {
 				t.Fatal(err)
