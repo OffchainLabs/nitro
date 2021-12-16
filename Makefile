@@ -245,7 +245,7 @@ solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_pr
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	@touch $@
 
-.make/test-go: $(go_source) build-node-deps arbitrator/prover/test-cases/global-state.wasm | .make
+.make/test-go: $(go_source) build-node-deps arbitrator/prover/test-cases/global-state.wasm arbitrator/prover/test-cases/global-state-wrapper.wasm | .make
 	gotestsum --format short-verbose
 	@touch $@
 

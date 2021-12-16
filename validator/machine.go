@@ -46,10 +46,12 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	return mach
 }
 
-func LoadSimpleMachine(wasm string) (*ArbitratorMachine, error) {
+func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
-	mach := C.arbitrator_load_machine(cWasm, nil, 0, C.struct_GlobalState{}, C.struct_CMultipleByteArrays{}, nil)
+	cLibraries := CreateCStringList(libraries)
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), C.struct_GlobalState{}, C.struct_CMultipleByteArrays{}, nil)
 	C.free(unsafe.Pointer(cWasm))
+	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
 		return nil, errors.Errorf("failed to load simple machine at path %v", wasm)
 	}

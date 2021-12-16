@@ -125,12 +125,12 @@ func CreateCStringList(input []string) **C.char {
 	return res
 }
 
-func FreeCStringList(ptr **C.char, size int) {
-	arr := (*[1 << 30]*C.char)(unsafe.Pointer(&ptr))[:size:size]
+func FreeCStringList(arrPtr **C.char, size int) {
+	arr := (*[1 << 30]*C.char)(unsafe.Pointer(arrPtr))[:size:size]
 	for _, ptr := range arr {
 		C.free(unsafe.Pointer(ptr))
 	}
-	C.free(unsafe.Pointer(ptr))
+	C.free(unsafe.Pointer(arrPtr))
 }
 
 // single file with the binary blob

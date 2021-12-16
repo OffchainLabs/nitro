@@ -108,7 +108,7 @@ func createGenesisAlloc(accts []*bind.TransactOpts) core.GenesisAlloc {
 	return alloc
 }
 
-func runChallengeTest(t *testing.T, wasmPath string, asserterIsCorrect bool) {
+func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, asserterIsCorrect bool) {
 	deployer := createTransactOpts(t)
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
@@ -117,7 +117,7 @@ func runChallengeTest(t *testing.T, wasmPath string, asserterIsCorrect bool) {
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
 	ctx := context.Background()
 
-	machine, err := LoadSimpleMachine(wasmPath)
+	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,5 +189,6 @@ func runChallengeTest(t *testing.T, wasmPath string, asserterIsCorrect bool) {
 
 func TestChallengeToOSP(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
-	runChallengeTest(t, path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/global-state.wasm"), false)
+	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, false)
 }
