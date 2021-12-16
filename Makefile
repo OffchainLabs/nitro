@@ -49,7 +49,10 @@ build: node
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen
 
-test-go-deps: arbitrator/prover/test-cases/global-state.wasm arbitrator/prover/test-cases/global-state-wrapper.wasm
+test-go-deps: \
+	arbitrator/prover/test-cases/global-state.wasm \
+	arbitrator/prover/test-cases/global-state-wrapper.wasm \
+	arbitrator/prover/test-cases/const.wasm
 
 build-prover-header: $(arbitrator_generated_header)
 
