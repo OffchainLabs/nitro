@@ -1,5 +1,6 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
+use prover::binary::WasmBinary;
 use prover::machine::{InboxIdentifier, InboxReaderFn};
 use prover::parse_binary;
 use prover::{machine::GlobalState, utils::Bytes32};
@@ -29,6 +30,8 @@ struct Opts {
     inbox_add_stub_headers: bool,
     #[structopt(long)]
     always_merkleize: bool,
+    #[structopt(short = "p", long)]
+    profile_run: bool,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: u64,
     #[structopt(long, default_value = "0")]
@@ -79,6 +82,11 @@ fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
     let mut msg = vec![0u8; headerlength];
     File::open(path).unwrap().read_to_end(&mut msg)?;
     Ok(msg)
+}
+
+struct SimpleProfile {
+    count: u64,
+    total_cycles: u64
 }
 
 fn main() -> Result<()> {
@@ -144,9 +152,14 @@ fn main() -> Result<()> {
         bytes32_vals: [last_block_hash],
     };
 
-    let mut mach = Machine::from_binary(
-        libraries,
-        main_mod,
+    println!("main module functions: {}", main_mod.names.functions.len());
+    for (modnum, lib) in libraries.iter().enumerate() {
+        println!("module {} functions: {}", modnum, lib.names.functions.len());
+    }
+
+     let mut mach = Machine::from_binary(
+        libraries.clone(),
+        main_mod.clone(),
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
@@ -159,6 +172,15 @@ fn main() -> Result<()> {
     let mut proofs: Vec<ProofInfo> = Vec::new();
     let mut seen_states = HashSet::default();
     let mut opcode_counts: HashMap<Opcode, usize> = HashMap::default();
+    let mut opcode_profile: HashMap<Opcode, SimpleProfile> = HashMap::default();
+    let mut func_profile: HashMap<(usize, usize), SimpleProfile> = HashMap::default();
+    let mut func_stack: Vec<(usize, usize, SimpleProfile)> = Vec::default();
+    let mut cycles_measured_total: u64 = 0;
+    let cycles_bigloop_start: u64;
+    let cycles_bigloop_end: u64;
+    unsafe {
+        cycles_bigloop_start = core::arch::x86_64::_rdtsc();
+    }
     while !mach.is_halted() {
         let next_inst = mach.get_next_instruction().unwrap();
         let next_opcode = next_inst.opcode;
@@ -174,30 +196,74 @@ fn main() -> Result<()> {
                 continue;
             }
         }
-        println!("Machine stack: {:?}", mach.get_data_stack());
-        print!(
-            "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
-            proofs.len(),
-            mach.get_steps(),
-            next_opcode,
-            next_inst.argument_data,
-        );
-        std::io::stdout().flush().unwrap();
-        let before = mach.hash();
-        if !seen_states.insert(before) {
-            break;
+        if opts.profile_run {
+            let start: u64;
+            let end: u64;
+            let pc = mach.get_pc().unwrap();
+            unsafe {
+            start = core::arch::x86_64::_rdtsc();
+            }
+            mach.step();
+            unsafe {
+            end = core::arch::x86_64::_rdtsc();
+            }
+            let profile_time = end - start;
+
+            cycles_measured_total += profile_time;
+
+            let opprofile = opcode_profile.entry(next_opcode).or_insert(SimpleProfile{count: 0, total_cycles:0});
+            opprofile.count += 1;
+            opprofile.total_cycles += profile_time;
+
+
+            if pc.inst == 0 {
+                func_stack.push((pc.module, pc.func, SimpleProfile{count: 0, total_cycles:0}));
+            }
+            let tail = func_stack.len() - 1;
+            func_stack[tail].2.count += 1;
+            func_stack[tail].2.total_cycles += profile_time;
+            if next_opcode == Opcode::Return {
+                let (module, func, profile) = func_stack.pop().unwrap();
+
+                let tail = func_stack.len() - 1;
+                func_stack[tail].2.count += profile.count;
+                func_stack[tail].2.total_cycles += profile.total_cycles;
+    
+                let entry = func_profile.entry((module, func)).or_insert(SimpleProfile{count: 0, total_cycles:0});
+                entry.count += profile.count;
+                entry.total_cycles += profile.total_cycles;
+            }
+        } else {
+            println!("Machine stack: {:?}", mach.get_data_stack());
+            print!(
+                "Generating proof \x1b[36m#{}\x1b[0m (inst \x1b[36m#{}\x1b[0m) of opcode \x1b[32m{:?}\x1b[0m with data 0x{:x}",
+                proofs.len(),
+                mach.get_steps(),
+                next_opcode,
+                next_inst.argument_data,
+            );
+            std::io::stdout().flush().unwrap();
+            let before = mach.hash();
+            if !seen_states.insert(before) {
+                break;
+            }
+            let proof = mach.serialize_proof();
+            mach.step();
+            let after = mach.hash();
+            println!(" - done");
+            proofs.push(ProofInfo {
+                before: before.to_string(),
+                proof: hex::encode(proof),
+                after: after.to_string(),
+            });
         }
-        let proof = mach.serialize_proof();
-        mach.step();
-        let after = mach.hash();
-        println!(" - done");
-        proofs.push(ProofInfo {
-            before: before.to_string(),
-            proof: hex::encode(proof),
-            after: after.to_string(),
-        });
         mach.step_n(opts.proving_interval.saturating_sub(1));
     }
+    unsafe {
+        cycles_bigloop_end = core::arch::x86_64::_rdtsc();
+    }
+
+    let cycles_bigloop = cycles_bigloop_end - cycles_bigloop_start;
 
     println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
@@ -223,5 +289,59 @@ fn main() -> Result<()> {
         serde_json::to_writer_pretty(out, &proofs)?;
     }
 
+    if opts.profile_run {
+        let mut sum = SimpleProfile{count:0, total_cycles:0};
+        while let Some((module, func, profile)) =  func_stack.pop() {
+            sum.total_cycles += profile.total_cycles;
+            sum.count += profile.count;
+            let entry = func_profile.entry((module, func)).or_insert(SimpleProfile{count: 0, total_cycles:0});
+            entry.count += sum.count;
+            entry.total_cycles += sum.total_cycles;
+        }
+
+        println!("Total cycles measured {} out of {} in loop ({}%)", cycles_measured_total, cycles_bigloop, (cycles_measured_total as f64) * 100.0 / (cycles_bigloop as f64));
+
+        println!("\n===Operations:");
+        let mut ops_vector: Vec<_> = opcode_profile.iter().collect();
+        ops_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
+        let mut printed = 0;
+        for (opcode, profile) in ops_vector {
+            println!{"Opcode {:?}: steps: {} cycles: {} ({}%)",opcode, profile.count, profile.total_cycles, (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64)}
+            printed += 1;
+            if printed > 20 {
+                break;
+            }
+        }
+
+        println!("\n===Functions:");
+        let mut func_vector: Vec<_> = func_profile.iter().collect();
+        func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
+        let mut printed = 0;
+        for ((module_num, func), profile) in func_vector {
+            let name: String;
+            let module_name: String;
+            if *module_num == 0 {
+                module_name = "entry module".to_string();
+                name = "".to_string();
+            } else {
+                let module: &WasmBinary;
+                if *module_num == &libraries.len() + 1 {
+                    module_name = opts.binary.file_name().unwrap().to_str().unwrap().to_string();
+                    module = &main_mod;
+                } else {
+                    module_name = opts.libraries[*module_num - 1].file_name().unwrap().to_str().unwrap().to_string();
+                    module = &libraries[*module_num - 1];
+                }
+                let func_idx = (*func - module.imports.len()) as u32;
+                name = module.names.functions[&func_idx].clone();
+            }
+            let percent = (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
+            println!{"module {}: function: {} {} steps: {} cycles: {} ({}%)", module_name, func, name, profile.count, profile.total_cycles, percent}
+            printed += 1;
+            if printed > 20 && percent < 3.0 {
+                break;
+            }
+        }
+    }
     Ok(())
 }

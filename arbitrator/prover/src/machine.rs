@@ -1046,6 +1046,13 @@ impl Machine {
             .cloned()
     }
 
+    pub fn get_pc(&self) -> Option<ProgramCounter> {
+        if self.is_halted() {
+            return None;
+        }
+        Some(self.pc)
+    }
+
     fn test_next_instruction(module: &Module, pc: &ProgramCounter) {
         assert!(module.funcs[pc.func].code.len() > pc.inst);
     }
