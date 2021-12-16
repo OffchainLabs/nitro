@@ -842,21 +842,19 @@ impl Machine {
 
         for export in &bin.exports {
             if let ExportKind::Function(f) = export.kind {
-                let ty_idx = usize::try_from(f)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                    .unwrap();
-                let ty = bin.functions[ty_idx];
-                let ty = &bin.types[usize::try_from(ty).unwrap()];
-                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
-                available_imports.insert(
-                    format!("env__wavm_guest_call__{}", export.name),
-                    AvailableImport {
-                        ty: ty.clone(),
-                        module,
-                        func: f,
-                    },
-                );
+                if let Some(ty_idx) = usize::try_from(f).unwrap().checked_sub(bin.imports.len()) {
+                    let ty = bin.functions[ty_idx];
+                    let ty = &bin.types[usize::try_from(ty).unwrap()];
+                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+                    available_imports.insert(
+                        format!("env__wavm_guest_call__{}", export.name),
+                        AvailableImport {
+                            ty: ty.clone(),
+                            module,
+                            func: f,
+                        },
+                    );
+                }
             }
         }
 
