@@ -249,7 +249,7 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
@@ -823,6 +823,8 @@ where
 }
 
 impl Machine {
+    pub const MAX_STEPS: u64 = 1 << 43;
+
     pub fn from_binary(
         libraries: Vec<WasmBinary>,
         bin: WasmBinary,
@@ -833,7 +835,8 @@ impl Machine {
         inbox_reader_fn: InboxReaderFn,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
-        let mut modules = Vec::new();
+        // `modules` starts out with the entrypoint module, which will be initialized later
+        let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
 
@@ -845,7 +848,7 @@ impl Machine {
                     .unwrap();
                 let ty = bin.functions[ty_idx];
                 let ty = &bin.types[usize::try_from(ty).unwrap()];
-                let module = u32::try_from(libraries.len()).unwrap();
+                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
                 available_imports.insert(
                     format!("env__wavm_guest_call__{}", export.name),
                     AvailableImport {
@@ -989,8 +992,7 @@ impl Machine {
             func_types: Arc::new(vec![FunctionType::default()]),
             exports: Arc::new(HashMap::default()),
         };
-        let entrypoint_idx = modules.len();
-        modules.push(entrypoint);
+        modules[0] = entrypoint;
 
         // Merkleize things if requested
         for module in &mut modules {
@@ -1027,7 +1029,7 @@ impl Machine {
             modules,
             modules_merkle,
             global_state,
-            pc: ProgramCounter::new(entrypoint_idx, 0, 0, 0),
+            pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
             inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
             preimages,
@@ -1076,6 +1078,10 @@ impl Machine {
         }
         // It's infeasible to overflow steps without halting
         self.steps += 1;
+        if self.steps == Self::MAX_STEPS {
+            self.status = MachineStatus::Errored;
+            return;
+        }
 
         if self.pc.inst == 1 {
             if let Some(hook) = self.modules[self.pc.module]
@@ -1939,6 +1945,7 @@ impl Machine {
                             Some(b) => b,
                             None => panic!("Missing requested preimage for hash {}", hash),
                         };
+                        data.push(0); // preimage proof type
                         data.extend(preimage);
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = self
