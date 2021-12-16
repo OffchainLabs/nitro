@@ -1998,6 +1998,10 @@ impl Machine {
         self.inbox_reader.context = context;
     }
 
+    pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {
+        self.modules.get(module).map(|m| &*m.names)
+    }
+
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
         let mut res = Vec::new();
         let mut push_pc = |pc: ProgramCounter| {

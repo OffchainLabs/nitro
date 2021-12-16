@@ -1,12 +1,12 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::binary::WasmBinary;
 use prover::machine::{InboxIdentifier, InboxReaderFn};
 use prover::parse_binary;
 use prover::{machine::GlobalState, utils::Bytes32};
 use prover::{machine::Machine, wavm::Opcode};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
+use std::io::BufWriter;
 use std::{
     fs::File,
     io::{BufReader, ErrorKind, Read, Write},
@@ -32,6 +32,10 @@ struct Opts {
     always_merkleize: bool,
     #[structopt(short = "p", long)]
     profile_run: bool,
+    #[structopt(long)]
+    profile_opcodes: bool,
+    #[structopt(long)]
+    profile_output: Option<PathBuf>,
     #[structopt(short = "i", long, default_value = "1")]
     proving_interval: u64,
     #[structopt(long, default_value = "0")]
@@ -84,9 +88,11 @@ fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
     Ok(msg)
 }
 
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 struct SimpleProfile {
     count: u64,
     total_cycles: u64,
+    local_cycles: u64,
 }
 
 fn main() -> Result<()> {
@@ -175,9 +181,12 @@ fn main() -> Result<()> {
     let mut opcode_profile: HashMap<Opcode, SimpleProfile> = HashMap::default();
     let mut func_profile: HashMap<(usize, usize), SimpleProfile> = HashMap::default();
     let mut func_stack: Vec<(usize, usize, SimpleProfile)> = Vec::default();
+    let mut backtrace_stack: Vec<(usize, usize)> = Vec::default();
     let mut cycles_measured_total: u64 = 0;
+    let mut profile_backtrace_counts: HashMap<Vec<(usize, usize)>, u64> = HashMap::default();
     let cycles_bigloop_start: u64;
     let cycles_bigloop_end: u64;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         cycles_bigloop_start = core::arch::x86_64::_rdtsc();
     }
@@ -200,50 +209,57 @@ fn main() -> Result<()> {
             let start: u64;
             let end: u64;
             let pc = mach.get_pc().unwrap();
+            #[cfg(target_arch = "x86_64")]
             unsafe {
                 start = core::arch::x86_64::_rdtsc();
             }
             mach.step();
+            #[cfg(target_arch = "x86_64")]
             unsafe {
                 end = core::arch::x86_64::_rdtsc();
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                start = 0;
+                end = 1;
             }
             let profile_time = end - start;
 
             cycles_measured_total += profile_time;
 
-            let opprofile = opcode_profile.entry(next_opcode).or_insert(SimpleProfile {
-                count: 0,
-                total_cycles: 0,
-            });
-            opprofile.count += 1;
-            opprofile.total_cycles += profile_time;
+            if opts.profile_opcodes {
+                let opprofile = opcode_profile.entry(next_opcode).or_default();
+                opprofile.count += 1;
+                opprofile.total_cycles += profile_time;
+            }
 
             if pc.inst == 0 {
-                func_stack.push((
-                    pc.module,
-                    pc.func,
-                    SimpleProfile {
-                        count: 0,
-                        total_cycles: 0,
-                    },
-                ));
+                func_stack.push((pc.module, pc.func, SimpleProfile::default()));
+                backtrace_stack.push((pc.module, pc.func));
             }
-            let tail = func_stack.len() - 1;
-            func_stack[tail].2.count += 1;
-            func_stack[tail].2.total_cycles += profile_time;
+            let this_func_profile = &mut func_stack.last_mut().unwrap().2;
+            this_func_profile.count += 1;
+            this_func_profile.total_cycles += profile_time;
+            this_func_profile.local_cycles += profile_time;
             if next_opcode == Opcode::Return {
                 let (module, func, profile) = func_stack.pop().unwrap();
 
-                let tail = func_stack.len() - 1;
-                func_stack[tail].2.count += profile.count;
-                func_stack[tail].2.total_cycles += profile.total_cycles;
+                if let Some(parent_func) = &mut func_stack.last_mut() {
+                    parent_func.2.count += profile.count;
+                    parent_func.2.total_cycles += profile.total_cycles;
+                }
 
-                let entry = func_profile.entry((module, func)).or_insert(SimpleProfile {
-                    count: 0,
-                    total_cycles: 0,
-                });
-                entry.count += profile.count;
-                entry.total_cycles += profile.total_cycles;
+                let func_profile_entry = func_profile.entry((module, func)).or_default();
+                func_profile_entry.count += profile.count;
+                func_profile_entry.total_cycles += profile.total_cycles;
+                func_profile_entry.local_cycles += profile.local_cycles;
+
+                if opts.profile_output.is_some() {
+                    *profile_backtrace_counts
+                        .entry(backtrace_stack.clone())
+                        .or_default() += profile.local_cycles;
+                }
+                backtrace_stack.pop();
             }
         } else {
             println!("Machine stack: {:?}", mach.get_data_stack());
@@ -271,8 +287,14 @@ fn main() -> Result<()> {
         }
         mach.step_n(opts.proving_interval.saturating_sub(1));
     }
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         cycles_bigloop_end = core::arch::x86_64::_rdtsc();
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        cycles_bigloop_start = 0;
+        cycles_bigloop_end = 0;
     }
 
     let cycles_bigloop = cycles_bigloop_end - cycles_bigloop_start;
@@ -302,19 +324,16 @@ fn main() -> Result<()> {
     }
 
     if opts.profile_run {
-        let mut sum = SimpleProfile {
-            count: 0,
-            total_cycles: 0,
-        };
+        let mut sum = SimpleProfile::default();
         while let Some((module, func, profile)) = func_stack.pop() {
             sum.total_cycles += profile.total_cycles;
             sum.count += profile.count;
-            let entry = func_profile.entry((module, func)).or_insert(SimpleProfile {
-                count: 0,
-                total_cycles: 0,
-            });
+            let entry = func_profile
+                .entry((module, func))
+                .or_insert(SimpleProfile::default());
             entry.count += sum.count;
             entry.total_cycles += sum.total_cycles;
+            entry.local_cycles += profile.local_cycles;
         }
 
         println!(
@@ -336,45 +355,81 @@ fn main() -> Result<()> {
             }
         }
 
+        let opts_binary = opts.binary;
+        let opts_libraries = opts.libraries;
+        let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
+            let names = match mach.get_module_names(module_num) {
+                Some(n) => n,
+                None => {
+                    return (
+                        format!("[unknown {}]", module_num),
+                        format!("[unknown {}]", func_num),
+                    );
+                }
+            };
+            let module_name: String;
+            let mut name: String;
+            if module_num == 0 {
+                module_name = names.module.clone();
+            } else if module_num == &libraries.len() + 1 {
+                module_name = opts_binary
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+            } else {
+                module_name = opts_libraries[module_num - 1]
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string();
+            }
+            let func_idx = func_num as u32;
+            name = names
+                .functions
+                .get(&func_idx)
+                .cloned()
+                .unwrap_or_else(|| format!("[unknown {}]", func_idx));
+            name = rustc_demangle::demangle(&name).to_string();
+            (module_name, name)
+        };
+
         println!("\n===Functions:");
         let mut func_vector: Vec<_> = func_profile.iter().collect();
         func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
         let mut printed = 0;
-        for ((module_num, func), profile) in func_vector {
-            let name: String;
-            let module_name: String;
-            if *module_num == 0 {
-                module_name = "entry module".to_string();
-                name = "".to_string();
-            } else {
-                let module: &WasmBinary;
-                if *module_num == &libraries.len() + 1 {
-                    module_name = opts
-                        .binary
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    module = &main_mod;
-                } else {
-                    module_name = opts.libraries[*module_num - 1]
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-                    module = &libraries[*module_num - 1];
-                }
-                let func_idx = (*func - module.imports.len()) as u32;
-                name = module.names.functions[&func_idx].clone();
-            }
+        for (&(module_num, func), profile) in func_vector {
+            let (name, module_name) = format_pc(module_num, func);
             let percent = (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
             println! {"module {}: function: {} {} steps: {} cycles: {} ({}%)", module_name, func, name, profile.count, profile.total_cycles, percent}
             printed += 1;
             if printed > 20 && percent < 3.0 {
                 break;
             }
+        }
+
+        if let Some(out) = opts.profile_output {
+            let mut out = BufWriter::new(File::create(out)?);
+            for (backtrace, count) in profile_backtrace_counts {
+                let mut path = String::new();
+                let mut last_module = None;
+                for (module, func) in backtrace {
+                    let (module_name, func_name) = format_pc(module, func);
+                    if last_module != Some(module) {
+                        path += "[module] ";
+                        path += &module_name;
+                        path += ";";
+                        last_module = Some(module);
+                    }
+                    path += &func_name;
+                    path += ";";
+                }
+                path.pop(); // remove trailing ';'
+                write!(out, "{} {}\n", path, count)?;
+            }
+            out.flush()?;
         }
     }
     Ok(())
