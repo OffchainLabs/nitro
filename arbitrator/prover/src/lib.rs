@@ -23,6 +23,7 @@ use std::{
     io::Read,
     os::raw::c_char,
     path::Path,
+    process::Command,
     sync::atomic::{self, AtomicU8},
 };
 
@@ -30,6 +31,11 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
+
+    let status = Command::new("wasm-validate").arg("--").arg(path).status()?;
+    if !status.success() {
+        bail!("failed to validate WASM binary at {:?}", path);
+    }
 
     let bin = match binary::parse(&buf) {
         Ok(bin) => bin,
