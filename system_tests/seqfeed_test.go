@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
-var feedOutputConfigTest = configuration.FeedOutput{
+var feedOutputConfigTest = wsbroadcastserver.FeedOutput{
 	Addr:          "127.0.0.1",
 	IOTimeout:     5 * time.Second,
 	Port:          "9642",

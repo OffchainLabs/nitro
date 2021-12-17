@@ -25,9 +25,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	legacyconfig "github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 func main() {
@@ -194,7 +194,7 @@ func main() {
 		}
 	}
 
-	feedOutputConfig := legacyconfig.FeedOutput{
+	feedOutputConfig := wsbroadcastserver.FeedOutput{
 		Addr:          *feedOutputAddr,
 		IOTimeout:     *feedOutputIOTimeout,
 		Port:          strconv.Itoa(*feedOutputPort),

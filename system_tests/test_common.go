@@ -23,9 +23,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -211,7 +211,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T, ctx context.Context, feedOutputConfig *configuration.FeedOutput) (*BlockchainTestInfo, *arbnode.Node) {
+func CreateTestL2(t *testing.T, ctx context.Context, feedOutputConfig *wsbroadcastserver.FeedOutput) (*BlockchainTestInfo, *arbnode.Node) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
 	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil, feedOutputConfig)
 	if err != nil {

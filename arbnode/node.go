@@ -22,12 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	legacyconfig "github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	nitrobroadcaster "github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -124,7 +124,7 @@ type Node struct {
 	BlockValidator   *validator.BlockValidator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, feedOutputConfig *legacyconfig.FeedOutput) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, feedOutputConfig *wsbroadcastserver.FeedOutput) (*Node, error) {
 	var broadcaster *nitrobroadcaster.Broadcaster
 	if config.BatchPoster && feedOutputConfig != nil {
 		broadcaster = nitrobroadcaster.NewBroadcaster(*feedOutputConfig)
