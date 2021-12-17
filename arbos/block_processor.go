@@ -92,7 +92,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 ) (*types.Block, types.Receipts) {
 
-	txes, err := message.ParseL2Messages(ChainConfig.ChainID)
+	txes, err := message.ParseL2Transactions(ChainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
