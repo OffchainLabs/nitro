@@ -70,6 +70,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	posterCost := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 
 	if p.msg.GasPrice().Sign() == 0 {
+		// TODO: Review when doing eth_call's
 		// suggest the amount of gas needed for a given amount of ETH is higher in case of congestion
 		adjustedPrice := new(big.Int).Mul(gasPrice, big.NewInt(15))
 		adjustedPrice = new(big.Int).Mul(adjustedPrice, big.NewInt(16))

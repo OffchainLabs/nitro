@@ -155,7 +155,9 @@ func (ps *L1PricingState) PosterDataCost(
 		return big.NewInt(0)
 	}
 
-	dataGas := 16 * uint64(len(data)) * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
+	bytesToCharge := uint64(len(data) + 64) // TODO: Pick a better fixed cost
+
+	dataGas := 16 * bytesToCharge * ps.AggregatorCompressionRatio(preferredAggregator) / DataWasNotCompressed
 
 	// add 5% to protect the aggregator bad price fluctuation luck
 	dataGas = dataGas * 21 / 20

@@ -114,6 +114,9 @@ func ProduceBlock(
 	gasLeft := PerBlockGasLimit
 	gasPrice := header.BaseFee
 
+	// We'll check that the block can fit each message, so this pool is set to not run out
+	gethGas := core.GasPool(1 << 63)
+
 	for _, tx := range txes {
 
 		sender, err := signer.Sender(tx)
@@ -157,7 +160,6 @@ func ProduceBlock(
 		statedb.Prepare(tx.Hash(), len(txes))
 
 		// We've checked that the block can fit this message, so we'll use a pool that won't run out
-		gethGas := core.GasPool(1 << 63)
 		gasPool := gethGas
 
 		receipt, err := core.ApplyTransaction(
@@ -183,6 +185,7 @@ func ProduceBlock(
 		}
 
 		gasUsed := gethGas.Gas() - gasPool.Gas()
+		gethGas = gasPool
 
 		if gasUsed > computeGas {
 			delta := strconv.FormatUint(gasUsed-computeGas, 10)
