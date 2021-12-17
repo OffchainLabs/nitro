@@ -145,7 +145,7 @@ func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
 	return int(atomic.LoadInt32(&b.messageCount))
 }
 
-func NewBroadcaster(settings wsbroadcastserver.FeedOutput) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer),

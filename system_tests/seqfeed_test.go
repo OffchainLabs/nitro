@@ -15,7 +15,7 @@ import (
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
-var feedOutputConfigTest = wsbroadcastserver.FeedOutput{
+var broadcasterConfigTest = wsbroadcastserver.BroadcasterConfig{
 	Addr:          "127.0.0.1",
 	IOTimeout:     5 * time.Second,
 	Port:          "9642",
@@ -28,11 +28,13 @@ var feedOutputConfigTest = wsbroadcastserver.FeedOutput{
 func TestSequencerFeed(t *testing.T) {
 	// TODO have own config for this
 	arbnode.NodeConfigL2Test.BatchPoster = true
+	arbnode.NodeConfigL2Test.Broadcaster = true
+	arbnode.NodeConfigL2Test.BroadcasterConfig = broadcasterConfigTest
 	defer func() { arbnode.NodeConfigL2Test.BatchPoster = false }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _ := CreateTestL2(t, ctx, &feedOutputConfigTest)
+	l2info, _ := CreateTestL2(t, ctx)
 
 	client := l2info.Client
 

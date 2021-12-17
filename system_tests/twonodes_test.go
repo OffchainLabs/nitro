@@ -32,7 +32,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	}
 	nodeConf := arbnode.NodeConfigL1Test
 	nodeConf.BatchPoster = false
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeConf, l2blockchain, l1client, first.DeployInfo, nil, nil)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeConf, l2blockchain, l1client, first.DeployInfo, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

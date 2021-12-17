@@ -37,7 +37,7 @@ type ClientManager struct {
 	poller        netpoll.Poller
 	broadcastChan chan interface{}
 	clientAction  chan ClientConnectionAction
-	settings      FeedOutput
+	settings      BroadcasterConfig
 	catchupBuffer CatchupBuffer
 }
 
@@ -46,7 +46,7 @@ type ClientConnectionAction struct {
 	create bool
 }
 
-func NewClientManager(poller netpoll.Poller, settings FeedOutput, catchupBuffer CatchupBuffer) *ClientManager {
+func NewClientManager(poller netpoll.Poller, settings BroadcasterConfig, catchupBuffer CatchupBuffer) *ClientManager {
 	return &ClientManager{
 		poller:        poller,
 		pool:          gopool.NewPool(settings.Workers, settings.Queue, 1),

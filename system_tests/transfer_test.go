@@ -16,7 +16,7 @@ import (
 func TestTransfer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _ := CreateTestL2(t, ctx, nil)
+	l2info, _ := CreateTestL2(t, ctx)
 
 	client := l2info.Client
 

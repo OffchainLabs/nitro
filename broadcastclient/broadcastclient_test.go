@@ -17,7 +17,7 @@ import (
 func TestReceiveMessages(t *testing.T) {
 	ctx := context.Background()
 
-	settings := configuration.FeedOutput{
+	settings := configuration.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9742",
@@ -94,7 +94,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expe
 func TestServerClientDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -151,7 +151,7 @@ func TestServerClientDisconnect(t *testing.T) {
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -190,7 +190,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9842",

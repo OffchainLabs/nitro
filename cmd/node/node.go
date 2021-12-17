@@ -56,13 +56,13 @@ func main() {
 	wsorigins := flag.String("wsorigins", "localhost", "list of origins to accept requests from")
 	wsexposeall := flag.Bool("wsexposeall", false, "expose private api via websocket")
 
-	// TODO Should we be using spf13/pflag like in arbitrum pkg?
-	feedOutputAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
-	feedOutputIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
-	feedOutputPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
-	feedOutputPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	feedOutputClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
-	feedOutputWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+	broadcasterEnabled := flag.Bool("broadcaster", false, "enable the broadcaster")
+	broadcasterAddr := flag.String("broadcaster.addr", "0.0.0.0", "address to bind the relay feed output to")
+	broadcasterIOTimeout := flag.Duration("broadcaster.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
+	broadcasterPort := flag.Int("broadcaster.port", 9642, "port to bind the relay feed output to")
+	broadcasterPing := flag.Duration("broadcaster.ping", 5*time.Second, "duration for ping interval")
+	broadcasterClientTimeout := flag.Duration("broadcaster.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	broadcasterWorkers := flag.Int("broadcaster.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
 	flag.Parse()
 
@@ -194,14 +194,15 @@ func main() {
 		}
 	}
 
-	feedOutputConfig := wsbroadcastserver.FeedOutput{
-		Addr:          *feedOutputAddr,
-		IOTimeout:     *feedOutputIOTimeout,
-		Port:          strconv.Itoa(*feedOutputPort),
-		Ping:          *feedOutputPing,
-		ClientTimeout: *feedOutputClientTimeout,
+	nodeConf.Broadcaster = *broadcasterEnabled
+	nodeConf.BroadcasterConfig = wsbroadcastserver.BroadcasterConfig{
+		Addr:          *broadcasterAddr,
+		IOTimeout:     *broadcasterIOTimeout,
+		Port:          strconv.Itoa(*broadcasterPort),
+		Ping:          *broadcasterPing,
+		ClientTimeout: *broadcasterClientTimeout,
 		Queue:         100,
-		Workers:       *feedOutputWorkers,
+		Workers:       *broadcasterWorkers,
 	}
 
 	genesisAlloc := make(core.GenesisAlloc)
@@ -230,7 +231,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts, &feedOutputConfig)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

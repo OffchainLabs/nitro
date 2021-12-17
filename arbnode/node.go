@@ -105,10 +105,12 @@ type NodeConfig struct {
 	ForwardingTarget       string // "" if not forwarding
 	BlockValidator         bool
 	BlockValidatorConfig   validator.BlockValidatorConfig
+	Broadcaster            bool
+	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -124,10 +126,10 @@ type Node struct {
 	BlockValidator   *validator.BlockValidator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, feedOutputConfig *wsbroadcastserver.FeedOutput) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
 	var broadcaster *nitrobroadcaster.Broadcaster
-	if config.BatchPoster && feedOutputConfig != nil {
-		broadcaster = nitrobroadcaster.NewBroadcaster(*feedOutputConfig)
+	if config.BatchPoster && config.Broadcaster {
+		broadcaster = nitrobroadcaster.NewBroadcaster(config.BroadcasterConfig)
 	}
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcaster)
 	if err != nil {
