@@ -11,9 +11,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/wsbroadcastserver"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 type Broadcaster struct {
@@ -146,7 +145,7 @@ func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
 	return int(atomic.LoadInt32(&b.messageCount))
 }
 
-func NewBroadcaster(settings configuration.FeedOutput) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.FeedOutput) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer),

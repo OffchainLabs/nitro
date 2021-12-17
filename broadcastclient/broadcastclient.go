@@ -17,8 +17,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/wsbroadcastserver"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 type BroadcastClient struct {

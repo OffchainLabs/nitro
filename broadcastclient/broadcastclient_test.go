@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
-
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 /* TODO port these tests to use new message type
@@ -95,7 +94,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expe
 func TestServerClientDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := configuration.FeedOutput{
+	settings := wsbroadcastserver.FeedOutput{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -152,7 +151,7 @@ func TestServerClientDisconnect(t *testing.T) {
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := configuration.FeedOutput{
+	settings := wsbroadcastserver.FeedOutput{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -191,7 +190,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := configuration.FeedOutput{
+	settings := wsbroadcastserver.FeedOutput{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9842",
