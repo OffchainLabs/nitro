@@ -21,7 +21,7 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
-	posterFee    *big.Int
+	posterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 }
 
 func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
