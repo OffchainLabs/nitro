@@ -842,21 +842,19 @@ impl Machine {
 
         for export in &bin.exports {
             if let ExportKind::Function(f) = export.kind {
-                let ty_idx = usize::try_from(f)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                    .unwrap();
-                let ty = bin.functions[ty_idx];
-                let ty = &bin.types[usize::try_from(ty).unwrap()];
-                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
-                available_imports.insert(
-                    format!("env__wavm_guest_call__{}", export.name),
-                    AvailableImport {
-                        ty: ty.clone(),
-                        module,
-                        func: f,
-                    },
-                );
+                if let Some(ty_idx) = usize::try_from(f).unwrap().checked_sub(bin.imports.len()) {
+                    let ty = bin.functions[ty_idx];
+                    let ty = &bin.types[usize::try_from(ty).unwrap()];
+                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+                    available_imports.insert(
+                        format!("env__wavm_guest_call__{}", export.name),
+                        AvailableImport {
+                            ty: ty.clone(),
+                            module,
+                            func: f,
+                        },
+                    );
+                }
             }
         }
 
@@ -1055,13 +1053,8 @@ impl Machine {
     }
 
     pub fn step_n(&mut self, n: u64) {
-        for x in 0..n {
+        for _ in 0..n {
             if self.is_halted() {
-                let remaining = n - x;
-                self.steps = self
-                    .steps
-                    .checked_add(remaining)
-                    .expect("Exceeded max uint64 steps");
                 break;
             }
             self.step();
@@ -1070,10 +1063,6 @@ impl Machine {
 
     pub fn step(&mut self) {
         if self.is_halted() {
-            self.steps = self
-                .steps
-                .checked_add(1)
-                .expect("Exceeded max uint64 steps");
             return;
         }
         // It's infeasible to overflow steps without halting
@@ -1789,6 +1778,10 @@ impl Machine {
                 .prove(self.pc.module)
                 .expect("Failed to prove module"),
         );
+
+        if self.is_halted() {
+            return data;
+        }
 
         // Begin next instruction proof
 
