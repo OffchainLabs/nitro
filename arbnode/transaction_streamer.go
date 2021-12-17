@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
-// Singleton that manages the production and recording of blocks
+// Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
 	db ethdb.Database

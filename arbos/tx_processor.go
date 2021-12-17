@@ -32,7 +32,7 @@ func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
-		posterFee:    new(big.Int),
+		posterFee:    nil,
 	}
 }
 

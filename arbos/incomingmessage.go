@@ -163,7 +163,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 	}, nil
 }
 
-func (msg *L1IncomingMessage) TypeSpecificParse(chainId *big.Int) (types.Transactions, error) {
+func (msg *L1IncomingMessage) ParseL2Messages(chainId *big.Int) (types.Transactions, error) {
 	if len(msg.L2msg) > MaxL2MessageSize {
 		// ignore the message if l2msg is too large
 		return nil, errors.New("message too large")

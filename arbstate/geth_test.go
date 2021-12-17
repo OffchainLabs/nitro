@@ -60,11 +60,11 @@ func TestEthDepositMessage(t *testing.T) {
 		panic("failed to init empty statedb")
 	}
 
-	addr := common.BigToAddress(big.NewInt(51395080))
+	addr := common.HexToAddress("0x32abcdeffffff")
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))
 
-	if statedb.GetBalance(addr).Cmp(big.NewInt(0)) != 0 {
+	if statedb.GetBalance(addr).Sign() != 0 {
 		t.Fatal()
 	}
 
@@ -119,7 +119,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := msg.TypeSpecificParse(chainId)
+		txes, err := msg.ParseL2Messages(chainId)
 		if err != nil {
 			t.Error(err)
 		}

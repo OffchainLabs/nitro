@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
@@ -91,7 +92,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 ) (*types.Block, types.Receipts) {
 
-	txes, err := message.TypeSpecificParse(ChainConfig.ChainID)
+	txes, err := message.ParseL2Messages(ChainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
@@ -134,6 +135,8 @@ func ProduceBlock(
 			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
 			if posterCostInL2Gas.IsUint64() {
 				dataGas = posterCostInL2Gas.Uint64()
+			} else {
+				log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
 			}
 		}
 
@@ -208,9 +211,7 @@ func ProduceBlock(
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
-		txCount := strconv.Itoa(len(block.Transactions()))
-		receiptCount := strconv.Itoa(len(receipts))
-		panic("Block has " + txCount + " txes but " + receiptCount + " receipts")
+		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
 	FinalizeBlock(header, complete, receipts, statedb)
