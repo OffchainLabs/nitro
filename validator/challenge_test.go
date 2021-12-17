@@ -6,8 +6,6 @@ package validator
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/rand"
 	"math/big"
 	"os"
 	"path"
@@ -19,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
@@ -90,7 +88,7 @@ func CreateChallenge(
 }
 
 func createTransactOpts(t *testing.T) *bind.TransactOpts {
-	key, err := ecdsa.GenerateKey(secp256k1.S256(), rand.Reader)
+	key, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}

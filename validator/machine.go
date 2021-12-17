@@ -78,6 +78,7 @@ func (m *ArbitratorMachine) GetGlobalState() C.struct_GlobalState {
 }
 
 func (m *ArbitratorMachine) GetStepCount() uint64 {
+	defer runtime.KeepAlive(m)
 	return uint64(C.arbitrator_get_num_steps(m.ptr))
 }
 
