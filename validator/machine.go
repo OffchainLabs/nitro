@@ -99,12 +99,9 @@ func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	}
 }
 
-func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
-	defer runtime.KeepAlive(m)
-
+func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
 	var zero C.uint8_t
 	conditionByte := &zero
-	defer runtime.KeepAlive(conditionByte)
 
 	doneEarlyChan := make(chan struct{})
 
@@ -117,9 +114,32 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 		}
 	})()
 
+	cancel := func() {
+		runtime.KeepAlive(conditionByte)
+		close(doneEarlyChan)
+	}
+
+	return conditionByte, cancel
+}
+
+func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
+	defer runtime.KeepAlive(m)
+
+	conditionByte, cancel := manageConditionByte(ctx)
+	defer cancel()
+
 	C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
 
-	close(doneEarlyChan)
+	return ctx.Err()
+}
+
+func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
+	defer runtime.KeepAlive(m)
+
+	conditionByte, cancel := manageConditionByte(ctx)
+	defer cancel()
+
+	C.arbitrator_step_until_host_io(m.ptr, conditionByte)
 
 	return ctx.Err()
 }

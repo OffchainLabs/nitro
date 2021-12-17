@@ -228,7 +228,10 @@ func (n *Node) Start(ctx context.Context) error {
 		n.BatchPoster.Start(ctx)
 	}
 	if n.BlockValidator != nil {
-		n.BlockValidator.Start(ctx)
+		err = n.BlockValidator.Start(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

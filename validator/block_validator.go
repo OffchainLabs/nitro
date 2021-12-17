@@ -552,9 +552,14 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	}
 }
 
-func (v *BlockValidator) Start(ctx context.Context) {
+func (v *BlockValidator) Start(ctx context.Context) error {
+	err := v.baseMachine.StepUntilHostIo(ctx)
+	if err != nil {
+		return err
+	}
 	v.startProgressLoop(ctx)
 	v.startValidationLoop(ctx)
+	return nil
 }
 
 // can only be used from One thread
