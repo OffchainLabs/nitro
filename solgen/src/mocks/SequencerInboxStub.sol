@@ -5,9 +5,9 @@
 
 pragma solidity ^0.8.0;
 
-import "./IBridge.sol";
-import "./Messages.sol";
-import "./ISequencerInbox.sol";
+import "../bridge/IBridge.sol";
+import "../bridge/Messages.sol";
+import "../bridge/ISequencerInbox.sol";
 
 contract SequencerInboxStub is ISequencerInbox {
 	bytes32[] public override inboxAccs;

@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./IChallengeResultReceiver.sol";
+import "../challenge/IChallengeResultReceiver.sol";
 
 contract MockResultReceiver is IChallengeResultReceiver {
 	address public winner;

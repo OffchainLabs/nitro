@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
+	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 )
 
@@ -58,8 +58,8 @@ func CreateChallenge(
 	endMachineHash common.Hash,
 	asserter common.Address,
 	challenger common.Address,
-) (*challengegen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := challengegen.DeployMockResultReceiver(auth, client)
+) (*mocksgen.MockResultReceiver, common.Address) {
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,12 +68,12 @@ func CreateChallenge(
 	var endHashBytes [32]byte
 	copy(startHashBytes[:], startMachineHash[:])
 	copy(endHashBytes[:], endMachineHash[:])
-	challenge, _, _, err := challengegen.DeploySingleExecutionChallenge(
+	challenge, _, _, err := mocksgen.DeploySingleExecutionChallenge(
 		auth,
 		client,
 		ospEntry,
 		resultReceiverAddr,
-		challengegen.ExecutionContext{
+		mocksgen.ExecutionContext{
 			MaxInboxMessagesRead: new(big.Int).SetUint64(^uint64(0)),
 		},
 		[2][32]byte{startHashBytes, endHashBytes},

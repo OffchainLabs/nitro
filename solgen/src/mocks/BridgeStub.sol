@@ -7,7 +7,7 @@ pragma solidity ^0.8.0;
 
 import "./InboxStub.sol";
 
-import "./IBridge.sol";
+import "../bridge/IBridge.sol";
 
 contract BridgeStub is IBridge {
     struct InOutInfo {
