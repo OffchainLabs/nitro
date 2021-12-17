@@ -9,7 +9,7 @@ interface IExecutionChallengeFactory {
     function createChallenge(
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
-        bytes32 challengeStateHash_,
+        bytes32[2] memory startAndEndHashes,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,

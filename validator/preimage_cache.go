@@ -8,6 +8,7 @@ package validator
 import "C"
 import (
 	"sync"
+	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -101,16 +102,19 @@ func (p *preimageCache) CacheMaintenance() {
 	})
 }
 
+// The top-level CMultipleByteArrays returned must be freed, but the inner byte arrays must **not** be freed.
 func (p *preimageCache) PrepareMultByteArrays(hashlist []common.Hash) (C.CMultipleByteArrays, error) {
 	length := len(hashlist)
 	array := AllocateMultipleCByteArrays(length)
 	for i, hash := range hashlist {
 		actual, found := p.cacheMap.Load(hash)
 		if !found {
+			C.free(unsafe.Pointer(array.ptr))
 			return C.CMultipleByteArrays{}, errors.New("preimage not in cache")
 		}
 		curEntry, ok := actual.(*preimageEntry)
 		if !ok {
+			C.free(unsafe.Pointer(array.ptr))
 			return C.CMultipleByteArrays{}, errors.New("preimage malformed in cache")
 		}
 
@@ -119,6 +123,7 @@ func (p *preimageCache) PrepareMultByteArrays(hashlist []common.Hash) (C.CMultip
 		curRefCount := curEntry.Refcount
 		curEntry.Mutex.Unlock()
 		if curRefCount <= 0 {
+			C.free(unsafe.Pointer(array.ptr))
 			return C.CMultipleByteArrays{}, errors.New("preimage cache in bad state")
 		}
 		UpdateCByteArrayInMultiple(array, i, curData)

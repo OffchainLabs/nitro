@@ -68,7 +68,7 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y gotestsum
+        run: sudo apt update && sudo apt install -y gotestsum wabt
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
@@ -99,7 +99,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Build
-        run: make build -j
+        run: make build test-go-deps -j
 
       - name: run tests with race detection
         run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- -race ./...
