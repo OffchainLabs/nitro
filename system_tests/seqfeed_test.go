@@ -26,7 +26,6 @@ var broadcasterConfigTest = wsbroadcastserver.BroadcasterConfig{
 }
 
 func TestSequencerFeed(t *testing.T) {
-	// TODO have own config for this
 	arbnode.NodeConfigL2Test.BatchPoster = true
 	arbnode.NodeConfigL2Test.Broadcaster = true
 	arbnode.NodeConfigL2Test.BroadcasterConfig = broadcasterConfigTest
