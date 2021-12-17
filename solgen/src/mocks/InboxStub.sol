@@ -5,10 +5,10 @@
 
 pragma solidity ^0.8.0;
 
-import "./IInbox.sol";
-import "./IBridge.sol";
+import "../bridge/IInbox.sol";
+import "../bridge/IBridge.sol";
 
-import "./Messages.sol";
+import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
 
 contract InboxStub is IInbox {

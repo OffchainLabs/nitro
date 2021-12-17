@@ -12,15 +12,6 @@ struct TempByteArray {
   uintptr_t len;
 };
 
-CByteArray CreateCByteArray(uint8_t* ptr, uintptr_t len) {
-	CByteArray retval = {ptr, len};
-	return retval;
-}
-
-void DestroyCByteArray(CByteArray arr) {
-	free((void *)arr.ptr);
-}
-
 CMultipleByteArrays CreateMultipleCByteArrays(uintptr_t num) {
 	CMultipleByteArrays retval = {malloc(sizeof(struct TempByteArray) * num), num};
 	return retval;
@@ -67,28 +58,6 @@ void AddToStringList(char** list, int index, char* val) {
 	list[index] = val;
 }
 
-int Bytes32ToGlobalState(struct GlobalState *gs, int idx, void *hash) {
-	uint8_t *hashBytes = (uint8_t *)hash;
-	if (idx >= GLOBAL_STATE_BYTES32_NUM) {
-		return -1;
-	}
-	for (int i=0; i<32 ; i++) {
-		gs->bytes32_vals[idx].bytes[i] = hashBytes[i];
-	}
-	return 0;
-}
-
-int Bytes32FromGlobalState(struct GlobalState *gs, int idx, void *hash) {
-	uint8_t *hashBytes = (uint8_t *)hash;
-	if (idx >= GLOBAL_STATE_BYTES32_NUM) {
-		return -1;
-	}
-	for (int i=0; i<32 ; i++) {
-		hashBytes[i] = gs->bytes32_vals[idx].bytes[i];
-	}
-	return 0;
-}
-
 struct CByteArray InboxReaderFunc(uint64_t context, uint64_t inbox_idx, uint64_t seq_num);
 
 struct CByteArray InboxReaderWrapper(uint64_t context, uint64_t inbox_idx, uint64_t seq_num){
@@ -117,25 +86,33 @@ func UpdateCByteArrayInMultiple(array C.CMultipleByteArrays, index int, cbyte C.
 }
 
 func CreateCByteArray(input []byte) C.CByteArray {
-	return C.CreateCByteArray((*C.uint8_t)(C.CBytes(input)), C.uintptr_t(len(input)))
+	return C.CByteArray{
+		// Warning: CBytes uses malloc internally, so this must be freed later
+		ptr: (*C.uint8_t)(C.CBytes(input)),
+		len: C.uintptr_t(len(input)),
+	}
 }
 
 func DestroyCByteArray(cbyte C.CByteArray) {
-	C.DestroyCByteArray(cbyte)
+	C.free(unsafe.Pointer(cbyte.ptr))
 }
 
 func CreateGlobalState(batch uint64, posinBatch uint64, blockHash common.Hash) C.GlobalState {
 	gs := C.GlobalState{}
 	gs.u64_vals[0] = C.uint64_t(batch)
 	gs.u64_vals[1] = C.uint64_t(posinBatch)
-	C.Bytes32ToGlobalState(&gs, 0, unsafe.Pointer(&blockHash[0]))
+	for i, b := range blockHash {
+		gs.bytes32_vals[0].bytes[i] = C.uint8_t(b)
+	}
 	return gs
 }
 
 func ParseGlobalState(gs C.GlobalState) (batch uint64, posinBatch uint64, blockHash common.Hash) {
 	batch = uint64(gs.u64_vals[0])
 	posinBatch = uint64(gs.u64_vals[1])
-	C.Bytes32FromGlobalState(&gs, 0, unsafe.Pointer(&blockHash[0]))
+	for i := range blockHash {
+		blockHash[i] = byte(gs.bytes32_vals[0].bytes[i])
+	}
 	return
 }
 
@@ -146,6 +123,14 @@ func CreateCStringList(input []string) **C.char {
 		C.AddToStringList(res, C.int(i), C.CString(str))
 	}
 	return res
+}
+
+func FreeCStringList(arrPtr **C.char, size int) {
+	arr := (*[1 << 30]*C.char)(unsafe.Pointer(arrPtr))[:size:size]
+	for _, ptr := range arr {
+		C.free(unsafe.Pointer(ptr))
+	}
+	C.free(unsafe.Pointer(arrPtr))
 }
 
 // single file with the binary blob

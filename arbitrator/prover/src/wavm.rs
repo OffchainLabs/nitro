@@ -283,6 +283,18 @@ impl Opcode {
             Opcode::HaltAndSetFinished => 0x8022,
         }
     }
+
+    pub fn is_host_io(self) -> bool {
+        match self {
+            Opcode::GetGlobalStateBytes32
+            | Opcode::SetGlobalStateBytes32
+            | Opcode::GetGlobalStateU64
+            | Opcode::SetGlobalStateU64
+            | Opcode::ReadPreImage
+            | Opcode::ReadInboxMessage => true,
+            _ => false,
+        }
+    }
 }
 
 pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
