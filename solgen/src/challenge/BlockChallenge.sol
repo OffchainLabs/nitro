@@ -9,42 +9,13 @@ import "./IExecutionChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 import "./Cloneable.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
-    enum Turn {
-        NO_CHALLENGE,
-        ASSERTER,
-        CHALLENGER
-    }
-
-    event InitiatedChallenge();
-    event Bisected(
-        bytes32 indexed challengeRoot,
-        uint256 challengedSegmentStart,
-        uint256 challengedSegmentLength,
-        bytes32[] chainHashes
-    );
-    event AsserterTimedOut();
-    event ChallengerTimedOut();
-    event ContinuedExecutionProven();
-
-    uint256 constant MAX_CHALLENGE_DEGREE = 40;
-
-    string constant NO_TURN = "NO_TURN";
+contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
+    event ExecutionChallengeBegun(IExecutionChallenge indexed challenge);
 
     IExecutionChallengeFactory public executionChallengeFactory;
-    IChallengeResultReceiver resultReceiver;
 
     ExecutionContext public execCtx;
     bytes32 public wasmModuleRoot;
-
-    address public asserter;
-    address public challenger;
-
-    uint256 public asserterTimeLeft;
-    uint256 public challengerTimeLeft;
-    uint256 public lastMoveTimestamp;
-
-    Turn public turn;
 
     IExecutionChallenge public executionChallenge;
 
@@ -81,94 +52,6 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
             0,
             numBlocks,
             segments
-        );
-    }
-
-    modifier takeTurn() {
-        require(msg.sender == currentResponder(), "BIS_SENDER");
-        require(
-            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
-            "BIS_DEADLINE"
-        );
-        require(address(executionChallenge) == address(0), "BIS_EXEC");
-
-        _;
-
-        if (turn == Turn.CHALLENGER) {
-            challengerTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.ASSERTER;
-        } else {
-            asserterTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.CHALLENGER;
-        }
-        lastMoveTimestamp = block.timestamp;
-    }
-
-    function currentResponder() public view returns (address) {
-        if (turn == Turn.ASSERTER) {
-            return asserter;
-        } else if (turn == Turn.CHALLENGER) {
-            return challenger;
-        } else {
-            revert(NO_TURN);
-        }
-    }
-
-    function currentResponderTimeLeft() public view returns (uint256) {
-        if (turn == Turn.ASSERTER) {
-            return asserterTimeLeft;
-        } else if (turn == Turn.CHALLENGER) {
-            return challengerTimeLeft;
-        } else {
-            revert(NO_TURN);
-        }
-    }
-
-    /**
-     * @notice Initiate the next round in the bisection by objecting to execution correctness with a bisection
-     * of an execution segment with the same length but a different endpoint. This is either the initial move
-     * or follows another execution objection
-     */
-    function bisectExecution(
-        uint256 oldSegmentsStart,
-        uint256 oldSegmentsLength,
-        bytes32[] calldata oldSegments,
-        uint256 challengePosition,
-        bytes32[] calldata newSegments
-    ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
-                oldSegmentsStart,
-                oldSegmentsLength,
-                oldSegments,
-                challengePosition
-            );
-        require(challengeLength > 1, "TOO_SHORT");
-        {
-            uint256 expectedDegree = challengeLength;
-            if (expectedDegree > MAX_CHALLENGE_DEGREE) {
-                expectedDegree = MAX_CHALLENGE_DEGREE;
-            }
-            require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
-        }
-        require(
-            newSegments[newSegments.length - 1] !=
-                oldSegments[challengePosition + 1],
-            "SAME_END"
-        );
-
-        require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
-
-        challengeStateHash = ChallengeLib.hashChallengeState(
-            challengeStart,
-            challengeLength,
-            newSegments
-        );
-
-        emit Bisected(
-            challengeStateHash,
-            challengeStart,
-            challengeLength,
-            newSegments
         );
     }
 
@@ -261,6 +144,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
             newChallengerTimeLeft
         );
         turn = Turn.NO_CHALLENGE;
+
+        emit ExecutionChallengeBegun(executionChallenge);
     }
 
     function getStartMachineHash(bytes32 globalStateHash)
@@ -321,25 +206,6 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
         }
     }
 
-    function timeout() external {
-        require(address(executionChallenge) != address(0), "TIMEOUT_EXEC");
-        uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
-        require(
-            timeSinceLastMove > currentResponderTimeLeft(),
-            "TIMEOUT_DEADLINE"
-        );
-
-        if (turn == Turn.ASSERTER) {
-            emit AsserterTimedOut();
-            _challengerWin();
-        } else if (turn == Turn.CHALLENGER) {
-            emit ChallengerTimedOut();
-            _asserterWin();
-        } else {
-            revert(NO_TURN);
-        }
-    }
-
     function clearChallenge() external {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         if (address(executionChallenge) != address(0)) {
@@ -369,15 +235,5 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, Cloneable {
         // } else {
         // 	   revert(NO_TURN);
         // }
-    }
-
-    function _asserterWin() private {
-        resultReceiver.completeChallenge(asserter, challenger);
-        safeSelfDestruct(payable(0));
-    }
-
-    function _challengerWin() private {
-        resultReceiver.completeChallenge(challenger, asserter);
-        safeSelfDestruct(payable(0));
     }
 }

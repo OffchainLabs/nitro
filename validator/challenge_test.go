@@ -17,8 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 )
@@ -111,6 +113,22 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 	return alloc
 }
 
+func issueExecutionOSP(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState challengeState, startSegment int, machine MachineInterface) (*types.Transaction, error) {
+	con, err := challengegen.NewExecutionChallenge(challenge, client)
+	if err != nil {
+		return nil, err
+	}
+	proof := machine.ProveNextStep()
+	return con.OneStepProveExecution(
+		auth,
+		oldState.start,
+		new(big.Int).Sub(oldState.end, oldState.start),
+		oldState.rawSegments,
+		big.NewInt(int64(startSegment)),
+		proof,
+	)
+}
+
 func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, steps uint64, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlDebug)
@@ -165,18 +183,18 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		expectedWinner = asserter.From
 	}
 
-	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, 0, asserterMachine, 4)
+	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, 0, asserterMachine, issueExecutionOSP, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, 0, challengerMachine, 4)
+	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, 0, challengerMachine, issueExecutionOSP, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for i := 0; i < 100; i++ {
 		if i%2 == 0 {
-			err = challengerManager.Act(ctx)
+			_, err = challengerManager.Act(ctx)
 			if err != nil {
 				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
 					t.Log("challenge completed! challenger hit expected error:", err)
@@ -185,7 +203,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 				t.Fatal(err)
 			}
 		} else {
-			err = asserterManager.Act(ctx)
+			_, err = asserterManager.Act(ctx)
 			if err != nil {
 				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
 					t.Log("challenge completed! asserter hit expected error:", err)
