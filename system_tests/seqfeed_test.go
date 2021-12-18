@@ -60,7 +60,7 @@ func TestSequencerFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*5)
+	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}

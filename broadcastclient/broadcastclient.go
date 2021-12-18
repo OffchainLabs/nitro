@@ -85,7 +85,7 @@ func (bc *BroadcastClient) ConnectInBackground(ctx context.Context, messageRecei
 			if err == nil {
 				break
 			}
-			log.Warn("failed connect to sequencer broadcast, waiting and retrying, url = ", bc.websocketUrl, err.Error())
+			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
 			select {
 			case <-ctx.Done():
 				return
@@ -102,14 +102,14 @@ func (bc *BroadcastClient) connect(ctx context.Context, messageReceiver chan bro
 		return nil, nil
 	}
 
-	log.Info("connecting to arbitrum inbox message broadcaster, url = ", bc.websocketUrl)
+	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	timeoutDialer := ws.Dialer{
 		Timeout: 10 * time.Second,
 	}
 
 	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
-		log.Warn("broadcast client unable to connect", err.Error())
+		log.Warn("broadcast client unable to connect", "err", err)
 		return nil, errors.Wrap(err, "broadcast client unable to connect")
 	}
 
@@ -137,9 +137,9 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context, messageRec
 					return
 				}
 				if strings.Contains(err.Error(), "i/o timeout") {
-					log.Error("Server connection timed out without receiving data, feed = ", bc.websocketUrl)
+					log.Error("Server connection timed out without receiving data", "url", bc.websocketUrl, "err", err)
 				} else {
-					log.Error("error calling readData, feed = ", bc.websocketUrl, ", opcode = ", int(op), err.Error())
+					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
 				_ = bc.conn.Close()
 				bc.RetryConnect(ctx, messageReceiver)
@@ -150,16 +150,16 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context, messageRec
 				res := broadcaster.BroadcastMessage{}
 				err = json.Unmarshal(msg, &res)
 				if err != nil {
-					log.Error("error unmarshalling message ", msg, err.Error())
+					log.Error("error unmarshalling message", "msg", msg, "err", err)
 					continue
 				}
 
 				if len(res.Messages) > 0 {
-					log.Debug("received batch item, count", len(res.Messages), ", first seq, ", res.Messages[0].SequenceNumber)
+					log.Debug("received batch item", "count", len(res.Messages), "first seq", res.Messages[0].SequenceNumber)
 				} else if res.ConfirmedSequenceNumberMessage != nil {
-					log.Debug("confirmed sequence number ", res.ConfirmedSequenceNumberMessage.SequenceNumber)
+					log.Debug("confirmed sequence number", "seq", res.ConfirmedSequenceNumberMessage.SequenceNumber)
 				} else {
-					log.Debug("received broadcast with no messages populated, length = ", len(msg))
+					log.Debug("received broadcast with no messages populated", "length", len(msg))
 				}
 
 				if res.Version == 1 {
