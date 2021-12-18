@@ -83,21 +83,21 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 	return mach.Hash(), nil
 }
 
-func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState challengeState, startSegment int) (*types.Transaction, error) {
+func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState ChallengeState, startSegment int) (*types.Transaction, error) {
 	con, err := challengegen.NewExecutionChallenge(challenge, client)
 	if err != nil {
 		return nil, err
 	}
-	mach, err := b.getMachineAt(ctx, oldState.segments[startSegment].position)
+	mach, err := b.getMachineAt(ctx, oldState.Segments[startSegment].Position)
 	if err != nil {
 		return nil, err
 	}
 	proof := mach.ProveNextStep()
 	return con.OneStepProveExecution(
 		auth,
-		oldState.start,
-		new(big.Int).Sub(oldState.end, oldState.start),
-		oldState.rawSegments,
+		oldState.Start,
+		new(big.Int).Sub(oldState.End, oldState.Start),
+		oldState.RawSegments,
 		big.NewInt(int64(startSegment)),
 		proof,
 	)

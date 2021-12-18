@@ -34,7 +34,7 @@ func init() {
 type ChallengeBackend interface {
 	SetRange(ctx context.Context, start uint64, end uint64) error
 	GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error)
-	IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState challengeState, startSegment int) (*types.Transaction, error)
+	IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState ChallengeState, startSegment int) (*types.Transaction, error)
 }
 
 type ChallengeManager struct {
@@ -63,43 +63,43 @@ func NewChallengeManager(ctx context.Context, client bind.ContractBackend, auth 
 	}, nil
 }
 
-type challengeSegment struct {
-	hash     common.Hash
-	position uint64
+type ChallengeSegment struct {
+	Hash     common.Hash
+	Position uint64
 }
 
-type challengeState struct {
-	start       *big.Int
-	end         *big.Int
-	segments    []challengeSegment
-	rawSegments [][32]byte
+type ChallengeState struct {
+	Start       *big.Int
+	End         *big.Int
+	Segments    []ChallengeSegment
+	RawSegments [][32]byte
 }
 
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.
-func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash common.Hash) (challengeState, error) {
+func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash common.Hash) (ChallengeState, error) {
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
 		Addresses: []common.Address{m.challengeAddr},
 		Topics:    [][]common.Hash{{challengeBisectedID}, {stateHash}},
 	})
 	if err != nil {
-		return challengeState{}, err
+		return ChallengeState{}, err
 	}
 	if len(logs) == 0 {
-		return challengeState{}, errors.New("didn't find Bisected event")
+		return ChallengeState{}, errors.New("didn't find Bisected event")
 	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
 	log := logs[len(logs)-1]
 	parsedLog, err := m.con.ParseBisected(log)
 	if err != nil {
-		return challengeState{}, err
+		return ChallengeState{}, err
 	}
-	state := challengeState{
-		start:       parsedLog.ChallengedSegmentStart,
-		end:         new(big.Int).Add(parsedLog.ChallengedSegmentStart, parsedLog.ChallengedSegmentLength),
-		segments:    make([]challengeSegment, len(parsedLog.ChainHashes)),
-		rawSegments: parsedLog.ChainHashes,
+	state := ChallengeState{
+		Start:       parsedLog.ChallengedSegmentStart,
+		End:         new(big.Int).Add(parsedLog.ChallengedSegmentStart, parsedLog.ChallengedSegmentLength),
+		Segments:    make([]ChallengeSegment, len(parsedLog.ChainHashes)),
+		RawSegments: parsedLog.ChainHashes,
 	}
 	degree := len(parsedLog.ChainHashes) - 1
 	currentPosition := new(big.Int).Set(parsedLog.ChallengedSegmentStart)
@@ -107,26 +107,26 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 	for i, h := range parsedLog.ChainHashes {
 		hash := common.Hash(h)
 		if i == len(parsedLog.ChainHashes)-1 {
-			if currentPosition.Cmp(state.end) > 0 {
-				return challengeState{}, errors.New("computed last segment position past end")
+			if currentPosition.Cmp(state.End) > 0 {
+				return ChallengeState{}, errors.New("computed last segment position past end")
 			}
-			currentPosition.Set(state.end)
+			currentPosition.Set(state.End)
 		}
 		if !currentPosition.IsUint64() {
-			return challengeState{}, errors.New("challenge segment position doesn't fit in a uint64")
+			return ChallengeState{}, errors.New("challenge segment position doesn't fit in a uint64")
 		}
-		state.segments[i] = challengeSegment{
-			hash:     hash,
-			position: currentPosition.Uint64(),
+		state.Segments[i] = ChallengeSegment{
+			Hash:     hash,
+			Position: currentPosition.Uint64(),
 		}
 		currentPosition.Add(currentPosition, normalSegmentLength)
 	}
 	return state, nil
 }
 
-func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, startSegment int) (*types.Transaction, error) {
-	startSegmentPosition := oldState.segments[startSegment].position
-	endSegmentPosition := oldState.segments[startSegment+1].position
+func (m *ChallengeManager) bisect(ctx context.Context, oldState ChallengeState, startSegment int) (*types.Transaction, error) {
+	startSegmentPosition := oldState.Segments[startSegment].Position
+	endSegmentPosition := oldState.Segments[startSegment+1].Position
 	newChallengeLength := endSegmentPosition - startSegmentPosition
 	err := m.backend.SetRange(ctx, startSegmentPosition, endSegmentPosition)
 	if err != nil {
@@ -154,9 +154,9 @@ func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, 
 	}
 	return m.con.BisectExecution(
 		m.auth,
-		oldState.start,
-		new(big.Int).Sub(oldState.end, oldState.start),
-		oldState.rawSegments,
+		oldState.Start,
+		new(big.Int).Sub(oldState.End, oldState.Start),
+		oldState.RawSegments,
 		big.NewInt(int64(startSegment)),
 		newSegments,
 	)
@@ -183,34 +183,34 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, err
 	}
 
-	err = m.backend.SetRange(ctx, state.start.Uint64(), state.end.Uint64())
+	err = m.backend.SetRange(ctx, state.Start.Uint64(), state.End.Uint64())
 	if err != nil {
 		return nil, err
 	}
 
-	for i, segment := range state.segments {
-		ourHash, err := m.backend.GetHashAtStep(ctx, segment.position)
+	for i, segment := range state.Segments {
+		ourHash, err := m.backend.GetHashAtStep(ctx, segment.Position)
 		if err != nil {
 			return nil, err
 		}
-		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.position, "ourHash", ourHash, "segmentHash", segment.hash)
-		if segment.hash != ourHash {
+		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.Position, "ourHash", ourHash, "segmentHash", segment.Hash)
+		if segment.Hash != ourHash {
 			if i == 0 {
 				return nil, errors.Errorf(
 					"first challenge segment doesn't match: at step count %v challenge has %v but resolved %v",
-					segment.position, segment.hash, ourHash,
+					segment.Position, segment.Hash, ourHash,
 				)
 			}
-			lastSegment := state.segments[i-1]
-			if lastSegment.position+1 == segment.position {
-				log.Debug("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.position)
+			lastSegment := state.Segments[i-1]
+			if lastSegment.Position+1 == segment.Position {
+				log.Debug("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.Position)
 				return m.backend.IssueOneStepProof(ctx, m.client, m.auth, m.challengeAddr, state, i-1)
 			} else {
-				log.Debug("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.position, "endPosition", segment.position)
+				log.Debug("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.Position, "endPosition", segment.Position)
 				return m.bisect(ctx, state, i-1)
 			}
 		}
 	}
 
-	return nil, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.start.String(), state.end.String())
+	return nil, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
 }
