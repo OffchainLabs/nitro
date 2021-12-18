@@ -32,7 +32,7 @@ var broadcastClientConfigTest = broadcastclient.BroadcastClientConfig{
 }
 
 func TestSequencerFeed(t *testing.T) {
-	glogger := log.Root().GetHandler().(*log.GlogHandler)
+	glogger, _ := log.Root().GetHandler().(*log.GlogHandler)
 	glogger.Verbosity(log.LvlTrace)
 	defer func() { glogger.Verbosity(log.LvlInfo) }()
 
