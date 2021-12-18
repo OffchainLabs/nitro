@@ -70,6 +70,11 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 			Messages: b.messages,
 		}
 
+		// There is an unknown race in gobwas between the server reporting
+		// handshake complete and the client actually being ready to receive.
+		// If data is sent before then it is lost.
+		time.Sleep(time.Second)
+
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
