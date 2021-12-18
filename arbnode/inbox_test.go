@@ -66,7 +66,7 @@ func TestTransactionStreamer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	inbox, err := NewTransactionStreamer(db, bc, nil)
+	inbox, err := NewTransactionStreamer(db, bc, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

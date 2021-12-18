@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -56,13 +57,16 @@ func main() {
 	wsorigins := flag.String("wsorigins", "localhost", "list of origins to accept requests from")
 	wsexposeall := flag.Bool("wsexposeall", false, "expose private api via websocket")
 
-	broadcasterEnabled := flag.Bool("broadcaster", false, "enable the broadcaster")
-	broadcasterAddr := flag.String("broadcaster.addr", "0.0.0.0", "address to bind the relay feed output to")
-	broadcasterIOTimeout := flag.Duration("broadcaster.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
-	broadcasterPort := flag.Int("broadcaster.port", 9642, "port to bind the relay feed output to")
-	broadcasterPing := flag.Duration("broadcaster.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("broadcaster.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
-	broadcasterWorkers := flag.Int("broadcaster.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+	broadcasterEnabled := flag.Bool("feed.output.enabled", false, "enable the broadcaster")
+	broadcasterAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
+	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
+	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
+	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
+	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+
+	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
+	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
 
 	flag.Parse()
 
@@ -203,6 +207,12 @@ func main() {
 		ClientTimeout: *broadcasterClientTimeout,
 		Queue:         100,
 		Workers:       *broadcasterWorkers,
+	}
+
+	nodeConf.BroadcastClient = *feedInputUrl != ""
+	nodeConf.BroadcastClientConfig = broadcastclient.BroadcastClientConfig{
+		Timeout: *feedInputTimeout,
+		URL:     *feedInputUrl,
 	}
 
 	genesisAlloc := make(core.GenesisAlloc)

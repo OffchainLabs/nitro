@@ -21,6 +21,13 @@ import (
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
+type BroadcastClientConfig struct {
+	Timeout time.Duration
+	URL     string // TODO should this be an array for multiple clients?
+}
+
+var DefaultBroadcastClientConfig BroadcastClientConfig
+
 type BroadcastClient struct {
 	websocketUrl    string
 	lastInboxSeqNum *big.Int

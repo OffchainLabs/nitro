@@ -211,8 +211,12 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 
 // L2 -Only. Enough for tests that needs no interface to L1
 func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node) {
+	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
+}
+
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
-	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

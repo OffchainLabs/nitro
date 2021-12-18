@@ -25,54 +25,50 @@ var broadcasterConfigTest = wsbroadcastserver.BroadcasterConfig{
 	Workers:       100,
 }
 
+var broadcastClientConfigTest = broadcastclient.BroadcastClientConfig{
+	URL:     "ws://localhost:9642/feed",
+	Timeout: 20 * time.Second,
+}
+
 func TestSequencerFeed(t *testing.T) {
-	arbnode.NodeConfigL2Test.BatchPoster = true
-	arbnode.NodeConfigL2Test.Broadcaster = true
-	arbnode.NodeConfigL2Test.BroadcasterConfig = broadcasterConfigTest
-	defer func() { arbnode.NodeConfigL2Test.BatchPoster = false }()
+	seqNodeConfig := arbnode.NodeConfigL2Test
+	seqNodeConfig.BatchPoster = true
+	seqNodeConfig.Broadcaster = true
+	seqNodeConfig.BroadcasterConfig = broadcasterConfigTest
+
+	clientNodeConfig := arbnode.NodeConfigL2Test
+	clientNodeConfig.BroadcastClient = true
+	clientNodeConfig.BroadcastClientConfig = broadcastClientConfigTest
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _ := CreateTestL2(t, ctx)
+	l2info1, _ := CreateTestL2WithConfig(t, ctx, &seqNodeConfig)
+	l2info2, _ := CreateTestL2WithConfig(t, ctx, &clientNodeConfig)
 
-	client := l2info.Client
+	client1 := l2info1.Client
+	l2info1.GenerateAccount("User2")
 
-	l2info.GenerateAccount("User2")
+	tx := l2info1.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
-	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
-
-	err := client.SendTransaction(ctx, tx)
+	err := client1.SendTransaction(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, client1, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	broadcastClient := broadcastclient.NewBroadcastClient("ws://127.0.0.1:9642/", nil, 20*time.Second)
-	messageCount := 0
-
-	// connect returns
-	messageReceiver, err := broadcastClient.Connect(ctx)
+	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// TODO make this test smarter, right now it just checks for receipt of 1 msg
-	defer broadcastClient.Close()
-	for {
-		select {
-		case <-messageReceiver:
-			messageCount++
-			if messageCount == 1 {
-				return
-			}
-		case <-broadcastClient.ConfirmedSequenceNumberListener:
-		case <-time.After(5 * time.Second):
-			t.Errorf("Client expected %d mesages, only got %d messages\n", 1, messageCount)
-			return
-		}
+	l2balance, err := l2info2.Client.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
 	}
 }
