@@ -31,39 +31,35 @@ func init() {
 	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
 }
 
-type OSPIssuer = func(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState challengeState, startSegment int, machine MachineInterface) (*types.Transaction, error)
-
-type ChallengeManager struct {
-	con               *challengegen.ChallengeCore
-	client            bind.ContractBackend
-	challengeAddr     common.Address
-	startL1Block      *big.Int
-	auth              *bind.TransactOpts
-	actingAs          common.Address
-	initialMachine    MachineInterface
-	targetNumMachines int
-	cache             *MachineCache
-	issueOneStepProof OSPIssuer
+type ChallengeBackend interface {
+	SetRange(ctx context.Context, start uint64, end uint64) error
+	GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error)
+	IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState challengeState, startSegment int) (*types.Transaction, error)
 }
 
-func NewExecutionChallengeManager(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, addr common.Address, startL1Block uint64, initialMachine MachineInterface, issueOSP OSPIssuer, targetNumMachines int) (*ChallengeManager, error) {
-	if initialMachine.GetStepCount() != 0 {
-		return nil, errors.New("initial machine not at 0 steps")
-	}
+type ChallengeManager struct {
+	con           *challengegen.ChallengeCore
+	client        bind.ContractBackend
+	challengeAddr common.Address
+	startL1Block  *big.Int
+	auth          *bind.TransactOpts
+	actingAs      common.Address
+	backend       ChallengeBackend
+}
+
+func NewChallengeManager(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, addr common.Address, startL1Block uint64, backend ChallengeBackend) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeCore(addr, client)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeManager{
-		con:               con,
-		client:            client,
-		challengeAddr:     addr,
-		startL1Block:      new(big.Int).SetUint64(startL1Block),
-		auth:              auth,
-		actingAs:          auth.From,
-		initialMachine:    initialMachine,
-		targetNumMachines: targetNumMachines,
-		issueOneStepProof: issueOSP,
+		con:           con,
+		client:        client,
+		challengeAddr: addr,
+		startL1Block:  new(big.Int).SetUint64(startL1Block),
+		auth:          auth,
+		actingAs:      auth.From,
+		backend:       backend,
 	}, nil
 }
 
@@ -128,16 +124,11 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 	return state, nil
 }
 
-func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, startSegment int, initialMachine MachineInterface) (*types.Transaction, error) {
+func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, startSegment int) (*types.Transaction, error) {
 	startSegmentPosition := oldState.segments[startSegment].position
 	endSegmentPosition := oldState.segments[startSegment+1].position
 	newChallengeLength := endSegmentPosition - startSegmentPosition
-	if !initialMachine.ValidForStep(startSegmentPosition) {
-		return nil, errors.New("initial machine not at start segment position")
-	}
-	m.cache = nil // allow Go to free the old machines
-	var err error
-	m.cache, err = NewMachineCacheWithEndSteps(ctx, initialMachine, m.targetNumMachines, endSegmentPosition)
+	err := m.backend.SetRange(ctx, startSegmentPosition, endSegmentPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +137,6 @@ func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, 
 		bisectionDegree = newChallengeLength
 	}
 	newSegments := make([][32]byte, int(bisectionDegree+1))
-	var mach MachineInterface
 	position := startSegmentPosition
 	normalSegmentLength := newChallengeLength / bisectionDegree
 	for i := range newSegments {
@@ -156,11 +146,10 @@ func (m *ChallengeManager) bisect(ctx context.Context, oldState challengeState, 
 			}
 			position = endSegmentPosition
 		}
-		mach, err = m.cache.GetMachineAt(ctx, mach, position)
+		newSegments[i], err = m.backend.GetHashAtStep(ctx, position)
 		if err != nil {
 			return nil, err
 		}
-		newSegments[i] = mach.Hash()
 		position += normalSegmentLength
 	}
 	return m.con.BisectExecution(
@@ -194,50 +183,31 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		return nil, err
 	}
 
-	if m.cache == nil {
-		initialMachine := m.initialMachine.CloneMachineInterface()
-		if initialMachine.GetStepCount() != 0 {
-			return nil, errors.New("initial machine not at 0 steps")
-		}
-		err = initialMachine.Step(ctx, state.start.Uint64())
-		if err != nil {
-			return nil, err
-		}
-		m.cache, err = NewMachineCacheWithEndSteps(ctx, initialMachine, m.targetNumMachines, state.end.Uint64())
-		if err != nil {
-			return nil, err
-		}
+	err = m.backend.SetRange(ctx, state.start.Uint64(), state.end.Uint64())
+	if err != nil {
+		return nil, err
 	}
 
-	var mach MachineInterface
 	for i, segment := range state.segments {
-		var prevMach MachineInterface
-		if mach != nil {
-			prevMach = mach.CloneMachineInterface()
-		}
-		mach, err = m.cache.GetMachineAt(ctx, mach, segment.position)
+		ourHash, err := m.backend.GetHashAtStep(ctx, segment.position)
 		if err != nil {
 			return nil, err
 		}
-		machineHash := mach.Hash()
-		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.position, "ourHash", machineHash, "segmentHash", segment.hash)
-		if segment.hash != machineHash {
+		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.position, "ourHash", ourHash, "segmentHash", segment.hash)
+		if segment.hash != ourHash {
 			if i == 0 {
 				return nil, errors.Errorf(
 					"first challenge segment doesn't match: at step count %v challenge has %v but resolved %v",
-					segment.position, segment.hash, machineHash,
+					segment.position, segment.hash, ourHash,
 				)
 			}
 			lastSegment := state.segments[i-1]
-			if prevMach == nil || !prevMach.ValidForStep(lastSegment.position) {
-				return nil, errors.New("internal error: prevMach nil or at wrong step count")
-			}
 			if lastSegment.position+1 == segment.position {
 				log.Debug("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.position)
-				return m.issueOneStepProof(ctx, m.client, m.auth, m.challengeAddr, state, i-1, prevMach)
+				return m.backend.IssueOneStepProof(ctx, m.client, m.auth, m.challengeAddr, state, i-1)
 			} else {
 				log.Debug("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.position, "endPosition", segment.position)
-				return m.bisect(ctx, state, i-1, prevMach)
+				return m.bisect(ctx, state, i-1)
 			}
 		}
 	}

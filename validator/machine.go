@@ -34,7 +34,7 @@ type ArbitratorMachine struct {
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
-var _ MachineInterface = &ArbitratorMachine{}
+var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
