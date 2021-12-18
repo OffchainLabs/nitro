@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
@@ -31,6 +32,10 @@ var broadcastClientConfigTest = broadcastclient.BroadcastClientConfig{
 }
 
 func TestSequencerFeed(t *testing.T) {
+	glogger := log.Root().GetHandler().(*log.GlogHandler)
+	glogger.Verbosity(log.LvlTrace)
+	defer func() { glogger.Verbosity(log.LvlInfo) }()
+
 	seqNodeConfig := arbnode.NodeConfigL2Test
 	seqNodeConfig.BatchPoster = true
 	seqNodeConfig.Broadcaster = true
