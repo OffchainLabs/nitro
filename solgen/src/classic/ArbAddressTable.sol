@@ -49,5 +49,14 @@ interface ArbAddressTable {
     * @return compressed address bytes
     */
     function compress(address addr) external returns(bytes memory);
+
+    /**
+    * @notice compute a chained hash over a range of addresses in the table
+    * @param start first index to include in hash chain
+    * @param end end of range to include (this-1 is the last included)
+    * @param startChain hash value to start the chained hash with
+    * @return chained hash result
+    */
+    function hashRange(uint start, uint end, bytes32 startChain) external returns(bytes32);
 }
 
