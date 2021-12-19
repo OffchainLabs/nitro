@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../osp/IOneStepProofEntry.sol";
+import "../state/GlobalStates.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
@@ -14,17 +15,16 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
 
     IExecutionChallengeFactory public executionChallengeFactory;
 
-    ExecutionContext public execCtx;
     bytes32 public wasmModuleRoot;
+    GlobalState[2] internal startAndEndGlobalStates;
 
     IExecutionChallenge public executionChallenge;
 
     constructor(
         IExecutionChallengeFactory executionChallengeFactory_,
         IChallengeResultReceiver resultReceiver_,
-        ExecutionContext memory execCtx_,
         bytes32 wasmModuleRoot_,
-        bytes32[2] memory startAndEndHashes,
+        GlobalState[2] memory startAndEndGlobalStates_,
         uint64 numBlocks,
         address asserter_,
         address challenger_,
@@ -33,18 +33,20 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
     ) {
         executionChallengeFactory = executionChallengeFactory_;
         resultReceiver = resultReceiver_;
-        execCtx = execCtx_;
         wasmModuleRoot = wasmModuleRoot_;
-        bytes32[] memory segments = new bytes32[](2);
-        segments[0] = startAndEndHashes[0];
-        segments[1] = startAndEndHashes[1];
-        challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
+        startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
+        startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
         asserter = asserter_;
         challenger = challenger_;
         asserterTimeLeft = asserterTimeLeft_;
         challengerTimeLeft = challengerTimeLeft_;
         lastMoveTimestamp = block.timestamp;
         turn = Turn.CHALLENGER;
+
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = GlobalStates.hash(startAndEndGlobalStates_[0]);
+        segments[1] = GlobalStates.hash(startAndEndGlobalStates_[1]);
+        challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         emit InitiatedChallenge();
         emit Bisected(
@@ -53,6 +55,14 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
             numBlocks,
             segments
         );
+    }
+
+    function getStartGlobalState() external view returns (GlobalState memory) {
+        return startAndEndGlobalStates[0];
+    }
+
+    function getEndGlobalState() external view returns (GlobalState memory) {
+        return startAndEndGlobalStates[1];
     }
 
     function challengeExecution(
@@ -133,6 +143,10 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
             machineStatuses[1],
             globalStateHashes[1]
         );
+
+        ExecutionContext memory execCtx = ExecutionContext({
+            maxInboxMessagesRead: startAndEndGlobalStates[1].u64_vals[0] + 1
+        });
 
         executionChallenge = executionChallengeFactory.createChallenge(
             this,

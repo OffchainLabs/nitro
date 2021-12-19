@@ -41,6 +41,14 @@ func (s GoGlobalState) Hash() common.Hash {
 	return crypto.Keccak256Hash(data)
 }
 
+func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
+	return GoGlobalState{
+		BlockHash:  gs.Bytes32Vals[0],
+		Batch:      gs.U64Vals[0],
+		PosInBatch: gs.U64Vals[1],
+	}
+}
+
 type BlockChallengeBackend struct {
 	bc                     *core.BlockChain
 	startBlock             uint64
@@ -55,7 +63,18 @@ type BlockChallengeBackend struct {
 // Assert that BlockChallengeBackend implements ChallengeBackend
 var _ validator.ChallengeBackend = (*BlockChallengeBackend)(nil)
 
-func NewBlockChallengeBackend(bc *core.BlockChain, inboxTracker *InboxTracker, startGs GoGlobalState, endGs GoGlobalState) (*BlockChallengeBackend, error) {
+func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker *InboxTracker, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
+	callOpts := &bind.CallOpts{Context: ctx}
+	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
+	if err != nil {
+		return nil, err
+	}
+
+	solStartGs, err := challengeCon.GetStartGlobalState(callOpts)
+	if err != nil {
+		return nil, err
+	}
+	startGs := GoGlobalStateFromSolidity(solStartGs)
 	startBlock := bc.GetBlockByHash(startGs.BlockHash)
 	if startBlock == nil {
 		return nil, errors.New("failed to find start block")
@@ -70,6 +89,11 @@ func NewBlockChallengeBackend(bc *core.BlockChain, inboxTracker *InboxTracker, s
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
 
+	solEndGs, err := challengeCon.GetStartGlobalState(callOpts)
+	if err != nil {
+		return nil, err
+	}
+	endGs := GoGlobalStateFromSolidity(solEndGs)
 	endBatchMeta, err := inboxTracker.GetBatchMetadata(endGs.Batch)
 	if err != nil {
 		return nil, err
