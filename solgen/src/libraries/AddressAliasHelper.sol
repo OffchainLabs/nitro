@@ -1,9 +1,9 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.7.5;
+pragma solidity ^0.8.0;
 
 library AddressAliasHelper {
     uint160 constant offset = uint160(0x1111000000000000000000000000000000001111);

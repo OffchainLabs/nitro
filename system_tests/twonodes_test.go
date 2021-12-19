@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +32,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	}
 	nodeConf := arbnode.NodeConfigL1Test
 	nodeConf.BatchPoster = false
+	nodeConf.BlockValidator = blockValidator
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeConf, l2blockchain, l1client, first.DeployInfo, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
+	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, false)
 
 	l2info.GenerateAccount("User2")
 

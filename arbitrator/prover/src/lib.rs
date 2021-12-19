@@ -18,17 +18,31 @@ use fnv::FnvHashMap as HashMap;
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     fs::File,
     io::Read,
     os::raw::c_char,
     path::Path,
+    process::Command,
+    sync::atomic::{self, AtomicU8},
 };
 
 pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
+
+    let mut cmd = Command::new("wasm-validate");
+    if path.starts_with("-") {
+        // Escape the path and ensure it isn't treated as a flag.
+        // Unfortunately, older versions of wasm-validate don't support this,
+        // so we only pass in this option if the path looks like a flag.
+        cmd.arg("--");
+    }
+    let status = cmd.arg(path).status()?;
+    if !status.success() {
+        bail!("failed to validate WASM binary at {:?}", path);
+    }
 
     let bin = match binary::parse(&buf) {
         Ok(bin) => bin,
@@ -49,6 +63,14 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
 pub struct CByteArray {
     pub ptr: *const u8,
     pub len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustByteArray {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub capacity: usize,
 }
 
 #[repr(C)]
@@ -159,9 +181,48 @@ pub unsafe extern "C" fn arbitrator_clone_machine(mach: *mut Machine) -> *mut Ma
     Box::into_raw(Box::new(new_mach))
 }
 
+/// Go doesn't have this functionality builtin for whatever reason. Uses relaxed ordering.
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64) {
-    (*mach).step_n(num_steps);
+pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
+    (*(ptr as *mut AtomicU8)).store(contents, atomic::Ordering::Relaxed);
+}
+
+/// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_step(mach: *mut Machine, num_steps: u64, condition: *const u8) {
+    let mach = &mut *mach;
+    let condition = &*(condition as *const AtomicU8);
+    let mut remaining_steps = num_steps;
+    while condition.load(atomic::Ordering::Relaxed) == 0 {
+        if remaining_steps == 0 || mach.is_halted() {
+            break;
+        }
+        let stepping = std::cmp::min(remaining_steps, 1_000_000);
+        mach.step_n(stepping);
+        remaining_steps -= stepping;
+    }
+}
+
+/// Like arbitrator_step, but stops early if it hits a host io operation.
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condition: *const u8) {
+    let mach = &mut *mach;
+    let condition = &*(condition as *const AtomicU8);
+    while condition.load(atomic::Ordering::Relaxed) == 0 {
+        for _ in 0..1_000_000 {
+            if mach.is_halted() {
+                return;
+            }
+            if mach
+                .get_next_instruction()
+                .map(|i| i.opcode.is_host_io())
+                .unwrap_or(true)
+            {
+                return;
+            }
+            mach.step();
+        }
+    }
 }
 
 #[no_mangle]
@@ -224,14 +285,18 @@ pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> *mut c_char {
-    let proof = (*mach).serialize_proof();
-    CString::new(hex::encode(proof))
-        .expect("CString new failed")
-        .into_raw()
+pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArray {
+    let mut proof = (*mach).serialize_proof();
+    let ret = RustByteArray {
+        ptr: proof.as_mut_ptr(),
+        len: proof.len(),
+        capacity: proof.capacity(),
+    };
+    std::mem::forget(proof);
+    ret
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_free_proof(proof: *mut c_char) {
-    drop(CString::from_raw(proof));
+pub unsafe extern "C" fn arbitrator_free_proof(proof: RustByteArray) {
+    drop(Vec::from_raw_parts(proof.ptr, proof.len, proof.capacity))
 }

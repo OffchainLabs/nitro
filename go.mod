@@ -58,7 +58,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/mitchellh/mapstructure v1.4.2 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
-	github.com/offchainlabs/arbitrum/packages/arb-util v0.8.1-0.20211124002622-922b29a8e3b6
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/peterh/liner v1.1.1-0.20190123174540-a2c9a5303de7 // indirect

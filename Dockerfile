@@ -1,31 +1,69 @@
-FROM node:16-alpine as contracts-builder
-
+FROM node:17-bullseye-slim as contracts-builder
+RUN apt-get update && \
+    apt-get install -y git
 WORKDIR /app
 COPY solgen/package.json solgen/
 RUN cd solgen && yarn
 COPY solgen solgen/
 RUN cd solgen && yarn build
 
-FROM alpine:20210804 as builder
+FROM rust:1.57-slim-bullseye as wasm-lib-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make clang lld && \
+    rustup target add wasm32-unknown-unknown && \
+    rustup target add wasm32-wasi
+COPY ./Makefile ./
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries/
+RUN make build-wasm-libs
 
-WORKDIR /app
+FROM rust:1.57-slim-bullseye as prover-header-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make && \
+    cargo install --force cbindgen
+COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY ./Makefile ./
+COPY arbitrator/prover arbitrator/prover
+RUN make build-prover-header
 
-RUN apk add --update-cache go=1.17.4-r0 gcc=11.2.1_git20211128-r0 g++=11.2.1_git20211128-r0
+FROM rust:1.57-slim-bullseye as prover-lib-builder
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y make
+COPY arbitrator/Cargo.* arbitrator/
+COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+RUN mkdir arbitrator/prover/src && \
+    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    cargo build --manifest-path arbitrator/Cargo.toml --release --lib
+COPY ./Makefile ./
+COPY arbitrator/prover arbitrator/prover
+RUN touch -a -m arbitrator/prover/src/lib.rs && \
+    make build-prover-lib
 
+FROM golang:1.17-bullseye as node-builder
+COPY go.mod go.sum /workspace/
+WORKDIR /workspace
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
-COPY solgen solgen/
-COPY go-ethereum go-ethereum/
 COPY --from=contracts-builder app/solgen/artifacts solgen/artifacts/
+COPY solgen/gen.go solgen/
+COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \
-	go run solgen/gen.go
+	go run -v solgen/gen.go
 COPY . ./
-RUN go build -v ./cmd/node && \
-    go build -v ./cmd/deploy
+COPY --from=prover-header-builder /workspace/arbitrator/target/env arbitrator/target/env/
+COPY --from=prover-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
+RUN mkdir res && \
+    go build -v -o res ./cmd/node ./cmd/deploy && \
+    GOOS=js GOARCH=wasm go build -o res/arbitrator/target/env/lib/replay.wasm ./cmd/replay/...
 
-FROM alpine:20210804
-COPY --from=builder app/node .
-COPY --from=builder app/deploy .
+FROM debian:bullseye-slim
+COPY --from=node-builder /workspace/res .
+COPY --from=wasm-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
 ENTRYPOINT [ "./node" ]
