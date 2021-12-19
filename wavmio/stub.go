@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -41,26 +42,6 @@ var (
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
 )
-
-func pathToBytes(path string) []byte {
-	file, err := os.Open(path)
-	if err != nil {
-		panic(err)
-	}
-	msg := make([]byte, 1<<20)
-	offset := 0
-	for {
-		read, err := file.Read(msg[offset:])
-		if err != nil && err != io.EOF {
-			panic(err)
-		}
-		offset += read
-		if offset < len(msg) {
-			return msg[0:offset]
-		}
-		msg = append(msg, make([]byte, offset)...)
-	}
-}
 
 func parsePreimageBytes(path string) {
 	file, err := os.Open(path)
@@ -110,10 +91,18 @@ func StubInit() {
 	delayedMsgFirstPos = uint64(*delayedPositionFlag)
 	lastBlockHash = common.HexToHash(*lastBlockFlag)
 	for _, path := range delayedMsgPath {
-		delayedMsgs = append(delayedMsgs, pathToBytes(path))
+		msg, err := ioutil.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+		delayedMsgs = append(delayedMsgs, msg)
 	}
 	if *inboxPath != "" {
-		seqMsg = pathToBytes(*inboxPath)
+		msg, err := ioutil.ReadFile(*inboxPath)
+		if err != nil {
+			panic(err)
+		}
+		seqMsg = msg
 	}
 	if *preimagesPath != "" {
 		parsePreimageBytes(*preimagesPath)
