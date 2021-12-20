@@ -320,7 +320,7 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
-					Sender:      SequencerAddress,
+					Poster:      SequencerAddress,
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,
