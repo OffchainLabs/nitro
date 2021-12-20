@@ -469,25 +469,24 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	pos, _, err := s.getLastBlockPosition()
+	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
-	msgCount, err := s.GetMessageCount()
+	pos, lastBlockNumber, err := s.getLastBlockPosition()
+	if err != nil {
+		return err
+	}
+	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
+	if lastBlockHeader == nil {
+		return errors.New("last block header not found")
+	}
+	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
 	}
 
 	for pos < msgCount {
-
-		pos, lastBlockNumber, err := s.getLastBlockPosition()
-		if err != nil {
-			return err
-		}
-		lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
-		if lastBlockHeader == nil {
-			return errors.New("last block header not found")
-		}
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
@@ -500,11 +499,6 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		msg, err := s.GetMessage(pos)
-		if err != nil {
-			return err
-		}
-
-		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 		if err != nil {
 			return err
 		}
@@ -542,27 +536,27 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			return errors.New("geth rejected block as non-canonical")
 		}
 
-		if s.validator == nil {
-			continue
+		if s.validator != nil {
+			recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
+			if err != nil {
+				return err
+			}
+
+			block, _ = arbos.ProduceBlock(
+				msg.Message,
+				msg.DelayedMessagesRead,
+				lastBlockHeader,
+				recordingdb,
+				chaincontext,
+			)
+			preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+			if err != nil {
+				return fmt.Errorf("failed getting records: %w", err)
+			}
+			s.validator.NewBlock(block, preimages, pos-1)
 		}
 
-		recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
-		if err != nil {
-			return err
-		}
-
-		block, _ = arbos.ProduceBlock(
-			msg.Message,
-			msg.DelayedMessagesRead,
-			lastBlockHeader,
-			recordingdb,
-			chaincontext,
-		)
-		preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
-		if err != nil {
-			return fmt.Errorf("failed getting records: %w", err)
-		}
-		s.validator.NewBlock(block, preimages, pos)
+		lastBlockHeader = block.Header()
 	}
 
 	return nil

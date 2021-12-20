@@ -97,10 +97,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 
 	gasPrice := p.blockContext.BaseFee
 
-	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
+	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 
 	totalCost := new(big.Int).Mul(gasPrice, gasUsed)
 	computeCost := new(big.Int).Sub(totalCost, p.posterFee)
