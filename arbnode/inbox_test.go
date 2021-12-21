@@ -25,15 +25,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 )
 
-type blockTestState struct {
-	balances    map[common.Address]uint64
-	accounts    []common.Address
-	numMessages uint64
-	blockNumber uint64
-}
-
-func TestTransactionStreamer(t *testing.T) {
-	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
+func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
@@ -70,6 +62,23 @@ func TestTransactionStreamer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	return inbox, bc
+}
+
+type blockTestState struct {
+	balances    map[common.Address]uint64
+	accounts    []common.Address
+	numMessages uint64
+	blockNumber uint64
+}
+
+func TestTransactionStreamer(t *testing.T) {
+	ownerAddress := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
+
+	inbox, bc := NewTransactionStreamerForTest(t, ownerAddress)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	inbox.Start(ctx)
@@ -86,7 +95,7 @@ func TestTransactionStreamer(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			err = inbox.ReorgTo(blockStates[reorgTo].numMessages)
+			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +136,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,
-							Sender: util.InverseRemapL1Address(source),
+							Poster: util.InverseRemapL1Address(source),
 						},
 						L2msg: l2Message,
 					},
@@ -138,7 +147,7 @@ func TestTransactionStreamer(t *testing.T) {
 				state.balances[dest] += amount
 			}
 
-			err = inbox.AddMessages(state.numMessages, false, messages)
+			err := inbox.AddMessages(state.numMessages, false, messages)
 			if err != nil {
 				t.Fatal(err)
 			}

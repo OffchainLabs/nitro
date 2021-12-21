@@ -6,7 +6,10 @@ package arbos
 
 import (
 	"encoding/binary"
+	"fmt"
+	"math"
 	"math/big"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -43,72 +46,6 @@ var ChainConfig = &params.ChainConfig{
 	},
 }
 
-type BlockBuilder struct {
-	statedb         *state.StateDB
-	lastBlockHeader *types.Header
-	chainContext    core.ChainContext
-
-	// Setup based on first segment
-	blockInfo *L1Info
-	header    *types.Header
-	gasPool   core.GasPool
-
-	txes     types.Transactions
-	receipts types.Receipts
-
-	isDone bool
-}
-
-type BlockData struct {
-	Txes   types.Transactions
-	Header *types.Header
-}
-
-func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext) *BlockBuilder {
-	return &BlockBuilder{
-		statedb:         statedb,
-		lastBlockHeader: lastBlockHeader,
-		chainContext:    chainContext,
-	}
-}
-
-// Must always return true if the block is empty
-func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
-	if b.isDone {
-		return false
-	}
-	if b.blockInfo == nil {
-		return true
-	}
-	info := segment.L1Info
-	// End current block without including segment
-	// TODO: This would split up all delayed messages
-	// If we distinguish between segments that might be aggregated from ones that definitely aren't
-	// we could handle coinbases differently
-	return info.l1Sender == b.blockInfo.l1Sender &&
-		info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) <= 0 &&
-		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
-}
-
-// Must always return true if the block is empty
-func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
-	if !b.CanAddMessage(segment) {
-		return false
-	}
-	if b.blockInfo == nil {
-		return true
-	}
-	newGasUsed := b.header.GasUsed
-	for _, tx := range segment.Txes {
-		oldGasUsed := newGasUsed
-		newGasUsed += tx.Gas()
-		if newGasUsed < oldGasUsed {
-			newGasUsed = ^uint64(0)
-		}
-	}
-	return newGasUsed <= PerBlockGasLimit
-}
-
 func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
@@ -117,7 +54,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp.Uint64()
-		coinbase = l1info.l1Sender
+		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
@@ -147,78 +84,142 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	}
 }
 
-func (b *BlockBuilder) AddMessage(segment MessageSegment) {
-	if !b.CanAddMessage(segment) {
-		log.Warn("attempted to add incompatible message to block")
-		return
-	}
-	if b.blockInfo == nil {
-		l1Info := segment.L1Info
-		b.blockInfo = &L1Info{
-			l1Sender:      l1Info.l1Sender,
-			l1BlockNumber: new(big.Int).Set(l1Info.l1BlockNumber),
-			l1Timestamp:   new(big.Int).Set(l1Info.l1Timestamp),
-		}
+func ProduceBlock(
+	message *L1IncomingMessage,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+) (*types.Block, types.Receipts) {
 
-		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
-		b.gasPool = core.GasPool(b.header.GasLimit)
+	txes, err := message.ParseL2Transactions(ChainConfig.ChainID)
+	if err != nil {
+		log.Warn("error parsing incoming message", "err", err)
+		txes = types.Transactions{}
 	}
 
-	for _, tx := range segment.Txes {
-		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
-			// Ignore and transactions with higher than the max possible gas
+	poster := message.Header.Poster
+
+	l1Info := &L1Info{
+		poster:        poster,
+		l1BlockNumber: message.Header.BlockNumber.Big(),
+		l1Timestamp:   message.Header.Timestamp.Big(),
+	}
+
+	header := createNewHeader(lastBlockHeader, l1Info)
+	signer := types.MakeSigner(ChainConfig, header.Number)
+
+	complete := types.Transactions{}
+	receipts := types.Receipts{}
+	gasLeft := PerBlockGasLimit
+	gasPrice := header.BaseFee
+
+	// We'll check that the block can fit each message, so this pool is set to not run out
+	gethGas := core.GasPool(1 << 63)
+
+	for _, tx := range txes {
+
+		sender, err := signer.Sender(tx)
+		if err != nil {
 			continue
 		}
-		snap := b.statedb.Snapshot()
-		b.statedb.Prepare(tx.Hash(), len(b.txes))
+
+		aggregator := &poster
+
+		if !isAggregated(*aggregator, sender) {
+			aggregator = nil
+		}
+
+		var dataGas uint64 = 0
+		if gasPrice.Sign() > 0 {
+			dataGas = math.MaxUint64
+			pricing := OpenArbosState(statedb).L1PricingState()
+			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
+			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+			if posterCostInL2Gas.IsUint64() {
+				dataGas = posterCostInL2Gas.Uint64()
+			} else {
+				log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+			}
+		}
+
+		if dataGas > tx.Gas() {
+			// this txn is going to be rejected later
+			dataGas = 0
+		}
+
+		computeGas := tx.Gas() - dataGas
+
+		if computeGas > gasLeft {
+			continue
+		}
+
+		gasLeft -= computeGas
+
+		snap := statedb.Snapshot()
+		statedb.Prepare(tx.Hash(), len(txes))
+
+		// We've checked that the block can fit this message, so we'll use a pool that won't run out
+		gasPool := gethGas
+
 		receipt, err := core.ApplyTransaction(
 			ChainConfig,
-			b.chainContext,
-			&b.header.Coinbase,
-			&b.gasPool,
-			b.statedb,
-			b.header,
+			chainContext,
+			&header.Coinbase,
+			&gasPool,
+			statedb,
+			header,
 			tx,
-			&b.header.GasUsed,
+			&header.GasUsed,
 			vm.Config{},
 		)
 		if err != nil {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
-			b.statedb.RevertToSnapshot(snap)
+			statedb.RevertToSnapshot(snap)
 			continue
 		}
-		b.txes = append(b.txes, tx)
-		b.receipts = append(b.receipts, receipt)
-	}
-}
 
-func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
-	if b.header == nil {
-		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
+		if gasPool > gethGas {
+			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
+			panic("ApplyTransaction() gave back " + delta + " gas")
+		}
+
+		gasUsed := gethGas.Gas() - gasPool.Gas()
+		gethGas = gasPool
+
+		if gasUsed > computeGas {
+			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		}
+
+		complete = append(complete, tx)
+		receipts = append(receipts, receipt)
+		gasLeft -= gasUsed
 	}
 
-	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
-	b.header.Root = b.statedb.IntermediateRoot(true)
+	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
+	header.Root = statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
-	tmpBlock := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
-	for _, receipt := range b.receipts {
+	for _, receipt := range receipts {
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
 			txLog.BlockHash = blockHash
 		}
 	}
 
-	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
+	if len(block.Transactions()) != len(receipts) {
+		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
+	}
 
-	b.isDone = true
-	// Reset the block builder for the next block
-	receipts := b.receipts
-	return block, receipts, b.statedb
+	FinalizeBlock(header, complete, receipts, statedb)
+
+	return block, receipts
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
@@ -230,8 +231,4 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
-}
-
-func (b *BlockBuilder) ChainContext() core.ChainContext {
-	return b.chainContext
 }
