@@ -316,11 +316,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.addDelayedMessages(delayedMessages)
+	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
-	err = r.tracker.addSequencerBatches(ctx, r.client, sequencerBatches)
+	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {

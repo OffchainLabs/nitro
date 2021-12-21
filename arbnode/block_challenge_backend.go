@@ -49,6 +49,13 @@ func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 	}
 }
 
+func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
+	return challengegen.GlobalState{
+		Bytes32Vals: [1][32]byte{s.BlockHash},
+		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
+	}
+}
+
 type BlockChallengeBackend struct {
 	bc                     *core.BlockChain
 	startBlock             uint64
