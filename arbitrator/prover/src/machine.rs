@@ -23,7 +23,7 @@ use std::{
     collections::hash_map,
     convert::TryFrom,
     fs::File,
-    io::{BufReader, BufWriter},
+    io::{BufReader, BufWriter, Write},
     num::Wrapping,
     ops::{Deref, DerefMut},
     path::Path,
@@ -1070,8 +1070,12 @@ impl Machine {
     }
 
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
-        let writer = BufWriter::new(File::create(path)?);
-        bincode::serialize_into(writer, &self)?;
+        let mut f = File::create(path)?;
+        let mut writer = BufWriter::new(&mut f);
+        bincode::serialize_into(&mut writer, &self)?;
+        writer.flush()?;
+        drop(writer);
+        f.sync_data()?;
         Ok(())
     }
 
