@@ -1,5 +1,5 @@
 use digest::Digest;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 
 use crate::utils::Bytes32;

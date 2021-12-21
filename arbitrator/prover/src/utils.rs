@@ -1,9 +1,9 @@
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
     ops::{Deref, DerefMut},
 };
-use serde::{Deserialize, Serialize};
 
 /// cbindgen:field-names=[bytes]
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

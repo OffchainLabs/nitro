@@ -5,7 +5,7 @@ use crate::{
 };
 use digest::Digest;
 use rayon::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
 

@@ -226,7 +226,10 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condi
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_serialize_state(mach: *const Machine, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn arbitrator_serialize_state(
+    mach: *const Machine,
+    path: *const c_char,
+) -> c_int {
     let mach = &*mach;
     let res = CStr::from_ptr(path)
         .to_str()
@@ -241,7 +244,10 @@ pub unsafe extern "C" fn arbitrator_serialize_state(mach: *const Machine, path: 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(mach: *mut Machine, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(
+    mach: *mut Machine,
+    path: *const c_char,
+) -> c_int {
     let mach = &mut *mach;
     let res = CStr::from_ptr(path)
         .to_str()
