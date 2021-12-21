@@ -27,7 +27,7 @@ type ExecutionChallengeBackend struct {
 // Assert that ExecutionChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
-// machineCache may be null, but if present, it must not have a restricted range
+// machineCache may be nil, but if present, it must not have a restricted range
 func NewExecutionChallengeBackend(initialMachine MachineInterface, targetNumMachines int, machineCache *MachineCache) (*ExecutionChallengeBackend, error) {
 	if initialMachine.GetStepCount() != 0 {
 		return nil, errors.New("initialMachine not at step count 0")

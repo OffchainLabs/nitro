@@ -20,6 +20,7 @@ import (
 )
 
 const MAX_BISECTION_DEGREE uint64 = 40
+const CONFIRMATION_BLOCKS int64 = 12
 
 var challengeBisectedID common.Hash
 
@@ -29,6 +30,18 @@ func init() {
 		panic(err)
 	}
 	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
+}
+
+func LatestConfirmedBlock(ctx context.Context, client bind.ContractBackend) (*big.Int, error) {
+	latestBlock, err := client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	block := new(big.Int).Sub(latestBlock.Number, big.NewInt(CONFIRMATION_BLOCKS))
+	if block.Sign() < 0 {
+		block.SetInt64(0)
+	}
+	return block, nil
 }
 
 type ChallengeBackend interface {
@@ -165,6 +178,18 @@ func (m *ChallengeManager) bisect(ctx context.Context, oldState ChallengeState, 
 func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	responder, err := m.con.CurrentResponder(callOpts)
+	if err != nil {
+		return nil, err
+	}
+	if responder != m.actingAs {
+		return nil, nil
+	}
+	// Perform future checks against the latest confirmed block
+	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, m.client)
+	if err != nil {
+		return nil, err
+	}
+	responder, err = m.con.CurrentResponder(callOpts)
 	if err != nil {
 		return nil, err
 	}
