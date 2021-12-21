@@ -337,7 +337,6 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 	for _, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        true,
 			DelayedMessagesRead: delayedMessagesRead,
 		})
 	}
@@ -364,14 +363,13 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 	}
 
 	if delayedMessagesRead != firstDelayedSeqNum {
-		return errors.New("attempted to insert delayed messages at incorrect position")
+		return fmt.Errorf("attempted to insert delayed messages at incorrect position got %d expected %d", firstDelayedSeqNum, delayedMessagesRead)
 	}
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        i == len(messages)-1,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
 		})
 	}
