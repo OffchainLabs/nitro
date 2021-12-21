@@ -646,8 +646,14 @@ func (v *BlockValidator) Start(ctx context.Context) error {
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
 	timeoutChan := time.After(timeout)
 	for {
+		if v.blocksValidated >= blockNumber {
+			return true
+		}
 		select {
 		case <-timeoutChan:
+			if v.blocksValidated >= blockNumber {
+				return true
+			}
 			return false
 		case block, ok := <-v.progressChan:
 			if block >= blockNumber {

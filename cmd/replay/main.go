@@ -107,6 +107,8 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 }
 
 func main() {
+	wavmio.StubInit()
+
 	// We initialize the elliptic curve before calling into wavmio.
 	// This allows the validator to cache the elliptic curve initialization.
 	btcec.S256()
@@ -147,4 +149,6 @@ func main() {
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	wavmio.SetLastBlockHash(newBlockHash)
+
+	wavmio.StubFinal()
 }
