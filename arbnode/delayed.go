@@ -112,7 +112,7 @@ type DelayedInboxMessage struct {
 func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
-		m.Message.Header.Sender.Bytes(),
+		m.Message.Header.Poster.Bytes(),
 		m.Message.Header.BlockNumber.Bytes(),
 		m.Message.Header.Timestamp.Bytes(),
 		m.Message.Header.RequestId.Bytes(),
@@ -199,7 +199,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
-					Sender:      parsedLog.Sender,
+					Poster:      parsedLog.Sender,
 					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
 					Timestamp:   common.BigToHash(parsedLog.Timestamp),
 					RequestId:   common.BigToHash(parsedLog.MessageIndex),

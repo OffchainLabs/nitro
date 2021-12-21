@@ -48,7 +48,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
-			Sender:      arbstate.SequencerAddress,
+			Poster:      arbstate.SequencerAddress,
 			BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
 			Timestamp:   timestamp,
 			RequestId:   common.Hash{},

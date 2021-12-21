@@ -23,7 +23,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:        0,
-							Sender:      [20]byte{},
+							Poster:      [20]byte{},
 							BlockNumber: [32]byte{},
 							Timestamp:   [32]byte{},
 							RequestId:   [32]byte{},
