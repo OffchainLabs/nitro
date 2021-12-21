@@ -21,7 +21,7 @@ use std::{
     ffi::CStr,
     fs::File,
     io::Read,
-    os::raw::c_char,
+    os::raw::{c_char, c_int},
     path::Path,
     process::Command,
     sync::atomic::{self, AtomicU8},
@@ -222,6 +222,36 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(mach: *mut Machine, condi
             }
             mach.step();
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_serialize_state(mach: *const Machine, path: *const c_char) -> c_int {
+    let mach = &*mach;
+    let res = CStr::from_ptr(path)
+        .to_str()
+        .map_err(eyre::Report::from)
+        .and_then(|path| mach.serialize_state(path));
+    if let Err(err) = res {
+        eprintln!("Failed to serialize machine state: {}", err);
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_deserialize_and_replace_state(mach: *mut Machine, path: *const c_char) -> c_int {
+    let mach = &mut *mach;
+    let res = CStr::from_ptr(path)
+        .to_str()
+        .map_err(eyre::Report::from)
+        .and_then(|path| mach.deserialize_and_replace_state(path));
+    if let Err(err) = res {
+        eprintln!("Failed to deserialize machine state: {}", err);
+        1
+    } else {
+        0
     }
 }
 

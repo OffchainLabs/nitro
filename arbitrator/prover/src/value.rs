@@ -1,4 +1,5 @@
 use digest::Digest;
+use serde::{Serialize, Deserialize};
 use sha3::Keccak256;
 
 use crate::utils::Bytes32;
@@ -37,7 +38,7 @@ impl Into<ValueType> for IntegerValType {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramCounter {
     pub module: usize,
     pub func: usize,
@@ -64,7 +65,7 @@ impl ProgramCounter {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Value {
     I32(u32),
     I64(u64),

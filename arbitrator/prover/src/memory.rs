@@ -5,12 +5,14 @@ use crate::{
 };
 use digest::Digest;
 use rayon::prelude::*;
+use serde::{Serialize, Deserialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
 
-#[derive(PartialEq, Eq, Clone, Debug, Default)]
+#[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
+    #[serde(skip)]
     merkle: Option<Merkle>,
 }
 

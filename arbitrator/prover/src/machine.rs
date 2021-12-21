@@ -15,13 +15,17 @@ use crate::{
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
     collections::hash_map,
     convert::TryFrom,
+    fs::File,
+    io::{BufReader, BufWriter},
     num::Wrapping,
     ops::{Deref, DerefMut},
+    path::Path,
     sync::Arc,
 };
 
@@ -142,7 +146,7 @@ impl Function {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct StackFrame {
     return_ref: Value,
     locals: Vec<Value>,
@@ -249,20 +253,31 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
+    #[serde(skip)]
     tables: Vec<Table>,
+    #[serde(skip)]
     tables_merkle: Merkle,
+    #[serde(skip)]
     funcs: Arc<Vec<Function>>,
+    #[serde(skip)]
     funcs_merkle: Arc<Merkle>,
+    #[serde(skip)]
     types: Arc<Vec<FunctionType>>,
+    #[serde(skip)]
     internals_offset: u32,
+    #[serde(skip)]
     names: Arc<NameCustomSection>,
+    #[serde(skip)]
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    #[serde(skip)]
     start_function: Option<u32>,
+    #[serde(skip)]
     func_types: Arc<Vec<FunctionType>>,
+    #[serde(skip)]
     exports: Arc<HashMap<String, u32>>,
 }
 
@@ -553,7 +568,7 @@ impl Module {
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct GlobalState {
     pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
@@ -618,6 +633,18 @@ pub struct InboxReaderCached {
     context: u64,
 }
 
+impl Default for InboxReaderCached {
+    fn default() -> Self {
+        Self {
+            inbox_cache: Default::default(),
+            inbox_reader: Arc::new(
+                Box::new(|_: u64, _: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
+            ),
+            context: Default::default(),
+        }
+    }
+}
+
 impl InboxReaderCached {
     pub fn create(
         inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
@@ -660,7 +687,7 @@ impl InboxReaderCached {
 }
 
 /// cbindgen:ignore
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum MachineStatus {
     Running,
@@ -669,7 +696,7 @@ pub enum MachineStatus {
     TooFar,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
@@ -678,11 +705,14 @@ pub struct Machine {
     block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
     modules: Vec<Module>,
+    #[serde(skip)]
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
+    #[serde(skip)]
     inbox_reader: InboxReaderCached,
+    #[serde(skip)]
     preimages: HashMap<Bytes32, Vec<u8>>,
 }
 
@@ -1032,6 +1062,27 @@ impl Machine {
             inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
             preimages,
         }
+    }
+
+    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+        let writer = BufWriter::new(File::create(path)?);
+        bincode::serialize_into(writer, &self)?;
+        Ok(())
+    }
+
+    // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
+    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
+        let reader = BufReader::new(File::open(path)?);
+        let mut new_mach: Machine = bincode::deserialize_from(reader)?;
+        for (old_module, new_module) in self.modules.iter_mut().zip(new_mach.modules.iter_mut()) {
+            std::mem::swap(&mut old_module.globals, &mut new_module.globals);
+            std::mem::swap(&mut old_module.memory, &mut new_module.memory);
+        }
+        std::mem::swap(&mut self.modules, &mut new_mach.modules);
+        std::mem::swap(&mut self.inbox_reader, &mut new_mach.inbox_reader);
+        std::mem::swap(&mut self.preimages, &mut new_mach.preimages);
+        *self = new_mach;
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
