@@ -12,14 +12,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbnode"
@@ -30,7 +31,7 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 )
 
-func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend, delayedBridge common.Address, seqInbox common.Address) common.Address {
+func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client, delayedBridge common.Address, seqInbox common.Address) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,11 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	ospEntry, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = arbnode.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +62,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 func CreateChallenge(
 	t *testing.T,
 	auth *bind.TransactOpts,
-	client bind.ContractBackend,
+	client *ethclient.Client,
 	ospEntry common.Address,
 	wasmModuleRoot common.Hash,
 	startGlobalState arbnode.GoGlobalState,
@@ -71,7 +76,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	challenge, _, _, err := challengegen.DeployBlockChallenge(
+	challenge, tx, _, err := challengegen.DeployBlockChallenge(
 		auth,
 		client,
 		ospEntry,
@@ -87,6 +92,10 @@ func CreateChallenge(
 		big.NewInt(100),
 		big.NewInt(100),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = arbnode.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +140,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	return err
 }
 
-func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *backends.SimulatedBackend, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, isChallenger bool) {
+func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, isChallenger bool) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{0})
@@ -155,8 +164,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	if err != nil {
 		t.Fatal(err)
 	}
-	backend.Commit()
-	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
+	receipt, err := arbnode.EnsureTxSucceeded(ctx, backend, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,9 +193,37 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
 	sequencer := createTransactOpts(t)
-	alloc := createGenesisAlloc(deployer, asserter, challenger, sequencer)
-	backend := backends.NewSimulatedBackend(alloc, 1_000_000_000)
-	backend.Commit()
+	l1Alloc := createGenesisAlloc(deployer, asserter, challenger, sequencer)
+
+	l1Info, _, _ := CreateTestL1BlockChain(t, l1Alloc)
+	backend := l1Info.Client
+	conf := arbnode.NodeConfigL1Test
+	conf.BlockValidator = true
+	conf.BatchPoster = false
+	conf.InboxReaderConfig.CheckDelay = time.Second
+	rollupAddresses := TestDeployOnL1(t, ctx, l1Info)
+
+	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain := createL2BlockChain(t)
+	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, &conf, asserterL2Blockchain, l1Info.Client, rollupAddresses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = asserterL2.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asserterL2Info.Client = ClientForArbBackend(t, asserterL2.Backend)
+
+	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain := createL2BlockChain(t)
+	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, &conf, challengerL2Blockchain, l1Info.Client, rollupAddresses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = challengerL2.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challengerL2Info.Client = ClientForArbBackend(t, challengerL2.Backend)
 
 	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(deployer, backend)
 	if err != nil {
@@ -203,11 +239,6 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		t.Fatal(err)
 	}
 
-	backend.Commit()
-
-	asserterL2Info, asserterL2 := CreateTestL2(t, ctx)
-	challengerL2Info, challengerL2 := CreateTestL2(t, ctx)
-
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
 	makeBatch(t, asserterL2, asserterL2Info, backend, sequencer, asserterSeqInbox, asserterSeqInboxAddr, false)
@@ -220,7 +251,6 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		expectedWinner = asserter.From
 	}
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend, delayedBridge, trueSeqInboxAddr)
-	backend.Commit()
 
 	wasmModuleRoot := asserterL2.BlockValidator.GetInitialModuleRoot()
 
@@ -252,8 +282,6 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		challenger.From,
 	)
 
-	backend.Commit()
-
 	asserterManager, err := arbnode.NewFullChallengeManager(ctx, asserterL2, backend, asserter, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
@@ -265,8 +293,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 
 	for i := 0; i < 100; i++ {
+		var tx *types.Transaction
 		if i%2 == 0 {
-			_, err = challengerManager.Act(ctx)
+			tx, err = challengerManager.Act(ctx)
 			if err != nil {
 				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
 					t.Log("challenge completed! challenger hit expected error:", err)
@@ -275,7 +304,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Fatal(err)
 			}
 		} else {
-			_, err = asserterManager.Act(ctx)
+			tx, err = asserterManager.Act(ctx)
 			if err != nil {
 				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
 					t.Log("challenge completed! asserter hit expected error:", err)
@@ -284,7 +313,10 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Fatal(err)
 			}
 		}
-		backend.Commit()
+		_, err = arbnode.EnsureTxSucceeded(ctx, backend, tx)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {

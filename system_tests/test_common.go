@@ -49,7 +49,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 	}
 }
 
-func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+func CreateTestL1BlockChain(t *testing.T, customGenesis core.GenesisAlloc) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
 	l1info.GenerateAccount("faucet")
 
@@ -71,6 +71,9 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
 	l1Genesys = core.DeveloperGenesisBlock(0, arbos.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	for acct, info := range customGenesis {
+		l1Genesys.Alloc[acct] = info
+	}
 	nodeConf.Genesis = l1Genesys
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
@@ -187,7 +190,7 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
+	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
 	addresses := TestDeployOnL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
