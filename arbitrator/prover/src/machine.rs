@@ -715,6 +715,7 @@ pub struct Machine {
     inbox_reader: InboxReaderCached,
     #[serde(skip)]
     preimages: HashMap<Bytes32, Vec<u8>>,
+    initial_hash: Bytes32,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -1048,7 +1049,7 @@ impl Machine {
             ));
         }
 
-        Machine {
+        let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
@@ -1062,7 +1063,10 @@ impl Machine {
             stdio_output: Vec::new(),
             inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
             preimages,
-        }
+            initial_hash: Bytes32::default(),
+        };
+        mach.initial_hash = mach.hash();
+        mach
     }
 
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
@@ -1075,6 +1079,15 @@ impl Machine {
     pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
         let reader = BufReader::new(File::open(path)?);
         let mut new_mach: Machine = bincode::deserialize_from(reader)?;
+        if self.initial_hash != new_mach.initial_hash {
+            eyre::bail!(
+                "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
+                new_mach.initial_hash, self.initial_hash,
+            );
+        }
+        assert_eq!(self.modules.len(), new_mach.modules.len());
+
+        // Start mutating the machine. We must not return an error past this point.
         for (old_module, new_module) in self.modules.iter_mut().zip(new_mach.modules.iter_mut()) {
             std::mem::swap(&mut old_module.globals, &mut new_module.globals);
             std::mem::swap(&mut old_module.memory, &mut new_module.memory);
