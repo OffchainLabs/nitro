@@ -43,3 +43,7 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 func (con ArbGasInfo) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) error {
 	return errors.New("unimplemented")
 }
+
+func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
+	return nil, errors.New("unimplemented")
+}
