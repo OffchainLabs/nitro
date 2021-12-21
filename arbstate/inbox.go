@@ -39,8 +39,7 @@ type MessageWithMetadata struct {
 }
 
 type InboxMultiplexer interface {
-	Peek() (*MessageWithMetadata, error)
-	Advance() error
+	Next() (*MessageWithMetadata, error)
 	DelayedMessagesRead() uint64
 }
 
@@ -153,9 +152,8 @@ const BatchSegmentKindDelayedMessages uint8 = 1
 const BatchSegmentKindAdvanceTimestamp uint8 = 2
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 3
 
-// Returns the next message without advancing, and any *backend* error
-// This does *not* return parse errors, those are transformed into invalid messages
-func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
+// Returns the next message or any *backend* error, advancing to the next L1 message on success
+func (r *inboxMultiplexer) Next() (*MessageWithMetadata, error) {
 	seqMsgPosition := r.backend.GetSequencerInboxPosition()
 	var seqMsg *sequencerMessage
 	if r.sequencerMessageCache != nil && r.sequencerMessageCachePosition == seqMsgPosition {
@@ -170,7 +168,7 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 		r.sequencerMessageCachePosition = seqMsgPosition
 	}
 
-	msg, delayedTarget, parseErr := r.peekInternal(seqMsg)
+	msg, delayedTarget, parseErr := r.constructNextMsg(seqMsg)
 	if parseErr != nil {
 		log.Warn("error parsing sequencer message", "err", parseErr)
 		delayedTarget = nil
@@ -234,11 +232,23 @@ func (r *inboxMultiplexer) Peek() (*MessageWithMetadata, error) {
 	}
 	r.advanceComputed = true
 
+	r.delayedMessagesRead = r.advanceDelayedTo
+	if (r.delayedSegmentUntil != nil) && (*r.delayedSegmentUntil == r.delayedMessagesRead) {
+		r.delayedSegmentUntil = nil
+	}
+	r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
+	if r.advanceMessage {
+		r.backend.AdvanceSequencerInbox()
+		r.cachedSegmentNum = 0
+		r.cachedSegmentTimestamp = 0
+		r.cachedSegmentBlockNumber = 0
+	}
+	r.advanceComputed = false
 	return msg, nil
 }
 
-// Returns a message, the delayed messages being read up to if applicable, and any *parsing* error
-func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithMetadata, *uint64, error) {
+// Returns a message, the delayed messages being read up to if applicable, and any L1=>L2 *parsing* error
+func (r *inboxMultiplexer) constructNextMsg(seqMsg *sequencerMessage) (*MessageWithMetadata, *uint64, error) {
 	targetSegment := r.backend.GetPositionWithinMessage()
 	segmentNum := r.cachedSegmentNum
 	timestamp := r.cachedSegmentTimestamp
@@ -349,31 +359,6 @@ func (r *inboxMultiplexer) peekInternal(seqMsg *sequencerMessage) (*MessageWithM
 	} else {
 		return nil, nil, fmt.Errorf("bad sequencer message segment kind %v", segmentKind)
 	}
-}
-
-func (r *inboxMultiplexer) Advance() error {
-	if !r.advanceComputed {
-		_, realErr := r.Peek()
-		if realErr != nil {
-			return realErr
-		}
-		if !r.advanceComputed {
-			panic("Failed to compute advance action")
-		}
-	}
-	r.delayedMessagesRead = r.advanceDelayedTo
-	if (r.delayedSegmentUntil != nil) && (*r.delayedSegmentUntil == r.delayedMessagesRead) {
-		r.delayedSegmentUntil = nil
-	}
-	r.backend.SetPositionWithinMessage(r.advanceSegmentTo)
-	if r.advanceMessage {
-		r.backend.AdvanceSequencerInbox()
-		r.cachedSegmentNum = 0
-		r.cachedSegmentTimestamp = 0
-		r.cachedSegmentBlockNumber = 0
-	}
-	r.advanceComputed = false
-	return nil
 }
 
 func (r *inboxMultiplexer) DelayedMessagesRead() uint64 {
