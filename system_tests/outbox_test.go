@@ -30,7 +30,7 @@ func TestOutboxProofs(t *testing.T) {
 	defer cancel()
 
 	arbSysAbi, err := precompilesgen.ArbSysMetaData.GetAbi()
-	failOnError(t, err, "failed to get abi")
+	Require(t, err, "failed to get abi")
 	withdrawTopic := arbSysAbi.Events["L2ToL1Transaction"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 	arbSysAddress := common.HexToAddress("0x64")
@@ -65,14 +65,14 @@ func TestOutboxProofs(t *testing.T) {
 		ownerOps.Value = big.NewInt(i * 1000000000)
 		ownerOps.Nonce = big.NewInt(i)
 		tx, err := arbSys.WithdrawEth(&ownerOps, common.Address{})
-		failOnError(t, err, "ArbSys failed")
+		Require(t, err, "ArbSys failed")
 		txns = append(txns, tx.Hash())
 
 		time.Sleep(4 * time.Millisecond) // Geth takes a few ms for the receipt to show up
 		_, err = client.TransactionReceipt(ctx, tx.Hash())
 		if err == nil {
 			merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
-			failOnError(t, err, "could not get merkle root")
+			Require(t, err, "could not get merkle root")
 
 			root := proofRoot{
 				root: merkleState.Root,          // we assume the user knows the root and size
@@ -85,7 +85,7 @@ func TestOutboxProofs(t *testing.T) {
 	for _, tx := range txns {
 		var receipt *types.Receipt
 		receipt, err = client.TransactionReceipt(ctx, tx)
-		failOnError(t, err, "No receipt for txn")
+		Require(t, err, "No receipt for txn")
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			t.Fatal("Tx failed with status code:", receipt)
@@ -98,7 +98,7 @@ func TestOutboxProofs(t *testing.T) {
 
 			if log.Topics[0] == withdrawTopic {
 				parsedLog, err := arbSys.ParseL2ToL1Transaction(*log)
-				failOnError(t, err, "Failed to parse log")
+				Require(t, err, "Failed to parse log")
 
 				provables = append(provables, proofPair{
 					hash: common.BigToHash(parsedLog.Hash),
@@ -196,7 +196,7 @@ func TestOutboxProofs(t *testing.T) {
 						query,
 					},
 				})
-				failOnError(t, err, "couldn't get logs")
+				Require(t, err, "couldn't get logs")
 			}
 
 			t.Log("Querried for", len(query), "positions", query)
@@ -320,11 +320,5 @@ func TestOutboxProofs(t *testing.T) {
 				t.Fatal("Proof is wrong")
 			}
 		}
-	}
-}
-
-func failOnError(t *testing.T, err error, msg string) {
-	if err != nil {
-		t.Fatal(msg+":", err)
 	}
 }

@@ -10,4 +10,6 @@ interface ArbDebug {
     event Store(bool indexed flag, address indexed field, uint24 number, bytes32 value, bytes store);
 
     function events(bool flag, bytes32 value) external payable returns(address, uint256);
+    function becomeChainOwner() external;
+    function getL2GasPrice() external view returns(uint256);
 }

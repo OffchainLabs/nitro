@@ -46,10 +46,10 @@ var ChainConfig = &params.ChainConfig{
 	},
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := big.NewInt(params.InitialBaseFee / 100)
+	baseFee := OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(time.Now().Unix())
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -80,7 +80,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 		Extra:       []byte{},   // Unused
 		MixDigest:   [32]byte{}, // Unused
 		Nonce:       [8]byte{},  // Filled in later
-		BaseFee:     baseFee,    //TODO: parameter
+		BaseFee:     baseFee,
 	}
 }
 
@@ -106,7 +106,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info)
+	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
 
 	complete := types.Transactions{}

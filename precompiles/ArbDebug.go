@@ -4,6 +4,8 @@
 
 package precompiles
 
+import "github.com/offchainlabs/arbstate/arbos"
+
 type ArbDebug struct {
 	Address      addr
 	Basic        func(mech, bool, [32]byte)                     // index'd: 2nd
@@ -28,4 +30,13 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value [32]byte
 	con.Mixed(evm, flag, !flag, value, con.Address, c.caller)
 
 	return c.caller, paid, nil
+}
+
+func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
+	arbos.OpenArbosState(evm.StateDB).ChainOwners().Add(c.caller)
+	return nil
+}
+
+func (con ArbDebug) GetL2GasPrice(c ctx, evm mech) (huge, error) {
+	return arbos.OpenArbosState(evm.StateDB).GasPriceWei(), nil
 }
