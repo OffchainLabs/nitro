@@ -15,6 +15,7 @@ use crate::{
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{
@@ -127,7 +128,7 @@ impl Function {
         );
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
-            code.iter().map(|i| i.hash()).collect(),
+            code.par_iter().map(|i| i.hash()).collect(),
         );
 
         Function {
