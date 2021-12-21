@@ -11,7 +11,7 @@ import "./IExecutionChallengeFactory.sol";
 import "./Cloneable.sol";
 
 contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
-    event ExecutionChallengeBegun(IExecutionChallenge indexed challenge);
+    event ExecutionChallengeBegun(IExecutionChallenge indexed challenge, uint256 blockSteps);
 
     IExecutionChallengeFactory public executionChallengeFactory;
 
@@ -19,6 +19,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
     GlobalState[2] internal startAndEndGlobalStates;
 
     IExecutionChallenge public executionChallenge;
+    uint256 public executionChallengeAtSteps;
 
     constructor(
         IExecutionChallengeFactory executionChallengeFactory_,
@@ -79,7 +80,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
             "EXEC_DEADLINE"
         );
 
-        (, uint256 challengeLength) = extractChallengeSegment(
+        uint256 challengeLength;
+        (executionChallengeAtSteps, challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,
@@ -159,7 +161,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         );
         turn = Turn.NO_CHALLENGE;
 
-        emit ExecutionChallengeBegun(executionChallenge);
+        emit ExecutionChallengeBegun(executionChallenge, executionChallengeAtSteps);
     }
 
     function getStartMachineHash(bytes32 globalStateHash)

@@ -285,6 +285,11 @@ pub unsafe extern "C" fn arbitrator_hash(mach: *mut Machine) -> utils::Bytes32 {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> utils::Bytes32 {
+    (*mach).get_modules_root()
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArray {
     let mut proof = (*mach).serialize_proof();
     let ret = RustByteArray {

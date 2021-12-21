@@ -2,11 +2,6 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-/*
-//go:build full_challenge_test
-// +build full_challenge_test
-*/
-
 package arbtest
 
 import (
@@ -35,7 +30,7 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 )
 
-func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend, seqInbox common.Address) common.Address {
+func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend, delayedBridge common.Address, seqInbox common.Address) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +43,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, seqInbox, common.Address{})
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, seqInbox, delayedBridge)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,12 +137,11 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	batchBuffer := bytes.NewBuffer([]byte{0})
 	batchWriter := brotli.NewWriter(batchBuffer)
 	for i := int64(0); i < 10; i++ {
-		asserterValue := i
-		challengerValue := i
-		if i == 5 {
-			challengerValue++
+		value := i
+		if i == 5 && isChallenger {
+			value++
 		}
-		err := writeTxToBatch(batchWriter, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(asserterValue), []byte{}))
+		err := writeTxToBatch(batchWriter, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,14 +189,21 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	backend := backends.NewSimulatedBackend(alloc, 1_000_000_000)
 	backend.Commit()
 
-	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(deployer, backend, common.Address{}, sequencer.From)
+	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(deployer, backend)
 	if err != nil {
 		t.Fatal(err)
 	}
-	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(deployer, backend, common.Address{}, sequencer.From)
+
+	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(deployer, backend, delayedBridge, sequencer.From)
 	if err != nil {
 		t.Fatal(err)
 	}
+	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(deployer, backend, delayedBridge, sequencer.From)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	backend.Commit()
 
 	asserterL2Info, asserterL2 := CreateTestL2(t, ctx)
 	challengerL2Info, challengerL2 := CreateTestL2(t, ctx)
@@ -218,8 +219,25 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		trueSeqInboxAddr = asserterSeqInboxAddr
 		expectedWinner = asserter.From
 	}
-	ospEntry := DeployOneStepProofEntry(t, deployer, backend, trueSeqInboxAddr)
+	ospEntry := DeployOneStepProofEntry(t, deployer, backend, delayedBridge, trueSeqInboxAddr)
 	backend.Commit()
+
+	wasmModuleRoot := asserterL2.BlockValidator.GetInitialModuleRoot()
+
+	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
+	asserterLatestBlock := asserterL2.ArbInterface.BlockChain().CurrentBlock()
+
+	asserterStartGlobalState := arbnode.GoGlobalState{
+		BlockHash:  asserterGenesis.Hash(),
+		Batch:      0,
+		PosInBatch: 0,
+	}
+	asserterEndGlobalState := arbnode.GoGlobalState{
+		BlockHash:  asserterLatestBlock.Hash(),
+		Batch:      1,
+		PosInBatch: 0,
+	}
+	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
 
 	resultReceiver, challenge := CreateChallenge(
 		t,
@@ -236,12 +254,12 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	backend.Commit()
 
-	asserterManager, err := arbnode.NewFullChallengeManager(ctx, asserterL2.ArbInterface.BlockChain(), asserterL2.InboxTracker, initialMachine, backend, asserter, challenge, 0, 4)
+	asserterManager, err := arbnode.NewFullChallengeManager(ctx, asserterL2, backend, asserter, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := arbnode.NewFullChallengeManager(ctx, challengerL2.ArbInterface.BlockChain(), challengerL2.InboxTracker, initialMachine, backend, challenger, challenge, 0, 4)
+	challengerManager, err := arbnode.NewFullChallengeManager(ctx, challengerL2, backend, challenger, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

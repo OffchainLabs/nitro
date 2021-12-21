@@ -39,6 +39,7 @@ type BlockValidator struct {
 	blocksValidated    uint64
 	posValidatedMutex  sync.Mutex
 	posNextSend        uint64
+	initialModuleRoot  common.Hash
 
 	baseMachine *ArbitratorMachine
 
@@ -186,6 +187,7 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
 	}
+	validator.initialModuleRoot = validator.baseMachine.GetModuleRoot()
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator
@@ -584,4 +586,12 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration)
 			}
 		}
 	}
+}
+
+func (v *BlockValidator) GetInitialModuleRoot() common.Hash {
+	return v.initialModuleRoot
+}
+
+func (v *BlockValidator) GetInitialMachineForBlock(ctx context.Context, blockNumber uint64) (MachineInterface, error) {
+	return nil, errors.New("TODO")
 }

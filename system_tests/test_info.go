@@ -66,7 +66,8 @@ func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 }
 
 func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) {
-	b.Accounts[name] = &*info
+	infoCopy := *info
+	b.Accounts[name] = &infoCopy
 }
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {

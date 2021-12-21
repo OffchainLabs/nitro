@@ -153,6 +153,14 @@ func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 	return
 }
 
+func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
+	defer runtime.KeepAlive(m)
+	bytes := C.arbitrator_module_root(m.ptr)
+	for i, b := range bytes.bytes {
+		hash[i] = byte(b)
+	}
+	return
+}
 func (m *ArbitratorMachine) ProveNextStep() []byte {
 	defer runtime.KeepAlive(m)
 
