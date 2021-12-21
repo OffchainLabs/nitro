@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -32,7 +33,12 @@ func init() {
 	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
 }
 
+// Returns nil if client is a SimulatedBackend
 func LatestConfirmedBlock(ctx context.Context, client bind.ContractBackend) (*big.Int, error) {
+	_, isSimulated := client.(*backends.SimulatedBackend)
+	if isSimulated {
+		return nil, nil
+	}
 	latestBlock, err := client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return nil, err
