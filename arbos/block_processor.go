@@ -59,7 +59,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.St
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
-		baseFee = prevHeader.BaseFee
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}

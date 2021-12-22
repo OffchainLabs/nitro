@@ -206,6 +206,7 @@ func CreateTestL2(
 // Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
 	if err != nil {
-		t.Fatal(text, err)
+		t.Error(text, err)
+		panic("")
 	}
 }

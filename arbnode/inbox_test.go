@@ -147,10 +147,7 @@ func TestTransactionStreamer(t *testing.T) {
 				state.balances[dest] += amount
 			}
 
-			err := inbox.AddMessages(state.numMessages, false, messages)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
 			state.numMessages += uint64(len(messages))
 			state.blockNumber += uint64(len(messages))
@@ -191,5 +188,13 @@ func TestTransactionStreamer(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Fail a test should an error occur
+func Require(t *testing.T, err error, text ...string) {
+	if err != nil {
+		t.Error(text, err)
+		panic("")
 	}
 }

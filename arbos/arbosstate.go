@@ -104,6 +104,8 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
 	addressSet.Initialize(ownersStorage)
 	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+
+	backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(1))
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
