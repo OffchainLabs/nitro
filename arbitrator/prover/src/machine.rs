@@ -254,31 +254,20 @@ struct AvailableImport {
     func: u32,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
 struct Module {
     globals: Vec<Value>,
     memory: Memory,
-    #[serde(skip)]
     tables: Vec<Table>,
-    #[serde(skip)]
     tables_merkle: Merkle,
-    #[serde(skip)]
     funcs: Arc<Vec<Function>>,
-    #[serde(skip)]
     funcs_merkle: Arc<Merkle>,
-    #[serde(skip)]
     types: Arc<Vec<FunctionType>>,
-    #[serde(skip)]
     internals_offset: u32,
-    #[serde(skip)]
     names: Arc<NameCustomSection>,
-    #[serde(skip)]
     host_call_hooks: Arc<Vec<Option<(String, String)>>>,
-    #[serde(skip)]
     start_function: Option<u32>,
-    #[serde(skip)]
     func_types: Arc<Vec<FunctionType>>,
-    #[serde(skip)]
     exports: Arc<HashMap<String, u32>>,
 }
 
@@ -698,6 +687,27 @@ pub enum MachineStatus {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+pub struct ModuleState<'a> {
+    globals: Cow<'a, Vec<Value>>,
+    memory: Cow<'a, Memory>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MachineState<'a> {
+    steps: u64, // Not part of machine hash
+    status: MachineStatus,
+    value_stack: Cow<'a, Vec<Value>>,
+    internal_stack: Cow<'a, Vec<Value>>,
+    block_stack: Cow<'a, Vec<usize>>,
+    frame_stack: Cow<'a, Vec<StackFrame>>,
+    modules: Vec<ModuleState<'a>>,
+    global_state: GlobalState,
+    pc: ProgramCounter,
+    stdio_output: Cow<'a, Vec<u8>>,
+    initial_hash: Bytes32,
+}
+
+#[derive(Clone)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
     status: MachineStatus,
@@ -706,14 +716,11 @@ pub struct Machine {
     block_stack: Vec<usize>,
     frame_stack: Vec<StackFrame>,
     modules: Vec<Module>,
-    #[serde(skip)]
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
-    #[serde(skip)]
     inbox_reader: InboxReaderCached,
-    #[serde(skip)]
     preimages: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
 }
@@ -1072,7 +1079,28 @@ impl Machine {
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
         let mut f = File::create(path)?;
         let mut writer = BufWriter::new(&mut f);
-        bincode::serialize_into(&mut writer, &self)?;
+        let modules = self
+            .modules
+            .iter()
+            .map(|m| ModuleState {
+                globals: Cow::Borrowed(&m.globals),
+                memory: Cow::Borrowed(&m.memory),
+            })
+            .collect();
+        let state = MachineState {
+            steps: self.steps,
+            status: self.status,
+            value_stack: Cow::Borrowed(&self.value_stack),
+            internal_stack: Cow::Borrowed(&self.internal_stack),
+            block_stack: Cow::Borrowed(&self.block_stack),
+            frame_stack: Cow::Borrowed(&self.frame_stack),
+            modules,
+            global_state: self.global_state.clone(),
+            pc: self.pc,
+            stdio_output: Cow::Borrowed(&self.stdio_output),
+            initial_hash: self.initial_hash,
+        };
+        bincode::serialize_into(&mut writer, &state)?;
         writer.flush()?;
         drop(writer);
         f.sync_data()?;
@@ -1082,24 +1110,30 @@ impl Machine {
     // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
     pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
         let reader = BufReader::new(File::open(path)?);
-        let mut new_mach: Machine = bincode::deserialize_from(reader)?;
-        if self.initial_hash != new_mach.initial_hash {
+        let new_state: MachineState = bincode::deserialize_from(reader)?;
+        if self.initial_hash != new_state.initial_hash {
             eyre::bail!(
                 "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
-                new_mach.initial_hash, self.initial_hash,
+                new_state.initial_hash, self.initial_hash,
             );
         }
-        assert_eq!(self.modules.len(), new_mach.modules.len());
+        assert_eq!(self.modules.len(), new_state.modules.len());
 
         // Start mutating the machine. We must not return an error past this point.
-        for (old_module, new_module) in self.modules.iter_mut().zip(new_mach.modules.iter_mut()) {
-            std::mem::swap(&mut old_module.globals, &mut new_module.globals);
-            std::mem::swap(&mut old_module.memory, &mut new_module.memory);
+        for (module, new_module_state) in self.modules.iter_mut().zip(new_state.modules.into_iter())
+        {
+            module.globals = new_module_state.globals.into_owned();
+            module.memory = new_module_state.memory.into_owned();
         }
-        std::mem::swap(&mut self.modules, &mut new_mach.modules);
-        std::mem::swap(&mut self.inbox_reader, &mut new_mach.inbox_reader);
-        std::mem::swap(&mut self.preimages, &mut new_mach.preimages);
-        *self = new_mach;
+        self.steps = new_state.steps;
+        self.status = new_state.status;
+        self.value_stack = new_state.value_stack.into_owned();
+        self.internal_stack = new_state.internal_stack.into_owned();
+        self.block_stack = new_state.block_stack.into_owned();
+        self.frame_stack = new_state.frame_stack.into_owned();
+        self.global_state = new_state.global_state;
+        self.pc = new_state.pc;
+        self.stdio_output = new_state.stdio_output.into_owned();
         Ok(())
     }
 
