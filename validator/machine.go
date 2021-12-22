@@ -162,3 +162,31 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 
 	return proofBytes
 }
+
+func (m *ArbitratorMachine) SerializeState(path string) error {
+	defer runtime.KeepAlive(m)
+
+	cPath := C.CString(path)
+	status := C.arbitrator_serialize_state(m.ptr, cPath)
+	C.free(unsafe.Pointer(cPath))
+
+	if status != 0 {
+		return errors.New("failed to serialize machine state")
+	} else {
+		return nil
+	}
+}
+
+func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
+	defer runtime.KeepAlive(m)
+
+	cPath := C.CString(path)
+	status := C.arbitrator_deserialize_and_replace_state(m.ptr, cPath)
+	C.free(unsafe.Pointer(cPath))
+
+	if status != 0 {
+		return errors.New("failed to deserialize machine state")
+	} else {
+		return nil
+	}
+}
