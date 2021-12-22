@@ -20,16 +20,14 @@ func TestDeploy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _ := CreateTestL2(t, ctx)
-	client := l2info.Client
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	_, _, client, auth := CreateTestL2(t, ctx)
 
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	_, tx, simple, err := mocksgen.DeploySimple(auth, client)
 	Require(t, err, "could not deploy contract")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	tx, err = simple.Increment(&auth)
+	tx, err = simple.Increment(auth)
 	Require(t, err, "failed to call Increment()")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -46,16 +44,14 @@ func TestEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l2info, _ := CreateTestL2(t, ctx)
-	client := l2info.Client
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	_, _, client, auth := CreateTestL2(t, ctx)
 
 	gasPrice := big.NewInt(2000)
 
 	// make auth a chain owner
 	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
 	Require(t, err, "could not deploy contract")
-	tx, err := arbdebug.BecomeChainOwner(&auth)
+	tx, err := arbdebug.BecomeChainOwner(auth)
 	Require(t, err, "could not set L2 gas price")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -63,7 +59,7 @@ func TestEstimate(t *testing.T) {
 	// set the gas price
 	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x6b"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err = arbowner.SetL2GasPrice(&auth, gasPrice)
+	tx, err = arbowner.SetL2GasPrice(auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -77,7 +73,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "could not get balance")
 
 	// deploy a test contract
-	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
+	_, tx, simple, err := mocksgen.DeploySimple(auth, client)
 	Require(t, err, "could not deploy contract")
 	receipt, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -96,7 +92,7 @@ func TestEstimate(t *testing.T) {
 		// t.Fatal("Expected deployment to cost", expectedCost, "instead of", observedCost)
 	}
 
-	tx, err = simple.Increment(&auth)
+	tx, err = simple.Increment(auth)
 	Require(t, err, "failed to call Increment()")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)

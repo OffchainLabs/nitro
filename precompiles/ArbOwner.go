@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 type ArbOwner struct {
@@ -18,14 +17,13 @@ type ArbOwner struct {
 }
 
 var UnauthorizedError = errors.New("unauthorized caller to access-controlled method")
-var ZeroAddressL2 = util.RemapL1Address(common.Address{})
 
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	if err := c.burn(3 * params.SloadGas); err != nil { // charge less because only owner can call this
 		return err
 	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
-	if !owners.IsMember(c.caller) && c.caller != ZeroAddressL2 {
+	if !owners.IsMember(c.caller) {
 		return UnauthorizedError
 	}
 	owners.Add(newOwner)
@@ -51,7 +49,7 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 		return err
 	}
 	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
-	if !owners.IsMember(c.caller) && c.caller != ZeroAddressL2 {
+	if !owners.IsMember(c.caller) {
 		return UnauthorizedError
 	}
 	owners.Remove(addr)

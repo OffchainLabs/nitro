@@ -5,8 +5,9 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -96,8 +97,13 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+
+	// the zero address is the initial chain owner
+	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
+	addressSet.Initialize(ownersStorage)
+	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 }
 
 func (state *ArbosState) FormatVersion() uint64 {

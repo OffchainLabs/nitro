@@ -71,7 +71,7 @@ func TestEvents(t *testing.T) {
 		^uint64(0),
 		&evm,
 	)
-	check(t, err, "call failed")
+	Require(t, err, "call failed")
 
 	burned := ^uint64(0) - gasLeft
 	if burned != 3768 {
@@ -174,11 +174,5 @@ func TestEventCosts(t *testing.T) {
 
 	if tests != expected {
 		t.Fatal("Events are mispriced\nexpected:", expected, "\nbut have:", tests)
-	}
-}
-
-func check(t *testing.T, err error, str ...string) {
-	if err != nil {
-		t.Fatal(err, str)
 	}
 }

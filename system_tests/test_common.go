@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -176,13 +177,30 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node) {
+func CreateTestL2(
+	t *testing.T,
+	ctx context.Context,
+) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *bind.TransactOpts) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
 	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	l2info.Client = ClientForArbBackend(t, node.Backend)
-	return l2info, node
+
+	client := l2info.Client
+	auth := l2info.GetDefaultTransactOpts("Owner")
+
+	// make auth a chain owner
+	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	tx, err := arbdebug.BecomeChainOwner(&auth)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	return l2info, node, client, &auth
 }
 
 // Fail a test should an error occur

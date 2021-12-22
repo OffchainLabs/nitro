@@ -6,13 +6,14 @@ package precompiles
 
 import (
 	"bytes"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"math/big"
-	"testing"
 )
 
 func TestArbAddressTableInit(t *testing.T) {
@@ -20,21 +21,19 @@ func TestArbAddressTableInit(t *testing.T) {
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{})
 
-	sz, err := atab.Size(context, st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if (!sz.IsInt64()) || (sz.Int64() != 0) {
+	size, err := atab.Size(context, st)
+	Require(t, err)
+	if (!size.IsInt64()) || (size.Int64() != 0) {
 		t.Fatal()
 	}
 
-	_, err = atab.Lookup(context, st, common.Address{})
-	if err == nil {
+	_, shouldErr := atab.Lookup(context, st, common.Address{})
+	if shouldErr == nil {
 		t.Fatal()
 	}
 
-	_, err = atab.LookupIndex(context, st, big.NewInt(0))
-	if err == nil {
+	_, shouldErr = atab.LookupIndex(context, st, big.NewInt(0))
+	if shouldErr == nil {
 		t.Fatal()
 	}
 }
@@ -48,49 +47,41 @@ func TestAddressTable1(t *testing.T) {
 
 	// register addr
 	slot, err := atab.Register(context, st, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if (!slot.IsInt64()) || (slot.Int64() != 0) {
 		t.Fatal()
 	}
 
 	// verify Size() is 1
-	sz, err := atab.Size(context, st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if (!sz.IsInt64()) || (sz.Int64() != 1) {
+	size, err := atab.Size(context, st)
+	Require(t, err)
+	if (!size.IsInt64()) || (size.Int64() != 1) {
 		t.Fatal()
 	}
 
 	// verify Lookup of addr returns 0
 	index, err := atab.Lookup(context, st, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if (!index.IsInt64()) || (index.Int64() != 0) {
 		t.Fatal()
 	}
 
 	// verify Lookup of nonexistent address returns error
-	_, err = atab.Lookup(context, st, common.Address{})
-	if err == nil {
+	_, shouldErr := atab.Lookup(context, st, common.Address{})
+	if shouldErr == nil {
 		t.Fatal()
 	}
 
 	// verify LookupIndex of 0 returns addr
 	addr2, err := atab.LookupIndex(context, st, big.NewInt(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if addr2 != addr {
 		t.Fatal()
 	}
 
 	// verify LookupIndex of 1 returns error
-	_, err = atab.LookupIndex(context, st, big.NewInt(1))
-	if err == nil {
+	_, shouldErr = atab.LookupIndex(context, st, big.NewInt(1))
+	if shouldErr == nil {
 		t.Fatal()
 	}
 }
@@ -104,9 +95,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 
 	// verify that compressing addr produces the 21-byte format
 	res, err := atab.Compress(context, st, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if len(res) != 21 {
 		t.Fatal()
 	}
@@ -116,9 +105,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 
 	// verify that decompressing res consumes 21 bytes and returns the original addr
 	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if (!nbytes.IsInt64()) || (nbytes.Int64() != 21) {
 		t.Fatal()
 	}
@@ -141,9 +128,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 
 	// verify that compressing addr yields the <= 9 byte format
 	res, err := atab.Compress(context, st, addr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if len(res) > 9 {
 		t.Fatal(len(res))
 	}
@@ -154,9 +139,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 
 	// verify that decompressing res consumes all but two bytes of res and produces addr
 	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if (!nbytes.IsInt64()) || (nbytes.Int64()+2 != int64(len(res))) {
 		t.Fatal()
 	}
@@ -169,10 +152,16 @@ func newMockEVMForTesting(t *testing.T) *vm.EVM {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return &vm.EVM{
 		StateDB: statedb,
+	}
+}
+
+// Fail a test should an error occur
+func Require(t *testing.T, err error, text ...string) {
+	if err != nil {
+		t.Error(text, err)
+		panic("")
 	}
 }
