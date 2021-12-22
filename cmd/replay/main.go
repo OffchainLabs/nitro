@@ -88,39 +88,27 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
-	blockBuilder := arbos.NewBlockBuilder(lastBlockHeader, statedb, chainContext)
-	for {
-		message, err := inboxMultiplexer.Peek()
-		if err != nil {
-			return nil, err
-		}
-		segment, err := arbos.IncomingMessageToSegment(message.Message, arbos.ChainConfig.ChainID)
-		if err != nil {
-			log.Warn("error parsing incoming message", "err", err)
-			err = inboxMultiplexer.Advance()
-			if err != nil {
-				return nil, err
-			}
-			break
-		}
-		// Always passes if the block is empty
-		if !blockBuilder.ShouldAddMessage(segment) {
-			break
-		}
-		err = inboxMultiplexer.Advance()
-		if err != nil {
-			return nil, err
-		}
-		blockBuilder.AddMessage(segment)
-		if message.MustEndBlock {
-			break
-		}
+
+	message, err := inboxMultiplexer.Peek()
+	if err != nil {
+		return nil, err
 	}
-	block, _, _ := blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+
+	err = inboxMultiplexer.Advance()
+	if err != nil {
+		return nil, err
+	}
+
+	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
+	l1Message := message.Message
+
+	block, _ := arbos.ProduceBlock(l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext)
 	return block, nil
 }
 
 func main() {
+	wavmio.StubInit()
+
 	// We initialize the elliptic curve before calling into wavmio.
 	// This allows the validator to cache the elliptic curve initialization.
 	btcec.S256()
@@ -161,4 +149,6 @@ func main() {
 	fmt.Printf("New block hash: %v\n", newBlockHash)
 
 	wavmio.SetLastBlockHash(newBlockHash)
+
+	wavmio.StubFinal()
 }

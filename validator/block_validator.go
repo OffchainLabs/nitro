@@ -15,7 +15,9 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -52,21 +54,23 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	RootPath            string // prepends all other paths
-	ProverBinPath       string
-	ModulePaths         []string
-	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU#)
-	BlocksToRecord      []uint64
+	RootPath                string // prepends all other paths
+	ProverBinPath           string
+	ModulePaths             []string
+	OutputPath              string
+	InitialMachineCachePath string
+	ConcurrentRunsLimit     int // 0 - default (CPU#)
+	BlocksToRecord          []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	RootPath:            "./arbitrator/target/env/",
-	ProverBinPath:       "lib/replay.wasm",
-	ModulePaths:         []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
-	OutputPath:          "output",
-	ConcurrentRunsLimit: 0,
-	BlocksToRecord:      []uint64{},
+	RootPath:                "./arbitrator/target/env/",
+	ProverBinPath:           "lib/replay.wasm",
+	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
+	OutputPath:              "output",
+	InitialMachineCachePath: "initial-machine-cache",
+	ConcurrentRunsLimit:     0,
+	BlocksToRecord:          []uint64{},
 }
 
 func init() {
@@ -113,21 +117,21 @@ type validationEntry struct {
 	BlockHash     common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
-	EndPos        uint64
+	Pos           uint64
 	Running       bool
 	StartBatchNr  uint64
 	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
-func newValidationEntry(header *types.Header, preimages []common.Hash, endPos uint64) *validationEntry {
+func newValidationEntry(header *types.Header, preimages []common.Hash, pos uint64) *validationEntry {
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
-		EndPos:        endPos,
+		Pos:           pos,
 	}
 }
 
@@ -191,14 +195,14 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	return validator
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, startPos uint64, endPos uint64) {
+func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, pos uint64) {
 	hashlist := v.preimageCache.PourToCache(preimages)
-	validatorStatic.validationEntries.Store(startPos, newValidationEntry(header, hashlist, endPos))
+	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hashlist, pos))
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, startPos uint64, endPos uint64) {
-	go v.prepareBlock(block.Header(), preimages, startPos, endPos)
+func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, pos uint64) {
+	go v.prepareBlock(block.Header(), preimages, pos)
 }
 
 // this func cannot be in a file where the C premable has anything other than declarations
@@ -342,8 +346,8 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("validator: validatorStatic not initialized")
 		return
 	}
-	if validationEntry.EndPos != end.Pos {
-		log.Error("validator: validate got bad args", "block.end", validationEntry.EndPos, "end", end.Pos)
+	if validationEntry.Pos != end.Pos {
+		log.Error("validator: validate got bad args", "block.end", validationEntry.Pos, "end", end.Pos)
 		return
 	}
 	c_preimages, err := v.preimageCache.PrepareMultByteArrays(validationEntry.Preimages)
@@ -449,13 +453,13 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		idx = v.posToValidate.StupidSearchPos(validationEntry.EndPos)
-		if len(v.posToValidate) <= idx || v.posToValidate[idx].Pos != validationEntry.EndPos {
+		idx = v.posToValidate.StupidSearchPos(validationEntry.Pos)
+		if len(v.posToValidate) <= idx || v.posToValidate[idx].Pos != validationEntry.Pos {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		go v.validate(ctx, validationEntry, v.posToValidate[0], v.posToValidate[idx])
-		v.posNextSend = validationEntry.EndPos + 1
+		v.posNextSend = validationEntry.Pos + 1
 		v.posToValidate = v.posToValidate[idx+1:]
 	}
 }
@@ -510,7 +514,7 @@ func (v *BlockValidator) ProgressValidated() {
 			}
 			DestroyCByteArray(cbyte)
 		}
-		v.posNext = validationEntry.EndPos + 1
+		v.posNext = validationEntry.Pos + 1
 		v.blocksValidated = validationEntry.BlockNumber
 		select {
 		case v.progressChan <- v.blocksValidated:
@@ -552,8 +556,84 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	}
 }
 
+func (v *BlockValidator) cacheBaseMachineUntilHostIo(ctx context.Context) error {
+	hash := v.baseMachine.Hash()
+	expectedName := hash.String() + ".bin"
+	cacheDir := path.Join(v.config.RootPath, v.config.InitialMachineCachePath)
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
+		return err
+	}
+	files, err := ioutil.ReadDir(cacheDir)
+	if err != nil {
+		return err
+	}
+	cleanCacheBefore := time.Now().Add(-time.Hour * 24)
+	foundInCache := false
+	for _, file := range files {
+		if file.Name() == expectedName {
+			foundInCache = true
+		} else if file.ModTime().Before(cleanCacheBefore) {
+			log.Info("removing unknown old machine cache", "name", file.Name())
+			err = os.Remove(path.Join(cacheDir, file.Name()))
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Info("keeping unknown old machine cache", "name", file.Name())
+		}
+	}
+
+	file := path.Join(cacheDir, expectedName)
+	if foundInCache {
+		// Update the file's last modified time so it doesn't get cleaned up
+		now := time.Now()
+		err = os.Chtimes(file, now, now)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				foundInCache = false
+			} else {
+				return err
+			}
+		}
+	}
+
+	if foundInCache {
+		log.Info("found cached initial machine", "hash", hash)
+
+		err = v.baseMachine.DeserializeAndReplaceState(file)
+		if err != nil {
+			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
+			log.Info("failed to load initial machine cache; will reexecute", "err", err)
+		} else {
+			return nil
+		}
+	} else {
+		log.Info("didn't find initial machine in cache", "hash", hash)
+	}
+
+	err = v.baseMachine.StepUntilHostIo(ctx)
+	if err != nil {
+		return err
+	}
+
+	log.Info("saving initial machine cache", "hash", hash)
+
+	wipFile := file + ".wip"
+	err = v.baseMachine.SerializeState(wipFile)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(wipFile, file)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (v *BlockValidator) Start(ctx context.Context) error {
-	err := v.baseMachine.StepUntilHostIo(ctx)
+	err := v.cacheBaseMachineUntilHostIo(ctx)
 	if err != nil {
 		return err
 	}
@@ -566,8 +646,14 @@ func (v *BlockValidator) Start(ctx context.Context) error {
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
 	timeoutChan := time.After(timeout)
 	for {
+		if v.blocksValidated >= blockNumber {
+			return true
+		}
 		select {
 		case <-timeoutChan:
+			if v.blocksValidated >= blockNumber {
+				return true
+			}
 			return false
 		case block, ok := <-v.progressChan:
 			if block >= blockNumber {
