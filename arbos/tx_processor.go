@@ -26,7 +26,7 @@ type TxProcessor struct {
 	posterGas    uint64
 }
 
-func NewTxProcessor(msg core.Message, evm *vm.EVM) *TxProcessor {
+func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	arbosState := OpenArbosState(evm.StateDB)
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
@@ -51,17 +51,13 @@ func (p *TxProcessor) getAggregator() *common.Address {
 	return nil
 }
 
-func (p *TxProcessor) InterceptMessage() *core.ExecutionResult {
+func (p *TxProcessor) InterceptMessage() bool {
 	if p.msg.From() != arbAddress {
-		return nil
+		return false
 	}
 	// Message is deposit
 	p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
-	return &core.ExecutionResult{
-		UsedGas:    0,
-		Err:        nil,
-		ReturnData: nil,
-	}
+	return true
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
