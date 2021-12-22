@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
@@ -5,7 +6,7 @@ use std::{
 };
 
 /// cbindgen:field-names=[bytes]
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
