@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
@@ -136,7 +135,7 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
 	}
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)

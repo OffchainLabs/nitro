@@ -47,7 +47,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(0),
+		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
 	}
 
 	db := rawdb.NewMemoryDatabase()
