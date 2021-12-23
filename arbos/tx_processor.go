@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -54,13 +55,27 @@ func (p *TxProcessor) getAggregator() *common.Address {
 	return nil
 }
 
-func (p *TxProcessor) InterceptMessage() bool {
-	if p.msg.From() != arbAddress {
+// returns whether message is a successful deposit
+func (p *TxProcessor) StartTxHook() bool {
+
+	underlyingTx := p.msg.UnderlyingTransaction()
+	if underlyingTx == nil {
 		return false
 	}
-	// Message is deposit
-	p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
-	return true
+
+	switch tx := underlyingTx.GetInner().(type) {
+	case *types.ArbitrumDepositTx:
+		if p.msg.From() != arbAddress {
+			return false
+		}
+		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		return true
+	case *types.ArbitrumSubmitRetryableTx:
+		p.stateDB.AddBalance(tx.From, tx.DepositValue)
+		return false
+	default:
+		return false
+	}
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
