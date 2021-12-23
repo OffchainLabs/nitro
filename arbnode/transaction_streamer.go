@@ -589,7 +589,11 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 	var broadcastReceiver chan broadcaster.BroadcastFeedMessage
 	if s.broadcastClient != nil {
 		broadcastReceiver = make(chan broadcaster.BroadcastFeedMessage)
-		s.broadcastClient.ConnectInBackground(ctx, broadcastReceiver)
+		receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
+			broadcastReceiver <- *msg
+		}
+
+		s.broadcastClient.ConnectInBackground(ctx, receiveMessage)
 	}
 
 	go (func() {
