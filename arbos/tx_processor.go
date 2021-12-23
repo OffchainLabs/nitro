@@ -17,6 +17,9 @@ import (
 var arbAddress = common.HexToAddress("0xabc")
 var networkAddress = common.HexToAddress("0x01")
 
+// A TxProcessor is created and freed for every L2 transaction.
+// It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
+// Public fields are accessible in precompiles.
 type TxProcessor struct {
 	msg          core.Message
 	blockContext vm.BlockContext
