@@ -144,7 +144,6 @@ func TestTransactionStreamer(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					MustEndBlock:        true,
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source].Sub(state.balances[source], amount)
@@ -200,8 +199,8 @@ func TestTransactionStreamer(t *testing.T) {
 
 // Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
 	if err != nil {
 		t.Error(text, err)
-		panic("")
 	}
 }

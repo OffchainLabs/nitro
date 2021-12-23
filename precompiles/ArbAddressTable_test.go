@@ -160,8 +160,8 @@ func newMockEVMForTesting(t *testing.T) *vm.EVM {
 
 // Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
 	if err != nil {
 		t.Error(text, err)
-		panic("")
 	}
 }

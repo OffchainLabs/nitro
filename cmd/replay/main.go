@@ -89,7 +89,7 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
 
-	message, err := inboxMultiplexer.Next()
+	message, err := inboxMultiplexer.Pop()
 	if err != nil {
 		return nil, err
 	}
