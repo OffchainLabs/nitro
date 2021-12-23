@@ -30,10 +30,16 @@ struct Opts {
     inbox_add_stub_headers: bool,
     #[structopt(long)]
     always_merkleize: bool,
+    /// profile output instead of generting proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
+    /// simple summary of hot opcodes
     #[structopt(long)]
-    profile_opcodes: bool,
+    profile_sum_opcodes: bool,
+    /// simple summary of hot functions
+    #[structopt(long)]
+    profile_sum_funcs: bool,
+    /// profile written in "folded" format (use as input for e.g. inferno-flamegraph)
     #[structopt(long)]
     profile_output: Option<PathBuf>,
     #[structopt(short = "i", long, default_value = "1")]
@@ -158,11 +164,6 @@ fn main() -> Result<()> {
         bytes32_vals: [last_block_hash],
     };
 
-    println!("main module functions: {}", main_mod.names.functions.len());
-    for (modnum, lib) in libraries.iter().enumerate() {
-        println!("module {} functions: {}", modnum, lib.names.functions.len());
-    }
-
     let mut mach = Machine::from_binary(
         libraries.clone(),
         main_mod.clone(),
@@ -227,7 +228,7 @@ fn main() -> Result<()> {
 
             cycles_measured_total += profile_time;
 
-            if opts.profile_opcodes {
+            if opts.profile_sum_opcodes {
                 let opprofile = opcode_profile.entry(next_opcode).or_default();
                 opprofile.count += 1;
                 opprofile.total_cycles += profile_time;
@@ -244,15 +245,16 @@ fn main() -> Result<()> {
             if next_opcode == Opcode::Return {
                 let (module, func, profile) = func_stack.pop().unwrap();
 
-                if let Some(parent_func) = &mut func_stack.last_mut() {
-                    parent_func.2.count += profile.count;
-                    parent_func.2.total_cycles += profile.total_cycles;
+                if opts.profile_sum_funcs {
+                    if let Some(parent_func) = &mut func_stack.last_mut() {
+                        parent_func.2.count += profile.count;
+                        parent_func.2.total_cycles += profile.total_cycles;
+                    }
+                    let func_profile_entry = func_profile.entry((module, func)).or_default();
+                    func_profile_entry.count += profile.count;
+                    func_profile_entry.total_cycles += profile.total_cycles;
+                    func_profile_entry.local_cycles += profile.local_cycles;
                 }
-
-                let func_profile_entry = func_profile.entry((module, func)).or_default();
-                func_profile_entry.count += profile.count;
-                func_profile_entry.total_cycles += profile.total_cycles;
-                func_profile_entry.local_cycles += profile.local_cycles;
 
                 if opts.profile_output.is_some() {
                     *profile_backtrace_counts
@@ -284,8 +286,8 @@ fn main() -> Result<()> {
                 proof: hex::encode(proof),
                 after: after.to_string(),
             });
+            mach.step_n(opts.proving_interval.saturating_sub(1));
         }
-        mach.step_n(opts.proving_interval.saturating_sub(1));
     }
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -343,21 +345,23 @@ fn main() -> Result<()> {
             (cycles_measured_total as f64) * 100.0 / (cycles_bigloop as f64)
         );
 
-        println!("\n===Operations:");
-        let mut ops_vector: Vec<_> = opcode_profile.iter().collect();
-        ops_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
-        let mut printed = 0;
-        for (opcode, profile) in ops_vector {
-            println!(
-                "Opcode {:?}: steps: {} cycles: {} ({}%)",
-                opcode,
-                profile.count,
-                profile.total_cycles,
-                (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64),
-            );
-            printed += 1;
-            if printed > 20 {
-                break;
+        if opts.profile_sum_opcodes {
+            println!("\n===Operations:");
+            let mut ops_vector: Vec<_> = opcode_profile.iter().collect();
+            ops_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
+            let mut printed = 0;
+            for (opcode, profile) in ops_vector {
+                println!(
+                    "Opcode {:?}: steps: {} cycles: {} ({}%)",
+                    opcode,
+                    profile.count,
+                    profile.total_cycles,
+                    (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64),
+                );
+                printed += 1;
+                if printed > 20 {
+                    break;
+                }
             }
         }
 
@@ -402,20 +406,23 @@ fn main() -> Result<()> {
             (module_name, name)
         };
 
-        println!("\n===Functions:");
-        let mut func_vector: Vec<_> = func_profile.iter().collect();
-        func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
-        let mut printed = 0;
-        for (&(module_num, func), profile) in func_vector {
-            let (name, module_name) = format_pc(module_num, func);
-            let percent = (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
-            println!(
-                "module {}: function: {} {} steps: {} cycles: {} ({}%)",
-                module_name, func, name, profile.count, profile.total_cycles, percent,
-            );
-            printed += 1;
-            if printed > 20 && percent < 3.0 {
-                break;
+        if opts.profile_sum_funcs {
+            println!("\n===Functions:");
+            let mut func_vector: Vec<_> = func_profile.iter().collect();
+            func_vector.sort_by(|a, b| b.1.total_cycles.cmp(&a.1.total_cycles));
+            let mut printed = 0;
+            for (&(module_num, func), profile) in func_vector {
+                let (name, module_name) = format_pc(module_num, func);
+                let percent =
+                    (profile.total_cycles as f64) * 100.0 / (cycles_measured_total as f64);
+                println!(
+                    "module {}: function: {} {} steps: {} cycles: {} ({}%)",
+                    module_name, func, name, profile.count, profile.total_cycles, percent,
+                );
+                printed += 1;
+                if printed > 20 && percent < 3.0 {
+                    break;
+                }
             }
         }
 
