@@ -57,13 +57,6 @@ char **PrepareStringList(intptr_t num) {
 void AddToStringList(char** list, int index, char* val) {
 	list[index] = val;
 }
-
-struct CByteArray InboxReaderFunc(uint64_t context, uint64_t inbox_idx, uint64_t seq_num);
-
-struct CByteArray InboxReaderWrapper(uint64_t context, uint64_t inbox_idx, uint64_t seq_num){
-	return InboxReaderFunc(context, inbox_idx, seq_num);
-}
-
 */
 import "C"
 import (

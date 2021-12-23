@@ -8,8 +8,6 @@ package validator
 #cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
 #include "arbitrator.h"
 #include <stdlib.h>
-
-struct CByteArray InboxReaderWrapper(uint64_t inbox_idx, uint64_t seq_num);
 */
 import "C"
 import (
@@ -117,20 +115,24 @@ type validationEntry struct {
 	BlockHash     common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
+	HasDelayedMsg bool
+	DelayedMsgNr  uint64
+	SeqMsgNr      uint64
 	Pos           uint64
 	Running       bool
-	StartBatchNr  uint64
 	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
-func newValidationEntry(header *types.Header, preimages []common.Hash, pos uint64) *validationEntry {
+func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash, pos uint64) *validationEntry {
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
+		HasDelayedMsg: hasDelayed,
+		DelayedMsgNr:  delayedMsgNr,
 		Pos:           pos,
 	}
 }
@@ -168,7 +170,7 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 
 	cZeroPreimages := C.CMultipleByteArrays{}
 	cZeroPreimages.len = 0
-	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages, (*[0]byte)(C.InboxReaderWrapper))
+	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages)
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
 	if validatorStatic.initialized {
@@ -195,66 +197,29 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	return validator
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, pos uint64) {
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, preimages map[common.Hash][]byte, pos uint64) {
 	hashlist := v.preimageCache.PourToCache(preimages)
-	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hashlist, pos))
+	var delayedMsgToRead uint64
+	var hasDelayedMessage bool
+	if header.ParentHash != prevHeader.Hash() {
+		log.Error("prepareBlock: wrong headers", "num", header.Number, "parenthash", header.ParentHash, "prevhash", prevHeader.Hash())
+		return
+	}
+	if header.Nonce != prevHeader.Nonce {
+		hasDelayedMessage = true
+		delayedMsgToRead = prevHeader.Nonce.Uint64()
+	}
+	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist, pos))
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, pos uint64) {
-	go v.prepareBlock(block.Header(), preimages, pos)
-}
-
-// this func cannot be in a file where the C premable has anything other than declarations
-//export InboxReaderFunc
-func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.uint64_t) C.CByteArray {
-	index := uint64(c_inbox_idx)
-	msgNum := uint64(c_seq_num)
-	startPos := uint64(c_context)
-	entry, found := validatorStatic.validationEntries.Load(startPos)
-	if !found {
-		log.Error("error while trying to read validation entry", "pos", startPos)
-		runtime.Goexit()
-	}
-	validationEntry, ok := entry.(*validationEntry)
-	if !ok {
-		log.Error("illegal validation entry", "pos", startPos)
-		runtime.Goexit()
-	}
-	if index == 0 {
-		if validationEntry.StartBatchNr != msgNum {
-			return cbyteError
-		}
-		entry, found := validatorStatic.sequencerBatches.Load(msgNum)
-		if !found {
-			log.Error("didn't find sequencer message", "pos", startPos, "msgNum", msgNum)
-			runtime.Goexit()
-		}
-		cbyte, ok := entry.(C.CByteArray)
-		if !ok {
-			log.Error("sequencer message bad format", "pos", startPos, "msgNum", msgNum)
-			runtime.Goexit()
-		}
-		return cbyte
-	} else if index == 1 {
-		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(msgNum)
-		if err != nil {
-			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", msgNum, "pos", startPos)
-			runtime.Goexit()
-		}
-		cByte := CreateCByteArray(msg)
-		validationEntry.MsgsAllocated = append(validationEntry.MsgsAllocated, delayedMsgInfo{cByte, uint64(c_seq_num)})
-		return cByte
-	} else {
-		log.Error("bad inbox index while proving", "index", index, "pos", startPos)
-		runtime.Goexit()
-	}
-	return C.CByteArray{} // will never get here, parsers don't realise Goexit is dead end
+func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, preimages map[common.Hash][]byte, pos uint64) {
+	go v.prepareBlock(block.Header(), prevHeader, preimages, pos)
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end PosInSequencer, c_preimages C.CMultipleByteArrays) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end PosInSequencer, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
 	outDirPath := filepath.Join(v.config.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
@@ -287,13 +252,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 			return err
 		}
 	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash))
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", validationEntry.SeqMsgNr, start.PosInBatch, validationEntry.PrevBlockHash))
 	if err != nil {
 		return err
 	}
 
-	sequencerCByte := InboxReaderFunc(C.uint64_t(start.Pos), C.uint64_t(0), C.uint64_t(start.BatchNum))
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNum)
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", validationEntry.SeqMsgNr)
 	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
 	if err != nil {
 		return err
@@ -312,15 +276,13 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		return err
 	}
 
-	if len(validationEntry.MsgsAllocated) > 0 {
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.MsgsAllocated[0].seq))
+	if validationEntry.HasDelayedMsg {
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.DelayedMsgNr))
 		if err != nil {
 			return err
 		}
-	}
-	for _, msg := range validationEntry.MsgsAllocated {
-		filename := fmt.Sprintf("delayed_%d.bin", msg.seq)
-		err = CByteToFile(msg.data, filepath.Join(outDirPath, filename))
+		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
+		err = CByteToFile(delayedCByte, filepath.Join(outDirPath, filename))
 		if err != nil {
 			return err
 		}
@@ -329,6 +291,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 			return err
 		}
 	}
+
 	_, err = cmdFile.WriteString(" \"$@\"\n")
 	if err != nil {
 		return err
@@ -356,14 +319,36 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
+	validationEntry.SeqMsgNr = start.BatchNum
 	validationEntry.Running = true
-	validationEntry.StartBatchNr = start.BatchNum
 	gsStart := CreateGlobalState(start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash)
+
+	seqEntry, found := validatorStatic.sequencerBatches.Load(start.BatchNum)
+	if !found {
+		log.Error("didn't find sequencer message", "pos", start.Pos, "msgNum", validationEntry.SeqMsgNr)
+		runtime.Goexit()
+	}
+	seqCByte, ok := seqEntry.(C.CByteArray)
+	if !ok {
+		log.Error("sequencer message bad format", "pos", start.Pos, "msgNum", validationEntry.SeqMsgNr)
+		runtime.Goexit()
+	}
 
 	mach := v.baseMachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
-	C.arbitrator_set_inbox_reader_context(mach.ptr, C.uint64_t(start.Pos))
 	mach.SetGlobalState(gsStart)
+	mach.AddSequencerInboxMessage(start.BatchNum, seqCByte)
+	var delayedByte C.CByteArray
+	if validationEntry.HasDelayedMsg {
+		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
+		if err != nil {
+			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "pos", start.Pos)
+			runtime.Goexit()
+		}
+		delayedByte = CreateCByteArray(msg)
+		mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
+	}
+
 	var steps uint64
 	for mach.IsRunning() {
 		var count uint64 = 100000000
@@ -401,7 +386,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 
 	if writeThisBlock {
-		err = v.writeToFile(validationEntry, start, end, c_preimages)
+		err = v.writeToFile(validationEntry, start, end, c_preimages, seqCByte, delayedByte)
 		if err != nil {
 			log.Error("failed to write file", "err", err)
 		}
@@ -501,7 +486,7 @@ func (v *BlockValidator) ProgressValidated() {
 			return
 		}
 		validatorStatic.validationEntries.Delete(v.posNext)
-		for batch := v.batchNrValidated; batch < validationEntry.StartBatchNr; batch++ {
+		for batch := v.batchNrValidated; batch < validationEntry.SeqMsgNr; batch++ {
 			entry, found := validatorStatic.sequencerBatches.LoadAndDelete(batch)
 			if !found {
 				log.Warn("didn't find sequencer batch", "number", batch)
