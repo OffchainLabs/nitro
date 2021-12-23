@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
 
@@ -163,6 +162,13 @@ func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
 	} else {
 		r.backend.SetPositionWithinMessage(positionRead + 1)
 	}
+	// parsing error in getNextMsg
+	if msg == nil && err == nil {
+		msg = &MessageWithMetadata{
+			Message:             invalidMessage,
+			DelayedMessagesRead: r.delayedMessagesRead,
+		}
+	}
 	return msg, err
 }
 
@@ -178,7 +184,8 @@ func (r *inboxMultiplexer) advanceSequencerMsg() {
 	r.cachedSegmentBlockNumber = 0
 }
 
-// Returns a message, the delayed messages being read up to if applicable, and any *parsing* error
+// Returns a message, the segment number that had this message, and real/backend errors
+// parsing errors will be reported to log, return nil msg and nil error
 func (r *inboxMultiplexer) getNextMsg(targetSegment uint64) (*MessageWithMetadata, uint64, error) {
 	seqMsg := r.cachedSequencerMessage
 	segmentNum := r.cachedSegmentNum
@@ -234,7 +241,8 @@ func (r *inboxMultiplexer) getNextMsg(targetSegment uint64) (*MessageWithMetadat
 		segment = seqMsg.segments[int(segmentNum)]
 	}
 	if len(segment) == 0 {
-		return nil, segmentNum, errors.New("empty sequencer message segment")
+		log.Error("empty sequencer message segment", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum)
+		return nil, segmentNum, nil
 	}
 	segmentKind := segment[0]
 	var msg *MessageWithMetadata
@@ -277,19 +285,20 @@ func (r *inboxMultiplexer) getNextMsg(targetSegment uint64) (*MessageWithMetadat
 			if realErr != nil {
 				return nil, segmentNum, realErr
 			}
+			r.delayedMessagesRead += 1
 			delayed, parseErr := arbos.ParseIncomingL1Message(bytes.NewReader(data))
 			if parseErr != nil {
 				log.Warn("error parsing delayed message", "err", parseErr, "delayedMsg", r.delayedMessagesRead)
-				delayed = invalidMessage
+				return nil, segmentNum, nil
 			}
-			r.delayedMessagesRead += 1
 			msg = &MessageWithMetadata{
 				Message:             delayed,
 				DelayedMessagesRead: r.delayedMessagesRead,
 			}
 		}
 	} else {
-		return nil, segmentNum, fmt.Errorf("bad sequencer message segment kind %v", segmentKind)
+		log.Error("bad sequencer message segment kind", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum, "kind", segmentKind)
+		return nil, segmentNum, nil
 	}
 	return msg, segmentNum, nil
 }
