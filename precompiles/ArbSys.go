@@ -75,7 +75,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		return nil, err
 	}
 
-	sendHash := crypto.Keccak256Hash(common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
+	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := arbos.OpenArbosState(evm.StateDB)
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents := merkleAcc.Append(sendHash)

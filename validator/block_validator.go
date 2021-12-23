@@ -15,7 +15,9 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -52,21 +54,23 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	RootPath            string // prepends all other paths
-	ProverBinPath       string
-	ModulePaths         []string
-	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU#)
-	BlocksToRecord      []uint64
+	RootPath                string // prepends all other paths
+	ProverBinPath           string
+	ModulePaths             []string
+	OutputPath              string
+	InitialMachineCachePath string
+	ConcurrentRunsLimit     int // 0 - default (CPU#)
+	BlocksToRecord          []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	RootPath:            "./arbitrator/target/env/",
-	ProverBinPath:       "lib/replay.wasm",
-	ModulePaths:         []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
-	OutputPath:          "output",
-	ConcurrentRunsLimit: 0,
-	BlocksToRecord:      []uint64{},
+	RootPath:                "./arbitrator/target/env/",
+	ProverBinPath:           "lib/replay.wasm",
+	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
+	OutputPath:              "output",
+	InitialMachineCachePath: "initial-machine-cache",
+	ConcurrentRunsLimit:     0,
+	BlocksToRecord:          []uint64{},
 }
 
 func init() {
@@ -552,8 +556,84 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	}
 }
 
+func (v *BlockValidator) cacheBaseMachineUntilHostIo(ctx context.Context) error {
+	hash := v.baseMachine.Hash()
+	expectedName := hash.String() + ".bin"
+	cacheDir := path.Join(v.config.RootPath, v.config.InitialMachineCachePath)
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
+		return err
+	}
+	files, err := ioutil.ReadDir(cacheDir)
+	if err != nil {
+		return err
+	}
+	cleanCacheBefore := time.Now().Add(-time.Hour * 24)
+	foundInCache := false
+	for _, file := range files {
+		if file.Name() == expectedName {
+			foundInCache = true
+		} else if file.ModTime().Before(cleanCacheBefore) {
+			log.Info("removing unknown old machine cache", "name", file.Name())
+			err = os.Remove(path.Join(cacheDir, file.Name()))
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Info("keeping unknown old machine cache", "name", file.Name())
+		}
+	}
+
+	file := path.Join(cacheDir, expectedName)
+	if foundInCache {
+		// Update the file's last modified time so it doesn't get cleaned up
+		now := time.Now()
+		err = os.Chtimes(file, now, now)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				foundInCache = false
+			} else {
+				return err
+			}
+		}
+	}
+
+	if foundInCache {
+		log.Info("found cached initial machine", "hash", hash)
+
+		err = v.baseMachine.DeserializeAndReplaceState(file)
+		if err != nil {
+			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
+			log.Info("failed to load initial machine cache; will reexecute", "err", err)
+		} else {
+			return nil
+		}
+	} else {
+		log.Info("didn't find initial machine in cache", "hash", hash)
+	}
+
+	err = v.baseMachine.StepUntilHostIo(ctx)
+	if err != nil {
+		return err
+	}
+
+	log.Info("saving initial machine cache", "hash", hash)
+
+	wipFile := file + ".wip"
+	err = v.baseMachine.SerializeState(wipFile)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(wipFile, file)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (v *BlockValidator) Start(ctx context.Context) error {
-	err := v.baseMachine.StepUntilHostIo(ctx)
+	err := v.cacheBaseMachineUntilHostIo(ctx)
 	if err != nil {
 		return err
 	}
