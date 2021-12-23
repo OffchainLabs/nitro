@@ -586,11 +586,12 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			panic("error starting broadcaster")
 		}
 	}
-	var broadcastReceiver chan broadcaster.BroadcastFeedMessage
 	if s.broadcastClient != nil {
-		broadcastReceiver = make(chan broadcaster.BroadcastFeedMessage)
 		receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
-			broadcastReceiver <- *msg
+			if err := s.AddMessages(msg.SequenceNumber, false, []arbstate.MessageWithMetadata{msg.Message}); err != nil {
+				log.Error("Error adding message from Sequencer Feed", "err", err)
+			}
+
 		}
 
 		s.broadcastClient.ConnectInBackground(ctx, receiveMessage)
@@ -605,10 +606,6 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case msg := <-broadcastReceiver:
-				if err := s.AddMessages(msg.SequenceNumber, false, []arbstate.MessageWithMetadata{msg.Message}); err != nil {
-					log.Error("Error adding message from Sequencer Feed", "err", err)
-				}
 			case <-s.newMessageNotifier:
 			case <-time.After(10 * time.Second):
 			}
