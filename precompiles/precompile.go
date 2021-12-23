@@ -427,22 +427,21 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
-	txProcessor, ok := (evm.ProcessingHook).(*arbos.TxProcessor)
-	if !ok {
-		_, ok = (evm.ProcessingHook).(*vm.DefaultTxProcessor)
-		if ok {
-			glog.Error("processing hook not set")
-		} else {
-			glog.Error("unknown processing hook")
-		}
-		return nil, 0, vm.ErrExecutionReverted
-	}
-
 	callerCtx := &context{
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
-		txProcessor: txProcessor,
+	}
+
+	switch txProcessor := evm.ProcessingHook.(type) {
+	case *arbos.TxProcessor:
+		callerCtx.txProcessor = txProcessor
+	case *vm.DefaultTxProcessor:
+		glog.Error("processing hook not set")
+		return nil, 0, vm.ErrExecutionReverted
+	default:
+		glog.Error("unknown processing hook")
+		return nil, 0, vm.ErrExecutionReverted
 	}
 
 	reflectArgs := []reflect.Value{
