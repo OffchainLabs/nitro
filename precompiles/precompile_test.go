@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -29,6 +30,7 @@ func TestEvents(t *testing.T) {
 			BlockNumber: big.NewInt(int64(blockNumber)),
 			GasLimit:    ^uint64(0),
 		},
+		ProcessingHook: &arbos.TxProcessor{},
 	}
 
 	debugContractAddr := common.HexToAddress("ff")

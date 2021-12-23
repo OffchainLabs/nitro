@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/offchainlabs/arbstate/arbos"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -425,10 +427,22 @@ func (p Precompile) Call(
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
+	txProcessor, ok := (evm.ProcessingHook).(*arbos.TxProcessor)
+	if !ok {
+		_, ok = (evm.ProcessingHook).(*vm.DefaultTxProcessor)
+		if ok {
+			glog.Error("processing hook not set")
+		} else {
+			glog.Error("unknown processing hook")
+		}
+		return nil, 0, vm.ErrExecutionReverted
+	}
+
 	callerCtx := &context{
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
+		txProcessor: txProcessor,
 	}
 
 	reflectArgs := []reflect.Value{

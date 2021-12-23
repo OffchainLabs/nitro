@@ -39,7 +39,7 @@ func TestOutboxProofs(t *testing.T) {
 	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
 	Require(t, err)
 
-	txnCount := int64(1 + rand.Intn(128))
+	txnCount := int64(1 + rand.Intn(64))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {

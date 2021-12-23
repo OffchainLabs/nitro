@@ -22,7 +22,7 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
-	posterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
+	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
 
@@ -34,7 +34,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
-		posterFee:    new(big.Int),
+		PosterFee:    new(big.Int),
 		posterGas:    0,
 	}
 }
@@ -81,7 +81,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			posterCostInL2Gas = new(big.Int).SetUint64(math.MaxUint64)
 		}
 		p.posterGas = posterCostInL2Gas.Uint64()
-		p.posterFee = posterCost
+		p.PosterFee = posterCost
 		gasNeededToStartEVM = p.posterGas
 	}
 
@@ -106,15 +106,15 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 
 	totalCost := new(big.Int).Mul(gasPrice, gasUsed)
-	computeCost := new(big.Int).Sub(totalCost, p.posterFee)
+	computeCost := new(big.Int).Sub(totalCost, p.PosterFee)
 	if computeCost.Sign() < 0 {
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.posterFee)
-		p.posterFee = totalCost
+		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		p.PosterFee = totalCost
 		computeCost = new(big.Int)
 	}
 
 	p.stateDB.AddBalance(networkAddress, computeCost)
-	p.stateDB.AddBalance(p.blockContext.Coinbase, p.posterFee)
+	p.stateDB.AddBalance(p.blockContext.Coinbase, p.PosterFee)
 
 	if p.msg.GasPrice().Sign() > 0 {
 		// in tests, gasprice coud be 0
