@@ -41,7 +41,7 @@ type BlockValidator struct {
 
 	blocksValidated      uint64
 	blocksValidatedMutex sync.Mutex
-	batchNrValidated     uint64
+	earliestBatchKept    uint64
 	posNextSend          uint64
 
 	baseMachine *ArbitratorMachine
@@ -98,11 +98,6 @@ type DelayedMessageReader interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 }
 
-type delayedMsgInfo struct {
-	data C.CByteArray
-	seq  uint64
-}
-
 type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
@@ -113,7 +108,6 @@ type validationEntry struct {
 	DelayedMsgNr  uint64
 	SeqMsgNr      uint64
 	Running       bool
-	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
@@ -310,33 +304,44 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	seqEntry, found := v.sequencerBatches.Load(pos.BatchNum)
 	if !found {
 		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
-		runtime.Goexit()
+		return
 	}
 	seqCByte, ok := seqEntry.(C.CByteArray)
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
-		runtime.Goexit()
+		return
 	}
 
 	mach := v.baseMachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
 	mach.SetGlobalState(gsStart)
-	mach.AddSequencerInboxMessage(validationEntry.SeqMsgNr, seqCByte)
+	err = mach.AddSequencerInboxMessage(validationEntry.SeqMsgNr, seqCByte)
+	if err != nil {
+		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", validationEntry.SeqMsgNr, "blockNr", validationEntry.BlockNumber)
+		return
+	}
 	var delayedByte C.CByteArray
 	if validationEntry.HasDelayedMsg {
 		msg, err := v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
-			runtime.Goexit()
+			return
 		}
 		delayedByte = CreateCByteArray(msg)
-		mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
+		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
+		if err != nil {
+			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
+			return
+		}
 	}
 
 	var steps uint64
 	for mach.IsRunning() {
-		var count uint64 = 100000000
+		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
+		if steps > 0 {
+			log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
+		}
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				log.Error("running machine failed", "err", err)
@@ -345,7 +350,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 			return
 		}
 		steps += count
-		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}
 	gsEnd := mach.GetGlobalState()
 
@@ -385,11 +389,11 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if err != nil {
 		log.Error("validator failed to remove from cache", "err", err)
 	}
-	for _, cbyte := range validationEntry.MsgsAllocated {
-		DestroyCByteArray(cbyte.data)
+	if validationEntry.HasDelayedMsg {
+		DestroyCByteArray(delayedByte)
 	}
+
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
-	validationEntry.MsgsAllocated = nil
 	validationEntry.Preimages = nil
 	validationEntry.Valid = true // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
@@ -464,22 +468,25 @@ func (v *BlockValidator) ProgressValidated() {
 			log.Error("bad block number for validation entry", "expected", v.blocksValidated+1, "found", validationEntry.BlockNumber)
 			return
 		}
-		v.validationEntries.Delete(v.blocksValidated + 1)
-		for batch := v.batchNrValidated; batch < validationEntry.SeqMsgNr; batch++ {
-			entry, found := v.sequencerBatches.LoadAndDelete(batch)
-			if !found {
-				log.Warn("didn't find sequencer batch", "number", batch)
-				continue
+		if v.earliestBatchKept < validationEntry.SeqMsgNr {
+			for batch := v.earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
+				entry, found := v.sequencerBatches.Load(batch)
+				if !found {
+					log.Warn("didn't find sequencer batch", "number", batch)
+					continue
+				}
+				cbyte, ok := entry.(C.CByteArray)
+				if !ok {
+					log.Error("bad entry trying to delete batch", "number", batch)
+					continue
+				}
+				DestroyCByteArray(cbyte)
+				v.sequencerBatches.Delete(batch)
 			}
-			cbyte, ok := entry.(C.CByteArray)
-			if !ok {
-				log.Error("bad entry trying to delete batch", "number", batch)
-				continue
-			}
-			DestroyCByteArray(cbyte)
+			v.earliestBatchKept = validationEntry.SeqMsgNr
 		}
-		v.batchNrValidated = validationEntry.SeqMsgNr - 1
 		v.blocksValidated += 1
+		v.validationEntries.Delete(v.blocksValidated)
 		select {
 		case v.progressChan <- v.blocksValidated:
 		default:

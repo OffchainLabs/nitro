@@ -67,8 +67,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-var cbyteError = C.CByteArray{ptr: nil, len: 1}
-
 func AllocateMultipleCByteArrays(length int) C.CMultipleByteArrays {
 	return C.CreateMultipleCByteArrays(C.uintptr_t(length))
 }
