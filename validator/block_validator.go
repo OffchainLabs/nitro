@@ -31,6 +31,11 @@ import (
 )
 
 type BlockValidator struct {
+	inboxTracker DelayedMessageReader
+
+	validationEntries sync.Map
+	sequencerBatches  sync.Map
+
 	preimageCache      preimageCache
 	posToValidate      posToValidateList
 	posToValidateMutex sync.Mutex
@@ -93,16 +98,6 @@ type DelayedMessageReader interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 }
-
-// block validator interacts with c, so some functions don't have specific conext and must use globals
-type blockValidatorGlobals struct {
-	initialized       bool
-	validationEntries sync.Map
-	sequencerBatches  sync.Map
-	inboxTracker      DelayedMessageReader
-}
-
-var validatorStatic blockValidatorGlobals
 
 type delayedMsgInfo struct {
 	data C.CByteArray
@@ -173,17 +168,13 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages)
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
-	if validatorStatic.initialized {
-		panic("creating block validator when one exists")
-	}
-	validatorStatic.inboxTracker = inbox
-	validatorStatic.initialized = true
 
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
 	validator := &BlockValidator{
+		inboxTracker:        inbox,
 		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
@@ -209,7 +200,7 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 		hasDelayedMessage = true
 		delayedMsgToRead = prevHeader.Nonce.Uint64()
 	}
-	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist, pos))
+	v.validationEntries.Store(pos, newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist, pos))
 	v.sendValidationsChan <- struct{}{}
 }
 
@@ -305,10 +296,6 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 
 func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, start, end PosInSequencer) {
 	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber, "start", start, "end", end)
-	if !validatorStatic.initialized {
-		log.Error("validator: validatorStatic not initialized")
-		return
-	}
 	if validationEntry.Pos != end.Pos {
 		log.Error("validator: validate got bad args", "block.end", validationEntry.Pos, "end", end.Pos)
 		return
@@ -323,7 +310,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	validationEntry.Running = true
 	gsStart := CreateGlobalState(start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash)
 
-	seqEntry, found := validatorStatic.sequencerBatches.Load(start.BatchNum)
+	seqEntry, found := v.sequencerBatches.Load(start.BatchNum)
 	if !found {
 		log.Error("didn't find sequencer message", "pos", start.Pos, "msgNum", validationEntry.SeqMsgNr)
 		runtime.Goexit()
@@ -340,7 +327,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	mach.AddSequencerInboxMessage(start.BatchNum, seqCByte)
 	var delayedByte C.CByteArray
 	if validationEntry.HasDelayedMsg {
-		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
+		msg, err := v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "pos", start.Pos)
 			runtime.Goexit()
@@ -429,7 +416,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if len(v.posToValidate) == 0 || v.posToValidate[0].Pos != v.posNextSend {
 			return
 		}
-		entry, found := validatorStatic.validationEntries.Load(v.posNextSend)
+		entry, found := v.validationEntries.Load(v.posNextSend)
 		if !found {
 			return
 		}
@@ -469,7 +456,7 @@ func (v *BlockValidator) ProgressValidated() {
 	v.posValidatedMutex.Lock()
 	defer v.posValidatedMutex.Unlock()
 	for {
-		entry, found := validatorStatic.validationEntries.Load(v.posNext)
+		entry, found := v.validationEntries.Load(v.posNext)
 		if !found {
 			return
 		}
@@ -485,9 +472,9 @@ func (v *BlockValidator) ProgressValidated() {
 			log.Error("bad block number for validation entry", "expected", v.blocksValidated+1, "found", validationEntry.BlockNumber, "pos", v.posNext)
 			return
 		}
-		validatorStatic.validationEntries.Delete(v.posNext)
+		v.validationEntries.Delete(v.posNext)
 		for batch := v.batchNrValidated; batch < validationEntry.SeqMsgNr; batch++ {
-			entry, found := validatorStatic.sequencerBatches.LoadAndDelete(batch)
+			entry, found := v.sequencerBatches.LoadAndDelete(batch)
 			if !found {
 				log.Warn("didn't find sequencer batch", "number", batch)
 				continue
@@ -530,7 +517,7 @@ func (v *BlockValidator) BlocksValidated() uint64 {
 
 func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []PosInSequencer) {
 	for batchNr, msg := range batches {
-		validatorStatic.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
+		v.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
 	}
 	v.posToValidateMutex.Lock()
 	v.posToValidate = append(v.posToValidate, posData...)
