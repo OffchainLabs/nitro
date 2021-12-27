@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/arbstate/arbos"
@@ -137,12 +136,9 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) error {
-	headerChan := make(chan *types.Header)
-	headSubscribe, err := d.client.SubscribeNewHead(ctx, headerChan)
-	if err != nil {
-		return err
-	}
-	defer headSubscribe.Unsubscribe()
+	headerChan, cancel := HeaderSubscribeWithRetry(ctx, d.client)
+	defer cancel()
+
 	for {
 		err := d.update(ctx)
 		if err != nil {
@@ -156,7 +152,13 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 				return nil
 			case <-timeout:
 				break AggregateWaitLoop
-			case newHeader := <-headerChan:
+			case newHeader, ok := <-headerChan:
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if !ok {
+					return errors.New("header channel closed")
+				}
 				if d.waitingForBlock == nil || newHeader.Number.Cmp(d.waitingForBlock) >= 0 {
 					break AggregateWaitLoop
 				}
