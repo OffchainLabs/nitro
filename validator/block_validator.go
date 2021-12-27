@@ -328,6 +328,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 			return
 		}
 		delayedByte = CreateCByteArray(msg)
+		defer DestroyCByteArray(delayedByte)
 		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
 		if err != nil {
 			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
@@ -380,21 +381,19 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		}
 	}
 
-	if !resultValid {
-		log.Error("validation failed", "blockNr", validationEntry.BlockNumber, "batch_exp", pos.BatchAfter, "batch_actual", resBatch, "pos_exp", pos.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
-		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
-	}
-
 	err = v.preimageCache.RemoveFromCache(validationEntry.Preimages)
 	if err != nil {
 		log.Error("validator failed to remove from cache", "err", err)
 	}
-	if validationEntry.HasDelayedMsg {
-		DestroyCByteArray(delayedByte)
-	}
-
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
 	validationEntry.Preimages = nil
+
+	if !resultValid {
+		log.Error("validation failed", "blockNr", validationEntry.BlockNumber, "batch_exp", pos.BatchAfter, "batch_actual", resBatch, "pos_exp", pos.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
+		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
+		return
+	}
+
 	validationEntry.Valid = true // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
