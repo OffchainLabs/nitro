@@ -76,10 +76,19 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
+	executionChallengeFactoryAddr, tx, _, err := challengegen.DeployExecutionChallengeFactory(auth, client, ospEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = arbnode.EnsureTxSucceeded(context.Background(), client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	challenge, tx, _, err := challengegen.DeployBlockChallenge(
 		auth,
 		client,
-		ospEntry,
+		executionChallengeFactoryAddr,
 		resultReceiverAddr,
 		wasmModuleRoot,
 		[2]uint8{
@@ -207,7 +216,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	glogger.Verbosity(log.LvlDebug)
 	log.Root().SetHandler(glogger)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	deployer := createTransactOpts(t)
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
