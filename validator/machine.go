@@ -49,7 +49,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), C.struct_GlobalState{}, C.struct_CMultipleByteArrays{}, nil)
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), C.struct_GlobalState{}, C.struct_CMultipleByteArrays{})
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
@@ -169,4 +169,52 @@ func (m *ArbitratorMachine) ProveNextStep() []byte {
 	C.arbitrator_free_proof(rustProof)
 
 	return proofBytes
+}
+
+func (m *ArbitratorMachine) SerializeState(path string) error {
+	defer runtime.KeepAlive(m)
+
+	cPath := C.CString(path)
+	status := C.arbitrator_serialize_state(m.ptr, cPath)
+	C.free(unsafe.Pointer(cPath))
+
+	if status != 0 {
+		return errors.New("failed to serialize machine state")
+	} else {
+		return nil
+	}
+}
+
+func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
+	defer runtime.KeepAlive(m)
+
+	cPath := C.CString(path)
+	status := C.arbitrator_deserialize_and_replace_state(m.ptr, cPath)
+	C.free(unsafe.Pointer(cPath))
+
+	if status != 0 {
+		return errors.New("failed to deserialize machine state")
+	} else {
+		return nil
+	}
+}
+
+func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data C.CByteArray) error {
+	defer runtime.KeepAlive(m)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), data)
+	if status != 0 {
+		return errors.New("failed to add sequencer inbox message")
+	} else {
+		return nil
+	}
+}
+
+func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data C.CByteArray) error {
+	defer runtime.KeepAlive(m)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), data)
+	if status != 0 {
+		return errors.New("failed to add sequencer inbox message")
+	} else {
+		return nil
+	}
 }

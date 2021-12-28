@@ -8,14 +8,14 @@ package validator
 #cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
 #include "arbitrator.h"
 #include <stdlib.h>
-
-struct CByteArray InboxReaderWrapper(uint64_t inbox_idx, uint64_t seq_num);
 */
 import "C"
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -31,15 +31,19 @@ import (
 )
 
 type BlockValidator struct {
+	inboxTracker DelayedMessageReader
+
+	validationEntries  sync.Map
+	sequencerBatches   sync.Map
 	preimageCache      preimageCache
 	posToValidate      posToValidateList
 	posToValidateMutex sync.Mutex
-	posNext            uint64
-	batchNrValidated   uint64
-	blocksValidated    uint64
-	posValidatedMutex  sync.Mutex
-	posNextSend        uint64
 	initialModuleRoot  common.Hash
+
+	blocksValidated      uint64
+	blocksValidatedMutex sync.Mutex
+	earliestBatchKept    uint64
+	posNextSend          uint64
 
 	baseMachine *ArbitratorMachine
 
@@ -53,21 +57,23 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	RootPath            string // prepends all other paths
-	ProverBinPath       string
-	ModulePaths         []string
-	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU#)
-	BlocksToRecord      []uint64
+	RootPath                string // prepends all other paths
+	ProverBinPath           string
+	ModulePaths             []string
+	OutputPath              string
+	InitialMachineCachePath string
+	ConcurrentRunsLimit     int // 0 - default (CPU#)
+	BlocksToRecord          []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	RootPath:            "./arbitrator/target/env/",
-	ProverBinPath:       "lib/replay.wasm",
-	ModulePaths:         []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
-	OutputPath:          "output",
-	ConcurrentRunsLimit: 0,
-	BlocksToRecord:      []uint64{},
+	RootPath:                "./arbitrator/target/env/",
+	ProverBinPath:           "lib/replay.wasm",
+	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
+	OutputPath:              "output",
+	InitialMachineCachePath: "initial-machine-cache",
+	ConcurrentRunsLimit:     0,
+	BlocksToRecord:          []uint64{},
 }
 
 func init() {
@@ -93,42 +99,28 @@ type DelayedMessageReader interface {
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 }
 
-// block validator interacts with c, so some functions don't have specific conext and must use globals
-type blockValidatorGlobals struct {
-	initialized       bool
-	validationEntries sync.Map
-	sequencerBatches  sync.Map
-	inboxTracker      DelayedMessageReader
-}
-
-var validatorStatic blockValidatorGlobals
-
-type delayedMsgInfo struct {
-	data C.CByteArray
-	seq  uint64
-}
-
 type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
 	BlockHash     common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
-	Pos           uint64
+	HasDelayedMsg bool
+	DelayedMsgNr  uint64
+	SeqMsgNr      uint64
 	Running       bool
-	StartBatchNr  uint64
-	MsgsAllocated []delayedMsgInfo
 	Valid         bool
 }
 
-func newValidationEntry(header *types.Header, preimages []common.Hash, pos uint64) *validationEntry {
+func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
-		Pos:           pos,
+		HasDelayedMsg: hasDelayed,
+		DelayedMsgNr:  delayedMsgNr,
 	}
 }
 
@@ -165,20 +157,16 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 
 	cZeroPreimages := C.CMultipleByteArrays{}
 	cZeroPreimages.len = 0
-	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages, (*[0]byte)(C.InboxReaderWrapper))
+	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages)
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
-	if validatorStatic.initialized {
-		panic("creating block validator when one exists")
-	}
-	validatorStatic.inboxTracker = inbox
-	validatorStatic.initialized = true
 
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
 	validator := &BlockValidator{
+		inboxTracker:        inbox,
 		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
@@ -193,66 +181,29 @@ func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegist
 	return validator
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, preimages map[common.Hash][]byte, pos uint64) {
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, preimages map[common.Hash][]byte) {
 	hashlist := v.preimageCache.PourToCache(preimages)
-	validatorStatic.validationEntries.Store(pos, newValidationEntry(header, hashlist, pos))
+	var delayedMsgToRead uint64
+	var hasDelayedMessage bool
+	if header.ParentHash != prevHeader.Hash() {
+		log.Error("prepareBlock: wrong headers", "num", header.Number, "parenthash", header.ParentHash, "prevhash", prevHeader.Hash())
+		return
+	}
+	if header.Nonce != prevHeader.Nonce {
+		hasDelayedMessage = true
+		delayedMsgToRead = prevHeader.Nonce.Uint64()
+	}
+	v.validationEntries.Store(header.Number.Uint64(), newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist))
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, preimages map[common.Hash][]byte, pos uint64) {
-	go v.prepareBlock(block.Header(), preimages, pos)
-}
-
-// this func cannot be in a file where the C premable has anything other than declarations
-//export InboxReaderFunc
-func InboxReaderFunc(c_context C.uint64_t, c_inbox_idx C.uint64_t, c_seq_num C.uint64_t) C.CByteArray {
-	index := uint64(c_inbox_idx)
-	msgNum := uint64(c_seq_num)
-	startPos := uint64(c_context)
-	entry, found := validatorStatic.validationEntries.Load(startPos)
-	if !found {
-		log.Error("error while trying to read validation entry", "pos", startPos)
-		runtime.Goexit()
-	}
-	validationEntry, ok := entry.(*validationEntry)
-	if !ok {
-		log.Error("illegal validation entry", "pos", startPos)
-		runtime.Goexit()
-	}
-	if index == 0 {
-		if validationEntry.StartBatchNr != msgNum {
-			return cbyteError
-		}
-		entry, found := validatorStatic.sequencerBatches.Load(msgNum)
-		if !found {
-			log.Error("didn't find sequencer message", "pos", startPos, "msgNum", msgNum)
-			runtime.Goexit()
-		}
-		cbyte, ok := entry.(C.CByteArray)
-		if !ok {
-			log.Error("sequencer message bad format", "pos", startPos, "msgNum", msgNum)
-			runtime.Goexit()
-		}
-		return cbyte
-	} else if index == 1 {
-		msg, err := validatorStatic.inboxTracker.GetDelayedMessageBytes(msgNum)
-		if err != nil {
-			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", msgNum, "pos", startPos)
-			runtime.Goexit()
-		}
-		cByte := CreateCByteArray(msg)
-		validationEntry.MsgsAllocated = append(validationEntry.MsgsAllocated, delayedMsgInfo{cByte, uint64(c_seq_num)})
-		return cByte
-	} else {
-		log.Error("bad inbox index while proving", "index", index, "pos", startPos)
-		runtime.Goexit()
-	}
-	return C.CByteArray{} // will never get here, parsers don't realise Goexit is dead end
+func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, preimages map[common.Hash][]byte) {
+	go v.prepareBlock(block.Header(), prevHeader, preimages)
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end PosInSequencer, c_preimages C.CMultipleByteArrays) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosInSequencer, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
 	outDirPath := filepath.Join(v.config.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
@@ -265,7 +216,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	}
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchAfter, end.PosAfter, validationEntry.BlockHash) +
+		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", pos.BatchAfter, pos.PosAfter, validationEntry.BlockHash) +
 		"ROOTPATH=\"" + v.config.RootPath + "\"\n" +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
@@ -285,13 +236,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 			return err
 		}
 	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash))
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", validationEntry.SeqMsgNr, pos.PosInBatch, validationEntry.PrevBlockHash))
 	if err != nil {
 		return err
 	}
 
-	sequencerCByte := InboxReaderFunc(C.uint64_t(start.Pos), C.uint64_t(0), C.uint64_t(start.BatchNum))
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNum)
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", validationEntry.SeqMsgNr)
 	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
 	if err != nil {
 		return err
@@ -310,15 +260,13 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		return err
 	}
 
-	if len(validationEntry.MsgsAllocated) > 0 {
-		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.MsgsAllocated[0].seq))
+	if validationEntry.HasDelayedMsg {
+		_, err = cmdFile.WriteString(fmt.Sprintf(" --delayed-inbox-position %d", validationEntry.DelayedMsgNr))
 		if err != nil {
 			return err
 		}
-	}
-	for _, msg := range validationEntry.MsgsAllocated {
-		filename := fmt.Sprintf("delayed_%d.bin", msg.seq)
-		err = CByteToFile(msg.data, filepath.Join(outDirPath, filename))
+		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
+		err = CByteToFile(delayedCByte, filepath.Join(outDirPath, filename))
 		if err != nil {
 			return err
 		}
@@ -327,6 +275,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 			return err
 		}
 	}
+
 	_, err = cmdFile.WriteString(" \"$@\"\n")
 	if err != nil {
 		return err
@@ -338,34 +287,64 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	return nil
 }
 
-func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, start, end PosInSequencer) {
-	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber, "start", start, "end", end)
-	if !validatorStatic.initialized {
-		log.Error("validator: validatorStatic not initialized")
+func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, pos PosInSequencer) {
+	if validationEntry.BlockNumber != pos.Pos+1 {
+		log.Error("bad validation", "blockNr", validationEntry.BlockNumber, "pos", pos.Pos)
 		return
 	}
-	if validationEntry.Pos != end.Pos {
-		log.Error("validator: validate got bad args", "block.end", validationEntry.Pos, "end", end.Pos)
-		return
-	}
+	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber)
 	c_preimages, err := v.preimageCache.PrepareMultByteArrays(validationEntry.Preimages)
 	defer C.free(unsafe.Pointer(c_preimages.ptr))
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
+	validationEntry.SeqMsgNr = pos.BatchNum
 	validationEntry.Running = true
-	validationEntry.StartBatchNr = start.BatchNum
-	gsStart := CreateGlobalState(start.BatchNum, start.PosInBatch, validationEntry.PrevBlockHash)
+	gsStart := CreateGlobalState(pos.BatchNum, pos.PosInBatch, validationEntry.PrevBlockHash)
+
+	seqEntry, found := v.sequencerBatches.Load(pos.BatchNum)
+	if !found {
+		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
+		return
+	}
+	seqCByte, ok := seqEntry.(C.CByteArray)
+	if !ok {
+		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
+		return
+	}
 
 	mach := v.baseMachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
-	C.arbitrator_set_inbox_reader_context(mach.ptr, C.uint64_t(start.Pos))
 	mach.SetGlobalState(gsStart)
+	err = mach.AddSequencerInboxMessage(validationEntry.SeqMsgNr, seqCByte)
+	if err != nil {
+		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", validationEntry.SeqMsgNr, "blockNr", validationEntry.BlockNumber)
+		return
+	}
+	var delayedByte C.CByteArray
+	if validationEntry.HasDelayedMsg {
+		msg, err := v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
+		if err != nil {
+			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
+			return
+		}
+		delayedByte = CreateCByteArray(msg)
+		defer DestroyCByteArray(delayedByte)
+		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
+		if err != nil {
+			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
+			return
+		}
+	}
+
 	var steps uint64
 	for mach.IsRunning() {
-		var count uint64 = 100000000
+		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
+		if steps > 0 {
+			log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
+		}
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				log.Error("running machine failed", "err", err)
@@ -374,7 +353,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 			return
 		}
 		steps += count
-		log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
 	}
 	gsEnd := mach.GetGlobalState()
 
@@ -382,7 +360,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 
 	writeThisBlock := false
 
-	resultValid := (resBatch == end.BatchAfter) && (resPosInBatch == end.PosAfter) && (resHash == validationEntry.BlockHash)
+	resultValid := (resBatch == pos.BatchAfter) && (resPosInBatch == pos.PosAfter) && (resHash == validationEntry.BlockHash)
 
 	if !resultValid {
 		writeThisBlock = true
@@ -399,28 +377,25 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 
 	if writeThisBlock {
-		err = v.writeToFile(validationEntry, start, end, c_preimages)
+		err = v.writeToFile(validationEntry, pos, c_preimages, seqCByte, delayedByte)
 		if err != nil {
 			log.Error("failed to write file", "err", err)
 		}
-	}
-
-	if !resultValid {
-		log.Error("validation failed", "startPos", start.Pos, "batch_exp", end.BatchAfter, "batch_actual", resBatch, "pos_exp", end.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
-		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
-		panic("validation failed. quitting..")
 	}
 
 	err = v.preimageCache.RemoveFromCache(validationEntry.Preimages)
 	if err != nil {
 		log.Error("validator failed to remove from cache", "err", err)
 	}
-	for _, cbyte := range validationEntry.MsgsAllocated {
-		DestroyCByteArray(cbyte.data)
-	}
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
-	validationEntry.MsgsAllocated = nil
 	validationEntry.Preimages = nil
+
+	if !resultValid {
+		log.Error("validation failed", "blockNr", validationEntry.BlockNumber, "batch_exp", pos.BatchAfter, "batch_actual", resBatch, "pos_exp", pos.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
+		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
+		return
+	}
+
 	validationEntry.Valid = true // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
@@ -442,7 +417,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if len(v.posToValidate) == 0 || v.posToValidate[0].Pos != v.posNextSend {
 			return
 		}
-		entry, found := validatorStatic.validationEntries.Load(v.posNextSend)
+		entry, found := v.validationEntries.Load(v.posNextSend + 1)
 		if !found {
 			return
 		}
@@ -451,14 +426,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		idx = v.posToValidate.StupidSearchPos(validationEntry.Pos)
-		if len(v.posToValidate) <= idx || v.posToValidate[idx].Pos != validationEntry.Pos {
-			return
-		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		go v.validate(ctx, validationEntry, v.posToValidate[0], v.posToValidate[idx])
-		v.posNextSend = validationEntry.Pos + 1
-		v.posToValidate = v.posToValidate[idx+1:]
+		go v.validate(ctx, validationEntry, v.posToValidate[0])
+		v.posNextSend += 1
+		v.posToValidate = v.posToValidate[1:]
 	}
 }
 
@@ -479,10 +450,10 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 }
 
 func (v *BlockValidator) ProgressValidated() {
-	v.posValidatedMutex.Lock()
-	defer v.posValidatedMutex.Unlock()
+	v.blocksValidatedMutex.Lock()
+	defer v.blocksValidatedMutex.Unlock()
 	for {
-		entry, found := validatorStatic.validationEntries.Load(v.posNext)
+		entry, found := v.validationEntries.Load(v.blocksValidated + 1)
 		if !found {
 			return
 		}
@@ -495,25 +466,28 @@ func (v *BlockValidator) ProgressValidated() {
 			return
 		}
 		if validationEntry.BlockNumber != v.blocksValidated+1 {
-			log.Error("bad block number for validation entry", "expected", v.blocksValidated+1, "found", validationEntry.BlockNumber, "pos", v.posNext)
+			log.Error("bad block number for validation entry", "expected", v.blocksValidated+1, "found", validationEntry.BlockNumber)
 			return
 		}
-		validatorStatic.validationEntries.Delete(v.posNext)
-		for batch := v.batchNrValidated; batch < validationEntry.StartBatchNr; batch++ {
-			entry, found := validatorStatic.sequencerBatches.LoadAndDelete(batch)
-			if !found {
-				log.Warn("didn't find sequencer batch", "number", batch)
-				continue
+		if v.earliestBatchKept < validationEntry.SeqMsgNr {
+			for batch := v.earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
+				entry, found := v.sequencerBatches.Load(batch)
+				if !found {
+					log.Warn("didn't find sequencer batch", "number", batch)
+					continue
+				}
+				cbyte, ok := entry.(C.CByteArray)
+				if !ok {
+					log.Error("bad entry trying to delete batch", "number", batch)
+					continue
+				}
+				DestroyCByteArray(cbyte)
+				v.sequencerBatches.Delete(batch)
 			}
-			cbyte, ok := entry.(C.CByteArray)
-			if !ok {
-				log.Error("bad entry trying to delete batch", "number", batch)
-				continue
-			}
-			DestroyCByteArray(cbyte)
+			v.earliestBatchKept = validationEntry.SeqMsgNr
 		}
-		v.posNext = validationEntry.Pos + 1
-		v.blocksValidated = validationEntry.BlockNumber
+		v.blocksValidated += 1
+		v.validationEntries.Delete(v.blocksValidated)
 		select {
 		case v.progressChan <- v.blocksValidated:
 		default:
@@ -543,7 +517,7 @@ func (v *BlockValidator) BlocksValidated() uint64 {
 
 func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []PosInSequencer) {
 	for batchNr, msg := range batches {
-		validatorStatic.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
+		v.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
 	}
 	v.posToValidateMutex.Lock()
 	v.posToValidate = append(v.posToValidate, posData...)
@@ -554,8 +528,84 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	}
 }
 
+func (v *BlockValidator) cacheBaseMachineUntilHostIo(ctx context.Context) error {
+	hash := v.baseMachine.Hash()
+	expectedName := hash.String() + ".bin"
+	cacheDir := path.Join(v.config.RootPath, v.config.InitialMachineCachePath)
+	err := os.MkdirAll(cacheDir, 0o755)
+	if err != nil {
+		return err
+	}
+	files, err := ioutil.ReadDir(cacheDir)
+	if err != nil {
+		return err
+	}
+	cleanCacheBefore := time.Now().Add(-time.Hour * 24)
+	foundInCache := false
+	for _, file := range files {
+		if file.Name() == expectedName {
+			foundInCache = true
+		} else if file.ModTime().Before(cleanCacheBefore) {
+			log.Info("removing unknown old machine cache", "name", file.Name())
+			err = os.Remove(path.Join(cacheDir, file.Name()))
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Info("keeping unknown old machine cache", "name", file.Name())
+		}
+	}
+
+	file := path.Join(cacheDir, expectedName)
+	if foundInCache {
+		// Update the file's last modified time so it doesn't get cleaned up
+		now := time.Now()
+		err = os.Chtimes(file, now, now)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				foundInCache = false
+			} else {
+				return err
+			}
+		}
+	}
+
+	if foundInCache {
+		log.Info("found cached initial machine", "hash", hash)
+
+		err = v.baseMachine.DeserializeAndReplaceState(file)
+		if err != nil {
+			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
+			log.Info("failed to load initial machine cache; will reexecute", "err", err)
+		} else {
+			return nil
+		}
+	} else {
+		log.Info("didn't find initial machine in cache", "hash", hash)
+	}
+
+	err = v.baseMachine.StepUntilHostIo(ctx)
+	if err != nil {
+		return err
+	}
+
+	log.Info("saving initial machine cache", "hash", hash)
+
+	wipFile := file + ".wip"
+	err = v.baseMachine.SerializeState(wipFile)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(wipFile, file)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (v *BlockValidator) Start(ctx context.Context) error {
-	err := v.baseMachine.StepUntilHostIo(ctx)
+	err := v.cacheBaseMachineUntilHostIo(ctx)
 	if err != nil {
 		return err
 	}

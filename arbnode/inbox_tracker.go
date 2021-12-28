@@ -440,12 +440,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		msg, err := multiplexer.Peek()
+		posInBatch := backend.positionWithinMessage
+		msg, err := multiplexer.Pop()
 		if err != nil {
 			return err
 		}
-		posInBatch := backend.positionWithinMessage
-		err = multiplexer.Advance()
 		position := validator.PosInSequencer{
 			Pos:        currentpos - 1,
 			BatchNum:   batchSeqNum,
@@ -455,9 +454,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		}
 		positions = append(positions, position)
 
-		if err != nil {
-			return err
-		}
 		messages = append(messages, *msg)
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1

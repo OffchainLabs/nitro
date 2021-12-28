@@ -140,7 +140,6 @@ func TestTransactionStreamer(t *testing.T) {
 						},
 						L2msg: l2Message,
 					},
-					MustEndBlock:        true,
 					DelayedMessagesRead: 0,
 				})
 				state.balances[source] -= amount

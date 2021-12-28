@@ -82,6 +82,25 @@ jobs:
         with:
           go-version: 1.17.x
 
+      - name: Install wasm-ld
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld-10
+          sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
+
+      - name: Install rust wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Install rust wasm32-wasi
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-wasi
+
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
         with:
@@ -109,28 +128,6 @@ jobs:
         uses: guyarb/golang-test-annotations@v0.5.0
         with:
           test-results: test-output-withrace.json
-
-      - name: Install wasm-ld
-        run: |
-          sudo apt-get update && sudo apt-get install -y lld-10
-          sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
-
-      - name: Install rust wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
-      - name: Install rust wasm32-wasi
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          target: wasm32-wasi
-
-      - name: Build replay-env
-        run: make build-replay-env -j
 
       - name: run tests without race detection
         if: always()
