@@ -642,6 +642,6 @@ func (v *BlockValidator) GetInitialModuleRoot() common.Hash {
 	return v.initialModuleRoot
 }
 
-func (v *BlockValidator) GetInitialMachineForBlock(ctx context.Context, blockNumber uint64) (MachineInterface, error) {
+func (v *BlockValidator) GetInitialMachineForBlock(ctx context.Context, blockNumber uint64, batch uint64, posInBatch uint64) (MachineInterface, error) {
 	return nil, errors.New("TODO")
 }

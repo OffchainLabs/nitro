@@ -17,15 +17,16 @@ import (
 )
 
 type FullChallengeManager struct {
-	rootChallengeAddr    common.Address
-	isExecutionChallenge bool
-	challenge            *validator.ChallengeManager
-	blockChallengeCon    *challengegen.BlockChallenge
-	l1Client             bind.ContractBackend
-	auth                 *bind.TransactOpts
-	node                 *Node
-	startL1Block         uint64
-	targetNumMachines    int
+	rootChallengeAddr     common.Address
+	isExecutionChallenge  bool
+	challenge             *validator.ChallengeManager
+	blockChallengeBackend *BlockChallengeBackend
+	blockChallengeCon     *challengegen.BlockChallenge
+	l1Client              bind.ContractBackend
+	auth                  *bind.TransactOpts
+	node                  *Node
+	startL1Block          uint64
+	targetNumMachines     int
 }
 
 func NewFullChallengeManager(
@@ -41,35 +42,38 @@ func NewFullChallengeManager(
 	if err != nil {
 		return nil, err
 	}
+	blockBackend, err := NewBlockChallengeBackend(ctx, node.ArbInterface.BlockChain(), node.InboxTracker, l1Client, challengeAddr)
+	if err != nil {
+		return nil, err
+	}
+	blockChallengeManager, err := validator.NewChallengeManager(ctx, l1Client, auth, challengeAddr, startL1Block, blockBackend)
+	if err != nil {
+		return nil, err
+	}
 	manager := &FullChallengeManager{
-		rootChallengeAddr:    challengeAddr,
-		isExecutionChallenge: false,
-		challenge:            nil,
-		blockChallengeCon:    blockchallengeCon,
-		l1Client:             l1Client,
-		auth:                 auth,
-		node:                 node,
-		startL1Block:         startL1Block,
-		targetNumMachines:    targetNumMachines,
+		rootChallengeAddr:     challengeAddr,
+		isExecutionChallenge:  false,
+		challenge:             blockChallengeManager,
+		blockChallengeBackend: blockBackend,
+		blockChallengeCon:     blockchallengeCon,
+		l1Client:              l1Client,
+		auth:                  auth,
+		node:                  node,
+		startL1Block:          startL1Block,
+		targetNumMachines:     targetNumMachines,
 	}
 	err = manager.checkForExecutionChallenge(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if manager.challenge == nil {
-		blockBackend, err := NewBlockChallengeBackend(ctx, node.ArbInterface.BlockChain(), node.InboxTracker, l1Client, challengeAddr)
-		if err != nil {
-			return nil, err
-		}
-		manager.challenge, err = validator.NewChallengeManager(ctx, l1Client, auth, challengeAddr, startL1Block, blockBackend)
-		if err != nil {
-			return nil, err
-		}
-	}
 	return manager, nil
 }
 
 func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) error {
+	if m.blockChallengeBackend == nil {
+		// This has already moved on to an execution challenge
+		return nil
+	}
 	callOpts := &bind.CallOpts{Context: ctx}
 	var err error
 	callOpts.BlockNumber, err = validator.LatestConfirmedBlock(ctx, m.l1Client)
@@ -97,7 +101,12 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if !blockNumber.IsUint64() {
 			return errors.New("execution challenge occurred at non-uint64 block number")
 		}
-		initialMachine, err := m.node.BlockValidator.GetInitialMachineForBlock(ctx, blockNumber.Uint64())
+		blockNumU64 := blockNumber.Uint64()
+		batch, posInBatch, err := m.blockChallengeBackend.FindBatchAndPositionFromMessageCount(ctx, blockNumU64)
+		if err != nil {
+			return err
+		}
+		initialMachine, err := m.node.BlockValidator.GetInitialMachineForBlock(ctx, blockNumU64, batch, posInBatch)
 		if err != nil {
 			return err
 		}
@@ -110,6 +119,7 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 			return err
 		}
 		m.challenge = newChallenge
+		m.blockChallengeBackend = nil
 	}
 	return nil
 }
