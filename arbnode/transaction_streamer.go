@@ -23,8 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/broadcaster"
 	nitrobroadcaster "github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/validator"
 )
@@ -40,18 +38,16 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
-	broadcaster     *nitrobroadcaster.Broadcaster
-	broadcastClient *broadcastclient.BroadcastClient
-	validator       *validator.BlockValidator
+	broadcaster *nitrobroadcaster.Broadcaster
+	validator   *validator.BlockValidator
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcaster *nitrobroadcaster.Broadcaster, broadcastClient *broadcastclient.BroadcastClient) (*TransactionStreamer, error) {
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcaster *nitrobroadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
 		broadcaster:        broadcaster,
-		broadcastClient:    broadcastClient,
 	}
 	return inbox, nil
 }
@@ -585,16 +581,6 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 		if err := s.broadcaster.Start(ctx); err != nil {
 			panic("error starting broadcaster")
 		}
-	}
-	if s.broadcastClient != nil {
-		receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
-			if err := s.AddMessages(msg.SequenceNumber, false, []arbstate.MessageWithMetadata{msg.Message}); err != nil {
-				log.Error("Error adding message from Sequencer Feed", "err", err)
-			}
-
-		}
-
-		s.broadcastClient.ConnectInBackground(ctx, receiveMessage)
 	}
 
 	go (func() {

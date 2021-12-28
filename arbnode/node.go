@@ -20,11 +20,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/broadcaster"
 	nitrobroadcaster "github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/validator"
@@ -127,6 +129,7 @@ type Node struct {
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
 	BlockValidator   *validator.BlockValidator
+	BroadcastClient  *broadcastclient.BroadcastClient
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
@@ -134,11 +137,8 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if config.BatchPoster && config.Broadcaster {
 		broadcaster = nitrobroadcaster.NewBroadcaster(config.BroadcasterConfig)
 	}
-	var broadcastClient *broadcastclient.BroadcastClient
-	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout)
-	}
-	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcaster, broadcastClient)
+
+	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcaster)
 	if err != nil {
 		return nil, err
 	}
@@ -164,9 +164,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-
+	var broadcastClient *broadcastclient.BroadcastClient
+	if config.BroadcastClient {
+		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout)
+	}
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, broadcastClient}, nil
 	}
 
 	if deployInfo == nil {
@@ -195,7 +198,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, broadcastClient}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -209,7 +212,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, broadcastClient}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -247,6 +250,15 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+	if n.BroadcastClient != nil {
+		// Pass callback to TxStreamer into BroadcastClient to avoid circular dependency
+		receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
+			if err := n.TxStreamer.AddMessages(msg.SequenceNumber, false, []arbstate.MessageWithMetadata{msg.Message}); err != nil {
+				log.Error("Error adding message from Sequencer Feed", "err", err)
+			}
+		}
+		n.BroadcastClient.Start(ctx, receiveMessage)
 	}
 	return nil
 }

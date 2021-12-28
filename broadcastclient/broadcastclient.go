@@ -61,6 +61,11 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 	}
 }
 
+func (bc *BroadcastClient) Start(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) {
+
+	bc.ConnectInBackground(ctx, receiveMessage)
+}
+
 func (bc *BroadcastClient) Connect(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) error {
 	err := bc.connect(ctx)
 	if err != nil {
