@@ -233,28 +233,6 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	conf.InboxReaderConfig.CheckDelay = time.Second
 	rollupAddresses := TestDeployOnL1(t, ctx, l1Info)
 
-	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain := createL2BlockChain(t)
-	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, &conf, asserterL2Blockchain, l1Info.Client, rollupAddresses, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = asserterL2.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	asserterL2Info.Client = ClientForArbBackend(t, asserterL2.Backend)
-
-	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain := createL2BlockChain(t)
-	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, &conf, challengerL2Blockchain, l1Info.Client, rollupAddresses, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = challengerL2.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	challengerL2Info.Client = ClientForArbBackend(t, challengerL2.Backend)
-
 	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(deployer, backend)
 	if err != nil {
 		t.Fatal(err)
@@ -268,6 +246,30 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain := createL2BlockChain(t)
+	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
+	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, &conf, asserterL2Blockchain, l1Info.Client, rollupAddresses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = asserterL2.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asserterL2Info.Client = ClientForArbBackend(t, asserterL2.Backend)
+
+	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain := createL2BlockChain(t)
+	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
+	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, &conf, challengerL2Blockchain, l1Info.Client, rollupAddresses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = challengerL2.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challengerL2Info.Client = ClientForArbBackend(t, challengerL2.Backend)
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
