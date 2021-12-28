@@ -82,30 +82,42 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		return nil, err
 	}
 	startGs := GoGlobalStateFromSolidity(solStartGs)
+	if startGs.PosInBatch != 0 {
+		return nil, errors.New("challenge started misaligned with batch boundary")
+	}
 	startBlock := bc.GetBlockByHash(startGs.BlockHash)
 	if startBlock == nil {
 		return nil, errors.New("failed to find start block")
 	}
 	startBlockNum := startBlock.NumberU64()
 
-	startBatchMeta, err := inboxTracker.GetBatchMetadata(startGs.Batch)
-	if err != nil {
-		return nil, err
+	var startBatchMeta BatchMetadata
+	if startGs.Batch > 0 {
+		startBatchMeta, err = inboxTracker.GetBatchMetadata(startGs.Batch - 1)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
+		}
 	}
 	if startBatchMeta.MessageCount != startBlockNum {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
 
-	solEndGs, err := challengeCon.GetStartGlobalState(callOpts)
+	solEndGs, err := challengeCon.GetEndGlobalState(callOpts)
 	if err != nil {
 		return nil, err
 	}
 	endGs := GoGlobalStateFromSolidity(solEndGs)
-	endBatchMeta, err := inboxTracker.GetBatchMetadata(endGs.Batch)
-	if err != nil {
-		return nil, err
+	if endGs.PosInBatch != 0 {
+		return nil, errors.New("challenge ended misaligned with batch boundary")
 	}
-	endMsgCount := endBatchMeta.MessageCount
+	if endGs.Batch <= startGs.Batch {
+		return nil, errors.New("challenge didn't advance batch")
+	}
+	lastBatchMeta, err := inboxTracker.GetBatchMetadata(endGs.Batch - 1)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
+	}
+	endMsgCount := lastBatchMeta.MessageCount
 	endBatchBlock := bc.GetBlockByNumber(endMsgCount)
 	if endBatchBlock == nil {
 		return nil, errors.New("missing block at end of last challenge batch")
@@ -123,26 +135,35 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	}, nil
 }
 
-func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, msgCount uint64) (uint64, uint64, error) {
+func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, msgCount uint64) (uint64, error) {
+	if msgCount == 0 {
+		return 0, nil
+	}
 	low := b.startGs.Batch
-	high := b.endGs.Batch + 1
+	high := b.endGs.Batch
+	if b.endGs.PosInBatch == 0 {
+		if high == 0 {
+			return 0, errors.New("end global state at inbox position (0, 0)")
+		}
+		high--
+	}
 	for {
 		// Binary search invariants:
-		//   - messageCount(high) > msgCount
-		//   - messageCount(low) <= msgCount
+		//   - messageCount(high) >= msgCount
+		//   - messageCount(low-1) < msgCount
 		mid := (low + high) / 2
 		batchMeta, err := b.inboxTracker.GetBatchMetadata(mid)
 		if err != nil {
-			return 0, 0, err
+			return 0, errors.Wrap(err, "failed to get batch metadata while binary searching")
 		}
-		if batchMeta.MessageCount > msgCount {
-			high = mid
+		if batchMeta.MessageCount < msgCount {
+			low = mid + 1
 		} else if batchMeta.MessageCount == msgCount {
-			return mid, 0, nil
-		} else if mid+1 == high { // batchMeta.MessageCount < msgCount
-			return mid, msgCount - batchMeta.MessageCount, nil
-		} else { // batchMeta.MessageCount < msgCount
-			low = mid
+			return mid, nil
+		} else if mid == low { // batchMeta.MessageCount > msgCount
+			return mid, nil
+		} else { // batchMeta.MessageCount > msgCount
+			high = mid
 		}
 	}
 }
@@ -158,13 +179,24 @@ func (b *BlockChallengeBackend) getInfoAtStep(ctx context.Context, position uint
 	if block == nil {
 		return GoGlobalState{}, 0, errors.New("failed to get block in block challenge")
 	}
-	batch, posInBatch, err := b.findBatchFromMessageCount(ctx, b.startBlock+position)
+	msgCount := b.startBlock + position
+	batch, err := b.findBatchFromMessageCount(ctx, msgCount)
 	if err != nil {
 		return GoGlobalState{}, 0, err
 	}
+	var prevBatchMeta BatchMetadata
+	if batch > 0 {
+		prevBatchMeta, err = b.inboxTracker.GetBatchMetadata(batch - 1)
+		if err != nil {
+			return GoGlobalState{}, 0, err
+		}
+		if prevBatchMeta.MessageCount >= msgCount {
+			return GoGlobalState{}, 0, errors.New("findBatchFromMessageCount returned bad block")
+		}
+	}
 	globalState := GoGlobalState{
 		Batch:      batch,
-		PosInBatch: posInBatch,
+		PosInBatch: msgCount - prevBatchMeta.MessageCount,
 		BlockHash:  block.Hash(),
 	}
 	return globalState, STATUS_FINISHED, nil
@@ -178,12 +210,14 @@ func (b *BlockChallengeBackend) SetRange(ctx context.Context, start uint64, end 
 	if err != nil {
 		return err
 	}
-	newEndGs, _, err := b.getInfoAtStep(ctx, end)
+	newEndGs, endStatus, err := b.getInfoAtStep(ctx, end)
 	if err != nil {
 		return err
 	}
 	b.startGs = newStartGs
-	b.endGs = newEndGs
+	if endStatus == STATUS_FINISHED {
+		b.endGs = newEndGs
+	}
 	return nil
 }
 
@@ -193,11 +227,11 @@ func (b *BlockChallengeBackend) GetHashAtStep(ctx context.Context, position uint
 		return common.Hash{}, err
 	}
 	if status == STATUS_FINISHED {
-		data := []byte("Machine finished:")
+		data := []byte("Block state:")
 		data = append(data, gs.Hash().Bytes()...)
 		return crypto.Keccak256Hash(data), nil
 	} else if status == STATUS_TOO_FAR {
-		return crypto.Keccak256Hash([]byte("Machine too far:")), nil
+		return crypto.Keccak256Hash([]byte("Block state, too far:")), nil
 	} else {
 		panic(fmt.Sprintf("Unknown block status: %v", status))
 	}

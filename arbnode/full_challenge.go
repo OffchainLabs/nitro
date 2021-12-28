@@ -20,6 +20,7 @@ type FullChallengeManager struct {
 	rootChallengeAddr    common.Address
 	isExecutionChallenge bool
 	challenge            *validator.ChallengeManager
+	blockChallengeCon    *challengegen.BlockChallenge
 	l1Client             bind.ContractBackend
 	auth                 *bind.TransactOpts
 	node                 *Node
@@ -36,17 +37,22 @@ func NewFullChallengeManager(
 	startL1Block uint64,
 	targetNumMachines int,
 ) (*FullChallengeManager, error) {
+	blockchallengeCon, err := challengegen.NewBlockChallenge(challengeAddr, l1Client)
+	if err != nil {
+		return nil, err
+	}
 	manager := &FullChallengeManager{
 		rootChallengeAddr:    challengeAddr,
 		isExecutionChallenge: false,
 		challenge:            nil,
+		blockChallengeCon:    blockchallengeCon,
 		l1Client:             l1Client,
 		auth:                 auth,
 		node:                 node,
 		startL1Block:         startL1Block,
 		targetNumMachines:    targetNumMachines,
 	}
-	err := manager.checkForExecutionChallenge(ctx)
+	err = manager.checkForExecutionChallenge(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -64,21 +70,18 @@ func NewFullChallengeManager(
 }
 
 func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) error {
-	con, err := challengegen.NewBlockChallenge(m.rootChallengeAddr, m.l1Client)
-	if err != nil {
-		return err
-	}
 	callOpts := &bind.CallOpts{Context: ctx}
+	var err error
 	callOpts.BlockNumber, err = validator.LatestConfirmedBlock(ctx, m.l1Client)
 	if err != nil {
 		return err
 	}
-	addr, err := con.ExecutionChallenge(callOpts)
+	addr, err := m.blockChallengeCon.ExecutionChallenge(callOpts)
 	if err != nil {
 		return err
 	}
 	if addr != (common.Address{}) {
-		startGs, err := con.GetStartGlobalState(callOpts)
+		startGs, err := m.blockChallengeCon.GetStartGlobalState(callOpts)
 		if err != nil {
 			return err
 		}
@@ -86,7 +89,7 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if startHeader == nil {
 			return errors.New("failed to find challenge start block")
 		}
-		blockOffset, err := con.ExecutionChallengeAtSteps(callOpts)
+		blockOffset, err := m.blockChallengeCon.ExecutionChallengeAtSteps(callOpts)
 		if err != nil {
 			return err
 		}

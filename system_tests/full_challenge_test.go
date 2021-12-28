@@ -82,6 +82,10 @@ func CreateChallenge(
 		ospEntry,
 		resultReceiverAddr,
 		wasmModuleRoot,
+		[2]uint8{
+			arbnode.STATUS_FINISHED,
+			arbnode.STATUS_FINISHED,
+		},
 		[2]challengegen.GlobalState{
 			startGlobalState.AsSolidityStruct(),
 			endGlobalState.AsSolidityStruct(),
@@ -177,9 +181,24 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(batches) == 0 {
+		t.Fatal("batch not found after AddSequencerL2BatchFromOrigin")
+	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
 	if err != nil {
 		t.Fatal(err)
+	}
+	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	if err != nil {
+		t.Fatal("failed to get batch metadata after adding batch:", err)
+	}
+}
+
+func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbnode.L1Interface) {
+	for i := 0; i < 12; i++ {
+		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
+			l1Info.PrepareTx("faucet", "faucet", 30000, big.NewInt(1e12), nil),
+		})
 	}
 }
 
@@ -242,7 +261,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
 	makeBatch(t, asserterL2, asserterL2Info, backend, sequencer, asserterSeqInbox, asserterSeqInboxAddr, false)
-	makeBatch(t, asserterL2, asserterL2Info, backend, sequencer, challengerSeqInbox, challengerSeqInboxAddr, false)
+	makeBatch(t, challengerL2, challengerL2Info, backend, sequencer, challengerSeqInbox, challengerSeqInboxAddr, true)
 
 	trueSeqInboxAddr := challengerSeqInboxAddr
 	expectedWinner := challenger.From
@@ -255,7 +274,15 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	wasmModuleRoot := asserterL2.BlockValidator.GetInitialModuleRoot()
 
 	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
+	challengerGenesis := challengerL2.ArbInterface.BlockChain().Genesis()
+	if asserterGenesis.Hash() != challengerGenesis.Hash() {
+		t.Fatal("asserter and challenger have different genesis hashes")
+	}
 	asserterLatestBlock := asserterL2.ArbInterface.BlockChain().CurrentBlock()
+	challengerLatestBlock := challengerL2.ArbInterface.BlockChain().CurrentBlock()
+	if asserterLatestBlock.Hash() == challengerLatestBlock.Hash() {
+		t.Fatal("asserter and challenger have the same end block")
+	}
 
 	asserterStartGlobalState := arbnode.GoGlobalState{
 		BlockHash:  asserterGenesis.Hash(),
@@ -282,6 +309,8 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		challenger.From,
 	)
 
+	confirmLatestBlock(ctx, t, l1Info, backend)
+
 	asserterManager, err := arbnode.NewFullChallengeManager(ctx, asserterL2, backend, asserter, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
@@ -303,6 +332,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				}
 				t.Fatal(err)
 			}
+			if tx == nil {
+				t.Fatal("challenger didn't move")
+			}
 		} else {
 			tx, err = asserterManager.Act(ctx)
 			if err != nil {
@@ -312,11 +344,16 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				}
 				t.Fatal(err)
 			}
+			if tx == nil {
+				t.Fatal("asserter didn't move")
+			}
 		}
 		_, err = arbnode.EnsureTxSucceeded(ctx, backend, tx)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		confirmLatestBlock(ctx, t, l1Info, backend)
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
 		if err != nil {

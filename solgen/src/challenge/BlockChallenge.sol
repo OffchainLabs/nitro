@@ -25,6 +25,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         IExecutionChallengeFactory executionChallengeFactory_,
         IChallengeResultReceiver resultReceiver_,
         bytes32 wasmModuleRoot_,
+        MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
         uint64 numBlocks,
         address asserter_,
@@ -45,8 +46,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         turn = Turn.CHALLENGER;
 
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = GlobalStates.hash(startAndEndGlobalStates_[0]);
-        segments[1] = GlobalStates.hash(startAndEndGlobalStates_[1]);
+        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], GlobalStates.hash(startAndEndGlobalStates_[0]));
+        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], GlobalStates.hash(startAndEndGlobalStates_[1]));
         challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         emit InitiatedChallenge();
