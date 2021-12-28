@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -27,6 +28,10 @@ type BroadcastClientConfig struct {
 }
 
 var DefaultBroadcastClientConfig BroadcastClientConfig
+
+type TransactionStreamerInterface interface {
+	AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error
+}
 
 type BroadcastClient struct {
 	websocketUrl    string
@@ -42,9 +47,10 @@ type BroadcastClient struct {
 	shuttingDown                    bool
 	ConfirmedSequenceNumberListener chan uint64
 	idleTimeout                     time.Duration
+	txStreamer                      TransactionStreamerInterface
 }
 
-func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeout time.Duration) *BroadcastClient {
+func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeout time.Duration, txStreamer TransactionStreamerInterface) *BroadcastClient {
 	var seqNum *big.Int
 	if lastInboxSeqNum == nil {
 		seqNum = big.NewInt(0)
@@ -58,29 +64,30 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 		connMutex:       &sync.Mutex{},
 		retryMutex:      &sync.Mutex{},
 		idleTimeout:     idleTimeout,
+		txStreamer:      txStreamer,
 	}
 }
 
-func (bc *BroadcastClient) Start(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) {
+func (bc *BroadcastClient) Start(ctx context.Context) {
 
-	bc.ConnectInBackground(ctx, receiveMessage)
+	bc.ConnectInBackground(ctx)
 }
 
-func (bc *BroadcastClient) Connect(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) error {
+func (bc *BroadcastClient) Connect(ctx context.Context) error {
 	err := bc.connect(ctx)
 	if err != nil {
 		return err
 	}
 
-	bc.startBackgroundReader(ctx, receiveMessage)
+	bc.startBackgroundReader(ctx)
 
 	return nil
 }
 
-func (bc *BroadcastClient) ConnectInBackground(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) {
+func (bc *BroadcastClient) ConnectInBackground(ctx context.Context) {
 	go (func() {
 		for {
-			err := bc.Connect(ctx, receiveMessage)
+			err := bc.Connect(ctx)
 			if err == nil {
 				break
 			}
@@ -121,7 +128,7 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 	return nil
 }
 
-func (bc *BroadcastClient) startBackgroundReader(ctx context.Context, receiveMessage func(*broadcaster.BroadcastFeedMessage)) {
+func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 	go func() {
 		for {
 			select {
@@ -163,7 +170,9 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context, receiveMes
 
 				if res.Version == 1 {
 					for _, message := range res.Messages {
-						receiveMessage(message)
+						if err := bc.txStreamer.AddMessages(message.SequenceNumber, false, []arbstate.MessageWithMetadata{message.Message}); err != nil {
+							log.Error("Error adding message from Sequencer Feed", "err", err)
+						}
 					}
 
 					if res.ConfirmedSequenceNumberMessage != nil && bc.ConfirmedSequenceNumberListener != nil {

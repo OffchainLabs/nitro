@@ -20,13 +20,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/broadcaster"
 	nitrobroadcaster "github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/validator"
@@ -166,7 +164,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 	var broadcastClient *broadcastclient.BroadcastClient
 	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout)
+		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
 	}
 	if !config.L1Reader {
 		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, broadcastClient}, nil
@@ -252,13 +250,7 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BroadcastClient != nil {
-		// Pass callback to TxStreamer into BroadcastClient to avoid circular dependency
-		receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
-			if err := n.TxStreamer.AddMessages(msg.SequenceNumber, false, []arbstate.MessageWithMetadata{msg.Message}); err != nil {
-				log.Error("Error adding message from Sequencer Feed", "err", err)
-			}
-		}
-		n.BroadcastClient.Start(ctx, receiveMessage)
+		n.BroadcastClient.Start(ctx)
 	}
 	return nil
 }
