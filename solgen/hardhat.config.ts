@@ -1,6 +1,7 @@
-require("@nomiclabs/hardhat-waffle");
-require("hardhat-deploy");
-require("@nomiclabs/hardhat-ethers");
+import "@nomiclabs/hardhat-waffle";
+import "hardhat-deploy";
+import "@nomiclabs/hardhat-ethers";
+import "@typechain/hardhat";
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
@@ -15,4 +16,9 @@ module.exports = {
             default: 0,
         },
     },
+    networks: {
+        geth: {
+            url: "http://localhost:8545"
+        }
+    }
 };

@@ -1,11 +1,11 @@
-const { ethers, run, getNamedAccounts } = require("hardhat");
-const fs = require("fs");
-const assert = require("assert");
-const readline = require('readline');
+import { ethers, run, getNamedAccounts } from "hardhat"
+import fs from "fs";
+import assert from "assert";
+import readline from 'readline';
 
 const PARALLEL = 128;
 
-async function sendTestMessages(deployment) {
+async function sendTestMessages(deployment: Promise<any>) {
   await deployment;
   const { deployer } = await getNamedAccounts();
   const inbox = await ethers.getContract("InboxStub", deployer);
@@ -33,7 +33,7 @@ describe("OneStepProof", function () {
       await deployment;
 
       let path = root + file;
-      let proofs = JSON.parse(fs.readFileSync(path));
+      let proofs = JSON.parse(fs.readFileSync(path).toString('utf8'));
 
       const osp = await ethers.getContract("OneStepProofEntry");
 
@@ -47,23 +47,23 @@ describe("OneStepProof", function () {
         isdone.push(false);
         const inboxLimit = 1000000;
         const promise = osp.proveOneStep([inboxLimit], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
-          .catch(err => {
+          .catch((err: any) => {
             console.error("Error executing proof " + i);
             throw err;
           })
-          .then(after => assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i))
-          .finally(_ => {isdone[i] = true});
+          .then((after: any) => assert.equal(after, "0x" + proof.after, "After state doesn't match after proof " + i))
+          .finally((_: any) => {isdone[i] = true});
         if (promises.length < PARALLEL) {
           promises.push(promise);
         } else {
-          const finished = await Promise.race(promises.map((p, k) => p.then(_ => k)));
+          const finished: any = await Promise.race(promises.map((p, k) => p.then((_: any) => k)));
           promises[finished] = promise;
         }
       }
 
       let stillWaiting = []
       do {
-        const finished = await Promise.race(promises.map((p, k) => p.then(_ => k)));
+        const finished: any = await Promise.race(promises.map((p, k) => p.then((_: any) => k)));
         if (finished == promises.length - 1) {
           promises.pop()
         } else {
@@ -75,7 +75,7 @@ describe("OneStepProof", function () {
             stillWaiting.push(i)
           }
         }
-        readline.clearLine(process.stdout);
+        readline.clearLine(process.stdout, 0);
         process.stdout.write("\rTesting " + file + " Waiting for: " + String(stillWaiting.length) + "/" + String(isdone.length));
         if (stillWaiting.length < 10) {
           process.stdout.write(": ")
