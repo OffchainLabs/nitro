@@ -110,12 +110,12 @@ func main() {
 
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
-	lastBlockHash := wavmio.GetLastBlockHash()
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
+	glogger.Verbosity(log.LvlError)
 	log.Root().SetHandler(glogger)
 
-	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
+	lastBlockHash := wavmio.GetLastBlockHash()
+
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
 	if lastBlockHash != (common.Hash{}) {
@@ -123,7 +123,7 @@ func main() {
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
 
-	fmt.Printf("Previous block state root: %v\n", lastBlockStateRoot)
+	log.Info("Initial State", "lastBlockHash", lastBlockHash, "lastBlockStateRoot", lastBlockStateRoot)
 	statedb, err := state.New(lastBlockStateRoot, db, nil)
 	if err != nil {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
@@ -139,9 +139,9 @@ func main() {
 		return
 	}
 
-	fmt.Printf("New state root: %v\n", newBlock.Root())
 	newBlockHash := newBlock.Hash()
-	fmt.Printf("New block hash: %v\n", newBlockHash)
+
+	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
 	wavmio.SetLastBlockHash(newBlockHash)
 
