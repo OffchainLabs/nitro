@@ -558,7 +558,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed getting records: %w", err)
 			}
-			s.validator.NewBlock(block, preimages, pos-1)
+			s.validator.NewBlock(block, lastBlockHeader, preimages)
 		}
 
 		lastBlockHeader = block.Header()
