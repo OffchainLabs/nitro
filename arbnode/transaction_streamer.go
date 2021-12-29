@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
-	nitrobroadcaster "github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
@@ -38,16 +38,16 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
-	broadcaster *nitrobroadcaster.Broadcaster
-	validator   *validator.BlockValidator
+	broadcastServer *broadcaster.Broadcaster
+	validator       *validator.BlockValidator
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcaster *nitrobroadcaster.Broadcaster) (*TransactionStreamer, error) {
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
-		broadcaster:        broadcaster,
+		broadcastServer:    broadcastServer,
 	}
 	return inbox, nil
 }
@@ -345,10 +345,10 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		})
 	}
 
-	if s.broadcaster != nil {
+	if s.broadcastServer != nil {
 		for i, message := range messagesWithMeta {
 			// TODO method for broadcasting more than one?
-			s.broadcaster.BroadcastSingle(message, pos+uint64(i))
+			s.broadcastServer.BroadcastSingle(message, pos+uint64(i))
 		}
 	}
 
@@ -577,12 +577,6 @@ func (s *TransactionStreamer) Initialize() error {
 }
 
 func (s *TransactionStreamer) Start(ctx context.Context) {
-	if s.broadcaster != nil {
-		if err := s.broadcaster.Start(ctx); err != nil {
-			panic("error starting broadcaster")
-		}
-	}
-
 	go (func() {
 		for {
 			err := s.createBlocks(ctx)
