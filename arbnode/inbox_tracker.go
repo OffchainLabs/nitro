@@ -115,32 +115,37 @@ func (t *InboxTracker) GetDelayedCount() (uint64, error) {
 
 type BatchMetadata struct {
 	Accumulator         common.Hash
-	DelayedMessageCount uint64
 	MessageCount        uint64
+	DelayedMessageCount uint64
 }
 
-func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
+func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (accumulator common.Hash, messageCount uint64, delayedMessageCount uint64, err error) {
 	key := dbKey(sequencerBatchMetaPrefix, seqNum)
-	hasKey, err := t.db.Has(key)
+	var hasKey bool
+	hasKey, err = t.db.Has(key)
 	if err != nil {
-		return BatchMetadata{}, err
+		return
 	}
 	if !hasKey {
-		return BatchMetadata{}, accumulatorNotFound
+		err = accumulatorNotFound
+		return
 	}
 	data, err := t.db.Get(key)
 	if err != nil {
-		return BatchMetadata{}, err
+		return
 	}
 	var metadata BatchMetadata
 	err = rlp.DecodeBytes(data, &metadata)
-	return metadata, err
+	accumulator = metadata.Accumulator
+	delayedMessageCount = metadata.DelayedMessageCount
+	messageCount = metadata.MessageCount
+	return
 }
 
 // Convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
-	meta, err := t.GetBatchMetadata(seqNum)
-	return meta.Accumulator, err
+	accumulator, _, _, err := t.GetBatchMetadata(seqNum)
+	return accumulator, err
 }
 
 func (t *InboxTracker) GetBatchCount() (uint64, error) {
@@ -308,15 +313,15 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		var prevMeta BatchMetadata
+		var prevMesssageCount uint64
 		if count > 0 {
-			prevMeta, err = t.GetBatchMetadata(count - 1)
+			_, prevMesssageCount, _, err = t.GetBatchMetadata(count - 1)
 			if err != nil {
 				return err
 			}
 		}
 		// Writes batch
-		return t.txStreamer.ReorgToAndEndBatch(batch, prevMeta.MessageCount)
+		return t.txStreamer.ReorgToAndEndBatch(batch, prevMesssageCount)
 	} else {
 		return batch.Write()
 	}
@@ -380,15 +385,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 	var prevDelayedMessages uint64
 	var startMessagePos uint64
 	if pos > 0 {
-		meta, err := t.GetBatchMetadata(pos - 1)
+		var err error
+		nextAcc, startMessagePos, prevDelayedMessages, err = t.GetBatchMetadata(pos - 1)
 		if errors.Is(err, accumulatorNotFound) {
 			return errors.New("missing previous sequencer batch")
 		} else if err != nil {
 			return err
 		}
-		nextAcc = meta.Accumulator
-		prevDelayedMessages = meta.DelayedMessageCount
-		startMessagePos = meta.MessageCount
 	}
 
 	dbBatch := t.db.NewBatch()
@@ -534,10 +537,11 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	var prevMeta BatchMetadata
+	var prevCount uint64
+	var prevDelayedCount uint64
 	if count > 0 {
 		var err error
-		prevMeta, err = t.GetBatchMetadata(count - 1)
+		_, prevCount, prevDelayedCount, err = t.GetBatchMetadata(count - 1)
 		if errors.Is(err, accumulatorNotFound) {
 			return errors.New("attempted to reorg to future batch count")
 		} else if err != nil {
@@ -547,7 +551,7 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 
 	dbBatch := t.db.NewBatch()
 
-	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToBytes(prevMeta.DelayedMessageCount))
+	err := deleteStartingAt(t.db, dbBatch, delayedSequencedPrefix, uint64ToBytes(prevDelayedCount))
 	if err != nil {
 		return err
 	}
@@ -564,5 +568,5 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		return err
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", count)
-	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevMeta.MessageCount)
+	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevCount)
 }

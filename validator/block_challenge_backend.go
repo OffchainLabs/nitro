@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbnode
+package validator
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/validator"
+
 	"github.com/pkg/errors"
 )
 
@@ -63,14 +63,14 @@ type BlockChallengeBackend struct {
 	endPosition            uint64
 	startGs                GoGlobalState
 	endGs                  GoGlobalState
-	inboxTracker           *InboxTracker
+	inboxTracker           MessageReader
 	tooFarStartsAtPosition uint64
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
-var _ validator.ChallengeBackend = (*BlockChallengeBackend)(nil)
+var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
-func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker *InboxTracker, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
+func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker MessageReader, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
 	if err != nil {
@@ -91,14 +91,14 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	}
 	startBlockNum := startBlock.NumberU64()
 
-	var startBatchMeta BatchMetadata
+	var startMsgCount uint64
 	if startGs.Batch > 0 {
-		startBatchMeta, err = inboxTracker.GetBatchMetadata(startGs.Batch - 1)
+		_, startMsgCount, _, err = inboxTracker.GetBatchMetadata(startGs.Batch - 1)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
-	if startBatchMeta.MessageCount != startBlockNum {
+	if startMsgCount != startBlockNum {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
 
@@ -113,11 +113,11 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if endGs.Batch <= startGs.Batch {
 		return nil, errors.New("challenge didn't advance batch")
 	}
-	lastBatchMeta, err := inboxTracker.GetBatchMetadata(endGs.Batch - 1)
+	_, lastMsgCount, _, err := inboxTracker.GetBatchMetadata(endGs.Batch - 1)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
 	}
-	endMsgCount := lastBatchMeta.MessageCount
+	endMsgCount := lastMsgCount
 	endBatchBlock := bc.GetBlockByNumber(endMsgCount)
 	if endBatchBlock == nil {
 		return nil, errors.New("missing block at end of last challenge batch")
@@ -152,17 +152,17 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, m
 		//   - messageCount(high) >= msgCount
 		//   - messageCount(low-1) < msgCount
 		mid := (low + high) / 2
-		batchMeta, err := b.inboxTracker.GetBatchMetadata(mid)
+		_, batchMsgCount, _, err := b.inboxTracker.GetBatchMetadata(mid)
 		if err != nil {
 			return 0, errors.Wrap(err, "failed to get batch metadata while binary searching")
 		}
-		if batchMeta.MessageCount < msgCount {
+		if batchMsgCount < msgCount {
 			low = mid + 1
-		} else if batchMeta.MessageCount == msgCount {
+		} else if batchMsgCount == msgCount {
 			return mid, nil
-		} else if mid == low { // batchMeta.MessageCount > msgCount
+		} else if mid == low { // batchMsgCount > msgCount
 			return mid, nil
-		} else { // batchMeta.MessageCount > msgCount
+		} else { // batchMsgCount > msgCount
 			high = mid
 		}
 	}
@@ -173,17 +173,17 @@ func (b *BlockChallengeBackend) FindBatchAndPositionFromMessageCount(ctx context
 	if err != nil {
 		return 0, 0, err
 	}
-	var prevBatchMeta BatchMetadata
+	var batchMsgCount uint64
 	if batch > 0 {
-		prevBatchMeta, err = b.inboxTracker.GetBatchMetadata(batch - 1)
+		_, batchMsgCount, _, err = b.inboxTracker.GetBatchMetadata(batch - 1)
 		if err != nil {
 			return 0, 0, err
 		}
-		if prevBatchMeta.MessageCount >= msgCount {
+		if batchMsgCount >= msgCount {
 			return 0, 0, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	return batch, msgCount - prevBatchMeta.MessageCount, nil
+	return batch, msgCount - batchMsgCount, nil
 }
 
 const STATUS_FINISHED uint8 = 1
@@ -244,7 +244,7 @@ func (b *BlockChallengeBackend) GetHashAtStep(ctx context.Context, position uint
 	}
 }
 
-func (b *BlockChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState validator.ChallengeState, startSegment int) (*types.Transaction, error) {
+func (b *BlockChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState ChallengeState, startSegment int) (*types.Transaction, error) {
 	con, err := challengegen.NewBlockChallenge(challenge, client)
 	if err != nil {
 		return nil, err

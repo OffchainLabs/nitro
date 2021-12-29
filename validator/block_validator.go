@@ -31,7 +31,7 @@ import (
 )
 
 type BlockValidator struct {
-	inboxTracker DelayedMessageReader
+	inboxTracker MessageReader
 
 	validationEntries  sync.Map
 	sequencerBatches   sync.Map
@@ -94,9 +94,10 @@ type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
 
-type DelayedMessageReader interface {
+type MessageReader interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
+	GetBatchMetadata(seqNum uint64) (common.Hash, uint64, uint64, error)
 }
 
 type validationEntry struct {
@@ -147,7 +148,7 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 	return idx
 }
 
-func NewBlockValidator(inbox DelayedMessageReader, streamer BlockValidatorRegistrer, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, config *BlockValidatorConfig) *BlockValidator {
 	moduleList := []string{}
 	for _, module := range config.ModulePaths {
 		moduleList = append(moduleList, filepath.Join(config.RootPath, module))

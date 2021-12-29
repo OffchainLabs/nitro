@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
+	"github.com/offchainlabs/arbstate/validator"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client, delayedBridge common.Address, seqInbox common.Address) common.Address {
@@ -65,8 +66,8 @@ func CreateChallenge(
 	client *ethclient.Client,
 	ospEntry common.Address,
 	wasmModuleRoot common.Hash,
-	startGlobalState arbnode.GoGlobalState,
-	endGlobalState arbnode.GoGlobalState,
+	startGlobalState validator.GoGlobalState,
+	endGlobalState validator.GoGlobalState,
 	numBlocks uint64,
 	asserter common.Address,
 	challenger common.Address,
@@ -92,8 +93,8 @@ func CreateChallenge(
 		resultReceiverAddr,
 		wasmModuleRoot,
 		[2]uint8{
-			arbnode.STATUS_FINISHED,
-			arbnode.STATUS_FINISHED,
+			validator.STATUS_FINISHED,
+			validator.STATUS_FINISHED,
 		},
 		[2]challengegen.GlobalState{
 			startGlobalState.AsSolidityStruct(),
@@ -197,7 +198,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	_, _, _, err = l2Node.InboxTracker.GetBatchMetadata(0)
 	if err != nil {
 		t.Fatal("failed to get batch metadata after adding batch:", err)
 	}
@@ -297,12 +298,12 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		t.Fatal("asserter and challenger have the same end block")
 	}
 
-	asserterStartGlobalState := arbnode.GoGlobalState{
+	asserterStartGlobalState := validator.GoGlobalState{
 		BlockHash:  asserterGenesis.Hash(),
 		Batch:      0,
 		PosInBatch: 0,
 	}
-	asserterEndGlobalState := arbnode.GoGlobalState{
+	asserterEndGlobalState := validator.GoGlobalState{
 		BlockHash:  asserterLatestBlock.Hash(),
 		Batch:      1,
 		PosInBatch: 0,

@@ -292,12 +292,11 @@ func (b *BatchPoster) postSequencerBatch() error {
 	}
 	var msgToPost, prevDelayedMsg uint64
 	if b.sequencesPosted > 0 {
-		prevBatchMeta, err := b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
+		var err error
+		_, msgToPost, prevDelayedMsg, err = b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
 		if err != nil {
 			return err
 		}
-		msgToPost = prevBatchMeta.MessageCount
-		prevDelayedMsg = prevBatchMeta.DelayedMessageCount
 	}
 	segments := newBatchSegments(prevDelayedMsg, b.config)
 	firstMsgToPost := msgToPost

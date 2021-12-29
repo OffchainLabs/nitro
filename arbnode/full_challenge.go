@@ -20,7 +20,7 @@ type FullChallengeManager struct {
 	rootChallengeAddr     common.Address
 	isExecutionChallenge  bool
 	challenge             *validator.ChallengeManager
-	blockChallengeBackend *BlockChallengeBackend
+	blockChallengeBackend *validator.BlockChallengeBackend
 	blockChallengeCon     *challengegen.BlockChallenge
 	l1Client              bind.ContractBackend
 	auth                  *bind.TransactOpts
@@ -42,7 +42,7 @@ func NewFullChallengeManager(
 	if err != nil {
 		return nil, err
 	}
-	blockBackend, err := NewBlockChallengeBackend(ctx, node.ArbInterface.BlockChain(), node.InboxTracker, l1Client, challengeAddr)
+	blockBackend, err := validator.NewBlockChallengeBackend(ctx, node.ArbInterface.BlockChain(), node.InboxTracker, l1Client, challengeAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if err != nil {
 			return err
 		}
-		startHeader := m.node.ArbInterface.BlockChain().GetHeaderByHash(GoGlobalStateFromSolidity(startGs).BlockHash)
+		startHeader := m.node.ArbInterface.BlockChain().GetHeaderByHash(validator.GoGlobalStateFromSolidity(startGs).BlockHash)
 		if startHeader == nil {
 			return errors.New("failed to find challenge start block")
 		}
