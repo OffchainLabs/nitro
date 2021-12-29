@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -425,23 +424,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		}
 
 		if s.validator != nil {
-			recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(s.bc, lastBlockHeader)
-			if err != nil {
-				return err
-			}
-
-			block, _ = arbos.ProduceBlock(
-				msg.Message,
-				msg.DelayedMessagesRead,
-				lastBlockHeader,
-				recordingdb,
-				chaincontext,
-			)
-			preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
-			if err != nil {
-				return fmt.Errorf("failed getting records: %w", err)
-			}
-			s.validator.NewBlock(block, lastBlockHeader, preimages)
+			s.validator.NewBlock(block, lastBlockHeader, msg)
 		}
 
 		lastBlockHeader = block.Header()

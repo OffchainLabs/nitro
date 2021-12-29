@@ -24,14 +24,19 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
 	inboxTracker MessageReader
+	blockchain   *core.BlockChain
 
 	validationEntries  sync.Map
 	sequencerBatches   sync.Map
@@ -148,7 +153,7 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 	return idx
 }
 
-func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
 	moduleList := []string{}
 	for _, module := range config.ModulePaths {
 		moduleList = append(moduleList, filepath.Join(config.RootPath, module))
@@ -168,6 +173,7 @@ func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, co
 	}
 	validator := &BlockValidator{
 		inboxTracker:        inbox,
+		blockchain:          blockchain,
 		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
@@ -182,7 +188,36 @@ func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, co
 	return validator
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, preimages map[common.Hash][]byte) {
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
+	if err != nil {
+		return common.Hash{}, nil, err
+	}
+
+	block, _ := arbos.ProduceBlock(
+		msg.Message,
+		msg.DelayedMessagesRead,
+		prevHeader,
+		recordingdb,
+		chaincontext,
+	)
+
+	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
+
+	return block.Hash(), preimages, err
+}
+
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
+	blockhash, preimages, err := RecordBlockCreation(v.blockchain, prevHeader, msg)
+	if err != nil {
+		log.Error("failed getting records", "err", err, "blocknum", header.Number)
+		return
+	}
+	if blockhash != header.Hash() {
+		log.Error("wrong hash while recording", "expected", header.Hash(), "got", blockhash, "blocknum", header.Number)
+		return
+	}
+
 	hashlist := v.preimageCache.PourToCache(preimages)
 	var delayedMsgToRead uint64
 	var hasDelayedMessage bool
@@ -198,8 +233,8 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, preimages map[common.Hash][]byte) {
-	go v.prepareBlock(block.Header(), prevHeader, preimages)
+func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
+	go v.prepareBlock(block.Header(), prevHeader, msg)
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
