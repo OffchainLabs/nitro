@@ -58,7 +58,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		t.Fatal(err)
 	}
 
-	inbox, err := NewTransactionStreamer(db, bc, nil, nil)
+	inbox, err := NewTransactionStreamer(db, bc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

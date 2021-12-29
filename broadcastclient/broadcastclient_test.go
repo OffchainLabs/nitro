@@ -169,14 +169,10 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.Stop()
 
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second)
+	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second, nil)
 
 	// connect returns
-	messageReceiver := make(chan broadcaster.BroadcastFeedMessage)
-	receiveMessage := func(msg *broadcaster.BroadcastFeedMessage) {
-		messageReceiver <- *msg
-	}
-	err = broadcastClient.Connect(ctx, receiveMessage)
+	err = broadcastClient.Connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
