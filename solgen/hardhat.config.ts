@@ -2,6 +2,7 @@ import "@nomiclabs/hardhat-waffle";
 import "hardhat-deploy";
 import "@nomiclabs/hardhat-ethers";
 import "@typechain/hardhat";
+import "solidity-coverage"
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
@@ -20,5 +21,8 @@ module.exports = {
         geth: {
             url: "http://localhost:8545"
         }
+    },
+    mocha: {
+        timeout: 0
     }
 };

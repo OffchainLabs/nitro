@@ -5,8 +5,7 @@ import readline from 'readline';
 
 const PARALLEL = 128;
 
-async function sendTestMessages(deployment: Promise<any>) {
-  await deployment;
+async function sendTestMessages() {
   const { deployer } = await getNamedAccounts();
   const inbox = await ethers.getContract("InboxStub", deployer);
   const seqInbox = await ethers.getContract("SequencerInboxStub", deployer);
@@ -21,23 +20,20 @@ async function sendTestMessages(deployment: Promise<any>) {
 }
 
 describe("OneStepProof", function () {
-  const deployment = run("deploy", { "tags": "OneStepProofEntryStubbedInbox" });
   const root = "./test/proofs/";
   const dir = fs.readdirSync(root);
-
-  const sendTestMessagesPromise = sendTestMessages(deployment);
+  
+  before(async function () {
+    await run("deploy", { "tags": "OneStepProofEntryStubbedInbox" });
+    await sendTestMessages();
+  })
 
   for (let file of dir) {
     if (!file.endsWith(".json")) continue;
     it("Should pass " + file + " proofs", async function () {
-      await deployment;
-
       let path = root + file;
       let proofs = JSON.parse(fs.readFileSync(path).toString('utf8'));
-
       const osp = await ethers.getContract("OneStepProofEntry");
-
-      await sendTestMessagesPromise;
 
       const promises = [];
       const isdone = [];
