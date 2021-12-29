@@ -81,10 +81,7 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 }
 
 func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, client ethereum.ChainReader) {
-	defer close(chanOut)
-
-	headerChanIn := make(chan *types.Header)
-	headerSubscription, err := client.SubscribeNewHead(ctx, headerChanIn)
+	headerSubscription, err := client.SubscribeNewHead(ctx, chanOut)
 	if err != nil {
 		if ctx.Err() == nil {
 			log.Error("failed sunscribing to header", "err", err)
@@ -94,15 +91,13 @@ func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, 
 
 	for {
 		select {
-		case header := <-headerChanIn:
-			chanOut <- header
 		case err := <-headerSubscription.Err():
 			if ctx.Err() == nil {
 				return
 			}
 			log.Warn("error in subscription to L1 headers", "err", err)
 			for {
-				headerSubscription, err = client.SubscribeNewHead(ctx, headerChanIn)
+				headerSubscription, err = client.SubscribeNewHead(ctx, chanOut)
 				if err != nil {
 					log.Warn("error re-subscribing to L1 headers", "err", err)
 					select {
