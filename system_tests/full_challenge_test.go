@@ -325,12 +325,12 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	confirmLatestBlock(ctx, t, l1Info, backend)
 
-	asserterManager, err := arbnode.NewFullChallengeManager(ctx, asserterL2, backend, asserter, challenge, 0, 4)
+	asserterManager, err := validator.NewFullChallengeManager(ctx, asserterL2.InboxTracker, asserterL2Blockchain, backend, asserter, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := arbnode.NewFullChallengeManager(ctx, challengerL2, backend, challenger, challenge, 0, 4)
+	challengerManager, err := validator.NewFullChallengeManager(ctx, challengerL2.InboxTracker, challengerL2Blockchain, backend, challenger, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}

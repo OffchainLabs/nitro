@@ -168,22 +168,23 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, m
 	}
 }
 
-func (b *BlockChallengeBackend) FindBatchAndPositionFromMessageCount(ctx context.Context, msgCount uint64) (uint64, uint64, error) {
+func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, header *types.Header) (GoGlobalState, error) {
+	msgCount := header.Number.Uint64()
 	batch, err := b.findBatchFromMessageCount(ctx, msgCount)
 	if err != nil {
-		return 0, 0, err
+		return GoGlobalState{}, err
 	}
 	var batchMsgCount uint64
 	if batch > 0 {
 		_, batchMsgCount, _, err = b.inboxTracker.GetBatchMetadata(batch - 1)
 		if err != nil {
-			return 0, 0, err
+			return GoGlobalState{}, err
 		}
 		if batchMsgCount >= msgCount {
-			return 0, 0, errors.New("findBatchFromMessageCount returned bad batch")
+			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	return batch, msgCount - batchMsgCount, nil
+	return GoGlobalState{header.Hash(), batch, msgCount - batchMsgCount}, nil
 }
 
 const STATUS_FINISHED uint8 = 1
@@ -193,18 +194,13 @@ func (b *BlockChallengeBackend) getInfoAtStep(ctx context.Context, position uint
 	if position >= b.tooFarStartsAtPosition {
 		return GoGlobalState{}, STATUS_TOO_FAR, nil
 	}
-	block := b.bc.GetBlockByNumber(b.startBlock + position)
-	if block == nil {
+	header := b.bc.GetHeaderByNumber(b.startBlock + position)
+	if header == nil {
 		return GoGlobalState{}, 0, errors.New("failed to get block in block challenge")
 	}
-	batch, posInBatch, err := b.FindBatchAndPositionFromMessageCount(ctx, b.startBlock+position)
+	globalState, err := b.FindGlobalStateFromHeader(ctx, header)
 	if err != nil {
 		return GoGlobalState{}, 0, err
-	}
-	globalState := GoGlobalState{
-		Batch:      batch,
-		PosInBatch: posInBatch,
-		BlockHash:  block.Hash(),
 	}
 	return globalState, STATUS_FINISHED, nil
 }

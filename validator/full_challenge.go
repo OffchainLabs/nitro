@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbnode
+package validator
 
 import (
 	"context"
@@ -10,28 +10,29 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
 
 type FullChallengeManager struct {
 	rootChallengeAddr     common.Address
 	isExecutionChallenge  bool
-	challenge             *validator.ChallengeManager
-	blockChallengeBackend *validator.BlockChallengeBackend
+	challenge             *ChallengeManager
+	blockChallengeBackend *BlockChallengeBackend
 	blockChallengeCon     *challengegen.BlockChallenge
 	l1Client              bind.ContractBackend
 	auth                  *bind.TransactOpts
-	node                  *Node
+	blockchain            *core.BlockChain
 	startL1Block          uint64
 	targetNumMachines     int
 }
 
 func NewFullChallengeManager(
 	ctx context.Context,
-	node *Node,
+	inboxTracker MessageReader,
+	blockchain *core.BlockChain,
 	l1Client bind.ContractBackend,
 	auth *bind.TransactOpts,
 	challengeAddr common.Address,
@@ -42,11 +43,11 @@ func NewFullChallengeManager(
 	if err != nil {
 		return nil, err
 	}
-	blockBackend, err := validator.NewBlockChallengeBackend(ctx, node.ArbInterface.BlockChain(), node.InboxTracker, l1Client, challengeAddr)
+	blockBackend, err := NewBlockChallengeBackend(ctx, blockchain, inboxTracker, l1Client, challengeAddr)
 	if err != nil {
 		return nil, err
 	}
-	blockChallengeManager, err := validator.NewChallengeManager(ctx, l1Client, auth, challengeAddr, startL1Block, blockBackend)
+	blockChallengeManager, err := NewChallengeManager(ctx, l1Client, auth, challengeAddr, startL1Block, blockBackend)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +59,7 @@ func NewFullChallengeManager(
 		blockChallengeCon:     blockchallengeCon,
 		l1Client:              l1Client,
 		auth:                  auth,
-		node:                  node,
+		blockchain:            blockchain,
 		startL1Block:          startL1Block,
 		targetNumMachines:     targetNumMachines,
 	}
@@ -76,7 +77,7 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 	}
 	callOpts := &bind.CallOpts{Context: ctx}
 	var err error
-	callOpts.BlockNumber, err = validator.LatestConfirmedBlock(ctx, m.l1Client)
+	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, m.l1Client)
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if err != nil {
 			return err
 		}
-		startHeader := m.node.ArbInterface.BlockChain().GetHeaderByHash(validator.GoGlobalStateFromSolidity(startGs).BlockHash)
+		startHeader := m.blockchain.GetHeaderByHash(GoGlobalStateFromSolidity(startGs).BlockHash)
 		if startHeader == nil {
 			return errors.New("failed to find challenge start block")
 		}
@@ -102,19 +103,16 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 			return errors.New("execution challenge occurred at non-uint64 block number")
 		}
 		blockNumU64 := blockNumber.Uint64()
-		batch, posInBatch, err := m.blockChallengeBackend.FindBatchAndPositionFromMessageCount(ctx, blockNumU64)
+		blockHeader := m.blockchain.GetHeaderByNumber(blockNumU64)
+		globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
 		if err != nil {
 			return err
 		}
-		initialMachine, err := m.node.BlockValidator.GetInitialMachineForBlock(ctx, blockNumU64, batch, posInBatch)
+		execBackend, err := NewNitroChallengeBackend(ctx, globalState, m.targetNumMachines, nil)
 		if err != nil {
 			return err
 		}
-		execBackend, err := validator.NewExecutionChallengeBackend(initialMachine, m.targetNumMachines, nil)
-		if err != nil {
-			return err
-		}
-		newChallenge, err := validator.NewChallengeManager(ctx, m.l1Client, m.auth, addr, m.startL1Block, execBackend)
+		newChallenge, err := NewChallengeManager(ctx, m.l1Client, m.auth, addr, m.startL1Block, execBackend)
 		if err != nil {
 			return err
 		}
