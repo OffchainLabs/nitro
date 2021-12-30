@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -201,6 +202,6 @@ func TestTransactionStreamer(t *testing.T) {
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
 	if err != nil {
-		t.Error(text, err)
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }

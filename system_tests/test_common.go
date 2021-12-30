@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util/colors"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -206,6 +207,6 @@ func CreateTestL2(
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
 	if err != nil {
-		t.Error(text, err)
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }

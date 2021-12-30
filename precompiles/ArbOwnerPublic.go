@@ -12,18 +12,18 @@ import (
 
 // The calls to this precompile are not authenticated.
 // For those that are, see ArbOwner
-type ArbOwnerOld struct {
+type ArbOwnerPublic struct {
 	Address addr
 }
 
-func (con ArbOwnerOld) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
+func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
 	if err := c.burn(6 * params.SloadGas); err != nil {
 		return []addr{}, err
 	}
 	return arbos.OpenArbosState(evm.StateDB).ChainOwners().AllMembers(), nil
 }
 
-func (con ArbOwnerOld) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
+func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return false, err
 	}

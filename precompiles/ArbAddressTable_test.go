@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/util/colors"
 )
 
 func TestArbAddressTableInit(t *testing.T) {
@@ -162,6 +163,6 @@ func newMockEVMForTesting(t *testing.T) *vm.EVM {
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
 	if err != nil {
-		t.Error(text, err)
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }

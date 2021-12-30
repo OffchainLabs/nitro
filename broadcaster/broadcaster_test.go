@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/util/colors"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -129,6 +130,6 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
 	if err != nil {
-		t.Fatal(text, err)
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }

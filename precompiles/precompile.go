@@ -379,7 +379,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
 	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
 	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(makePrecompile(templates.ArbOwnerOldMetaData, &ArbOwnerOld{Address: hex("6b")}))
+	insert(makePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))

@@ -210,13 +210,14 @@ func ProduceBlock(
 		}
 	}
 
+	FinalizeBlock(header, complete, receipts, statedb)
+	header.Root = statedb.IntermediateRoot(true)
+
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
-
-	FinalizeBlock(header, complete, receipts, statedb)
 
 	return block, receipts
 }
