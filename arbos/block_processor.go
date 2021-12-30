@@ -245,13 +245,13 @@ func ProduceBlock(
 						RequestId: txLog.Topics[2],
 						From:      retryable.From(),
 						GasPrice:  gasPrice,
-						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+						Gas:       common.BytesToHash(txLog.Data[8:40]).Big().Uint64(),
 						To:        retryable.To(),
 						Value:     retryable.Callvalue(),
 						Data:      retryable.Calldata(),
 					},
 					TicketId: ticketId,
-					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
+					RefundTo: common.BytesToAddress(txLog.Data[40:72]),
 				})
 
 				redeems = append(redeems, reedem)
