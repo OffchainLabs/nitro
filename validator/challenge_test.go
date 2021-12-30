@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
+	"github.com/offchainlabs/arbstate/util/colors"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
@@ -212,7 +213,8 @@ func TestChallengeToFailedErroredOSP(t *testing.T) {
 
 // Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
 	if err != nil {
-		t.Fatal(text, err)
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }
