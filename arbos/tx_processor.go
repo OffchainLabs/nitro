@@ -79,7 +79,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		// TODO: Review when doing eth_call's
 
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help an eth_call user pad the total they'll pay in case the price rises a bit
+		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
+		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 		adjustedPrice := util.BigMulByFrac(gasPrice, 15, 16)
 		gasPrice = adjustedPrice
 	}
