@@ -2018,6 +2018,7 @@ impl Machine {
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
+                            data.push(0); // inbox proof type
                             data.extend(msg_data);
                         }
                     } else {
