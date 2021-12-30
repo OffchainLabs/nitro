@@ -12,7 +12,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 	id := common.BigToHash(big.NewInt(978645611142))
 	retryable := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if retryable != nil {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -33,7 +33,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 
 	reread := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if reread != nil {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -54,9 +54,9 @@ func TestRetryableCreate(t *testing.T) {
 
 	reread := rstate.OpenRetryable(id, state.LastTimestampSeen())
 	if reread == nil {
-		t.Fatal()
+		Fail(t)
 	}
 	if !reread.Equals(retryable) {
-		t.Fatal()
+		Fail(t)
 	}
 }

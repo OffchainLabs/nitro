@@ -55,13 +55,13 @@ func TestValidatorSimple(t *testing.T) {
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
+		Fail(t, "Unexpected balance:", l2balance)
 	}
 	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	testDeadLine, _ := t.Deadline()
 	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
-		t.Fatal("did not validate all blocks")
+		Fail(t, "did not validate all blocks")
 	}
 
 }

@@ -274,6 +274,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 		return false
 	}
 	if batchcount < b.sequencesPosted {
+		b.sequencesPosted = batchcount
 		return false
 	}
 	if batchcount > b.sequencesPosted {
@@ -287,7 +288,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 // TODO make sure we detect end of block!
 func (b *BatchPoster) postSequencerBatch() error {
 	for !b.lastSubmissionIsSynced() {
-		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
+		// log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(b.config.SubmissionSyncDelay)
 	}
 	var msgToPost, prevDelayedMsg uint64
