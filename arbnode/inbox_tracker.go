@@ -142,6 +142,11 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (accumulator common.Hash,
 	return
 }
 
+func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (uint64, error) {
+	_, msgCount, _, err := t.GetBatchMetadata(seqNum)
+	return msgCount, err
+}
+
 // Convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	accumulator, _, _, err := t.GetBatchMetadata(seqNum)
@@ -426,7 +431,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 	}
 
 	var messages []arbstate.MessageWithMetadata
-	var positions []validator.PosInSequencer
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -443,19 +447,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		posInBatch := backend.positionWithinMessage
 		msg, err := multiplexer.Pop()
 		if err != nil {
 			return err
 		}
-		position := validator.PosInSequencer{
-			Pos:        currentpos - 1,
-			BatchNum:   batchSeqNum,
-			PosInBatch: posInBatch,
-			BatchAfter: backend.batchSeqNum,
-			PosAfter:   backend.positionWithinMessage,
-		}
-		positions = append(positions, position)
 
 		messages = append(messages, *msg)
 		batchMessageCounts[batchSeqNum] = currentpos
@@ -500,7 +495,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		return err
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", pos)
+
 	// This also writes the batch
+	err = t.txStreamer.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
+	if err != nil {
+		return err
+	}
+
 	if t.validator != nil {
 		batchMap := make(map[uint64][]byte, len(batches))
 		for _, batch := range batches {
@@ -510,10 +511,9 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 			}
 			batchMap[batch.SequenceNumber] = msg
 		}
-		t.validator.ProcessBatches(batchMap, positions)
+		t.validator.ProcessBatches(batchMap)
 	}
-	err = t.txStreamer.AddMessagesAndEndBatch(startMessagePos, true, messages, dbBatch)
-	return err
+	return nil
 }
 
 func (t *InboxTracker) ReorgDelayedTo(count uint64) error {

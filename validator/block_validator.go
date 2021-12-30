@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,16 +35,16 @@ type BlockValidator struct {
 	inboxTracker MessageReader
 	blockchain   *core.BlockChain
 
-	validationEntries  sync.Map
-	sequencerBatches   sync.Map
-	preimageCache      preimageCache
-	posToValidate      posToValidateList
-	posToValidateMutex sync.Mutex
+	validationEntries sync.Map
+	sequencerBatches  sync.Map
+	preimageCache     preimageCache
 
 	blocksValidated      uint64
 	blocksValidatedMutex sync.Mutex
 	earliestBatchKept    uint64
-	posNextSend          uint64
+
+	posNextSend       uint64
+	globalPosNextSend GlobalStatePosition
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -68,14 +67,6 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	BlocksToRecord:      []uint64{},
 }
 
-type PosInSequencer struct {
-	Pos        uint64
-	BatchNum   uint64
-	PosInBatch uint64
-	BatchAfter uint64
-	PosAfter   uint64
-}
-
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
@@ -84,6 +75,38 @@ type MessageReader interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMetadata(seqNum uint64) (common.Hash, uint64, uint64, error)
+	GetBatchMessageCount(seqNum uint64) (uint64, error)
+	GetBatchCount() (uint64, error)
+}
+
+type GlobalStatePosition struct {
+	BatchNumber uint64
+	PosInBatch  uint64
+}
+
+func GlobalStatePoisionsFor(reader MessageReader, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
+	if err != nil {
+		return GlobalStatePosition{}, GlobalStatePosition{}, err
+	}
+	var firstInBatch uint64
+	if batch > 0 {
+		firstInBatch, err = reader.GetBatchMessageCount(batch - 1)
+		if err != nil {
+			return GlobalStatePosition{}, GlobalStatePosition{}, err
+		}
+	}
+	if msgCountInBatch <= pos {
+		return GlobalStatePosition{}, GlobalStatePosition{}, fmt.Errorf("batch %d has up to message %d, failed getting for %d", batch, msgCountInBatch-1, pos)
+	}
+	if firstInBatch > pos {
+		return GlobalStatePosition{}, GlobalStatePosition{}, fmt.Errorf("batch %d starts from %d, failed getting for %d", batch, firstInBatch, pos)
+	}
+	startPos := GlobalStatePosition{batch, pos - firstInBatch}
+	if msgCountInBatch == pos+1 {
+		return startPos, GlobalStatePosition{batch + 1, 0}, nil
+	}
+	return startPos, GlobalStatePosition{batch, pos + 1 - firstInBatch}, nil
 }
 
 type validationEntry struct {
@@ -109,29 +132,6 @@ func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
 	}
-}
-
-type posToValidateList []PosInSequencer
-
-func (l posToValidateList) Len() int {
-	return len(l)
-}
-
-func (l posToValidateList) Swap(i, j int) {
-	l[i], l[j] = l[j], l[i]
-}
-
-func (l posToValidateList) Less(i, j int) bool {
-	return l[i].Pos < l[j].Pos
-}
-
-// we search for pos that should be close to start - so stupid is best
-func (l posToValidateList) StupidSearchPos(pos uint64) int {
-	idx := 0
-	for (idx < len(l)) && (l[idx].Pos < pos) {
-		idx++
-	}
-	return idx
 }
 
 func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
@@ -206,7 +206,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosInSequencer, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
 	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
@@ -219,7 +219,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosIn
 	}
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
-		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", pos.BatchAfter, pos.PosAfter, validationEntry.BlockHash) +
+		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
 		"ROOTPATH=\"" + StaticNitroMachineConfig.RootPath + "\"\n" +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
@@ -239,12 +239,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosIn
 			return err
 		}
 	}
-	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", validationEntry.SeqMsgNr, pos.PosInBatch, validationEntry.PrevBlockHash))
+	_, err = cmdFile.WriteString(fmt.Sprintf(" --inbox-position %d --position-within-message %d --last-block-hash %s", start.BatchNumber, start.PosInBatch, validationEntry.PrevBlockHash))
 	if err != nil {
 		return err
 	}
 
-	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", validationEntry.SeqMsgNr)
+	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNumber)
 	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
 	if err != nil {
 		return err
@@ -290,11 +290,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosIn
 	return nil
 }
 
-func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, pos PosInSequencer) {
-	if validationEntry.BlockNumber != pos.Pos+1 {
-		log.Error("bad validation", "blockNr", validationEntry.BlockNumber, "pos", pos.Pos)
-		return
-	}
+func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, start, end GlobalStatePosition) {
 	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber)
 	c_preimages, err := v.preimageCache.PrepareMultByteArrays(validationEntry.Preimages)
 	defer C.free(unsafe.Pointer(c_preimages.ptr))
@@ -302,22 +298,22 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
-	validationEntry.SeqMsgNr = pos.BatchNum
+	validationEntry.SeqMsgNr = start.BatchNumber
 	validationEntry.Running = true
 	gsStart := GoGlobalState{
-		Batch:      pos.BatchNum,
-		PosInBatch: pos.PosInBatch,
+		Batch:      start.BatchNumber,
+		PosInBatch: start.PosInBatch,
 		BlockHash:  validationEntry.PrevBlockHash,
 	}
 
-	seqEntry, found := v.sequencerBatches.Load(pos.BatchNum)
+	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
 	if !found {
-		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
+		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
 	}
 	seqCByte, ok := seqEntry.(C.CByteArray)
 	if !ok {
-		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", validationEntry.SeqMsgNr)
+		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
 	}
 
@@ -332,9 +328,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("error while tsetting global state for proving", "err", err, "gsStart", gsStart)
 		return
 	}
-	err = mach.AddSequencerInboxMessage(validationEntry.SeqMsgNr, seqCByte)
+	err = mach.AddSequencerInboxMessage(start.BatchNumber, seqCByte)
 	if err != nil {
-		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", validationEntry.SeqMsgNr, "blockNr", validationEntry.BlockNumber)
+		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", start.BatchNumber, "blockNr", validationEntry.BlockNumber)
 		return
 	}
 	var delayedByte C.CByteArray
@@ -371,7 +367,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	gsEnd := mach.GetGlobalState()
 
-	gsExpected := GoGlobalState{Batch: pos.BatchAfter, PosInBatch: pos.PosAfter, BlockHash: validationEntry.BlockHash}
+	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash}
 
 	writeThisBlock := false
 
@@ -392,7 +388,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 
 	if writeThisBlock {
-		err = v.writeToFile(validationEntry, pos, c_preimages, seqCByte, delayedByte)
+		err = v.writeToFile(validationEntry, start, end, c_preimages, seqCByte, delayedByte)
 		if err != nil {
 			log.Error("failed to write file", "err", err)
 		}
@@ -417,20 +413,23 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
-	v.posToValidateMutex.Lock()
-	defer v.posToValidateMutex.Unlock()
-	sort.Sort(v.posToValidate)
-
-	idx := v.posToValidate.StupidSearchPos(v.posNextSend)
-	v.posToValidate = v.posToValidate[idx:]
-
+	var batchCount uint64
 	for {
 		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
 			return
 		}
-		if len(v.posToValidate) == 0 || v.posToValidate[0].Pos != v.posNextSend {
-			return
+		if batchCount <= v.globalPosNextSend.BatchNumber {
+			var err error
+			batchCount, err = v.inboxTracker.GetBatchCount()
+			if err != nil {
+				log.Error("validator failed to get message count", "err", err)
+				return
+			}
+			if batchCount <= v.globalPosNextSend.BatchNumber {
+				return
+			}
 		}
+		// valdationEntries is By blockNumber, which is one more than pos
 		entry, found := v.validationEntries.Load(v.posNextSend + 1)
 		if !found {
 			return
@@ -440,10 +439,18 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
+		startPos, endPos, err := GlobalStatePoisionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
+		if err != nil {
+			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
+		}
+		if startPos != v.globalPosNextSend {
+			log.Error("inconsistent pos mapping", "uint_pos", v.posNextSend, "expected", v.globalPosNextSend, "found", startPos)
+			return
+		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		go v.validate(ctx, validationEntry, v.posToValidate[0])
+		go v.validate(ctx, validationEntry, startPos, endPos)
 		v.posNextSend += 1
-		v.posToValidate = v.posToValidate[1:]
+		v.globalPosNextSend = endPos
 	}
 }
 
@@ -529,13 +536,10 @@ func (v *BlockValidator) BlocksValidated() uint64 {
 	return v.blocksValidated
 }
 
-func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []PosInSequencer) {
+func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 	for batchNr, msg := range batches {
 		v.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
 	}
-	v.posToValidateMutex.Lock()
-	v.posToValidate = append(v.posToValidate, posData...)
-	v.posToValidateMutex.Unlock()
 	select {
 	case v.sendValidationsChan <- struct{}{}:
 	default:
