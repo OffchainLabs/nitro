@@ -37,7 +37,7 @@ type ArbosPrecompile interface {
 		caller common.Address,
 		value *big.Int,
 		readOnly bool,
-		suppliedGas uint64,
+		gasSupplied uint64,
 		evm *vm.EVM,
 	) (output []byte, gasLeft uint64, err error)
 
@@ -379,12 +379,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
 	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
 	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}))
+	insert(makePrecompile(templates.ArbOwnerOldMetaData, &ArbOwnerOld{Address: hex("6b")}))
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
+	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
 }

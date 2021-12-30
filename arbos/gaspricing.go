@@ -3,6 +3,7 @@ package arbos
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -26,6 +27,7 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool := state.GasPool()
 	smallGasPool := state.SmallGasPool()
 	price := state.GasPriceWei()
+	maxPrice := state.MaxGasPriceWei()
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -91,6 +93,14 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 
 	if price.Cmp(minPrice) < 0 {
 		price = minPrice
+	}
+	if price.Cmp(maxPrice) > 0 {
+		log.Warn(
+			"ArbOS is trying to set a price that's unsafe for geth",
+			"attempted", price,
+			"used", maxPrice,
+		)
+		price = maxPrice
 	}
 	state.SetGasPool(gasPool)
 	state.SetSmallGasPool(smallGasPool)

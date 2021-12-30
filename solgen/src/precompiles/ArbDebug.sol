@@ -2,7 +2,7 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 /**
-* @title A test contract
+* @title A test contract whose methods are only accessible in debug mode
 */
 interface ArbDebug {
     event Basic(bool flag, bytes32 indexed value);

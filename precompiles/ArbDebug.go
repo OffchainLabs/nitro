@@ -6,6 +6,8 @@ package precompiles
 
 import "github.com/offchainlabs/arbstate/arbos"
 
+// All calls to this precompile are authenticated by the DebugPrecompile wrapper,
+// which ensures these methods are not accessible in production.
 type ArbDebug struct {
 	Address      addr
 	Basic        func(mech, bool, [32]byte)                     // index'd: 2nd

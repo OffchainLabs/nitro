@@ -20,6 +20,7 @@ import (
 )
 
 func TestEvents(t *testing.T) {
+	AllowDebugPrecompiles = true
 
 	blockNumber := 1024
 
