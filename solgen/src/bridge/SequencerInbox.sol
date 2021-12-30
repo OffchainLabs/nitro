@@ -16,6 +16,8 @@ contract SequencerInbox is ISequencerInbox {
 
     IBridge public delayedBridge;
 
+    uint256 public constant MAX_DATA_SIZE = 498073;
+
     mapping(address => bool) public isBatchPoster;
     uint256 public maxDelayBlocks;
     uint256 public maxFutureBlocks;
@@ -203,6 +205,7 @@ contract SequencerInbox is ISequencerInbox {
 
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
+        require(fullDataLen <= MAX_DATA_SIZE, "DATA_TOO_LARGE");
         bytes memory fullData = new bytes(fullDataLen);
         timeBounds = getTimeBounds();
         bytes memory header = abi.encodePacked(
