@@ -41,7 +41,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 		return NotFoundError
 	}
 	if c.caller != retryable.Beneficiary() {
-		return UnauthorizedError
+		return errors.New("only the beneficiary may cancel a retryable")
 	}
 	retryableState.DeleteRetryable(ticketId)
 	con.Canceled(evm, ticketId)

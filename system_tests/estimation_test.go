@@ -13,11 +13,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/precompiles"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 func TestDeploy(t *testing.T) {
+	precompiles.AllowDebugPrecompiles = true
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -42,6 +44,7 @@ func TestDeploy(t *testing.T) {
 }
 
 func TestEstimate(t *testing.T) {
+	precompiles.AllowDebugPrecompiles = true
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -50,7 +53,7 @@ func TestEstimate(t *testing.T) {
 	gasPrice := big.NewInt(2 * params.GWei)
 
 	// set the gas price
-	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x6b"), client)
+	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
 	tx, err := arbowner.SetL2GasPrice(auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
@@ -58,9 +61,9 @@ func TestEstimate(t *testing.T) {
 	Require(t, err)
 
 	// get the gas price
-	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)
 	Require(t, err, "could not deploy contract")
-	setPrice, err := arbdebug.GetL2GasPrice(&bind.CallOpts{})
+	_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
 	Require(t, err, "could not get L2 gas price")
 	if gasPrice.Cmp(setPrice) != 0 {
 		t.Fatal("L2 gas price was not set correctly", gasPrice, setPrice)

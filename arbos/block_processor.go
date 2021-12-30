@@ -67,17 +67,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.St
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
-
-		maxBaseFee := new(big.Int).Mul(prevHeader.BaseFee, big.NewInt(2))
-		if maxBaseFee.Cmp(baseFee) < 0 {
-			log.Warn(
-				"the base fee rose faster than is safe for geth",
-				"prior", prevHeader.BaseFee,
-				"block", baseFee,
-				"used", maxBaseFee,
-			)
-			baseFee = maxBaseFee
-		}
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
@@ -288,13 +277,14 @@ func ProduceBlock(
 		}
 	}
 
+	FinalizeBlock(header, complete, receipts, statedb)
+	header.Root = statedb.IntermediateRoot(true)
+
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
-
-	FinalizeBlock(header, complete, receipts, statedb)
 
 	return block, receipts
 }
@@ -304,6 +294,9 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state := OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
+
+		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
