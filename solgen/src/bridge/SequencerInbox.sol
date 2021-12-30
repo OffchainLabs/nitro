@@ -16,7 +16,8 @@ contract SequencerInbox is ISequencerInbox {
 
     IBridge public delayedBridge;
 
-    uint256 public constant MAX_DATA_SIZE = 498073;
+    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
+    uint256 public constant MAX_DATA_SIZE = 117964;
 
     mapping(address => bool) public isBatchPoster;
     uint256 public maxDelayBlocks;

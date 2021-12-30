@@ -23,7 +23,8 @@ contract Inbox is IInbox {
     uint8 internal constant L2MessageType_unsignedEOATx = 0;
     uint8 internal constant L2MessageType_unsignedContractTx = 1;
 
-    uint256 public constant MAX_DATA_SIZE = 498073;
+    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
+    uint256 public constant MAX_DATA_SIZE = 117964;
 
     string internal constant TOO_LARGE = "TOO_LARGE";
 
