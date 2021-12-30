@@ -285,7 +285,10 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend, delayedBridge, trueSeqInboxAddr)
 
-	wasmModuleRoot := asserterL2.BlockValidator.GetInitialModuleRoot()
+	wasmModuleRoot, err := validator.GetInitialModuleRoot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	asserterGenesis := asserterL2.ArbInterface.BlockChain().Genesis()
 	challengerGenesis := challengerL2.ArbInterface.BlockChain().Genesis()

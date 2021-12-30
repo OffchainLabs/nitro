@@ -13,9 +13,7 @@ import "C"
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -43,14 +41,11 @@ type BlockValidator struct {
 	preimageCache      preimageCache
 	posToValidate      posToValidateList
 	posToValidateMutex sync.Mutex
-	initialModuleRoot  common.Hash
 
 	blocksValidated      uint64
 	blocksValidatedMutex sync.Mutex
 	earliestBatchKept    uint64
 	posNextSend          uint64
-
-	baseMachine *ArbitratorMachine
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -62,29 +57,15 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	RootPath                string // prepends all other paths
-	ProverBinPath           string
-	ModulePaths             []string
-	OutputPath              string
-	InitialMachineCachePath string
-	ConcurrentRunsLimit     int // 0 - default (CPU#)
-	BlocksToRecord          []uint64
+	OutputPath          string
+	ConcurrentRunsLimit int // 0 - default (CPU#)
+	BlocksToRecord      []uint64
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	RootPath:                "./arbitrator/target/env/",
-	ProverBinPath:           "lib/replay.wasm",
-	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
-	OutputPath:              "output",
-	InitialMachineCachePath: "initial-machine-cache",
-	ConcurrentRunsLimit:     0,
-	BlocksToRecord:          []uint64{},
-}
-
-func init() {
-	_, thisfile, _, _ := runtime.Caller(0)
-	projectDir := filepath.Dir(filepath.Dir(thisfile))
-	DefaultBlockValidatorConfig.RootPath = filepath.Join(projectDir, "arbitrator", "target", "env")
+	OutputPath:          "./arbitrator/target/env/output",
+	ConcurrentRunsLimit: 0,
+	BlocksToRecord:      []uint64{},
 }
 
 type PosInSequencer struct {
@@ -154,19 +135,7 @@ func (l posToValidateList) StupidSearchPos(pos uint64) int {
 }
 
 func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
-	moduleList := []string{}
-	for _, module := range config.ModulePaths {
-		moduleList = append(moduleList, filepath.Join(config.RootPath, module))
-	}
-	cModuleList := CreateCStringList(moduleList)
-	cBinPath := C.CString(filepath.Join(config.RootPath, config.ProverBinPath))
-
-	cZeroPreimages := C.CMultipleByteArrays{}
-	cZeroPreimages.len = 0
-	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages)
-	FreeCStringList(cModuleList, len(moduleList))
-	C.free(unsafe.Pointer(cBinPath))
-
+	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
@@ -178,11 +147,9 @@ func NewBlockValidator(inbox MessageReader, streamer BlockValidatorRegistrer, bl
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
-		baseMachine:         machineFromPointer(baseMachine),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
 	}
-	validator.initialModuleRoot = validator.baseMachine.GetModuleRoot()
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator
@@ -240,7 +207,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosInSequencer, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
-	outDirPath := filepath.Join(v.config.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
 		return err
@@ -253,7 +220,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosIn
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", pos.BatchAfter, pos.PosAfter, validationEntry.BlockHash) +
-		"ROOTPATH=\"" + v.config.RootPath + "\"\n" +
+		"ROOTPATH=\"" + StaticNitroMachineConfig.RootPath + "\"\n" +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
 		"		ROOTPATH=$2\n" +
@@ -261,12 +228,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, pos PosIn
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + v.config.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + StaticNitroMachineConfig.ProverBinPath)
 	if err != nil {
 		return err
 	}
 
-	for _, module := range v.config.ModulePaths {
+	for _, module := range StaticNitroMachineConfig.ModulePaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err
@@ -350,9 +317,17 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		return
 	}
 
-	mach := v.baseMachine.Clone()
+	basemachine, err := GetHostIoMachine(ctx)
+	if err != nil {
+		return
+	}
+	mach := basemachine.Clone()
 	C.arbitrator_add_preimages(mach.ptr, c_preimages)
-	mach.SetGlobalState(gsStart)
+	err = mach.SetGlobalState(gsStart)
+	if err != nil {
+		log.Error("error while tsetting global state for proving", "err", err, "gsStart", gsStart)
+		return
+	}
 	err = mach.AddSequencerInboxMessage(validationEntry.SeqMsgNr, seqCByte)
 	if err != nil {
 		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", validationEntry.SeqMsgNr, "blockNr", validationEntry.BlockNumber)
@@ -564,87 +539,7 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, posData []Pos
 	}
 }
 
-func (v *BlockValidator) cacheBaseMachineUntilHostIo(ctx context.Context) error {
-	hash := v.baseMachine.Hash()
-	expectedName := hash.String() + ".bin"
-	cacheDir := path.Join(v.config.RootPath, v.config.InitialMachineCachePath)
-	err := os.MkdirAll(cacheDir, 0o755)
-	if err != nil {
-		return err
-	}
-	files, err := ioutil.ReadDir(cacheDir)
-	if err != nil {
-		return err
-	}
-	cleanCacheBefore := time.Now().Add(-time.Hour * 24)
-	foundInCache := false
-	for _, file := range files {
-		if file.Name() == expectedName {
-			foundInCache = true
-		} else if file.ModTime().Before(cleanCacheBefore) {
-			log.Info("removing unknown old machine cache", "name", file.Name())
-			err = os.Remove(path.Join(cacheDir, file.Name()))
-			if err != nil {
-				return err
-			}
-		} else {
-			log.Info("keeping unknown old machine cache", "name", file.Name())
-		}
-	}
-
-	file := path.Join(cacheDir, expectedName)
-	if foundInCache {
-		// Update the file's last modified time so it doesn't get cleaned up
-		now := time.Now()
-		err = os.Chtimes(file, now, now)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				foundInCache = false
-			} else {
-				return err
-			}
-		}
-	}
-
-	if foundInCache {
-		log.Info("found cached initial machine", "hash", hash)
-
-		err = v.baseMachine.DeserializeAndReplaceState(file)
-		if err != nil {
-			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
-			log.Info("failed to load initial machine cache; will reexecute", "err", err)
-		} else {
-			return nil
-		}
-	} else {
-		log.Info("didn't find initial machine in cache", "hash", hash)
-	}
-
-	err = v.baseMachine.StepUntilHostIo(ctx)
-	if err != nil {
-		return err
-	}
-
-	log.Info("saving initial machine cache", "hash", hash)
-
-	wipFile := file + ".wip"
-	err = v.baseMachine.SerializeState(wipFile)
-	if err != nil {
-		return err
-	}
-	err = os.Rename(wipFile, file)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (v *BlockValidator) Start(ctx context.Context) error {
-	err := v.cacheBaseMachineUntilHostIo(ctx)
-	if err != nil {
-		return err
-	}
 	v.startProgressLoop(ctx)
 	v.startValidationLoop(ctx)
 	return nil
@@ -672,12 +567,4 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration)
 			}
 		}
 	}
-}
-
-func (v *BlockValidator) GetInitialModuleRoot() common.Hash {
-	return v.initialModuleRoot
-}
-
-func (v *BlockValidator) GetInitialMachineForBlock(ctx context.Context, blockNumber uint64, batch uint64, posInBatch uint64) (MachineInterface, error) {
-	return nil, errors.New("TODO")
 }
