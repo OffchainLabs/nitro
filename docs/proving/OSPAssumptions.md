@@ -18,15 +18,16 @@ The current method of inbox hashing requires the full inbox message be available
 That message must not be too large as to prevent it from being supplied for proving,
 which is enforced by the inboxes.
 
-A reasonable length limit is 498,073 bytes, which is 95% the max transaction size Geth will accept,
-leaving 26,215 bytes for other proving data.
+A reasonable length limit is 117,964 bytes, which is 90% of the
+[max transaction size Geth will accept](https://github.com/ethereum/go-ethereum/blob/356bbe343a30789e77bb38f25983c8f2f2bfbb47/core/tx_pool.go#L53),
+leaving 13,107 bytes for other proving data.
 
 ## Requested preimages must be known and not too large
 
 WAVM has an opcode which resolves the preimage of a Keccak-256 hash.
 This can only be executed if the preimage is already known,
 and can only be proven if the preimage isn't too long.
-A reasonable length limit is 498,073 bytes for the reasons mentioned above.
+A reasonable length limit is 117,964 bytes for the reasons mentioned above.
 Here's a list of which preimages may be requested by Nitro, and why they're safe to request:
 
 ### Block headers
