@@ -88,23 +88,26 @@ func DestroyCByteArray(cbyte C.CByteArray) {
 	C.free(unsafe.Pointer(cbyte.ptr))
 }
 
-func CreateGlobalState(batch uint64, posinBatch uint64, blockHash common.Hash) C.GlobalState {
+func GlobalStateToC(gsIn GoGlobalState) C.GlobalState {
 	gs := C.GlobalState{}
-	gs.u64_vals[0] = C.uint64_t(batch)
-	gs.u64_vals[1] = C.uint64_t(posinBatch)
-	for i, b := range blockHash {
+	gs.u64_vals[0] = C.uint64_t(gsIn.Batch)
+	gs.u64_vals[1] = C.uint64_t(gsIn.PosInBatch)
+	for i, b := range gsIn.BlockHash {
 		gs.bytes32_vals[0].bytes[i] = C.uint8_t(b)
 	}
 	return gs
 }
 
-func ParseGlobalState(gs C.GlobalState) (batch uint64, posinBatch uint64, blockHash common.Hash) {
-	batch = uint64(gs.u64_vals[0])
-	posinBatch = uint64(gs.u64_vals[1])
+func GlobalStateFromC(gs C.GlobalState) GoGlobalState {
+	var blockHash common.Hash
 	for i := range blockHash {
 		blockHash[i] = byte(gs.bytes32_vals[0].bytes[i])
 	}
-	return
+	return GoGlobalState{
+		Batch:      uint64(gs.u64_vals[0]),
+		PosInBatch: uint64(gs.u64_vals[1]),
+		BlockHash:  blockHash,
+	}
 }
 
 // creates a list of strings, does take ownership, should be freed

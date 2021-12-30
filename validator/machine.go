@@ -73,18 +73,20 @@ func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
 	return m.Clone()
 }
 
-func (m *ArbitratorMachine) SetGlobalState(globalState C.struct_GlobalState) error {
+func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
 	defer runtime.KeepAlive(m)
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	C.arbitrator_set_global_state(m.ptr, globalState)
+	cGlobalState := GlobalStateToC(globalState)
+	C.arbitrator_set_global_state(m.ptr, cGlobalState)
 	return nil
 }
 
-func (m *ArbitratorMachine) GetGlobalState() C.struct_GlobalState {
+func (m *ArbitratorMachine) GetGlobalState() GoGlobalState {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_global_state(m.ptr)
+	cGlobalState := C.arbitrator_global_state(m.ptr)
+	return GlobalStateFromC(cGlobalState)
 }
 
 func (m *ArbitratorMachine) GetStepCount() uint64 {

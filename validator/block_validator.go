@@ -304,7 +304,11 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	validationEntry.SeqMsgNr = pos.BatchNum
 	validationEntry.Running = true
-	gsStart := CreateGlobalState(pos.BatchNum, pos.PosInBatch, validationEntry.PrevBlockHash)
+	gsStart := GoGlobalState{
+		Batch:      pos.BatchNum,
+		PosInBatch: pos.PosInBatch,
+		BlockHash:  validationEntry.PrevBlockHash,
+	}
 
 	seqEntry, found := v.sequencerBatches.Load(pos.BatchNum)
 	if !found {
@@ -367,11 +371,11 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	gsEnd := mach.GetGlobalState()
 
-	resBatch, resPosInBatch, resHash := ParseGlobalState(gsEnd)
+	gsExpected := GoGlobalState{Batch: pos.BatchAfter, PosInBatch: pos.PosAfter, BlockHash: validationEntry.BlockHash}
 
 	writeThisBlock := false
 
-	resultValid := (resBatch == pos.BatchAfter) && (resPosInBatch == pos.PosAfter) && (resHash == validationEntry.BlockHash)
+	resultValid := (gsEnd == gsExpected)
 
 	if !resultValid {
 		writeThisBlock = true
@@ -402,8 +406,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	validationEntry.Preimages = nil
 
 	if !resultValid {
-		log.Error("validation failed", "blockNr", validationEntry.BlockNumber, "batch_exp", pos.BatchAfter, "batch_actual", resBatch, "pos_exp", pos.PosAfter, "pos_actual", resPosInBatch, "hash_exp", validationEntry.BlockHash, "hash_actual", resHash)
-		log.Error("validation failed", "expHeader", validationEntry.BlockHeader)
+		log.Error("validation failed", "got", gsEnd, "expected", gsExpected, "expHeader", validationEntry.BlockHeader)
 		return
 	}
 
