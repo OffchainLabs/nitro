@@ -23,6 +23,10 @@ contract Inbox is IInbox {
     uint8 internal constant L2MessageType_unsignedEOATx = 0;
     uint8 internal constant L2MessageType_unsignedContractTx = 1;
 
+    uint256 public constant MAX_DATA_SIZE = 498073;
+
+    string internal constant TOO_LARGE = "TOO_LARGE";
+
     IBridge public override bridge;
 
     bool public isCreateRetryablePaused;
@@ -44,6 +48,7 @@ contract Inbox is IInbox {
     {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "origin only");
+        require(messageData.length < MAX_DATA_SIZE, TOO_LARGE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -59,6 +64,7 @@ contract Inbox is IInbox {
         override
         returns (uint256)
     {
+        require(messageData.length < MAX_DATA_SIZE, TOO_LARGE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -339,6 +345,7 @@ contract Inbox is IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
+        require(_messageData.length < MAX_DATA_SIZE, TOO_LARGE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
