@@ -64,6 +64,10 @@ func (store *Storage) SetByUint64(key uint64, value common.Hash) {
 	store.Set(util.UintToHash(key), value)
 }
 
+func (store *Storage) SetUint64ByUint64(key uint64, value uint64) {
+	store.Set(util.UintToHash(key), util.UintToHash(value))
+}
+
 func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
 	oldValue := store.Get(key)
 	store.Set(key, newValue)
@@ -100,6 +104,10 @@ func (store *Storage) GetBytes() []byte {
 	}
 	ret = append(ret, store.GetByUint64(offset).Bytes()[32-bytesLeft:]...)
 	return ret
+}
+
+func (store *Storage) GetBytesSize() uint64 {
+	return store.GetByUint64(0).Big().Uint64()
 }
 
 func (store *Storage) DeleteBytes() {

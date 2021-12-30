@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 var ChainConfig = &params.ChainConfig{
@@ -45,6 +46,10 @@ var ChainConfig = &params.ChainConfig{
 		Epoch:  0,
 	},
 }
+
+// set by the precompile module, to avoid a package dependence cycle
+var ArbRetryableTxAddress common.Address
+var RedeemScheduledEventID common.Hash
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
@@ -116,18 +121,53 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
+	state := OpenArbosState(statedb)
+	gasLeft := state.CurrentPerBlockGasLimit()
+
+	if lastBlockHeader == nil {
+		state.timestamp.Set(uint64(time.Now().Unix()))
+	}
+
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	gasLeft := PerBlockGasLimit
 	gasPrice := header.BaseFee
+	time := header.Time
+
+	redeems := types.Transactions{}
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(1 << 63)
 
-	for _, tx := range txes {
+	for len(txes) > 0 || len(redeems) > 0 {
+
+		state := OpenArbosState(statedb)
+		retryableState := state.RetryableState()
+
+		var tx *types.Transaction
+		if len(redeems) > 0 {
+			tx = redeems[0]
+			redeems = redeems[1:]
+
+			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
+			if !ok {
+				panic("retryable tx is somehow not a retryable")
+			}
+			retryable := retryableState.OpenRetryable(retry.TicketId, time)
+			if retryable == nil {
+				// retryable was already deleted, so just refund the gas
+				retryGas := new(big.Int).SetUint64(retry.Gas)
+				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
+				refund := util.BigMulByFrac(gasGiven, 31, 32)
+				statedb.AddBalance(retry.RefundTo, refund)
+				continue
+			}
+		} else {
+			tx = txes[0]
+			txes = txes[1:]
+		}
 
 		sender, err := signer.Sender(tx)
 		if err != nil {
@@ -143,7 +183,7 @@ func ProduceBlock(
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
-			pricing := OpenArbosState(statedb).L1PricingState()
+			pricing := state.L1PricingState()
 			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
 			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
 			if posterCostInL2Gas.IsUint64() {
@@ -200,6 +240,33 @@ func ProduceBlock(
 		if gasUsed > computeGas {
 			delta := strconv.FormatUint(gasUsed-computeGas, 10)
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		}
+
+		for _, txLog := range receipt.Logs {
+			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
+
+				ticketId := txLog.Topics[1]
+
+				retryableState = OpenArbosState(statedb).RetryableState()
+				retryable := retryableState.OpenRetryable(ticketId, time)
+
+				reedem := types.NewTx(&types.ArbitrumRetryTx{
+					ArbitrumContractTx: types.ArbitrumContractTx{
+						ChainId:   ChainConfig.ChainID,
+						RequestId: txLog.Topics[2],
+						From:      retryable.From(),
+						GasPrice:  gasPrice,
+						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+						To:        retryable.To(),
+						Value:     retryable.Callvalue(),
+						Data:      retryable.Calldata(),
+					},
+					TicketId: ticketId,
+					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
+				})
+
+				redeems = append(redeems, reedem)
+			}
 		}
 
 		complete = append(complete, tx)

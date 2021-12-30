@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 var arbAddress = common.HexToAddress("0xabc")
@@ -26,6 +28,7 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
+	time         uint64
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
@@ -38,6 +41,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
+		time:         evm.Context.Time.Uint64(),
 		PosterFee:    new(big.Int),
 		posterGas:    0,
 	}
@@ -72,10 +76,25 @@ func (p *TxProcessor) StartTxHook() bool {
 		return true
 	case *types.ArbitrumSubmitRetryableTx:
 		p.stateDB.AddBalance(tx.From, tx.DepositValue)
-		return false
-	default:
-		return false
+
+		timeout := p.time + retryables.RetryableLifetimeSeconds
+
+		p.state.RetryableState().CreateRetryable(
+			p.time,
+			underlyingTx.Hash(),
+			timeout,
+			tx.From,
+			underlyingTx.To(),
+			underlyingTx.Value(),
+			tx.Beneficiary,
+			tx.Data,
+		)
+	case *types.ArbitrumRetryTx:
+		// another tx already burnt gas for this one
+		p.state.RetryableState().DeleteRetryable(tx.TicketId)
+		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 	}
+	return false
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
@@ -99,7 +118,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			posterCostInL2Gas = new(big.Int).SetUint64(math.MaxUint64)
 		}
 		p.posterGas = posterCostInL2Gas.Uint64()
-		p.PosterFee = posterCost
+		p.PosterFee = new(big.Int).Mul(posterCostInL2Gas, gasPrice) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
 
@@ -136,7 +155,14 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 
 	if p.msg.GasPrice().Sign() > 0 {
 		// in tests, gasprice coud be 0
-		p.state.notifyGasUsed(computeCost.Uint64())
+		if gasUsed.Uint64() < p.posterGas {
+			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+		}
+		computeGas := gasUsed.Uint64() - p.posterGas
+		if computeGas > math.MaxInt64 {
+			computeGas = math.MaxInt64
+		}
+		p.state.AddToGasPools(int64(computeGas))
 	}
 	return nil
 }

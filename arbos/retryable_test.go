@@ -27,8 +27,9 @@ func TestOpenExpiredRetryable(t *testing.T) {
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
+	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
 	calldata := []byte{42}
-	_ = state.RetryableState().CreateRetryable(state.LastTimestampSeen(), id, timeout, from, to, callvalue, calldata)
+	_ = state.RetryableState().CreateRetryable(state.LastTimestampSeen(), id, timeout, from, &to, callvalue, beneficiary, calldata)
 
 	reread := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if reread != nil {
@@ -43,12 +44,13 @@ func TestRetryableCreate(t *testing.T) {
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
+	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
 	calldata := make([]byte, 42)
 	for i := range calldata {
 		calldata[i] = byte(i + 3)
 	}
 	rstate := state.RetryableState()
-	retryable := rstate.CreateRetryable(state.LastTimestampSeen(), id, timeout, from, to, callvalue, calldata)
+	retryable := rstate.CreateRetryable(state.LastTimestampSeen(), id, timeout, from, &to, callvalue, beneficiary, calldata)
 
 	reread := rstate.OpenRetryable(id, state.LastTimestampSeen())
 	if reread == nil {

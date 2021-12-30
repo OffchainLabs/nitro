@@ -57,6 +57,7 @@ type Precompile struct {
 	methods     map[[4]byte]PrecompileMethod
 	events      map[string]PrecompileEvent
 	implementer reflect.Value
+	address     common.Address
 }
 
 type PrecompileMethod struct {
@@ -357,6 +358,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		methods,
 		events,
 		reflect.ValueOf(implementer),
+		address,
 	}
 }
 
@@ -369,8 +371,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	contracts := make(map[addr]ArbosPrecompile)
 
-	insert := func(address addr, impl ArbosPrecompile) {
+	insert := func(address addr, impl ArbosPrecompile) Precompile {
 		contracts[address] = impl
+		return impl.Precompile()
 	}
 
 	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
@@ -382,9 +385,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}))
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	arbos.ArbRetryableTxAddress = ArbRetryable.address
+	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 
 	return contracts
 }
