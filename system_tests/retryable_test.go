@@ -33,9 +33,8 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	user2Address := l2info.GetAddress("User2")
 
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	usertxopts := l1info.GetDefaultTransactOpts("faucet")
 	usertxopts.Value = new(big.Int).Mul(big.NewInt(1e12), big.NewInt(1e12))
 
@@ -50,13 +49,10 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l1receipt.Status != 1 {
 		t.Fatal("l1receipt indicated failure")
 	}
@@ -80,17 +76,14 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
 	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if receipt.Status != 1 {
 		t.Fatal()
 	}
 
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
@@ -108,9 +101,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	user2Address := l2info.GetAddress("User2")
 
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	usertxopts := l1info.GetDefaultTransactOpts("faucet")
 	usertxopts.Value = new(big.Int).Mul(big.NewInt(1e12), big.NewInt(1e12))
 
@@ -125,21 +117,17 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l1receipt.Status != 1 {
 		t.Fatal("l1receipt indicated failure")
 	}
 
 	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	var l2TxId *common.Hash
 	for _, log := range l1receipt.Logs {
 		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
@@ -155,18 +143,15 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
 	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if receipt.Status != 0 {
 		t.Fatal()
 	}
 
 	// send tx to redeem the retryable
 	arbRetryableTxAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	arbRetryableAddress := common.BigToAddress(big.NewInt(0x6e))
 	txData := &types.DynamicFeeTx{
 		To:        &arbRetryableAddress,
@@ -178,35 +163,27 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 	tx := l2info.SignTxAs("Owner", txData)
 	txbytes, err := tx.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	usertxopts = l1info.GetDefaultTransactOpts("faucet")
 	l1tx, err = delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	// wait for redeem transaction to complete successfully
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if receipt.Status != 1 {
 		t.Fatal()
 	}
 
 	// verify that balance transfer happened, so we know the retry succeeded
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
@@ -214,9 +191,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	// check the receipt for the retry
 	retryTxId := retryables.TxIdForRedeemAttempt(*l2TxId, 0)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if receipt.Status != 1 {
 		t.Fatal()
 	}

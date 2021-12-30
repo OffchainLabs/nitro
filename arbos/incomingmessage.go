@@ -182,7 +182,11 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		}
 		return types.Transactions{tx}, nil
 	case L1MessageType_SubmitRetryable:
-		panic("unimplemented")
+		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
