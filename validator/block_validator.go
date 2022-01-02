@@ -206,7 +206,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, c_preimages C.CMultipleByteArrays, sequencerCByte C.CByteArray, delayedCByte C.CByteArray) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, c_preimages C.CMultipleByteArrays, sequencerMsg, delayedMsg []byte) error {
 	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
@@ -245,7 +245,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	}
 
 	sequencerFileName := fmt.Sprintf("sequencer_%d.bin", start.BatchNumber)
-	err = CByteToFile(sequencerCByte, filepath.Join(outDirPath, sequencerFileName))
+	err = os.WriteFile(filepath.Join(outDirPath, sequencerFileName), sequencerMsg, 0644)
 	if err != nil {
 		return err
 	}
@@ -269,7 +269,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 			return err
 		}
 		filename := fmt.Sprintf("delayed_%d.bin", validationEntry.DelayedMsgNr)
-		err = CByteToFile(delayedCByte, filepath.Join(outDirPath, filename))
+		err = os.WriteFile(filepath.Join(outDirPath, filename), delayedMsg, 0644)
 		if err != nil {
 			return err
 		}
@@ -311,7 +311,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
 	}
-	seqCByte, ok := seqEntry.(C.CByteArray)
+	seqMsg, ok := seqEntry.([]byte)
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
@@ -328,21 +328,19 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("error while tsetting global state for proving", "err", err, "gsStart", gsStart)
 		return
 	}
-	err = mach.AddSequencerInboxMessage(start.BatchNumber, seqCByte)
+	err = mach.AddSequencerInboxMessage(start.BatchNumber, seqMsg)
 	if err != nil {
 		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", start.BatchNumber, "blockNr", validationEntry.BlockNumber)
 		return
 	}
-	var delayedByte C.CByteArray
+	var delayedMsg []byte
 	if validationEntry.HasDelayedMsg {
-		msg, err := v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
+		delayedMsg, err = v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
 		if err != nil {
 			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
 			return
 		}
-		delayedByte = CreateCByteArray(msg)
-		defer DestroyCByteArray(delayedByte)
-		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedByte)
+		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedMsg)
 		if err != nil {
 			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
 			return
@@ -388,7 +386,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 
 	if writeThisBlock {
-		err = v.writeToFile(validationEntry, start, end, c_preimages, seqCByte, delayedByte)
+		err = v.writeToFile(validationEntry, start, end, c_preimages, seqMsg, delayedMsg)
 		if err != nil {
 			log.Error("failed to write file", "err", err)
 		}
@@ -492,17 +490,6 @@ func (v *BlockValidator) ProgressValidated() {
 		}
 		if v.earliestBatchKept < validationEntry.SeqMsgNr {
 			for batch := v.earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
-				entry, found := v.sequencerBatches.Load(batch)
-				if !found {
-					log.Warn("didn't find sequencer batch", "number", batch)
-					continue
-				}
-				cbyte, ok := entry.(C.CByteArray)
-				if !ok {
-					log.Error("bad entry trying to delete batch", "number", batch)
-					continue
-				}
-				DestroyCByteArray(cbyte)
 				v.sequencerBatches.Delete(batch)
 			}
 			v.earliestBatchKept = validationEntry.SeqMsgNr
@@ -538,7 +525,7 @@ func (v *BlockValidator) BlocksValidated() uint64 {
 
 func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 	for batchNr, msg := range batches {
-		v.sequencerBatches.Store(batchNr, CreateCByteArray(msg))
+		v.sequencerBatches.Store(batchNr, msg)
 	}
 	select {
 	case v.sendValidationsChan <- struct{}{}:

@@ -221,14 +221,15 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	}
 }
 
-func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data C.CByteArray) error {
+func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
 
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), data)
+	cbyte := CreateCByteArray(data)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), cbyte)
+	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
 	} else {
@@ -236,14 +237,16 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data C.CByteA
 	}
 }
 
-func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data C.CByteArray) error {
+func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
 
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
 
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), data)
+	cbyte := CreateCByteArray(data)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), cbyte)
+	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
 	} else {

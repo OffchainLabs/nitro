@@ -127,12 +127,6 @@ func FreeCStringList(arrPtr **C.char, size int) {
 	C.free(unsafe.Pointer(arrPtr))
 }
 
-// single file with the binary blob
-func CByteToFile(cData C.CByteArray, path string) error {
-	data := C.GoBytes(unsafe.Pointer(cData.ptr), C.int(cData.len))
-	return os.WriteFile(path, data, 0644)
-}
-
 // single file with multiple values, each prefixed with it's size
 func CMultipleByteArrayToFile(cMulti C.CMultipleByteArrays, path string) error {
 	bufNum := int(cMulti.len)
