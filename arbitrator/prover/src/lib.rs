@@ -14,7 +14,6 @@ use crate::{
     machine::{argument_data_to_inbox, Machine},
 };
 use eyre::{bail, Result};
-use fnv::FnvHashMap as HashMap;
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use std::{
@@ -73,28 +72,13 @@ pub struct RustByteArray {
     pub capacity: usize,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct CMultipleByteArrays {
-    pub ptr: *const CByteArray,
-    pub len: usize,
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_load_machine(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
-    global_state: GlobalState,
-    c_preimages: CMultipleByteArrays,
 ) -> *mut Machine {
-    match arbitrator_load_machine_impl(
-        binary_path,
-        library_paths,
-        library_paths_size,
-        global_state,
-        c_preimages,
-    ) {
+    match arbitrator_load_machine_impl(binary_path, library_paths, library_paths_size) {
         Ok(mach) => mach,
         Err(err) => {
             eprintln!("Error loading binary: {}", err);
@@ -107,8 +91,6 @@ unsafe fn arbitrator_load_machine_impl(
     binary_path: *const c_char,
     library_paths: *const *const c_char,
     library_paths_size: isize,
-    global_state: GlobalState,
-    c_preimages: CMultipleByteArrays,
 ) -> Result<*mut Machine> {
     let main_mod = {
         let binary_path = cstr_to_string(binary_path);
@@ -123,23 +105,14 @@ unsafe fn arbitrator_load_machine_impl(
         libraries.push(parse_binary(library_path)?);
     }
 
-    let mut preimages = HashMap::default();
-    for i in 0..c_preimages.len {
-        let c_bytes = *c_preimages.ptr.add(i);
-        let slice = std::slice::from_raw_parts(c_bytes.ptr, c_bytes.len);
-        let data = slice.to_vec();
-        let hash = Keccak256::digest(&data);
-        preimages.insert(hash.into(), data);
-    }
-
     let mach = Machine::from_binary(
         libraries,
         main_mod,
         false,
         false,
-        global_state,
-        HashMap::default(),
-        preimages,
+        Default::default(),
+        Default::default(),
+        Default::default(),
     );
     Ok(Box::into_raw(Box::new(mach)))
 }
@@ -293,17 +266,15 @@ pub unsafe extern "C" fn arbitrator_set_global_state(mach: *mut Machine, gs: Glo
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_add_preimages(
+pub unsafe extern "C" fn arbitrator_add_preimage(
     mach: *mut Machine,
-    c_preimages: CMultipleByteArrays,
-) {
-    for i in 0..c_preimages.len {
-        let c_bytes = *c_preimages.ptr.add(i);
-        let slice = std::slice::from_raw_parts(c_bytes.ptr, c_bytes.len);
-        let data = slice.to_vec();
-        let hash = Keccak256::digest(&data);
-        (*mach).add_preimage(hash.into(), data)
-    }
+    c_preimage: CByteArray,
+) -> c_int {
+    let slice = std::slice::from_raw_parts(c_preimage.ptr, c_preimage.len);
+    let data = slice.to_vec();
+    let hash = Keccak256::digest(&data);
+    (*mach).add_preimage(hash.into(), data);
+    0
 }
 
 #[no_mangle]

@@ -63,14 +63,14 @@ type BlockChallengeBackend struct {
 	endPosition            uint64
 	startGs                GoGlobalState
 	endGs                  GoGlobalState
-	inboxTracker           MessageReader
+	inboxTracker           InboxTrackerInterface
 	tooFarStartsAtPosition uint64
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
-func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker MessageReader, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
+func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
 	if err != nil {
@@ -93,7 +93,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 
 	var startMsgCount uint64
 	if startGs.Batch > 0 {
-		_, startMsgCount, _, err = inboxTracker.GetBatchMetadata(startGs.Batch - 1)
+		startMsgCount, err = inboxTracker.GetBatchMessageCount(startGs.Batch - 1)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
@@ -113,7 +113,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if endGs.Batch <= startGs.Batch {
 		return nil, errors.New("challenge didn't advance batch")
 	}
-	_, lastMsgCount, _, err := inboxTracker.GetBatchMetadata(endGs.Batch - 1)
+	lastMsgCount, err := inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
 	}
@@ -152,7 +152,7 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, m
 		//   - messageCount(high) >= msgCount
 		//   - messageCount(low-1) < msgCount
 		mid := (low + high) / 2
-		_, batchMsgCount, _, err := b.inboxTracker.GetBatchMetadata(mid)
+		batchMsgCount, err := b.inboxTracker.GetBatchMessageCount(mid)
 		if err != nil {
 			return 0, errors.Wrap(err, "failed to get batch metadata while binary searching")
 		}
@@ -176,7 +176,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 	}
 	var batchMsgCount uint64
 	if batch > 0 {
-		_, batchMsgCount, _, err = b.inboxTracker.GetBatchMetadata(batch - 1)
+		batchMsgCount, err = b.inboxTracker.GetBatchMessageCount(batch - 1)
 		if err != nil {
 			return GoGlobalState{}, err
 		}

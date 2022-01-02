@@ -50,7 +50,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), C.struct_GlobalState{}, C.struct_CMultipleByteArrays{})
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)))
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
@@ -252,4 +252,16 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 	} else {
 		return nil
 	}
+}
+
+func (m *ArbitratorMachine) AddPreimages(preimages map[common.Hash][]byte) error {
+	for _, val := range preimages {
+		cbyte := CreateCByteArray(val)
+		status := C.arbitrator_add_preimage(m.ptr, cbyte)
+		DestroyCByteArray(cbyte)
+		if status != 0 {
+			return errors.New("failed to add sequencer inbox message")
+		}
+	}
+	return nil
 }

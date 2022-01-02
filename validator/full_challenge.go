@@ -17,6 +17,7 @@ import (
 )
 
 type FullChallengeManager struct {
+	txStreamer            TransactionStreamerInterface
 	rootChallengeAddr     common.Address
 	isExecutionChallenge  bool
 	challenge             *ChallengeManager
@@ -31,7 +32,7 @@ type FullChallengeManager struct {
 
 func NewFullChallengeManager(
 	ctx context.Context,
-	inboxTracker MessageReader,
+	inboxTracker InboxTrackerInterface,
 	blockchain *core.BlockChain,
 	l1Client bind.ContractBackend,
 	auth *bind.TransactOpts,
@@ -104,6 +105,21 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		}
 		blockNumU64 := blockNumber.Uint64()
 		blockHeader := m.blockchain.GetHeaderByNumber(blockNumU64)
+		machine, err := GetZeroStepMachine(ctx)
+		if err != nil {
+			return err
+		}
+		return errors.New("TODO")
+		message, err := m.txStreamer.GetMessage(blockNumU64 - 1)
+		if err != nil {
+			return err
+		}
+		nextHeader := m.blockchain.GetHeaderByNumber(blockNumU64 + 1)
+		preimages, _, _, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
+		if err != nil {
+			return err
+		}
+		machine.AddPreimages(preimages)
 		globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
 		if err != nil {
 			return err

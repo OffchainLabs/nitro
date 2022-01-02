@@ -6,46 +6,6 @@ package validator
 #include "arbitrator.h"
 #include <stdlib.h>
 
-// same as arbitrator defines, but without constant pointers
-struct TempByteArray {
-  uint8_t *ptr;
-  uintptr_t len;
-};
-
-CMultipleByteArrays CreateMultipleCByteArrays(uintptr_t num) {
-	CMultipleByteArrays retval = {malloc(sizeof(struct TempByteArray) * num), num};
-	return retval;
-}
-
-int CopyCByteToMultiple(CMultipleByteArrays multiple, uintptr_t index, CByteArray cbyte) {
-	if (multiple.len < index) {
-		return -1;
-	}
-	if (!multiple.ptr) {
-		return -2;
-	}
-	struct TempByteArray *tempPtr = (struct TempByteArray *)&multiple.ptr[index];
-	tempPtr->ptr = (uint8_t *)cbyte.ptr;
-	tempPtr->len = cbyte.len;
-	return 0;
-}
-
-struct TempByteArray TempByteFromMultiple(CMultipleByteArrays multiple, uintptr_t index) {
-	struct TempByteArray res;
-	res.len = 0;
-
-	if (multiple.len < index) {
-		return res;
-	}
-	if (!multiple.ptr) {
-		return res;
-	}
-	struct TempByteArray *tempPtr = (struct TempByteArray *)&multiple.ptr[index];
-	res.ptr = tempPtr->ptr;
-	res.len = tempPtr->len;
-	return res;
-}
-
 char **PrepareStringList(intptr_t num) {
 	char** res = malloc(sizeof(char*) * num);
 	if (! res) {
@@ -60,21 +20,10 @@ void AddToStringList(char** list, int index, char* val) {
 */
 import "C"
 import (
-	"encoding/binary"
-	"os"
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
 )
-
-func AllocateMultipleCByteArrays(length int) C.CMultipleByteArrays {
-	return C.CreateMultipleCByteArrays(C.uintptr_t(length))
-}
-
-// Does not clone / take ownership of data
-func UpdateCByteArrayInMultiple(array C.CMultipleByteArrays, index int, cbyte C.CByteArray) {
-	C.CopyCByteToMultiple(array, C.uintptr_t(index), cbyte)
-}
 
 func CreateCByteArray(input []byte) C.CByteArray {
 	return C.CByteArray{
@@ -125,29 +74,4 @@ func FreeCStringList(arrPtr **C.char, size int) {
 		C.free(unsafe.Pointer(ptr))
 	}
 	C.free(unsafe.Pointer(arrPtr))
-}
-
-// single file with multiple values, each prefixed with it's size
-func CMultipleByteArrayToFile(cMulti C.CMultipleByteArrays, path string) error {
-	bufNum := int(cMulti.len)
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	for i := 0; i < bufNum; i++ {
-		cTempByte := C.TempByteFromMultiple(cMulti, C.uintptr_t(i))
-		data := C.GoBytes(unsafe.Pointer(cTempByte.ptr), C.int(cTempByte.len))
-		lenbytes := make([]byte, 8)
-		binary.LittleEndian.PutUint64(lenbytes, uint64(cTempByte.len))
-		_, err := file.Write(lenbytes)
-		if err != nil {
-			return err
-		}
-		_, err = file.Write(data)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }

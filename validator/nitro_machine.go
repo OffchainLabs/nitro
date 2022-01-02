@@ -69,9 +69,7 @@ func createZeroStepMachineInternal() {
 	cModuleList := CreateCStringList(moduleList)
 	cBinPath := C.CString(filepath.Join(StaticNitroMachineConfig.RootPath, StaticNitroMachineConfig.ProverBinPath))
 
-	cZeroPreimages := C.CMultipleByteArrays{}
-	cZeroPreimages.len = 0
-	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)), C.GlobalState{}, cZeroPreimages)
+	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)))
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
 	zeroStepMachine.machine = machineFromPointer(baseMachine)
