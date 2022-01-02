@@ -17,7 +17,9 @@ import (
 )
 
 type FullChallengeManager struct {
+	inboxTracker          InboxTrackerInterface
 	txStreamer            TransactionStreamerInterface
+	inboxReader           InboxReaderInterface
 	rootChallengeAddr     common.Address
 	isExecutionChallenge  bool
 	challenge             *ChallengeManager
@@ -30,9 +32,15 @@ type FullChallengeManager struct {
 	targetNumMachines     int
 }
 
+type InboxReaderInterface interface {
+	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+}
+
 func NewFullChallengeManager(
 	ctx context.Context,
 	inboxTracker InboxTrackerInterface,
+	txStreamer TransactionStreamerInterface,
+	inboxReader InboxReaderInterface,
 	blockchain *core.BlockChain,
 	l1Client bind.ContractBackend,
 	auth *bind.TransactOpts,
@@ -53,6 +61,9 @@ func NewFullChallengeManager(
 		return nil, err
 	}
 	manager := &FullChallengeManager{
+		inboxTracker:          inboxTracker,
+		txStreamer:            txStreamer,
+		inboxReader:           inboxReader,
 		rootChallengeAddr:     challengeAddr,
 		isExecutionChallenge:  false,
 		challenge:             blockChallengeManager,
@@ -109,13 +120,12 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if err != nil {
 			return err
 		}
-		return errors.New("TODO")
-		message, err := m.txStreamer.GetMessage(blockNumU64 - 1)
+		message, err := m.txStreamer.GetMessage(blockNumU64)
 		if err != nil {
 			return err
 		}
 		nextHeader := m.blockchain.GetHeaderByNumber(blockNumU64 + 1)
-		preimages, _, _, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
 		if err != nil {
 			return err
 		}
@@ -124,7 +134,20 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if err != nil {
 			return err
 		}
-		execBackend, err := NewNitroChallengeBackend(ctx, globalState, m.targetNumMachines, nil)
+		machine.SetGlobalState(globalState)
+		if hasDelayedMsg {
+			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+			if err != nil {
+				return err
+			}
+			machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+		}
+		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, globalState.Batch)
+		if err != nil {
+			return err
+		}
+		machine.AddSequencerInboxMessage(globalState.Batch, batchBytes)
+		execBackend, err := NewExecutionChallengeBackend(machine, m.targetNumMachines, nil)
 		if err != nil {
 			return err
 		}

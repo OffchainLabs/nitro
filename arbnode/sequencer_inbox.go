@@ -83,6 +83,7 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 
 type SequencerInboxBatch struct {
 	BlockHash         common.Hash
+	BlockNumber       uint64
 	SequenceNumber    uint64
 	BeforeInboxAcc    common.Hash
 	AfterInboxAcc     common.Hash
@@ -159,6 +160,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
+				BlockNumber:       log.BlockNumber,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
 				AfterInboxAcc:     parsedLog.AfterAcc,
@@ -182,6 +184,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
+				BlockNumber:       log.BlockNumber,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
 				AfterInboxAcc:     parsedLog.AfterAcc,

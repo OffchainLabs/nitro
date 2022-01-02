@@ -354,3 +354,21 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	}
 	return msg.Header.RequestId.Big(), nil
 }
+
+func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+	metadata, err := r.tracker.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	blockNum := big.NewInt(0).SetUint64(metadata.L1Block)
+	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
+	if err != nil {
+		return nil, err
+	}
+	for _, batch := range seqBatches {
+		if batch.SequenceNumber == seqNum {
+			return batch.Serialize(ctx, r.client)
+		}
+	}
+	return nil, errors.New("sequencer batch not found")
+}

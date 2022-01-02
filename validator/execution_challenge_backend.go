@@ -39,10 +39,6 @@ func NewExecutionChallengeBackend(initialMachine MachineInterface, targetNumMach
 	}, nil
 }
 
-func NewNitroChallengeBackend(ctx context.Context, initialGlobalState GoGlobalState, targetNumMachines int, machineCache *MachineCache) (*ExecutionChallengeBackend, error) {
-	return nil, errors.New("TODO")
-}
-
 func (b *ExecutionChallengeBackend) getMachineAt(ctx context.Context, stepCount uint64) (MachineInterface, error) {
 	if b.machineCache == nil {
 		mach := b.initialMachine

@@ -198,7 +198,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = l2Node.InboxTracker.GetBatchMetadata(0)
+	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
 	if err != nil {
 		t.Fatal("failed to get batch metadata after adding batch:", err)
 	}
@@ -328,12 +328,12 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	confirmLatestBlock(ctx, t, l1Info, backend)
 
-	asserterManager, err := validator.NewFullChallengeManager(ctx, asserterL2.InboxTracker, asserterL2Blockchain, backend, asserter, challenge, 0, 4)
+	asserterManager, err := validator.NewFullChallengeManager(ctx, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterL2.InboxReader, asserterL2Blockchain, backend, asserter, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := validator.NewFullChallengeManager(ctx, challengerL2.InboxTracker, challengerL2Blockchain, backend, challenger, challenge, 0, 4)
+	challengerManager, err := validator.NewFullChallengeManager(ctx, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerL2.InboxReader, challengerL2Blockchain, backend, challenger, challenge, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
