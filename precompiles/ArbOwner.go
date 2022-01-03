@@ -9,7 +9,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
-// All calls to this precompile are authenticated by the OwnerPrecompile wrapper,
+// All calls to this precompile are authorized by the OwnerPrecompile wrapper,
 // which ensures only a chain owner can access these methods. For methods that
 // are safe for non-owners to call, see ArbOwnerOld
 type ArbOwner struct {

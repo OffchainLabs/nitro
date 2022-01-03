@@ -10,7 +10,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
-// The calls to this precompile are not authenticated.
+// The calls to this precompile do not require the sender be a chain owner.
 // For those that are, see ArbOwner
 type ArbOwnerPublic struct {
 	Address addr
