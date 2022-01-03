@@ -24,7 +24,7 @@ func TestGasPricingGasPool(t *testing.T) {
 	checkGasPools()
 
 	initialSub := int64(SmallGasPoolMax / 2)
-	st.notifyGasUsed(uint64(initialSub))
+	st.AddToGasPools(-initialSub)
 
 	expectedSmallGasPool -= initialSub
 	expectedGasPool -= initialSub
@@ -64,7 +64,7 @@ func TestGasPricingPoolPrice(t *testing.T) {
 	}
 
 	initialSub := int64(SmallGasPoolMax * 4)
-	st.notifyGasUsed(uint64(initialSub))
+	st.AddToGasPools(-initialSub)
 
 	if st.GasPriceWei().Cmp(big.NewInt(MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should not be changed")

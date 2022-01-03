@@ -31,14 +31,10 @@ func TestValidatorSimple(t *testing.T) {
 	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
 	err := l2info.Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
 		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
@@ -55,20 +51,14 @@ func TestValidatorSimple(t *testing.T) {
 	}
 
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	testDeadLine, _ := t.Deadline()
 	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
 		t.Fatal("did not validate all blocks")

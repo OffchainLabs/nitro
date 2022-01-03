@@ -3,7 +3,9 @@ package arbos
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 const SpeedLimitPerSecond = 1000000
@@ -16,16 +18,16 @@ const PerBlockGasLimit uint64 = 20 * 1000000
 const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
 
-func (state *ArbosState) notifyGasUsed(gas uint64) {
-	gasInt := int64(gas)
-	state.SetGasPool(state.GasPool() - gasInt)
-	state.SetSmallGasPool(state.SmallGasPool() - gasInt)
+func (state *ArbosState) AddToGasPools(gas int64) {
+	state.SetGasPool(util.SaturatingAdd(state.GasPool(), gas))
+	state.SetSmallGasPool(util.SaturatingAdd(state.SmallGasPool(), gas))
 }
 
 func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool := state.GasPool()
 	smallGasPool := state.SmallGasPool()
 	price := state.GasPriceWei()
+	maxPrice := state.MaxGasPriceWei()
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -91,6 +93,14 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 
 	if price.Cmp(minPrice) < 0 {
 		price = minPrice
+	}
+	if price.Cmp(maxPrice) > 0 {
+		log.Warn(
+			"ArbOS is trying to set a price that's unsafe for geth",
+			"attempted", price,
+			"used", maxPrice,
+		)
+		price = maxPrice
 	}
 	state.SetGasPool(gasPool)
 	state.SetSmallGasPool(smallGasPool)

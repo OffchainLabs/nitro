@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -47,7 +48,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(0),
+		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
 	}
 
 	db := rawdb.NewMemoryDatabase()
@@ -67,7 +68,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 }
 
 type blockTestState struct {
-	balances    map[common.Address]uint64
+	balances    map[common.Address]*big.Int
 	accounts    []common.Address
 	numMessages uint64
 	blockNumber uint64
@@ -83,10 +84,15 @@ func TestTransactionStreamer(t *testing.T) {
 	defer cancel()
 	inbox.Start(ctx)
 
+	maxExpectedGasCost := big.NewInt(arbos.InitialGasPriceWei)
+	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
+
+	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
+
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
-		balances: map[common.Address]uint64{
-			rewrittenOwnerAddress: params.Ether,
+		balances: map[common.Address]*big.Int{
+			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000)),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 0,
@@ -102,9 +108,9 @@ func TestTransactionStreamer(t *testing.T) {
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
 			state := blockStates[len(blockStates)-1]
-			newBalances := make(map[common.Address]uint64)
+			newBalances := make(map[common.Address]*big.Int)
 			for k, v := range state.balances {
-				newBalances[k] = v
+				newBalances[k] = new(big.Int).Set(v)
 			}
 			state.balances = newBalances
 
@@ -113,11 +119,10 @@ func TestTransactionStreamer(t *testing.T) {
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
 				source := state.accounts[rand.Int()%len(state.accounts)]
-				amount := uint64(rand.Int()) % state.balances[source]
-				if state.balances[source]-amount < 100000000 {
-					// Leave enough funds for gas
-					amount = 1
+				if state.balances[source].Cmp(minBalance) < 0 {
+					continue
 				}
+				amount := big.NewInt(int64(rand.Int() % 1000))
 				var dest common.Address
 				if j == 0 {
 					binary.LittleEndian.PutUint64(dest[:], uint64(len(state.accounts)))
@@ -129,9 +134,9 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(1))...)
+				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbos.InitialGasPriceWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
-				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(amount))...)
+				l2Message = append(l2Message, math.U256Bytes(amount)...)
 				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
@@ -142,14 +147,14 @@ func TestTransactionStreamer(t *testing.T) {
 					},
 					DelayedMessagesRead: 0,
 				})
-				state.balances[source] -= amount
-				state.balances[dest] += amount
+				state.balances[source].Sub(state.balances[source], amount)
+				if state.balances[dest] == nil {
+					state.balances[dest] = new(big.Int)
+				}
+				state.balances[dest].Add(state.balances[dest], amount)
 			}
 
-			err := inbox.AddMessages(state.numMessages, false, messages)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
 			state.numMessages += uint64(len(messages))
 			state.blockNumber += uint64(len(messages))
@@ -185,10 +190,18 @@ func TestTransactionStreamer(t *testing.T) {
 					t.Fatal("error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
+				if balance.Cmp(haveBalance) < 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
 		}
+	}
+}
+
+// Fail a test should an error occur
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(colors.Red, text, err, colors.Clear)
 	}
 }

@@ -46,10 +46,10 @@ var ChainConfig = &params.ChainConfig{
 	},
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := big.NewInt(params.InitialBaseFee / 100)
+	baseFee := OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(time.Now().Unix())
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -59,7 +59,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
-		baseFee = prevHeader.BaseFee
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
@@ -80,7 +79,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 		Extra:       []byte{},   // Unused
 		MixDigest:   [32]byte{}, // Unused
 		Nonce:       [8]byte{},  // Filled in later
-		BaseFee:     baseFee,    //TODO: parameter
+		BaseFee:     baseFee,
 	}
 }
 
@@ -106,7 +105,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info)
+	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
 
 	complete := types.Transactions{}
@@ -211,13 +210,14 @@ func ProduceBlock(
 		}
 	}
 
+	FinalizeBlock(header, complete, receipts, statedb)
+	header.Root = statedb.IntermediateRoot(true)
+
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
-
-	FinalizeBlock(header, complete, receipts, statedb)
 
 	return block, receipts
 }
@@ -227,6 +227,9 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state := OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
+
+		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
