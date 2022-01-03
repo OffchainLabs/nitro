@@ -149,7 +149,9 @@ func TestSequencerInboxReader(t *testing.T) {
 				var dest common.Address
 				if j == 0 && amount >= params.InitialBaseFee*1000000 {
 					name := accountName(len(state.accounts))
-					l2Info.GenerateAccount(name)
+					if !l2Info.HasAccount(name) {
+						l2Info.GenerateAccount(name)
+					}
 					dest = l2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
 				} else {

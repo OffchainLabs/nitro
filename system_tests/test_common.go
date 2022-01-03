@@ -49,8 +49,10 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 	}
 }
 
-func CreateTestL1BlockChain(t *testing.T, customGenesis core.GenesisAlloc) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
+func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	if l1info == nil {
+		l1info = NewL1TestInfo(t)
+	}
 	l1info.GenerateAccount("faucet")
 
 	stackConf := node.DefaultConfig
@@ -71,7 +73,8 @@ func CreateTestL1BlockChain(t *testing.T, customGenesis core.GenesisAlloc) (*Blo
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
 	l1Genesys = core.DeveloperGenesisBlock(0, arbos.PerBlockGasLimit, l1info.GetAddress("faucet"))
-	for acct, info := range customGenesis {
+	infoGenesys := l1info.GetGenesysAlloc()
+	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
 	}
 	nodeConf.Genesis = l1Genesys
@@ -135,7 +138,7 @@ func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 }
 
 func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
-	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
+	l2info := NewArbTestInfo(t)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
 	l2GenesysAlloc := make(map[common.Address]core.GenesisAccount)
@@ -196,6 +199,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
+		sequencerTxOpts.GasLimit = 4000000
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
