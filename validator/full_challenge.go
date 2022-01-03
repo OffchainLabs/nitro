@@ -116,7 +116,16 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		}
 		blockNumU64 := blockNumber.Uint64()
 		blockHeader := m.blockchain.GetHeaderByNumber(blockNumU64)
-		machine, err := GetZeroStepMachine(ctx)
+		initialmachine, err := GetZeroStepMachine(ctx)
+		if err != nil {
+			return err
+		}
+		machine := initialmachine.Clone()
+		globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
+		if err != nil {
+			return err
+		}
+		err = machine.SetGlobalState(globalState)
 		if err != nil {
 			return err
 		}
@@ -130,11 +139,6 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 			return err
 		}
 		machine.AddPreimages(preimages)
-		globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
-		if err != nil {
-			return err
-		}
-		machine.SetGlobalState(globalState)
 		if hasDelayedMsg {
 			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
 			if err != nil {

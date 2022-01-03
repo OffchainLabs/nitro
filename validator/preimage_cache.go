@@ -1,11 +1,5 @@
 package validator
 
-/*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
-#include "arbitrator.h"
-#include <stdlib.h>
-*/
-import "C"
 import (
 	"sync"
 	"sync/atomic"

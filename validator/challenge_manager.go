@@ -234,10 +234,10 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 			}
 			lastSegment := state.Segments[i-1]
 			if lastSegment.Position+1 == segment.Position {
-				log.Debug("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.Position)
+				log.Info("issuing one step proof", "challenge", m.challengeAddr, "startPosition", lastSegment.Position)
 				return m.backend.IssueOneStepProof(ctx, m.client, m.auth, m.challengeAddr, state, i-1)
 			} else {
-				log.Debug("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.Position, "endPosition", segment.Position)
+				log.Info("bisecting execution", "challenge", m.challengeAddr, "startPosition", lastSegment.Position, "endPosition", segment.Position)
 				return m.bisect(ctx, state, i-1)
 			}
 		}
