@@ -69,26 +69,11 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 }
 
 func (bc *BroadcastClient) Start(ctx context.Context) {
-
-	bc.ConnectInBackground(ctx)
-}
-
-func (bc *BroadcastClient) Connect(ctx context.Context) error {
-	err := bc.connect(ctx)
-	if err != nil {
-		return err
-	}
-
-	bc.startBackgroundReader(ctx)
-
-	return nil
-}
-
-func (bc *BroadcastClient) ConnectInBackground(ctx context.Context) {
 	go (func() {
 		for {
-			err := bc.Connect(ctx)
+			err := bc.connect(ctx)
 			if err == nil {
+				bc.startBackgroundReader(ctx)
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -102,7 +87,6 @@ func (bc *BroadcastClient) ConnectInBackground(ctx context.Context) {
 }
 
 func (bc *BroadcastClient) connect(ctx context.Context) error {
-
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
 		return nil

@@ -171,11 +171,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 
 	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second, nil)
 
-	// connect returns
-	err = broadcastClient.Connect(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	broadcastClient.Start(ctx)
 
 	// Client set to timeout connection at 2 seconds, and server set to send ping every 50 seconds,
 	// so at least one timeout/reconnect should happen after 4 seconds
