@@ -6,6 +6,7 @@ package arbosState
 
 import (
 	"math/big"
+	"sync"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
@@ -28,7 +29,8 @@ import (
 // efficient.
 //
 // Modifications to the ArbosState are written through to the underlying StateDB so that the StateDB always
-// has the definitive state, stored persistently.
+// has the definitive state, stored persistently. (Note that some tests use memory-backed StateDB's that aren't
+// persisted beyond the end of the test.)
 
 type ArbosState struct {
 	formatVersion  uint64
@@ -45,9 +47,13 @@ type ArbosState struct {
 	backingStorage *storage.Storage
 }
 
+var openArbosStatesMutex sync.Mutex
 var openArbosStates map[vm.StateDB]*ArbosState
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
+	openArbosStatesMutex.Lock()
+	defer openArbosStatesMutex.Unlock()
+
 	if openArbosStates == nil {
 		openArbosStates = make(map[vm.StateDB]*ArbosState)
 	}
@@ -78,14 +84,18 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	return ret
 }
 
-// See if we should upgrade the storage format. The format version is stored in location zero of our backing storage.
+// See if we should upgrade the storage format. The format version is stored at location zero of our backing storage.
 //
 // If we know how to upgrade from the observed storage version, we do so. We return true iff we upgraded.
 // It might be that yet another upgrade is possible, so if this returns true, the caller should call this again.
 //
-// Format version 0 means that we need to initialize the storage. (An uninitialized storage space will be zero-filled,
-// so it will be detected as being at version 0.) Upgrading from version 0 to version 1 is done by initializing the
-// storage, so version 1 is the first defined version.
+// If the latest version is N, then there must always be code to upgrade from every version less than N. Each
+// such upgrade must increase the version number by at least 1, so that a sequence of upgrades will converge on
+// the latest version.
+//
+// Because uninitialized storage space always returns 0 for all reads, we define format version 0 to mean that the
+// storage space is uninitialized. This uninitialized version 0 will cause an upgrade to version 1, which will
+// initialize the storage.
 //
 // During early development we sometimes change the definition of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the format will require defining a new version and providing

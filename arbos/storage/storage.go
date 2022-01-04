@@ -25,12 +25,12 @@ import (
 // them exist and contain zeroes.
 //
 // A storage space (represented by a Storage object) has a byte-slice storageKey which distinguishes it from other
-// storage spaces. The root Storage has storageKey of the empty string. A parent storage space can contain children,
+// storage spaces. The root Storage has its storageKey as the empty string. A parent storage space can contain children,
 // each with a distinct name. The storageKey of a child is keccak256(parent.storageKey, name). Note that two spaces
 // cannot have the same storageKey because that would imply a collision in keccak256.
 //
 // The contents of all storage spaces are stored in a single, flat key-value store that is implemented as the storage
-// of the fictional Ethereum account. The contents of key key, within a storage space with storageKey, are stored
+// of the fictional Ethereum account. The contents of key, within a storage space with storageKey, are stored
 // at location keccak256(storageKey, key) in the flat KVS. Two slots, whether in the same or different storage spaces,
 // cannot occupy the same location because that would imply a collision in keccak256.
 

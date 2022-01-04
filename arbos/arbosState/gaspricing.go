@@ -39,7 +39,9 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	secondsLeft := secondsElapsed
 	for secondsLeft > 0 {
 		if (gasPool == GasPoolMax) && (smallGasPool == SmallGasPoolMax) {
+			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
+				// price is already at the minimum, so no need to iterate further
 				state.SetGasPool(GasPoolMax)
 				state.SetSmallGasPool(SmallGasPoolMax)
 				state.SetGasPriceWei(minPrice)
@@ -107,7 +109,7 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	state.SetGasPriceWei(price)
 }
 
-func (state ArbosState) CurrentPerBlockGasLimit() uint64 {
+func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
 	pool := state.GasPool()
 	if pool < 0 {
 		return 0
