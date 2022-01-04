@@ -10,7 +10,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 )
 
@@ -151,10 +150,13 @@ func (retryable *Retryable) IncrementNumTries() uint64 {
 }
 
 func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {
-	// zero byte is included to prevent collision with a txId used by the Arbitrum Classic retryables API
-	asBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(asBytes, trySequenceNum)
-	return crypto.Keccak256Hash(ticketId.Bytes(), []byte{0}, asBytes)
+	// Since tickets & sequence numbers are assigned sequentially, each is expressible as a uint64.
+	// Relying on this, we can set the upper and lower 8 bytes for the ticket & sequence number, respectively.
+
+	bytes := make([]byte, 32)
+	binary.BigEndian.PutUint64(bytes[0:], ticketId.Big().Uint64())
+	binary.BigEndian.PutUint64(bytes[24:], trySequenceNum)
+	return common.BytesToHash(bytes)
 }
 
 func (retryable *Retryable) Beneficiary() common.Address {

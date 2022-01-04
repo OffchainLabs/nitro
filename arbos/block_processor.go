@@ -186,12 +186,10 @@ func ProduceBlock(
 			continue
 		}
 
-		gasLeft -= computeGas
-
 		snap := statedb.Snapshot()
-		statedb.Prepare(tx.Hash(), len(txes))
+		statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
-		// We've checked that the block can fit this message, so we'll use a pool that won't run out
+		gasLeft -= computeGas
 		gasPool := gethGas
 
 		receipt, err := core.ApplyTransaction(
@@ -238,13 +236,13 @@ func ProduceBlock(
 						RequestId: txLog.Topics[2],
 						From:      retryable.From(),
 						GasPrice:  gasPrice,
-						Gas:       common.BytesToHash(txLog.Data[8:40]).Big().Uint64(),
+						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
 						To:        retryable.To(),
 						Value:     retryable.Callvalue(),
 						Data:      retryable.Calldata(),
 					},
 					TicketId: ticketId,
-					RefundTo: common.BytesToAddress(txLog.Data[40:72]),
+					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
 				})
 
 				redeems = append(redeems, reedem)

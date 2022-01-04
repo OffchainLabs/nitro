@@ -142,7 +142,7 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	gasPrice := p.blockContext.BaseFee
 
@@ -178,5 +178,4 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
-	return nil
 }

@@ -19,12 +19,12 @@ type ArbRetryableTx struct {
 	Address                 addr
 	TicketCreated           func(mech, [32]byte)
 	LifetimeExtended        func(mech, [32]byte, huge)
-	RedeemScheduled         func(mech, [32]byte, [32]byte, uint64, huge, addr)
+	RedeemScheduled         func(mech, [32]byte, [32]byte, uint64, uint64, addr)
 	Redeemed                func(mech, [32]byte)
 	Canceled                func(mech, [32]byte)
 	TicketCreatedGasCost    func([32]byte) uint64
 	LifetimeExtendedGasCost func([32]byte, huge) uint64
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, huge, addr) uint64
+	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) uint64
 	RedeemedGasCost         func([32]byte) uint64
 	CanceledGasCost         func([32]byte) uint64
 }
@@ -113,9 +113,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, error) {
 
-	zero := big.NewInt(0)
-
-	eventCost := con.RedeemScheduledGasCost(ticketId, ticketId, 0, zero, c.caller)
+	eventCost := con.RedeemScheduledGasCost(ticketId, ticketId, 0, 0, c.caller)
 	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + eventCost); err != nil {
 		return common.Hash{}, err
 	}
@@ -132,7 +130,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	}
 	sequenceNum := retryable.IncrementNumTries()
 	redeemTxId := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
-	con.RedeemScheduled(evm, ticketId, redeemTxId, sequenceNum, big.NewInt(int64(c.gasLeft)), c.caller)
+	con.RedeemScheduled(evm, ticketId, redeemTxId, sequenceNum, c.gasLeft, c.caller)
 
 	// now donate all of the remaining gas to the retry
 	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs

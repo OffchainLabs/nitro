@@ -190,7 +190,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 
 	// check the receipt for the retry
-	retryTxId := retryables.TxIdForRedeemAttempt(*l2TxId, 0)
+	retryTxId := retryables.TxIdForRedeemAttempt(*l2TxId, 1)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
