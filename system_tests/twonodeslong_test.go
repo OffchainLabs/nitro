@@ -58,9 +58,8 @@ func TestTwoNodesLong(t *testing.T) {
 		l2info.PrepareTx("Faucet", "DelayedFaucet", 30000, delayedFaucetNeeds, nil),
 	})
 	delayedFaucetBalance, err := l2info.Client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
 		t.Fatalf("Unexpected balance, has %v, expects %v", delayedFaucetBalance, delayedFaucetNeeds)
 	}
@@ -141,21 +140,13 @@ func TestTwoNodesLong(t *testing.T) {
 	}
 
 	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1], time.Second*10)
-	if err != nil {
-		t.Fatal("Failed waiting for Tx on main node", "err", err)
-	}
+	Require(t, err, "Failed waiting for Tx on main node")
 	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
-	if err != nil {
-		t.Fatal("Failed waiting for Tx on secondary node", "err", err)
-	}
+	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	directBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DirectReceiver"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	delayedExpectd := new(big.Int).Mul(fundsPerDelayed, big.NewInt(delayedTransfers))
 	directExpectd := new(big.Int).Mul(fundsPerDirect, big.NewInt(directTransfers))
 	if (delayedBalance.Cmp(delayedExpectd) != 0) || (directBalance.Cmp(directExpectd) != 0) {
@@ -168,9 +159,7 @@ func TestTwoNodesLong(t *testing.T) {
 	}
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 		testDeadLine, deadlineExist := t.Deadline()
 		var timeout time.Duration
 		if deadlineExist {

@@ -14,11 +14,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 func TestEvents(t *testing.T) {
+	AllowDebugPrecompiles = true
 
 	blockNumber := 1024
 
@@ -29,6 +31,7 @@ func TestEvents(t *testing.T) {
 			BlockNumber: big.NewInt(int64(blockNumber)),
 			GasLimit:    ^uint64(0),
 		},
+		ProcessingHook: &arbos.TxProcessor{},
 	}
 
 	debugContractAddr := common.HexToAddress("ff")
@@ -71,7 +74,7 @@ func TestEvents(t *testing.T) {
 		^uint64(0),
 		&evm,
 	)
-	check(t, err, "call failed")
+	Require(t, err, "call failed")
 
 	burned := ^uint64(0) - gasLeft
 	if burned != 3768 {
@@ -174,11 +177,5 @@ func TestEventCosts(t *testing.T) {
 
 	if tests != expected {
 		t.Fatal("Events are mispriced\nexpected:", expected, "\nbut have:", tests)
-	}
-}
-
-func check(t *testing.T, err error, str ...string) {
-	if err != nil {
-		t.Fatal(err, str)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/util/colors"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -64,10 +65,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	b := NewBroadcaster(broadcasterSettings)
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Start(ctx))
 	defer b.Stop()
 
 	dummyMessage := arbstate.MessageWithMetadata{}
@@ -126,4 +124,12 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(1,
 		"1 message after duplicates and already seen messages"))
 
+}
+
+// Fail a test should an error occur
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(colors.Red, text, err, colors.Clear)
+	}
 }
