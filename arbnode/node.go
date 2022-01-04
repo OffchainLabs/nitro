@@ -133,7 +133,7 @@ type Node struct {
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
-	if config.BatchPoster && config.Broadcaster {
+	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
 	}
 

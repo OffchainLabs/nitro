@@ -187,6 +187,10 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &arbnode.NodeConfigL1Test)
+}
+
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
 	addresses := TestDeployOnL1(t, ctx, l1info)
@@ -196,7 +200,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, &arbnode.NodeConfigL1Test, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,4 +230,38 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbno
 	}
 	l2info.Client = ClientForArbBackend(t, node.Backend)
 	return l2info, node
+}
+
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
+	nodeConf := arbnode.NodeConfigL1Test
+	nodeConf.BatchPoster = false
+	nodeConf.BlockValidator = blockValidator
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, &nodeConf)
+}
+
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+	l1rpcClient, err := l1stack.Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l1client := ethclient.NewClient(l1rpcClient)
+	l2stack, err := arbnode.CreateDefaultStack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = node.Start(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2client := ClientForArbBackend(t, node.Backend)
+	return l2client, node
 }
