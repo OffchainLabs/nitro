@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	retryable := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if retryable != nil {
@@ -17,7 +18,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	originalTimestamp := state.LastTimestampSeen()
 	newTimestamp := originalTimestamp + 42
 	state.SetLastTimestampSeen(newTimestamp)
@@ -37,7 +38,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 }
 
 func TestRetryableCreate(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := state.LastTimestampSeen() + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})

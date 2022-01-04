@@ -1,4 +1,4 @@
-package arbos
+package arbosState
 
 import (
 	"math/big"
@@ -23,7 +23,7 @@ func (state *ArbosState) AddToGasPools(gas int64) {
 	state.SetSmallGasPool(util.SaturatingAdd(state.SmallGasPool(), gas))
 }
 
-func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
+func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool := state.GasPool()
 	smallGasPool := state.SmallGasPool()
 	price := state.GasPriceWei()
@@ -107,7 +107,7 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	state.SetGasPriceWei(price)
 }
 
-func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
+func (state ArbosState) CurrentPerBlockGasLimit() uint64 {
 	pool := state.GasPool()
 	if pool < 0 {
 		return 0

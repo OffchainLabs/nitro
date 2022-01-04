@@ -7,6 +7,7 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
 	"strconv"
@@ -49,7 +50,7 @@ var ChainConfig = &params.ChainConfig{
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := OpenArbosState(statedb).GasPriceWei()
+	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(time.Now().Unix())
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -73,7 +74,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.St
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    PerBlockGasLimit,
+		GasLimit:    arbosState.PerBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -110,7 +111,7 @@ func ProduceBlock(
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	gasLeft := PerBlockGasLimit
+	gasLeft := arbosState.PerBlockGasLimit
 	gasPrice := header.BaseFee
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
@@ -132,7 +133,7 @@ func ProduceBlock(
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
-			pricing := OpenArbosState(statedb).L1PricingState()
+			pricing := arbosState.OpenArbosState(statedb).L1PricingState()
 			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
 			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
 			if posterCostInL2Gas.IsUint64() {
@@ -224,7 +225,7 @@ func ProduceBlock(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
 

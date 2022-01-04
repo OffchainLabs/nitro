@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package arbosState
 
 import (
 	"math/big"
@@ -20,6 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
+// ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
+// The ArbOSState is a cache of data that is stored permanently in the stateDB.
+
 type ArbosState struct {
 	formatVersion  uint64
 	gasPool        *storage.StorageBackedInt64
@@ -35,13 +38,22 @@ type ArbosState struct {
 	backingStorage *storage.Storage
 }
 
+var openArbosStates map[vm.StateDB]*ArbosState
+
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
+	if openArbosStates == nil {
+		openArbosStates = make(map[vm.StateDB]*ArbosState)
+	}
+	if state, exists := openArbosStates[stateDB]; exists {
+		return state
+	}
+
 	backingStorage := storage.NewGeth(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {
 	}
 
-	return &ArbosState{
+	ret := &ArbosState{
 		backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64(),
 		nil,
 		nil,
@@ -55,7 +67,17 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		backingStorage.OpenStorageBackedUint64(util.UintToHash(uint64(timestampKey))),
 		backingStorage,
 	}
+	openArbosStates[stateDB] = ret
+	return ret
 }
+
+// See if we should upgrade the storage format. The format version is stored in location zero of our backing storage.
+//
+// If we know how to upgrade from that storage version, we do so. We return true iff we upgraded.
+// It might be that another upgrade is possible, so if this returns true, the caller should call this again.
+//
+// Uninitialized storage is zero-filled, so format version 0 means that we need to initialize the storage. That
+// initialization is represented an upgrade from format version 0 to format version 1.
 
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 	formatVersion := backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64()
@@ -110,6 +132,10 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
 	backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(1))
+}
+
+func (state *ArbosState) BackingStorage() *storage.Storage {
+	return state.backingStorage
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -220,6 +246,6 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 	if val > ts {
 		delta := val - ts
 		state.timestamp.Set(val)
-		state.notifyGasPricerThatTimeElapsed(delta)
+		state.NotifyGasPricerThatTimeElapsed(delta)
 	}
 }
