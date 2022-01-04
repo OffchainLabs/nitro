@@ -36,13 +36,13 @@ type ArbosState struct {
 	formatVersion  uint64
 	gasPool        *storage.StorageBackedInt64
 	smallGasPool   *storage.StorageBackedInt64
-	gasPriceWei    *big.Int
-	maxGasPriceWei *big.Int // the max gas price ArbOS can set without breaking geth
+	gasPriceWei    *storage.StorageBackedBigInt
+	maxGasPriceWei *storage.StorageBackedBigInt
 	l1PricingState *l1pricing.L1PricingState
-	retryableState *retryables.RetryableState
+	retryableState *retryables.RetryableState //TODO: make this cache-free
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
-	sendMerkle     *merkleAccumulator.MerkleAccumulator
+	sendMerkle     *merkleAccumulator.MerkleAccumulator //TODO: make this cache-free
 	timestamp      *storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
@@ -196,27 +196,15 @@ func (state *ArbosState) SetSmallGasPool(val int64) {
 	state.smallGasPool.Set(val)
 }
 
-func (state *ArbosState) GasPriceWei() *big.Int {
-	if state.gasPriceWei == nil {
-		state.gasPriceWei = state.backingStorage.GetByUint64(uint64(gasPriceKey)).Big()
-	}
-	return state.gasPriceWei
+func (state *ArbosState) GasPriceWei() *storage.StorageBackedBigInt {
+	return state.backingStorage.OpenStorageBackedBigInt(util.UintToHash(uint64(gasPriceKey)))
 }
 
-func (state *ArbosState) SetGasPriceWei(val *big.Int) {
-	state.gasPriceWei = val
-	state.backingStorage.SetByUint64(uint64(gasPriceKey), common.BigToHash(val))
-}
-
-func (state *ArbosState) MaxGasPriceWei() *big.Int {
-	if state.maxGasPriceWei == nil {
-		state.maxGasPriceWei = state.backingStorage.GetByUint64(uint64(maxPriceKey)).Big()
-	}
-	return state.maxGasPriceWei
+func (state *ArbosState) MaxGasPriceWei() *storage.StorageBackedBigInt { // the max gas price ArbOS can set without breaking geth
+	return state.backingStorage.OpenStorageBackedBigInt(util.UintToHash(uint64(maxPriceKey)))
 }
 
 func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
-	state.maxGasPriceWei = val
 	state.backingStorage.SetByUint64(uint64(maxPriceKey), common.BigToHash(val))
 }
 

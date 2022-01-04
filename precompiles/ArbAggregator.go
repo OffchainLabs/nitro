@@ -25,7 +25,7 @@ func (con ArbAggregator) GetDefaultAggregator(c ctx, evm mech) (addr, error) {
 	if err := c.burn(params.SloadGas); err != nil {
 		return addr{}, err
 	}
-	return arbosState.OpenArbosState(evm.StateDB).L1PricingState().DefaultAggregator(), nil
+	return arbosState.OpenArbosState(evm.StateDB).L1PricingState().DefaultAggregator().Get(), nil
 }
 
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (addr, bool, error) {
@@ -60,7 +60,7 @@ func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) 
 	if err := c.burn(params.SstoreSetGas); err != nil {
 		return err
 	}
-	arbosState.OpenArbosState(evm.StateDB).L1PricingState().SetDefaultAggregator(newDefault)
+	arbosState.OpenArbosState(evm.StateDB).L1PricingState().DefaultAggregator().Set(newDefault)
 	return nil
 }
 

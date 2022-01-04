@@ -26,8 +26,8 @@ func (state *ArbosState) AddToGasPools(gas int64) {
 func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool := state.GasPool()
 	smallGasPool := state.SmallGasPool()
-	price := state.GasPriceWei()
-	maxPrice := state.MaxGasPriceWei()
+	price := state.GasPriceWei().Get()
+	maxPrice := state.MaxGasPriceWei().Get()
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -44,7 +44,7 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 				// price is already at the minimum, so no need to iterate further
 				state.SetGasPool(GasPoolMax)
 				state.SetSmallGasPool(SmallGasPoolMax)
-				state.SetGasPriceWei(minPrice)
+				state.GasPriceWei().Set(minPrice)
 				return
 			} else {
 				if secondsLeft >= 83 {
@@ -106,7 +106,7 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	}
 	state.SetGasPool(gasPool)
 	state.SetSmallGasPool(smallGasPool)
-	state.SetGasPriceWei(price)
+	state.GasPriceWei().Set(price)
 }
 
 func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {

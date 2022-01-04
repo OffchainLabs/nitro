@@ -140,32 +140,25 @@ func (store *Storage) DeleteBytes() {
 type StorageBackedInt64 struct {
 	storage *Storage
 	offset  common.Hash
-	cache   *int64
 }
 
 func (sto *Storage) OpenStorageBackedInt64(offset common.Hash) *StorageBackedInt64 {
-	return &StorageBackedInt64{sto, offset, nil}
+	return &StorageBackedInt64{sto, offset}
 }
 
 func (sbu *StorageBackedInt64) Get() int64 {
-	if sbu.cache == nil {
-		raw := sbu.storage.Get(sbu.offset).Big()
-		if raw.Bit(255) != 0 {
-			raw = new(big.Int).SetBit(raw, 255, 0)
-			raw = new(big.Int).Neg(raw)
-		}
-		if !raw.IsInt64() {
-			panic("expected int64 compatible value in storage")
-		}
-		i := raw.Int64()
-		sbu.cache = &i
+	raw := sbu.storage.Get(sbu.offset).Big()
+	if raw.Bit(255) != 0 {
+		raw = new(big.Int).SetBit(raw, 255, 0)
+		raw = new(big.Int).Neg(raw)
 	}
-	return *sbu.cache
+	if !raw.IsInt64() {
+		panic("expected int64 compatible value in storage")
+	}
+	return raw.Int64()
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) {
-	i := value
-	sbu.cache = &i
 	var bigValue *big.Int
 	if value >= 0 {
 		bigValue = big.NewInt(value)
@@ -178,28 +171,55 @@ func (sbu *StorageBackedInt64) Set(value int64) {
 type StorageBackedUint64 struct {
 	storage *Storage
 	offset  common.Hash
-	cache   *uint64
 }
 
 func (sto *Storage) OpenStorageBackedUint64(offset common.Hash) *StorageBackedUint64 {
-	return &StorageBackedUint64{sto, offset, nil}
+	return &StorageBackedUint64{sto, offset}
 }
 
 func (sbu *StorageBackedUint64) Get() uint64 {
-	if sbu.cache == nil {
-		raw := sbu.storage.Get(sbu.offset).Big()
-		if !raw.IsUint64() {
-			panic("expected uint64 compatible value in storage")
-		}
-		i := raw.Uint64()
-		sbu.cache = &i
+	raw := sbu.storage.Get(sbu.offset).Big()
+	if !raw.IsUint64() {
+		panic("expected uint64 compatible value in storage")
 	}
-	return *sbu.cache
+	return raw.Uint64()
 }
 
 func (sbu *StorageBackedUint64) Set(value uint64) {
-	i := value
-	sbu.cache = &i
 	bigValue := new(big.Int).SetUint64(value)
 	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+}
+
+type StorageBackedBigInt struct {
+	storage *Storage
+	offset  common.Hash
+}
+
+func (sto *Storage) OpenStorageBackedBigInt(offset common.Hash) *StorageBackedBigInt {
+	return &StorageBackedBigInt{sto, offset}
+}
+
+func (sbbi *StorageBackedBigInt) Get() *big.Int {
+	return sbbi.storage.Get(sbbi.offset).Big()
+}
+
+func (sbbi *StorageBackedBigInt) Set(val *big.Int) {
+	sbbi.storage.Set(sbbi.offset, common.BigToHash(val))
+}
+
+type StorageBackedAddress struct {
+	storage *Storage
+	offset  common.Hash
+}
+
+func (sto *Storage) OpenStorageBackedAddress(offset common.Hash) *StorageBackedAddress {
+	return &StorageBackedAddress{sto, offset}
+}
+
+func (sba *StorageBackedAddress) Get() common.Address {
+	return common.BytesToAddress(sba.storage.Get(sba.offset).Bytes())
+}
+
+func (sba *StorageBackedAddress) Set(val common.Address) {
+	sba.storage.Set(sba.offset, common.BytesToHash(val.Bytes()))
 }

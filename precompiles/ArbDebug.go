@@ -42,5 +42,5 @@ func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 }
 
 func (con ArbDebug) GetL2GasPrice(c ctx, evm mech) (huge, error) {
-	return arbosState.OpenArbosState(evm.StateDB).GasPriceWei(), nil
+	return arbosState.OpenArbosState(evm.StateDB).GasPriceWei().Get(), nil
 }

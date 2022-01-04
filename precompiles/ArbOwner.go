@@ -37,7 +37,6 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 }
 
 func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
-	state := arbosState.OpenArbosState(evm.StateDB)
-	state.SetGasPriceWei(priceInWei)
+	arbosState.OpenArbosState(evm.StateDB).GasPriceWei().Set(priceInWei)
 	return nil
 }

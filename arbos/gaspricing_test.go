@@ -60,26 +60,26 @@ func TestGasPricingGasPool(t *testing.T) {
 func TestGasPricingPoolPrice(t *testing.T) {
 	st := arbosState.OpenArbosStateForTesting(t)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
 		t.Fatal("wrong initial gas price")
 	}
 
 	initialSub := int64(arbosState.SmallGasPoolMax * 4)
 	st.AddToGasPools(-initialSub)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should not be changed")
 	}
 
 	st.NotifyGasPricerThatTimeElapsed(20)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) <= 0 {
+	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) <= 0 {
 		t.Fatal("price should be above minimum")
 	}
 
 	st.NotifyGasPricerThatTimeElapsed(500)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
 		t.Fatal("price should return to minimum")
 	}
 }

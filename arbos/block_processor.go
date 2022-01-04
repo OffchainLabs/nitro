@@ -50,7 +50,7 @@ var ChainConfig = &params.ChainConfig{
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
+	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei().Get()
 	timestamp := uint64(time.Now().Unix())
 	coinbase := common.Address{}
 	if l1info != nil {
