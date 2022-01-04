@@ -83,14 +83,24 @@ func TestLyingSequencer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// The truthful sequencer
 	nodeConfigA := arbnode.NodeConfigL1Test
-	nodeConfigA.BatchPoster = false
-	nodeConfigA.Broadcaster = true
-	nodeConfigA.BroadcasterConfig = broadcasterConfigTest
+	nodeConfigA.BatchPoster = true
+	nodeConfigA.Broadcaster = false
 	l2infoA, nodeA, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
+	l2clientA := l2infoA.Client
 
+	// The lying sequencer
+	nodeConfigC := arbnode.NodeConfigL1Test
+	nodeConfigC.BatchPoster = false
+	nodeConfigC.Broadcaster = true
+	nodeConfigC.BroadcasterConfig = broadcasterConfigTest
+	l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &nodeConfigC)
+
+	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.NodeConfigL1Test
+	nodeConfigB.Broadcaster = false
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = broadcastClientConfigTest
@@ -100,14 +110,15 @@ func TestLyingSequencer(t *testing.T) {
 	l2infoA.GenerateAccount("RealUser")
 
 	fraudTx := l2infoA.PrepareTx("Owner", "FraudUser", 30000, big.NewInt(1e12), nil)
-	//	realTx := l2infoA.PrepareTx("Owner", "RealUser", 30000, big.NewInt(1e12), nil)
+	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
+	realTx := l2infoA.PrepareTx("Owner", "RealUser", 30000, big.NewInt(1e12), nil)
 
-	err := l2infoA.Client.SendTransaction(ctx, fraudTx)
+	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2infoA.Client, fraudTx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,41 +136,35 @@ func TestLyingSequencer(t *testing.T) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	/* TODO figure out why can't create 3rd node like this
-	nodeConfigC := arbnode.NodeConfigL1Test
-	nodeConfigC.BatchPoster = true
-	//l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &nodeConfigC)
-	Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &nodeConfigC)
+	// Send the real transaction to client A
+	err = l2clientA.SendTransaction(ctx, realTx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		err = l2clientC.SendTransaction(ctx, realTx)
-		if err != nil {
-			t.Fatal(err)
-		}
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, realTx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		_, err = arbnode.EnsureTxSucceeded(ctx, l2clientC, realTx)
-		if err != nil {
-			t.Fatal(err)
-		}
+	// Node B should get the transaction after NodeC posts a batch.
+	_, err = arbnode.WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l2balanceFraudAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l2balanceFraudAcct.Cmp(big.NewInt(0)) != 0 {
+		t.Fatal("Unexpected balance (fraud acct should be empty) was:", l2balanceFraudAcct)
+	}
 
-			// Node B should get the transaction after NodeC posts a batch.
-			_, err = arbnode.WaitForTx(ctx, l2clientC, fraudTx.Hash(), time.Second*5)
-			if err != nil {
-				t.Fatal(err)
-			}
-			l2balanceFraudAcct, err := l2clientC.BalanceAt(ctx, l2infoA.GetAddress("FraudUser"), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if l2balance.Cmp(big.NewInt(0)) != 0 {
-				t.Fatal("Unexpected balance (fraud acct should be empty) was:", l2balanceFraudAcct)
-			}
-
-			l2balanceRealAcct, err := l2clientC.BalanceAt(ctx, l2infoA.GetAddress("RealUser"), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-				t.Fatal("Unexpected balance:", l2balanceRealAcct)
-			}
-	*/
+	l2balanceRealAcct, err := l2clientB.BalanceAt(ctx, l2infoA.GetAddress("RealUser"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balanceRealAcct)
+	}
 }
