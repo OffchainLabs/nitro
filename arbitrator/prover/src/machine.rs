@@ -926,7 +926,8 @@ impl Machine {
             let argv_ptr = name_str_ptr + 8;
             assert!(main_module.internals_offset != 0);
             let main_module_idx = u32::try_from(main_module_idx).unwrap();
-            let main_module_store32 = HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
+            let main_module_store32 =
+                HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
             // Write "js\0" to name_str_ptr, to match what the actual JS environment does
             entrypoint.push(HirInstruction::I32Const(name_str_ptr));
             entrypoint.push(HirInstruction::I32Const(0x736a)); // b"js\0"
