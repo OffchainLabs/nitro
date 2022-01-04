@@ -12,6 +12,7 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/precompiles"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -31,14 +32,10 @@ var broadcastClientConfigTest = broadcastclient.BroadcastClientConfig{
 }
 
 func TestSequencerFeed(t *testing.T) {
-	/*
-		glogger, _ := log.Root().GetHandler().(*log.GlogHandler)
-		glogger.Verbosity(log.LvlTrace)
-		defer func() { glogger.Verbosity(log.LvlInfo) }()
-	*/
+	precompiles.AllowDebugPrecompiles = true
+	defer func() { precompiles.AllowDebugPrecompiles = false }()
 
 	seqNodeConfig := arbnode.NodeConfigL2Test
-	seqNodeConfig.BatchPoster = true
 	seqNodeConfig.Broadcaster = true
 	seqNodeConfig.BroadcasterConfig = broadcasterConfigTest
 
@@ -48,8 +45,8 @@ func TestSequencerFeed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info1, _ := CreateTestL2WithConfig(t, ctx, &seqNodeConfig)
-	l2info2, _ := CreateTestL2WithConfig(t, ctx, &clientNodeConfig)
+	l2info1, _, _, _ := CreateTestL2WithConfig(t, ctx, &seqNodeConfig)
+	l2info2, _, _, _ := CreateTestL2WithConfig(t, ctx, &clientNodeConfig)
 
 	client1 := l2info1.Client
 	l2info1.GenerateAccount("User2")
@@ -57,23 +54,15 @@ func TestSequencerFeed(t *testing.T) {
 	tx := l2info1.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
 	err := client1.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, client1, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
-	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*15)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*5)
+	Require(t, err)
 	l2balance, err := l2info2.Client.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
