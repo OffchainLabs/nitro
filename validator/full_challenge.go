@@ -138,19 +138,28 @@ func (m *FullChallengeManager) checkForExecutionChallenge(ctx context.Context) e
 		if err != nil {
 			return err
 		}
-		machine.AddPreimages(preimages)
+		err = machine.AddPreimages(preimages)
+		if err != nil {
+			return err
+		}
 		if hasDelayedMsg {
 			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
 			if err != nil {
 				return err
 			}
-			machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+			if err != nil {
+				return err
+			}
 		}
 		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, globalState.Batch)
 		if err != nil {
 			return err
 		}
-		machine.AddSequencerInboxMessage(globalState.Batch, batchBytes)
+		err = machine.AddSequencerInboxMessage(globalState.Batch, batchBytes)
+		if err != nil {
+			return err
+		}
 		execBackend, err := NewExecutionChallengeBackend(machine, m.targetNumMachines, nil)
 		if err != nil {
 			return err

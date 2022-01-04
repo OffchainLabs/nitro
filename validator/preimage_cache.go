@@ -38,7 +38,7 @@ func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.H
 		actual, found := p.cacheMap.LoadOrStore(hash, newEntry)
 		var curEntry *preimageEntry
 		if found {
-			ok := true
+			var ok bool
 			curEntry, ok = actual.(*preimageEntry)
 			if !ok {
 				p.cacheMap.Store(hash, newEntry)

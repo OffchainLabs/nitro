@@ -115,6 +115,7 @@ func CreateChallenge(
 	return resultReceiver, challenge
 }
 
+//nolint:unused
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	txData, err := tx.MarshalBinary()
 	if err != nil {
@@ -128,6 +129,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	return err
 }
 
+//nolint:unused
 func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, isChallenger bool) {
 	ctx := context.Background()
 
@@ -178,6 +180,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	}
 }
 
+//nolint:unused
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbnode.L1Interface) {
 	for i := 0; i < 12; i++ {
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
@@ -186,6 +189,7 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
+//nolint:unused
 func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
