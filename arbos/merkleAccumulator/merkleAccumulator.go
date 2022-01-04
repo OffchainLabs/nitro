@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	util_math "github.com/offchainlabs/arbstate/util"
 )
 
@@ -24,7 +23,7 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
-	size := sto.GetByUint64(0).Big().Uint64()
+	size := sto.GetUint64ByUint64(0)
 	numPartials := CalcNumPartials(size)
 	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
 }
@@ -96,7 +95,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent
 	events := []MerkleTreeNodeEvent{}
 
 	if acc.backingStorage != nil {
-		acc.backingStorage.SetByUint64(0, util.UintToHash(acc.size))
+		acc.backingStorage.SetUint64ByUint64(0, acc.size)
 	}
 	level := uint64(0)
 	soFar := itemHash.Bytes()

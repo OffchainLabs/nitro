@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
@@ -84,7 +83,7 @@ func (rs *RetryableState) CreateRetryable(
 		calldata,
 	}
 	sto.SetByUint64(numTriesOffset, common.Hash{})
-	sto.SetByUint64(timeoutOffset, util.IntToHash(int64(timeout)))
+	sto.SetUint64ByUint64(timeoutOffset, timeout)
 	sto.SetByUint64(fromOffset, common.BytesToHash(from.Bytes()))
 	sto.SetByUint64(toOffset, common.BytesToHash(to.Bytes()))
 	sto.SetByUint64(callvalueOffset, common.BigToHash(callvalue))
@@ -122,7 +121,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
 	if retStorage.GetByUint64(timeoutOffset) == (common.Hash{}) {
 		return false
 	}
-	retStorage.SetByUint64(numTriesOffset, common.Hash{})
+	retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	retStorage.SetByUint64(timeoutOffset, common.Hash{})
 	retStorage.SetByUint64(fromOffset, common.Hash{})
 	retStorage.SetByUint64(toOffset, common.Hash{})
@@ -134,7 +133,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
 
 func (retryable *Retryable) NumTries() uint64 {
 	if retryable.numTries == nil {
-		numTries := retryable.backingStorage.GetByUint64(numTriesOffset).Big().Uint64()
+		numTries := retryable.backingStorage.GetUint64ByUint64(numTriesOffset)
 		retryable.numTries = &numTries
 	}
 	return *retryable.numTries
@@ -168,7 +167,7 @@ func (retryable *Retryable) Beneficiary() common.Address {
 
 func (retryable *Retryable) Timeout() uint64 {
 	if retryable.timeout == nil {
-		t := retryable.backingStorage.GetByUint64(timeoutOffset).Big().Uint64()
+		t := retryable.backingStorage.GetUint64ByUint64(timeoutOffset)
 		retryable.timeout = &t
 	}
 	return *retryable.timeout
@@ -214,7 +213,7 @@ func (retryable *Retryable) CalldataSize() uint64 { // efficiently gets size of 
 
 func (retryable *Retryable) SetTimeout(timeout uint64) {
 	retryable.timeout = &timeout
-	retryable.backingStorage.SetByUint64(timeoutOffset, util.IntToHash(int64(timeout)))
+	retryable.backingStorage.SetUint64ByUint64(timeoutOffset, timeout)
 }
 
 func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) bool {

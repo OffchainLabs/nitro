@@ -17,8 +17,8 @@ type Queue struct {
 }
 
 func InitializeQueue(sto *Storage) {
-	sto.SetByUint64(0, util.UintToHash(2))
-	sto.SetByUint64(1, util.UintToHash(2))
+	sto.SetUint64ByUint64(0, 2)
+	sto.SetUint64ByUint64(1, 2)
 }
 
 func OpenQueue(sto *Storage) *Queue {

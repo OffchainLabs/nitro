@@ -52,8 +52,16 @@ func (store *Storage) Get(key common.Hash) common.Hash {
 	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()))
 }
 
+func (store *Storage) GetUint64(key common.Hash) uint64 {
+	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes())).Big().Uint64()
+}
+
 func (store *Storage) GetByUint64(key uint64) common.Hash {
 	return store.Get(util.UintToHash(key))
+}
+
+func (store *Storage) GetUint64ByUint64(key uint64) uint64 {
+	return store.Get(util.UintToHash(key)).Big().Uint64()
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) {
@@ -83,7 +91,7 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 }
 
 func (store *Storage) WriteBytes(b []byte) {
-	store.SetByUint64(0, util.UintToHash(uint64(len(b))))
+	store.SetUint64ByUint64(0, uint64(len(b)))
 	offset := uint64(1)
 	for len(b) >= 32 {
 		store.SetByUint64(offset, common.BytesToHash(b[:32]))
@@ -94,7 +102,7 @@ func (store *Storage) WriteBytes(b []byte) {
 }
 
 func (store *Storage) GetBytes() []byte {
-	bytesLeft := store.GetByUint64(0).Big().Uint64()
+	bytesLeft := store.GetUint64ByUint64(0)
 	ret := []byte{}
 	offset := uint64(1)
 	for bytesLeft >= 32 {
@@ -107,11 +115,11 @@ func (store *Storage) GetBytes() []byte {
 }
 
 func (store *Storage) GetBytesSize() uint64 {
-	return store.GetByUint64(0).Big().Uint64()
+	return store.GetUint64ByUint64(0)
 }
 
 func (store *Storage) DeleteBytes() {
-	bytesLeft := store.GetByUint64(0).Big().Uint64()
+	bytesLeft := store.GetUint64ByUint64(0)
 	offset := uint64(1)
 	for bytesLeft > 0 {
 		store.SetByUint64(offset, common.Hash{})
