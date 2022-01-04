@@ -27,14 +27,10 @@ func TestTwoNodesSimple(t *testing.T) {
 	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
 	err := l2info.Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
 	time.Sleep(time.Millisecond * 100)
@@ -47,13 +43,11 @@ func TestTwoNodesSimple(t *testing.T) {
 	}
 
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}

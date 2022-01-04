@@ -56,15 +56,11 @@ func TestDelayInboxLong(t *testing.T) {
 		// adding multiple messages in the same AddLocal to get them in the same L1 block
 		errs := l1backend.TxPool().AddLocals(l1Txs)
 		for _, err := range errs {
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 		}
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
 		_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 	}
 
 	t.Log("Done sending", delayedMessages, "delayedMessages")
@@ -80,13 +76,9 @@ func TestDelayInboxLong(t *testing.T) {
 	}
 
 	_, err := arbnode.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l2balance.Cmp(big.NewInt(fundsPerDelayed*delayedMessages)) != 0 {
 		t.Fatal("Unexpected balance:", "balance", l2balance, "expected", fundsPerDelayed*delayedMessages)
 	}

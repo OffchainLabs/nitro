@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
-    collections::hash_map,
     convert::TryFrom,
     fs::File,
     io::{BufReader, BufWriter, Write},
@@ -614,68 +613,6 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = Box<dyn Fn(u64, u64, u64) -> Option<Vec<u8>>>;
-
-#[derive(Clone)]
-pub struct InboxReaderCached {
-    inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    inbox_reader: Arc<InboxReaderFn>,
-    context: u64,
-}
-
-impl Default for InboxReaderCached {
-    fn default() -> Self {
-        Self {
-            inbox_cache: Default::default(),
-            inbox_reader: Arc::new(
-                Box::new(|_: u64, _: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
-            ),
-            context: Default::default(),
-        }
-    }
-}
-
-impl InboxReaderCached {
-    pub fn create(
-        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        inbox_reader_fn: InboxReaderFn,
-        context: u64,
-    ) -> InboxReaderCached {
-        InboxReaderCached {
-            inbox_cache: inbox_cache,
-            inbox_reader: Arc::new(inbox_reader_fn),
-            context: context,
-        }
-    }
-
-    pub fn get_inbox_msg(
-        &mut self,
-        inbox_identifier: InboxIdentifier,
-        msg_num: u64,
-    ) -> Option<&[u8]> {
-        match self.inbox_cache.entry((inbox_identifier, msg_num)) {
-            hash_map::Entry::Vacant(entry) => {
-                let message = (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num)?;
-                Some(entry.insert(message))
-            }
-            hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
-        }
-    }
-
-    // gets inbox msg as a copy, without updating cache
-    // can be called on immutable object
-    pub fn get_inbox_msg_owned(
-        &self,
-        inbox_identifier: InboxIdentifier,
-        msg_num: u64,
-    ) -> Option<Vec<u8>> {
-        match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
-            Some(val) => Some(val.to_vec()),
-            None => (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num),
-        }
-    }
-}
-
 /// cbindgen:ignore
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -720,7 +657,7 @@ pub struct Machine {
     global_state: GlobalState,
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
-    inbox_reader: InboxReaderCached,
+    inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     preimages: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
 }
@@ -870,8 +807,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        inbox_reader_fn: InboxReaderFn,
+        inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         // `modules` starts out with the entrypoint module, which will be initialized later
@@ -1068,7 +1004,7 @@ impl Machine {
             global_state,
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
-            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
+            inbox_contents,
             preimages,
             initial_hash: Bytes32::default(),
         };
@@ -1694,9 +1630,7 @@ impl Machine {
                         "Bad inbox identifier"
                     );
                     let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
-                    if let Some(message) =
-                        self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num)
-                    {
+                    if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
                         let offset = usize::try_from(offset).unwrap();
                         let len = std::cmp::min(32, message.len().saturating_sub(offset));
                         let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -2051,9 +1985,8 @@ impl Machine {
                             .assume_u64();
                         let inbox_identifier =
                             argument_data_to_inbox(next_inst.argument_data).unwrap();
-                        if let Some(msg_data) = self
-                            .inbox_reader
-                            .get_inbox_msg_owned(inbox_identifier, msg_idx)
+                        if let Some(msg_data) =
+                            self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
                             data.extend(msg_data);
                         }
@@ -2083,8 +2016,8 @@ impl Machine {
         self.preimages.insert(key, val);
     }
 
-    pub fn set_inbox_reader_context(&mut self, context: u64) {
-        self.inbox_reader.context = context;
+    pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
+        self.inbox_contents.insert((identifier, index), data);
     }
 
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {

@@ -288,6 +288,13 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 			messages = messages[1:]
 			pos++
 		} else {
+			var dbMessageParsed arbstate.MessageWithMetadata
+			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
+			if err != nil {
+				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
+			} else {
+				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-read", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-read", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
+			}
 			reorg = true
 			break
 		}
@@ -340,7 +347,6 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 	for _, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        true,
 			DelayedMessagesRead: delayedMessagesRead,
 		})
 	}
@@ -374,14 +380,13 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 	}
 
 	if delayedMessagesRead != firstDelayedSeqNum {
-		return errors.New("attempted to insert delayed messages at incorrect position")
+		return fmt.Errorf("attempted to insert delayed messages at incorrect position got %d expected %d", firstDelayedSeqNum, delayedMessagesRead)
 	}
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        i == len(messages)-1,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
 		})
 	}
@@ -563,7 +568,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed getting records: %w", err)
 			}
-			s.validator.NewBlock(block, preimages, pos-1)
+			s.validator.NewBlock(block, lastBlockHeader, preimages)
 		}
 
 		lastBlockHeader = block.Header()

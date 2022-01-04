@@ -7,6 +7,8 @@ package precompiles
 import (
 	"math/big"
 
+	"github.com/offchainlabs/arbstate/arbos"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
@@ -20,6 +22,7 @@ type context struct {
 	caller      addr
 	gasSupplied uint64
 	gasLeft     uint64
+	txProcessor *arbos.TxProcessor
 }
 
 func (c *context) burn(amount uint64) error {

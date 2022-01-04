@@ -1,0 +1,19 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
+package colors
+
+var Red = "\033[31;1m"
+var Blue = "\033[34;1m"
+var Yellow = "\033[33;1m"
+var Pink = "\033[38;5;161;1m"
+var Mint = "\033[38;5;48;1m"
+var Grey = "\033[90m"
+
+var Lime = "\033[38;5;119;1m"
+var Lavender = "\033[38;5;183;1m"
+var Maroon = "\033[38;5;124;1m"
+var Orange = "\033[38;5;202;1m"
+
+var Clear = "\033[0;0m"
