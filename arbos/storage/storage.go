@@ -15,10 +15,29 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
+// Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
+// the stateDB as the storage of a fictional Ethereum account at address 0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.
+//
+// The storage is logically a tree of storage spaces which can be nested hierarchically, with each storage space
+// containing a key-value store with 256-bit keys and values. Uninitialized storage spaces and uninitialized keys
+// within initialized storage spaces are deemed to be filled with zeroes (consistent with the behavior of Ethereum
+// account storage). Logically, when a chain is launched, all possible storage spaces and all possible keys within
+// them exist and contain zeroes.
+//
+// A storage space (represented by a Storage object) has a byte-slice storageKey which distinguishes it from other
+// storage spaces. The root Storage has storageKey of the empty string. A parent storage space can contain children,
+// each with a distinct name. The storageKey of a child is keccak256(parent.storageKey, name). Note that two spaces
+// cannot have the same storageKey because that would imply a collision in keccak256.
+//
+// The contents of all storage spaces are stored in a single, flat key-value store that is implemented as the storage
+// of the fictional Ethereum account. The contents of key key, within a storage space with storageKey, are stored
+// at location keccak256(storageKey, key) in the flat KVS. Two slots, whether in the same or different storage spaces,
+// cannot occupy the same location because that would imply a collision in keccak256.
+
 type Storage struct {
-	account common.Address
-	db      vm.StateDB
-	key     []byte
+	account    common.Address
+	db         vm.StateDB
+	storageKey []byte
 }
 
 // Use a Geth database to create an evm key-value store
@@ -26,9 +45,9 @@ func NewGeth(statedb vm.StateDB) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
-		account: account,
-		db:      statedb,
-		key:     []byte{},
+		account:    account,
+		db:         statedb,
+		storageKey: []byte{},
 	}
 }
 
@@ -49,7 +68,7 @@ func NewMemoryBackedStateDB() vm.StateDB {
 }
 
 func (store *Storage) Get(key common.Hash) common.Hash {
-	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()))
+	return store.db.GetState(store.account, crypto.Keccak256Hash(store.storageKey, key.Bytes()))
 }
 
 func (store *Storage) GetByUint64(key uint64) common.Hash {
@@ -57,7 +76,7 @@ func (store *Storage) GetByUint64(key uint64) common.Hash {
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) {
-	store.db.SetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()), value)
+	store.db.SetState(store.account, crypto.Keccak256Hash(store.storageKey, key.Bytes()), value)
 }
 
 func (store *Storage) SetByUint64(key uint64, value common.Hash) {
@@ -74,7 +93,7 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 	return &Storage{
 		store.account,
 		store.db,
-		crypto.Keccak256(store.key, id),
+		crypto.Keccak256(store.storageKey, id),
 	}
 }
 
