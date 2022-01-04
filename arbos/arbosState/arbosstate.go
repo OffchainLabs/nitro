@@ -21,7 +21,14 @@ import (
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
-// The ArbOSState is a cache of data that is stored permanently in the stateDB.
+// An ArbosState object is a cache of data that is stored permanently in a StateDB. We ensure that there is
+// at most one ArbosState per StateDB so that caches don't become inconsistent.
+//
+// Portions of the ArbosState are lazily initialized, so that accesses that only touch some parts are
+// efficient.
+//
+// Modifications to the ArbosState are written through to the underlying StateDB so that the StateDB always
+// has the definitive state, stored persistently.
 
 type ArbosState struct {
 	formatVersion  uint64
@@ -73,12 +80,16 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 // See if we should upgrade the storage format. The format version is stored in location zero of our backing storage.
 //
-// If we know how to upgrade from that storage version, we do so. We return true iff we upgraded.
-// It might be that another upgrade is possible, so if this returns true, the caller should call this again.
+// If we know how to upgrade from the observed storage version, we do so. We return true iff we upgraded.
+// It might be that yet another upgrade is possible, so if this returns true, the caller should call this again.
 //
-// Uninitialized storage is zero-filled, so format version 0 means that we need to initialize the storage. That
-// initialization is represented an upgrade from format version 0 to format version 1.
-
+// Format version 0 means that we need to initialize the storage. (An uninitialized storage space will be zero-filled,
+// so it will be detected as being at version 0.) Upgrading from version 0 to version 1 is done by initializing the
+// storage, so version 1 is the first defined version.
+//
+// During early development we sometimes change the definition of version 1, for convenience. But as soon as we
+// start running long-lived chains, every change to the format will require defining a new version and providing
+// upgrade code.
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 	formatVersion := backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64()
 	switch formatVersion {
