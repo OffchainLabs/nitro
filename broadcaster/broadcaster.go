@@ -182,6 +182,10 @@ func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
 }
 
+func (b *Broadcaster) GetCachedMessageCount() int {
+	return b.catchupBuffer.GetMessageCount()
+}
+
 func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
