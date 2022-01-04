@@ -176,11 +176,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_EndOfBlock:
 		return nil, nil
 	case L1MessageType_L2FundedByL1:
-		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
-		if err != nil {
-			return nil, err
-		}
-		return types.Transactions{tx}, nil
+		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:
 		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
 		if err != nil {

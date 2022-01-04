@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"strconv"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -20,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/arbstate/util"
 )
 
 var ChainConfig = &params.ChainConfig{
@@ -55,7 +53,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.St
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
 	baseFee := OpenArbosState(statedb).GasPriceWei()
-	timestamp := uint64(time.Now().Unix())
+	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp.Uint64()
@@ -112,11 +110,6 @@ func ProduceBlock(
 
 	state := OpenArbosState(statedb)
 	gasLeft := state.CurrentPerBlockGasLimit()
-
-	if lastBlockHeader == nil {
-		state.timestamp.Set(uint64(time.Now().Unix()))
-	}
-
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
 
@@ -131,6 +124,7 @@ func ProduceBlock(
 	gethGas := core.GasPool(1 << 63)
 
 	for len(txes) > 0 || len(redeems) > 0 {
+		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		state := OpenArbosState(statedb)
 		retryableState := state.RetryableState()
@@ -149,8 +143,7 @@ func ProduceBlock(
 				// retryable was already deleted, so just refund the gas
 				retryGas := new(big.Int).SetUint64(retry.Gas)
 				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
-				refund := util.BigMulByFrac(gasGiven, 31, 32)
-				statedb.AddBalance(retry.RefundTo, refund)
+				statedb.AddBalance(retry.RefundTo, gasGiven)
 				continue
 			}
 		} else {
