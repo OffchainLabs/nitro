@@ -101,9 +101,9 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 	currentTime := evm.Context.Time.Uint64()
 	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
 	window := currentTime + retryables.RetryableLifetimeSeconds
-	success := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
-	if !success {
-		return big.NewInt(0), NotFoundError
+	err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
+	if err != nil {
+		return big.NewInt(0), err
 	}
 
 	newTimeout := retryableState.OpenRetryable(ticketId, currentTime).Timeout()

@@ -7,10 +7,12 @@ package retryables
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
@@ -112,7 +114,8 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 	if retryable == nil {
 		return 0
 	}
-	return 6*32 + retryable.CalldataSize()
+	calldata := 32 + 32*util.WordsForBytes(retryable.CalldataSize()) // length + contents
+	return 6*32 + calldata
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
@@ -218,17 +221,17 @@ func (retryable *Retryable) SetTimeout(timeout uint64) {
 	retryable.backingStorage.SetUint64ByUint64(timeoutOffset, timeout)
 }
 
-func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) bool {
+func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) error {
 	retryable := rs.OpenRetryable(ticketId, currentTimestamp)
 	if retryable == nil {
-		return false
+		return errors.New("ticketId not found")
 	}
 	timeout := retryable.Timeout()
 	if timeout > limitBeforeAdd {
-		return false
+		return errors.New("timeout too far into the future")
 	}
 	retryable.SetTimeout(timeout + timeToAdd)
-	return true
+	return nil
 }
 
 func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
