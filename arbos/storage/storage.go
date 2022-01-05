@@ -190,6 +190,23 @@ func (sbu *StorageBackedUint64) Set(value uint64) {
 	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
 }
 
+type MemoryBackedUint64 struct {
+	contents uint64
+}
+
+func (mbu *MemoryBackedUint64) Get() uint64 {
+	return mbu.contents
+}
+
+func (mbu *MemoryBackedUint64) Set(val uint64) {
+	mbu.contents = val
+}
+
+type WrappedUint64 interface {
+	Get() uint64
+	Set(uint64)
+}
+
 type StorageBackedBigInt struct {
 	storage *Storage
 	offset  common.Hash

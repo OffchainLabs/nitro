@@ -14,9 +14,8 @@ import (
 
 type MerkleAccumulator struct {
 	backingStorage *storage.Storage
-	size           uint64         // stored in backingStorage, slot 0, if backingStorage exists
-	numPartials    uint64         // not stored in the DB, but calculated from size
-	partials       []*common.Hash // nil means we haven't yet loaded it from backingStorage
+	size           storage.WrappedUint64
+	partials       []*common.Hash // nil if we are using backingStorage (in that case we access partials in backingStorage
 }
 
 func InitializeMerkleAccumulator(sto *storage.Storage) {
@@ -24,13 +23,12 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
-	size := sto.GetByUint64(0).Big().Uint64()
-	numPartials := CalcNumPartials(size)
-	return &MerkleAccumulator{sto, size, numPartials, make([]*common.Hash, numPartials)}
+	size := sto.OpenStorageBackedUint64(util.UintToHash(0))
+	return &MerkleAccumulator{sto, size, nil}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
-	return &MerkleAccumulator{nil, 0, 0, make([]*common.Hash, 0)}
+	return &MerkleAccumulator{nil, &storage.MemoryBackedUint64{}, make([]*common.Hash, 0)}
 }
 
 func CalcNumPartials(size uint64) uint64 {
@@ -46,32 +44,37 @@ func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) *Mer
 		}
 		levelSize *= 2
 	}
-	return &MerkleAccumulator{nil, size, uint64(len(partials)), partials}
+	mbu := &storage.MemoryBackedUint64{}
+	mbu.Set(size)
+	return &MerkleAccumulator{nil, mbu, partials}
 }
 
 func (acc *MerkleAccumulator) NonPersistentClone() *MerkleAccumulator {
-	partials := make([]*common.Hash, acc.numPartials)
-	for i := uint64(0); i < acc.numPartials; i++ {
+	numPartials := CalcNumPartials(acc.size.Get())
+	partials := make([]*common.Hash, numPartials)
+	for i := uint64(0); i < numPartials; i++ {
 		partials[i] = acc.getPartial(i)
 	}
-	return &MerkleAccumulator{nil, acc.size, acc.numPartials, partials}
+	mbu := &storage.MemoryBackedUint64{}
+	mbu.Set(acc.size.Get())
+	return &MerkleAccumulator{nil, mbu, partials}
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) *common.Hash {
-	if acc.partials[level] == nil {
-		if acc.backingStorage != nil {
-			h := acc.backingStorage.GetByUint64(2 + level)
-			acc.partials[level] = &h
-		} else {
+	if acc.backingStorage == nil {
+		if acc.partials[level] == nil {
 			h := common.Hash{}
 			acc.partials[level] = &h
 		}
+		return acc.partials[level]
+	} else {
+		ret := acc.backingStorage.GetByUint64(2 + level)
+		return &ret
 	}
-	return acc.partials[level]
 }
 
 func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
-	partials := make([]*common.Hash, acc.numPartials)
+	partials := make([]*common.Hash, CalcNumPartials(acc.size.Get()))
 	for i := range partials {
 		p := *acc.getPartial(uint64(i))
 		partials[i] = &p
@@ -80,28 +83,23 @@ func (acc *MerkleAccumulator) GetPartials() []*common.Hash {
 }
 
 func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
-	if level == acc.numPartials {
-		acc.numPartials++
+	if acc.backingStorage != nil {
+		acc.backingStorage.SetByUint64(2+level, *val)
+	} else if level == uint64(len(acc.partials)) {
 		acc.partials = append(acc.partials, val)
 	} else {
 		acc.partials[level] = val
 	}
-	if acc.backingStorage != nil {
-		acc.backingStorage.SetByUint64(2+level, *val)
-	}
 }
 
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
-	acc.size++
+	acc.size.Set(acc.size.Get() + 1)
 	events := []MerkleTreeNodeEvent{}
 
-	if acc.backingStorage != nil {
-		acc.backingStorage.SetByUint64(0, util.UintToHash(acc.size))
-	}
 	level := uint64(0)
 	soFar := itemHash.Bytes()
 	for {
-		if level == acc.numPartials {
+		if level == CalcNumPartials(acc.size.Get()-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
 			acc.setPartial(level, &h)
 			return events
@@ -116,23 +114,23 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent
 		h := common.Hash{}
 		acc.setPartial(level, &h)
 		level += 1
-		events = append(events, MerkleTreeNodeEvent{level, acc.size - 1, common.BytesToHash(soFar)})
+		events = append(events, MerkleTreeNodeEvent{level, acc.size.Get() - 1, common.BytesToHash(soFar)})
 	}
 }
 
 func (acc *MerkleAccumulator) Size() uint64 {
-	return acc.size
+	return acc.size.Get()
 }
 
 func (acc *MerkleAccumulator) Root() common.Hash {
-	if acc.size == 0 {
+	if acc.size.Get() == 0 {
 		return common.Hash{}
 	}
 
 	var hashSoFar *common.Hash
 	var capacityInHash uint64
 	capacity := uint64(1)
-	for level := uint64(0); level < acc.numPartials; level++ {
+	for level := uint64(0); level < CalcNumPartials(acc.size.Get()); level++ {
 		partial := acc.getPartial(level)
 		if *partial != (common.Hash{}) {
 			if hashSoFar == nil {
@@ -155,9 +153,8 @@ func (acc *MerkleAccumulator) Root() common.Hash {
 }
 
 func (acc *MerkleAccumulator) StateForExport() (size uint64, root common.Hash, partials []common.Hash) {
-	size = acc.size
 	root = acc.Root()
-	numPartials := acc.numPartials
+	numPartials := CalcNumPartials(acc.size.Get())
 	partials = make([]common.Hash, numPartials)
 	for i := uint64(0); i < numPartials; i++ {
 		partials[i] = *acc.getPartial(i)
