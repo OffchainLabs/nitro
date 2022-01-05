@@ -13,11 +13,11 @@ func TestGasPricingGasPool(t *testing.T) {
 
 	checkGasPools := func() {
 		t.Helper()
-		if st.SmallGasPool() != expectedSmallGasPool {
+		if st.SmallGasPool().Get() != expectedSmallGasPool {
 			Fail(t, "wrong small gas pool, expected", expectedSmallGasPool, "but got", st.SmallGasPool())
 		}
 
-		if st.GasPool() != expectedGasPool {
+		if st.GasPool().Get() != expectedGasPool {
 			Fail(t, "wrong gas pool, expected", expectedGasPool, "but got", st.GasPool())
 		}
 	}

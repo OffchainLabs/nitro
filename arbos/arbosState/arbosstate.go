@@ -151,32 +151,12 @@ func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.backingStorage.SetUint64ByUint64(uint64(versionKey), val)
 }
 
-func (state *ArbosState) GasPool() int64 {
-	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(uint64(gasPoolKey))
-	}
-	return state.gasPool.Get()
+func (state *ArbosState) GasPool() *storage.StorageBackedInt64 {
+	return state.gasPool
 }
 
-func (state *ArbosState) SetGasPool(val int64) {
-	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(uint64(gasPoolKey))
-	}
-	state.gasPool.Set(val)
-}
-
-func (state *ArbosState) SmallGasPool() int64 {
-	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolKey))
-	}
-	return state.smallGasPool.Get()
-}
-
-func (state *ArbosState) SetSmallGasPool(val int64) {
-	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolKey))
-	}
-	state.smallGasPool.Set(val)
+func (state *ArbosState) SmallGasPool() *storage.StorageBackedInt64 {
+	return state.smallGasPool
 }
 
 func (state *ArbosState) GasPriceWei() *storage.StorageBackedBigInt {

@@ -19,13 +19,13 @@ const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
 
 func (state *ArbosState) AddToGasPools(gas int64) {
-	state.SetGasPool(util.SaturatingAdd(state.GasPool(), gas))
-	state.SetSmallGasPool(util.SaturatingAdd(state.SmallGasPool(), gas))
+	state.GasPool().Set(util.SaturatingAdd(state.GasPool().Get(), gas))
+	state.SmallGasPool().Set(util.SaturatingAdd(state.SmallGasPool().Get(), gas))
 }
 
 func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
-	gasPool := state.GasPool()
-	smallGasPool := state.SmallGasPool()
+	gasPool := state.GasPool().Get()
+	smallGasPool := state.SmallGasPool().Get()
 	price := state.GasPriceWei().Get()
 	maxPrice := state.MaxGasPriceWei().Get()
 
@@ -42,8 +42,8 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
 				// price is already at the minimum, so no need to iterate further
-				state.SetGasPool(GasPoolMax)
-				state.SetSmallGasPool(SmallGasPoolMax)
+				state.GasPool().Set(GasPoolMax)
+				state.SmallGasPool().Set(SmallGasPoolMax)
 				state.GasPriceWei().Set(minPrice)
 				return
 			} else {
@@ -104,13 +104,13 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 		)
 		price = maxPrice
 	}
-	state.SetGasPool(gasPool)
-	state.SetSmallGasPool(smallGasPool)
+	state.GasPool().Set(gasPool)
+	state.SmallGasPool().Set(smallGasPool)
 	state.GasPriceWei().Set(price)
 }
 
 func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
-	pool := state.GasPool()
+	pool := state.GasPool().Get()
 	if pool < 0 {
 		return 0
 	} else if pool > int64(PerBlockGasLimit) {
