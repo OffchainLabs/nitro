@@ -153,8 +153,10 @@ func (store *Storage) ClearBytes() {
 	store.SetByUint64(0, common.Hash{})
 }
 
-// The conversions between common.Hash and big.Int that are provided by geth don't handle negative values cleanly.
-// This class hides that complexity.
+// Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
+//     for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
+//     Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
+//     so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
 type StorageBackedInt64 struct {
 	storage *Storage
 	offset  common.Hash
@@ -166,24 +168,14 @@ func (sto *Storage) OpenStorageBackedInt64(offset uint64) *StorageBackedInt64 {
 
 func (sbu *StorageBackedInt64) Get() int64 {
 	raw := sbu.storage.Get(sbu.offset).Big()
-	if raw.Bit(255) != 0 {
-		raw = new(big.Int).SetBit(raw, 255, 0)
-		raw = new(big.Int).Neg(raw)
+	if !raw.IsUint64() {
+		panic("invalid value found in StorageBackedInt64 storage")
 	}
-	if !raw.IsInt64() {
-		panic("expected int64 compatible value in storage")
-	}
-	return raw.Int64()
+	return int64(raw.Uint64()) // see implementation note above
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) {
-	var bigValue *big.Int
-	if value >= 0 {
-		bigValue = big.NewInt(value)
-	} else {
-		bigValue = new(big.Int).SetBit(big.NewInt(-value), 255, 1)
-	}
-	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+	sbu.storage.Set(sbu.offset, util.UintToHash(uint64(value))) // see implementation note above
 }
 
 type StorageBackedUint64 struct {
