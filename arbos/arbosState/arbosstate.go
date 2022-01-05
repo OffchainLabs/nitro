@@ -5,10 +5,8 @@
 package arbosState
 
 import (
-	"math/big"
-	"sync"
-
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -47,41 +45,26 @@ type ArbosState struct {
 	backingStorage *storage.Storage
 }
 
-var openArbosStatesMutex sync.Mutex
-var openArbosStates map[vm.StateDB]*ArbosState
-
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
-	openArbosStatesMutex.Lock()
-	defer openArbosStatesMutex.Unlock()
-
-	if openArbosStates == nil {
-		openArbosStates = make(map[vm.StateDB]*ArbosState)
-	}
-	if state, exists := openArbosStates[stateDB]; exists {
-		return state
-	}
-
 	backingStorage := storage.NewGeth(stateDB)
 
 	for tryStorageUpgrade(backingStorage) {
 	}
 
-	ret := &ArbosState{
+	return &ArbosState{
 		backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64(),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
+		backingStorage.OpenStorageBackedInt64(uint64(gasPoolKey)),
+		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolKey)),
+		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceKey)),
+		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceKey)),
+		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
+		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
+		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
+		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampKey)),
 		backingStorage,
 	}
-	openArbosStates[stateDB] = ret
-	return ret
 }
 
 // See if we should upgrade the storage format. The format version is stored at location zero of our backing storage.
