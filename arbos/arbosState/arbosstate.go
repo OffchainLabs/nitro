@@ -37,9 +37,9 @@ type ArbosState struct {
 	gasPool        *storage.StorageBackedInt64
 	smallGasPool   *storage.StorageBackedInt64
 	gasPriceWei    *storage.StorageBackedBigInt
-	maxGasPriceWei *storage.StorageBackedBigInt
+	maxGasPriceWei *storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 	l1PricingState *l1pricing.L1PricingState
-	retryableState *retryables.RetryableState //TODO: make this cache-free
+	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
