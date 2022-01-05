@@ -24,7 +24,7 @@ func Initialize(sto *storage.Storage) {
 }
 
 func Open(sto *storage.Storage) *AddressTable {
-	numItems := sto.OpenStorageBackedUint64(util.UintToHash(0))
+	numItems := sto.OpenStorageBackedUint64(0)
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 

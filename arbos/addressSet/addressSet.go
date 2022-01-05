@@ -26,7 +26,7 @@ func Initialize(sto *storage.Storage) {
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
-		sto.OpenStorageBackedUint64(util.UintToHash(0)),
+		sto.OpenStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
 	}
 }

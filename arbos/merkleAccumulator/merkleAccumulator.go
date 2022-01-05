@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	util_math "github.com/offchainlabs/arbstate/util"
 )
 
@@ -23,7 +22,7 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
-	size := sto.OpenStorageBackedUint64(util.UintToHash(0))
+	size := sto.OpenStorageBackedUint64(0)
 	return &MerkleAccumulator{sto, size, nil}
 }
 

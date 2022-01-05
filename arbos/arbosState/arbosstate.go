@@ -77,7 +77,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		nil,
 		nil,
 		nil,
-		backingStorage.OpenStorageBackedUint64(util.UintToHash(uint64(timestampKey))),
+		backingStorage.OpenStorageBackedUint64(uint64(timestampKey)),
 		backingStorage,
 	}
 	openArbosStates[stateDB] = ret
@@ -170,38 +170,38 @@ func (state *ArbosState) SetFormatVersion(val uint64) {
 
 func (state *ArbosState) GasPool() int64 {
 	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
+		state.gasPool = state.backingStorage.OpenStorageBackedInt64(uint64(gasPoolKey))
 	}
 	return state.gasPool.Get()
 }
 
 func (state *ArbosState) SetGasPool(val int64) {
 	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
+		state.gasPool = state.backingStorage.OpenStorageBackedInt64(uint64(gasPoolKey))
 	}
 	state.gasPool.Set(val)
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
 	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
+		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolKey))
 	}
 	return state.smallGasPool.Get()
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
 	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
+		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolKey))
 	}
 	state.smallGasPool.Set(val)
 }
 
 func (state *ArbosState) GasPriceWei() *storage.StorageBackedBigInt {
-	return state.backingStorage.OpenStorageBackedBigInt(util.UintToHash(uint64(gasPriceKey)))
+	return state.backingStorage.OpenStorageBackedBigInt(uint64(gasPriceKey))
 }
 
 func (state *ArbosState) MaxGasPriceWei() *storage.StorageBackedBigInt { // the max gas price ArbOS can set without breaking geth
-	return state.backingStorage.OpenStorageBackedBigInt(util.UintToHash(uint64(maxPriceKey)))
+	return state.backingStorage.OpenStorageBackedBigInt(uint64(maxPriceKey))
 }
 
 func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {

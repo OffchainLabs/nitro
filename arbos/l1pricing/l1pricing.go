@@ -5,7 +5,6 @@
 package l1pricing
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -45,8 +44,8 @@ func InitializeL1PricingState(sto *storage.Storage) {
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		sto.OpenStorageBackedAddress(util.UintToHash(defaultAggregatorAddressOffset)),
-		sto.OpenStorageBackedBigInt(util.UintToHash(l1GasPriceEstimateOffset)),
+		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
+		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
 		sto.OpenSubStorage(preferredAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),

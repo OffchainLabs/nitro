@@ -5,7 +5,6 @@
 package arbosState
 
 import (
-	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -39,7 +38,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 func TestStorageBackedInt64(t *testing.T) {
 	state := OpenArbosStateForTesting(t)
 	storage := state.backingStorage
-	offset := common.BigToHash(big.NewInt(7895463))
+	offset := uint64(7895463)
 
 	valuesToTry := []int64{0, 7, -7, 56487423567, -7586427647}
 

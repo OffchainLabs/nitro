@@ -40,7 +40,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	if retryable == nil {
 		return NotFoundError
 	}
-	if c.caller != retryable.Beneficiary() {
+	if c.caller != retryable.Beneficiary().Get() {
 		return errors.New("only the beneficiary may cancel a retryable")
 	}
 	retryableState.DeleteRetryable(ticketId)
@@ -57,7 +57,7 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (ad
 	if retryable == nil {
 		return common.Address{}, NotFoundError
 	}
-	return retryable.Beneficiary(), nil
+	return retryable.Beneficiary().Get(), nil
 }
 
 func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (huge, error) {
@@ -88,7 +88,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	if retryable == nil {
 		return big.NewInt(0), NotFoundError
 	}
-	return big.NewInt(int64(retryable.Timeout())), nil
+	return big.NewInt(int64(retryable.Timeout().Get())), nil
 }
 
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
@@ -106,7 +106,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 		return big.NewInt(0), err
 	}
 
-	newTimeout := retryableState.OpenRetryable(ticketId, currentTime).Timeout()
+	newTimeout := retryableState.OpenRetryable(ticketId, currentTime).Timeout().Get()
 	con.LifetimeExtended(evm, ticketId, big.NewInt(int64(newTimeout)))
 	return big.NewInt(int64(newTimeout)), nil
 }

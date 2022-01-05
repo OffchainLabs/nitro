@@ -109,7 +109,8 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 	}
 }
 
-func (store *Storage) WriteBytes(b []byte) {
+func (store *Storage) SetBytes(b []byte) {
+	store.ClearBytes()
 	store.SetUint64ByUint64(0, uint64(len(b)))
 	offset := uint64(1)
 	for len(b) >= 32 {
@@ -137,7 +138,7 @@ func (store *Storage) GetBytesSize() uint64 {
 	return store.GetUint64ByUint64(0)
 }
 
-func (store *Storage) DeleteBytes() {
+func (store *Storage) ClearBytes() {
 	bytesLeft := store.GetUint64ByUint64(0)
 	offset := uint64(1)
 	for bytesLeft > 0 {
@@ -149,17 +150,18 @@ func (store *Storage) DeleteBytes() {
 			bytesLeft -= 32
 		}
 	}
+	store.SetByUint64(0, common.Hash{})
 }
 
-// StorageBackedInt64 exists because the conversions between common.Hash and big.Int that is provided by
-//     go-ethereum don't handle negative values cleanly.  This class hides that complexity.
+// The conversions between common.Hash and big.Int that are provided by geth don't handle negative values cleanly.
+// This class hides that complexity.
 type StorageBackedInt64 struct {
 	storage *Storage
 	offset  common.Hash
 }
 
-func (sto *Storage) OpenStorageBackedInt64(offset common.Hash) *StorageBackedInt64 {
-	return &StorageBackedInt64{sto, offset}
+func (sto *Storage) OpenStorageBackedInt64(offset uint64) *StorageBackedInt64 {
+	return &StorageBackedInt64{sto, util.UintToHash(offset)}
 }
 
 func (sbu *StorageBackedInt64) Get() int64 {
@@ -189,8 +191,8 @@ type StorageBackedUint64 struct {
 	offset  common.Hash
 }
 
-func (sto *Storage) OpenStorageBackedUint64(offset common.Hash) *StorageBackedUint64 {
-	return &StorageBackedUint64{sto, offset}
+func (sto *Storage) OpenStorageBackedUint64(offset uint64) *StorageBackedUint64 {
+	return &StorageBackedUint64{sto, util.UintToHash(offset)}
 }
 
 func (sbu *StorageBackedUint64) Get() uint64 {
@@ -228,8 +230,8 @@ type StorageBackedBigInt struct {
 	offset  common.Hash
 }
 
-func (sto *Storage) OpenStorageBackedBigInt(offset common.Hash) *StorageBackedBigInt {
-	return &StorageBackedBigInt{sto, offset}
+func (sto *Storage) OpenStorageBackedBigInt(offset uint64) *StorageBackedBigInt {
+	return &StorageBackedBigInt{sto, util.UintToHash(offset)}
 }
 
 func (sbbi *StorageBackedBigInt) Get() *big.Int {
@@ -245,8 +247,8 @@ type StorageBackedAddress struct {
 	offset  common.Hash
 }
 
-func (sto *Storage) OpenStorageBackedAddress(offset common.Hash) *StorageBackedAddress {
-	return &StorageBackedAddress{sto, offset}
+func (sto *Storage) OpenStorageBackedAddress(offset uint64) *StorageBackedAddress {
+	return &StorageBackedAddress{sto, util.UintToHash(offset)}
 }
 
 func (sba *StorageBackedAddress) Get() common.Address {
@@ -255,4 +257,63 @@ func (sba *StorageBackedAddress) Get() common.Address {
 
 func (sba *StorageBackedAddress) Set(val common.Address) {
 	sba.storage.Set(sba.offset, common.BytesToHash(val.Bytes()))
+}
+
+type StorageBackedAddressOrNil struct {
+	storage *Storage
+	offset  common.Hash
+}
+
+var NilAddressRepresentation common.Hash
+
+func init() {
+	NilAddressRepresentation = common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 160))
+}
+
+func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) *StorageBackedAddressOrNil {
+	return &StorageBackedAddressOrNil{sto, util.UintToHash(offset)}
+}
+
+func (sba *StorageBackedAddressOrNil) Get() *common.Address {
+	asHash := sba.storage.Get(sba.offset)
+	if asHash == NilAddressRepresentation {
+		return nil
+	} else {
+		ret := common.BytesToAddress(sba.storage.Get(sba.offset).Bytes())
+		return &ret
+	}
+}
+
+func (sba *StorageBackedAddressOrNil) Set(val *common.Address) {
+	if val == nil {
+		sba.storage.Set(sba.offset, NilAddressRepresentation)
+	} else {
+		sba.storage.Set(sba.offset, common.BytesToHash(val.Bytes()))
+	}
+}
+
+type StorageBackedBytes struct {
+	storage *Storage
+}
+
+func (sto *Storage) OpenStorageBackedBytes(id []byte) *StorageBackedBytes {
+	return &StorageBackedBytes{
+		sto.OpenSubStorage(id),
+	}
+}
+
+func (sbb *StorageBackedBytes) Get() []byte {
+	return sbb.storage.GetBytes()
+}
+
+func (sbb *StorageBackedBytes) Set(val []byte) {
+	sbb.storage.SetBytes(val)
+}
+
+func (sbb *StorageBackedBytes) Clear() {
+	sbb.storage.ClearBytes()
+}
+
+func (sbb *StorageBackedBytes) Size() uint64 {
+	return sbb.storage.GetBytesSize()
 }
