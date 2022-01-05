@@ -39,7 +39,7 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 }
 
 type Retryable struct {
-	id             common.Hash // the retryable's ID is also the key that determines where it lives in storage
+	id             common.Hash // not backed by storage; this is the key that determines where it lives in storage
 	backingStorage *storage.Storage
 	numTries       *storage.StorageBackedUint64
 	timeout        *storage.StorageBackedUint64
