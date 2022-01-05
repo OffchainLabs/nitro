@@ -6,7 +6,9 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"strconv"
 	"testing"
 	"time"
 
@@ -16,32 +18,37 @@ import (
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
-var broadcasterConfigTest = wsbroadcastserver.BroadcasterConfig{
-	Addr:          "127.0.0.1",
-	IOTimeout:     5 * time.Second,
-	Port:          "9642",
-	Ping:          5 * time.Second,
-	ClientTimeout: 15 * time.Second,
-	Queue:         100,
-	Workers:       100,
+func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {
+	return &wsbroadcastserver.BroadcasterConfig{
+		Addr:          "127.0.0.1",
+		IOTimeout:     5 * time.Second,
+		Port:          strconv.Itoa(port),
+		Ping:          5 * time.Second,
+		ClientTimeout: 15 * time.Second,
+		Queue:         100,
+		Workers:       100,
+	}
 }
 
-var broadcastClientConfigTest = broadcastclient.BroadcastClientConfig{
-	URL:     "ws://localhost:9642/feed",
-	Timeout: 20 * time.Second,
+func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConfig {
+	return &broadcastclient.BroadcastClientConfig{
+		URL:     fmt.Sprintf("ws://localhost:%d/feed", port),
+		Timeout: 20 * time.Second,
+	}
 }
 
 func TestSequencerFeed(t *testing.T) {
 	precompiles.AllowDebugPrecompiles = true
 	defer func() { precompiles.AllowDebugPrecompiles = false }()
 
+	port := 9642
 	seqNodeConfig := arbnode.NodeConfigL2Test
 	seqNodeConfig.Broadcaster = true
-	seqNodeConfig.BroadcasterConfig = broadcasterConfigTest
+	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(port)
 
 	clientNodeConfig := arbnode.NodeConfigL2Test
 	clientNodeConfig.BroadcastClient = true
-	clientNodeConfig.BroadcastClientConfig = broadcastClientConfigTest
+	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -72,6 +79,8 @@ func TestLyingSequencer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	port := 9643
+
 	// The truthful sequencer
 	nodeConfigA := arbnode.NodeConfigL1Test
 	nodeConfigA.BatchPoster = true
@@ -84,7 +93,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC := arbnode.NodeConfigL1Test
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
-	nodeConfigC.BroadcasterConfig = broadcasterConfigTest
+	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(port)
 	l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &nodeConfigC)
 
 	// The client node, connects to lying sequencer's feed
@@ -92,7 +101,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.Broadcaster = false
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
-	nodeConfigB.BroadcastClientConfig = broadcastClientConfigTest
+	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
