@@ -11,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -41,7 +42,7 @@ type BroadcastClient struct {
 	conn      net.Conn
 
 	retryMutex *sync.Mutex
-	retryCount int
+	retryCount int64
 
 	retrying                        bool
 	shuttingDown                    bool
@@ -99,7 +100,6 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 
 	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
-		log.Warn("broadcast client unable to connect", "err", err)
 		return errors.Wrap(err, "broadcast client unable to connect")
 	}
 
@@ -132,7 +132,7 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
 				_ = bc.conn.Close()
-				bc.RetryConnect(ctx)
+				bc.retryConnect(ctx)
 				continue
 			}
 
@@ -168,14 +168,11 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 	}()
 }
 
-func (bc *BroadcastClient) GetRetryCount() int {
-	bc.retryMutex.Lock()
-	defer bc.retryMutex.Unlock()
-
-	return bc.retryCount
+func (bc *BroadcastClient) GetRetryCount() int64 {
+	return atomic.LoadInt64(&bc.retryCount)
 }
 
-func (bc *BroadcastClient) RetryConnect(ctx context.Context) {
+func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 	bc.retryMutex.Lock()
 	defer bc.retryMutex.Unlock()
 
@@ -189,7 +186,7 @@ func (bc *BroadcastClient) RetryConnect(ctx context.Context) {
 		case <-time.After(waitDuration):
 		}
 
-		bc.retryCount++
+		atomic.AddInt64(&bc.retryCount, 1)
 		err := bc.connect(ctx)
 		if err == nil {
 			bc.retrying = false
