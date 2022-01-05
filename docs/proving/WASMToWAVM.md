@@ -61,6 +61,6 @@ Finally, a WAVM `Return` is added, returning control flow to the caller.
 ## Floating point instructions
 
 A floating point library module must be present to translate floating point instructions.
-They are translated by bitcasting `f32` and `f64` arguments to `i32`s and `f64`s,
+They are translated by bitcasting `f32` and `f64` arguments to `i32`s and `i64`s,
 then a cross module call to the floating point library,
 and finally bitcasts of any return values from `i32`s and `i64`s to `f32`s and `f64`s.
