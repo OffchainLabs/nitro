@@ -1,3 +1,6 @@
+//go:build fullchallengetest
+// +build fullchallengetest
+
 //
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
@@ -115,7 +118,6 @@ func CreateChallenge(
 	return resultReceiver, challenge
 }
 
-//nolint:unused
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	txData, err := tx.MarshalBinary()
 	if err != nil {
@@ -129,7 +131,6 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 	return err
 }
 
-//nolint:unused
 func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, isChallenger bool) {
 	ctx := context.Background()
 
@@ -180,7 +181,6 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 	}
 }
 
-//nolint:unused
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbnode.L1Interface) {
 	for i := 0; i < 12; i++ {
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
@@ -189,7 +189,6 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-//nolint:unused
 func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
@@ -214,6 +213,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	rollupAddresses := TestDeployOnL1(t, ctx, l1Info)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
+	deployerTxOpts.GasLimit = 15_000_000
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
 	asserterTxOpts.GasLimit = 15_000_000
@@ -325,7 +325,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	for i := 0; i < 100; i++ {
 		var tx *types.Transaction
+		var currentCorrect bool
 		if i%2 == 0 {
+			currentCorrect = !asserterIsCorrect
 			tx, err = challengerManager.Act(ctx)
 			if err != nil {
 				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
@@ -338,6 +340,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Fatal("challenger didn't move")
 			}
 		} else {
+			currentCorrect = asserterIsCorrect
 			tx, err = asserterManager.Act(ctx)
 			if err != nil {
 				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
@@ -352,6 +355,10 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		}
 		_, err = arbnode.EnsureTxSucceeded(ctx, backend, tx)
 		if err != nil {
+			if !currentCorrect && strings.Contains(err.Error(), "BAD_SEQINBOX_MESSAGE") {
+				t.Log("challenge complete! Tx failed as expected:", err)
+				return
+			}
 			t.Fatal(err)
 		}
 
@@ -373,11 +380,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 }
 
 func TestFullChallengeAsserterIncorrect(t *testing.T) {
-	t.SkipNow()
 	runChallengeTest(t, false)
 }
 
 func TestFullChallengeAsserterCorrect(t *testing.T) {
-	t.SkipNow()
 	runChallengeTest(t, true)
 }

@@ -75,6 +75,10 @@ lint: .make/lint
 test-go: .make/test-go
 	@printf $(done)
 
+test-go-challenge: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
