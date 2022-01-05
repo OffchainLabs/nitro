@@ -76,11 +76,10 @@ func TestGasPricingPoolPrice(t *testing.T) {
 	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) <= 0 {
 		Fail(t, "price should be above minimum")
 	}
-}
 
-st.NotifyGasPricerThatTimeElapsed(500)
+	st.NotifyGasPricerThatTimeElapsed(500)
 
-if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
-Fail(t, "price should return to minimum")
-}
+	if st.GasPriceWei().Get().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+		Fail(t, "price should return to minimum")
+	}
 }

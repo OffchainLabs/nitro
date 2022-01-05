@@ -72,7 +72,7 @@ func (store *Storage) Get(key common.Hash) common.Hash {
 }
 
 func (store *Storage) GetUint64(key common.Hash) uint64 {
-	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes())).Big().Uint64()
+	return store.db.GetState(store.account, crypto.Keccak256Hash(store.storageKey, key.Bytes())).Big().Uint64()
 }
 
 func (store *Storage) GetByUint64(key uint64) common.Hash {

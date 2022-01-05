@@ -109,7 +109,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := OpenArbosState(statedb)
+	state := arbosState.OpenArbosState(statedb)
 	gasLeft := state.CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
@@ -127,7 +127,7 @@ func ProduceBlock(
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb)
 		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
@@ -228,7 +228,7 @@ func ProduceBlock(
 
 				ticketId := txLog.Topics[1]
 
-				retryableState = OpenArbosState(statedb).RetryableState()
+				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
 				retryable := retryableState.OpenRetryable(ticketId, time)
 
 				reedem := types.NewTx(&types.ArbitrumRetryTx{
