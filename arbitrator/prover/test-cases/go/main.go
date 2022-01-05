@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"os"
 	"runtime"
 	"time"
 
@@ -34,7 +36,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 }
 
 func main() {
-	println("start")
+	fmt.Printf("starting executable with %v arg(s): %v\n", len(os.Args), os.Args)
 	runtime.GC()
 	time.Sleep(time.Second)
 

@@ -21,7 +21,7 @@ type AddressSet struct {
 }
 
 func Initialize(sto *storage.Storage) {
-	sto.SetByUint64(0, util.UintToHash(0))
+	sto.SetUint64ByUint64(0, 0)
 }
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
@@ -69,7 +69,7 @@ func (aset *AddressSet) Add(addr common.Address) {
 
 func (aset *AddressSet) Remove(addr common.Address) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	slot := aset.byAddress.Get(addrAsHash).Big().Uint64()
+	slot := aset.byAddress.GetUint64(addrAsHash)
 	if slot == 0 {
 		return
 	}

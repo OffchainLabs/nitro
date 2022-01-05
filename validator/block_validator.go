@@ -352,6 +352,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		}
 		steps += count
 	}
+	if mach.IsErrored() {
+		panic("Machine entered errored state during attempted validation")
+	}
 	gsEnd := mach.GetGlobalState()
 
 	resBatch, resPosInBatch, resHash := ParseGlobalState(gsEnd)
@@ -585,6 +588,10 @@ func (v *BlockValidator) cacheBaseMachineUntilHostIo(ctx context.Context) error 
 	err = v.baseMachine.StepUntilHostIo(ctx)
 	if err != nil {
 		return err
+	}
+
+	if v.baseMachine.IsErrored() {
+		panic("Machine entered errored state while caching execution up to host io")
 	}
 
 	log.Info("saving initial machine cache", "hash", hash)

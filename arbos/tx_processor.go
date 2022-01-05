@@ -10,8 +10,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -26,6 +28,7 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
+	time         uint64
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
@@ -38,6 +41,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
+		time:         evm.Context.Time.Uint64(),
 		PosterFee:    new(big.Int),
 		posterGas:    0,
 	}
@@ -55,13 +59,44 @@ func (p *TxProcessor) getAggregator() *common.Address {
 	return nil
 }
 
-func (p *TxProcessor) InterceptMessage() bool {
-	if p.msg.From() != arbAddress {
+// returns whether message is a successful deposit
+func (p *TxProcessor) StartTxHook() bool {
+	// Changes to the statedb in this hook will be discarded should the tx later revert.
+	// Hence, modifications can be made with the assumption that the tx will succeed.
+
+	underlyingTx := p.msg.UnderlyingTransaction()
+	if underlyingTx == nil {
 		return false
 	}
-	// Message is deposit
-	p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
-	return true
+
+	switch tx := underlyingTx.GetInner().(type) {
+	case *types.ArbitrumDepositTx:
+		if p.msg.From() != arbAddress {
+			return false
+		}
+		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		return true
+	case *types.ArbitrumSubmitRetryableTx:
+		p.stateDB.AddBalance(tx.From, tx.DepositValue)
+
+		timeout := p.time + retryables.RetryableLifetimeSeconds
+
+		p.state.RetryableState().CreateRetryable(
+			p.time,
+			underlyingTx.Hash(),
+			timeout,
+			tx.From,
+			underlyingTx.To(),
+			underlyingTx.Value(),
+			tx.Beneficiary,
+			tx.Data,
+		)
+	case *types.ArbitrumRetryTx:
+		// another tx already burnt gas for this one
+		p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
+	}
+	return false
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
@@ -109,7 +144,7 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	gasPrice := p.blockContext.BaseFee
 
@@ -145,5 +180,4 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) error {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
-	return nil
 }

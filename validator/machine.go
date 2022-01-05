@@ -87,6 +87,11 @@ func (m *ArbitratorMachine) IsRunning() bool {
 	return C.arbitrator_get_status(m.ptr) == C.Running
 }
 
+func (m *ArbitratorMachine) IsErrored() bool {
+	defer runtime.KeepAlive(m)
+	return C.arbitrator_get_status(m.ptr) == C.Errored
+}
+
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	haveStep := m.GetStepCount()
 	if haveStep > requestedStep {

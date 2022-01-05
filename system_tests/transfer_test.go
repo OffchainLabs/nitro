@@ -34,6 +34,6 @@ func TestTransfer(t *testing.T) {
 	bal2, err := client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if bal2.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected recipient balance: ", bal2)
+		Fail(t, "Unexpected recipient balance: ", bal2)
 	}
 }
