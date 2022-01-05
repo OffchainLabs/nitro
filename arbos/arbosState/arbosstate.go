@@ -42,7 +42,7 @@ type ArbosState struct {
 	retryableState *retryables.RetryableState //TODO: make this cache-free
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
-	sendMerkle     *merkleAccumulator.MerkleAccumulator //TODO: make this cache-free
+	sendMerkle     *merkleAccumulator.MerkleAccumulator
 	timestamp      *storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
