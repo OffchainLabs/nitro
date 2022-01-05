@@ -15,13 +15,17 @@ use crate::{
 use digest::Digest;
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{
     borrow::Cow,
-    collections::hash_map,
     convert::TryFrom,
+    fs::File,
+    io::{BufReader, BufWriter, Write},
     num::Wrapping,
     ops::{Deref, DerefMut},
+    path::Path,
     sync::Arc,
 };
 
@@ -123,7 +127,7 @@ impl Function {
         );
         let code_merkle = Merkle::new(
             MerkleType::Instruction,
-            code.iter().map(|i| i.hash()).collect(),
+            code.par_iter().map(|i| i.hash()).collect(),
         );
 
         Function {
@@ -142,7 +146,7 @@ impl Function {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct StackFrame {
     return_ref: Value,
     locals: Vec<Value>,
@@ -553,7 +557,7 @@ impl Module {
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct GlobalState {
     pub bytes32_vals: [Bytes32; GLOBAL_STATE_BYTES32_NUM],
@@ -609,64 +613,35 @@ impl Drop for LazyModuleMerkle<'_> {
     }
 }
 
-pub type InboxReaderFn = Box<dyn Fn(u64, u64, u64) -> Option<Vec<u8>>>;
-
-#[derive(Clone)]
-pub struct InboxReaderCached {
-    inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-    inbox_reader: Arc<InboxReaderFn>,
-    context: u64,
-}
-
-impl InboxReaderCached {
-    pub fn create(
-        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        inbox_reader_fn: InboxReaderFn,
-        context: u64,
-    ) -> InboxReaderCached {
-        InboxReaderCached {
-            inbox_cache: inbox_cache,
-            inbox_reader: Arc::new(inbox_reader_fn),
-            context: context,
-        }
-    }
-
-    pub fn get_inbox_msg(
-        &mut self,
-        inbox_identifier: InboxIdentifier,
-        msg_num: u64,
-    ) -> Option<&[u8]> {
-        match self.inbox_cache.entry((inbox_identifier, msg_num)) {
-            hash_map::Entry::Vacant(entry) => {
-                let message = (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num)?;
-                Some(entry.insert(message))
-            }
-            hash_map::Entry::Occupied(entry) => Some(entry.into_mut()),
-        }
-    }
-
-    // gets inbox msg as a copy, without updating cache
-    // can be called on immutable object
-    pub fn get_inbox_msg_owned(
-        &self,
-        inbox_identifier: InboxIdentifier,
-        msg_num: u64,
-    ) -> Option<Vec<u8>> {
-        match self.inbox_cache.get(&(inbox_identifier, msg_num)) {
-            Some(val) => Some(val.to_vec()),
-            None => (self.inbox_reader)(self.context, inbox_identifier as u64, msg_num),
-        }
-    }
-}
-
 /// cbindgen:ignore
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum MachineStatus {
     Running,
     Finished,
     Errored,
     TooFar,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ModuleState<'a> {
+    globals: Cow<'a, Vec<Value>>,
+    memory: Cow<'a, Memory>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MachineState<'a> {
+    steps: u64, // Not part of machine hash
+    status: MachineStatus,
+    value_stack: Cow<'a, Vec<Value>>,
+    internal_stack: Cow<'a, Vec<Value>>,
+    block_stack: Cow<'a, Vec<usize>>,
+    frame_stack: Cow<'a, Vec<StackFrame>>,
+    modules: Vec<ModuleState<'a>>,
+    global_state: GlobalState,
+    pc: ProgramCounter,
+    stdio_output: Cow<'a, Vec<u8>>,
+    initial_hash: Bytes32,
 }
 
 #[derive(Clone)]
@@ -682,8 +657,9 @@ pub struct Machine {
     global_state: GlobalState,
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
-    inbox_reader: InboxReaderCached,
+    inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     preimages: HashMap<Bytes32, Vec<u8>>,
+    initial_hash: Bytes32,
 }
 
 fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -831,8 +807,7 @@ impl Machine {
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
-        inbox_cache: HashMap<(InboxIdentifier, u64), Vec<u8>>,
-        inbox_reader_fn: InboxReaderFn,
+        inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Machine {
         // `modules` starts out with the entrypoint module, which will be initialized later
@@ -842,21 +817,19 @@ impl Machine {
 
         for export in &bin.exports {
             if let ExportKind::Function(f) = export.kind {
-                let ty_idx = usize::try_from(f)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                    .unwrap();
-                let ty = bin.functions[ty_idx];
-                let ty = &bin.types[usize::try_from(ty).unwrap()];
-                let module = u32::try_from(modules.len() + libraries.len()).unwrap();
-                available_imports.insert(
-                    format!("env__wavm_guest_call__{}", export.name),
-                    AvailableImport {
-                        ty: ty.clone(),
-                        module,
-                        func: f,
-                    },
-                );
+                if let Some(ty_idx) = usize::try_from(f).unwrap().checked_sub(bin.imports.len()) {
+                    let ty = bin.functions[ty_idx];
+                    let ty = &bin.types[usize::try_from(ty).unwrap()];
+                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+                    available_imports.insert(
+                        format!("env__wavm_guest_call__{}", export.name),
+                        AvailableImport {
+                            ty: ty.clone(),
+                            module,
+                            func: f,
+                        },
+                    );
+                }
             }
         }
 
@@ -1019,7 +992,7 @@ impl Machine {
             ));
         }
 
-        Machine {
+        let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
             value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
@@ -1031,9 +1004,73 @@ impl Machine {
             global_state,
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
-            inbox_reader: InboxReaderCached::create(inbox_cache, inbox_reader_fn, 0),
+            inbox_contents,
             preimages,
+            initial_hash: Bytes32::default(),
+        };
+        mach.initial_hash = mach.hash();
+        mach
+    }
+
+    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+        let mut f = File::create(path)?;
+        let mut writer = BufWriter::new(&mut f);
+        let modules = self
+            .modules
+            .iter()
+            .map(|m| ModuleState {
+                globals: Cow::Borrowed(&m.globals),
+                memory: Cow::Borrowed(&m.memory),
+            })
+            .collect();
+        let state = MachineState {
+            steps: self.steps,
+            status: self.status,
+            value_stack: Cow::Borrowed(&self.value_stack),
+            internal_stack: Cow::Borrowed(&self.internal_stack),
+            block_stack: Cow::Borrowed(&self.block_stack),
+            frame_stack: Cow::Borrowed(&self.frame_stack),
+            modules,
+            global_state: self.global_state.clone(),
+            pc: self.pc,
+            stdio_output: Cow::Borrowed(&self.stdio_output),
+            initial_hash: self.initial_hash,
+        };
+        bincode::serialize_into(&mut writer, &state)?;
+        writer.flush()?;
+        drop(writer);
+        f.sync_data()?;
+        Ok(())
+    }
+
+    // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
+    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
+        let reader = BufReader::new(File::open(path)?);
+        let new_state: MachineState = bincode::deserialize_from(reader)?;
+        if self.initial_hash != new_state.initial_hash {
+            eyre::bail!(
+                "attempted to load deserialize machine with initial hash {} into machine with initial hash {}",
+                new_state.initial_hash, self.initial_hash,
+            );
         }
+        assert_eq!(self.modules.len(), new_state.modules.len());
+
+        // Start mutating the machine. We must not return an error past this point.
+        for (module, new_module_state) in self.modules.iter_mut().zip(new_state.modules.into_iter())
+        {
+            module.globals = new_module_state.globals.into_owned();
+            module.memory = new_module_state.memory.into_owned();
+        }
+        self.steps = new_state.steps;
+        self.status = new_state.status;
+        self.value_stack = new_state.value_stack.into_owned();
+        self.internal_stack = new_state.internal_stack.into_owned();
+        self.block_stack = new_state.block_stack.into_owned();
+        self.frame_stack = new_state.frame_stack.into_owned();
+        self.global_state = new_state.global_state;
+        self.pc = new_state.pc;
+        self.stdio_output = new_state.stdio_output.into_owned();
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1062,13 +1099,8 @@ impl Machine {
     }
 
     pub fn step_n(&mut self, n: u64) {
-        for x in 0..n {
+        for _ in 0..n {
             if self.is_halted() {
-                let remaining = n - x;
-                self.steps = self
-                    .steps
-                    .checked_add(remaining)
-                    .expect("Exceeded max uint64 steps");
                 break;
             }
             self.step();
@@ -1077,10 +1109,6 @@ impl Machine {
 
     pub fn step(&mut self) {
         if self.is_halted() {
-            self.steps = self
-                .steps
-                .checked_add(1)
-                .expect("Exceeded max uint64 steps");
             return;
         }
         // It's infeasible to overflow steps without halting
@@ -1609,9 +1637,7 @@ impl Machine {
                         "Bad inbox identifier"
                     );
                     let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
-                    if let Some(message) =
-                        self.inbox_reader.get_inbox_msg(inbox_identifier, msg_num)
-                    {
+                    if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
                         let offset = usize::try_from(offset).unwrap();
                         let len = std::cmp::min(32, message.len().saturating_sub(offset));
                         let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -1797,6 +1823,10 @@ impl Machine {
                 .expect("Failed to prove module"),
         );
 
+        if self.is_halted() {
+            return data;
+        }
+
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func];
@@ -1962,9 +1992,8 @@ impl Machine {
                             .assume_u64();
                         let inbox_identifier =
                             argument_data_to_inbox(next_inst.argument_data).unwrap();
-                        if let Some(msg_data) = self
-                            .inbox_reader
-                            .get_inbox_msg_owned(inbox_identifier, msg_idx)
+                        if let Some(msg_data) =
+                            self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
                             data.extend(msg_data);
                         }
@@ -1994,8 +2023,8 @@ impl Machine {
         self.preimages.insert(key, val);
     }
 
-    pub fn set_inbox_reader_context(&mut self, context: u64) {
-        self.inbox_reader.context = context;
+    pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
+        self.inbox_contents.insert((identifier, index), data);
     }
 
     pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {

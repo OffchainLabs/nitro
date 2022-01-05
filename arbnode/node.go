@@ -106,7 +106,7 @@ type NodeConfig struct {
 }
 
 var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, DefaultDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -228,7 +228,10 @@ func (n *Node) Start(ctx context.Context) error {
 		n.BatchPoster.Start(ctx)
 	}
 	if n.BlockValidator != nil {
-		n.BlockValidator.Start(ctx)
+		err = n.BlockValidator.Start(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

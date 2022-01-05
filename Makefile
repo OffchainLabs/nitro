@@ -35,7 +35,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps build-prover-header build-prover-lib build-replay-env build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-replay-env build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -48,6 +48,12 @@ build: node
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen
+
+test-go-deps: \
+	build-replay-env \
+	arbitrator/prover/test-cases/global-state.wasm \
+	arbitrator/prover/test-cases/global-state-wrapper.wasm \
+	arbitrator/prover/test-cases/const.wasm
 
 build-prover-header: $(arbitrator_generated_header)
 
@@ -223,7 +229,7 @@ arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
 solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
-	$(arbitrator_prover_bin) $< -o $@ --always-merkleize
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(arbitrator_output_root)/lib/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --always-merkleize
@@ -245,7 +251,7 @@ solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_pr
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	@touch $@
 
-.make/test-go: $(go_source) build-node-deps | .make
+.make/test-go: $(go_source) build-node-deps test-go-deps | .make
 	gotestsum --format short-verbose
 	@touch $@
 

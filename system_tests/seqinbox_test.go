@@ -45,18 +45,14 @@ func TestSequencerInboxReader(t *testing.T) {
 	l1BlockChain := l1backend.BlockChain()
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
 	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	startOwnerBalance := startState.GetBalance(ownerAddress).Uint64()
 	startOwnerNonce := startState.GetNonce(ownerAddress)
 
@@ -109,18 +105,14 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
 				t.Fatal("Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
 			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
 			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
 			err = l1BlockChain.ReorgToOldBlock(reorgTarget)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
 			state := blockStates[len(blockStates)-1]
@@ -166,26 +158,19 @@ func TestSequencerInboxReader(t *testing.T) {
 				state.nonces[source]++
 				tx := l2Info.SignTxAs(accountName(sourceNum), rawTx)
 				txData, err := tx.MarshalBinary()
-				if err != nil {
-					t.Fatal(err)
-				}
+				Require(t, err)
 				var segment []byte
 				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
 				err = rlp.Encode(batchWriter, segment)
-				if err != nil {
-					t.Fatal(err)
-				}
+				Require(t, err)
 
 				state.balances[source] -= amount
 				state.balances[dest] += amount
 			}
 
-			err = batchWriter.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, batchWriter.Close())
 			batchData := batchBuffer.Bytes()
 
 			var tx *types.Transaction
@@ -194,13 +179,9 @@ func TestSequencerInboxReader(t *testing.T) {
 			} else {
 				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 
 			state.l2BlockNumber += uint64(numMessages)
 			state.l1BlockNumber = txRes.BlockNumber.Uint64()
@@ -235,16 +216,12 @@ func TestSequencerInboxReader(t *testing.T) {
 
 		for _, state := range blockStates {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			if block == nil {
 				t.Fatal("missing state block", state.l2BlockNumber)
 			}
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			for acct, balance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {

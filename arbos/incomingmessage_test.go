@@ -37,11 +37,11 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segment, err := IncomingMessageToSegment(newMsg, chainId)
+	txes, err := newMsg.ParseL2Transactions(chainId)
 	if err != nil {
 		t.Error(err)
 	}
-	if len(segment.Txes) != 0 {
+	if len(txes) != 0 {
 		t.Fatal("unexpected tx count")
 	}
 }

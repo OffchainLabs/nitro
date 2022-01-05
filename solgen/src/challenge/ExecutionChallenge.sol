@@ -4,12 +4,13 @@ pragma solidity ^0.8.0;
 import "../osp/IOneStepProofEntry.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
+import "./ChallengeCore.sol";
 import "./IExecutionChallenge.sol";
 import "./Cloneable.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ExecutionChallenge is IExecutionChallenge, Cloneable {
+contract ExecutionChallenge is ChallengeCore, IExecutionChallenge, Cloneable {
     enum Turn {
         NO_CHALLENGE,
         ASSERTER,
@@ -29,6 +30,7 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
     event ContinuedExecutionProven();
 
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
+    uint256 constant CHALLENGE_START_LENGTH = ~uint64(0);
 
     string constant NO_TURN = "NO_TURN";
 
@@ -36,8 +38,6 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
     IChallengeResultReceiver resultReceiver;
 
     ExecutionContext public execCtx;
-
-    bytes32 public challengeStateHash;
 
     address public asserter;
     address public challenger;
@@ -48,20 +48,27 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
 
     Turn public turn;
 
-    constructor(
+    function initialize(
         IOneStepProofEntry osp_,
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
-        bytes32 challengeStateHash_,
+        bytes32[2] memory startAndEndHashes,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) {
+    ) public {
+        require(!isMasterCopy, "MASTER_INIT");
+        require(address(resultReceiver) == address(0), "ALREADY_INIT");
+        require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
+
         osp = osp_;
         resultReceiver = resultReceiver_;
         execCtx = execCtx_;
-        challengeStateHash = challengeStateHash_;
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = startAndEndHashes[0];
+        segments[1] = startAndEndHashes[1];
+        challengeStateHash = ChallengeLib.hashChallengeState(0, CHALLENGE_START_LENGTH, segments);
         asserter = asserter_;
         challenger = challenger_;
         asserterTimeLeft = asserterTimeLeft_;
@@ -70,6 +77,12 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
         turn = Turn.CHALLENGER;
 
         emit InitiatedChallenge();
+        emit Bisected(
+            challengeStateHash,
+            0,
+            CHALLENGE_START_LENGTH,
+            segments
+        );
     }
 
     modifier takeTurn() {
@@ -126,8 +139,7 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
         (
             uint256 challengeStart,
             uint256 challengeLength
-        ) = ChallengeLib.extractChallengeSegment(
-				challengeStateHash,
+        ) = extractChallengeSegment(
                 oldSegmentsStart,
                 oldSegmentsLength,
                 oldSegments,
@@ -170,8 +182,7 @@ contract ExecutionChallenge is IExecutionChallenge, Cloneable {
         uint256 challengePosition,
         bytes calldata proof
     ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
-			challengeStateHash,
+        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,

@@ -16,30 +16,24 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l1client := ethclient.NewClient(l1rpcClient)
 	l2stack, err := arbnode.CreateDefaultStack()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	nodeConf := arbnode.NodeConfigL1Test
 	nodeConf.BatchPoster = false
+	nodeConf.BlockValidator = blockValidator
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, &nodeConf, l2blockchain, l1client, first.DeployInfo, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = node.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
+	Require(t, node.Start(ctx))
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
 }
@@ -50,21 +44,17 @@ func TestTwoNodesSimple(t *testing.T) {
 	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack)
+	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, false)
 
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
 
 	err := l2info.Client.SendTransaction(ctx, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
 	time.Sleep(time.Millisecond * 100)
@@ -77,13 +67,11 @@ func TestTwoNodesSimple(t *testing.T) {
 	}
 
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}

@@ -1,6 +1,6 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::{InboxIdentifier, InboxReaderFn};
+use prover::machine::InboxIdentifier;
 use prover::parse_binary;
 use prover::{machine::GlobalState, utils::Bytes32};
 use prover::{machine::Machine, wavm::Opcode};
@@ -110,7 +110,7 @@ fn main() -> Result<()> {
     }
     let main_mod = parse_binary(&opts.binary)?;
 
-    let mut inbox_cache = HashMap::default();
+    let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;
     let mut delayed_position = opts.delayed_inbox_position;
     let inbox_header_len;
@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     }
 
     for path in opts.inbox {
-        inbox_cache.insert(
+        inbox_contents.insert(
             (InboxIdentifier::Sequencer, inbox_position),
             file_with_stub_header(&path, inbox_header_len)?,
         );
@@ -132,7 +132,7 @@ fn main() -> Result<()> {
         inbox_position += 1;
     }
     for path in opts.delayed_inbox {
-        inbox_cache.insert(
+        inbox_contents.insert(
             (InboxIdentifier::Delayed, delayed_position),
             file_with_stub_header(&path, delayed_header_len)?,
         );
@@ -170,8 +170,7 @@ fn main() -> Result<()> {
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
-        inbox_cache,
-        Box::new(|_: u64, _: u64, _: u64| -> Option<Vec<u8>> { None }) as InboxReaderFn,
+        inbox_contents,
         preimages,
     );
     println!("Starting machine hash: {}", mach.hash());

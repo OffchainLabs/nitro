@@ -68,7 +68,7 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y gotestsum
+        run: sudo apt update && sudo apt install -y gotestsum wabt
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
@@ -81,6 +81,25 @@ jobs:
         uses: actions/setup-go@v2
         with:
           go-version: 1.17.x
+
+      - name: Install wasm-ld
+        run: |
+          sudo apt-get update && sudo apt-get install -y lld-10
+          sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
+
+      - name: Install rust wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Install rust wasm32-wasi
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: wasm32-wasi
 
       - name: Install rust stable
         uses: actions-rs/toolchain@v1
@@ -99,7 +118,7 @@ jobs:
           restore-keys: ${{ runner.os }}-go-
 
       - name: Build
-        run: make build -j
+        run: make build test-go-deps -j
 
       - name: run tests with race detection
         run: gotestsum --format short-verbose --jsonfile test-output-withrace.json -- -race ./...
