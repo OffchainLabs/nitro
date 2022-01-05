@@ -66,7 +66,7 @@ func TestTwoNodesLong(t *testing.T) {
 	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, params.InitialBaseFee)
 
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
-		t.Fatal("bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
+		Fail(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
 	}
 	for i := 0; i < largeLoops; i++ {
 		l1TxsThisTime := rand.Int() % (avgTotalL1MessagesPerLoop * 2)
@@ -88,7 +88,7 @@ func TestTwoNodesLong(t *testing.T) {
 		errs := l1backend.TxPool().AddLocals(l1Txs)
 		for _, err := range errs {
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 		}
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
@@ -101,7 +101,7 @@ func TestTwoNodesLong(t *testing.T) {
 		if len(l1Txs) > 0 {
 			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1Txs[len(l1Txs)-1])
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 		}
 		// create bad tx on delayed inbox
@@ -120,7 +120,7 @@ func TestTwoNodesLong(t *testing.T) {
 
 	t.Log("Done sending", delayedTransfers, "delayed transfers", directTransfers, "direct transfers")
 	if (delayedTransfers + directTransfers) == 0 {
-		t.Fatal("No transfers sent!")
+		Fail(t, "No transfers sent!")
 	}
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -130,12 +130,12 @@ func TestTwoNodesLong(t *testing.T) {
 			tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
 			err := l1info.Client.SendTransaction(ctx, tx)
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 		}
 		_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, tx)
 		if err != nil {
-			t.Fatal(err)
+			Fail(t, err)
 		}
 	}
 
@@ -155,7 +155,7 @@ func TestTwoNodesLong(t *testing.T) {
 		ownerBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)
 		delayedFaucetBalance, _ := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
-		t.Fatal("Unexpected balance")
+		Fail(t, "Unexpected balance")
 	}
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
@@ -168,7 +168,7 @@ func TestTwoNodesLong(t *testing.T) {
 			timeout = time.Hour * 12
 		}
 		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
-			t.Fatal("did not validate all blocks")
+			Fail(t, "did not validate all blocks")
 		}
 	}
 }

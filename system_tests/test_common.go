@@ -26,7 +26,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -204,10 +204,12 @@ func CreateTestL2(
 	return l2info, node, client, &auth
 }
 
-// Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
-	if err != nil {
-		t.Fatal(colors.Red, text, err, colors.Clear)
-	}
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

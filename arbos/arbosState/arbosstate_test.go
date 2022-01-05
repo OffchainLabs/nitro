@@ -47,7 +47,7 @@ func TestStorageBackedInt64(t *testing.T) {
 		storage.OpenStorageBackedInt64(offset).Set(val)
 		res := storage.OpenStorageBackedInt64(offset).Get()
 		if val != res {
-			t.Fatal(val, res)
+			Fail(t, val, res)
 		}
 	}
 }

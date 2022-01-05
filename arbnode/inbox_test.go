@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -57,12 +57,12 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	shouldPreserve := func(_ *types.Block) bool { return false }
 	bc, err := core.NewBlockChain(db, nil, arbos.ChainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	inbox, err := NewTransactionStreamer(db, bc)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	return inbox, bc
@@ -104,7 +104,7 @@ func TestTransactionStreamer(t *testing.T) {
 			reorgTo := rand.Int() % len(blockStates)
 			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
@@ -162,11 +162,11 @@ func TestTransactionStreamer(t *testing.T) {
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()
 				if blockNumber > state.blockNumber {
-					t.Fatal("unexpected block number", blockNumber, ">", state.blockNumber)
+					Fail(t, "unexpected block number", blockNumber, ">", state.blockNumber)
 				} else if blockNumber == state.blockNumber {
 					break
 				} else if i >= 100 {
-					t.Fatal("timed out waiting for new block")
+					Fail(t, "timed out waiting for new block")
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
@@ -177,18 +177,18 @@ func TestTransactionStreamer(t *testing.T) {
 		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
 		if lastBlockNumber != expectedLastBlockNumber {
-			t.Fatal("unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+			Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
 		}
 
 		for _, state := range blockStates {
 			block := bc.GetBlockByNumber(state.blockNumber)
 			if block == nil {
-				t.Fatal("missing state block", state.blockNumber)
+				Fail(t, "missing state block", state.blockNumber)
 			}
 			for acct, balance := range state.balances {
 				state, err := bc.StateAt(block.Root())
 				if err != nil {
-					t.Fatal("error getting block state", err)
+					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
 				if balance.Cmp(haveBalance) < 0 {
@@ -199,10 +199,12 @@ func TestTransactionStreamer(t *testing.T) {
 	}
 }
 
-// Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
-	if err != nil {
-		t.Fatal(colors.Red, text, err, colors.Clear)
-	}
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

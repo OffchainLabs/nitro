@@ -274,6 +274,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 		return false
 	}
 	if batchcount < b.sequencesPosted {
+		b.sequencesPosted = batchcount
 		return false
 	}
 	if batchcount > b.sequencesPosted {
