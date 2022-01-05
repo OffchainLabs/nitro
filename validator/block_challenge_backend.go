@@ -57,6 +57,8 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 }
 
 type BlockChallengeBackend struct {
+	blockChallengeCon      *challengegen.BlockChallenge
+	client                 bind.ContractBackend
 	bc                     *core.BlockChain
 	startBlock             uint64
 	startPosition          uint64
@@ -124,6 +126,8 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	}
 
 	return &BlockChallengeBackend{
+		client:                 client,
+		blockChallengeCon:      challengeCon,
 		bc:                     bc,
 		startBlock:             startBlockNum,
 		startGs:                startGs,
@@ -190,11 +194,15 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 const STATUS_FINISHED uint8 = 1
 const STATUS_TOO_FAR uint8 = 3
 
-func (b *BlockChallengeBackend) getInfoAtStep(ctx context.Context, position uint64) (GoGlobalState, uint8, error) {
-	if position >= b.tooFarStartsAtPosition {
+func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) uint64 {
+	return b.startBlock + step
+}
+
+func (b *BlockChallengeBackend) GetInfoAtStep(ctx context.Context, step uint64) (GoGlobalState, uint8, error) {
+	if step >= b.tooFarStartsAtPosition {
 		return GoGlobalState{}, STATUS_TOO_FAR, nil
 	}
-	header := b.bc.GetHeaderByNumber(b.startBlock + position)
+	header := b.bc.GetHeaderByNumber(b.GetBlockNrAtStep(step))
 	if header == nil {
 		return GoGlobalState{}, 0, errors.New("failed to get block in block challenge")
 	}
@@ -209,11 +217,11 @@ func (b *BlockChallengeBackend) SetRange(ctx context.Context, start uint64, end 
 	if b.startPosition == start && b.endPosition == end {
 		return nil
 	}
-	newStartGs, _, err := b.getInfoAtStep(ctx, start)
+	newStartGs, _, err := b.GetInfoAtStep(ctx, start)
 	if err != nil {
 		return err
 	}
-	newEndGs, endStatus, err := b.getInfoAtStep(ctx, end)
+	newEndGs, endStatus, err := b.GetInfoAtStep(ctx, end)
 	if err != nil {
 		return err
 	}
@@ -225,7 +233,7 @@ func (b *BlockChallengeBackend) SetRange(ctx context.Context, start uint64, end 
 }
 
 func (b *BlockChallengeBackend) GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error) {
-	gs, status, err := b.getInfoAtStep(ctx, position)
+	gs, status, err := b.GetInfoAtStep(ctx, position)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -240,7 +248,7 @@ func (b *BlockChallengeBackend) GetHashAtStep(ctx context.Context, position uint
 	}
 }
 
-func (b *BlockChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState ChallengeState, startSegment int) (*types.Transaction, error) {
+func (b *BlockChallengeBackend) IssueExecChallenge(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState *ChallengeState, startSegment int, numsteps uint64) (*types.Transaction, error) {
 	con, err := challengegen.NewBlockChallenge(challenge, client)
 	if err != nil {
 		return nil, err
@@ -248,11 +256,11 @@ func (b *BlockChallengeBackend) IssueOneStepProof(ctx context.Context, client bi
 	position := oldState.Segments[startSegment].Position
 	machineStatuses := [2]uint8{}
 	globalStates := [2]GoGlobalState{}
-	globalStates[0], machineStatuses[0], err = b.getInfoAtStep(ctx, position)
+	globalStates[0], machineStatuses[0], err = b.GetInfoAtStep(ctx, position)
 	if err != nil {
 		return nil, err
 	}
-	globalStates[1], machineStatuses[1], err = b.getInfoAtStep(ctx, position+1)
+	globalStates[1], machineStatuses[1], err = b.GetInfoAtStep(ctx, position+1)
 	if err != nil {
 		return nil, err
 	}
@@ -268,5 +276,44 @@ func (b *BlockChallengeBackend) IssueOneStepProof(ctx context.Context, client bi
 		big.NewInt(int64(startSegment)),
 		machineStatuses,
 		globalStateHashes,
+		big.NewInt(int64(numsteps)),
 	)
+}
+
+func inExecChallengeError(err error) (bool, common.Address, uint64, error) {
+	return false, common.Address{}, 0, err
+}
+
+func (b *BlockChallengeBackend) IsInExecutionChallenge(ctx context.Context) (bool, common.Address, uint64, error) {
+	callOpts := &bind.CallOpts{Context: ctx}
+	var err error
+	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, b.client)
+	if err != nil {
+		return inExecChallengeError(err)
+	}
+	addr, err := b.blockChallengeCon.ExecutionChallenge(callOpts)
+	if err != nil {
+		return inExecChallengeError(err)
+	}
+	if addr == (common.Address{}) {
+		return inExecChallengeError(nil)
+	}
+
+	startGs, err := b.blockChallengeCon.GetStartGlobalState(callOpts)
+	if err != nil {
+		return inExecChallengeError(err)
+	}
+	startHeader := b.bc.GetHeaderByHash(GoGlobalStateFromSolidity(startGs).BlockHash)
+	if startHeader == nil {
+		return inExecChallengeError(errors.New("failed to find challenge start block"))
+	}
+	blockOffset, err := b.blockChallengeCon.ExecutionChallengeAtSteps(callOpts)
+	if err != nil {
+		return inExecChallengeError(err)
+	}
+	blockNumber := new(big.Int).Add(startHeader.Number, blockOffset)
+	if !blockNumber.IsUint64() {
+		return inExecChallengeError(errors.New("execution challenge occurred at non-uint64 block number"))
+	}
+	return true, addr, blockNumber.Uint64(), nil
 }

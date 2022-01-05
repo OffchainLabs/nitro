@@ -73,7 +73,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         MachineStatus[2] calldata machineStatuses,
-        bytes32[2] calldata globalStateHashes
+        bytes32[2] calldata globalStateHashes,
+        uint256 numSteps
     ) external {
         require(msg.sender == currentResponder(), "EXEC_SENDER");
         require(
@@ -155,6 +156,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
             this,
             execCtx,
             startAndEndHashes,
+            numSteps,
             newAsserter,
             newChallenger,
             newAsserterTimeLeft,

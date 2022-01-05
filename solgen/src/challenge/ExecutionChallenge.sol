@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 contract ExecutionChallenge is ChallengeCore, IExecutionChallenge {
     event OneStepProofCompleted();
 
-    uint256 constant CHALLENGE_START_LENGTH = ~uint64(0);
+    uint256 constant CHALLENGE_MAX_START_LENGTH = 0x100000000000;
 
     IOneStepProofEntry public osp;
     ExecutionContext public execCtx;
@@ -23,6 +23,7 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge {
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,
+        uint256 challenge_length,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,
@@ -31,14 +32,14 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge {
         require(!isMasterCopy, "MASTER_INIT");
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
-
+        require(challenge_length <= CHALLENGE_MAX_START_LENGTH, "CHALLENGE_TOO_LONG");
         osp = osp_;
         resultReceiver = resultReceiver_;
         execCtx = execCtx_;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        challengeStateHash = ChallengeLib.hashChallengeState(0, CHALLENGE_START_LENGTH, segments);
+        challengeStateHash = ChallengeLib.hashChallengeState(0, challenge_length, segments);
         asserter = asserter_;
         challenger = challenger_;
         asserterTimeLeft = asserterTimeLeft_;
@@ -50,7 +51,7 @@ contract ExecutionChallenge is ChallengeCore, IExecutionChallenge {
         emit Bisected(
             challengeStateHash,
             0,
-            CHALLENGE_START_LENGTH,
+            challenge_length,
             segments
         );
     }

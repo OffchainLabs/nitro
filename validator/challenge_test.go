@@ -54,6 +54,7 @@ func CreateChallenge(
 	ospEntry common.Address,
 	startMachineHash common.Hash,
 	endMachineHash common.Hash,
+	endMachineSteps uint64,
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
@@ -75,6 +76,7 @@ func CreateChallenge(
 			MaxInboxMessagesRead: new(big.Int).SetUint64(^uint64(0)),
 		},
 		[2][32]byte{startHashBytes, endHashBytes},
+		big.NewInt(int64(endMachineSteps)),
 		asserter,
 		challenger,
 		big.NewInt(100),
@@ -140,6 +142,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 
 	startMachineHash := machine.Hash()
 	endMachineHash := endMachine.Hash()
+	endMachineSteps := endMachine.GetStepCount()
 	if !asserterIsCorrect {
 		endMachineHash = IncorrectMachineHash(endMachineHash)
 	}
@@ -151,6 +154,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		ospEntry,
 		startMachineHash,
 		endMachineHash,
+		endMachineSteps,
 		asserter.From,
 		challenger.From,
 	)
@@ -165,44 +169,34 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		expectedWinner = asserter.From
 	}
 
-	asserterBackend, err := NewExecutionChallengeBackend(asserterMachine, 4, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	asserterManager, err := NewChallengeManager(ctx, backend, asserter, challenge, 0, asserterBackend)
+	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, asserterMachine, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerBackend, err := NewExecutionChallengeBackend(challengerMachine, 4, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	challengerManager, err := NewChallengeManager(ctx, backend, challenger, challenge, 0, challengerBackend)
+	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, challengerMachine, 0, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for i := 0; i < 100; i++ {
+		var currentCorrect bool
 		if i%2 == 0 {
 			_, err = challengerManager.Act(ctx)
-			if err != nil {
-				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
-					t.Log("challenge completed! challenger hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
-			}
+			currentCorrect = !asserterIsCorrect
 		} else {
 			_, err = asserterManager.Act(ctx)
-			if err != nil {
-				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
-					t.Log("challenge completed! asserter hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
-			}
+			currentCorrect = asserterIsCorrect
 		}
+		if err != nil {
+			if !currentCorrect &&
+				(strings.Contains(err.Error(), "lost challenge") || strings.Contains(err.Error(), "SAME_OSP_END")) {
+				t.Log("challenge completed! asserter hit expected error:", err)
+				return
+			}
+			t.Fatal(err)
+		}
+
 		backend.Commit()
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
@@ -226,17 +220,17 @@ var wasmDir string = (func() string {
 })()
 
 func TestChallengeToOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, false)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, true)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, true)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, false)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, false)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, true)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, true)
 }

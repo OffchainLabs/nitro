@@ -77,6 +77,10 @@ type TransactionStreamerInterface interface {
 	GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error)
 }
 
+type InboxReaderInterface interface {
+	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+}
+
 type GlobalStatePosition struct {
 	BatchNumber uint64
 	PosInBatch  uint64
