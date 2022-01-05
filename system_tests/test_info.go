@@ -125,7 +125,8 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(name)
 	return bind.TransactOpts{
-		From: info.Address,
+		From:     info.Address,
+		GasLimit: 4000000,
 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			if address != info.Address {
 				return nil, errors.New("bad address")

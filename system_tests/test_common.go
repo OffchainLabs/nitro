@@ -199,7 +199,6 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
-		sequencerTxOpts.GasLimit = 4000000
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 

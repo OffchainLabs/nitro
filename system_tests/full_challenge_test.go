@@ -216,7 +216,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
+	asserterTxOpts.GasLimit = 15_000_000
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger")
+	challengerTxOpts.GasLimit = 15_000_000
 	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, backend)
 	if err != nil {
 		t.Fatal(err)

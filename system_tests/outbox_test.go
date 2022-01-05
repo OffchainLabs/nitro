@@ -42,7 +42,6 @@ func TestOutboxProofs(t *testing.T) {
 		t.Fatal(err)
 	}
 	ownerOps := l2info.GetDefaultTransactOpts("Owner")
-	ownerOps.GasLimit = 4000000
 
 	txnCount := int64(1 + rand.Intn(128))
 
