@@ -35,14 +35,14 @@ interface ArbRetryableTx {
     function getKeepaliveGas(bytes32 ticketId) external view returns(uint);
 
     /**
-    @notice Deposits callvalue into the sender's L2 account, then adds one lifetime period to the life of ticketId.
+    * @notice Adds one lifetime period to the life of ticketId.
     * Donate gas to pay for the lifetime extension.
     * If successful, emits LifetimeExtended event.
     * Revert if ticketId does not exist, or if the timeout of ticketId is already at least one lifetime period in the future.
     * @param ticketId unique ticket identifier
     * @return new timeout of ticketId
     */
-    function keepalive(bytes32 ticketId) external payable returns(uint);
+    function keepalive(bytes32 ticketId) external returns(uint);
 
     /**
     * @notice Return the beneficiary of ticketId.
