@@ -3,6 +3,7 @@ package arbnode
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -73,7 +74,6 @@ type batchSegments struct {
 	timestamp           uint64
 	blockNum            uint64
 	delayedMsg          uint64
-	pendingDelayed      uint64
 	sizeLimit           int
 	compressionLevel    int
 	newUncompressedSize int
@@ -91,7 +91,6 @@ func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegm
 		compressionLevel: config.CompressionLevel,
 		rawSegments:      make([][]byte, 0, 128),
 		delayedMsg:       firstDelayed,
-		pendingDelayed:   firstDelayed,
 	}
 }
 
@@ -130,13 +129,9 @@ func (s *batchSegments) testForOverflow() (bool, error) {
 }
 
 func (s *batchSegments) close() error {
-	err := s.testAddDelayedMessage()
-	if err != nil {
-		return err
-	}
 	s.rawSegments = s.rawSegments[:len(s.rawSegments)-s.trailingHeaders]
 	s.trailingHeaders = 0
-	err = s.recompressAll()
+	err := s.recompressAll()
 	if err != nil {
 		return err
 	}
@@ -152,17 +147,6 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 	lenWritten, err := s.compressedWriter.Write(encoded)
 	s.newUncompressedSize += lenWritten
 	return err
-}
-
-// This segment will be added even if it's overbound
-func (s *batchSegments) unconditionalAddSegment(segment []byte) error {
-	err := s.addSegmentToCompressed(segment)
-	if err != nil {
-		return err
-	}
-	s.trailingHeaders = 0
-	s.rawSegments = append(s.rawSegments, segment)
-	return nil
 }
 
 // returns false if segment was too large, error in case of real error
@@ -228,40 +212,24 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, se
 	return success, err
 }
 
-func (s *batchSegments) testAddDelayedMessage() error {
-	if s.pendingDelayed <= s.delayedMsg {
-		return nil
+func (s *batchSegments) addDelayedMessage() (bool, error) {
+	segment := []byte{arbstate.BatchSegmentKindDelayedMessages}
+	success, err := s.addSegment(segment, false)
+	if (err == nil) && success {
+		s.delayedMsg += 1
 	}
-	delayedSeg, err := s.prepareIntSegment(s.pendingDelayed-s.delayedMsg, arbstate.BatchSegmentKindDelayedMessages)
-	if err != nil {
-		return err
-	}
-	err = s.unconditionalAddSegment(delayedSeg)
-	if err != nil {
-		return err
-	}
-	s.delayedMsg = s.pendingDelayed
-	return nil
+	return success, err
 }
 
 func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
 	if s.isDone {
 		return false, nil
 	}
-	if msg.DelayedMessagesRead > s.pendingDelayed {
-		s.pendingDelayed = msg.DelayedMessagesRead
-		if msg.MustEndBlock {
-			err := s.testAddDelayedMessage()
-			if err != nil {
-				return false, err
-			}
-			return true, nil
+	if msg.DelayedMessagesRead > s.delayedMsg {
+		if msg.DelayedMessagesRead != s.delayedMsg+1 {
+			return false, fmt.Errorf("attempted to add delayed msg %d after %d", msg.DelayedMessagesRead, s.delayedMsg)
 		}
-		return true, nil
-	}
-	err := s.testAddDelayedMessage()
-	if err != nil {
-		return false, err
+		return s.addDelayedMessage()
 	}
 	success, err := s.maybeAddDiffSegment(&s.timestamp, msg.Message.Header.Timestamp, arbstate.BatchSegmentKindAdvanceTimestamp)
 	if !success {
@@ -306,6 +274,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 		return false
 	}
 	if batchcount < b.sequencesPosted {
+		b.sequencesPosted = batchcount
 		return false
 	}
 	if batchcount > b.sequencesPosted {

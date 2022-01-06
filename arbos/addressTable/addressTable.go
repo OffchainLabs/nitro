@@ -7,6 +7,7 @@ package addressTable
 import (
 	"bytes"
 	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -44,7 +45,7 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 
 func (atab *AddressTable) Lookup(addr common.Address) (uint64, bool) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	res := atab.byAddress.Get(addrAsHash).Big().Uint64()
+	res := atab.byAddress.GetUint64(addrAsHash)
 	if res == 0 {
 		return 0, false
 	} else {

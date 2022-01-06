@@ -21,7 +21,7 @@ func OpenArbosStateForTest(t *testing.T) *ArbosState {
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
-		t.Fatal("failed to init empty statedb")
+		Fail(t, "failed to init empty statedb")
 	}
 	return OpenArbosState(statedb)
 }
@@ -60,7 +60,7 @@ func TestStorageBackedInt64(t *testing.T) {
 		storage.OpenStorageBackedInt64(offset).Set(val)
 		res := storage.OpenStorageBackedInt64(offset).Get()
 		if val != res {
-			t.Fatal(val, res)
+			Fail(t, val, res)
 		}
 	}
 }

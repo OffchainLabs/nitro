@@ -8,4 +8,5 @@ interface ArbOwner {
     function removeChainOwner(address ownerToRemove) external;    // revert if ownerToRemove is not an owner
     function isChainOwner(address addr) external view returns(bool);
     function getAllChainOwners() external view returns(address[] memory);
+    function setL2GasPrice(uint256 priceInWei) external;
 }

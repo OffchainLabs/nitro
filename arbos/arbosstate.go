@@ -5,8 +5,9 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -24,6 +25,7 @@ type ArbosState struct {
 	gasPool        *storage.StorageBackedInt64
 	smallGasPool   *storage.StorageBackedInt64
 	gasPriceWei    *big.Int
+	maxGasPriceWei *big.Int // the max gas price ArbOS can set without breaking geth
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
@@ -40,7 +42,8 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
-		backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64(),
+		backingStorage.GetUint64ByUint64(uint64(versionKey)),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -55,7 +58,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 }
 
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.GetByUint64(uint64(versionKey)).Big().Uint64()
+	formatVersion := backingStorage.GetUint64ByUint64(uint64(versionKey))
 	switch formatVersion {
 	case 0:
 		upgrade_0_to_1(backingStorage)
@@ -74,6 +77,7 @@ const (
 	gasPoolKey
 	smallGasPoolKey
 	gasPriceKey
+	maxPriceKey
 	timestampKey
 )
 
@@ -88,16 +92,24 @@ var (
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
-	backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(1))
-	backingStorage.SetByUint64(uint64(gasPoolKey), util.IntToHash(GasPoolMax))
-	backingStorage.SetByUint64(uint64(smallGasPoolKey), util.IntToHash(SmallGasPoolMax))
-	backingStorage.SetByUint64(uint64(gasPriceKey), util.UintToHash(InitialGasPriceWei))
-	backingStorage.SetByUint64(uint64(timestampKey), util.UintToHash(0))
+	backingStorage.SetUint64ByUint64(uint64(versionKey), 1)
+	backingStorage.SetUint64ByUint64(uint64(gasPoolKey), GasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(smallGasPoolKey), SmallGasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(gasPriceKey), InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(maxPriceKey), 2*InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(timestampKey), 0)
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	addressSet.Initialize(backingStorage.OpenSubStorage(chainOwnerSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+
+	// the zero address is the initial chain owner
+	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
+	addressSet.Initialize(ownersStorage)
+	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+
+	backingStorage.SetUint64ByUint64(uint64(versionKey), 1)
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -106,7 +118,7 @@ func (state *ArbosState) FormatVersion() uint64 {
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.formatVersion = val
-	state.backingStorage.SetByUint64(uint64(versionKey), util.UintToHash(val))
+	state.backingStorage.SetUint64ByUint64(uint64(versionKey), val)
 }
 
 func (state *ArbosState) GasPool() int64 {
@@ -147,6 +159,18 @@ func (state *ArbosState) GasPriceWei() *big.Int {
 func (state *ArbosState) SetGasPriceWei(val *big.Int) {
 	state.gasPriceWei = val
 	state.backingStorage.SetByUint64(uint64(gasPriceKey), common.BigToHash(val))
+}
+
+func (state *ArbosState) MaxGasPriceWei() *big.Int {
+	if state.maxGasPriceWei == nil {
+		state.maxGasPriceWei = state.backingStorage.GetByUint64(uint64(maxPriceKey)).Big()
+	}
+	return state.maxGasPriceWei
+}
+
+func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
+	state.maxGasPriceWei = val
+	state.backingStorage.SetByUint64(uint64(maxPriceKey), common.BigToHash(val))
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {

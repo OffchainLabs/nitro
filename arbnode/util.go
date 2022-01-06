@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type L1Interface interface {
@@ -24,17 +25,13 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 	ctx, cancel := context.WithTimeout(ctxinput, timeout)
 	defer cancel()
 
-	chanHead := make(chan *types.Header, 20)
-	headSubscribe, err := client.SubscribeNewHead(ctx, chanHead)
-	if err != nil {
-		return nil, err
-	}
-	defer headSubscribe.Unsubscribe()
+	chanHead, cancel := HeaderSubscribeWithRetry(ctx, client)
+	defer cancel()
 
 	for {
-		reciept, err := client.TransactionReceipt(ctx, txhash)
-		if reciept != nil {
-			return reciept, err
+		receipt, err := client.TransactionReceipt(ctx, txhash)
+		if receipt != nil {
+			return receipt, err
 		}
 		select {
 		case <-chanHead:
@@ -81,4 +78,50 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 		return nil, errors.New("tx failed but call succeeded")
 	}
 	return txRes, nil
+}
+
+func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, client ethereum.ChainReader) {
+	headerSubscription, err := client.SubscribeNewHead(ctx, chanOut)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Error("failed sunscribing to header", "err", err)
+		}
+		return
+	}
+
+	for {
+		select {
+		case err := <-headerSubscription.Err():
+			if ctx.Err() == nil {
+				return
+			}
+			log.Warn("error in subscription to L1 headers", "err", err)
+			for {
+				headerSubscription, err = client.SubscribeNewHead(ctx, chanOut)
+				if err != nil {
+					log.Warn("error re-subscribing to L1 headers", "err", err)
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(time.Second):
+					}
+				} else {
+					break
+				}
+			}
+		case <-ctx.Done():
+			headerSubscription.Unsubscribe()
+			return
+		}
+	}
+}
+
+// returned channel will reconnect to client if disconnected, until context closed or cancel called
+func HeaderSubscribeWithRetry(ctx context.Context, client ethereum.ChainReader) (<-chan *types.Header, context.CancelFunc) {
+	chanOut := make(chan *types.Header)
+
+	childCtx, cancelFunc := context.WithCancel(ctx)
+	go headerSubscribeMainLoop(chanOut, childCtx, client)
+
+	return chanOut, cancelFunc
 }
