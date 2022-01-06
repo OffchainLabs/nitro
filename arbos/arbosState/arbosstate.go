@@ -6,6 +6,7 @@ package arbosState
 
 import (
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/arbstate/arbos/chainParams"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
@@ -36,6 +37,7 @@ type ArbosState struct {
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
 	timestamp      storage.StorageBackedUint64
+	chainParams    *chainParams.ArbitrumChainParams
 	backingStorage *storage.Storage
 }
 
@@ -57,6 +59,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.NewStorageBackedUint64(uint64(timestampOffset)),
+		chainParams.OpenArbitrumChainParams(backingStorage),
 		backingStorage,
 	}
 }
@@ -109,6 +112,7 @@ var (
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
 	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
 	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
+	chainParamsSubspace  ArbosStateSubspaceID = []byte{5}
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
@@ -122,6 +126,7 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+	chainParams.InitializeArbitrumChainParams(backingStorage.OpenSubStorage(chainParamsSubspace))
 
 	// the zero address is the initial chain owner
 	ZeroAddressL2 := util.RemapL1Address(common.Address{})
@@ -210,6 +215,14 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
+}
+
+func (state *ArbosState) GetParameter(which chainParams.ChainParamID) common.Hash {
+	return state.chainParams.Get(which)
+}
+
+func (state *ArbosState) SetParameter(which chainParams.ChainParamID, val common.Hash) {
+	state.chainParams.Set(which, val)
 }
 
 func (state *ArbosState) LastTimestampSeen() uint64 {
