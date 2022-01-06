@@ -79,7 +79,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 
 	eventCost := con.LifetimeExtendedGasCost(ticketId, big.NewInt(0))
 	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + eventCost); err != nil {
