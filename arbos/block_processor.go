@@ -53,7 +53,7 @@ var RedeemScheduledEventID common.Hash
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei().Get()
+	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {

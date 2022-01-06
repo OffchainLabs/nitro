@@ -20,28 +20,22 @@ import (
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
-// An ArbosState object is a cache of data that is stored permanently in a StateDB. We ensure that there is
-// at most one ArbosState per StateDB so that caches don't become inconsistent.
-//
-// Portions of the ArbosState are lazily initialized, so that accesses that only touch some parts are
-// efficient.
-//
 // Modifications to the ArbosState are written through to the underlying StateDB so that the StateDB always
 // has the definitive state, stored persistently. (Note that some tests use memory-backed StateDB's that aren't
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
 	formatVersion  uint64
-	gasPool        *storage.StorageBackedInt64
-	smallGasPool   *storage.StorageBackedInt64
-	gasPriceWei    *storage.StorageBackedBigInt
-	maxGasPriceWei *storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
+	gasPool        storage.StorageBackedInt64
+	smallGasPool   storage.StorageBackedInt64
+	gasPriceWei    storage.StorageBackedBigInt
+	maxGasPriceWei storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      *storage.StorageBackedUint64
+	timestamp      storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
 
@@ -53,16 +47,16 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
-		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
-		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolOffset)),
-		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
-		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset)),
+		backingStorage.NewStorageBackedInt64(uint64(gasPoolOffset)),
+		backingStorage.NewStorageBackedInt64(uint64(smallGasPoolOffset)),
+		backingStorage.NewStorageBackedBigInt(uint64(gasPriceOffset)),
+		backingStorage.NewStorageBackedBigInt(uint64(maxPriceOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
+		backingStorage.NewStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
 	}
 }
@@ -151,24 +145,36 @@ func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val)
 }
 
-func (state *ArbosState) GasPool() *storage.StorageBackedInt64 {
-	return state.gasPool
+func (state *ArbosState) GasPool() int64 {
+	return state.gasPool.Get()
 }
 
-func (state *ArbosState) SmallGasPool() *storage.StorageBackedInt64 {
-	return state.smallGasPool
+func (state *ArbosState) SetGasPool(val int64) {
+	state.gasPool.Set(val)
 }
 
-func (state *ArbosState) GasPriceWei() *storage.StorageBackedBigInt {
-	return state.backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset))
+func (state *ArbosState) SmallGasPool() int64 {
+	return state.smallGasPool.Get()
 }
 
-func (state *ArbosState) MaxGasPriceWei() *storage.StorageBackedBigInt { // the max gas price ArbOS can set without breaking geth
-	return state.backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset))
+func (state *ArbosState) SetSmallGasPool(val int64) {
+	state.smallGasPool.Set(val)
+}
+
+func (state *ArbosState) GasPriceWei() *big.Int {
+	return state.gasPriceWei.Get()
+}
+
+func (state *ArbosState) SetGasPriceWei(val *big.Int) {
+	state.gasPriceWei.Set(val)
+}
+
+func (state *ArbosState) MaxGasPriceWei() *big.Int { // the max gas price ArbOS can set without breaking geth
+	return state.maxGasPriceWei.Get()
 }
 
 func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
-	state.backingStorage.SetByUint64(uint64(maxPriceOffset), common.BigToHash(val))
+	state.maxGasPriceWei.Set(val)
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {

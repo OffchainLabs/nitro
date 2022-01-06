@@ -162,6 +162,10 @@ type StorageBackedInt64 struct {
 	offset  common.Hash
 }
 
+func (sto *Storage) NewStorageBackedInt64(offset uint64) StorageBackedInt64 {
+	return StorageBackedInt64{sto, util.UintToHash(offset)}
+}
+
 func (sto *Storage) OpenStorageBackedInt64(offset uint64) *StorageBackedInt64 {
 	return &StorageBackedInt64{sto, util.UintToHash(offset)}
 }
@@ -181,6 +185,10 @@ func (sbu *StorageBackedInt64) Set(value int64) {
 type StorageBackedUint64 struct {
 	storage *Storage
 	offset  common.Hash
+}
+
+func (sto *Storage) NewStorageBackedUint64(offset uint64) StorageBackedUint64 {
+	return StorageBackedUint64{sto, util.UintToHash(offset)}
 }
 
 func (sto *Storage) OpenStorageBackedUint64(offset uint64) *StorageBackedUint64 {
@@ -220,6 +228,10 @@ type WrappedUint64 interface {
 type StorageBackedBigInt struct {
 	storage *Storage
 	offset  common.Hash
+}
+
+func (sto *Storage) NewStorageBackedBigInt(offset uint64) StorageBackedBigInt {
+	return StorageBackedBigInt{sto, util.UintToHash(offset)}
 }
 
 func (sto *Storage) OpenStorageBackedBigInt(offset uint64) *StorageBackedBigInt {
