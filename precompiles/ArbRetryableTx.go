@@ -62,18 +62,6 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (ad
 	return retryable.Beneficiary(), nil
 }
 
-func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (huge, error) {
-	if err := c.burn(3 * params.SloadGas); err != nil {
-		return nil, err
-	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
-	nbytes := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
-	if nbytes == 0 {
-		return nil, NotFoundError
-	}
-	return big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100)), nil
-}
-
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	// there's no need to burn gas for something this cheap
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
@@ -91,7 +79,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 
 	// charge for the check & event
 	eventCost := con.LifetimeExtendedGasCost(ticketId, big.NewInt(0))
