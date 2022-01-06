@@ -316,11 +316,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.addDelayedMessages(delayedMessages)
+	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
-	err = r.tracker.addSequencerBatches(ctx, r.client, sequencerBatches)
+	err = r.tracker.AddSequencerBatches(ctx, r.client, sequencerBatches)
 	if errors.Is(err, delayedMessagesMismatch) {
 		return true, nil
 	} else if err != nil {
@@ -353,4 +353,22 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 		return nil, err
 	}
 	return msg.Header.RequestId.Big(), nil
+}
+
+func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+	metadata, err := r.tracker.GetBatchMetadata(seqNum)
+	if err != nil {
+		return nil, err
+	}
+	blockNum := big.NewInt(0).SetUint64(metadata.L1Block)
+	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
+	if err != nil {
+		return nil, err
+	}
+	for _, batch := range seqBatches {
+		if batch.SequenceNumber == seqNum {
+			return batch.Serialize(ctx, r.client)
+		}
+	}
+	return nil, errors.New("sequencer batch not found")
 }
