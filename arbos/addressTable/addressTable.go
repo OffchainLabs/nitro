@@ -33,11 +33,10 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 	rev := atab.byAddress.Get(addrAsHash)
 	if rev == (common.Hash{}) {
 		// addr isn't in the table, so add it
-		ret := atab.numItems.Get()
-		atab.numItems.Set(ret + 1)
-		atab.backingStorage.SetByUint64(ret+1, addrAsHash)
-		atab.byAddress.Set(addrAsHash, util.UintToHash(ret+1))
-		return ret
+		newNumItems := atab.numItems.Increment()
+		atab.backingStorage.SetByUint64(newNumItems, addrAsHash)
+		atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems))
+		return newNumItems - 1
 	} else {
 		return rev.Big().Uint64() - 1
 	}

@@ -55,7 +55,7 @@ func (aset *AddressSet) Add(addr common.Address) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	aset.byAddress.Set(addrAsHash, slot)
 	aset.backingStorage.Set(slot, addrAsHash)
-	aset.size.Set(aset.size.Get() + 1)
+	_ = aset.size.Increment()
 }
 
 func (aset *AddressSet) Remove(addr common.Address) {
@@ -70,5 +70,5 @@ func (aset *AddressSet) Remove(addr common.Address) {
 		aset.backingStorage.SetByUint64(slot, aset.backingStorage.GetByUint64(sz))
 	}
 	aset.backingStorage.SetByUint64(sz, common.Hash{})
-	aset.size.Set(sz - 1)
+	_ = aset.size.Decrement()
 }

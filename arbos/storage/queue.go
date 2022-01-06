@@ -45,16 +45,12 @@ func (q *Queue) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	ngo := q.nextGetOffset.Get()
-	res := q.storage.Swap(util.UintToHash(ngo), common.Hash{})
-	ngo++
-	q.nextGetOffset.Set(ngo)
+	newOffset := q.nextGetOffset.Increment()
+	res := q.storage.Swap(util.UintToHash(newOffset-1), common.Hash{})
 	return &res
 }
 
 func (q *Queue) Put(val common.Hash) {
-	npo := q.nextPutOffset.Get()
-	q.storage.SetByUint64(npo, val)
-	npo++
-	q.nextPutOffset.Set(npo)
+	newOffset := q.nextPutOffset.Increment()
+	q.storage.SetByUint64(newOffset-1, val)
 }

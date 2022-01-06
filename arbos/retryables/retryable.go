@@ -145,9 +145,7 @@ func (retryable *Retryable) NumTries() uint64 {
 }
 
 func (retryable *Retryable) IncrementNumTries() uint64 {
-	newNumTries := retryable.numTries.Get() + 1
-	retryable.numTries.Set(newNumTries)
-	return newNumTries
+	return retryable.numTries.Increment()
 }
 
 func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {

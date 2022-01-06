@@ -195,17 +195,35 @@ func (sto *Storage) OpenStorageBackedUint64(offset uint64) *StorageBackedUint64 
 	return &StorageBackedUint64{sto, util.UintToHash(offset)}
 }
 
-func (sbu *StorageBackedUint64) Get() uint64 {
-	raw := sbu.storage.Get(sbu.offset).Big()
+func (mbu *StorageBackedUint64) Get() uint64 {
+	raw := mbu.storage.Get(mbu.offset).Big()
 	if !raw.IsUint64() {
 		panic("expected uint64 compatible value in storage")
 	}
 	return raw.Uint64()
 }
 
-func (sbu *StorageBackedUint64) Set(value uint64) {
+func (mbu *StorageBackedUint64) Set(value uint64) {
 	bigValue := new(big.Int).SetUint64(value)
-	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+	mbu.storage.Set(mbu.offset, common.BigToHash(bigValue))
+}
+
+func (mbu *StorageBackedUint64) Increment() uint64 {
+	old := mbu.Get()
+	if old+1 < old {
+		panic("Overflow in StorageBackedUint64::Increment")
+	}
+	mbu.Set(old + 1)
+	return old + 1
+}
+
+func (mbu *StorageBackedUint64) Decrement() uint64 {
+	old := mbu.Get()
+	if old == 0 {
+		panic("Underflow in StorageBackedUint64::Decrement")
+	}
+	mbu.Set(old - 1)
+	return old - 1
 }
 
 type MemoryBackedUint64 struct {
@@ -220,9 +238,29 @@ func (mbu *MemoryBackedUint64) Set(val uint64) {
 	mbu.contents = val
 }
 
+func (mbu *MemoryBackedUint64) Increment() uint64 {
+	old := mbu.Get()
+	if old+1 < old {
+		panic("Overflow in StorageBackedUint64::Increment")
+	}
+	mbu.Set(old + 1)
+	return old + 1
+}
+
+func (mbu *MemoryBackedUint64) Decrement() uint64 {
+	old := mbu.Get()
+	if old == 0 {
+		panic("Underflow in StorageBackedUint64::Decrement")
+	}
+	mbu.Set(old - 1)
+	return old - 1
+}
+
 type WrappedUint64 interface {
 	Get() uint64
 	Set(uint64)
+	Increment() uint64
+	Decrement() uint64
 }
 
 type StorageBackedBigInt struct {

@@ -92,7 +92,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) {
 }
 
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) []MerkleTreeNodeEvent {
-	acc.size.Set(acc.size.Get() + 1)
+	_ = acc.size.Increment()
 	events := []MerkleTreeNodeEvent{}
 
 	level := uint64(0)
