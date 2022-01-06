@@ -54,7 +54,12 @@ func NewMemoryBackedStateDB() vm.StateDB {
 // Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
 func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	keyBytes := key.Bytes()
-	return common.BytesToHash(append(crypto.Keccak256(storageKey, keyBytes[:31])[:31], keyBytes[31]))
+	return common.BytesToHash(
+		append(
+			crypto.Keccak256(storageKey, keyBytes[:common.HashLength-1])[:common.HashLength-1],
+			keyBytes[common.HashLength-1],
+		),
+	)
 }
 
 func (store *Storage) Get(key common.Hash) common.Hash {
