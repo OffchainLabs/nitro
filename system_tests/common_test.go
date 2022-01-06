@@ -23,9 +23,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
@@ -51,6 +51,8 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	}
 	l1info.GenerateAccount("faucet")
 
+	chainConfig := params.ArbitrumTestChainConfig()
+
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.WSPort = 0
@@ -65,7 +67,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	Require(t, err)
 
 	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
+	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
 	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
@@ -130,7 +132,7 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		PrivateKey: nil,
 	}
 	l2Genesys = &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     params.ArbitrumTestChainConfig(),
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),

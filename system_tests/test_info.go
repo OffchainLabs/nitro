@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -44,7 +43,8 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInf
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
-	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
+	chainConfig := params.ArbitrumOneChainConfig()
+	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)))
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {

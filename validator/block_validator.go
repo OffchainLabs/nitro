@@ -163,12 +163,15 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 		return common.Hash{}, nil, err
 	}
 
+	chainConfig := blockchain.Config()
+
 	block, _ := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
 		prevHeader,
 		recordingdb,
 		chaincontext,
+		chainConfig,
 	)
 
 	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
