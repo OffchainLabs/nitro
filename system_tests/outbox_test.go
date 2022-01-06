@@ -84,10 +84,10 @@ func TestOutboxProofs(t *testing.T) {
 		Require(t, err, "No receipt for txn")
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			t.Fatal("Tx failed with status code:", receipt)
+			Fail(t, "Tx failed with status code:", receipt)
 		}
 		if len(receipt.Logs) == 0 {
-			t.Fatal("Tx didn't emit any logs")
+			Fail(t, "Tx didn't emit any logs")
 		}
 
 		for _, log := range receipt.Logs {
@@ -220,7 +220,7 @@ func TestOutboxProofs(t *testing.T) {
 
 				if zero, ok := partials[place]; ok {
 					if zero != (common.Hash{}) {
-						t.Fatal("Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
+						Fail(t, "Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
 					}
 					partials[place] = hash
 					partialsByLevel[level] = hash
@@ -254,7 +254,7 @@ func TestOutboxProofs(t *testing.T) {
 
 					curr, ok := known[step]
 					if !ok {
-						t.Fatal("We should know the current node's value")
+						Fail(t, "We should know the current node's value")
 					}
 
 					left := curr
@@ -266,7 +266,7 @@ func TestOutboxProofs(t *testing.T) {
 						step.Leaf -= 1 << step.Level
 						partial, ok := known[step]
 						if !ok {
-							t.Fatal("There should be a partial here")
+							Fail(t, "There should be a partial here")
 						}
 						left = partial
 					} else {
@@ -299,7 +299,7 @@ func TestOutboxProofs(t *testing.T) {
 			for i, place := range nodes {
 				hash, ok := known[place]
 				if !ok {
-					t.Fatal("We're missing data for the node at position", place)
+					Fail(t, "We're missing data for the node at position", place)
 				}
 				hashes[i] = hash
 				t.Log("node", place, hash)
@@ -313,7 +313,7 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			if !proof.IsCorrect() {
-				t.Fatal("Proof is wrong")
+				Fail(t, "Proof is wrong")
 			}
 		}
 	}

@@ -6,12 +6,12 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -76,7 +76,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
-	arbosState := arbos.OpenArbosState(evm.StateDB)
+	arbosState := arbosState.OpenArbosState(evm.StateDB)
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents := merkleAcc.Append(sendHash)
 
@@ -122,7 +122,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][3
 
 	// OK to not charge gas, because method is only callable by address zero
 
-	size, rootHash, rawPartials := arbos.OpenArbosState(evm.StateDB).SendMerkleAccumulator().StateForExport()
+	size, rootHash, rawPartials := arbosState.OpenArbosState(evm.StateDB).SendMerkleAccumulator().StateForExport()
 	partials := make([][32]byte, len(rawPartials))
 	for i, par := range rawPartials {
 		partials[i] = [32]byte(par)

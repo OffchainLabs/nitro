@@ -134,10 +134,6 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("Error building block: %v", err.Error()))
 	}
-	if newBlock == nil {
-		// failed to parse message, move on without creating block
-		return
-	}
 
 	newBlockHash := newBlock.Hash()
 

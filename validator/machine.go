@@ -30,11 +30,12 @@ type MachineInterface interface {
 
 // Holds an arbitrator machine pointer, and manages its lifetime
 type ArbitratorMachine struct {
-	ptr *C.struct_Machine
+	ptr    *C.struct_Machine
+	frozen bool // does not allow anything that changes machine state, not cloned with the machine
 }
 
 // Assert that ArbitratorMachine implements MachineInterface
-var _ MachineInterface = &ArbitratorMachine{}
+var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 func freeMachine(mach *ArbitratorMachine) {
 	C.arbitrator_free_machine(mach.ptr)
@@ -49,7 +50,7 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), C.struct_GlobalState{}, C.struct_CMultipleByteArrays{})
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)))
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
@@ -58,6 +59,11 @@ func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, err
 	return machineFromPointer(mach), nil
 }
 
+func (m *ArbitratorMachine) Freeze() {
+	m.frozen = true
+}
+
+// Even if origin is frozen - clone is not
 func (m *ArbitratorMachine) Clone() *ArbitratorMachine {
 	defer runtime.KeepAlive(m)
 	return machineFromPointer(C.arbitrator_clone_machine(m.ptr))
@@ -67,14 +73,20 @@ func (m *ArbitratorMachine) CloneMachineInterface() MachineInterface {
 	return m.Clone()
 }
 
-func (m *ArbitratorMachine) SetGlobalState(globalState C.struct_GlobalState) {
+func (m *ArbitratorMachine) SetGlobalState(globalState GoGlobalState) error {
 	defer runtime.KeepAlive(m)
-	C.arbitrator_set_global_state(m.ptr, globalState)
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	cGlobalState := GlobalStateToC(globalState)
+	C.arbitrator_set_global_state(m.ptr, cGlobalState)
+	return nil
 }
 
-func (m *ArbitratorMachine) GetGlobalState() C.struct_GlobalState {
+func (m *ArbitratorMachine) GetGlobalState() GoGlobalState {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_global_state(m.ptr)
+	cGlobalState := C.arbitrator_global_state(m.ptr)
+	return GlobalStateFromC(cGlobalState)
 }
 
 func (m *ArbitratorMachine) GetStepCount() uint64 {
@@ -85,6 +97,11 @@ func (m *ArbitratorMachine) GetStepCount() uint64 {
 func (m *ArbitratorMachine) IsRunning() bool {
 	defer runtime.KeepAlive(m)
 	return C.arbitrator_get_status(m.ptr) == C.Running
+}
+
+func (m *ArbitratorMachine) IsErrored() bool {
+	defer runtime.KeepAlive(m)
+	return C.arbitrator_get_status(m.ptr) == C.Errored
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
@@ -125,6 +142,9 @@ func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
 func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	defer runtime.KeepAlive(m)
 
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
@@ -135,6 +155,9 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 
 func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 	defer runtime.KeepAlive(m)
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
 
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
@@ -153,6 +176,14 @@ func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 	return
 }
 
+func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
+	defer runtime.KeepAlive(m)
+	bytes := C.arbitrator_module_root(m.ptr)
+	for i, b := range bytes.bytes {
+		hash[i] = byte(b)
+	}
+	return
+}
 func (m *ArbitratorMachine) ProveNextStep() []byte {
 	defer runtime.KeepAlive(m)
 
@@ -180,6 +211,10 @@ func (m *ArbitratorMachine) SerializeState(path string) error {
 func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	defer runtime.KeepAlive(m)
 
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+
 	cPath := C.CString(path)
 	status := C.arbitrator_deserialize_and_replace_state(m.ptr, cPath)
 	C.free(unsafe.Pointer(cPath))
@@ -191,9 +226,15 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	}
 }
 
-func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data C.CByteArray) error {
+func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), data)
+
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	cbyte := CreateCByteArray(data)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), cbyte)
+	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
 	} else {
@@ -201,12 +242,31 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data C.CByteA
 	}
 }
 
-func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data C.CByteArray) error {
+func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) error {
 	defer runtime.KeepAlive(m)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), data)
+
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+
+	cbyte := CreateCByteArray(data)
+	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), cbyte)
+	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
 	} else {
 		return nil
 	}
+}
+
+func (m *ArbitratorMachine) AddPreimages(preimages map[common.Hash][]byte) error {
+	for _, val := range preimages {
+		cbyte := CreateCByteArray(val)
+		status := C.arbitrator_add_preimage(m.ptr, cbyte)
+		DestroyCByteArray(cbyte)
+		if status != 0 {
+			return errors.New("failed to add sequencer inbox message")
+		}
+	}
+	return nil
 }
