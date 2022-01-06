@@ -251,6 +251,10 @@ type StorageBackedAddress struct {
 	offset  common.Hash
 }
 
+func (sto *Storage) NewStorageBackedAddress(offset uint64) StorageBackedAddress {
+	return StorageBackedAddress{sto, util.UintToHash(offset)}
+}
+
 func (sto *Storage) OpenStorageBackedAddress(offset uint64) *StorageBackedAddress {
 	return &StorageBackedAddress{sto, util.UintToHash(offset)}
 }
@@ -272,6 +276,10 @@ var NilAddressRepresentation common.Hash
 
 func init() {
 	NilAddressRepresentation = common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 160))
+}
+
+func (sto *Storage) NewStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
+	return StorageBackedAddressOrNil{sto, util.UintToHash(offset)}
 }
 
 func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) *StorageBackedAddressOrNil {
@@ -298,6 +306,12 @@ func (sba *StorageBackedAddressOrNil) Set(val *common.Address) {
 
 type StorageBackedBytes struct {
 	storage *Storage
+}
+
+func (sto *Storage) NewStorageBackedBytes(id []byte) StorageBackedBytes {
+	return StorageBackedBytes{
+		sto.OpenSubStorage(id),
+	}
 }
 
 func (sto *Storage) OpenStorageBackedBytes(id []byte) *StorageBackedBytes {

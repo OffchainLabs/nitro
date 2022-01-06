@@ -17,14 +17,14 @@ import (
 type AddressTable struct {
 	backingStorage *storage.Storage
 	byAddress      *storage.Storage // 0 means item isn't in the table; n > 0 means it's in the table at slot n-1
-	numItems       *storage.StorageBackedUint64
+	numItems       storage.StorageBackedUint64
 }
 
 func Initialize(sto *storage.Storage) {
 }
 
 func Open(sto *storage.Storage) *AddressTable {
-	numItems := sto.OpenStorageBackedUint64(0)
+	numItems := sto.NewStorageBackedUint64(0)
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 

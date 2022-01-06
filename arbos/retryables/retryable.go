@@ -41,13 +41,13 @@ func OpenRetryableState(sto *storage.Storage) *RetryableState {
 type Retryable struct {
 	id             common.Hash // not backed by storage; this is the key that determines where it lives in storage
 	backingStorage *storage.Storage
-	numTries       *storage.StorageBackedUint64
-	timeout        *storage.StorageBackedUint64
-	from           *storage.StorageBackedAddress
-	to             *storage.StorageBackedAddressOrNil
-	callvalue      *storage.StorageBackedBigInt
-	beneficiary    *storage.StorageBackedAddress
-	calldata       *storage.StorageBackedBytes
+	numTries       storage.StorageBackedUint64
+	timeout        storage.StorageBackedUint64
+	from           storage.StorageBackedAddress
+	to             storage.StorageBackedAddressOrNil
+	callvalue      storage.StorageBackedBigInt
+	beneficiary    storage.StorageBackedAddress
+	calldata       storage.StorageBackedBytes
 }
 
 const (
@@ -74,13 +74,13 @@ func (rs *RetryableState) CreateRetryable(
 	ret := &Retryable{
 		id,
 		sto,
-		sto.OpenStorageBackedUint64(numTriesOffset),
-		sto.OpenStorageBackedUint64(timeoutOffset),
-		sto.OpenStorageBackedAddress(fromOffset),
-		sto.OpenStorageBackedAddressOrNil(toOffset),
-		sto.OpenStorageBackedBigInt(callvalueOffset),
-		sto.OpenStorageBackedAddress(beneficiaryOffset),
-		sto.OpenStorageBackedBytes(calldataKey),
+		sto.NewStorageBackedUint64(numTriesOffset),
+		sto.NewStorageBackedUint64(timeoutOffset),
+		sto.NewStorageBackedAddress(fromOffset),
+		sto.NewStorageBackedAddressOrNil(toOffset),
+		sto.NewStorageBackedBigInt(callvalueOffset),
+		sto.NewStorageBackedAddress(beneficiaryOffset),
+		sto.NewStorageBackedBytes(calldataKey),
 	}
 	ret.numTries.Set(0)
 	ret.timeout.Set(timeout)
@@ -98,7 +98,7 @@ func (rs *RetryableState) CreateRetryable(
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
-	timeout := sto.OpenStorageBackedUint64(timeoutOffset)
+	timeout := sto.NewStorageBackedUint64(timeoutOffset)
 	if timeout.Get() == 0 {
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
@@ -106,13 +106,13 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	return &Retryable{
 		id:             id,
 		backingStorage: sto,
-		numTries:       sto.OpenStorageBackedUint64(numTriesOffset),
+		numTries:       sto.NewStorageBackedUint64(numTriesOffset),
 		timeout:        timeout,
-		from:           sto.OpenStorageBackedAddress(fromOffset),
-		to:             sto.OpenStorageBackedAddressOrNil(toOffset),
-		callvalue:      sto.OpenStorageBackedBigInt(callvalueOffset),
-		beneficiary:    sto.OpenStorageBackedAddress(beneficiaryOffset),
-		calldata:       sto.OpenStorageBackedBytes(calldataKey),
+		from:           sto.NewStorageBackedAddress(fromOffset),
+		to:             sto.NewStorageBackedAddressOrNil(toOffset),
+		callvalue:      sto.NewStorageBackedBigInt(callvalueOffset),
+		beneficiary:    sto.NewStorageBackedAddress(beneficiaryOffset),
+		calldata:       sto.NewStorageBackedBytes(calldataKey),
 	}
 }
 
@@ -140,8 +140,8 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) bool {
 	return true
 }
 
-func (retryable *Retryable) NumTries() *storage.StorageBackedUint64 {
-	return retryable.numTries
+func (retryable *Retryable) NumTries() uint64 {
+	return retryable.numTries.Get()
 }
 
 func (retryable *Retryable) IncrementNumTries() uint64 {
@@ -160,28 +160,32 @@ func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Ha
 	return common.BytesToHash(bytes)
 }
 
-func (retryable *Retryable) Beneficiary() *storage.StorageBackedAddress {
-	return retryable.beneficiary
+func (retryable *Retryable) Beneficiary() common.Address {
+	return retryable.beneficiary.Get()
 }
 
-func (retryable *Retryable) Timeout() *storage.StorageBackedUint64 {
-	return retryable.timeout
+func (retryable *Retryable) Timeout() uint64 {
+	return retryable.timeout.Get()
 }
 
-func (retryable *Retryable) From() *storage.StorageBackedAddress {
-	return retryable.from
+func (retryable *Retryable) SetTimeout(val uint64) {
+	retryable.timeout.Set(val)
 }
 
-func (retryable *Retryable) To() *storage.StorageBackedAddressOrNil {
-	return retryable.to
+func (retryable *Retryable) From() common.Address {
+	return retryable.from.Get()
 }
 
-func (retryable *Retryable) Callvalue() *storage.StorageBackedBigInt {
-	return retryable.callvalue
+func (retryable *Retryable) To() *common.Address {
+	return retryable.to.Get()
 }
 
-func (retryable *Retryable) Calldata() *storage.StorageBackedBytes {
-	return retryable.calldata
+func (retryable *Retryable) Callvalue() *big.Int {
+	return retryable.callvalue.Get()
+}
+
+func (retryable *Retryable) Calldata() []byte {
+	return retryable.calldata.Get()
 }
 
 func (retryable *Retryable) CalldataSize() uint64 { // efficiently gets size of calldata without loading all of it
@@ -193,11 +197,11 @@ func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limi
 	if retryable == nil {
 		return errors.New("ticketId not found")
 	}
-	timeout := retryable.Timeout().Get()
+	timeout := retryable.Timeout()
 	if timeout > limitBeforeAdd {
 		return errors.New("timeout too far into the future")
 	}
-	retryable.Timeout().Set(timeout + timeToAdd)
+	retryable.SetTimeout(timeout + timeToAdd)
 	return nil
 }
 
@@ -205,17 +209,17 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 	if retryable.id != other.id {
 		return false
 	}
-	if retryable.NumTries().Get() != other.NumTries().Get() {
+	if retryable.NumTries() != other.NumTries() {
 		return false
 	}
-	if retryable.Timeout().Get() != other.Timeout().Get() {
+	if retryable.Timeout() != other.Timeout() {
 		return false
 	}
-	if retryable.From().Get() != other.From().Get() {
+	if retryable.From() != other.From() {
 		return false
 	}
-	rto := retryable.To().Get()
-	oto := other.To().Get()
+	rto := retryable.To()
+	oto := other.To()
 	if rto == nil {
 		if oto != nil {
 			return false
@@ -225,13 +229,13 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 	} else if *rto != *oto {
 		return false
 	}
-	if retryable.Callvalue().Get().Cmp(other.Callvalue().Get()) != 0 {
+	if retryable.Callvalue().Cmp(other.Callvalue()) != 0 {
 		return false
 	}
-	if retryable.Beneficiary().Get() != other.Beneficiary().Get() {
+	if retryable.Beneficiary() != other.Beneficiary() {
 		return false
 	}
-	return bytes.Equal(retryable.Calldata().Get(), other.Calldata().Get())
+	return bytes.Equal(retryable.Calldata(), other.Calldata())
 }
 
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {

@@ -12,8 +12,8 @@ import (
 
 type Queue struct {
 	storage       *Storage
-	nextPutOffset *StorageBackedUint64
-	nextGetOffset *StorageBackedUint64
+	nextPutOffset StorageBackedUint64
+	nextGetOffset StorageBackedUint64
 }
 
 func InitializeQueue(sto *Storage) {
@@ -24,8 +24,8 @@ func InitializeQueue(sto *Storage) {
 func OpenQueue(sto *Storage) *Queue {
 	return &Queue{
 		sto,
-		sto.OpenStorageBackedUint64(0),
-		sto.OpenStorageBackedUint64(1),
+		sto.NewStorageBackedUint64(0),
+		sto.NewStorageBackedUint64(1),
 	}
 }
 

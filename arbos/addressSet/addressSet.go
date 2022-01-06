@@ -15,7 +15,7 @@ import (
 //   members of the set are stored sequentially from 1 onward
 type AddressSet struct {
 	backingStorage *storage.Storage
-	size           *storage.StorageBackedUint64
+	size           storage.StorageBackedUint64
 	byAddress      *storage.Storage
 }
 
@@ -26,7 +26,7 @@ func Initialize(sto *storage.Storage) {
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
-		sto.OpenStorageBackedUint64(0),
+		sto.NewStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
 	}
 }
