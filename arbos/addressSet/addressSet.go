@@ -15,8 +15,7 @@ import (
 //   members of the set are stored sequentially from 1 onward
 type AddressSet struct {
 	backingStorage *storage.Storage
-	size           *storage.StorageBackedUint64
-	cachedMembers  map[common.Address]struct{}
+	size           storage.StorageBackedUint64
 	byAddress      *storage.Storage
 }
 
@@ -27,8 +26,7 @@ func Initialize(sto *storage.Storage) {
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
-		sto.OpenStorageBackedUint64(util.UintToHash(0)),
-		make(map[common.Address]struct{}),
+		sto.NewStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
 	}
 }
@@ -38,14 +36,7 @@ func (aset *AddressSet) Size() uint64 {
 }
 
 func (aset *AddressSet) IsMember(addr common.Address) bool {
-	if _, cached := aset.cachedMembers[addr]; cached {
-		return true
-	}
-	if aset.byAddress.Get(common.BytesToHash(addr.Bytes())) != (common.Hash{}) {
-		aset.cachedMembers[addr] = struct{}{}
-		return true
-	}
-	return false
+	return aset.byAddress.Get(common.BytesToHash(addr.Bytes())) != (common.Hash{})
 }
 
 func (aset *AddressSet) AllMembers() []common.Address {
@@ -64,7 +55,7 @@ func (aset *AddressSet) Add(addr common.Address) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	aset.byAddress.Set(addrAsHash, slot)
 	aset.backingStorage.Set(slot, addrAsHash)
-	aset.size.Set(aset.size.Get() + 1)
+	_ = aset.size.Increment()
 }
 
 func (aset *AddressSet) Remove(addr common.Address) {
@@ -73,12 +64,11 @@ func (aset *AddressSet) Remove(addr common.Address) {
 	if slot == 0 {
 		return
 	}
-	delete(aset.cachedMembers, addr)
 	aset.byAddress.Set(addrAsHash, common.Hash{})
 	sz := aset.size.Get()
 	if slot < sz {
 		aset.backingStorage.SetByUint64(slot, aset.backingStorage.GetByUint64(sz))
 	}
 	aset.backingStorage.SetByUint64(sz, common.Hash{})
-	aset.size.Set(sz - 1)
+	_ = aset.size.Decrement()
 }

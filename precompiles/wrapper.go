@@ -6,12 +6,12 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
 // A precompile wrapper for those not allowed in production
@@ -76,7 +76,7 @@ func (wrapper *OwnerPrecompile) Call(
 		// the user can't pay for the ownership check
 		return nil, 0, vm.ErrOutOfGas
 	}
-	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
+	owners := arbosState.OpenArbosState(evm.StateDB).ChainOwners()
 	if !owners.IsMember(caller) {
 		gasLeft := gasSupplied - 3*params.SloadGas
 		return nil, gasLeft, errors.New("unauthorized caller to access-controlled method")

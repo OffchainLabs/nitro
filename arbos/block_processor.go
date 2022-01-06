@@ -7,6 +7,7 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
 	"strconv"
@@ -52,7 +53,7 @@ var RedeemScheduledEventID common.Hash
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := OpenArbosState(statedb).GasPriceWei()
+	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -76,7 +77,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.St
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    PerBlockGasLimit,
+		GasLimit:    arbosState.PerBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -108,7 +109,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := OpenArbosState(statedb)
+	state := arbosState.OpenArbosState(statedb)
 	gasLeft := state.CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
@@ -126,7 +127,7 @@ func ProduceBlock(
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb)
 		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
@@ -227,7 +228,7 @@ func ProduceBlock(
 
 				ticketId := txLog.Topics[1]
 
-				retryableState = OpenArbosState(statedb).RetryableState()
+				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
 				retryable := retryableState.OpenRetryable(ticketId, time)
 
 				reedem := types.NewTx(&types.ArbitrumRetryTx{
@@ -282,7 +283,7 @@ func ProduceBlock(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
 
