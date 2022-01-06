@@ -158,6 +158,10 @@ func createHostIoMachineInternal() {
 		return
 	}
 
+	if machine.IsErrored() {
+		panic("Machine entered errored state while caching execution up to host io")
+	}
+
 	hostIoMachine.machine = machine
 	hostIoMachine.machine.Freeze()
 	if !saveStateToFile {

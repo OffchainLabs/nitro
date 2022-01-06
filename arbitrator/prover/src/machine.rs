@@ -914,12 +914,38 @@ impl Machine {
                 main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
             );
+            // Go's flags library panics if the argument list is empty.
+            // To pass in the program name argument, we need to put it in memory.
+            // The Go linker guarantees a section of memory starting at byte 4096 is available for this purpose.
+            // https://github.com/golang/go/blob/252324e879e32f948d885f787decf8af06f82be9/misc/wasm/wasm_exec.js#L520
+            // These memory stores also assume that the Go module's memory is large enough to begin with.
+            // That's also handled by the Go compiler. Go 1.17.5 in the compilation of the arbitrator go test case
+            // initializes its memory to 272 pages long (about 18MB), much larger than the required space.
+            let free_memory_base = 4096;
+            let name_str_ptr = free_memory_base;
+            let argv_ptr = name_str_ptr + 8;
+            assert!(main_module.internals_offset != 0);
+            let main_module_idx = u32::try_from(main_module_idx).unwrap();
+            let main_module_store32 =
+                HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
+            // Write "js\0" to name_str_ptr, to match what the actual JS environment does
+            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
+            entrypoint.push(HirInstruction::I32Const(0x736a)); // b"js\0"
+            entrypoint.push(main_module_store32.clone());
+            entrypoint.push(HirInstruction::I32Const(name_str_ptr + 4));
             entrypoint.push(HirInstruction::I32Const(0));
+            entrypoint.push(main_module_store32.clone());
+            // Write name_str_ptr to argv_ptr
+            entrypoint.push(HirInstruction::I32Const(argv_ptr));
+            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
+            entrypoint.push(main_module_store32.clone());
+            entrypoint.push(HirInstruction::I32Const(argv_ptr + 4));
             entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(HirInstruction::CrossModuleCall(
-                u32::try_from(main_module_idx).unwrap(),
-                f,
-            ));
+            entrypoint.push(main_module_store32);
+            // Launch main with an argument count of 1 and argv_ptr
+            entrypoint.push(HirInstruction::I32Const(1));
+            entrypoint.push(HirInstruction::I32Const(argv_ptr));
+            entrypoint.push(HirInstruction::CrossModuleCall(main_module_idx, f));
             if let Some(i) = available_imports.get("wavm__go_after_run") {
                 assert!(
                     i.ty == FunctionType::default(),

@@ -7,10 +7,10 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
 	"strconv"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -46,11 +46,15 @@ var ChainConfig = &params.ChainConfig{
 	},
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
+// set by the precompile module, to avoid a package dependence cycle
+var ArbRetryableTxAddress common.Address
+var RedeemScheduledEventID common.Hash
+
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := big.NewInt(params.InitialBaseFee / 100)
-	timestamp := uint64(time.Now().Unix())
+	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
+	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp.Uint64()
@@ -59,7 +63,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
-		baseFee = prevHeader.BaseFee
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
@@ -74,13 +77,13 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    PerBlockGasLimit,
+		GasLimit:    arbosState.PerBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
 		MixDigest:   [32]byte{}, // Unused
 		Nonce:       [8]byte{},  // Filled in later
-		BaseFee:     baseFee,    //TODO: parameter
+		BaseFee:     baseFee,
 	}
 }
 
@@ -106,18 +109,48 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info)
+	state := arbosState.OpenArbosState(statedb)
+	gasLeft := state.CurrentPerBlockGasLimit()
+	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(ChainConfig, header.Number)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
-	gasLeft := PerBlockGasLimit
 	gasPrice := header.BaseFee
+	time := header.Time
+
+	redeems := types.Transactions{}
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(1 << 63)
 
-	for _, tx := range txes {
+	for len(txes) > 0 || len(redeems) > 0 {
+		// repeatedly process the next tx, doing redeems created along the way in FIFO order
+
+		state := arbosState.OpenArbosState(statedb)
+		retryableState := state.RetryableState()
+
+		var tx *types.Transaction
+		if len(redeems) > 0 {
+			tx = redeems[0]
+			redeems = redeems[1:]
+
+			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
+			if !ok {
+				panic("retryable tx is somehow not a retryable")
+			}
+			retryable := retryableState.OpenRetryable(retry.TicketId, time)
+			if retryable == nil {
+				// retryable was already deleted, so just refund the gas
+				retryGas := new(big.Int).SetUint64(retry.Gas)
+				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
+				statedb.AddBalance(retry.RefundTo, gasGiven)
+				continue
+			}
+		} else {
+			tx = txes[0]
+			txes = txes[1:]
+		}
 
 		sender, err := signer.Sender(tx)
 		if err != nil {
@@ -133,7 +166,7 @@ func ProduceBlock(
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
-			pricing := OpenArbosState(statedb).L1PricingState()
+			pricing := state.L1PricingState()
 			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
 			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
 			if posterCostInL2Gas.IsUint64() {
@@ -154,12 +187,10 @@ func ProduceBlock(
 			continue
 		}
 
-		gasLeft -= computeGas
-
 		snap := statedb.Snapshot()
-		statedb.Prepare(tx.Hash(), len(txes))
+		statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
 
-		// We've checked that the block can fit this message, so we'll use a pool that won't run out
+		gasLeft -= computeGas
 		gasPool := gethGas
 
 		receipt, err := core.ApplyTransaction(
@@ -192,6 +223,33 @@ func ProduceBlock(
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
 		}
 
+		for _, txLog := range receipt.Logs {
+			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
+
+				ticketId := txLog.Topics[1]
+
+				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
+				retryable := retryableState.OpenRetryable(ticketId, time)
+
+				reedem := types.NewTx(&types.ArbitrumRetryTx{
+					ArbitrumContractTx: types.ArbitrumContractTx{
+						ChainId:   ChainConfig.ChainID,
+						RequestId: txLog.Topics[2],
+						From:      retryable.From(),
+						GasPrice:  gasPrice,
+						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+						To:        retryable.To(),
+						Value:     retryable.Callvalue(),
+						Data:      retryable.Calldata(),
+					},
+					TicketId: ticketId,
+					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
+				})
+
+				redeems = append(redeems, reedem)
+			}
+		}
+
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
 		gasLeft -= gasUsed
@@ -211,22 +269,26 @@ func ProduceBlock(
 		}
 	}
 
+	FinalizeBlock(header, complete, receipts, statedb)
+	header.Root = statedb.IntermediateRoot(true)
+
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
-	FinalizeBlock(header, complete, receipts, statedb)
-
 	return block, receipts
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
+
+		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()

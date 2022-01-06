@@ -389,6 +389,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		}
 		steps += count
 	}
+	if mach.IsErrored() {
+		panic("Machine entered errored state during attempted validation")
+	}
 	gsEnd := mach.GetGlobalState()
 
 	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash}

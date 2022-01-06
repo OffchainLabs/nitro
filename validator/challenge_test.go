@@ -25,25 +25,19 @@ import (
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{}, common.Address{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return ospEntry
 }
 
@@ -59,9 +53,7 @@ func CreateChallenge(
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
 	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	var startHashBytes [32]byte
 	var endHashBytes [32]byte
@@ -82,22 +74,17 @@ func CreateChallenge(
 		big.NewInt(100),
 		big.NewInt(100),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	return resultReceiver, challenge
 }
 
 func createTransactOpts(t *testing.T) *bind.TransactOpts {
 	key, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1337))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return opts
 }
 
@@ -130,15 +117,10 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	backend.Commit()
 
 	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	endMachine := machine.Clone()
-	err = endMachine.Step(ctx, ^uint64(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, endMachine.Step(ctx, ^uint64(0)))
 
 	startMachineHash := machine.Hash()
 	endMachineHash := endMachine.Hash()
@@ -170,14 +152,10 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	}
 
 	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, asserterMachine, 0, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, challengerMachine, 0, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	for i := 0; i < 100; i++ {
 		var currentCorrect bool
@@ -200,9 +178,8 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		backend.Commit()
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
+
 		if winner == (common.Address{}) {
 			continue
 		}

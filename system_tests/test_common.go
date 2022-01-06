@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -21,10 +23,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -36,16 +39,11 @@ var (
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
 	t.Helper()
 	for _, tx := range txs {
-		err := client.SendTransaction(ctx, tx)
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, client.SendTransaction(ctx, tx))
 	}
 	if len(txs) > 0 {
 		_, err := arbnode.EnsureTxSucceeded(ctx, client, txs[len(txs)-1])
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 	}
 }
 
@@ -66,13 +64,11 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	var err error
 	stackConf.DataDir = t.TempDir()
 	stack, err := node.New(&stackConf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, arbos.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
@@ -81,33 +77,18 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
 	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["faucet"].PrivateKey, "passphrase")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = tempKeyStore.Unlock(faucetAccount, "passphrase")
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
 	l1backend.AccountManager().AddBackend(tempKeyStore)
 	l1backend.SetEtherbase(l1info.GetAddress("faucet"))
-	err = stack.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = l1backend.StartMining(1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, stack.Start())
+	Require(t, l1backend.StartMining(1))
 
 	rpcClient, err := stack.Attach()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	l1Client := ethclient.NewClient(rpcClient)
 
@@ -128,9 +109,7 @@ func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	addresses, err := arbnode.DeployOnL1(ctx, l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
@@ -165,16 +144,12 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 	stack, err := arbnode.CreateDefaultStack()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return l2info, stack, chainDb, blockchain
 }
 
@@ -183,9 +158,8 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 	inproc := rpc.NewServer()
 	for _, api := range apis {
-		if err := inproc.RegisterName(api.Namespace, api.Service); err != nil {
-			t.Fatal(err)
-		}
+		err := inproc.RegisterName(api.Namespace, api.Service)
+		Require(t, err)
 	}
 
 	return ethclient.NewClient(rpc.DialInProc(inproc))
@@ -203,29 +177,46 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 	}
 
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, &arbnode.NodeConfigL1Test, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = node.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	Require(t, node.Start(ctx))
 
 	l2info.Client = ClientForArbBackend(t, node.Backend)
 	return l2info, node, l1info, l1backend, l1stack
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node) {
+func CreateTestL2(
+	t *testing.T,
+	ctx context.Context,
+) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *bind.TransactOpts) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
 	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = node.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	Require(t, node.Start(ctx))
 	l2info.Client = ClientForArbBackend(t, node.Backend)
-	return l2info, node
+
+	client := l2info.Client
+	auth := l2info.GetDefaultTransactOpts("Owner")
+
+	// make auth a chain owner
+	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	tx, err := arbdebug.BecomeChainOwner(&auth)
+	Require(t, err, "failed to deploy ArbDebug")
+
+	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+
+	return l2info, node, client, &auth
+}
+
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }
