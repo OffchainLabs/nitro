@@ -37,10 +37,10 @@ type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    L1Interface
+	client    bind.ContractBackend
 }
 
-func NewSequencerInbox(client L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client bind.ContractBackend, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -83,6 +83,7 @@ func (i *SequencerInbox) GetAccumulator(ctx context.Context, sequenceNumber uint
 
 type SequencerInboxBatch struct {
 	BlockHash         common.Hash
+	BlockNumber       uint64
 	SequenceNumber    uint64
 	BeforeInboxAcc    common.Hash
 	AfterInboxAcc     common.Hash
@@ -93,7 +94,7 @@ type SequencerInboxBatch struct {
 	txIndexInBlock    uint
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) GetData(ctx context.Context, client ethereum.ChainReader) ([]byte, error) {
 	if m.dataIfAvailable != nil {
 		return *m.dataIfAvailable, nil
 	}
@@ -109,7 +110,7 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) (
 	return args["data"].([]byte), nil
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client ethereum.ChainReader) ([]byte, error) {
 	var fullData []byte
 
 	// Serialize the header
@@ -159,6 +160,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
+				BlockNumber:       log.BlockNumber,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
 				AfterInboxAcc:     parsedLog.AfterAcc,
@@ -182,6 +184,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 			}
 			batch := &SequencerInboxBatch{
 				BlockHash:         log.BlockHash,
+				BlockNumber:       log.BlockNumber,
 				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
 				BeforeInboxAcc:    parsedLog.BeforeAcc,
 				AfterInboxAcc:     parsedLog.AfterAcc,

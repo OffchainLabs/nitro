@@ -9,11 +9,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos"
 )
 
 type AccountInfo struct {
@@ -23,33 +25,46 @@ type AccountInfo struct {
 }
 
 type BlockchainTestInfo struct {
-	T        *testing.T
-	Signer   types.Signer
-	Accounts map[string]*AccountInfo
-	keySeed  int64
-	Client   *ethclient.Client
+	T            *testing.T
+	Signer       types.Signer
+	Accounts     map[string]*AccountInfo
+	Client       *ethclient.Client
+	GenesisAlloc core.GenesisAlloc
 }
 
-func NewBlockChainTestInfo(t *testing.T, signer types.Signer, keySeed int64) *BlockchainTestInfo {
+func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
-		T:        t,
-		Signer:   signer,
-		Accounts: make(map[string]*AccountInfo),
-		keySeed:  keySeed,
+		T:            t,
+		Signer:       signer,
+		Accounts:     make(map[string]*AccountInfo),
+		GenesisAlloc: make(core.GenesisAlloc),
 	}
+}
+
+func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
+	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)))
+}
+
+func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
+	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
 }
 
 func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	b.T.Helper()
 
-	seedBytes := common.BigToHash(big.NewInt(b.keySeed)).Bytes()
-	seedBytes = append(seedBytes, seedBytes...)
+	nameBytes := []byte(name)
+	seedBytes := make([]byte, 0, 128)
+	for len(seedBytes) < 64 {
+		seedBytes = append(seedBytes, nameBytes...)
+	}
 	seedReader := bytes.NewReader(seedBytes)
 	privateKey, err := ecdsa.GenerateKey(crypto.S256(), seedReader)
 	if err != nil {
 		b.T.Fatal(err)
 	}
-	b.keySeed += 1
+	if b.Accounts[name] != nil {
+		b.T.Fatal("account already exists")
+	}
 	b.Accounts[name] = &AccountInfo{
 		PrivateKey: privateKey,
 		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
@@ -58,11 +73,31 @@ func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	log.Info("New Key ", "name", name, "Address", b.Accounts[name].Address)
 }
 
+func (b *BlockchainTestInfo) HasAccount(name string) bool {
+	return b.Accounts[name] != nil
+}
+
+func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.Int) {
+	b.GenerateAccount(name)
+	b.GenesisAlloc[b.Accounts[name].Address] = core.GenesisAccount{
+		Balance: new(big.Int).Set(balance),
+	}
+}
+
+func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
+	return b.GenesisAlloc
+}
+
 func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 	b.Accounts[name] = &AccountInfo{
 		PrivateKey: nil,
 		Address:    address,
 	}
+}
+
+func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) {
+	infoCopy := *info
+	b.Accounts[name] = &infoCopy
 }
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {

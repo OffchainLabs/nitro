@@ -25,25 +25,19 @@ import (
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{}, common.Address{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return ospEntry
 }
 
@@ -54,13 +48,12 @@ func CreateChallenge(
 	ospEntry common.Address,
 	startMachineHash common.Hash,
 	endMachineHash common.Hash,
+	endMachineSteps uint64,
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
 	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	var startHashBytes [32]byte
 	var endHashBytes [32]byte
@@ -75,27 +68,23 @@ func CreateChallenge(
 			MaxInboxMessagesRead: new(big.Int).SetUint64(^uint64(0)),
 		},
 		[2][32]byte{startHashBytes, endHashBytes},
+		big.NewInt(int64(endMachineSteps)),
 		asserter,
 		challenger,
 		big.NewInt(100),
 		big.NewInt(100),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	return resultReceiver, challenge
 }
 
 func createTransactOpts(t *testing.T) *bind.TransactOpts {
 	key, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	opts, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1337))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return opts
 }
 
@@ -128,18 +117,14 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	backend.Commit()
 
 	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	endMachine := machine.Clone()
-	err = endMachine.Step(ctx, ^uint64(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, endMachine.Step(ctx, ^uint64(0)))
 
 	startMachineHash := machine.Hash()
 	endMachineHash := endMachine.Hash()
+	endMachineSteps := endMachine.GetStepCount()
 	if !asserterIsCorrect {
 		endMachineHash = IncorrectMachineHash(endMachineHash)
 	}
@@ -151,6 +136,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		ospEntry,
 		startMachineHash,
 		endMachineHash,
+		endMachineSteps,
 		asserter.From,
 		challenger.From,
 	)
@@ -165,41 +151,35 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		expectedWinner = asserter.From
 	}
 
-	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, 0, asserterMachine, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
-	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, 0, challengerMachine, 4)
-	if err != nil {
-		t.Fatal(err)
-	}
+	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, asserterMachine, 0, 4)
+	Require(t, err)
+
+	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, challengerMachine, 0, 4)
+	Require(t, err)
 
 	for i := 0; i < 100; i++ {
+		var currentCorrect bool
 		if i%2 == 0 {
-			err = challengerManager.Act(ctx)
-			if err != nil {
-				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
-					t.Log("challenge completed! challenger hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
-			}
+			_, err = challengerManager.Act(ctx)
+			currentCorrect = !asserterIsCorrect
 		} else {
-			err = asserterManager.Act(ctx)
-			if err != nil {
-				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
-					t.Log("challenge completed! asserter hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
-			}
+			_, err = asserterManager.Act(ctx)
+			currentCorrect = asserterIsCorrect
 		}
+		if err != nil {
+			if !currentCorrect &&
+				(strings.Contains(err.Error(), "lost challenge") || strings.Contains(err.Error(), "SAME_OSP_END")) {
+				t.Log("challenge completed! asserter hit expected error:", err)
+				return
+			}
+			t.Fatal(err)
+		}
+
 		backend.Commit()
 
 		winner, err := resultReceiver.Winner(&bind.CallOpts{})
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
+
 		if winner == (common.Address{}) {
 			continue
 		}
@@ -217,17 +197,17 @@ var wasmDir string = (func() string {
 })()
 
 func TestChallengeToOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, false)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 20, true)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, true)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, false)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, false)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 10000, true)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, true)
 }

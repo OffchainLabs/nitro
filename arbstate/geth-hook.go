@@ -37,11 +37,10 @@ func (p ArbosPrecompileWrapper) RunAdvanced(
 }
 
 func init() {
-	core.CreateTxProcessingHook = func(msg core.Message, evm *vm.EVM) core.TxProcessingHook {
+	core.ReadyEVMForL2 = func(evm *vm.EVM, msg core.Message) {
 		if evm.ChainConfig().IsArbitrum(big.NewInt(0)) {
-			return arbos.NewTxProcessor(msg, evm)
+			evm.ProcessingHook = arbos.NewTxProcessor(evm, msg)
 		}
-		return nil
 	}
 
 	for k, v := range vm.PrecompiledContractsBerlin {
