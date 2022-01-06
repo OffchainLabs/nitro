@@ -18,6 +18,8 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 )
 
+var simulatedChainID = big.NewInt(1337)
+
 type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey

@@ -30,8 +30,6 @@ import (
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
-var simulatedChainID = big.NewInt(1337)
-
 var (
 	l1Genesys, l2Genesys *core.Genesis
 )
