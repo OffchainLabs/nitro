@@ -6,10 +6,11 @@ package arbtest
 
 import (
 	"context"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -46,8 +47,10 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 	}
 }
 
-func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
+func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	if l1info == nil {
+		l1info = NewL1TestInfo(t)
+	}
 	l1info.GenerateAccount("faucet")
 
 	stackConf := node.DefaultConfig
@@ -66,6 +69,10 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
 	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	infoGenesys := l1info.GetGenesysAlloc()
+	for acct, info := range infoGenesys {
+		l1Genesys.Alloc[acct] = info
+	}
 	nodeConf.Genesis = l1Genesys
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
@@ -110,7 +117,7 @@ func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 }
 
 func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
-	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
+	l2info := NewArbTestInfo(t)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
 	l2GenesysAlloc := make(map[common.Address]core.GenesisAccount)
@@ -160,7 +167,7 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
+	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
 	addresses := TestDeployOnL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
