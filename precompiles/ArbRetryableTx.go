@@ -6,11 +6,11 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -35,7 +35,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	if err := c.burn(con.CanceledGasCost(ticketId)); err != nil {
 		return err
 	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	retryable := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if retryable == nil {
 		return NotFoundError
@@ -52,7 +52,7 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (ad
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return addr{}, err
 	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	retryable := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if retryable == nil {
 		return common.Address{}, NotFoundError
@@ -64,7 +64,7 @@ func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (h
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return nil, err
 	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	nbytes := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
 	if nbytes == 0 {
 		return nil, NotFoundError
@@ -83,7 +83,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return big.NewInt(0), err
 	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	retryable := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if retryable == nil {
 		return big.NewInt(0), NotFoundError
@@ -99,7 +99,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]by
 	}
 
 	currentTime := evm.Context.Time.Uint64()
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	window := currentTime + retryables.RetryableLifetimeSeconds
 	err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
 	if err != nil {
@@ -118,7 +118,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return common.Hash{}, err
 	}
 
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	writeBytes := util.WordsForBytes(retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64()))
 	if err := c.burn(params.SloadGas * writeBytes); err != nil {
 		return common.Hash{}, err

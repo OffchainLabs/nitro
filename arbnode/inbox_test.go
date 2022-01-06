@@ -7,6 +7,7 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -48,7 +49,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 
 	db := rawdb.NewMemoryDatabase()
@@ -84,7 +85,7 @@ func TestTransactionStreamer(t *testing.T) {
 	defer cancel()
 	inbox.Start(ctx)
 
-	maxExpectedGasCost := big.NewInt(arbos.InitialGasPriceWei)
+	maxExpectedGasCost := big.NewInt(arbosState.InitialGasPriceWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
 
 	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
@@ -134,7 +135,7 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbos.InitialGasPriceWei))...)
+				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbosState.InitialGasPriceWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(amount)...)
 				messages = append(messages, arbstate.MessageWithMetadata{

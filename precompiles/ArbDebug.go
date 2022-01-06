@@ -4,7 +4,9 @@
 
 package precompiles
 
-import "github.com/offchainlabs/arbstate/arbos"
+import (
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+)
 
 // All calls to this precompile are authenticated by the DebugPrecompile wrapper,
 // which ensures these methods are not accessible in production.
@@ -35,10 +37,10 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value [32]byte
 }
 
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
-	arbos.OpenArbosState(evm.StateDB).ChainOwners().Add(c.caller)
+	arbosState.OpenArbosState(evm.StateDB).ChainOwners().Add(c.caller)
 	return nil
 }
 
 func (con ArbDebug) GetL2GasPrice(c ctx, evm mech) (huge, error) {
-	return arbos.OpenArbosState(evm.StateDB).GasPriceWei(), nil
+	return arbosState.OpenArbosState(evm.StateDB).GasPriceWei(), nil
 }
