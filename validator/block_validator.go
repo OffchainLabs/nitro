@@ -456,6 +456,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				return
 			}
 		}
+		_, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		if !haveBatch {
+			return
+		}
 		// valdationEntries is By blockNumber, which is one more than pos
 		entry, found := v.validationEntries.Load(v.posNextSend + 1)
 		if !found {
