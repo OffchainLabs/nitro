@@ -62,6 +62,8 @@ func (p *TxProcessor) getAggregator() *common.Address {
 
 // returns whether message is a successful deposit
 func (p *TxProcessor) StartTxHook() bool {
+	// Changes to the statedb in this hook will be discarded should the tx later revert.
+	// Hence, modifications can be made with the assumption that the tx will succeed.
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
@@ -92,7 +94,7 @@ func (p *TxProcessor) StartTxHook() bool {
 		)
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
-		p.state.RetryableState().DeleteRetryable(tx.TicketId)
+		p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 	}
 	return false
