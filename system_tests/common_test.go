@@ -6,6 +6,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, arbos.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
 	nodeConf.Genesis = l1Genesys
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
@@ -136,7 +137,7 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
