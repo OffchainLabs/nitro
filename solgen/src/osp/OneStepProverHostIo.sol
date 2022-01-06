@@ -257,6 +257,10 @@ contract OneStepProverHostIo is IOneStepProver {
         );
 
         {
+            // TODO: support proving via an authenticated contract
+            require(proof[proofOffset] == 0, "UNKNOWN_INBOX_PROOF");
+            proofOffset++;
+
             function(uint64, bytes calldata)
                 internal
                 view
