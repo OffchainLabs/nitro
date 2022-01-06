@@ -48,12 +48,21 @@ func NewMemoryBackedStateDB() vm.StateDB {
 	return statedb
 }
 
+// We map addresses using "pages" of 256 storage slots. We hash over the page number but not the offset within
+//     a page, to preserve contiguity within a page. This will reduce cost if/when Ethereum switches to storage
+//     representations that reward contiguity.
+// Because page numbers are 248 bits, this gives us 124-bit security against collision attacks, which is good enough.
+func mapAddress(storageKey []byte, key common.Hash) common.Hash {
+	keyBytes := key.Bytes()
+	return common.BytesToHash(append(crypto.Keccak256(storageKey, keyBytes[:31])[:31], keyBytes[31]))
+}
+
 func (store *Storage) Get(key common.Hash) common.Hash {
-	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()))
+	return store.db.GetState(store.account, mapAddress(store.key, key))
 }
 
 func (store *Storage) GetUint64(key common.Hash) uint64 {
-	return store.db.GetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes())).Big().Uint64()
+	return store.Get(key).Big().Uint64()
 }
 
 func (store *Storage) GetByUint64(key uint64) common.Hash {
@@ -65,7 +74,7 @@ func (store *Storage) GetUint64ByUint64(key uint64) uint64 {
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) {
-	store.db.SetState(store.account, crypto.Keccak256Hash(store.key, key.Bytes()), value)
+	store.db.SetState(store.account, mapAddress(store.key, key), value)
 }
 
 func (store *Storage) SetByUint64(key uint64, value common.Hash) {
