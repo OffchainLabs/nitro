@@ -25,10 +25,10 @@ var networkAddress = common.HexToAddress("0x01")
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
 	msg          core.Message
+	evm          *vm.EVM
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *ArbosState
-	time         uint64
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
@@ -38,10 +38,10 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
+		evm:          evm,
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
-		time:         evm.Context.Time.Uint64(),
 		PosterFee:    new(big.Int),
 		posterGas:    0,
 	}
@@ -79,10 +79,11 @@ func (p *TxProcessor) StartTxHook() bool {
 	case *types.ArbitrumSubmitRetryableTx:
 		p.stateDB.AddBalance(tx.From, tx.DepositValue)
 
-		timeout := p.time + retryables.RetryableLifetimeSeconds
+		time := p.evm.Context.Time.Uint64()
+		timeout := time + retryables.RetryableLifetimeSeconds
 
 		p.state.RetryableState().CreateRetryable(
-			p.time,
+			time,
 			underlyingTx.Hash(),
 			timeout,
 			tx.From,

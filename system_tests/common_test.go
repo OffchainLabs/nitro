@@ -89,7 +89,7 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	return l1info, l1backend, stack
 }
 
-func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
+func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -161,7 +161,7 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
-	addresses := TestDeployOnL1(t, ctx, l1info)
+	addresses := DeployOnTestL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")

@@ -99,8 +99,13 @@ func (rs *RetryableState) CreateRetryable(
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
-	if sto.GetByUint64(timeoutOffset) == (common.Hash{}) {
+	timeout := sto.GetByUint64(timeoutOffset)
+	if timeout == (common.Hash{}) {
 		// no retryable here (real retryable never has a zero timeout)
+		return nil
+	}
+	if timeout.Big().Uint64() < currentTimestamp {
+		// the timeout has expired and will soon be reaped
 		return nil
 	}
 	return &Retryable{
