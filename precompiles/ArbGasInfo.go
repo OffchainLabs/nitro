@@ -6,6 +6,8 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"math/big"
 )
 
 type ArbGasInfo struct {
@@ -25,7 +27,10 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 }
 
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
+	// TODO charge gas based on the number of state queries
+	l2GasPrice := arbosState.OpenArbosState(evm.StateDB).GasPriceWei()
+	zero := big.NewInt(0)
+	return zero, zero, zero, zero, zero, l2GasPrice, nil
 }
 
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
@@ -42,4 +47,8 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 
 func (con ArbGasInfo) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) error {
 	return errors.New("unimplemented")
+}
+
+func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
+	return c.txProcessor.PosterFee, nil
 }

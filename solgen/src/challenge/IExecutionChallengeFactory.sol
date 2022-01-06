@@ -10,6 +10,7 @@ interface IExecutionChallengeFactory {
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,
+        uint256 challenge_length_,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,

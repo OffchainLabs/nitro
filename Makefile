@@ -37,7 +37,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 .DELETE_ON_ERROR: # causes a failure to delete its target
 .PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-replay-env build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
 
-push: lint test-go
+push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
@@ -73,6 +73,10 @@ lint: .make/lint
 	@printf $(done)
 
 test-go: .make/test-go
+	@printf $(done)
+
+test-go-challenge: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
 	@printf $(done)
 
 test-gen-proofs: \

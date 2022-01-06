@@ -7,6 +7,7 @@ package addressTable
 import (
 	"bytes"
 	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -16,14 +17,14 @@ import (
 type AddressTable struct {
 	backingStorage *storage.Storage
 	byAddress      *storage.Storage // 0 means item isn't in the table; n > 0 means it's in the table at slot n-1
-	numItems       *storage.StorageBackedUint64
+	numItems       storage.StorageBackedUint64
 }
 
 func Initialize(sto *storage.Storage) {
 }
 
 func Open(sto *storage.Storage) *AddressTable {
-	numItems := sto.OpenStorageBackedUint64(util.UintToHash(0))
+	numItems := sto.NewStorageBackedUint64(0)
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 
@@ -32,11 +33,10 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 	rev := atab.byAddress.Get(addrAsHash)
 	if rev == (common.Hash{}) {
 		// addr isn't in the table, so add it
-		ret := atab.numItems.Get()
-		atab.numItems.Set(ret + 1)
-		atab.backingStorage.SetByUint64(ret+1, addrAsHash)
-		atab.byAddress.Set(addrAsHash, util.UintToHash(ret+1))
-		return ret
+		newNumItems := atab.numItems.Increment()
+		atab.backingStorage.SetByUint64(newNumItems, addrAsHash)
+		atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems))
+		return newNumItems - 1
 	} else {
 		return rev.Big().Uint64() - 1
 	}
@@ -44,7 +44,7 @@ func (atab *AddressTable) Register(addr common.Address) uint64 {
 
 func (atab *AddressTable) Lookup(addr common.Address) (uint64, bool) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	res := atab.byAddress.Get(addrAsHash).Big().Uint64()
+	res := atab.byAddress.GetUint64(addrAsHash)
 	if res == 0 {
 		return 0, false
 	} else {

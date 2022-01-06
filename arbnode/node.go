@@ -176,7 +176,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, &config.BlockValidatorConfig)
+		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
 	}
 
 	if !config.BatchPoster {

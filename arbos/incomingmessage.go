@@ -178,7 +178,11 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_L2FundedByL1:
 		panic("unimplemented")
 	case L1MessageType_SubmitRetryable:
-		panic("unimplemented")
+		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
+		if err != nil {
+			return nil, err
+		}
+		return types.Transactions{tx}, nil
 	case L1MessageType_BatchForGasEstimation:
 		panic("unimplemented")
 	case L1MessageType_EthDeposit:
@@ -217,13 +221,13 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
-		tx, err := parseUnsignedTx(rd, poster, requestId, true)
+		tx, err := parseUnsignedTx(rd, poster, requestId, L2MessageKind_UnsignedUserTx)
 		if err != nil {
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
-		tx, err := parseUnsignedTx(rd, poster, requestId, false)
+		tx, err := parseUnsignedTx(rd, poster, requestId, L2MessageKind_ContractTx)
 		if err != nil {
 			return nil, err
 		}
@@ -239,9 +243,11 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		for {
 			nextMsg, err := util.BytestringFromReader(rd, MaxL2MessageSize)
 			if err != nil {
-				//lint:ignore nilerr an error here means there are no further messages in the batch
+				// an error here means there are no further messages in the batch
+				// nolint:nilerr
 				return segments, nil
 			}
+
 			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
 			var nextRequestId common.Hash
 			copy(nextRequestId[:], nestedRequestIdSlice)
@@ -280,7 +286,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash, includesNonce bool) (*types.Transaction, error) {
+func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash, txKind byte) (*types.Transaction, error) {
 	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -292,7 +298,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 	}
 
 	var nonce uint64
-	if includesNonce {
+	if txKind == L2MessageKind_UnsignedUserTx {
 		nonceAsHash, err := util.HashFromReader(rd)
 		if err != nil {
 			return nil, err
@@ -321,7 +327,8 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 
 	var inner types.TxData
 
-	if includesNonce {
+	switch txKind {
+	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
 			ChainId:  nil,
 			From:     util.RemapL1Address(poster),
@@ -332,7 +339,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			Value:    callvalue.Big(),
 			Data:     calldata,
 		}
-	} else {
+	case L2MessageKind_ContractTx:
 		inner = &types.ArbitrumContractTx{
 			ChainId:   nil,
 			RequestId: requestId,
@@ -343,6 +350,8 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			Value:     callvalue.Big(),
 			Data:      calldata,
 		}
+	default:
+		panic("Invalid L2 tx type in parseUnsignedTx")
 	}
 
 	return types.NewTx(inner), nil
@@ -358,6 +367,79 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 		L1RequestId: header.RequestId,
 		To:          header.Poster,
 		Value:       balance.Big(),
+	}
+	return types.NewTx(tx), nil
+}
+
+func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
+	destAddr, err := util.AddressFrom256FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	pDestAddr := &destAddr
+	if destAddr == (common.Address{}) {
+		pDestAddr = nil
+	}
+	callvalue, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	depositValue, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	submissionFeePaid, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	feeRefundAddress, err := util.AddressFrom256FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	callvalueRefundAddress, err := util.AddressFrom256FromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	maxGas, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	maxGasBig := maxGas.Big()
+	if !maxGasBig.IsUint64() {
+		return nil, errors.New("gas too large")
+	}
+	gasPriceBid, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	dataLength256, err := util.HashFromReader(rd)
+	if err != nil {
+		return nil, err
+	}
+	dataLengthBig := dataLength256.Big()
+	if !dataLengthBig.IsUint64() {
+		return nil, errors.New("data length field too large")
+	}
+	dataLength := dataLengthBig.Uint64()
+	data := make([]byte, dataLength)
+	if dataLength > 0 {
+		if _, err := rd.Read(data); err != nil {
+			return nil, err
+		}
+	}
+	tx := &types.ArbitrumSubmitRetryableTx{
+		ChainId:           chainId,
+		RequestId:         header.RequestId,
+		From:              header.Poster,
+		DepositValue:      depositValue.Big(),
+		GasPrice:          gasPriceBid.Big(),
+		Gas:               maxGasBig.Uint64(),
+		To:                pDestAddr,
+		Value:             callvalue.Big(),
+		Beneficiary:       callvalueRefundAddress,
+		SubmissionFeePaid: submissionFeePaid.Big(),
+		FeeRefundAddr:     feeRefundAddress,
+		Data:              data,
 	}
 	return types.NewTx(tx), nil
 }

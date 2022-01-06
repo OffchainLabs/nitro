@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/offchainlabs/arbstate/arbos"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	glog "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -35,7 +37,7 @@ type ArbosPrecompile interface {
 		caller common.Address,
 		value *big.Int,
 		readOnly bool,
-		suppliedGas uint64,
+		gasSupplied uint64,
 		evm *vm.EVM,
 	) (output []byte, gasLeft uint64, err error)
 
@@ -55,6 +57,7 @@ type Precompile struct {
 	methods     map[[4]byte]PrecompileMethod
 	events      map[string]PrecompileEvent
 	implementer reflect.Value
+	address     common.Address
 }
 
 type PrecompileMethod struct {
@@ -355,6 +358,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		methods,
 		events,
 		reflect.ValueOf(implementer),
+		address,
 	}
 }
 
@@ -367,8 +371,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	contracts := make(map[addr]ArbosPrecompile)
 
-	insert := func(address addr, impl ArbosPrecompile) {
+	insert := func(address addr, impl ArbosPrecompile) Precompile {
 		contracts[address] = impl
+		return impl.Precompile()
 	}
 
 	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
@@ -377,12 +382,17 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
 	insert(makePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
 	insert(makePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	insert(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("6b")}))
+	insert(makePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-	insert(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")}))
+
+	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
+	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+
+	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	arbos.ArbRetryableTxAddress = ArbRetryable.address
+	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 
 	return contracts
 }
@@ -429,6 +439,17 @@ func (p Precompile) Call(
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
+	}
+
+	switch txProcessor := evm.ProcessingHook.(type) {
+	case *arbos.TxProcessor:
+		callerCtx.txProcessor = txProcessor
+	case *vm.DefaultTxProcessor:
+		glog.Error("processing hook not set")
+		return nil, 0, vm.ErrExecutionReverted
+	default:
+		glog.Error("unknown processing hook")
+		return nil, 0, vm.ErrExecutionReverted
 	}
 
 	reflectArgs := []reflect.Value{

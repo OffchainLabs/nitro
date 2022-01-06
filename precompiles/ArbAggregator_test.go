@@ -5,10 +5,11 @@
 package precompiles
 
 import (
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestDefaultAggregator(t *testing.T) {
@@ -20,23 +21,17 @@ func TestDefaultAggregator(t *testing.T) {
 
 	// initial default aggregator should be zero address
 	def, err := agg.GetDefaultAggregator(context, evm)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if def != (common.Address{}) {
 		t.Fatal()
 	}
 
 	// set default aggregator to addr
-	if err := agg.SetDefaultAggregator(context, evm, addr); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, agg.SetDefaultAggregator(context, evm, addr))
 
 	// default aggregator should now be addr
 	res, err := agg.GetDefaultAggregator(context, evm)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if res != addr {
 		t.Fatal()
 	}
@@ -55,9 +50,7 @@ func TestPreferredAggregator(t *testing.T) {
 
 	// initial preferred aggregator should be the default of zero address
 	res, isNonDefault, err := agg.GetPreferredAggregator(callerCtx, evm, userAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if isNonDefault {
 		t.Fatal()
 	}
@@ -72,9 +65,7 @@ func TestPreferredAggregator(t *testing.T) {
 
 	// preferred aggregator should be the new default address
 	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if isNonDefault {
 		t.Fatal()
 	}
@@ -83,15 +74,11 @@ func TestPreferredAggregator(t *testing.T) {
 	}
 
 	// set preferred aggregator
-	if err := agg.SetPreferredAggregator(userCtx, evm, prefAggAddr); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, agg.SetPreferredAggregator(userCtx, evm, prefAggAddr))
 
 	// preferred aggregator should now be prefAggAddr
 	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if !isNonDefault {
 		t.Fatal()
 	}
@@ -115,38 +102,29 @@ func TestFeeCollector(t *testing.T) {
 
 	// initial result should be addr
 	coll, err := agg.GetFeeCollector(callerCtx, evm, aggAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if coll != aggAddr {
 		t.Fatal()
 	}
 
 	// set fee collector to collectorAddr
-	if err := agg.SetFeeCollector(aggCtx, evm, aggAddr, collectorAddr); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, agg.SetFeeCollector(aggCtx, evm, aggAddr, collectorAddr))
 
 	// fee collector should now be collectorAddr
 	coll, err = agg.GetFeeCollector(callerCtx, evm, aggAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if coll != collectorAddr {
 		t.Fatal()
 	}
 
 	// trying to set someone else's collector is an error
-	err = agg.SetFeeCollector(imposterCtx, evm, aggAddr, impostorAddr)
-	if err == nil {
+	shouldErr := agg.SetFeeCollector(imposterCtx, evm, aggAddr, impostorAddr)
+	if shouldErr == nil {
 		t.Fatal()
 	}
 
 	// but the fee collector can replace itself
-	err = agg.SetFeeCollector(collectorCtx, evm, aggAddr, impostorAddr)
-	if err != nil {
-		t.Fatal()
-	}
+	Require(t, agg.SetFeeCollector(collectorCtx, evm, aggAddr, impostorAddr))
 }
 
 func TestTxBaseFee(t *testing.T) {
@@ -161,9 +139,7 @@ func TestTxBaseFee(t *testing.T) {
 
 	// initial result should be zero
 	fee, err := agg.GetTxBaseFee(callerCtx, evm, aggAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if fee.Cmp(big.NewInt(0)) != 0 {
 		t.Fatal()
 	}
@@ -175,9 +151,7 @@ func TestTxBaseFee(t *testing.T) {
 
 	// base fee should now be targetFee
 	fee, err = agg.GetTxBaseFee(callerCtx, evm, aggAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if fee.Cmp(targetFee) != 0 {
 		t.Fatal(fee, targetFee)
 	}

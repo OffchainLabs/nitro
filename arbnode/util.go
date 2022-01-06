@@ -3,6 +3,8 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -29,9 +31,9 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 	defer cancel()
 
 	for {
-		reciept, err := client.TransactionReceipt(ctx, txhash)
-		if reciept != nil {
-			return reciept, err
+		receipt, err := client.TransactionReceipt(ctx, txhash)
+		if receipt != nil {
+			return receipt, err
 		}
 		select {
 		case <-chanHead:
@@ -46,10 +48,25 @@ func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transa
 	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second)
 }
 
+func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int) ([]byte, error) {
+	callMsg := ethereum.CallMsg{
+		From:       from,
+		To:         tx.To(),
+		Gas:        tx.Gas(),
+		GasPrice:   tx.GasPrice(),
+		GasFeeCap:  tx.GasFeeCap(),
+		GasTipCap:  tx.GasTipCap(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
+	}
+	return client.CallContract(ctx, callMsg, blockNum)
+}
+
 func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
 	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("waitFoxTx got: %w", err)
 	}
 	if txRes == nil {
 		return nil, errors.New("expected receipt")
@@ -58,24 +75,13 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 		// Re-execute the transaction as a call to get a better error
 		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
 		if err != nil {
-			return nil, err
+			return txRes, fmt.Errorf("TransactionSender got: %w", err)
 		}
-		callMsg := ethereum.CallMsg{
-			From:       from,
-			To:         tx.To(),
-			Gas:        tx.Gas(),
-			GasPrice:   tx.GasPrice(),
-			GasFeeCap:  tx.GasFeeCap(),
-			GasTipCap:  tx.GasTipCap(),
-			Value:      tx.Value(),
-			Data:       tx.Data(),
-			AccessList: tx.AccessList(),
-		}
-		_, err = client.CallContract(ctx, callMsg, txRes.BlockNumber)
+		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber)
 		if err != nil {
-			return nil, err
+			return txRes, fmt.Errorf("SendTxAsCall got: %w", err)
 		}
-		return nil, errors.New("tx failed but call succeeded")
+		return txRes, errors.New("tx failed but call succeeded")
 	}
 	return txRes, nil
 }

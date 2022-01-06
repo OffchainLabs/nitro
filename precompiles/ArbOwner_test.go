@@ -5,16 +5,18 @@
 package precompiles
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos"
-	"testing"
+	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 func TestAddressSet(t *testing.T) {
 	evm := newMockEVMForTesting(t)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	arbos.OpenArbosState(evm.StateDB).ChainOwners().Add(caller)
+	arbosState.OpenArbosState(evm.StateDB).ChainOwners().Add(caller)
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
 	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
@@ -23,62 +25,47 @@ func TestAddressSet(t *testing.T) {
 	prec := &ArbOwner{}
 	callCtx := testContext(caller)
 
-	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
-		t.Fatal(err)
-	}
-	if err := prec.AddChainOwner(callCtx, evm, addr2); err != nil {
-		t.Fatal(err)
-	}
-	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
-		t.Fatal(err)
-	}
+	// the zero address is an owner by default
+	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	Require(t, prec.RemoveChainOwner(callCtx, evm, ZeroAddressL2))
+
+	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
+	Require(t, prec.AddChainOwner(callCtx, evm, addr2))
+	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
+
 	member, err := prec.IsChainOwner(callCtx, evm, addr1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if !member {
 		t.Fatal()
 	}
+
 	member, err = prec.IsChainOwner(callCtx, evm, addr2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if !member {
 		t.Fatal()
 	}
+
 	member, err = prec.IsChainOwner(callCtx, evm, addr3)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if member {
 		t.Fatal()
 	}
 
-	if err := prec.RemoveChainOwner(callCtx, evm, addr1); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, prec.RemoveChainOwner(callCtx, evm, addr1))
 	member, err = prec.IsChainOwner(callCtx, evm, addr1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if member {
 		t.Fatal()
 	}
 	member, err = prec.IsChainOwner(callCtx, evm, addr2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if !member {
 		t.Fatal()
 	}
 
-	if err := prec.AddChainOwner(callCtx, evm, addr1); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, prec.AddChainOwner(callCtx, evm, addr1))
 	all, err := prec.GetAllChainOwners(callCtx, evm)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if len(all) != 3 {
 		t.Fatal()
 	}
