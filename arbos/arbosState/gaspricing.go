@@ -1,4 +1,4 @@
-package arbos
+package arbosState
 
 import (
 	"math/big"
@@ -23,7 +23,7 @@ func (state *ArbosState) AddToGasPools(gas int64) {
 	state.SetSmallGasPool(util.SaturatingAdd(state.SmallGasPool(), gas))
 }
 
-func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
+func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool := state.GasPool()
 	smallGasPool := state.SmallGasPool()
 	price := state.GasPriceWei()
@@ -39,7 +39,9 @@ func (state *ArbosState) notifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	secondsLeft := secondsElapsed
 	for secondsLeft > 0 {
 		if (gasPool == GasPoolMax) && (smallGasPool == SmallGasPoolMax) {
+			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
+				// price is already at the minimum, so no need to iterate further
 				state.SetGasPool(GasPoolMax)
 				state.SetSmallGasPool(SmallGasPoolMax)
 				state.SetGasPriceWei(minPrice)

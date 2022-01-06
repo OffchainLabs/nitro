@@ -2,12 +2,11 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package arbosState
 
 import (
-	"math/big"
-
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -20,18 +19,23 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
+// ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
+// Modifications to the ArbosState are written through to the underlying StateDB so that the StateDB always
+// has the definitive state, stored persistently. (Note that some tests use memory-backed StateDB's that aren't
+// persisted beyond the end of the test.)
+
 type ArbosState struct {
 	formatVersion  uint64
-	gasPool        *storage.StorageBackedInt64
-	smallGasPool   *storage.StorageBackedInt64
-	gasPriceWei    *big.Int
-	maxGasPriceWei *big.Int // the max gas price ArbOS can set without breaking geth
+	gasPool        storage.StorageBackedInt64
+	smallGasPool   storage.StorageBackedInt64
+	gasPriceWei    storage.StorageBackedBigInt
+	maxGasPriceWei storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 	l1PricingState *l1pricing.L1PricingState
 	retryableState *retryables.RetryableState
 	addressTable   *addressTable.AddressTable
 	chainOwners    *addressSet.AddressSet
 	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      *storage.StorageBackedUint64
+	timestamp      storage.StorageBackedUint64
 	backingStorage *storage.Storage
 }
 
@@ -42,23 +46,39 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	}
 
 	return &ArbosState{
-		backingStorage.GetUint64ByUint64(uint64(versionKey)),
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		backingStorage.OpenStorageBackedUint64(util.UintToHash(uint64(timestampKey))),
+		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
+		backingStorage.NewStorageBackedInt64(uint64(gasPoolOffset)),
+		backingStorage.NewStorageBackedInt64(uint64(smallGasPoolOffset)),
+		backingStorage.NewStorageBackedBigInt(uint64(gasPriceOffset)),
+		backingStorage.NewStorageBackedBigInt(uint64(maxPriceOffset)),
+		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
+		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
+		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
+		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
+		backingStorage.NewStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
 	}
 }
 
+// See if we should upgrade the storage format. The format version is stored at location zero of our backing storage.
+//
+// If we know how to upgrade from the observed storage version, we do so. We return true iff we upgraded.
+// It might be that yet another upgrade is possible, so if this returns true, the caller should call this again.
+//
+// If the latest version is N, then there must always be code to upgrade from every version less than N. Each
+// such upgrade must increase the version number by at least 1, so that a sequence of upgrades will converge on
+// the latest version.
+//
+// Because uninitialized storage space always returns 0 for all reads, we define format version 0 to mean that the
+// storage space is uninitialized. This uninitialized version 0 will cause an upgrade to version 1, which will
+// initialize the storage.
+//
+// During early development we sometimes change the definition of version 1, for convenience. But as soon as we
+// start running long-lived chains, every change to the format will require defining a new version and providing
+// upgrade code.
 func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.GetUint64ByUint64(uint64(versionKey))
+	formatVersion := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	switch formatVersion {
 	case 0:
 		upgrade_0_to_1(backingStorage)
@@ -73,12 +93,12 @@ func tryStorageUpgrade(backingStorage *storage.Storage) bool {
 type ArbosStateOffset int64
 
 const (
-	versionKey ArbosStateOffset = iota
-	gasPoolKey
-	smallGasPoolKey
-	gasPriceKey
-	maxPriceKey
-	timestampKey
+	versionOffset ArbosStateOffset = iota
+	gasPoolOffset
+	smallGasPoolOffset
+	gasPriceOffset
+	maxPriceOffset
+	timestampOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -92,12 +112,12 @@ var (
 )
 
 func upgrade_0_to_1(backingStorage *storage.Storage) {
-	backingStorage.SetUint64ByUint64(uint64(versionKey), 1)
-	backingStorage.SetUint64ByUint64(uint64(gasPoolKey), GasPoolMax)
-	backingStorage.SetUint64ByUint64(uint64(smallGasPoolKey), SmallGasPoolMax)
-	backingStorage.SetUint64ByUint64(uint64(gasPriceKey), InitialGasPriceWei)
-	backingStorage.SetUint64ByUint64(uint64(maxPriceKey), 2*InitialGasPriceWei)
-	backingStorage.SetUint64ByUint64(uint64(timestampKey), 0)
+	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+	backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
 	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
 	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
@@ -109,7 +129,11 @@ func upgrade_0_to_1(backingStorage *storage.Storage) {
 	addressSet.Initialize(ownersStorage)
 	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
-	backingStorage.SetUint64ByUint64(uint64(versionKey), 1)
+	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+}
+
+func (state *ArbosState) BackingStorage() *storage.Storage {
+	return state.backingStorage
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
@@ -118,59 +142,39 @@ func (state *ArbosState) FormatVersion() uint64 {
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.formatVersion = val
-	state.backingStorage.SetUint64ByUint64(uint64(versionKey), val)
+	state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val)
 }
 
 func (state *ArbosState) GasPool() int64 {
-	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
-	}
 	return state.gasPool.Get()
 }
 
 func (state *ArbosState) SetGasPool(val int64) {
-	if state.gasPool == nil {
-		state.gasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(gasPoolKey)))
-	}
 	state.gasPool.Set(val)
 }
 
 func (state *ArbosState) SmallGasPool() int64 {
-	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
-	}
 	return state.smallGasPool.Get()
 }
 
 func (state *ArbosState) SetSmallGasPool(val int64) {
-	if state.smallGasPool == nil {
-		state.smallGasPool = state.backingStorage.OpenStorageBackedInt64(util.UintToHash(uint64(smallGasPoolKey)))
-	}
 	state.smallGasPool.Set(val)
 }
 
 func (state *ArbosState) GasPriceWei() *big.Int {
-	if state.gasPriceWei == nil {
-		state.gasPriceWei = state.backingStorage.GetByUint64(uint64(gasPriceKey)).Big()
-	}
-	return state.gasPriceWei
+	return state.gasPriceWei.Get()
 }
 
 func (state *ArbosState) SetGasPriceWei(val *big.Int) {
-	state.gasPriceWei = val
-	state.backingStorage.SetByUint64(uint64(gasPriceKey), common.BigToHash(val))
+	state.gasPriceWei.Set(val)
 }
 
-func (state *ArbosState) MaxGasPriceWei() *big.Int {
-	if state.maxGasPriceWei == nil {
-		state.maxGasPriceWei = state.backingStorage.GetByUint64(uint64(maxPriceKey)).Big()
-	}
-	return state.maxGasPriceWei
+func (state *ArbosState) MaxGasPriceWei() *big.Int { // the max gas price ArbOS can set without breaking geth
+	return state.maxGasPriceWei.Get()
 }
 
 func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
-	state.maxGasPriceWei = val
-	state.backingStorage.SetByUint64(uint64(maxPriceKey), common.BigToHash(val))
+	state.maxGasPriceWei.Set(val)
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
@@ -220,6 +224,6 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 	if val > ts {
 		delta := val - ts
 		state.timestamp.Set(val)
-		state.notifyGasPricerThatTimeElapsed(delta)
+		state.NotifyGasPricerThatTimeElapsed(delta)
 	}
 }
