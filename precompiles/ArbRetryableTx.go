@@ -60,18 +60,6 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (ad
 	return retryable.Beneficiary(), nil
 }
 
-func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (huge, error) {
-	if err := c.burn(3 * params.SloadGas); err != nil {
-		return nil, err
-	}
-	retryableState := arbos.OpenArbosState(evm.StateDB).RetryableState()
-	nbytes := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
-	if nbytes == 0 {
-		return nil, NotFoundError
-	}
-	return big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100)), nil
-}
-
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	if err := c.burn(1); err != nil {
 		return nil, err

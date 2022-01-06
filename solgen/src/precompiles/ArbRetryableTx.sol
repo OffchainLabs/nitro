@@ -28,13 +28,6 @@ interface ArbRetryableTx {
     function getTimeout(bytes32 ticketId) external view returns(uint);
 
     /**
-     * @notice Return the amount of gas required to extend the lifetime of ticketId by an additional lifetime period. Revert if ticketId doesn't exist.
-     * @param ticketId unique ticket identifier
-     * @return gas required
-    */
-    function getKeepaliveGas(bytes32 ticketId) external view returns(uint);
-
-    /**
     * @notice Adds one lifetime period to the life of ticketId.
     * Donate gas to pay for the lifetime extension.
     * If successful, emits LifetimeExtended event.
