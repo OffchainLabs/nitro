@@ -16,7 +16,7 @@ type IncorrectMachine struct {
 	stepCount     uint64
 }
 
-var _ MachineInterface = &IncorrectMachine{}
+var _ MachineInterface = (*IncorrectMachine)(nil)
 
 func NewIncorrectMachine(inner MachineInterface, incorrectStep uint64) *IncorrectMachine {
 	return &IncorrectMachine{

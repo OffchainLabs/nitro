@@ -291,17 +291,16 @@ func (b *BatchPoster) postSequencerBatch() error {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(b.config.SubmissionSyncDelay)
 	}
-	var msgToPost, prevDelayedMsg uint64
+	var prevBatchMeta BatchMetadata
 	if b.sequencesPosted > 0 {
-		prevBatchMeta, err := b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
+		var err error
+		prevBatchMeta, err = b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
 		if err != nil {
 			return err
 		}
-		msgToPost = prevBatchMeta.MessageCount
-		prevDelayedMsg = prevBatchMeta.DelayedMessageCount
 	}
-	segments := newBatchSegments(prevDelayedMsg, b.config)
-	firstMsgToPost := msgToPost
+	segments := newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config)
+	msgToPost := prevBatchMeta.MessageCount
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
 		return err
@@ -327,13 +326,13 @@ func (b *BatchPoster) postSequencerBatch() error {
 		return err
 	}
 	if sequencerMsg == nil {
-		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "prev delayed", prevDelayedMsg)
+		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
 		return nil
 	}
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
 	if err == nil {
 		b.sequencesPosted++
-		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", firstMsgToPost, "to", msgToPost, "prev delayed", prevDelayedMsg, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
+		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	}
 	return err
 }

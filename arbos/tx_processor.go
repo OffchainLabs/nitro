@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
 
@@ -27,14 +28,14 @@ type TxProcessor struct {
 	msg          core.Message
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
-	state        *ArbosState
+	state        *arbosState.ArbosState
 	time         uint64
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := OpenArbosState(evm.StateDB)
+	arbosState := arbosState.OpenArbosState(evm.StateDB)
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
