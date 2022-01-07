@@ -103,6 +103,10 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
 	}
+	if timeout.Get() < currentTimestamp {
+		// the timeout has expired and will soon be reaped
+		return nil
+	}
 	return &Retryable{
 		id:             id,
 		backingStorage: sto,
@@ -239,10 +243,19 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
 	if !rs.timeoutQueue.IsEmpty() {
 		id := rs.timeoutQueue.Get()
-		retryable := rs.OpenRetryable(*id, currentTimestamp)
-		if retryable != nil {
-			// OpenRetryable returned non-nil, so we know the retryable hasn't expired
-			rs.timeoutQueue.Put(*id)
+		slot := rs.retryables.OpenSubStorage(id.Bytes()).OpenStorageBackedUint64(timeoutOffset)
+		timeout := slot.Get()
+		if timeout != 0 {
+			// retryables always have a non-zero timeout, so we know one exists here
+
+			if timeout < currentTimestamp {
+				// the retryable has expired, time to reap
+				rs.DeleteRetryable(*id)
+			} else {
+				// the retryable has not expired, but we'll check back later
+				// to preserve round-robin ordering, we put this at the end
+				rs.timeoutQueue.Put(*id)
+			}
 		}
 	}
 }
