@@ -1,4 +1,6 @@
-(func (local f32)
+(import "env" "wavm_halt_and_set_finished" (func $wavm_halt_and_set_finished))
+
+(func $main (local f32)
 	;; abs, neg
 	(f32.const -1)
 	(f32.abs)
@@ -99,6 +101,10 @@
 	;; ne
 	(local.get 0)
 	(local.get 0)
+	(f32.ne)
+	(call $assert_true)
+	(f32.const 1)
+	(f32.const 1)
 	(f32.ne)
 	(call $assert_false)
 	(f32.const 1)
@@ -223,6 +229,8 @@
 	(i64.trunc_f32_s)
 	(i64.lt_s (i64.const 0))
 	(call $assert_true)
+
+	(call $wavm_halt_and_set_finished)
 )
 
 (func $assert_f32 (param f32 f32) (result f32)
@@ -297,4 +305,4 @@
 	)
 )
 
-(start 0)
+(start $main)
