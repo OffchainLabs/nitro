@@ -7,11 +7,12 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
@@ -30,6 +31,8 @@ import (
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
+	chainConfig := params.ArbitrumTestChainConfig()
+
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[rewrittenOwnerAddress] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether),
@@ -37,7 +40,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		PrivateKey: nil,
 	}
 	genesis := &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     chainConfig,
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumTest"),
@@ -55,7 +58,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	db := rawdb.NewMemoryDatabase()
 	genesis.MustCommit(db)
 	shouldPreserve := func(_ *types.Block) bool { return false }
-	bc, err := core.NewBlockChain(db, nil, arbos.ChainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
+	bc, err := core.NewBlockChain(db, nil, chainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
 	if err != nil {
 		Fail(t, err)
 	}

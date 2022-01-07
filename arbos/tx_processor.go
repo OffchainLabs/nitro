@@ -5,9 +5,10 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -29,7 +30,6 @@ type TxProcessor struct {
 	blockContext vm.BlockContext
 	stateDB      vm.StateDB
 	state        *arbosState.ArbosState
-	time         uint64
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
 }
@@ -42,7 +42,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		blockContext: evm.Context,
 		stateDB:      evm.StateDB,
 		state:        arbosState,
-		time:         evm.Context.Time.Uint64(),
 		PosterFee:    new(big.Int),
 		posterGas:    0,
 	}
@@ -80,10 +79,11 @@ func (p *TxProcessor) StartTxHook() bool {
 	case *types.ArbitrumSubmitRetryableTx:
 		p.stateDB.AddBalance(tx.From, tx.DepositValue)
 
-		timeout := p.time + retryables.RetryableLifetimeSeconds
+		time := p.blockContext.Time.Uint64()
+		timeout := time + retryables.RetryableLifetimeSeconds
 
 		p.state.RetryableState().CreateRetryable(
-			p.time,
+			time,
 			underlyingTx.Hash(),
 			timeout,
 			tx.From,
