@@ -23,7 +23,7 @@ func InitializeMerkleAccumulator(sto *storage.Storage) {
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {
 	size := sto.OpenStorageBackedUint64(0)
-	return &MerkleAccumulator{sto, size, nil}
+	return &MerkleAccumulator{sto, &size, nil}
 }
 
 func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {

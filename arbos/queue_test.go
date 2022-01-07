@@ -5,8 +5,9 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"testing"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"

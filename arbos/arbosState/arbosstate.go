@@ -47,16 +47,16 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
-		backingStorage.NewStorageBackedInt64(uint64(gasPoolOffset)),
-		backingStorage.NewStorageBackedInt64(uint64(smallGasPoolOffset)),
-		backingStorage.NewStorageBackedBigInt(uint64(gasPriceOffset)),
-		backingStorage.NewStorageBackedBigInt(uint64(maxPriceOffset)),
+		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
+		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolOffset)),
+		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
+		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		backingStorage.NewStorageBackedUint64(uint64(timestampOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
 	}
 }
