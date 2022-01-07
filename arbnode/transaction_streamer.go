@@ -293,6 +293,10 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		})
 	}
 
+	if err := s.writeMessages(pos, messagesWithMeta, nil); err != nil {
+		return err
+	}
+
 	if s.broadcastServer != nil {
 		for i, message := range messagesWithMeta {
 			// TODO method for broadcasting more than one?
@@ -300,7 +304,7 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		}
 	}
 
-	return s.writeMessages(pos, messagesWithMeta, nil)
+	return nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {

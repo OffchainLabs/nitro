@@ -38,10 +38,9 @@ type BroadcastClient struct {
 	websocketUrl    string
 	lastInboxSeqNum *big.Int
 
-	connMutex *sync.Mutex
+	connMutex sync.Mutex
 	conn      net.Conn
 
-	retryMutex *sync.Mutex
 	retryCount int64
 
 	retrying                        bool
@@ -62,8 +61,6 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 	return &BroadcastClient{
 		websocketUrl:    websocketUrl,
 		lastInboxSeqNum: seqNum,
-		connMutex:       &sync.Mutex{},
-		retryMutex:      &sync.Mutex{},
 		idleTimeout:     idleTimeout,
 		txStreamer:      txStreamer,
 	}
@@ -98,14 +95,18 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 		Timeout: 10 * time.Second,
 	}
 
+	if bc.isShuttingDown() {
+		return nil
+	}
+
+	bc.connMutex.Lock()
+	defer bc.connMutex.Unlock()
 	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
 		return errors.Wrap(err, "broadcast client unable to connect")
 	}
 
-	bc.connMutex.Lock()
 	bc.conn = conn
-	bc.connMutex.Unlock()
 
 	log.Info("Connected")
 
@@ -123,7 +124,7 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 
 			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, bc.idleTimeout, ws.StateClientSide)
 			if err != nil {
-				if bc.shuttingDown {
+				if bc.isShuttingDown() {
 					return
 				}
 				if strings.Contains(err.Error(), "i/o timeout") {
@@ -153,12 +154,15 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 				}
 
 				if res.Version == 1 {
-					for _, message := range res.Messages {
-						if err := bc.txStreamer.AddMessages(message.SequenceNumber, false, []arbstate.MessageWithMetadata{message.Message}); err != nil {
+					if len(res.Messages) > 0 {
+						messages := []arbstate.MessageWithMetadata{}
+						for _, message := range res.Messages {
+							messages = append(messages, message.Message)
+						}
+						if err := bc.txStreamer.AddMessages(res.Messages[0].SequenceNumber, false, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}
-
 					if res.ConfirmedSequenceNumberMessage != nil && bc.ConfirmedSequenceNumberListener != nil {
 						bc.ConfirmedSequenceNumberListener <- res.ConfirmedSequenceNumberMessage.SequenceNumber
 					}
@@ -172,14 +176,18 @@ func (bc *BroadcastClient) GetRetryCount() int64 {
 	return atomic.LoadInt64(&bc.retryCount)
 }
 
-func (bc *BroadcastClient) retryConnect(ctx context.Context) {
-	bc.retryMutex.Lock()
-	defer bc.retryMutex.Unlock()
+func (bc *BroadcastClient) isShuttingDown() bool {
+	bc.connMutex.Lock()
+	defer bc.connMutex.Unlock()
+	return bc.shuttingDown
+}
 
+func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 	maxWaitDuration := 15 * time.Second
 	waitDuration := 500 * time.Millisecond
 	bc.retrying = true
-	for !bc.shuttingDown {
+
+	for !bc.isShuttingDown() {
 		select {
 		case <-ctx.Done():
 			return
@@ -201,10 +209,11 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 
 func (bc *BroadcastClient) Close() {
 	log.Debug("closing broadcaster client connection")
-	bc.shuttingDown = true
 	bc.connMutex.Lock()
+	defer bc.connMutex.Unlock()
+
+	bc.shuttingDown = true
 	if bc.conn != nil {
 		_ = bc.conn.Close()
 	}
-	bc.connMutex.Unlock()
 }

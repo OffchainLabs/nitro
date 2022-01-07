@@ -66,12 +66,11 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 }
 
 func (ts *dummyTransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
-	if len(messages) != 1 {
-		panic("unexpected message count to AddMessages")
-	}
-	ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
-		SequenceNumber: pos,
-		Message:        messages[0],
+	for i, message := range messages {
+		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
+			SequenceNumber: pos + uint64(i),
+			Message:        message,
+		}
 	}
 	return nil
 }
