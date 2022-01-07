@@ -86,7 +86,7 @@ func (store *Storage) Get(key common.Hash) common.Hash {
 	return store.db.GetState(store.account, mapAddress(store.storageKey, key))
 }
 
-func (store *Storage) GetStorageSpot(key common.Hash) common.Hash {
+func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
 	return mapAddress(store.storageKey, key)
 }
 
