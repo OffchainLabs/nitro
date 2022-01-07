@@ -44,8 +44,8 @@ func InitializeL1PricingState(sto *storage.Storage) {
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		sto.NewStorageBackedAddress(defaultAggregatorAddressOffset),
-		sto.NewStorageBackedBigInt(l1GasPriceEstimateOffset),
+		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
+		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
 		sto.OpenSubStorage(preferredAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),

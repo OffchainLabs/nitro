@@ -43,8 +43,10 @@ func TestStorageBackedInt64(t *testing.T) {
 	valuesToTry := []int64{0, 7, -7, 56487423567, -7586427647}
 
 	for _, val := range valuesToTry {
-		storage.OpenStorageBackedInt64(offset).Set(val)
-		res := storage.OpenStorageBackedInt64(offset).Get()
+		sbi := storage.OpenStorageBackedInt64(offset)
+		sbi.Set(val)
+		sbi = storage.OpenStorageBackedInt64(offset)
+		res := sbi.Get()
 		if val != res {
 			Fail(t, val, res)
 		}

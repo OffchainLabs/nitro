@@ -172,25 +172,38 @@ func (store *Storage) ClearBytes() {
 	store.SetByUint64(0, common.Hash{})
 }
 
+type StorageSlot struct {
+	account common.Address
+	db      vm.StateDB
+	slot    common.Hash
+}
+
+func (sto *Storage) NewSlot(offset uint64) StorageSlot {
+	return StorageSlot{sto.account, sto.db, mapAddress(sto.storageKey, util.UintToHash(offset))}
+}
+
+func (ss *StorageSlot) Get() common.Hash {
+	return ss.db.GetState(ss.account, ss.slot)
+}
+
+func (ss *StorageSlot) Set(val common.Hash) {
+	ss.db.SetState(ss.account, ss.slot, val)
+}
+
 // Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
 //     for negative values, so we cast to uint64 before writing to storage and cast back to int64 after reading.
 //     Golang casting between uint64 and int64 doesn't change the data, it just reinterprets the same 8 bytes,
 //     so this is a hacky but reliable way to store an 8-byte int64 in a common.Hash storage slot.
 type StorageBackedInt64 struct {
-	storage *Storage
-	offset  common.Hash
+	StorageSlot
 }
 
-func (sto *Storage) NewStorageBackedInt64(offset uint64) StorageBackedInt64 {
-	return StorageBackedInt64{sto, util.UintToHash(offset)}
-}
-
-func (sto *Storage) OpenStorageBackedInt64(offset uint64) *StorageBackedInt64 {
-	return &StorageBackedInt64{sto, util.UintToHash(offset)}
+func (sto *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
+	return StorageBackedInt64{sto.NewSlot(offset)}
 }
 
 func (sbu *StorageBackedInt64) Get() int64 {
-	raw := sbu.storage.Get(sbu.offset).Big()
+	raw := sbu.StorageSlot.Get().Big()
 	if !raw.IsUint64() {
 		panic("invalid value found in StorageBackedInt64 storage")
 	}
@@ -198,24 +211,19 @@ func (sbu *StorageBackedInt64) Get() int64 {
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) {
-	sbu.storage.Set(sbu.offset, util.UintToHash(uint64(value))) // see implementation note above
+	sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
 type StorageBackedUint64 struct {
-	storage *Storage
-	offset  common.Hash
+	StorageSlot
 }
 
-func (sto *Storage) NewStorageBackedUint64(offset uint64) StorageBackedUint64 {
-	return StorageBackedUint64{sto, util.UintToHash(offset)}
-}
-
-func (sto *Storage) OpenStorageBackedUint64(offset uint64) *StorageBackedUint64 {
-	return &StorageBackedUint64{sto, util.UintToHash(offset)}
+func (sto *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
+	return StorageBackedUint64{sto.NewSlot(offset)}
 }
 
 func (sbu *StorageBackedUint64) Get() uint64 {
-	raw := sbu.storage.Get(sbu.offset).Big()
+	raw := sbu.StorageSlot.Get().Big()
 	if !raw.IsUint64() {
 		panic("expected uint64 compatible value in storage")
 	}
@@ -224,7 +232,7 @@ func (sbu *StorageBackedUint64) Get() uint64 {
 
 func (sbu *StorageBackedUint64) Set(value uint64) {
 	bigValue := new(big.Int).SetUint64(value)
-	sbu.storage.Set(sbu.offset, common.BigToHash(bigValue))
+	sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
 func (sbu *StorageBackedUint64) Increment() uint64 {
@@ -283,112 +291,91 @@ type WrappedUint64 interface {
 }
 
 type StorageBackedBigInt struct {
-	storage *Storage
-	offset  common.Hash
+	StorageSlot
 }
 
-func (sto *Storage) NewStorageBackedBigInt(offset uint64) StorageBackedBigInt {
-	return StorageBackedBigInt{sto, util.UintToHash(offset)}
-}
-
-func (sto *Storage) OpenStorageBackedBigInt(offset uint64) *StorageBackedBigInt {
-	return &StorageBackedBigInt{sto, util.UintToHash(offset)}
+func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
+	return StorageBackedBigInt{sto.NewSlot(offset)}
 }
 
 func (sbbi *StorageBackedBigInt) Get() *big.Int {
-	return sbbi.storage.Get(sbbi.offset).Big()
+	return sbbi.StorageSlot.Get().Big()
 }
 
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) {
-	sbbi.storage.Set(sbbi.offset, common.BigToHash(val))
+	sbbi.StorageSlot.Set(common.BigToHash(val))
 }
 
 type StorageBackedAddress struct {
-	storage *Storage
-	offset  common.Hash
+	StorageSlot
 }
 
-func (sto *Storage) NewStorageBackedAddress(offset uint64) StorageBackedAddress {
-	return StorageBackedAddress{sto, util.UintToHash(offset)}
-}
-
-func (sto *Storage) OpenStorageBackedAddress(offset uint64) *StorageBackedAddress {
-	return &StorageBackedAddress{sto, util.UintToHash(offset)}
+func (sto *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress {
+	return StorageBackedAddress{sto.NewSlot(offset)}
 }
 
 func (sba *StorageBackedAddress) Get() common.Address {
-	return common.BytesToAddress(sba.storage.Get(sba.offset).Bytes())
+	return common.BytesToAddress(sba.StorageSlot.Get().Bytes())
 }
 
 func (sba *StorageBackedAddress) Set(val common.Address) {
-	sba.storage.Set(sba.offset, common.BytesToHash(val.Bytes()))
+	sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 type StorageBackedAddressOrNil struct {
-	storage *Storage
-	offset  common.Hash
+	StorageSlot
 }
 
 var NilAddressRepresentation common.Hash
 
 func init() {
-	NilAddressRepresentation = common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 160))
+	NilAddressRepresentation = common.BigToHash(new(big.Int).Lsh(big.NewInt(1), 255))
 }
 
-func (sto *Storage) NewStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
-	return StorageBackedAddressOrNil{sto, util.UintToHash(offset)}
-}
-
-func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) *StorageBackedAddressOrNil {
-	return &StorageBackedAddressOrNil{sto, util.UintToHash(offset)}
+func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAddressOrNil {
+	return StorageBackedAddressOrNil{sto.NewSlot(offset)}
 }
 
 func (sba *StorageBackedAddressOrNil) Get() *common.Address {
-	asHash := sba.storage.Get(sba.offset)
+	asHash := sba.StorageSlot.Get()
 	if asHash == NilAddressRepresentation {
 		return nil
 	} else {
-		ret := common.BytesToAddress(sba.storage.Get(sba.offset).Bytes())
+		ret := common.BytesToAddress(sba.StorageSlot.Get().Bytes())
 		return &ret
 	}
 }
 
 func (sba *StorageBackedAddressOrNil) Set(val *common.Address) {
 	if val == nil {
-		sba.storage.Set(sba.offset, NilAddressRepresentation)
+		sba.StorageSlot.Set(NilAddressRepresentation)
 	} else {
-		sba.storage.Set(sba.offset, common.BytesToHash(val.Bytes()))
+		sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 	}
 }
 
 type StorageBackedBytes struct {
-	storage *Storage
+	Storage
 }
 
-func (sto *Storage) NewStorageBackedBytes(id []byte) StorageBackedBytes {
+func (sto *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
 	return StorageBackedBytes{
-		sto.OpenSubStorage(id),
-	}
-}
-
-func (sto *Storage) OpenStorageBackedBytes(id []byte) *StorageBackedBytes {
-	return &StorageBackedBytes{
-		sto.OpenSubStorage(id),
+		*sto.OpenSubStorage(id),
 	}
 }
 
 func (sbb *StorageBackedBytes) Get() []byte {
-	return sbb.storage.GetBytes()
+	return sbb.Storage.GetBytes()
 }
 
 func (sbb *StorageBackedBytes) Set(val []byte) {
-	sbb.storage.SetBytes(val)
+	sbb.Storage.SetBytes(val)
 }
 
 func (sbb *StorageBackedBytes) Clear() {
-	sbb.storage.ClearBytes()
+	sbb.Storage.ClearBytes()
 }
 
 func (sbb *StorageBackedBytes) Size() uint64 {
-	return sbb.storage.GetBytesSize()
+	return sbb.Storage.GetBytesSize()
 }
