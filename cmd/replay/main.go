@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -82,7 +83,13 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, inbox arbstate.InboxBackend) (*types.Block, error) {
+func BuildBlock(
+	statedb *state.StateDB,
+	lastBlockHeader *types.Header,
+	chainContext core.ChainContext,
+	chainConfig *params.ChainConfig,
+	inbox arbstate.InboxBackend,
+) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -97,7 +104,9 @@ func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainCont
 	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
 	l1Message := message.Message
 
-	block, _ := arbos.ProduceBlock(l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext)
+	block, _ := arbos.ProduceBlock(
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
+	)
 	return block, nil
 }
 
@@ -129,8 +138,9 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
+	chainConfig := params.ArbitrumOneChainConfig()
 	chainContext := WavmChainContext{}
-	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
+	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, chainConfig, WavmInbox{})
 	if err != nil {
 		panic(fmt.Sprintf("Error building block: %v", err.Error()))
 	}

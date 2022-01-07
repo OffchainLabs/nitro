@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -222,7 +221,7 @@ func main() {
 		PrivateKey: nil,
 	}
 	l2Genesys := &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     params.ArbitrumOneChainConfig(),
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),

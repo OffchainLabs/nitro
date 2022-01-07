@@ -416,6 +416,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 			lastBlockHeader,
 			statedb,
 			s.bc,
+			s.bc.Config(),
 		)
 
 		// ProduceBlock advances one message

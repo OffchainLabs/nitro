@@ -103,6 +103,10 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
 	}
+	if timeout.Get() < currentTimestamp {
+		// the timeout has expired and will soon be reaped
+		return nil
+	}
 	return &Retryable{
 		id:             id,
 		backingStorage: sto,
