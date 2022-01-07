@@ -74,13 +74,13 @@ func (rs *RetryableState) CreateRetryable(
 	ret := &Retryable{
 		id,
 		sto,
-		sto.NewStorageBackedUint64(numTriesOffset),
-		sto.NewStorageBackedUint64(timeoutOffset),
-		sto.NewStorageBackedAddress(fromOffset),
-		sto.NewStorageBackedAddressOrNil(toOffset),
-		sto.NewStorageBackedBigInt(callvalueOffset),
-		sto.NewStorageBackedAddress(beneficiaryOffset),
-		sto.NewStorageBackedBytes(calldataKey),
+		sto.OpenStorageBackedUint64(numTriesOffset),
+		sto.OpenStorageBackedUint64(timeoutOffset),
+		sto.OpenStorageBackedAddress(fromOffset),
+		sto.OpenStorageBackedAddressOrNil(toOffset),
+		sto.OpenStorageBackedBigInt(callvalueOffset),
+		sto.OpenStorageBackedAddress(beneficiaryOffset),
+		sto.OpenStorageBackedBytes(calldataKey),
 	}
 	ret.numTries.Set(0)
 	ret.timeout.Set(timeout)
@@ -98,7 +98,7 @@ func (rs *RetryableState) CreateRetryable(
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
-	timeout := sto.NewStorageBackedUint64(timeoutOffset)
+	timeout := sto.OpenStorageBackedUint64(timeoutOffset)
 	if timeout.Get() == 0 {
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
@@ -110,13 +110,13 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	return &Retryable{
 		id:             id,
 		backingStorage: sto,
-		numTries:       sto.NewStorageBackedUint64(numTriesOffset),
+		numTries:       sto.OpenStorageBackedUint64(numTriesOffset),
 		timeout:        timeout,
-		from:           sto.NewStorageBackedAddress(fromOffset),
-		to:             sto.NewStorageBackedAddressOrNil(toOffset),
-		callvalue:      sto.NewStorageBackedBigInt(callvalueOffset),
-		beneficiary:    sto.NewStorageBackedAddress(beneficiaryOffset),
-		calldata:       sto.NewStorageBackedBytes(calldataKey),
+		from:           sto.OpenStorageBackedAddress(fromOffset),
+		to:             sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:      sto.OpenStorageBackedBigInt(callvalueOffset),
+		beneficiary:    sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:       sto.OpenStorageBackedBytes(calldataKey),
 	}
 }
 

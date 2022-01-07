@@ -24,8 +24,8 @@ func InitializeQueue(sto *Storage) {
 func OpenQueue(sto *Storage) *Queue {
 	return &Queue{
 		sto,
-		sto.NewStorageBackedUint64(0),
-		sto.NewStorageBackedUint64(1),
+		sto.OpenStorageBackedUint64(0),
+		sto.OpenStorageBackedUint64(1),
 	}
 }
 
