@@ -27,8 +27,12 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn env__exit(_: u32) {
-    core::arch::wasm32::unreachable()
+pub unsafe extern "C" fn env__exit(code: u32) {
+    if code == 0 {
+        wavm_halt_and_set_finished()
+    } else {
+        core::arch::wasm32::unreachable()
+    }
 }
 
 #[no_mangle]
