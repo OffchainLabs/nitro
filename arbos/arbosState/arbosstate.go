@@ -25,18 +25,20 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	formatVersion  uint64
-	gasPool        storage.StorageBackedInt64
-	smallGasPool   storage.StorageBackedInt64
-	gasPriceWei    storage.StorageBackedBigInt
-	maxGasPriceWei storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
-	l1PricingState *l1pricing.L1PricingState
-	retryableState *retryables.RetryableState
-	addressTable   *addressTable.AddressTable
-	chainOwners    *addressSet.AddressSet
-	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      storage.StorageBackedUint64
-	backingStorage *storage.Storage
+	arbosVersion     uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion   storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp storage.StorageBackedUint64 // when to do the planned upgrade
+	gasPool          storage.StorageBackedInt64
+	smallGasPool     storage.StorageBackedInt64
+	gasPriceWei      storage.StorageBackedBigInt
+	maxGasPriceWei   storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
+	l1PricingState   *l1pricing.L1PricingState
+	retryableState   *retryables.RetryableState
+	addressTable     *addressTable.AddressTable
+	chainOwners      *addressSet.AddressSet
+	sendMerkle       *merkleAccumulator.MerkleAccumulator
+	timestamp        storage.StorageBackedUint64
+	backingStorage   *storage.Storage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
@@ -45,6 +47,8 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 
 	return &ArbosState{
 		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
+		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
 		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolOffset)),
 		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
@@ -63,6 +67,8 @@ type ArbosStateOffset uint64
 
 const (
 	versionOffset ArbosStateOffset = iota
+	upgradeVersionOffset
+	upgradeTimestampOffset
 	gasPoolOffset
 	smallGasPoolOffset
 	gasPriceOffset
@@ -87,6 +93,8 @@ func initializeStorageIfNecessary(backingStorage *storage.Storage) {
 	if backingStorage.GetByUint64(uint64(versionOffset)) == (common.Hash{}) {
 		// we found a zero at storage location 0, so storage hasn't been initialized yet
 		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+		backingStorage.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
+		backingStorage.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 		backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
 		backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
 		backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
@@ -107,16 +115,25 @@ func initializeStorageIfNecessary(backingStorage *storage.Storage) {
 	}
 }
 
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+	upgradeTo := state.upgradeVersion.Get()
+	if upgradeTo > state.arbosVersion && currentTimestamp >= state.upgradeTimestamp.Get() {
+		// code to upgrade to future versions will be put here
+		// for now, no upgrades are enabled
+		panic("Unable to perform requested ArbOS upgrade")
+	}
+}
+
 func (state *ArbosState) BackingStorage() *storage.Storage {
 	return state.backingStorage
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
-	return state.formatVersion
+	return state.arbosVersion
 }
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
-	state.formatVersion = val
+	state.arbosVersion = val
 	state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val)
 }
 
