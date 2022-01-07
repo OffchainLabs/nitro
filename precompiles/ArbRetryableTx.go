@@ -6,8 +6,9 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -43,13 +44,15 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	if c.caller != retryable.Beneficiary() {
 		return errors.New("only the beneficiary may cancel a retryable")
 	}
+
+	// no refunds are given for deleting retryables because they use rented space
 	retryableState.DeleteRetryable(ticketId)
 	con.Canceled(evm, ticketId)
 	return nil
 }
 
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
-	if err := c.burn(3 * params.SloadGas); err != nil {
+	if err := c.burn(2 * params.SloadGas); err != nil {
 		return addr{}, err
 	}
 	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
@@ -60,22 +63,8 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (ad
 	return retryable.Beneficiary(), nil
 }
 
-func (con ArbRetryableTx) GetKeepaliveGas(c ctx, evm mech, ticketId [32]byte) (huge, error) {
-	if err := c.burn(3 * params.SloadGas); err != nil {
-		return nil, err
-	}
-	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
-	nbytes := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
-	if nbytes == 0 {
-		return nil, NotFoundError
-	}
-	return big.NewInt(int64(util.WordsForBytes(nbytes) * params.SstoreSetGas / 100)), nil
-}
-
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
-	if err := c.burn(1); err != nil {
-		return nil, err
-	}
+	// there's no need to burn gas for something this cheap
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
@@ -91,15 +80,26 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	return big.NewInt(int64(retryable.Timeout())), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, evm mech, value huge, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 
+	// charge for the check & event
 	eventCost := con.LifetimeExtendedGasCost(ticketId, big.NewInt(0))
-	if err := c.burn(3*params.SloadGas + 2*params.SstoreSetGas + eventCost); err != nil {
+	if err := c.burn(6*params.SloadGas + 2*params.SstoreSetGas + eventCost); err != nil {
+		return big.NewInt(0), err
+	}
+
+	// charge for the expiry update
+	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
+	nbytes := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
+	if nbytes == 0 {
+		return nil, NotFoundError
+	}
+	updateCost := util.WordsForBytes(nbytes) * params.SstoreSetGas / 100
+	if err := c.burn(updateCost); err != nil {
 		return big.NewInt(0), err
 	}
 
 	currentTime := evm.Context.Time.Uint64()
-	retryableState := arbosState.OpenArbosState(evm.StateDB).RetryableState()
 	window := currentTime + retryables.RetryableLifetimeSeconds
 	err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
 	if err != nil {

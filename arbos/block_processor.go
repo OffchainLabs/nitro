@@ -7,10 +7,11 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math"
 	"math/big"
 	"strconv"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -21,30 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
-
-var ChainConfig = &params.ChainConfig{
-	ChainID:             big.NewInt(412345),
-	HomesteadBlock:      big.NewInt(0),
-	DAOForkBlock:        nil,
-	DAOForkSupport:      true,
-	EIP150Block:         big.NewInt(0),
-	EIP150Hash:          common.Hash{},
-	EIP155Block:         big.NewInt(0),
-	EIP158Block:         big.NewInt(0),
-	ByzantiumBlock:      big.NewInt(0),
-	ConstantinopleBlock: big.NewInt(0),
-	PetersburgBlock:     big.NewInt(0),
-	IstanbulBlock:       big.NewInt(0),
-	MuirGlacierBlock:    big.NewInt(0),
-	BerlinBlock:         big.NewInt(0),
-	LondonBlock:         big.NewInt(0),
-	Arbitrum:            true,
-
-	Clique: &params.CliqueConfig{
-		Period: 0,
-		Epoch:  0,
-	},
-}
 
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
@@ -93,9 +70,10 @@ func ProduceBlock(
 	lastBlockHeader *types.Header,
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
+	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	txes, err := message.ParseL2Transactions(ChainConfig.ChainID)
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
@@ -112,7 +90,7 @@ func ProduceBlock(
 	state := arbosState.OpenArbosState(statedb)
 	gasLeft := state.CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
-	signer := types.MakeSigner(ChainConfig, header.Number)
+	signer := types.MakeSigner(chainConfig, header.Number)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -192,7 +170,7 @@ func ProduceBlock(
 		gasPool := gethGas
 
 		receipt, err := core.ApplyTransaction(
-			ChainConfig,
+			chainConfig,
 			chainContext,
 			&header.Coinbase,
 			&gasPool,
@@ -231,7 +209,7 @@ func ProduceBlock(
 
 				reedem := types.NewTx(&types.ArbitrumRetryTx{
 					ArbitrumContractTx: types.ArbitrumContractTx{
-						ChainId:   ChainConfig.ChainID,
+						ChainId:   chainConfig.ChainID,
 						RequestId: txLog.Topics[2],
 						From:      retryable.From(),
 						GasPrice:  gasPrice,
