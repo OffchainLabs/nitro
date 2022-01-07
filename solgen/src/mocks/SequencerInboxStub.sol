@@ -21,6 +21,25 @@ contract SequencerInboxStub is ISequencerInbox {
     uint256 public maxDelaySeconds;
     uint256 public maxFutureSeconds;
 
+    event SequencerBatchDelivered(
+        uint256 indexed batchSequenceNumber,
+        bytes32 indexed beforeAcc,
+        bytes32 indexed afterAcc,
+        bytes32 delayedAcc,
+        uint256 afterDelayedMessagesRead,
+        uint64[4] timeBounds,
+        bytes data
+    );
+
+    event SequencerBatchDeliveredFromOrigin(
+        uint256 indexed batchSequenceNumber,
+        bytes32 indexed beforeAcc,
+        bytes32 indexed afterAcc,
+        bytes32 delayedAcc,
+        uint256 afterDelayedMessagesRead,
+        uint64[4] timeBounds
+    );
+
     constructor(
         IBridge _delayedBridge,
         address _sequencer
@@ -51,9 +70,19 @@ contract SequencerInboxStub is ISequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
+        );
+
+        uint64[4] memory emptyTimeBounds;
+        emit SequencerBatchDeliveredFromOrigin(
+            inboxAccs.length - 1,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            totalDelayedMessagesRead,
+            emptyTimeBounds
         );
 
         if (gasRefunder != 0) {
@@ -70,9 +99,19 @@ contract SequencerInboxStub is ISequencerInbox {
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        addSequencerL2BatchImpl(
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
             data,
             afterDelayedMessagesRead
+        );
+        uint64[4] memory emptyTimeBounds;
+        emit SequencerBatchDelivered(
+            inboxAccs.length - 1,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            afterDelayedMessagesRead,
+            emptyTimeBounds,
+            data
         );
 
         if (gasRefunder != 0) {

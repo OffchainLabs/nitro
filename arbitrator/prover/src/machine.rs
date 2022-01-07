@@ -1759,6 +1759,10 @@ impl Machine {
         }
     }
 
+    pub fn get_modules_root(&self) -> Bytes32 {
+        self.get_modules_merkle().root()
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
@@ -1772,7 +1776,7 @@ impl Machine {
                 h.update(&(self.pc.module as u32).to_be_bytes());
                 h.update(&(self.pc.func as u32).to_be_bytes());
                 h.update(&(self.pc.inst as u32).to_be_bytes());
-                h.update(self.get_modules_merkle().root());
+                h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
                 h.update("Machine finished:");
@@ -2014,6 +2018,7 @@ impl Machine {
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
+                            data.push(0); // inbox proof type
                             data.extend(msg_data);
                         }
                     } else {

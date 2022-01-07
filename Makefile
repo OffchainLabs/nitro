@@ -75,6 +75,10 @@ lint: .make/lint
 test-go: .make/test-go
 	@printf $(done)
 
+test-go-challenge: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
@@ -232,7 +236,7 @@ solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prov
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(arbitrator_output_root)/lib/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --always-merkleize
+	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 solgen/test/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --inbox arbitrator/prover/test-cases/rust/messages/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg1.bin
