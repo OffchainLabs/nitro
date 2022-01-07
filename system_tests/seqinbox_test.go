@@ -107,7 +107,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
-				t.Fatal("Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
+				Fail(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
 			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
 			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
@@ -141,7 +141,9 @@ func TestSequencerInboxReader(t *testing.T) {
 				var dest common.Address
 				if j == 0 && amount >= params.InitialBaseFee*1000000 {
 					name := accountName(len(state.accounts))
-					l2Info.GenerateAccount(name)
+					if !l2Info.HasAccount(name) {
+						l2Info.GenerateAccount(name)
+					}
 					dest = l2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
 				} else {
@@ -193,12 +195,12 @@ func TestSequencerInboxReader(t *testing.T) {
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 			if batchCount.Cmp(big.NewInt(int64(len(blockStates)-1))) == 0 {
 				break
 			} else if i >= 100 {
-				t.Fatal("timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
+				Fail(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -209,7 +211,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			if blockNumber == expectedBlockNumber {
 				break
 			} else if i >= 1000 {
-				t.Fatal("timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
+				Fail(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -218,14 +220,14 @@ func TestSequencerInboxReader(t *testing.T) {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			if block == nil {
-				t.Fatal("missing state block", state.l2BlockNumber)
+				Fail(t, "missing state block", state.l2BlockNumber)
 			}
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			for acct, balance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
-					t.Fatal("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
+					Fail(t, "unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
 		}

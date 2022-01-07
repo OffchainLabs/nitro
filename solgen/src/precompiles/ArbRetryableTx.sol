@@ -7,13 +7,12 @@ pragma solidity >=0.4.21 <0.9.0;
 interface ArbRetryableTx {
 
     /**
-    * @notice Redeem a redeemable tx.
-    * Revert if called by an L2 contract, or if txId does not exist, or if txId reverts.
-    * If this returns, txId has been completed and is no longer available for redemption.
-    * If this reverts, txId is still available for redemption (until it times out or is canceled).
-    @param txId unique identifier of retryable message: keccak256(keccak256(ArbchainId, inbox-sequence-number), uint(0) )
+    * @notice Schedule an attempt to redeem a redeemable tx, donating all of the call's gas to the redeem.
+    * Revert if ticketId does not exist.
+    * @param ticketId unique identifier of retryable message: keccak256(keccak256(ArbchainId, inbox-sequence-number), uint(0) )
+    * @return txId that the redeem attempt will have
      */
-    function redeem(bytes32 txId) external;
+    function redeem(bytes32 ticketId) external returns(bytes32);
 
     /**
     * @notice Return the minimum lifetime of redeemable txn.
@@ -23,32 +22,25 @@ interface ArbRetryableTx {
 
     /**
     * @notice Return the timestamp when ticketId will age out, or zero if ticketId does not exist.
-    * The timestamp could be in the past, because aged-out tickets might not be discarded immediately.
     * @param ticketId unique ticket identifier
     * @return timestamp for ticket's deadline
     */
     function getTimeout(bytes32 ticketId) external view returns(uint);
 
     /**
-    * @notice Return the price, in wei, of submitting a new retryable tx with a given calldata size.
-    * @param calldataSize call data size to get price of (in wei)
-    * @return (price, nextUpdateTimestamp). Price is guaranteed not to change until nextUpdateTimestamp.
-    */
-    function getSubmissionPrice(uint calldataSize) external view returns (uint, uint);
-
-    /**
-     * @notice Return the price, in wei, of extending the lifetime of ticketId by an additional lifetime period. Revert if ticketId doesn't exist.
+     * @notice Return the amount of gas required to extend the lifetime of ticketId by an additional lifetime period. Revert if ticketId doesn't exist.
      * @param ticketId unique ticket identifier
-     * @return (price, nextUpdateTimestamp). Price is guaranteed not to change until nextUpdateTimestamp.
+     * @return gas required
     */
-    function getKeepalivePrice(bytes32 ticketId) external view returns(uint, uint);
+    function getKeepaliveGas(bytes32 ticketId) external view returns(uint);
 
     /**
     @notice Deposits callvalue into the sender's L2 account, then adds one lifetime period to the life of ticketId.
+    * Donate gas to pay for the lifetime extension.
     * If successful, emits LifetimeExtended event.
-    * Revert if ticketId does not exist, or if the timeout of ticketId is already at least one lifetime period in the future, or if the sender has insufficient funds (after the deposit).
+    * Revert if ticketId does not exist, or if the timeout of ticketId is already at least one lifetime period in the future.
     * @param ticketId unique ticket identifier
-    * @return New timeout of ticketId.
+    * @return new timeout of ticketId
     */
     function keepalive(bytes32 ticketId) external payable returns(uint);
 
@@ -69,6 +61,7 @@ interface ArbRetryableTx {
 
     event TicketCreated(bytes32 indexed ticketId);
     event LifetimeExtended(bytes32 indexed ticketId, uint newTimeout);
+    event RedeemScheduled(bytes32 indexed ticketId, bytes32 indexed redeemTxId, uint64 sequenceNum, uint64 donatedGas, address gasDonor);
     event Redeemed(bytes32 indexed ticketId);
     event Canceled(bytes32 indexed ticketId);
 }

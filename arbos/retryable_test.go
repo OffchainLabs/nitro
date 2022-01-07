@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 	"testing"
 
@@ -8,16 +9,16 @@ import (
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	retryable := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if retryable != nil {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	originalTimestamp := state.LastTimestampSeen()
 	newTimestamp := originalTimestamp + 42
 	state.SetLastTimestampSeen(newTimestamp)
@@ -27,34 +28,36 @@ func TestOpenExpiredRetryable(t *testing.T) {
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
+	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
 	calldata := []byte{42}
-	_ = state.RetryableState().CreateRetryable(state.LastTimestampSeen(), id, timeout, from, to, callvalue, calldata)
+	_ = state.RetryableState().CreateRetryable(state.LastTimestampSeen(), id, timeout, from, &to, callvalue, beneficiary, calldata)
 
 	reread := state.RetryableState().OpenRetryable(id, state.LastTimestampSeen())
 	if reread != nil {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
 func TestRetryableCreate(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := state.LastTimestampSeen() + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
 	to := common.BytesToAddress([]byte{6, 7, 8, 9})
 	callvalue := big.NewInt(0)
+	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
 	calldata := make([]byte, 42)
 	for i := range calldata {
 		calldata[i] = byte(i + 3)
 	}
 	rstate := state.RetryableState()
-	retryable := rstate.CreateRetryable(state.LastTimestampSeen(), id, timeout, from, to, callvalue, calldata)
+	retryable := rstate.CreateRetryable(state.LastTimestampSeen(), id, timeout, from, &to, callvalue, beneficiary, calldata)
 
 	reread := rstate.OpenRetryable(id, state.LastTimestampSeen())
 	if reread == nil {
-		t.Fatal()
+		Fail(t)
 	}
 	if !reread.Equals(retryable) {
-		t.Fatal()
+		Fail(t)
 	}
 }

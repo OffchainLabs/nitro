@@ -2,32 +2,18 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package arbosState
 
 import (
-	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
-// Create a memory-backed ArbOS state
-func OpenArbosStateForTest(t *testing.T) *ArbosState {
-	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
-	statedb, err := state.New(common.Hash{}, db, nil)
-	if err != nil {
-		t.Fatal("failed to init empty statedb")
-	}
-	return OpenArbosState(statedb)
-}
-
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosStateForTest(t)
+	storage := OpenArbosStateForTesting(t)
 	_ = storage
 }
 
@@ -50,9 +36,9 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageBackedInt64(t *testing.T) {
-	state := OpenArbosStateForTest(t)
+	state := OpenArbosStateForTesting(t)
 	storage := state.backingStorage
-	offset := common.BigToHash(big.NewInt(7895463))
+	offset := uint64(7895463)
 
 	valuesToTry := []int64{0, 7, -7, 56487423567, -7586427647}
 
@@ -60,7 +46,7 @@ func TestStorageBackedInt64(t *testing.T) {
 		storage.OpenStorageBackedInt64(offset).Set(val)
 		res := storage.OpenStorageBackedInt64(offset).Get()
 		if val != res {
-			t.Fatal(val, res)
+			Fail(t, val, res)
 		}
 	}
 }
