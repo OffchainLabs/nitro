@@ -14,7 +14,6 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/precompiles"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -38,9 +37,6 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConf
 }
 
 func TestSequencerFeed(t *testing.T) {
-	precompiles.AllowDebugPrecompiles = true
-	defer func() { precompiles.AllowDebugPrecompiles = false }()
-
 	port := 9642
 	seqNodeConfig := arbnode.NodeConfigL2Test
 	seqNodeConfig.Broadcaster = true

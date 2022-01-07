@@ -11,13 +11,9 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/precompiles"
 )
 
 func TestTransfer(t *testing.T) {
-	precompiles.AllowDebugPrecompiles = true
-	defer func() { precompiles.AllowDebugPrecompiles = false }()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, client, _ := CreateTestL2(t, ctx)
