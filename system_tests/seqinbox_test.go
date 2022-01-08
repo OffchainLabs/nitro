@@ -109,7 +109,8 @@ func TestSequencerInboxReader(t *testing.T) {
 					Nonce:     j,
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
-				SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{tx})
+				Require(t, l1Client.SendTransaction(ctx, tx))
+				_, _ = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
