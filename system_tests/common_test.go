@@ -176,11 +176,11 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
-	conf := &arbnode.NodeConfigL1Test
+	conf := arbnode.NodeConfigL1Test
 	if !isSequencer {
 		conf.BatchPoster = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, conf, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, &conf, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 
