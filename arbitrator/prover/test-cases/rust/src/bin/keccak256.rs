@@ -7,5 +7,5 @@ fn main() {
 		hasher.update(&[i]);
 	}
 	let output: [u8; 32] = hasher.finalize().into();
-	std::process::exit(output[0].into());
+	std::process::exit(i32::from(output[0]) ^ 183);
 }

@@ -904,6 +904,7 @@ impl Machine {
                 f,
             ));
             entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+            entrypoint.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
         }
         // Go support
         if let Some(&f) = main_module.exports.get("run") {

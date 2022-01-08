@@ -13,13 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/precompiles"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 func TestDeploy(t *testing.T) {
-	precompiles.AllowDebugPrecompiles = true
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -44,7 +42,6 @@ func TestDeploy(t *testing.T) {
 }
 
 func TestEstimate(t *testing.T) {
-	precompiles.AllowDebugPrecompiles = true
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

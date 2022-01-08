@@ -20,19 +20,18 @@ import (
 )
 
 func TestEvents(t *testing.T) {
-	AllowDebugPrecompiles = true
-
 	blockNumber := 1024
 
-	// create a minimal evm that supports just enough to create logs
-	evm := vm.EVM{
-		StateDB: storage.NewMemoryBackedStateDB(),
-		Context: vm.BlockContext{
-			BlockNumber: big.NewInt(int64(blockNumber)),
-			GasLimit:    ^uint64(0),
-		},
-		ProcessingHook: &arbos.TxProcessor{},
+	chainConfig := params.ArbitrumTestChainConfig()
+	statedb := storage.NewMemoryBackedStateDB()
+	context := vm.BlockContext{
+		BlockNumber: big.NewInt(int64(blockNumber)),
+		GasLimit:    ^uint64(0),
 	}
+
+	// create a minimal evm that supports just enough to create logs
+	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm.ProcessingHook = &arbos.TxProcessor{}
 
 	debugContractAddr := common.HexToAddress("ff")
 	contract := Precompiles()[debugContractAddr]
@@ -72,7 +71,7 @@ func TestEvents(t *testing.T) {
 		number,
 		false,
 		^uint64(0),
-		&evm,
+		evm,
 	)
 	Require(t, err, "call failed")
 

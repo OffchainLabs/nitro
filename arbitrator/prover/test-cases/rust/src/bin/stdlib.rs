@@ -7,4 +7,6 @@ fn main() {
 	let product = x.into_iter().fold(1, |p, x| p * x);
 	println!("Sum: {}", sum);
 	eprintln!("Product: {}", product);
+	assert_eq!(sum, 45);
+	assert_eq!(product, 362880);
 }
