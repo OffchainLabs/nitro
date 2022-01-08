@@ -1,6 +1,6 @@
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::InboxIdentifier;
+use prover::machine::{InboxIdentifier, MachineStatus};
 use prover::parse_binary;
 use prover::{machine::GlobalState, utils::Bytes32};
 use prover::{machine::Machine, wavm::Opcode};
@@ -48,6 +48,9 @@ struct Opts {
     delayed_inbox: Vec<PathBuf>,
     #[structopt(long)]
     preimages: Option<PathBuf>,
+    /// Require that the machine end in the Finished state
+    #[structopt(long)]
+    require_success: bool,
 }
 
 #[derive(Serialize)]
@@ -198,6 +201,15 @@ fn main() -> Result<()> {
         mach.step_n(opts.proving_interval.saturating_sub(1));
     }
 
+    if proofs.len() > 0 && mach.is_halted() {
+        let hash = mach.hash();
+        proofs.push(ProofInfo {
+            before: hash.to_string(),
+            proof: hex::encode(mach.serialize_proof()),
+            after: hash.to_string(),
+        });
+    }
+
     println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
@@ -220,6 +232,10 @@ fn main() -> Result<()> {
     if let Some(out) = opts.output {
         let out = File::create(out)?;
         serde_json::to_writer_pretty(out, &proofs)?;
+    }
+
+    if opts.require_success && mach.get_status() != MachineStatus::Finished {
+        std::process::exit(1);
     }
 
     Ok(())

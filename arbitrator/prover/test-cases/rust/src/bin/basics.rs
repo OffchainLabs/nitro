@@ -3,5 +3,5 @@ fn main() {
 	if std::env::vars().count() == 0 {
 		x = x.wrapping_add(1);
 	}
-	std::process::exit(x)
+	std::process::exit(x ^ 101)
 }

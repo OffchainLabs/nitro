@@ -12,20 +12,20 @@ import (
 
 type Queue struct {
 	storage       *Storage
-	nextPutOffset *StorageBackedUint64
-	nextGetOffset *StorageBackedUint64
+	nextPutOffset StorageBackedUint64
+	nextGetOffset StorageBackedUint64
 }
 
 func InitializeQueue(sto *Storage) {
-	sto.SetByUint64(0, util.UintToHash(2))
-	sto.SetByUint64(1, util.UintToHash(2))
+	sto.SetUint64ByUint64(0, 2)
+	sto.SetUint64ByUint64(1, 2)
 }
 
 func OpenQueue(sto *Storage) *Queue {
 	return &Queue{
 		sto,
-		sto.OpenStorageBackedUint64(util.UintToHash(0)),
-		sto.OpenStorageBackedUint64(util.UintToHash(1)),
+		sto.OpenStorageBackedUint64(0),
+		sto.OpenStorageBackedUint64(1),
 	}
 }
 
@@ -45,16 +45,12 @@ func (q *Queue) Get() *common.Hash { // returns nil iff queue is empty
 	if q.IsEmpty() {
 		return nil
 	}
-	ngo := q.nextGetOffset.Get()
-	res := q.storage.Swap(util.UintToHash(ngo), common.Hash{})
-	ngo++
-	q.nextGetOffset.Set(ngo)
+	newOffset := q.nextGetOffset.Increment()
+	res := q.storage.Swap(util.UintToHash(newOffset-1), common.Hash{})
 	return &res
 }
 
 func (q *Queue) Put(val common.Hash) {
-	npo := q.nextPutOffset.Get()
-	q.storage.SetByUint64(npo, val)
-	npo++
-	q.nextPutOffset.Set(npo)
+	newOffset := q.nextPutOffset.Increment()
+	q.storage.SetByUint64(newOffset-1, val)
 }

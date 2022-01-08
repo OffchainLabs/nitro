@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 func TestArbAddressTableInit(t *testing.T) {
@@ -131,7 +131,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	res, err := atab.Compress(context, st, addr)
 	Require(t, err)
 	if len(res) > 9 {
-		t.Fatal(len(res))
+		Fail(t, len(res))
 	}
 
 	// add a byte of padding at the beginning and end of res
@@ -142,10 +142,10 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(1))
 	Require(t, err)
 	if (!nbytes.IsInt64()) || (nbytes.Int64()+2 != int64(len(res))) {
-		t.Fatal()
+		Fail(t)
 	}
 	if dec != addr {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -159,10 +159,12 @@ func newMockEVMForTesting(t *testing.T) *vm.EVM {
 	}
 }
 
-// Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
-	if err != nil {
-		t.Fatal(colors.Red, text, err, colors.Clear)
-	}
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

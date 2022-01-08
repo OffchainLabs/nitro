@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+
 	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -29,6 +31,8 @@ import (
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
+	chainConfig := params.ArbitrumTestChainConfig()
+
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[rewrittenOwnerAddress] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether),
@@ -36,7 +40,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		PrivateKey: nil,
 	}
 	genesis := &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     chainConfig,
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumTest"),
@@ -48,20 +52,20 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 
 	db := rawdb.NewMemoryDatabase()
 	genesis.MustCommit(db)
 	shouldPreserve := func(_ *types.Block) bool { return false }
-	bc, err := core.NewBlockChain(db, nil, arbos.ChainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
+	bc, err := core.NewBlockChain(db, nil, chainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	inbox, err := NewTransactionStreamer(db, bc)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	return inbox, bc
@@ -84,7 +88,7 @@ func TestTransactionStreamer(t *testing.T) {
 	defer cancel()
 	inbox.Start(ctx)
 
-	maxExpectedGasCost := big.NewInt(arbos.InitialGasPriceWei)
+	maxExpectedGasCost := big.NewInt(arbosState.InitialGasPriceWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
 
 	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
@@ -103,7 +107,7 @@ func TestTransactionStreamer(t *testing.T) {
 			reorgTo := rand.Int() % len(blockStates)
 			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 			blockStates = blockStates[:(reorgTo + 1)]
 		} else {
@@ -134,7 +138,7 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbos.InitialGasPriceWei))...)
+				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbosState.InitialGasPriceWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(amount)...)
 				messages = append(messages, arbstate.MessageWithMetadata{
@@ -161,11 +165,11 @@ func TestTransactionStreamer(t *testing.T) {
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()
 				if blockNumber > state.blockNumber {
-					t.Fatal("unexpected block number", blockNumber, ">", state.blockNumber)
+					Fail(t, "unexpected block number", blockNumber, ">", state.blockNumber)
 				} else if blockNumber == state.blockNumber {
 					break
 				} else if i >= 100 {
-					t.Fatal("timed out waiting for new block")
+					Fail(t, "timed out waiting for new block")
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
@@ -176,18 +180,18 @@ func TestTransactionStreamer(t *testing.T) {
 		lastBlockNumber := bc.CurrentHeader().Number.Uint64()
 		expectedLastBlockNumber := blockStates[len(blockStates)-1].blockNumber
 		if lastBlockNumber != expectedLastBlockNumber {
-			t.Fatal("unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
+			Fail(t, "unexpected block number", lastBlockNumber, "vs", expectedLastBlockNumber)
 		}
 
 		for _, state := range blockStates {
 			block := bc.GetBlockByNumber(state.blockNumber)
 			if block == nil {
-				t.Fatal("missing state block", state.blockNumber)
+				Fail(t, "missing state block", state.blockNumber)
 			}
 			for acct, balance := range state.balances {
 				state, err := bc.StateAt(block.Root())
 				if err != nil {
-					t.Fatal("error getting block state", err)
+					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
 				if balance.Cmp(haveBalance) < 0 {
@@ -198,10 +202,12 @@ func TestTransactionStreamer(t *testing.T) {
 	}
 }
 
-// Fail a test should an error occur
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
-	if err != nil {
-		t.Fatal(colors.Red, text, err, colors.Clear)
-	}
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }
