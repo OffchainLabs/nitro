@@ -215,10 +215,10 @@ func TestSequencerInboxReader(t *testing.T) {
 			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 			if err != nil {
 				// Geth's clique miner is finicky.
+				// Unfortunately this is so rare that I haven't had an opportunity to test this workaround.
 				// Specifically, I suspect there's a race where it thinks there's no txs to put in the new block,
 				// if a new tx arrives at the same time as it tries to create a block.
 				// Resubmit the transaction in an attempt to get the miner going again.
-				t.Error("had to resubmit tx")
 				_ = l1Client.SendTransaction(ctx, tx)
 				txRes, err = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 				Require(t, err)
