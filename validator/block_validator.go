@@ -33,9 +33,8 @@ type BlockValidator struct {
 	sequencerBatches  sync.Map
 	preimageCache     preimageCache
 
-	blocksValidated      uint64
-	blocksValidatedMutex sync.Mutex
-	earliestBatchKept    uint64
+	blocksValidated   uint64
+	earliestBatchKept uint64
 
 	posNextSend       uint64
 	globalPosNextSend GlobalStatePosition
@@ -120,8 +119,7 @@ type validationEntry struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	SeqMsgNr      uint64
-	Running       bool
-	Valid         bool
+	Valid         uint32 // Atomic, either 0 or 1
 }
 
 func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
@@ -323,8 +321,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
-	validationEntry.SeqMsgNr = start.BatchNumber
-	validationEntry.Running = true
 	gsStart := GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
@@ -437,7 +433,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		return
 	}
 
-	validationEntry.Valid = true // after that - validation entry could be deleted from map
+	atomic.StoreUint32(&validationEntry.Valid, 1) // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
 	v.sendValidationsChan <- struct{}{}
@@ -483,6 +479,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
+		validationEntry.SeqMsgNr = startPos.BatchNumber
 		go v.validate(ctx, validationEntry, startPos, endPos)
 		v.posNextSend += 1
 		v.globalPosNextSend = endPos
@@ -505,10 +502,9 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 	})()
 }
 
-func (v *BlockValidator) ProgressValidated() {
-	v.blocksValidatedMutex.Lock()
-	defer v.blocksValidatedMutex.Unlock()
+func (v *BlockValidator) progressValidated() {
 	for {
+		// Reads from blocksValidated can be non-atomic as this goroutine is the only writer
 		entry, found := v.validationEntries.Load(v.blocksValidated + 1)
 		if !found {
 			return
@@ -518,7 +514,7 @@ func (v *BlockValidator) ProgressValidated() {
 			log.Error("bad entry trying to advance validated counter")
 			return
 		}
-		if !validationEntry.Valid {
+		if atomic.LoadUint32(&validationEntry.Valid) == 0 {
 			return
 		}
 		if validationEntry.BlockNumber != v.blocksValidated+1 {
@@ -531,7 +527,7 @@ func (v *BlockValidator) ProgressValidated() {
 			}
 			v.earliestBatchKept = validationEntry.SeqMsgNr
 		}
-		v.blocksValidated += 1
+		atomic.AddUint64(&v.blocksValidated, 1)
 		v.validationEntries.Delete(v.blocksValidated)
 		select {
 		case v.progressChan <- v.blocksValidated:
@@ -551,13 +547,13 @@ func (v *BlockValidator) startProgressLoop(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			}
-			v.ProgressValidated()
+			v.progressValidated()
 		}
 	})()
 }
 
 func (v *BlockValidator) BlocksValidated() uint64 {
-	return v.blocksValidated
+	return atomic.LoadUint64(&v.blocksValidated)
 }
 
 func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
@@ -580,12 +576,12 @@ func (v *BlockValidator) Start(ctx context.Context) error {
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
 	timeoutChan := time.After(timeout)
 	for {
-		if v.blocksValidated >= blockNumber {
+		if atomic.LoadUint64(&v.blocksValidated) >= blockNumber {
 			return true
 		}
 		select {
 		case <-timeoutChan:
-			if v.blocksValidated >= blockNumber {
+			if atomic.LoadUint64(&v.blocksValidated) >= blockNumber {
 				return true
 			}
 			return false
