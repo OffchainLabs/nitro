@@ -10,7 +10,7 @@ which are not part of WASM nor any WASM proposal.
 
 Many of these opcodes have implicit invariants about what's on the stack,
 e.g. "Pops an i32 from the stack" assumes that the top of the stack has an i32.
-If these conditions are not satisfied, execution is generally not executable.
+If these conditions are not satisfied, execution is generally not possible.
 These invariants are maintained by WASM validation and Arbitrator codegen.  (See `OSPAssumptions.md`.)
 
 ## Codegen internal
