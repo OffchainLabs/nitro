@@ -117,6 +117,19 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
+      - name: Cache Rust Build Products
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            arbitrator/target/
+            arbitrator/wasm-libraries/target/
+          key: ${{ runner.os }}-cargo-min-${{ hashFiles('arbitrator/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
       - name: Build
         run: make build test-go-deps -j
 
