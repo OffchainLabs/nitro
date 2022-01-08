@@ -201,6 +201,15 @@ fn main() -> Result<()> {
         mach.step_n(opts.proving_interval.saturating_sub(1));
     }
 
+    if proofs.len() > 0 && mach.is_halted() {
+        let hash = mach.hash();
+        proofs.push(ProofInfo {
+            before: hash.to_string(),
+            proof: hex::encode(mach.serialize_proof()),
+            after: hash.to_string(),
+        });
+    }
+
     println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
