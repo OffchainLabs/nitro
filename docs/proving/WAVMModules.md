@@ -3,8 +3,11 @@
 WASM natively has a notion of modules.
 Normally, in WASM, a module is the entire program.
 A `.wasm` file represents one module, and generally they aren't combined.
+An exception to this is C compiled via Clang, where wasm files are also used as object files,
+but [its linking scheme](https://github.com/WebAssembly/tool-conventions/blob/main/Linking.md) is not supported in other languages.
+
 In WAVM this is extended to make the executing program composed of multiple modules.
-These may call each other, and library modules may write to the main module's memory to return results.
+These may call each other, and library modules may write to their caller's memory to return results.
 
 ## The entrypoint module
 

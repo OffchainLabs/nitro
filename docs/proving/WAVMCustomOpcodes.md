@@ -57,6 +57,7 @@ These are only used in the implementation of "host calls".
 Each of these has an equivalent host call method, which can be invoked from libraries.
 The exception is `CallerModuleInternalCall`,
 which is used for the implementation of all of the `wavm_caller_*` host calls.
+Those calls are documented in `WAVMModules.md`.
 
 For these instruction descriptions, all pointers and offsets are represented as WASM i32s.
 
