@@ -10,17 +10,18 @@ which are not part of WASM nor any WASM proposal.
 
 Many of these opcodes have implicit invariants about what's on the stack,
 e.g. "Pops an i32 from the stack" assumes that the top of the stack has an i32.
-If these conditions are not, execution is generally not executable.
-These invariants are maintained by WASM validation and Arbitrator codegen.
+If these conditions are not satisfied, execution is generally not possible.
+These invariants are maintained by WASM validation and Arbitrator codegen.  (See `OSPAssumptions.md`.)
 
 ## Codegen internal
 
 These are generated when breaking down a WASM instruction that does many things into many WAVM instructions which each do one thing.
-For instance, `local.tee` is implemented with `dup` and then `local.set`, the former of which doesn't exist in WASM.
+For instance, a WASM `local.tee` is implemented in WAVM with `dup` and then `local.set`, the former of which doesn't exist in WASM.
 
 Other times, these opcodes help out an existing WASM opcode by splitting out functionality.
-For instance, the `return` opcode by itself does not clean up the stack in WAVM,
-but its WASM->WAVM codegen includes a loop that utilizes `IsStackBoundary` to clean up the stack.
+For instance, the WAVM `return` opcode by itself does not clean up the stack,
+but its WASM->WAVM codegen includes a loop that utilizes `IsStackBoundary` to perform the stack cleanup
+specified for WASM's `return`.
 
 | Opcode | Name                    | Description |
 |--------|-------------------------|-------------|
@@ -32,7 +33,7 @@ but its WASM->WAVM codegen includes a loop that utilizes `IsStackBoundary` to cl
 | 0x8005 | MoveFromStackToInternal | Pops an item from the stack and pushes it to the internal stack.
 | 0x8006 | MoveFromInternalToStack | Pops an item from the internal stack and pushes it to the stack.
 | 0x8007 | IsStackBoundary         | Pops an item from the stack. If a stack boundary, pushes an i32 with value 1. Otherwise, pushes an i32 with value 0.
-| 0x8008 | Dup                     | Peeks an item from the stack and pushes another copy to the stack.
+| 0x8008 | Dup                     | Peeks an item from the stack and pushes another copy of that item to the stack.
 
 The above opcodes eliminate the need for the following WASM opcodes (which are transpiled into other WAVM opcodes):
 - loop
@@ -57,7 +58,7 @@ Each of these has an equivalent host call method, which can be invoked from libr
 The exception is `CallerModuleInternalCall`,
 which is used for the implementation of all of the `wavm_caller_*` host calls.
 
-For these instructions descriptions, all pointers and offsets are represented as WASM i32s.
+For these instruction descriptions, all pointers and offsets are represented as WASM i32s.
 
 | Opcode | Name                     | Description |
 |--------|--------------------------|-------------|
