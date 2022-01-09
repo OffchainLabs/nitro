@@ -36,10 +36,15 @@ Because poster costs come at the expense of L1 aggregators and not the network m
 ## Interfaces and components
 
 ### [`APIBackend`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/apibackend.go#L27)
-TODO: Describe this & the purpose it serves
+APIBackend implements the [`ethapi.Bakend`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/internal/ethapi/backend.go#L42) interface, which allows simple integration of the arbitrum chain to existing geth API. Most calls are answered using the Backend member.
 
 ### [`Backend`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/backend.go#L14)
-TODO: Describe this & the purpose it serves
+This struct was created as an arbitrum equivalent to the [`Ethereum`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/eth/backend.go#L65) struct. It is mostly glue logic, including a pointer to the ArbInterface interface.
+
+### [`ArbInterface`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/arbos_interface.go#L10)
+This interface is the main interaction-point between geth-standard APIs and the arbitrum chain. Geth APIs mostly either check status by working on the Blockchain struct retrieved from the [`Blockchain`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/arbos_interface.go#L12) call, or send transactions to arbitrum using the [`PublishTransactions`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/arbos_interface.go#L11) call.
 
 ### [`RecordingKV`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L21)
-TODO: Describe this & the purpose it serves
+RecordingKV is a read-only key-value store, which retrieves values from an internal trie database. All values accessed by a RecordingKV are also recorded internally. This is used to record all preimages accessed during block creation, which will be needed to proove execution of this particular block.
+A [`RecordingChainContext`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L101) should also be used, to record which block headers the block execution reads (another option would be to always assume the last 256 block headers were accessed).
+The process is simplified using two functions: [`PrepareRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L133) creates a stateDB and chaincontext objects, running block creation process using these objects records the required preimages, and [`PreimagesFromRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L148) function extracts the preimages recorded.
