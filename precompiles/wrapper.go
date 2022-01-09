@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -76,9 +77,10 @@ func (wrapper *OwnerPrecompile) Call(
 		// the user can't pay for the ownership check
 		return nil, 0, vm.ErrOutOfGas
 	}
-	owners := arbosState.OpenArbosState(evm.StateDB).ChainOwners()
+	burner := &burn.SystemBurner{} // not the usual metered burner since we don't want to charge owners
+	owners := arbosState.OpenArbosState(evm.StateDB, burner).ChainOwners()
 	if !owners.IsMember(caller) {
-		gasLeft := gasSupplied - 3*params.SloadGas
+		gasLeft := gasSupplied - burner.Burned()
 		return nil, gasLeft, errors.New("unauthorized caller to access-controlled method")
 	}
 

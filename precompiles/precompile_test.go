@@ -15,6 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -28,6 +30,9 @@ func TestEvents(t *testing.T) {
 		BlockNumber: big.NewInt(int64(blockNumber)),
 		GasLimit:    ^uint64(0),
 	}
+
+	// open now to induce an upgrade
+	arbosState.OpenArbosState(statedb, &burn.SystemBurner{})
 
 	// create a minimal evm that supports just enough to create logs
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
@@ -75,9 +80,9 @@ func TestEvents(t *testing.T) {
 	)
 	Require(t, err, "call failed")
 
-	burned := ^uint64(0) - gasLeft
-	if burned != 3768 {
-		t.Fatal("burned", burned, "instead of", 3768, "gas")
+	burnedToEvents := ^uint64(0) - gasLeft - storage.StorageReadCost // the ArbOS version check costs a read
+	if burnedToEvents != 3768 {
+		t.Fatal("burned", burnedToEvents, "instead of", 3768, "gas")
 	}
 
 	outputAddr := common.BytesToAddress(output[:32])
@@ -177,4 +182,24 @@ func TestEventCosts(t *testing.T) {
 	if tests != expected {
 		t.Fatal("Events are mispriced\nexpected:", expected, "\nbut have:", tests)
 	}
+}
+
+type FatalBurner struct {
+	t       *testing.T
+	count   uint64
+	gasLeft uint64
+}
+
+func NewFatalBurner(t *testing.T, limit uint64) FatalBurner {
+	return FatalBurner{t, 0, limit}
+}
+
+func (burner FatalBurner) Burn(amount uint64) error {
+	burner.t.Helper()
+	burner.count += 1
+	if burner.gasLeft < amount {
+		Fail(burner.t, "out of gas after", burner.count, "burns")
+	}
+	burner.gasLeft -= amount
+	return nil
 }

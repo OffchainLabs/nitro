@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
@@ -38,22 +40,27 @@ type Storage struct {
 	account    common.Address
 	db         vm.StateDB
 	storageKey []byte
+	burner     burn.Burner
 }
 
+var StorageReadCost = params.SloadGasEIP2200
+var StorageWriteCost = params.SstoreSetGasEIP2200
+
 // Use a Geth database to create an evm key-value store
-func NewGeth(statedb vm.StateDB) *Storage {
+func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,
 		storageKey: []byte{},
+		burner:     burner,
 	}
 }
 
 // Use Geth's memory-backed database to create an evm key-value store
-func NewMemoryBacked() *Storage {
-	return NewGeth(NewMemoryBackedStateDB())
+func NewMemoryBacked(burner burn.Burner) *Storage {
+	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
 // Use Geth's memory-backed database to create a statedb
@@ -83,6 +90,8 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 }
 
 func (store *Storage) Get(key common.Hash) common.Hash {
+	err := store.burner.Burn(StorageReadCost)
+	_ = err
 	return store.db.GetState(store.account, mapAddress(store.storageKey, key))
 }
 
@@ -103,6 +112,8 @@ func (store *Storage) GetUint64ByUint64(key uint64) uint64 {
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) {
+	err := store.burner.Burn(StorageWriteCost)
+	_ = err
 	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
 }
 
@@ -125,6 +136,7 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 		store.account,
 		store.db,
 		crypto.Keccak256(store.storageKey, id),
+		store.burner,
 	}
 }
 

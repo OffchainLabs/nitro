@@ -5,14 +5,16 @@
 package addressSet
 
 import (
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"testing"
 )
 
 func TestEmptyAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	aset := OpenAddressSet(sto)
 
@@ -32,7 +34,7 @@ func TestEmptyAddressSet(t *testing.T) {
 }
 
 func TestAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	aset := OpenAddressSet(sto)
 

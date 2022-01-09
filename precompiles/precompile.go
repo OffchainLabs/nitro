@@ -13,6 +13,8 @@ import (
 	"unicode"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -440,6 +442,17 @@ func (p Precompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 	}
+
+	println(callerCtx.burned())
+
+	if method.purity == pure {
+		burner := burn.NewSafetyBurner("a pure method must not access state", false)
+		callerCtx.state = arbosState.OpenArbosState(evm.StateDB, burner)
+	} else {
+		callerCtx.state = arbosState.OpenArbosState(evm.StateDB, callerCtx)
+	}
+
+	println(callerCtx.burned())
 
 	switch txProcessor := evm.ProcessingHook.(type) {
 	case *arbos.TxProcessor:

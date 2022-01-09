@@ -8,6 +8,8 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -23,6 +25,11 @@ type context struct {
 	gasSupplied uint64
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
+	state       *arbosState.ArbosState
+}
+
+func (c *context) Burn(amount uint64) error {
+	return c.burn(amount)
 }
 
 func (c *context) burn(amount uint64) error {
@@ -39,10 +46,12 @@ func (c *context) burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
-func testContext(caller addr) *context {
-	return &context{
+func testContext(caller addr, evm mech) *context {
+	ctx := &context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
 	}
+	ctx.state = arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	return ctx
 }

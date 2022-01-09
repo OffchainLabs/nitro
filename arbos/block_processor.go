@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -30,7 +31,7 @@ var RedeemScheduledEventID common.Hash
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
+	baseFee := arbosState.OpenArbosState(statedb, &burn.SystemBurner{}).GasPriceWei()
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -87,7 +88,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenArbosState(statedb)
+	state := arbosState.OpenArbosState(statedb, &burn.SystemBurner{})
 	gasLeft := state.CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, statedb)
 	signer := types.MakeSigner(chainConfig, header.Number)
@@ -203,9 +204,7 @@ func ProduceBlock(
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
 
 				ticketId := txLog.Topics[1]
-
-				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
-				retryable := retryableState.OpenRetryable(ticketId, time)
+				retryable := state.RetryableState().OpenRetryable(ticketId, time)
 
 				reedem := types.NewTx(&types.ArbitrumRetryTx{
 					ArbitrumContractTx: types.ArbitrumContractTx{
@@ -261,7 +260,7 @@ func ProduceBlock(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenArbosState(statedb)
+		state := arbosState.OpenArbosState(statedb, &burn.SystemBurner{})
 		state.SetLastTimestampSeen(header.Time)
 		state.RetryableState().TryToReapOneRetryable(header.Time)
 

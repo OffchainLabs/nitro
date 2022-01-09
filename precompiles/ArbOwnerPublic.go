@@ -7,7 +7,6 @@ package precompiles
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 )
 
 // The calls to this precompile do not require the sender be a chain owner.
@@ -20,12 +19,12 @@ func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, 
 	if err := c.burn(6 * params.SloadGas); err != nil {
 		return []addr{}, err
 	}
-	return arbosState.OpenArbosState(evm.StateDB).ChainOwners().AllMembers(), nil
+	return c.state.ChainOwners().AllMembers(), nil
 }
 
 func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	if err := c.burn(3 * params.SloadGas); err != nil {
 		return false, err
 	}
-	return arbosState.OpenArbosState(evm.StateDB).ChainOwners().IsMember(addr), nil
+	return c.state.ChainOwners().IsMember(addr), nil
 }

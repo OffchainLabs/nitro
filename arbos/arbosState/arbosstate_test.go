@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/colors"
@@ -20,19 +21,19 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	st := storage.NewMemoryBacked()
-	if st.Get(common.Hash{}) != (common.Hash{}) {
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	if sto.Get(common.Hash{}) != (common.Hash{}) {
 		t.Fail()
 	}
 
 	loc1 := util.UintToHash(99)
 	val1 := util.UintToHash(1351908)
 
-	st.Set(loc1, val1)
-	if st.Get(common.Hash{}) != (common.Hash{}) {
+	sto.Set(loc1, val1)
+	if sto.Get(common.Hash{}) != (common.Hash{}) {
 		t.Fail()
 	}
-	if st.Get(loc1) != val1 {
+	if sto.Get(loc1) != val1 {
 		t.Fail()
 	}
 }

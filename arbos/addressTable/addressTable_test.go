@@ -6,14 +6,16 @@ package addressTable
 
 import (
 	"bytes"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"testing"
 )
 
 func TestAddressTableInit(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	atab := Open(sto)
 	if atab.Size() != 0 {
@@ -31,7 +33,7 @@ func TestAddressTableInit(t *testing.T) {
 }
 
 func TestAddressTable1(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -72,7 +74,7 @@ func TestAddressTable1(t *testing.T) {
 }
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
@@ -98,7 +100,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 }
 
 func TestAddressTableCompressInTable(t *testing.T) {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])

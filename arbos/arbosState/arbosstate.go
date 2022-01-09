@@ -5,8 +5,10 @@
 package arbosState
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -39,14 +41,18 @@ type ArbosState struct {
 	sendMerkle       *merkleAccumulator.MerkleAccumulator
 	timestamp        storage.StorageBackedUint64
 	backingStorage   *storage.Storage
+	Burner           burn.Burner
 }
 
-func OpenArbosState(stateDB vm.StateDB) *ArbosState {
-	backingStorage := storage.NewGeth(stateDB)
-	initializeStorageIfNecessary(backingStorage)
-
+func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) *ArbosState {
+	backingStorage := storage.NewGeth(stateDB, burner)
+	arbosVersion := backingStorage.GetUint64ByUint64(uint64(versionOffset))
+	if arbosVersion == 0 {
+		// we found a zero at storage location 0, so storage hasn't been initialized yet
+		initializeStorage(backingStorage)
+	}
 	return &ArbosState{
-		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
+		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
@@ -60,6 +66,7 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
+		burner,
 	}
 }
 
@@ -89,30 +96,27 @@ var (
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
-func initializeStorageIfNecessary(backingStorage *storage.Storage) {
-	if backingStorage.GetByUint64(uint64(versionOffset)) == (common.Hash{}) {
-		// we found a zero at storage location 0, so storage hasn't been initialized yet
-		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
-		backingStorage.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
-		backingStorage.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-		backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
-		backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
-		backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
-		backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
-		backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
-		l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
-		retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
-		addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-		merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+func initializeStorage(backingStorage *storage.Storage) {
+	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+	backingStorage.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
+	backingStorage.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
+	backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
+	backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
+	backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
+	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
+	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
+	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
+	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 
-		// the zero address is the initial chain owner
-		ZeroAddressL2 := util.RemapL1Address(common.Address{})
-		ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
-		addressSet.Initialize(ownersStorage)
-		addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+	// the zero address is the initial chain owner
+	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
+	addressSet.Initialize(ownersStorage)
+	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
-		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
-	}
+	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {

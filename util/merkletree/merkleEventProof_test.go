@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 )
 
 func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulator {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	merkleAccumulator.InitializeMerkleAccumulator(sto)
 	return merkleAccumulator.OpenMerkleAccumulator(sto)
 }
