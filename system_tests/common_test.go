@@ -167,7 +167,8 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &arbnode.NodeConfigL1Test)
+	conf := arbnode.NodeConfigL1Test
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
 }
 
 func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
