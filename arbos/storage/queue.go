@@ -17,7 +17,10 @@ type Queue struct {
 }
 
 func InitializeQueue(sto *Storage) error {
-	_ = sto.SetUint64ByUint64(0, 2)
+	err := sto.SetUint64ByUint64(0, 2)
+	if err != nil {
+		return err
+	}
 	return sto.SetUint64ByUint64(1, 2)
 }
 
@@ -30,32 +33,50 @@ func OpenQueue(sto *Storage) *Queue {
 }
 
 func (q *Queue) IsEmpty() (bool, error) {
-	put, _ := q.nextPutOffset.Get()
+	put, err := q.nextPutOffset.Get()
+	if err != nil {
+		return false, err
+	}
 	get, err := q.nextGetOffset.Get()
 	return put == get, err
 }
 
 func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
-	empty, _ := q.IsEmpty()
+	empty, err := q.IsEmpty()
+	if err != nil {
+		return nil, err
+	}
 	if empty {
 		return nil, nil
 	}
-	next, _ := q.nextGetOffset.Get()
+	next, err := q.nextGetOffset.Get()
+	if err != nil {
+		return nil, err
+	}
 	res, err := q.storage.GetByUint64(next)
 	return &res, err
 }
 
 func (q *Queue) Get() (*common.Hash, error) { // returns nil iff queue is empty
-	empty, _ := q.IsEmpty()
+	empty, err := q.IsEmpty()
+	if err != nil {
+		return nil, err
+	}
 	if empty {
 		return nil, nil
 	}
-	newOffset, _ := q.nextGetOffset.Increment()
+	newOffset, err := q.nextGetOffset.Increment()
+	if err != nil {
+		return nil, err
+	}
 	res, err := q.storage.Swap(util.UintToHash(newOffset-1), common.Hash{})
 	return &res, err
 }
 
 func (q *Queue) Put(val common.Hash) error {
-	newOffset, _ := q.nextPutOffset.Increment()
+	newOffset, err := q.nextPutOffset.Increment()
+	if err != nil {
+		return err
+	}
 	return q.storage.SetByUint64(newOffset-1, val)
 }

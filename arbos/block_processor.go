@@ -27,10 +27,12 @@ import (
 var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+	baseFee, err := state.GasPriceWei()
+	state.Restrict(err)
+
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee, _ := arbosState.OpenSystemArbosState(statedb).GasPriceWei()
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -89,7 +91,7 @@ func ProduceBlock(
 
 	state := arbosState.OpenSystemArbosState(statedb)
 	gasLeft, _ := state.CurrentPerBlockGasLimit()
-	header := createNewHeader(lastBlockHeader, l1Info, statedb)
+	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 
 	complete := types.Transactions{}
@@ -248,7 +250,7 @@ func ProduceBlock(
 		}
 	}
 
-	_ = state.UpgradeArbosVersionIfNecessary(header.Time)
+	state.UpgradeArbosVersionIfNecessary(header.Time)
 
 	FinalizeBlock(header, complete, receipts, statedb)
 	header.Root = statedb.IntermediateRoot(true)

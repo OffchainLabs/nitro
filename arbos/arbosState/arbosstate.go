@@ -74,7 +74,8 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 }
 
 func OpenSystemArbosState(stateDB vm.StateDB) *ArbosState {
-	state, _ := OpenArbosState(stateDB, &burn.SystemBurner{})
+	state, err := OpenArbosState(stateDB, &burn.SystemBurner{})
+	state.Restrict(err)
 	return state
 }
 
@@ -128,15 +129,15 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) error {
-	upgradeTo, _ := state.upgradeVersion.Get()
-	flagday, err := state.upgradeTimestamp.Get()
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+	upgradeTo, err := state.upgradeVersion.Get()
+	state.Restrict(err)
+	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		// code to upgrade to future versions will be put here
 		// for now, no upgrades are enabled
 		panic("Unable to perform requested ArbOS upgrade")
 	}
-	return err
 }
 
 func (state *ArbosState) BackingStorage() *storage.Storage {

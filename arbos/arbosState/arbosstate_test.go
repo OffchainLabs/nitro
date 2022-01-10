@@ -54,7 +54,7 @@ func TestStorageBackedInt64(t *testing.T) {
 
 	for _, val := range valuesToTry {
 		sbi := storage.OpenStorageBackedInt64(offset)
-		_ = sbi.Set(val)
+		Require(t, sbi.Set(val))
 		sbi = storage.OpenStorageBackedInt64(offset)
 		res, err := sbi.Get()
 		Require(t, err)

@@ -69,7 +69,10 @@ func (rs *RetryableState) CreateRetryable(
 	beneficiary common.Address,
 	calldata []byte,
 ) (*Retryable, error) {
-	_ = rs.TryToReapOneRetryable(currentTimestamp)
+	err := rs.TryToReapOneRetryable(currentTimestamp)
+	if err != nil {
+		return nil, err
+	}
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{
 		id,
@@ -91,7 +94,7 @@ func (rs *RetryableState) CreateRetryable(
 	_ = ret.calldata.Set(calldata)
 
 	// insert the new retryable into the queue so it can be reaped later
-	err := rs.timeoutQueue.Put(id)
+	err = rs.timeoutQueue.Put(id)
 	if err != nil {
 		return nil, err
 	}

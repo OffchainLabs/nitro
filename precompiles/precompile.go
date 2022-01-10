@@ -287,7 +287,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			//nolint:errcheck
 			cost := (gascost(args)[0].Interface()).(uint64)
 			if err := callerCtx.Burn(cost); err != nil {
-				return []reflect.Value{reflect.ValueOf(vm.ErrExecutionReverted)}
+				return []reflect.Value{reflect.ValueOf(vm.ErrOutOfGas)}
 			}
 
 			// Filter by index'd into data and topics. Indexed values, even if ultimately hashed,

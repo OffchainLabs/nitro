@@ -9,7 +9,6 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -36,7 +35,7 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState, _ := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	arbosState := arbosState.OpenSystemArbosState(evm.StateDB)
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
@@ -83,7 +82,7 @@ func (p *TxProcessor) StartTxHook() bool {
 		time := p.blockContext.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
-		_, _ = p.state.RetryableState().CreateRetryable(
+		_, err := p.state.RetryableState().CreateRetryable(
 			time,
 			underlyingTx.Hash(),
 			timeout,
@@ -93,10 +92,13 @@ func (p *TxProcessor) StartTxHook() bool {
 			tx.Beneficiary,
 			tx.Data,
 		)
+		p.state.Restrict(err)
+
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
-		_, _ = p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		_, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
+		p.state.Restrict(err)
 	}
 	return false
 }
@@ -110,7 +112,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.blockContext.BaseFee
 	pricing := p.state.L1PricingState()
-	posterCost, _ := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	p.state.Restrict(err)
 
 	if p.msg.GasPrice().Sign() == 0 {
 		// TODO: Review when doing eth_call's

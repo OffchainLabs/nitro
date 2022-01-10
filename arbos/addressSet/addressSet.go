@@ -60,7 +60,10 @@ func (aset *AddressSet) AllMembers() ([]common.Address, error) {
 }
 
 func (aset *AddressSet) Add(addr common.Address) error {
-	present, _ := aset.IsMember(addr)
+	present, err := aset.IsMember(addr)
+	if err != nil {
+		return err
+	}
 	size, err := aset.size.Get()
 	if err != nil {
 		return err
@@ -70,8 +73,14 @@ func (aset *AddressSet) Add(addr common.Address) error {
 	}
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	_ = aset.byAddress.Set(addrAsHash, slot)
-	_ = aset.backingStorage.Set(slot, addrAsHash)
+	err = aset.byAddress.Set(addrAsHash, slot)
+	if err != nil {
+		return err
+	}
+	err = aset.backingStorage.Set(slot, addrAsHash)
+	if err != nil {
+		return err
+	}
 	_, err = aset.size.Increment()
 	if err != nil {
 		return err
@@ -88,16 +97,28 @@ func (aset *AddressSet) Remove(addr common.Address) error {
 	if slot == 0 {
 		return nil
 	}
-	_ = aset.byAddress.Clear(addrAsHash)
+	err = aset.byAddress.Clear(addrAsHash)
+	if err != nil {
+		return err
+	}
 	size, err := aset.size.Get()
 	if err != nil {
 		return err
 	}
 	if slot < size {
-		atSize, _ := aset.backingStorage.GetByUint64(size)
-		_ = aset.backingStorage.SetByUint64(slot, atSize)
+		atSize, err := aset.backingStorage.GetByUint64(size)
+		if err != nil {
+			return err
+		}
+		err = aset.backingStorage.SetByUint64(slot, atSize)
+		if err != nil {
+			return err
+		}
 	}
-	_ = aset.backingStorage.ClearByUint64(size)
+	err = aset.backingStorage.ClearByUint64(size)
+	if err != nil {
+		return err
+	}
 	_, err = aset.size.Decrement()
 	return err
 }
