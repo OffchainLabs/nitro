@@ -31,10 +31,6 @@ type context struct {
 }
 
 func (c *context) Burn(amount uint64) error {
-	return c.burn(amount)
-}
-
-func (c *context) burn(amount uint64) error {
 	if c.gasLeft < amount {
 		c.gasLeft = 0
 		return vm.ErrOutOfGas

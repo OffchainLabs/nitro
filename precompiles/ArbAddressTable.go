@@ -7,8 +7,6 @@ package precompiles
 import (
 	"errors"
 	"math/big"
-
-	"github.com/ethereum/go-ethereum/params"
 )
 
 type ArbAddressTable struct {
@@ -61,9 +59,6 @@ func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error
 }
 
 func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
-	if err := c.burn(params.SstoreSetGas); err != nil {
-		return nil, err
-	}
 	slot, err := c.state.AddressTable().Register(addr)
 	return big.NewInt(int64(slot)), err
 }

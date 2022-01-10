@@ -36,7 +36,7 @@ func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
-	if err := c.burn(storage.StorageReadCost); err != nil {
+	if err := c.Burn(storage.StorageReadCost); err != nil {
 		return nil, err
 	}
 	return evm.StateDB.GetState(address, common.BigToHash(index)).Big(), nil

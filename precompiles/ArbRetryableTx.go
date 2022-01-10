@@ -99,7 +99,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, e
 		return nil, NotFoundError
 	}
 	updateCost := util.WordsForBytes(nbytes) * params.SstoreSetGas / 100
-	if err := c.burn(updateCost); err != nil {
+	if err := c.Burn(updateCost); err != nil {
 		return big.NewInt(0), err
 	}
 
@@ -133,7 +133,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return hash{}, err
 	}
 	writeBytes := util.WordsForBytes(byteCount)
-	if err := c.burn(params.SloadGas * writeBytes); err != nil {
+	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
 		return hash{}, err
 	}
 
@@ -157,7 +157,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	// now donate all of the remaining gas to the retry
 	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
 	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
-	if err := c.burn(c.gasLeft); err != nil {
+	if err := c.Burn(c.gasLeft); err != nil {
 		return hash{}, err
 	}
 
