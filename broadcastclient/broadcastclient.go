@@ -38,6 +38,7 @@ type BroadcastClient struct {
 	websocketUrl    string
 	lastInboxSeqNum *big.Int
 
+	// Protects conn and shuttingDown
 	connMutex sync.Mutex
 	conn      net.Conn
 
@@ -99,14 +100,14 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 		return nil
 	}
 
-	bc.connMutex.Lock()
-	defer bc.connMutex.Unlock()
 	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
 		return errors.Wrap(err, "broadcast client unable to connect")
 	}
 
+	bc.connMutex.Lock()
 	bc.conn = conn
+	bc.connMutex.Unlock()
 
 	log.Info("Connected")
 
