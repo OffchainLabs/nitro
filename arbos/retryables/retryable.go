@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -258,4 +259,21 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
 			}
 		}
 	}
+}
+
+func (retryable *Retryable) MakeTx(chainId *big.Int, requestId common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) *types.Transaction {
+	return types.NewTx(&types.ArbitrumRetryTx{
+		ArbitrumContractTx: types.ArbitrumContractTx{
+			ChainId:   chainId,
+			RequestId: requestId,
+			From:      retryable.From(),
+			GasPrice:  gasPrice,
+			Gas:       gas,
+			To:        retryable.To(),
+			Value:     retryable.Callvalue(),
+			Data:      retryable.Calldata(),
+		},
+		TicketId: ticketId,
+		RefundTo: refundTo,
+	})
 }

@@ -207,22 +207,15 @@ func ProduceBlock(
 				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
 				retryable := retryableState.OpenRetryable(ticketId, time)
 
-				reedem := types.NewTx(&types.ArbitrumRetryTx{
-					ArbitrumContractTx: types.ArbitrumContractTx{
-						ChainId:   chainConfig.ChainID,
-						RequestId: txLog.Topics[2],
-						From:      retryable.From(),
-						GasPrice:  gasPrice,
-						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
-						To:        retryable.To(),
-						Value:     retryable.Callvalue(),
-						Data:      retryable.Calldata(),
-					},
-					TicketId: ticketId,
-					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
-				})
-
-				redeems = append(redeems, reedem)
+				redeem := retryable.MakeTx(
+					chainConfig.ChainID,
+					txLog.Topics[2],
+					gasPrice,
+					common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+					ticketId,
+					common.BytesToAddress(txLog.Data[64:96]),
+				)
+				redeems = append(redeems, redeem)
 			}
 		}
 
