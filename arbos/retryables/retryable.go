@@ -74,13 +74,13 @@ func (rs *RetryableState) CreateRetryable(
 	ret := &Retryable{
 		id,
 		sto,
-		sto.NewStorageBackedUint64(numTriesOffset),
-		sto.NewStorageBackedUint64(timeoutOffset),
-		sto.NewStorageBackedAddress(fromOffset),
-		sto.NewStorageBackedAddressOrNil(toOffset),
-		sto.NewStorageBackedBigInt(callvalueOffset),
-		sto.NewStorageBackedAddress(beneficiaryOffset),
-		sto.NewStorageBackedBytes(calldataKey),
+		sto.OpenStorageBackedUint64(numTriesOffset),
+		sto.OpenStorageBackedUint64(timeoutOffset),
+		sto.OpenStorageBackedAddress(fromOffset),
+		sto.OpenStorageBackedAddressOrNil(toOffset),
+		sto.OpenStorageBackedBigInt(callvalueOffset),
+		sto.OpenStorageBackedAddress(beneficiaryOffset),
+		sto.OpenStorageBackedBytes(calldataKey),
 	}
 	ret.numTries.Set(0)
 	ret.timeout.Set(timeout)
@@ -98,7 +98,7 @@ func (rs *RetryableState) CreateRetryable(
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) *Retryable {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
-	timeout := sto.NewStorageBackedUint64(timeoutOffset)
+	timeout := sto.OpenStorageBackedUint64(timeoutOffset)
 	if timeout.Get() == 0 {
 		// no retryable here (real retryable never has a zero timeout)
 		return nil
@@ -110,13 +110,13 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	return &Retryable{
 		id:             id,
 		backingStorage: sto,
-		numTries:       sto.NewStorageBackedUint64(numTriesOffset),
+		numTries:       sto.OpenStorageBackedUint64(numTriesOffset),
 		timeout:        timeout,
-		from:           sto.NewStorageBackedAddress(fromOffset),
-		to:             sto.NewStorageBackedAddressOrNil(toOffset),
-		callvalue:      sto.NewStorageBackedBigInt(callvalueOffset),
-		beneficiary:    sto.NewStorageBackedAddress(beneficiaryOffset),
-		calldata:       sto.NewStorageBackedBytes(calldataKey),
+		from:           sto.OpenStorageBackedAddress(fromOffset),
+		to:             sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:      sto.OpenStorageBackedBigInt(callvalueOffset),
+		beneficiary:    sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:       sto.OpenStorageBackedBytes(calldataKey),
 	}
 }
 
@@ -243,10 +243,19 @@ func (retryable *Retryable) Equals(other *Retryable) bool { // for testing
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) {
 	if !rs.timeoutQueue.IsEmpty() {
 		id := rs.timeoutQueue.Get()
-		retryable := rs.OpenRetryable(*id, currentTimestamp)
-		if retryable != nil {
-			// OpenRetryable returned non-nil, so we know the retryable hasn't expired
-			rs.timeoutQueue.Put(*id)
+		slot := rs.retryables.OpenSubStorage(id.Bytes()).OpenStorageBackedUint64(timeoutOffset)
+		timeout := slot.Get()
+		if timeout != 0 {
+			// retryables always have a non-zero timeout, so we know one exists here
+
+			if timeout < currentTimestamp {
+				// the retryable has expired, time to reap
+				rs.DeleteRetryable(*id)
+			} else {
+				// the retryable has not expired, but we'll check back later
+				// to preserve round-robin ordering, we put this at the end
+				rs.timeoutQueue.Put(*id)
+			}
 		}
 	}
 }

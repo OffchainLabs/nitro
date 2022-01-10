@@ -1,4 +1,4 @@
-const { ethers, run } = require("hardhat");
+import { ethers, run } from "hardhat";
 
 describe("ValueArray", function () {
   it("Should pass ValueArrayTester", async function () {

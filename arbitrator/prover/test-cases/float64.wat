@@ -1,4 +1,6 @@
-(func (local f64)
+(import "env" "wavm_halt_and_set_finished" (func $wavm_halt_and_set_finished))
+
+(func $main (local f64)
 	;; abs, neg
 	(f64.const -1)
 	(f64.abs)
@@ -99,6 +101,10 @@
 	;; ne
 	(local.get 0)
 	(local.get 0)
+	(f64.ne)
+	(call $assert_true)
+	(f64.const 1)
+	(f64.const 1)
 	(f64.ne)
 	(call $assert_false)
 	(f64.const 1)
@@ -238,6 +244,8 @@
 	(f64.add)
 	(call $assert_f64 (f64.const 0.30000000000000004))
 	(drop)
+
+	(call $wavm_halt_and_set_finished)
 )
 
 (func $assert_f32 (param f32 f32) (result f32)
@@ -335,4 +343,4 @@
 	)
 )
 
-(start 0)
+(start $main)

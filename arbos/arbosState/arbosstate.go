@@ -25,75 +25,50 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	formatVersion  uint64
-	gasPool        storage.StorageBackedInt64
-	smallGasPool   storage.StorageBackedInt64
-	gasPriceWei    storage.StorageBackedBigInt
-	maxGasPriceWei storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
-	l1PricingState *l1pricing.L1PricingState
-	retryableState *retryables.RetryableState
-	addressTable   *addressTable.AddressTable
-	chainOwners    *addressSet.AddressSet
-	sendMerkle     *merkleAccumulator.MerkleAccumulator
-	timestamp      storage.StorageBackedUint64
-	backingStorage *storage.Storage
+	arbosVersion     uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion   storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp storage.StorageBackedUint64 // when to do the planned upgrade
+	gasPool          storage.StorageBackedInt64
+	smallGasPool     storage.StorageBackedInt64
+	gasPriceWei      storage.StorageBackedBigInt
+	maxGasPriceWei   storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
+	l1PricingState   *l1pricing.L1PricingState
+	retryableState   *retryables.RetryableState
+	addressTable     *addressTable.AddressTable
+	chainOwners      *addressSet.AddressSet
+	sendMerkle       *merkleAccumulator.MerkleAccumulator
+	timestamp        storage.StorageBackedUint64
+	backingStorage   *storage.Storage
 }
 
 func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 	backingStorage := storage.NewGeth(stateDB)
-
-	for tryStorageUpgrade(backingStorage) {
-	}
+	initializeStorageIfNecessary(backingStorage)
 
 	return &ArbosState{
 		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
-		backingStorage.NewStorageBackedInt64(uint64(gasPoolOffset)),
-		backingStorage.NewStorageBackedInt64(uint64(smallGasPoolOffset)),
-		backingStorage.NewStorageBackedBigInt(uint64(gasPriceOffset)),
-		backingStorage.NewStorageBackedBigInt(uint64(maxPriceOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
+		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
+		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolOffset)),
+		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
+		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		backingStorage.NewStorageBackedUint64(uint64(timestampOffset)),
+		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
 	}
 }
 
-// See if we should upgrade the storage format. The format version is stored at location zero of our backing storage.
-//
-// If we know how to upgrade from the observed storage version, we do so. We return true iff we upgraded.
-// It might be that yet another upgrade is possible, so if this returns true, the caller should call this again.
-//
-// If the latest version is N, then there must always be code to upgrade from every version less than N. Each
-// such upgrade must increase the version number by at least 1, so that a sequence of upgrades will converge on
-// the latest version.
-//
-// Because uninitialized storage space always returns 0 for all reads, we define format version 0 to mean that the
-// storage space is uninitialized. This uninitialized version 0 will cause an upgrade to version 1, which will
-// initialize the storage.
-//
-// During early development we sometimes change the definition of version 1, for convenience. But as soon as we
-// start running long-lived chains, every change to the format will require defining a new version and providing
-// upgrade code.
-func tryStorageUpgrade(backingStorage *storage.Storage) bool {
-	formatVersion := backingStorage.GetUint64ByUint64(uint64(versionOffset))
-	switch formatVersion {
-	case 0:
-		upgrade_0_to_1(backingStorage)
-		return true
-	default:
-		return false
-	}
-}
-
-// Don't change the positions of items in the following const block, because they are part of the storage format
-//     definition that ArbOS uses, so changes would break format compatibility.
-type ArbosStateOffset int64
+type ArbosStateOffset uint64
 
 const (
 	versionOffset ArbosStateOffset = iota
+	upgradeVersionOffset
+	upgradeTimestampOffset
 	gasPoolOffset
 	smallGasPoolOffset
 	gasPriceOffset
@@ -111,25 +86,42 @@ var (
 	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
 )
 
-func upgrade_0_to_1(backingStorage *storage.Storage) {
-	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
-	backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
-	backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
-	backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
-	backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
-	backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
-	l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
-	retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
-	addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-	merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+// During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
+// start running long-lived chains, every change to the storage format will require defining a new version and
+// providing upgrade code.
+func initializeStorageIfNecessary(backingStorage *storage.Storage) {
+	if backingStorage.GetByUint64(uint64(versionOffset)) == (common.Hash{}) {
+		// we found a zero at storage location 0, so storage hasn't been initialized yet
+		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+		backingStorage.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
+		backingStorage.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
+		backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
+		backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
+		backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
+		backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
+		backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
+		l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
+		retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
+		addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
+		merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
 
-	// the zero address is the initial chain owner
-	ZeroAddressL2 := util.RemapL1Address(common.Address{})
-	ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
-	addressSet.Initialize(ownersStorage)
-	addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+		// the zero address is the initial chain owner
+		ZeroAddressL2 := util.RemapL1Address(common.Address{})
+		ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
+		addressSet.Initialize(ownersStorage)
+		addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
-	backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
+	}
+}
+
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+	upgradeTo := state.upgradeVersion.Get()
+	if upgradeTo > state.arbosVersion && currentTimestamp >= state.upgradeTimestamp.Get() {
+		// code to upgrade to future versions will be put here
+		// for now, no upgrades are enabled
+		panic("Unable to perform requested ArbOS upgrade")
+	}
 }
 
 func (state *ArbosState) BackingStorage() *storage.Storage {
@@ -137,11 +129,11 @@ func (state *ArbosState) BackingStorage() *storage.Storage {
 }
 
 func (state *ArbosState) FormatVersion() uint64 {
-	return state.formatVersion
+	return state.arbosVersion
 }
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
-	state.formatVersion = val
+	state.arbosVersion = val
 	state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val)
 }
 

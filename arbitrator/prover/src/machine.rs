@@ -904,6 +904,7 @@ impl Machine {
                 f,
             ));
             entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+            entrypoint.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
         }
         // Go support
         if let Some(&f) = main_module.exports.get("run") {
@@ -1107,6 +1108,13 @@ impl Machine {
             .code
             .get(self.pc.inst)
             .cloned()
+    }
+
+    pub fn get_pc(&self) -> Option<ProgramCounter> {
+        if self.is_halted() {
+            return None;
+        }
+        Some(self.pc)
     }
 
     fn test_next_instruction(module: &Module, pc: &ProgramCounter) {
@@ -2049,6 +2057,10 @@ impl Machine {
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
         self.inbox_contents.insert((identifier, index), data);
+    }
+
+    pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {
+        self.modules.get(module).map(|m| &*m.names)
     }
 
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {

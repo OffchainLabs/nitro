@@ -104,8 +104,6 @@ func ProduceBlock(
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
-
-		state := arbosState.OpenArbosState(statedb)
 		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
@@ -246,6 +244,8 @@ func ProduceBlock(
 			txLog.BlockHash = blockHash
 		}
 	}
+
+	state.UpgradeArbosVersionIfNecessary(header.Time)
 
 	FinalizeBlock(header, complete, receipts, statedb)
 	header.Root = statedb.IntermediateRoot(true)
