@@ -443,16 +443,17 @@ func (p Precompile) Call(
 		gasLeft:     gasSupplied,
 	}
 
-	println(callerCtx.burned())
-
+	var burner burn.Burner
 	if method.purity == pure {
-		burner := burn.NewSafetyBurner("a pure method must not access state", false)
-		callerCtx.state = arbosState.OpenArbosState(evm.StateDB, burner)
+		burner = burn.NewSafetyBurner("a pure method must not access state", false)
 	} else {
-		callerCtx.state = arbosState.OpenArbosState(evm.StateDB, callerCtx)
+		burner = callerCtx
 	}
-
-	println(callerCtx.burned())
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, 0, err
+	}
+	callerCtx.state = state
 
 	switch txProcessor := evm.ProcessingHook.(type) {
 	case *arbos.TxProcessor:

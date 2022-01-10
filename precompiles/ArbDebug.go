@@ -33,10 +33,9 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value [32]byte
 }
 
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
-	c.state.ChainOwners().Add(c.caller)
-	return nil
+	return c.state.ChainOwners().Add(c.caller)
 }
 
 func (con ArbDebug) GetL2GasPrice(c ctx, evm mech) (huge, error) {
-	return c.state.GasPriceWei(), nil
+	return c.state.GasPriceWei()
 }

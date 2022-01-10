@@ -16,23 +16,14 @@ type ArbAddressTable struct {
 }
 
 func (con ArbAddressTable) AddressExists(c ctx, evm mech, addr addr) (bool, error) {
-	if err := c.burn(params.SloadGas); err != nil {
-		return false, err
-	}
-	return c.state.AddressTable().AddressExists(addr), nil
+	return c.state.AddressTable().AddressExists(addr)
 }
 
 func (con ArbAddressTable) Compress(c ctx, evm mech, addr addr) ([]uint8, error) {
-	if err := c.burn(params.SloadGas); err != nil {
-		return nil, err
-	}
-	return c.state.AddressTable().Compress(addr), nil
+	return c.state.AddressTable().Compress(addr)
 }
 
 func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge) (addr, huge, error) {
-	if err := c.burn(params.SloadGas); err != nil {
-		return addr{}, nil, err
-	}
 	if !offset.IsInt64() {
 		return addr{}, nil, errors.New("invalid offset in ArbAddressTable.Decompress")
 	}
@@ -45,10 +36,10 @@ func (con ArbAddressTable) Decompress(c ctx, evm mech, buf []uint8, offset huge)
 }
 
 func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
-	if err := c.burn(params.SloadGas); err != nil {
+	result, exists, err := c.state.AddressTable().Lookup(addr)
+	if err != nil {
 		return nil, err
 	}
-	result, exists := c.state.AddressTable().Lookup(addr)
 	if !exists {
 		return nil, errors.New("address does not exist in AddressTable")
 	}
@@ -56,13 +47,13 @@ func (con ArbAddressTable) Lookup(c ctx, evm mech, addr addr) (huge, error) {
 }
 
 func (con ArbAddressTable) LookupIndex(c ctx, evm mech, index huge) (addr, error) {
-	if err := c.burn(params.SloadGas); err != nil {
-		return addr{}, err
-	}
 	if !index.IsUint64() {
 		return addr{}, errors.New("invalid index in ArbAddressTable.LookupIndex")
 	}
-	result, exists := c.state.AddressTable().LookupIndex(index.Uint64())
+	result, exists, err := c.state.AddressTable().LookupIndex(index.Uint64())
+	if err != nil {
+		return addr{}, err
+	}
 	if !exists {
 		return addr{}, errors.New("index does not exist in AddressTable")
 	}
@@ -73,12 +64,14 @@ func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
 	if err := c.burn(params.SstoreSetGas); err != nil {
 		return nil, err
 	}
-	return big.NewInt(int64(c.state.AddressTable().Register(addr))), nil
+	slot, err := c.state.AddressTable().Register(addr)
+	return big.NewInt(int64(slot)), err
 }
 
 func (con ArbAddressTable) Size(c ctx, evm mech) (huge, error) {
 	if err := c.burn(params.SloadGas); err != nil {
 		return nil, err
 	}
-	return big.NewInt(int64(c.state.AddressTable().Size())), nil
+	size, err := c.state.AddressTable().Size()
+	return big.NewInt(int64(size)), err
 }

@@ -27,7 +27,10 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	// TODO charge gas based on the number of state queries
-	l2GasPrice := c.state.GasPriceWei()
+	l2GasPrice, err := c.state.GasPriceWei()
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
 	zero := big.NewInt(0)
 	return zero, zero, zero, zero, zero, l2GasPrice, nil
 }

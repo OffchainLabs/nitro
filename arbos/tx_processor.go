@@ -36,7 +36,7 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	arbosState, _ := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
@@ -83,7 +83,7 @@ func (p *TxProcessor) StartTxHook() bool {
 		time := p.blockContext.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
-		p.state.RetryableState().CreateRetryable(
+		_, _ = p.state.RetryableState().CreateRetryable(
 			time,
 			underlyingTx.Hash(),
 			timeout,
@@ -95,7 +95,7 @@ func (p *TxProcessor) StartTxHook() bool {
 		)
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
-		p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		_, _ = p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 	}
 	return false
@@ -110,7 +110,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.blockContext.BaseFee
 	pricing := p.state.L1PricingState()
-	posterCost := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, _ := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 
 	if p.msg.GasPrice().Sign() == 0 {
 		// TODO: Review when doing eth_call's

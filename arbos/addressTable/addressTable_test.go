@@ -12,21 +12,24 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 func TestAddressTableInit(t *testing.T) {
 	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	Initialize(sto)
 	atab := Open(sto)
-	if atab.Size() != 0 {
+	if size(t, atab) != 0 {
 		t.Fatal()
 	}
 
-	_, found := atab.Lookup(common.Address{})
+	_, found, err := atab.Lookup(common.Address{})
+	Require(t, err)
 	if found {
 		t.Fatal()
 	}
-	_, found = atab.LookupIndex(0)
+	_, found, err = atab.LookupIndex(0)
+	Require(t, err)
 	if found {
 		t.Fatal()
 	}
@@ -37,16 +40,18 @@ func TestAddressTable1(t *testing.T) {
 	Initialize(sto)
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	atab.Register(addr)
-	if atab.Size() != 1 {
+	_, err := atab.Register(addr)
+	Require(t, err)
+	if size(t, atab) != 1 {
 		t.Fatal()
 	}
 
 	atab = Open(sto)
-	if atab.Size() != 1 {
+	if size(t, atab) != 1 {
 		t.Fatal()
 	}
-	idx, found := atab.Lookup(addr)
+	idx, found, err := atab.Lookup(addr)
+	Require(t, err)
 	if !found {
 		t.Fatal()
 	}
@@ -54,12 +59,14 @@ func TestAddressTable1(t *testing.T) {
 		t.Fatal()
 	}
 
-	_, found = atab.Lookup(common.Address{})
+	_, found, err = atab.Lookup(common.Address{})
+	Require(t, err)
 	if found {
 		t.Fatal()
 	}
 
-	addr2, found := atab.LookupIndex(0)
+	addr2, found, err := atab.LookupIndex(0)
+	Require(t, err)
 	if !found {
 		t.Fatal()
 	}
@@ -67,7 +74,8 @@ func TestAddressTable1(t *testing.T) {
 		t.Fatal()
 	}
 
-	_, found = atab.LookupIndex(1)
+	_, found, err = atab.LookupIndex(1)
+	Require(t, err)
 	if found {
 		t.Fatal()
 	}
@@ -79,7 +87,8 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
-	res := atab.Compress(addr)
+	res, err := atab.Compress(addr)
+	Require(t, err)
 	if len(res) != 21 {
 		t.Fatal()
 	}
@@ -105,9 +114,11 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	atab := Open(sto)
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
-	_ = atab.Register(addr)
+	_, err := atab.Register(addr)
+	Require(t, err)
 
-	res := atab.Compress(addr)
+	res, err := atab.Compress(addr)
+	Require(t, err)
 	if len(res) > 9 {
 		t.Fatal(len(res))
 	}
@@ -122,4 +133,20 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	if dec != addr {
 		t.Fatal()
 	}
+}
+
+func size(t *testing.T, atab *AddressTable) uint64 {
+	size, err := atab.Size()
+	Require(t, err)
+	return size
+}
+
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

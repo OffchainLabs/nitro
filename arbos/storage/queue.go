@@ -16,9 +16,9 @@ type Queue struct {
 	nextGetOffset StorageBackedUint64
 }
 
-func InitializeQueue(sto *Storage) {
-	sto.SetUint64ByUint64(0, 2)
-	sto.SetUint64ByUint64(1, 2)
+func InitializeQueue(sto *Storage) error {
+	_ = sto.SetUint64ByUint64(0, 2)
+	return sto.SetUint64ByUint64(1, 2)
 }
 
 func OpenQueue(sto *Storage) *Queue {
@@ -29,28 +29,33 @@ func OpenQueue(sto *Storage) *Queue {
 	}
 }
 
-func (q *Queue) IsEmpty() bool {
-	return q.nextPutOffset.Get() == q.nextGetOffset.Get()
+func (q *Queue) IsEmpty() (bool, error) {
+	put, _ := q.nextPutOffset.Get()
+	get, err := q.nextGetOffset.Get()
+	return put == get, err
 }
 
-func (q *Queue) Peek() *common.Hash { // returns nil iff queue is empty
-	if q.IsEmpty() {
-		return nil
+func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
+	empty, _ := q.IsEmpty()
+	if empty {
+		return nil, nil
 	}
-	res := q.storage.GetByUint64(q.nextGetOffset.Get())
-	return &res
+	next, _ := q.nextGetOffset.Get()
+	res, err := q.storage.GetByUint64(next)
+	return &res, err
 }
 
-func (q *Queue) Get() *common.Hash { // returns nil iff queue is empty
-	if q.IsEmpty() {
-		return nil
+func (q *Queue) Get() (*common.Hash, error) { // returns nil iff queue is empty
+	empty, _ := q.IsEmpty()
+	if empty {
+		return nil, nil
 	}
-	newOffset := q.nextGetOffset.Increment()
-	res := q.storage.Swap(util.UintToHash(newOffset-1), common.Hash{})
-	return &res
+	newOffset, _ := q.nextGetOffset.Increment()
+	res, err := q.storage.Swap(util.UintToHash(newOffset-1), common.Hash{})
+	return &res, err
 }
 
-func (q *Queue) Put(val common.Hash) {
-	newOffset := q.nextPutOffset.Increment()
-	q.storage.SetByUint64(newOffset-1, val)
+func (q *Queue) Put(val common.Hash) error {
+	newOffset, _ := q.nextPutOffset.Increment()
+	return q.storage.SetByUint64(newOffset-1, val)
 }

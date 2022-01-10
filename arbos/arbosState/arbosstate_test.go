@@ -22,19 +22,26 @@ func TestStorageOpenFromEmpty(t *testing.T) {
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
 	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
-	if sto.Get(common.Hash{}) != (common.Hash{}) {
-		t.Fail()
+	value, err := sto.Get(common.Hash{})
+	Require(t, err)
+	if value != (common.Hash{}) {
+		Fail(t)
 	}
 
 	loc1 := util.UintToHash(99)
 	val1 := util.UintToHash(1351908)
 
-	sto.Set(loc1, val1)
-	if sto.Get(common.Hash{}) != (common.Hash{}) {
-		t.Fail()
+	Require(t, sto.Set(loc1, val1))
+	value, err = sto.Get(common.Hash{})
+	Require(t, err)
+	if value != (common.Hash{}) {
+		Fail(t)
 	}
-	if sto.Get(loc1) != val1 {
-		t.Fail()
+
+	value, err = sto.Get(loc1)
+	Require(t, err)
+	if value != val1 {
+		Fail(t)
 	}
 }
 
@@ -47,9 +54,10 @@ func TestStorageBackedInt64(t *testing.T) {
 
 	for _, val := range valuesToTry {
 		sbi := storage.OpenStorageBackedInt64(offset)
-		sbi.Set(val)
+		_ = sbi.Set(val)
 		sbi = storage.OpenStorageBackedInt64(offset)
-		res := sbi.Get()
+		res, err := sbi.Get()
+		Require(t, err)
 		if val != res {
 			Fail(t, val, res)
 		}

@@ -9,11 +9,9 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // A precompile wrapper for those not allowed in production
@@ -73,19 +71,27 @@ func (wrapper *OwnerPrecompile) Call(
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
 
-	if gasSupplied < 3*params.SloadGas {
-		// the user can't pay for the ownership check
-		return nil, 0, vm.ErrOutOfGas
+	burner := &context{
+		gasSupplied: gasSupplied,
+		gasLeft:     gasSupplied,
 	}
-	burner := &burn.SystemBurner{} // not the usual metered burner since we don't want to charge owners
-	owners := arbosState.OpenArbosState(evm.StateDB, burner).ChainOwners()
-	if !owners.IsMember(caller) {
-		gasLeft := gasSupplied - burner.Burned()
-		return nil, gasLeft, errors.New("unauthorized caller to access-controlled method")
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, burner.gasLeft, err
 	}
 
-	// we don't deduct gas since we don't want to charge the owner
-	return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	owners := state.ChainOwners()
+	isOwner, err := owners.IsMember(caller)
+	if err != nil {
+		return nil, burner.gasLeft, err
+	}
+
+	if !isOwner {
+		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
+	}
+
+	output, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 
 }
 

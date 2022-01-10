@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"log"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos"
@@ -18,6 +19,7 @@ import (
 type addr = common.Address
 type mech = *vm.EVM
 type huge = *big.Int
+type hash = common.Hash
 type ctx = *context
 
 type context struct {
@@ -46,12 +48,17 @@ func (c *context) burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
+func (c *context) Restrict(err error) {
+	log.Fatal("A metered burner was used for access-controlled work", err)
+}
+
 func testContext(caller addr, evm mech) *context {
 	ctx := &context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
 	}
-	ctx.state = arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	state, _ := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	ctx.state = state
 	return ctx
 }

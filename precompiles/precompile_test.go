@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -32,7 +31,7 @@ func TestEvents(t *testing.T) {
 	}
 
 	// open now to induce an upgrade
-	arbosState.OpenArbosState(statedb, &burn.SystemBurner{})
+	arbosState.OpenSystemArbosState(statedb)
 
 	// create a minimal evm that supports just enough to create logs
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})

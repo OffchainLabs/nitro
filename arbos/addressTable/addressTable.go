@@ -28,56 +28,73 @@ func Open(sto *storage.Storage) *AddressTable {
 	return &AddressTable{sto, sto.OpenSubStorage([]byte{}), numItems}
 }
 
-func (atab *AddressTable) Register(addr common.Address) uint64 {
+func (atab *AddressTable) Register(addr common.Address) (uint64, error) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	rev := atab.byAddress.Get(addrAsHash)
+	rev, err := atab.byAddress.Get(addrAsHash)
+	if err != nil {
+		return 0, err
+	}
 	if rev == (common.Hash{}) {
 		// addr isn't in the table, so add it
-		newNumItems := atab.numItems.Increment()
-		atab.backingStorage.SetByUint64(newNumItems, addrAsHash)
-		atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems))
-		return newNumItems - 1
+		newNumItems, _ := atab.numItems.Increment()
+		_ = atab.backingStorage.SetByUint64(newNumItems, addrAsHash)
+		err = atab.byAddress.Set(addrAsHash, util.UintToHash(newNumItems))
+		if err != nil {
+			return 0, err
+		}
+		return newNumItems - 1, nil
 	} else {
-		return rev.Big().Uint64() - 1
+		return rev.Big().Uint64() - 1, nil
 	}
 }
 
-func (atab *AddressTable) Lookup(addr common.Address) (uint64, bool) {
+func (atab *AddressTable) Lookup(addr common.Address) (uint64, bool, error) {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	res := atab.byAddress.GetUint64(addrAsHash)
-	if res == 0 {
-		return 0, false
+	res, err := atab.byAddress.GetUint64(addrAsHash)
+	if res == 0 || err != nil {
+		return 0, false, err
 	} else {
-		return res - 1, true
+		return res - 1, true, nil
 	}
 }
 
-func (atab *AddressTable) AddressExists(addr common.Address) bool {
-	_, ret := atab.Lookup(addr)
-	return ret
+func (atab *AddressTable) AddressExists(addr common.Address) (bool, error) {
+	_, ret, err := atab.Lookup(addr)
+	return ret, err
 }
 
-func (atab *AddressTable) Size() uint64 {
+func (atab *AddressTable) Size() (uint64, error) {
 	return atab.numItems.Get()
 }
 
-func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool) {
-	if index >= atab.numItems.Get() {
-		return common.Address{}, false
+func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool, error) {
+	items, err := atab.numItems.Get()
+	if err != nil {
+		return common.Address{}, false, err
 	}
-	return common.BytesToAddress(atab.backingStorage.GetByUint64(index + 1).Bytes()), true
+	if index >= items {
+		return common.Address{}, false, nil
+	}
+	value, err := atab.backingStorage.GetByUint64(index + 1)
+	if err != nil {
+		return common.Address{}, false, err
+	}
+	return common.BytesToAddress(value.Bytes()), true, nil
 }
 
-func (atab *AddressTable) Compress(addr common.Address) []byte {
-	index, exists := atab.Lookup(addr)
+func (atab *AddressTable) Compress(addr common.Address) ([]byte, error) {
+	index, exists, err := atab.Lookup(addr)
+	if err != nil {
+		return nil, err
+	}
 	if exists {
-		return rlp.AppendUint64([]byte{}, index)
+		return rlp.AppendUint64([]byte{}, index), nil
 	} else {
 		buf, err := rlp.EncodeToBytes(addr.Bytes())
 		if err != nil {
 			panic(err)
 		}
-		return buf
+		return buf, nil
 	}
 }
 
@@ -97,7 +114,10 @@ func (atab *AddressTable) Decompress(buf []byte) (common.Address, uint64, error)
 		if err != nil {
 			return common.Address{}, 0, err
 		}
-		addr, exists := atab.LookupIndex(index)
+		addr, exists, err := atab.LookupIndex(index)
+		if err != nil {
+			return common.Address{}, 0, err
+		}
 		if !exists {
 			return common.Address{}, 0, errors.New("invalid index in compressed address")
 		}

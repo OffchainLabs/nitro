@@ -6,10 +6,12 @@ package burn
 
 import (
 	"errors"
+	"log"
 )
 
 type Burner interface {
 	Burn(amount uint64) error
+	Restrict(err error)
 }
 
 type SystemBurner struct {
@@ -23,6 +25,10 @@ func (burner *SystemBurner) Burn(amount uint64) error {
 
 func (burner *SystemBurner) Burned() uint64 {
 	return burner.gasBurnt
+}
+
+func (burner *SystemBurner) Restrict(err error) {
+	// A system burner
 }
 
 type SafetyBurner struct {
@@ -39,4 +45,8 @@ func (burner *SafetyBurner) Burn(amount uint64) error {
 		panic(burner.message)
 	}
 	return errors.New(burner.message)
+}
+
+func (burner *SafetyBurner) Restrict(err error) {
+	log.Fatal("A metered burner was used for access-controlled work", err)
 }

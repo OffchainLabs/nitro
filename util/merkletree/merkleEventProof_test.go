@@ -27,19 +27,23 @@ func TestProofForNext(t *testing.T) {
 
 	acc := initializedMerkleAccumulatorForTesting()
 	for i, leaf := range leaves {
-		proof := ProofFromAccumulator(acc, leaf)
+		proof, err := ProofFromAccumulator(acc, leaf)
+		Require(t, err)
 		if proof == nil {
-			t.Fatal(i)
+			Fail(t, i)
 		}
 		if proof.LeafHash != leaf {
-			t.Fatal(i)
+			Fail(t, i)
 		}
 		if !proof.IsCorrect() {
-			t.Fatal(proof)
+			Fail(t, proof)
 		}
-		acc.Append(leaf)
-		if proof.RootHash != acc.Root() {
-			t.Fatal(i)
+		_, err = acc.Append(leaf)
+		Require(t, err)
+		root, err := acc.Root()
+		Require(t, err)
+		if proof.RootHash != root {
+			Fail(t, i)
 		}
 	}
 }

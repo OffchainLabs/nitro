@@ -16,26 +16,21 @@ type ArbOwner struct {
 }
 
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
-	owners := c.state.ChainOwners()
-	owners.Add(newOwner)
-	return nil
+	return c.state.ChainOwners().Add(newOwner)
 }
 
 func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.state.ChainOwners().AllMembers(), nil
+	return c.state.ChainOwners().AllMembers()
 }
 
 func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
-	return c.state.ChainOwners().IsMember(addr), nil
+	return c.state.ChainOwners().IsMember(addr)
 }
 
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
-	owners := c.state.ChainOwners()
-	owners.Remove(addr)
-	return nil
+	return c.state.ChainOwners().Remove(addr)
 }
 
 func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
-	c.state.SetGasPriceWei(priceInWei)
-	return nil
+	return c.state.SetGasPriceWei(priceInWei)
 }
