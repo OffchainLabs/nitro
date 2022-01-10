@@ -13,6 +13,7 @@ use crate::{
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
+use eyre::{bail, ensure, eyre};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -276,7 +277,7 @@ impl Module {
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
-    ) -> Module {
+    ) -> eyre::Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
@@ -287,11 +288,13 @@ impl Module {
             if let ImportKind::Function(ty) = import.kind {
                 let mut qualified_name = format!("{}__{}", import.module, import.name);
                 qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
+                let have_ty = &bin.types[ty as usize];
                 let func;
                 if let Some(import) = available_imports.get(&qualified_name) {
-                    assert_eq!(
-                        import.ty, bin.types[ty as usize],
-                        "Import has different function signature than host function",
+                    ensure!(
+                        &import.ty == have_ty,
+                        "Import has different function signature than host function. Expected {:?} but got {:?}",
+                        import.ty, have_ty,
                     );
                     let mut wavm = Vec::new();
                     wavm.push(Instruction::simple(Opcode::InitFrame));
@@ -307,11 +310,12 @@ impl Module {
                         &import.name,
                         BlockType::TypeIndex(ty as u32),
                     );
-                    assert_eq!(
-                        func.ty, bin.types[ty as usize],
-                        "Import has different function signature than host function",
+                    ensure!(
+                        &func.ty == have_ty,
+                        "Import has different function signature than host function. Expected {:?} but got {:?}",
+                        func.ty, have_ty,
                     );
-                    assert!(
+                    ensure!(
                         allow_hostapi,
                         "Calling hostapi directly is not allowed. Function {}",
                         import.name,
@@ -321,7 +325,7 @@ impl Module {
                 code.push(func);
                 host_call_hooks.push(Some((import.module, import.name)));
             } else {
-                panic!("Unsupport import kind {:?}", import);
+                bail!("Unsupport import kind {:?}", import);
             }
         }
         func_type_idxs.extend(bin.functions.into_iter());
@@ -341,7 +345,7 @@ impl Module {
             ));
             host_call_hooks.push(None);
         }
-        assert!(
+        ensure!(
             bin.memories.len() <= 1,
             "Multiple memories are not supported"
         );
@@ -350,7 +354,7 @@ impl Module {
             let size = usize::try_from(limits.minimum_size)
                 .ok()
                 .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
-                .expect("Memory size is too large");
+                .ok_or_else(|| eyre!("Memory size is too large"))?;
             memory = Memory::new(size);
         }
         let globals = bin
@@ -359,12 +363,12 @@ impl Module {
             .map(|g| {
                 if let [insn] = g.initializer.as_slice() {
                     if let Some(val) = insn.get_const_output() {
-                        return val;
+                        return Ok(val);
                     }
                 }
-                panic!("Global initializer isn't a constant");
+                Err(eyre!("Global initializer isn't a constant"))
             })
-            .collect();
+            .collect::<eyre::Result<Vec<_>>>()?;
         for export in bin.exports {
             if let ExportKind::Function(idx) = export.kind {
                 exports.insert(export.name, idx);
@@ -372,20 +376,22 @@ impl Module {
         }
         for data in bin.datas {
             if let Some(loc) = data.active_location {
-                assert_eq!(loc.memory, 0, "Attempted to write to nonexistant memory");
+                ensure!(loc.memory == 0, "Attempted to write to nonexistant memory");
                 let mut offset = None;
                 if let [insn] = loc.offset.as_slice() {
                     if let Some(Value::I32(x)) = insn.get_const_output() {
                         offset = Some(x);
                     }
                 }
-                let offset =
-                    usize::try_from(offset.expect("Non-constant data offset expression")).unwrap();
+                let offset = usize::try_from(
+                    offset.ok_or_else(|| eyre!("Non-constant data offset expression"))?,
+                )
+                .unwrap();
                 if !matches!(
                     offset.checked_add(data.data.len()),
                     Some(x) if (x as u64) < memory.size() as u64,
                 ) {
-                    panic!(
+                    bail!(
                         "Out-of-bounds data memory init with offset {} and size {}",
                         offset,
                         data.data.len(),
@@ -412,40 +418,48 @@ impl Module {
                         offset = Some(x);
                     }
                 }
-                let offset =
-                    usize::try_from(offset.expect("Non-constant data offset expression")).unwrap();
+                let offset = usize::try_from(
+                    offset.ok_or_else(|| eyre!("Non-constant data offset expression"))?,
+                )
+                .unwrap();
                 let t = usize::try_from(t).unwrap();
-                assert_eq!(tables[t].ty.ty, elem.ty);
+                let expected_ty = tables[t].ty.ty;
+                ensure!(
+                    expected_ty == elem.ty,
+                    "Element type expected to be of table type {:?} but of type {:?}",
+                    expected_ty,
+                    elem.ty
+                );
                 let contents: Vec<_> = elem
                     .init
                     .into_iter()
                     .map(|i| {
                         let insn = match i.as_slice() {
                             [x] => x,
-                            _ => panic!("Element initializer isn't one instruction: {:?}", o),
+                            _ => bail!("Element initializer isn't one instruction: {:?}", o),
                         };
                         match insn.get_const_output() {
-                            Some(v @ Value::RefNull) => TableElement {
+                            Some(v @ Value::RefNull) => Ok(TableElement {
                                 func_ty: FunctionType::default(),
                                 val: v,
-                            },
-                            Some(Value::FuncRef(x)) => TableElement {
+                            }),
+                            Some(Value::FuncRef(x)) => Ok(TableElement {
                                 func_ty: func_types[usize::try_from(x).unwrap()].clone(),
                                 val: Value::FuncRef(x),
-                            },
-                            _ => panic!("Invalid element initializer {:?}", insn),
+                            }),
+                            _ => Err(eyre!("Invalid element initializer {:?}", insn)),
                         }
                     })
-                    .collect();
+                    .collect::<eyre::Result<Vec<_>>>()?;
                 let len = contents.len();
                 tables[t].elems[offset..][..len].clone_from_slice(&contents);
             }
         }
-        assert!(
+        ensure!(
             code.len() < (1usize << 31),
             "Module function count must be under 2^31",
         );
-        assert!(!code.is_empty(), "Module has no code");
+        ensure!(!code.is_empty(), "Module has no code");
 
         // Make internal functions
         let internals_offset = code.len() as u32;
@@ -490,7 +504,7 @@ impl Module {
             memory_store_internal_type,
         ));
 
-        Module {
+        Ok(Module {
             memory,
             globals,
             tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
@@ -507,7 +521,7 @@ impl Module {
             start_function: bin.start,
             func_types: Arc::new(func_types),
             exports: Arc::new(exports),
-        }
+        })
     }
 
     fn hash(&self) -> Bytes32 {
@@ -809,7 +823,7 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
-    ) -> Machine {
+    ) -> eyre::Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
@@ -834,7 +848,7 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true);
+            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
@@ -855,27 +869,33 @@ impl Machine {
                             *ty = ValueType::I64;
                         }
                     }
-                    assert_eq!(ty, sig, "Wrong type for floating point impl {:?}", name);
+                    ensure!(
+                        ty == sig,
+                        "Wrong type for floating point impl {:?} expecting {:?} but got {:?}",
+                        name,
+                        sig,
+                        ty
+                    );
                     floating_point_impls.insert(op, (modules.len() as u32, func));
                 }
             }
             modules.push(module);
         }
 
-        // Shouldn't be necessary, but to safe, don't allow the binary to import its own guest calls
+        // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             bin,
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
-        ));
+        )?);
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
         for (i, module) in modules.iter().enumerate() {
             if let Some(s) = module.start_function {
-                assert!(
+                ensure!(
                     module.func_types[s as usize] == FunctionType::default(),
                     "Start function takes inputs or outputs",
                 );
@@ -893,7 +913,7 @@ impl Machine {
             expected_type.inputs.push(ValueType::I32); // argc
             expected_type.inputs.push(ValueType::I32); // argv
             expected_type.outputs.push(ValueType::I32); // ret
-            assert!(
+            ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [argc, argv] -> [ret]",
             );
@@ -911,7 +931,7 @@ impl Machine {
             let mut expected_type = FunctionType::default();
             expected_type.inputs.push(ValueType::I32); // argc
             expected_type.inputs.push(ValueType::I32); // argv
-            assert!(
+            ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
             );
@@ -925,7 +945,10 @@ impl Machine {
             let free_memory_base = 4096;
             let name_str_ptr = free_memory_base;
             let argv_ptr = name_str_ptr + 8;
-            assert!(main_module.internals_offset != 0);
+            ensure!(
+                main_module.internals_offset != 0,
+                "Main module doesn't have internals"
+            );
             let main_module_idx = u32::try_from(main_module_idx).unwrap();
             let main_module_store32 =
                 HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
@@ -948,7 +971,7 @@ impl Machine {
             entrypoint.push(HirInstruction::I32Const(argv_ptr));
             entrypoint.push(HirInstruction::CrossModuleCall(main_module_idx, f));
             if let Some(i) = available_imports.get("wavm__go_after_run") {
-                assert!(
+                ensure!(
                     i.ty == FunctionType::default(),
                     "Resume function has non-empty function signature",
                 );
@@ -1036,7 +1059,7 @@ impl Machine {
             initial_hash: Bytes32::default(),
         };
         mach.initial_hash = mach.hash();
-        mach
+        Ok(mach)
     }
 
     pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {

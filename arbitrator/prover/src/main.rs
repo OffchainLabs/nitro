@@ -175,7 +175,7 @@ fn main() -> Result<()> {
         global_state,
         inbox_contents,
         preimages,
-    );
+    )?;
     println!("Starting machine hash: {}", mach.hash());
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
