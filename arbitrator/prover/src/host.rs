@@ -5,7 +5,7 @@ use crate::{
     wavm::{FloatingPointImpls, Opcode},
 };
 
-pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
+pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result<Function> {
     let mut insts = Vec::new();
     let ty;
     match (module, name) {
@@ -117,11 +117,11 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> Function {
             ty = FunctionType::default();
             insts.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
         }
-        _ => panic!("Unsupported import of {:?} {:?}", module, name),
+        _ => eyre::bail!("Unsupported import of {:?} {:?}", module, name),
     }
     let code = Code {
         locals: Vec::new(),
         expr: insts,
     };
-    Function::new(code, ty, btype, &[], &FloatingPointImpls::default())
+    Ok(Function::new(code, ty, btype, &[], &FloatingPointImpls::default()))
 }

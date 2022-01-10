@@ -309,7 +309,7 @@ impl Module {
                         &import.module,
                         &import.name,
                         BlockType::TypeIndex(ty as u32),
-                    );
+                    )?;
                     ensure!(
                         &func.ty == have_ty,
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
