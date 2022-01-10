@@ -210,7 +210,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	conf.BlockValidator = false
 	conf.BatchPoster = false
 	conf.InboxReaderConfig.CheckDelay = time.Second
-	rollupAddresses := TestDeployOnL1(t, ctx, l1Info)
+	rollupAddresses := DeployOnTestL1(t, ctx, l1Info)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
 	deployerTxOpts.GasLimit = 15_000_000
