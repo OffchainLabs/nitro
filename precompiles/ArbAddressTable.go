@@ -69,9 +69,6 @@ func (con ArbAddressTable) Register(c ctx, evm mech, addr addr) (huge, error) {
 }
 
 func (con ArbAddressTable) Size(c ctx, evm mech) (huge, error) {
-	if err := c.burn(params.SloadGas); err != nil {
-		return nil, err
-	}
 	size, err := c.state.AddressTable().Size()
 	return big.NewInt(int64(size)), err
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
@@ -18,9 +17,9 @@ import (
 
 type ArbSys struct {
 	Address                  addr
-	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
+	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
-	SendMerkleUpdate         func(mech, huge, [32]byte, huge)
+	SendMerkleUpdate         func(ctx, mech, huge, [32]byte, huge) error
 	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) uint64
 }
 
@@ -66,14 +65,6 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 }
 
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
-	cost := params.CallValueTransferGas
-	zero := new(big.Int)
-	dest := destination
-	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{}, zero)
-	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
-	if err := c.burn(cost); err != nil {
-		return nil, err
-	}
 
 	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := c.state
@@ -91,12 +82,16 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 			Level: merkleUpdateEvent.Level,
 			Leaf:  merkleUpdateEvent.NumLeaves,
 		}
-		con.SendMerkleUpdate(
+		err := con.SendMerkleUpdate(
+			c,
 			evm,
 			big.NewInt(0),
 			merkleUpdateEvent.Hash,
 			position.ToBigInt(),
 		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	size, _ := merkleAcc.Size()
@@ -107,7 +102,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 
 	leafNum := big.NewInt(int64(size - 1))
 
-	con.L2ToL1Transaction(
+	err = con.L2ToL1Transaction(
+		c,
 		evm,
 		c.caller,
 		destination,
@@ -121,7 +117,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		calldataForL1,
 	)
 
-	return sendHash.Big(), nil
+	return sendHash.Big(), err
 }
 
 func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][32]byte, error) {

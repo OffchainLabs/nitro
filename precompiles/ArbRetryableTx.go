@@ -15,11 +15,11 @@ import (
 
 type ArbRetryableTx struct {
 	Address                 addr
-	TicketCreated           func(mech, [32]byte)
-	LifetimeExtended        func(mech, [32]byte, huge)
-	RedeemScheduled         func(mech, [32]byte, [32]byte, uint64, uint64, addr)
-	Redeemed                func(mech, [32]byte)
-	Canceled                func(mech, [32]byte)
+	TicketCreated           func(ctx, mech, [32]byte) error
+	LifetimeExtended        func(ctx, mech, [32]byte, huge) error
+	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr) error
+	Redeemed                func(ctx, mech, [32]byte) error
+	Canceled                func(ctx, mech, [32]byte) error
 	TicketCreatedGasCost    func([32]byte) uint64
 	LifetimeExtendedGasCost func([32]byte, huge) uint64
 	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) uint64
@@ -48,14 +48,13 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 
 	// no refunds are given for deleting retryables because they use rented space
 	_, err = retryableState.DeleteRetryable(ticketId)
-	con.Canceled(evm, ticketId)
-	return err
+	if err != nil {
+		return err
+	}
+	return con.Canceled(c, evm, ticketId)
 }
 
 func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
-	if err := c.burn(2 * params.SloadGas); err != nil {
-		return addr{}, err
-	}
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -90,12 +89,6 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 
 func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
 
-	// charge for the check & event
-	eventCost := con.LifetimeExtendedGasCost(ticketId, big.NewInt(0))
-	if err := c.burn(6*params.SloadGas + 2*params.SstoreSetGas + eventCost); err != nil {
-		return big.NewInt(0), err
-	}
-
 	// charge for the expiry update
 	retryableState := c.state.RetryableState()
 	nbytes, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
@@ -125,16 +118,14 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, e
 	if err != nil {
 		return nil, err
 	}
-	con.LifetimeExtended(evm, ticketId, big.NewInt(int64(newTimeout)))
+	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
+	if err != nil {
+		return nil, err
+	}
 	return big.NewInt(int64(newTimeout)), nil
 }
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, error) {
-
-	eventCost := con.RedeemScheduledGasCost(ticketId, ticketId, 0, 0, c.caller)
-	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + eventCost); err != nil {
-		return hash{}, err
-	}
 
 	retryableState := c.state.RetryableState()
 	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
@@ -158,7 +149,10 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return hash{}, err
 	}
 	redeemTxId := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
-	con.RedeemScheduled(evm, ticketId, redeemTxId, sequenceNum, c.gasLeft, c.caller)
+	err = con.RedeemScheduled(c, evm, ticketId, redeemTxId, sequenceNum, c.gasLeft, c.caller)
+	if err != nil {
+		return hash{}, err
+	}
 
 	// now donate all of the remaining gas to the retry
 	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
