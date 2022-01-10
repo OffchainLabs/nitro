@@ -31,7 +31,7 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-type FeedOutput struct {
+type BroadcasterConfig struct {
 	Addr          string
 	IOTimeout     time.Duration
 	Port          string
@@ -41,18 +41,20 @@ type FeedOutput struct {
 	Workers       int
 }
 
+var DefaultBroadcasterConfig BroadcasterConfig
+
 type WSBroadcastServer struct {
 	startMutex    *sync.Mutex
 	poller        netpoll.Poller
 	acceptDesc    *netpoll.Desc
 	listener      net.Listener
-	settings      FeedOutput
+	settings      BroadcasterConfig
 	started       bool
 	clientManager *ClientManager
 	catchupBuffer CatchupBuffer
 }
 
-func NewWSBroadcastServer(settings FeedOutput, catchupBuffer CatchupBuffer) *WSBroadcastServer {
+func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer) *WSBroadcastServer {
 	return &WSBroadcastServer{
 		startMutex:    &sync.Mutex{},
 		settings:      settings,

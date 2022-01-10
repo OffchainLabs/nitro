@@ -70,6 +70,11 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 			Messages: b.messages,
 		}
 
+		// There is an unknown race in gobwas between the server reporting
+		// handshake complete and the client actually being ready to receive.
+		// If data is sent before then it is lost.
+		time.Sleep(time.Second)
+
 		err := clientConnection.Write(bm)
 		if err != nil {
 			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
@@ -145,7 +150,7 @@ func (b *SequenceNumberCatchupBuffer) GetMessageCount() int {
 	return int(atomic.LoadInt32(&b.messageCount))
 }
 
-func NewBroadcaster(settings wsbroadcastserver.FeedOutput) *Broadcaster {
+func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 	catchupBuffer := NewSequenceNumberCatchupBuffer()
 	return &Broadcaster{
 		server:        wsbroadcastserver.NewWSBroadcastServer(settings, catchupBuffer),
@@ -175,6 +180,10 @@ func (b *Broadcaster) Confirm(seq uint64) {
 
 func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
+}
+
+func (b *Broadcaster) GetCachedMessageCount() int {
+	return b.catchupBuffer.GetMessageCount()
 }
 
 func (b *Broadcaster) Start(ctx context.Context) error {
