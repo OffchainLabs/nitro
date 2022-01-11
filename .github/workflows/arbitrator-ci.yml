@@ -84,10 +84,7 @@ jobs:
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
       - name: Make arbitrator libraries
-        run: |
-          make -j $LIB/wasi_stub.wasm $LIB/soft-float.wasm $LIB/go_stub.wasm $LIB/host_io.wasm
-        env:
-          LIB: arbitrator/target/env/lib
+        run: make -j wasm-ci-build
 
       - name: Enable rust instrumentation
         run: |
