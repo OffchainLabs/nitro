@@ -47,8 +47,11 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
         Ok(bin) => bin,
         Err(err) => {
             eprintln!("Parsing error:");
-            for (input, kind) in err.errors {
-                eprintln!("Got {:?} while parsing {}", kind, hex::encode(&input[..64]));
+            for (mut input, kind) in err.errors {
+                if input.len() > 64 {
+                    input = &input[..64];
+                }
+                eprintln!("Got {:?} while parsing {}", kind, hex::encode(input));
             }
             bail!("failed to parse binary");
         }
