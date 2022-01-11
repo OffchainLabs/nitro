@@ -209,7 +209,7 @@ func ProduceBlock(
 
 				redeem, _ := retryable.MakeTx(
 					chainConfig.ChainID,
-					txLog.Topics[2],
+					common.BytesToHash(txLog.Data[96:128]),
 					gasPrice,
 					common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
 					ticketId,

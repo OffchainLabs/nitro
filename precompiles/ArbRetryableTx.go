@@ -148,7 +148,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	if err != nil {
 		return hash{}, err
 	}
-	attemptUniquifier := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
+	attemptUniquifier := retryables.UniquifierForRedeemAttempt(ticketId, sequenceNum)
 
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
@@ -179,7 +179,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	}
 	retryTxHash := retryTx.Hash()
 
-	err = con.RedeemScheduled(c, evm, ticketId, attemptUniquifier, sequenceNum, c.gasLeft, c.caller, retryTxHash)
+	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, sequenceNum, c.gasLeft, c.caller, attemptUniquifier)
 	if err != nil {
 		return hash{}, err
 	}

@@ -156,7 +156,7 @@ func (retryable *Retryable) IncrementNumTries() (uint64, error) {
 	return retryable.numTries.Increment()
 }
 
-func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {
+func UniquifierForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {
 	// Since tickets & sequence numbers are assigned sequentially, each is expressible as a uint64.
 	// Relying on this, we can set the upper and lower 8 bytes for the ticket & sequence number, respectively.
 
@@ -286,7 +286,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 	return nil
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, requestId common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+func (retryable *Retryable) MakeTx(chainId *big.Int, uniqifier common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, requestId common.Hash, gasP
 	return &types.ArbitrumRetryTx{
 		ArbitrumContractTx: types.ArbitrumContractTx{
 			ChainId:   chainId,
-			RequestId: requestId,
+			RequestId: uniqifier,
 			From:      from,
 			GasPrice:  gasPrice,
 			Gas:       gas,
