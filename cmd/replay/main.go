@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
@@ -150,6 +151,8 @@ func main() {
 	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
 	wavmio.SetLastBlockHash(newBlockHash)
+	arbstate := arbosState.OpenArbosState(statedb)
+	wavmio.SetSendRoot(arbstate.SendMerkleAccumulator().Root())
 
 	wavmio.StubFinal()
 }

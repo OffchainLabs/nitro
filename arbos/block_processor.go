@@ -269,6 +269,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
+		// other code depends on the send root being in the extra field, and will need changed too if this is changed
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
 }

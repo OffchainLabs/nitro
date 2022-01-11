@@ -551,10 +551,11 @@ impl Module {
 }
 
 // Globalstate holds:
-// bytes32 - lastblockhash
+// bytes32 - last_block_hash
+// bytes32 - send_root
 // uint64 - inbox_position
 // uint64 - position_within_message
-pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

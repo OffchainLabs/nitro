@@ -114,6 +114,7 @@ type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
 	BlockHash     common.Hash
+	SendRoot      common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
 	HasDelayedMsg bool
@@ -123,9 +124,12 @@ type validationEntry struct {
 }
 
 func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
+	var sendRoot common.Hash
+	copy(sendRoot[:], header.Extra) // Assumes the send root is stored in the header Extra field
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
+		SendRoot:      sendRoot,
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
@@ -325,6 +329,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  validationEntry.PrevBlockHash,
+		SendRoot:   common.Hash{}, // Assumes the replay binary never reads the send root
 	}
 
 	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
@@ -394,7 +399,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	gsEnd := mach.GetGlobalState()
 
-	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash}
+	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash, SendRoot: validationEntry.SendRoot}
 
 	writeThisBlock := false
 
