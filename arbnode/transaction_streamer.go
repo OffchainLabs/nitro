@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
@@ -36,14 +37,16 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
-	validator *validator.BlockValidator
+	broadcastServer *broadcaster.Broadcaster
+	validator       *validator.BlockValidator
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*TransactionStreamer, error) {
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
+		broadcastServer:    broadcastServer,
 	}
 	return inbox, nil
 }
@@ -290,7 +293,18 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta, nil)
+	if err := s.writeMessages(pos, messagesWithMeta, nil); err != nil {
+		return err
+	}
+
+	if s.broadcastServer != nil {
+		for i, message := range messagesWithMeta {
+			// TODO method for broadcasting more than one?
+			s.broadcastServer.BroadcastSingle(message, pos+uint64(i))
+		}
+	}
+
+	return nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
