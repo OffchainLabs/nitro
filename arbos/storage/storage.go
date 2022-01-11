@@ -316,8 +316,7 @@ func (sbu *StorageBackedUint64) Increment() (uint64, error) {
 	if old+1 < old {
 		panic("Overflow in StorageBackedUint64::Increment")
 	}
-	err = sbu.Set(old + 1)
-	return old + 1, err
+	return old + 1, sbu.Set(old + 1)
 }
 
 func (sbu *StorageBackedUint64) Decrement() (uint64, error) {
@@ -328,8 +327,7 @@ func (sbu *StorageBackedUint64) Decrement() (uint64, error) {
 	if old == 0 {
 		panic("Underflow in StorageBackedUint64::Decrement")
 	}
-	err = sbu.Set(old - 1)
-	return old - 1, err
+	return old - 1, sbu.Set(old - 1)
 }
 
 type MemoryBackedUint64 struct {

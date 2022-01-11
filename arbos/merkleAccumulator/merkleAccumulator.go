@@ -44,11 +44,7 @@ func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) (*Me
 		levelSize *= 2
 	}
 	mbu := &storage.MemoryBackedUint64{}
-	err := mbu.Set(size)
-	if err != nil {
-		return nil, err
-	}
-	return &MerkleAccumulator{nil, mbu, partials}, nil
+	return &MerkleAccumulator{nil, mbu, partials}, mbu.Set(size)
 }
 
 func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
@@ -66,11 +62,7 @@ func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
 		partials[i] = partial
 	}
 	mbu := &storage.MemoryBackedUint64{}
-	err = mbu.Set(size)
-	if err != nil {
-		return nil, err
-	}
-	return &MerkleAccumulator{nil, mbu, partials}, nil
+	return &MerkleAccumulator{nil, mbu, partials}, mbu.Set(size)
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) (*common.Hash, error) {
@@ -163,11 +155,8 @@ func (acc *MerkleAccumulator) Size() (uint64, error) {
 
 func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 	size, err := acc.size.Get()
-	if err != nil {
+	if size == 0 || err != nil {
 		return common.Hash{}, err
-	}
-	if size == 0 {
-		return common.Hash{}, nil
 	}
 
 	var hashSoFar *common.Hash

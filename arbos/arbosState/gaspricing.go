@@ -114,11 +114,8 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 
 func (state *ArbosState) CurrentPerBlockGasLimit() (uint64, error) {
 	pool, err := state.GasPool()
-	if err != nil {
+	if pool < 0 || err != nil {
 		return 0, err
-	}
-	if pool < 0 {
-		return 0, nil
 	} else if pool > int64(PerBlockGasLimit) {
 		return PerBlockGasLimit, nil
 	} else {

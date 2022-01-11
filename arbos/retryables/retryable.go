@@ -95,26 +95,17 @@ func (rs *RetryableState) CreateRetryable(
 
 	// insert the new retryable into the queue so it can be reaped later
 	err = rs.timeoutQueue.Put(id)
-	if err != nil {
-		return nil, err
-	}
-	return ret, nil
+	return ret, err
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	timeoutStorage := sto.OpenStorageBackedUint64(timeoutOffset)
 	timeout, err := timeoutStorage.Get()
-	if err != nil {
+	if timeout == 0 || timeout < currentTimestamp || err != nil {
+		// Either no retryable here (real retryable never has a zero timeout),
+		// Or the timeout has expired and the retryable will soon be reaped
 		return nil, err
-	}
-	if timeout == 0 {
-		// no retryable here (real retryable never has a zero timeout)
-		return nil, nil
-	}
-	if timeout < currentTimestamp {
-		// the timeout has expired and will soon be reaped
-		return nil, nil
 	}
 	return &Retryable{
 		id:             id,
@@ -131,11 +122,8 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 
 func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64) (uint64, error) {
 	retryable, err := rs.OpenRetryable(id, currentTime)
-	if err != nil {
+	if retryable == nil || err != nil {
 		return 0, err
-	}
-	if retryable == nil {
-		return 0, nil
 	}
 	size, err := retryable.CalldataSize()
 	if err != nil {
@@ -148,11 +136,8 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeout, err := retStorage.GetByUint64(timeoutOffset)
-	if err != nil {
+	if timeout == (common.Hash{}) || err != nil {
 		return false, err
-	}
-	if timeout == (common.Hash{}) {
-		return false, nil
 	}
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
@@ -161,10 +146,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 	_ = retStorage.SetByUint64(callvalueOffset, common.Hash{})
 	_ = retStorage.SetByUint64(beneficiaryOffset, common.Hash{})
 	err = retStorage.OpenSubStorage(calldataKey).ClearBytes()
-	if err != nil {
-		return false, err
-	}
-	return true, nil
+	return true, err
 }
 
 func (retryable *Retryable) NumTries() (uint64, error) {

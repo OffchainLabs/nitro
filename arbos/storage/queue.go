@@ -43,11 +43,8 @@ func (q *Queue) IsEmpty() (bool, error) {
 
 func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
 	empty, err := q.IsEmpty()
-	if err != nil {
+	if empty || err != nil {
 		return nil, err
-	}
-	if empty {
-		return nil, nil
 	}
 	next, err := q.nextGetOffset.Get()
 	if err != nil {
@@ -59,11 +56,8 @@ func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
 
 func (q *Queue) Get() (*common.Hash, error) { // returns nil iff queue is empty
 	empty, err := q.IsEmpty()
-	if err != nil {
+	if empty || err != nil {
 		return nil, err
-	}
-	if empty {
-		return nil, nil
 	}
 	newOffset, err := q.nextGetOffset.Increment()
 	if err != nil {

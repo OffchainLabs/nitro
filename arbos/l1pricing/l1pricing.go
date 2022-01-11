@@ -112,9 +112,6 @@ func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Add
 
 func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Address) (*big.Int, error) {
 	value, err := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes()))
-	if err != nil {
-		return nil, err
-	}
 	return value.Big(), err
 }
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) (*big.Int, error) {
@@ -147,13 +144,10 @@ func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (com
 
 func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (uint64, error) {
 	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
-	if err != nil {
-		return 0, err
-	}
 	if raw == (common.Hash{}) {
-		return DataWasNotCompressed, nil
+		return DataWasNotCompressed, err
 	} else {
-		return raw.Big().Uint64(), nil
+		return raw.Big().Uint64(), err
 	}
 }
 

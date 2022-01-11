@@ -20,8 +20,7 @@ type AddressTable struct {
 	numItems       storage.StorageBackedUint64
 }
 
-func Initialize(sto *storage.Storage) {
-}
+func Initialize(sto *storage.Storage) {}
 
 func Open(sto *storage.Storage) *AddressTable {
 	numItems := sto.OpenStorageBackedUint64(0)
@@ -75,11 +74,8 @@ func (atab *AddressTable) Size() (uint64, error) {
 
 func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool, error) {
 	items, err := atab.numItems.Get()
-	if err != nil {
+	if index >= items || err != nil {
 		return common.Address{}, false, err
-	}
-	if index >= items {
-		return common.Address{}, false, nil
 	}
 	value, err := atab.backingStorage.GetByUint64(index + 1)
 	if err != nil {

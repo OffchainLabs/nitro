@@ -20,18 +20,18 @@ func TestAddressTableInit(t *testing.T) {
 	Initialize(sto)
 	atab := Open(sto)
 	if size(t, atab) != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	_, found, err := atab.Lookup(common.Address{})
 	Require(t, err)
 	if found {
-		t.Fatal()
+		Fail(t)
 	}
 	_, found, err = atab.LookupIndex(0)
 	Require(t, err)
 	if found {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -43,41 +43,41 @@ func TestAddressTable1(t *testing.T) {
 	_, err := atab.Register(addr)
 	Require(t, err)
 	if size(t, atab) != 1 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	atab = Open(sto)
 	if size(t, atab) != 1 {
-		t.Fatal()
+		Fail(t)
 	}
 	idx, found, err := atab.Lookup(addr)
 	Require(t, err)
 	if !found {
-		t.Fatal()
+		Fail(t)
 	}
 	if idx != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	_, found, err = atab.Lookup(common.Address{})
 	Require(t, err)
 	if found {
-		t.Fatal()
+		Fail(t)
 	}
 
 	addr2, found, err := atab.LookupIndex(0)
 	Require(t, err)
 	if !found {
-		t.Fatal()
+		Fail(t)
 	}
 	if addr2 != addr {
-		t.Fatal()
+		Fail(t)
 	}
 
 	_, found, err = atab.LookupIndex(1)
 	Require(t, err)
 	if found {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -90,21 +90,21 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	res, err := atab.Compress(addr)
 	Require(t, err)
 	if len(res) != 21 {
-		t.Fatal()
+		Fail(t)
 	}
 	if !bytes.Equal(addr.Bytes(), res[1:]) {
-		t.Fatal()
+		Fail(t)
 	}
 
 	dec, nbytes, err := atab.Decompress(res)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	if nbytes != 21 {
-		t.Fatal(nbytes)
+		Fail(t, nbytes)
 	}
 	if dec != addr {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -120,18 +120,18 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	res, err := atab.Compress(addr)
 	Require(t, err)
 	if len(res) > 9 {
-		t.Fatal(len(res))
+		Fail(t, len(res))
 	}
 
 	dec, nbytes, err := atab.Decompress(res)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	if nbytes > 9 {
-		t.Fatal(nbytes)
+		Fail(t, nbytes)
 	}
 	if dec != addr {
-		t.Fatal()
+		Fail(t)
 	}
 }
 

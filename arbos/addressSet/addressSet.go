@@ -37,10 +37,7 @@ func (aset *AddressSet) Size() (uint64, error) {
 
 func (aset *AddressSet) IsMember(addr common.Address) (bool, error) {
 	value, err := aset.byAddress.Get(util.AddressToHash(addr))
-	if err != nil {
-		return false, err
-	}
-	return value != (common.Hash{}), nil
+	return value != (common.Hash{}), err
 }
 
 func (aset *AddressSet) AllMembers() ([]common.Address, error) {
@@ -65,11 +62,8 @@ func (aset *AddressSet) Add(addr common.Address) error {
 		return err
 	}
 	size, err := aset.size.Get()
-	if err != nil {
+	if present || err != nil {
 		return err
-	}
-	if present {
-		return nil
 	}
 	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
@@ -82,20 +76,14 @@ func (aset *AddressSet) Add(addr common.Address) error {
 		return err
 	}
 	_, err = aset.size.Increment()
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (aset *AddressSet) Remove(addr common.Address) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
 	slot, err := aset.byAddress.GetUint64(addrAsHash)
-	if err != nil {
+	if slot == 0 || err != nil {
 		return err
-	}
-	if slot == 0 {
-		return nil
 	}
 	err = aset.byAddress.Clear(addrAsHash)
 	if err != nil {
