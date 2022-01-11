@@ -158,6 +158,9 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		ticketId,
 		c.caller,
 	)
+	if err != nil {
+		return hash{}, err
+	}
 
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
@@ -174,15 +177,13 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	retryTxInner.Gas = gasToDonate
 
 	retryTx := types.NewTx(retryTxInner)
-	if err != nil {
-		return hash{}, err
-	}
 	retryTxHash := retryTx.Hash()
 
 	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, sequenceNum, c.gasLeft, c.caller, attemptUniquifier)
 	if err != nil {
 		return hash{}, err
 	}
+
 	// now donate the remaining gas to the retry
 	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
 	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
