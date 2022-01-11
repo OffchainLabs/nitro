@@ -104,7 +104,8 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	timeout, err := timeoutStorage.Get()
 	if timeout == 0 || timeout < currentTimestamp || err != nil {
 		// Either no retryable here (real retryable never has a zero timeout),
-		// Or the timeout has expired and the retryable will soon be reaped
+		// Or the timeout has expired and the retryable will soon be reaped,
+		// Or the user is out of gas
 		return nil, err
 	}
 	return &Retryable{
@@ -126,11 +127,8 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 		return 0, err
 	}
 	size, err := retryable.CalldataSize()
-	if err != nil {
-		return 0, err
-	}
 	calldata := 32 + 32*util.WordsForBytes(size) // length + contents
-	return 6*32 + calldata, nil
+	return 6*32 + calldata, err
 }
 
 func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
@@ -276,12 +274,12 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 			if timeout < currentTimestamp {
 				// the retryable has expired, time to reap
 				_, err = rs.DeleteRetryable(*id)
+				return err
 			} else {
 				// the retryable has not expired, but we'll check back later
 				// to preserve round-robin ordering, we put this at the end
-				err = rs.timeoutQueue.Put(*id)
+				return rs.timeoutQueue.Put(*id)
 			}
-			return err
 		}
 	}
 	return nil

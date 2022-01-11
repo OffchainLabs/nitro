@@ -132,13 +132,10 @@ func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, a
 
 func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (common.Address, error) {
 	raw, err := ps.aggregatorFeeCollectors.Get(common.BytesToHash(aggregator.Bytes()))
-	if err != nil {
-		return common.Address{}, err
-	}
 	if raw == (common.Hash{}) {
-		return aggregator, nil
+		return aggregator, err
 	} else {
-		return common.BytesToAddress(raw.Bytes()), nil
+		return common.BytesToAddress(raw.Bytes()), err
 	}
 }
 

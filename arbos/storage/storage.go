@@ -103,10 +103,7 @@ func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
 
 func (store *Storage) GetUint64(key common.Hash) (uint64, error) {
 	value, err := store.Get(key)
-	if err != nil {
-		return 0, err
-	}
-	return value.Big().Uint64(), nil
+	return value.Big().Uint64(), err
 }
 
 func (store *Storage) GetByUint64(key uint64) (common.Hash, error) {
@@ -271,13 +268,10 @@ func (sto *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
 
 func (sbu *StorageBackedInt64) Get() (int64, error) {
 	raw, err := sbu.StorageSlot.Get()
-	if err != nil {
-		return 0, err
-	}
 	if !raw.Big().IsUint64() {
 		panic("invalid value found in StorageBackedInt64 storage")
 	}
-	return int64(raw.Big().Uint64()), nil // see implementation note above
+	return int64(raw.Big().Uint64()), err // see implementation note above
 }
 
 func (sbu *StorageBackedInt64) Set(value int64) error {
@@ -294,13 +288,10 @@ func (sto *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
 
 func (sbu *StorageBackedUint64) Get() (uint64, error) {
 	raw, err := sbu.StorageSlot.Get()
-	if err != nil {
-		return 0, err
-	}
 	if !raw.Big().IsUint64() {
 		panic("expected uint64 compatible value in storage")
 	}
-	return raw.Big().Uint64(), nil
+	return raw.Big().Uint64(), err
 }
 
 func (sbu *StorageBackedUint64) Set(value uint64) error {
@@ -376,10 +367,7 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 
 func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
 	value, err := sbbi.StorageSlot.Get()
-	if err != nil {
-		return nil, err
-	}
-	return value.Big(), nil
+	return value.Big(), err
 }
 
 func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
@@ -396,10 +384,7 @@ func (sto *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress
 
 func (sba *StorageBackedAddress) Get() (common.Address, error) {
 	value, err := sba.StorageSlot.Get()
-	if err != nil {
-		return common.Address{}, err
-	}
-	return common.BytesToAddress(value.Bytes()), nil
+	return common.BytesToAddress(value.Bytes()), err
 }
 
 func (sba *StorageBackedAddress) Set(val common.Address) error {
@@ -422,11 +407,8 @@ func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAd
 
 func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
 	asHash, err := sba.StorageSlot.Get()
-	if err != nil {
+	if asHash == NilAddressRepresentation || err != nil {
 		return nil, err
-	}
-	if asHash == NilAddressRepresentation {
-		return nil, nil
 	} else {
 		ret := common.BytesToAddress(asHash.Bytes())
 		return &ret, nil

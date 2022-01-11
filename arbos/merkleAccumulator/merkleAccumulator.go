@@ -121,10 +121,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)
 			err := acc.setPartial(level, &h)
-			if err != nil {
-				return nil, err
-			}
-			return events, nil
+			return events, err
 		}
 		thisLevel, err := acc.getPartial(level)
 		if err != nil {
@@ -133,10 +130,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 		if *thisLevel == (common.Hash{}) {
 			h := common.BytesToHash(soFar)
 			err := acc.setPartial(level, &h)
-			if err != nil {
-				return nil, err
-			}
-			return events, nil
+			return events, err
 		}
 		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
 		h := common.Hash{}

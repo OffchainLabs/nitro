@@ -20,7 +20,9 @@ type AddressTable struct {
 	numItems       storage.StorageBackedUint64
 }
 
-func Initialize(sto *storage.Storage) {}
+func Initialize(sto *storage.Storage) {
+	// no initialization needed
+}
 
 func Open(sto *storage.Storage) *AddressTable {
 	numItems := sto.OpenStorageBackedUint64(0)
@@ -78,19 +80,13 @@ func (atab *AddressTable) LookupIndex(index uint64) (common.Address, bool, error
 		return common.Address{}, false, err
 	}
 	value, err := atab.backingStorage.GetByUint64(index + 1)
-	if err != nil {
-		return common.Address{}, false, err
-	}
-	return common.BytesToAddress(value.Bytes()), true, nil
+	return common.BytesToAddress(value.Bytes()), true, err
 }
 
 func (atab *AddressTable) Compress(addr common.Address) ([]byte, error) {
 	index, exists, err := atab.Lookup(addr)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return rlp.AppendUint64([]byte{}, index), nil
+	if exists || err != nil {
+		return rlp.AppendUint64([]byte{}, index), err
 	} else {
 		buf, err := rlp.EncodeToBytes(addr.Bytes())
 		if err != nil {
