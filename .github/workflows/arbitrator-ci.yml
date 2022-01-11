@@ -93,9 +93,9 @@ jobs:
           command: test
           args: --all --manifest-path arbitrator/Cargo.toml
 
-      - name: Create code-coverage files if supported for rust ${{ matrix.rust }}
+      - name: Create code-coverage files
         run: |
-          grcov . --binary-path ./target/release/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+          grcov . --binary-path .arbitrator/target/release/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1
