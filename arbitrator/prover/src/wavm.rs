@@ -120,8 +120,6 @@ pub enum Opcode {
     /// Parameterized by the number of source bits
     I64ExtendS(u8),
 
-    FuncRefConst,
-
     IUnOp(IntegerValType, IUnOpType),
     IBinOp(IntegerValType, IBinOpType),
 
@@ -261,7 +259,6 @@ impl Opcode {
                 32 => 0xC4,
                 _ => panic!("Unsupported {:?}", self),
             },
-            Opcode::FuncRefConst => 0xD2,
             // Internal instructions:
             Opcode::EndBlock => 0x8000,
             Opcode::EndBlockIf => 0x8001,
@@ -495,7 +492,6 @@ impl Instruction {
                             | Opcode::GlobalGet
                             | Opcode::GlobalSet
                             | Opcode::Call
-                            | Opcode::FuncRefConst
                             | Opcode::CallerModuleInternalCall
                             | Opcode::ReadInboxMessage
                     ),

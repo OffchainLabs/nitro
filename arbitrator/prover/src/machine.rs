@@ -417,23 +417,19 @@ impl Module {
                 let t = usize::try_from(t).unwrap();
                 assert_eq!(tables[t].ty.ty, elem.ty);
                 let contents: Vec<_> = elem
-                    .init
+                    .values
                     .into_iter()
-                    .map(|i| {
-                        let insn = match i.as_slice() {
-                            [x] => x,
-                            _ => panic!("Element initializer isn't one instruction: {:?}", o),
-                        };
-                        match insn.get_const_output() {
-                            Some(v @ Value::RefNull) => TableElement {
+                    .map(|v| {
+                        match v {
+                            v @ Value::RefNull => TableElement {
                                 func_ty: FunctionType::default(),
                                 val: v,
                             },
-                            Some(Value::FuncRef(x)) => TableElement {
+                            Value::FuncRef(x) => TableElement {
                                 func_ty: func_types[usize::try_from(x).unwrap()].clone(),
                                 val: Value::FuncRef(x),
                             },
-                            _ => panic!("Invalid element initializer {:?}", insn),
+                            _ => panic!("Invalid element value {:?}", v),
                         }
                     })
                     .collect();
@@ -1391,10 +1387,6 @@ impl Machine {
             Opcode::F64Const => {
                 self.value_stack
                     .push(Value::F64(f64::from_bits(inst.argument_data)));
-            }
-            Opcode::FuncRefConst => {
-                self.value_stack
-                    .push(Value::FuncRef(inst.argument_data as u32));
             }
             Opcode::I32Eqz => {
                 let val = self.value_stack.pop().unwrap();

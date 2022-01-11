@@ -252,7 +252,6 @@ impl HirInstruction {
             HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
             HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
             HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
-            HirInstruction::WithIdx(Opcode::FuncRefConst, x) => Some(LirValue::FuncRef(x)),
             _ => None,
         }
     }
@@ -349,7 +348,7 @@ pub enum ElementMode {
 #[derive(Clone, Debug)]
 pub struct ElementSegment {
     pub ty: RefType,
-    pub init: Vec<Vec<HirInstruction>>,
+    pub values: Vec<LirValue>,
     pub mode: ElementMode,
 }
 
@@ -1106,23 +1105,19 @@ fn element_segment(mut input: &[u8]) -> IResult<ElementSegment> {
         _ => unreachable!(),
     }?;
     let ref_general = format & 4 != 0;
+    if ref_general {
+        return Err(Err::Error(VerboseError::from_error_kind(
+            input,
+            ErrorKind::Verify,
+        )));
+    }
     let (input, ty) = if format & 3 == 0 {
-        Ok((input, RefType::FuncRef))
-    } else if ref_general {
-        ref_type(input)
+        (input, RefType::FuncRef)
     } else {
-        value(RefType::FuncRef, tag(&[0x00]))(input)
-    }?;
-    let (input, init) = wasm_vec(|input| {
-        if ref_general {
-            instructions(input)
-        } else {
-            map(leb128_u32, |i| {
-                vec![HirInstruction::WithIdx(Opcode::FuncRefConst, i)]
-            })(input)
-        }
-    })(input)?;
-    Ok((input, ElementSegment { ty, mode, init }))
+        value(RefType::FuncRef, tag(&[0x00]))(input)?
+    };
+    let (input, values) = wasm_vec(map(leb128_u32, LirValue::FuncRef))(input)?;
+    Ok((input, ElementSegment { ty, mode, values }))
 }
 
 fn data_segment(input: &[u8]) -> IResult<Data> {
