@@ -20,11 +20,11 @@ type ArbRetryableTx struct {
 	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr) error
 	Redeemed                func(ctx, mech, [32]byte) error
 	Canceled                func(ctx, mech, [32]byte) error
-	TicketCreatedGasCost    func([32]byte) uint64
-	LifetimeExtendedGasCost func([32]byte, huge) uint64
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) uint64
-	RedeemedGasCost         func([32]byte) uint64
-	CanceledGasCost         func([32]byte) uint64
+	TicketCreatedGasCost    func([32]byte) (uint64, error)
+	LifetimeExtendedGasCost func([32]byte, huge) (uint64, error)
+	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) (uint64, error)
+	RedeemedGasCost         func([32]byte) (uint64, error)
+	CanceledGasCost         func([32]byte) (uint64, error)
 }
 
 var NotFoundError = errors.New("ticketId not found")

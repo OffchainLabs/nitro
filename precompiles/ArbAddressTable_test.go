@@ -10,15 +10,17 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 func TestArbAddressTableInit(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
@@ -40,7 +42,7 @@ func TestArbAddressTableInit(t *testing.T) {
 }
 
 func TestAddressTable1(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
@@ -88,7 +90,7 @@ func TestAddressTable1(t *testing.T) {
 }
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
@@ -116,7 +118,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 }
 
 func TestAddressTableCompressInTable(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	atab := ArbAddressTable{}
 	context := testContext(common.Address{}, evm)
 
@@ -149,14 +151,20 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	}
 }
 
-func newMockEVMForTesting(t *testing.T) *vm.EVM {
-	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
-	statedb, err := state.New(common.Hash{}, db, nil)
-	Require(t, err)
-	return &vm.EVM{
-		StateDB: statedb,
+func newMockEVMForTesting() *vm.EVM {
+	chainConfig := params.ArbitrumTestChainConfig()
+	statedb := storage.NewMemoryBackedStateDB()
+	context := vm.BlockContext{
+		BlockNumber: big.NewInt(0),
+		GasLimit:    ^uint64(0),
 	}
+
+	// open now to induce an upgrade
+	arbosState.OpenSystemArbosState(statedb)
+
+	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+	evm.ProcessingHook = &arbos.TxProcessor{}
+	return evm
 }
 
 func Require(t *testing.T, err error, text ...string) {

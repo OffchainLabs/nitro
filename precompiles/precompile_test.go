@@ -11,11 +11,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -23,25 +20,13 @@ import (
 func TestEvents(t *testing.T) {
 	blockNumber := 1024
 
-	chainConfig := params.ArbitrumTestChainConfig()
-	statedb := storage.NewMemoryBackedStateDB()
-	context := vm.BlockContext{
-		BlockNumber: big.NewInt(int64(blockNumber)),
-		GasLimit:    ^uint64(0),
-	}
-
-	// open now to induce an upgrade
-	arbosState.OpenSystemArbosState(statedb)
-
-	// create a minimal evm that supports just enough to create logs
-	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
-	evm.ProcessingHook = &arbos.TxProcessor{}
+	evm := newMockEVMForTesting()
+	evm.Context.BlockNumber = big.NewInt(int64(blockNumber))
 
 	debugContractAddr := common.HexToAddress("ff")
 	contract := Precompiles()[debugContractAddr]
 
 	var method PrecompileMethod
-
 	for _, available := range contract.Precompile().methods {
 		if available.name == "Events" {
 			method = available
@@ -154,12 +139,18 @@ func TestEventCosts(t *testing.T) {
 	}
 	testBytes[4] = append(testBytes[4], common.Hash{}.Bytes()...)
 
+	test := func(a bool, b addr, c huge, d hash, e []byte) uint64 {
+		cost, err := impl.StoreGasCost(a, b, c, d, e)
+		Require(t, err)
+		return cost
+	}
+
 	tests := [...]uint64{
-		impl.StoreGasCost(true, addr{}, big.NewInt(24), common.Hash{}, testBytes[0]),
-		impl.StoreGasCost(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[1]),
-		impl.StoreGasCost(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[2]),
-		impl.StoreGasCost(true, addr{}, big.NewInt(32), common.Hash{}, testBytes[3]),
-		impl.StoreGasCost(true, addr{}, big.NewInt(64), common.Hash{}, testBytes[4]),
+		test(true, addr{}, big.NewInt(24), common.Hash{}, testBytes[0]),
+		test(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[1]),
+		test(false, addr{}, big.NewInt(8), common.Hash{}, testBytes[2]),
+		test(true, addr{}, big.NewInt(32), common.Hash{}, testBytes[3]),
+		test(true, addr{}, big.NewInt(64), common.Hash{}, testBytes[4]),
 	}
 
 	expected := [5]uint64{}

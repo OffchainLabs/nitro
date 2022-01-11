@@ -58,11 +58,11 @@ func (aset *AddressSet) AllMembers() ([]common.Address, error) {
 
 func (aset *AddressSet) Add(addr common.Address) error {
 	present, err := aset.IsMember(addr)
-	if err != nil {
+	if present || err != nil {
 		return err
 	}
 	size, err := aset.size.Get()
-	if present || err != nil {
+	if err != nil {
 		return err
 	}
 	slot := util.UintToHash(1 + size)

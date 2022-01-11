@@ -5,6 +5,8 @@
 package precompiles
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -28,6 +30,10 @@ func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 }
 
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
+	member, _ := con.IsChainOwner(c, evm, addr)
+	if !member {
+		return errors.New("tried to remove non-owner")
+	}
 	return c.state.ChainOwners().Remove(addr)
 }
 
