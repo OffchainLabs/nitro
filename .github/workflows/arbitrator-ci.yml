@@ -13,6 +13,26 @@ env:
   WABT_VERSION: 1.0.24
 
 jobs:
+  rustfmt:
+    name: Rust formatting check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt
+
+      - name: Rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path arbitrator/Cargo.toml -- --check
 
   coverage:
     name: Run Arbitrator tests
@@ -92,7 +112,7 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
           echo RUSTFLAGS="-Zinstrument-coverage" >> $GITHUB_ENV
           echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
-        
+
       - name: Run rust tests
         uses: actions-rs/cargo@v1
         with:
@@ -113,3 +133,15 @@ jobs:
           files: ./lcov.info
           fail_ci_if_error: true
           verbose: false
+
+      - name: Start geth server
+        run: |
+          geth --dev --http --http.port 8545 &
+          sleep 2
+
+      - name: Run proof validation tests
+        run: |
+          npm install --global yarn
+          cd solgen
+          yarn install
+          yarn hardhat test --network localhost
