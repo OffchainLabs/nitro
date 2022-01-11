@@ -419,18 +419,16 @@ impl Module {
                 let contents: Vec<_> = elem
                     .values
                     .into_iter()
-                    .map(|v| {
-                        match v {
-                            v @ Value::RefNull => TableElement {
-                                func_ty: FunctionType::default(),
-                                val: v,
-                            },
-                            Value::FuncRef(x) => TableElement {
-                                func_ty: func_types[usize::try_from(x).unwrap()].clone(),
-                                val: Value::FuncRef(x),
-                            },
-                            _ => panic!("Invalid element value {:?}", v),
-                        }
+                    .map(|v| match v {
+                        v @ Value::RefNull => TableElement {
+                            func_ty: FunctionType::default(),
+                            val: v,
+                        },
+                        Value::FuncRef(x) => TableElement {
+                            func_ty: func_types[usize::try_from(x).unwrap()].clone(),
+                            val: Value::FuncRef(x),
+                        },
+                        _ => panic!("Invalid element value {:?}", v),
                     })
                     .collect();
                 let len = contents.len();
