@@ -85,7 +85,7 @@ jobs:
 
       - name: Make arbitrator libraries
         run: |
-          echo LIB="arbitrator/target/env/lib" >> $GITHUB_ENV
+          echo LIB="arbitrator/target/env/lib"
           make -j $LIB/wasi_stub.wasm $LIB/soft-float.wasm $LIB/go_stub.wasm $LIB/host_io.wasm
 
       - name: Enable rust instrumentation
