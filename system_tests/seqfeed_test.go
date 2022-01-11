@@ -48,8 +48,8 @@ func TestSequencerFeed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info1, _, _, _ := CreateTestL2WithConfig(t, ctx, &seqNodeConfig)
-	l2info2, _, _, _ := CreateTestL2WithConfig(t, ctx, &clientNodeConfig)
+	l2info1, _, _ := CreateTestL2WithConfig(t, ctx, &seqNodeConfig)
+	l2info2, _, _ := CreateTestL2WithConfig(t, ctx, &clientNodeConfig)
 
 	client1 := l2info1.Client
 	l2info1.GenerateAccount("User2")
