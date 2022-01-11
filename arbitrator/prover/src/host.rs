@@ -123,11 +123,5 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         locals: Vec::new(),
         expr: insts,
     };
-    Ok(Function::new(
-        code,
-        ty,
-        btype,
-        &[],
-        &FloatingPointImpls::default(),
-    ))
+    Function::new(code, ty, btype, &[], &FloatingPointImpls::default())
 }

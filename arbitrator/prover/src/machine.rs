@@ -67,7 +67,7 @@ impl Function {
         func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
-    ) -> Function {
+    ) -> eyre::Result<Function> {
         let locals_with_params: Vec<ValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
@@ -97,13 +97,13 @@ impl Function {
             &mut insts,
             codegen_state,
             crate::binary::HirInstruction::Block(func_block_ty, code.expr),
-        );
+        )?;
 
         Instruction::extend_from_hir(
             &mut insts,
             codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
-        );
+        )?;
 
         // Insert missing proving argument data
         for inst in insts.iter_mut() {
@@ -114,7 +114,7 @@ impl Function {
             }
         }
 
-        Function::new_from_wavm(insts, func_ty, locals_with_params)
+        Ok(Function::new_from_wavm(insts, func_ty, locals_with_params))
     }
 
     fn new_from_wavm(
@@ -342,7 +342,7 @@ impl Module {
                 BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
                 floating_point_impls,
-            ));
+            )?);
             host_call_hooks.push(None);
         }
         ensure!(
@@ -996,7 +996,7 @@ impl Machine {
             BlockType::TypeIndex(0),
             &entrypoint_types,
             &floating_point_impls,
-        )];
+        )?];
         let entrypoint = Module {
             globals: Vec::new(),
             memory: Memory::default(),

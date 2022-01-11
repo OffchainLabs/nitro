@@ -4,6 +4,7 @@ use crate::{
     value::{IntegerValType, ValueType},
 };
 use digest::Digest;
+use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
 use sha3::Keccak256;
 use std::convert::TryFrom;
@@ -385,14 +386,14 @@ impl Instruction {
         ops: &mut Vec<Instruction>,
         mut state: FunctionCodegenState,
         inst: HirInstruction,
-    ) {
+    ) -> Result<()> {
         match inst {
             HirInstruction::Block(_, insts) => {
                 let block_idx = ops.len();
                 ops.push(Instruction::simple(Opcode::Block));
                 state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, state, inst);
+                    Self::extend_from_hir(ops, state, inst)?;
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -405,7 +406,7 @@ impl Instruction {
                 });
                 state.block_depth += 1;
                 for inst in insts {
-                    Self::extend_from_hir(ops, state, inst);
+                    Self::extend_from_hir(ops, state, inst)?;
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
             }
@@ -425,13 +426,13 @@ impl Instruction {
                 ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
 
                 for inst in if_insts {
-                    Self::extend_from_hir(ops, state, inst);
+                    Self::extend_from_hir(ops, state, inst)?;
                 }
                 ops.push(Instruction::simple(Opcode::Branch));
 
                 ops[jump_idx].argument_data = ops.len() as u64;
                 for inst in else_insts {
-                    Self::extend_from_hir(ops, state, inst);
+                    Self::extend_from_hir(ops, state, inst)?;
                 }
                 ops.push(Instruction::simple(Opcode::EndBlock));
                 ops[block_idx].argument_data = ops.len() as u64;
@@ -472,19 +473,19 @@ impl Instruction {
                 }
                 // Nothing matched. Drop the index and jump to the default.
                 ops.push(Instruction::simple(Opcode::Drop));
-                Instruction::extend_from_hir(ops, state, HirInstruction::Branch(default));
+                Instruction::extend_from_hir(ops, state, HirInstruction::Branch(default))?;
                 // Make a jump table of branches
                 for (source, branch) in option_jumps {
                     ops[source].argument_data = ops.len() as u64;
                     // Drop the index and branch the target depth
                     ops.push(Instruction::simple(Opcode::Drop));
-                    Instruction::extend_from_hir(ops, state, HirInstruction::Branch(branch));
+                    Instruction::extend_from_hir(ops, state, HirInstruction::Branch(branch))?;
                 }
             }
             HirInstruction::LocalTee(x) => {
                 // Translate into a dup then local.set
-                Self::extend_from_hir(ops, state, HirInstruction::Simple(Opcode::Dup));
-                Self::extend_from_hir(ops, state, HirInstruction::WithIdx(Opcode::LocalSet, x));
+                Self::extend_from_hir(ops, state, HirInstruction::Simple(Opcode::Dup))?;
+                Self::extend_from_hir(ops, state, HirInstruction::WithIdx(Opcode::LocalSet, x))?;
             }
             HirInstruction::WithIdx(op, x) => {
                 assert!(
@@ -566,7 +567,7 @@ impl Instruction {
                         ops,
                         state,
                         HirInstruction::CrossModuleCall(module, func),
-                    );
+                    )?;
                     // Reinterpret returned ints that should be floats into floats
                     assert!(
                         sig.outputs.len() <= 1,
@@ -585,7 +586,7 @@ impl Instruction {
                         )));
                     }
                 } else {
-                    panic!("No implementation for floating point operation {:?}", inst);
+                    bail!("No implementation for floating point operation {:?}", inst);
                 }
             }
             HirInstruction::Simple(Opcode::Return) => {
@@ -606,7 +607,7 @@ impl Instruction {
                             HirInstruction::Simple(Opcode::BranchIf),
                         ],
                     ),
-                );
+                )?;
                 for _ in 0..state.block_depth {
                     ops.push(Instruction::simple(Opcode::EndBlock));
                 }
@@ -619,5 +620,6 @@ impl Instruction {
             }
             HirInstruction::Simple(op) => ops.push(Instruction::simple(op)),
         }
+        Ok(())
     }
 }
