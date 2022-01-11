@@ -25,6 +25,10 @@ func init() {
 	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
 }
 
+func AddressToHash(address common.Address) common.Hash {
+	return common.BytesToHash(address.Bytes())
+}
+
 func HashFromReader(rd io.Reader) (common.Hash, error) {
 	buf := make([]byte, 32)
 	if _, err := io.ReadFull(rd, buf); err != nil {

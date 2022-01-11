@@ -6,21 +6,20 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
 type ArbSys struct {
 	Address                  addr
-	L2ToL1Transaction        func(mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte)
+	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) uint64
-	SendMerkleUpdate         func(mech, huge, [32]byte, huge)
+	SendMerkleUpdate         func(ctx, mech, huge, [32]byte, huge) error
 	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) uint64
 }
 
@@ -37,7 +36,7 @@ func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
-	if err := c.burn(params.SloadGas); err != nil {
+	if err := c.Burn(storage.StorageReadCost); err != nil {
 		return nil, err
 	}
 	return evm.StateDB.GetState(address, common.BigToHash(index)).Big(), nil
@@ -66,19 +65,14 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 }
 
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
-	cost := params.CallValueTransferGas
-	zero := new(big.Int)
-	dest := destination
-	cost += 2 * con.SendMerkleUpdateGasCost(zero, common.Hash{}, zero)
-	cost += con.L2ToL1TransactionGasCost(dest, dest, zero, zero, zero, zero, zero, zero, zero, calldataForL1)
-	if err := c.burn(cost); err != nil {
-		return nil, err
-	}
 
 	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
-	arbosState := arbosState.OpenArbosState(evm.StateDB)
+	arbosState := c.state
 	merkleAcc := arbosState.SendMerkleAccumulator()
-	merkleUpdateEvents := merkleAcc.Append(sendHash)
+	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
+	if err != nil {
+		return nil, err
+	}
 
 	// burn the callvalue, which was previously deposited to this precompile's account
 	evm.StateDB.SubBalance(con.Address, value)
@@ -88,17 +82,28 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 			Level: merkleUpdateEvent.Level,
 			Leaf:  merkleUpdateEvent.NumLeaves,
 		}
-		con.SendMerkleUpdate(
+		err := con.SendMerkleUpdate(
+			c,
 			evm,
 			big.NewInt(0),
 			merkleUpdateEvent.Hash,
 			position.ToBigInt(),
 		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	leafNum := big.NewInt(int64(merkleAcc.Size() - 1))
+	size, _ := merkleAcc.Size()
+	timestamp, err := arbosState.LastTimestampSeen()
+	if err != nil {
+		return nil, err
+	}
 
-	con.L2ToL1Transaction(
+	leafNum := big.NewInt(int64(size - 1))
+
+	err = con.L2ToL1Transaction(
+		c,
 		evm,
 		c.caller,
 		destination,
@@ -107,12 +112,12 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		big.NewInt(0),
 		evm.Context.BlockNumber,
 		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
-		big.NewInt(int64(arbosState.LastTimestampSeen())),
+		big.NewInt(int64(timestamp)),
 		value,
 		calldataForL1,
 	)
 
-	return sendHash.Big(), nil
+	return sendHash.Big(), err
 }
 
 func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
@@ -122,7 +127,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][3
 
 	// OK to not charge gas, because method is only callable by address zero
 
-	size, rootHash, rawPartials := arbosState.OpenArbosState(evm.StateDB).SendMerkleAccumulator().StateForExport()
+	size, rootHash, rawPartials, _ := c.state.SendMerkleAccumulator().StateForExport()
 	partials := make([][32]byte, len(rawPartials))
 	for i, par := range rawPartials {
 		partials[i] = [32]byte(par)

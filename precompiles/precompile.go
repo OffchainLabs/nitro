@@ -13,6 +13,8 @@ import (
 	"unicode"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -184,7 +186,8 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		name := event.RawName
 
 		var needs = []reflect.Type{
-			reflect.TypeOf(&vm.EVM{}), // where the emit goes
+			reflect.TypeOf(&context{}), // where the emit goes
+			reflect.TypeOf(&vm.EVM{}),  // where the emit goes
 		}
 		for _, arg := range event.Inputs {
 			needs = append(needs, arg.Type.GetType())
@@ -202,8 +205,9 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		}
 
 		uint64Type := []reflect.Type{reflect.TypeOf(uint64(0))}
-		expectedFieldType := reflect.FuncOf(needs, []reflect.Type{}, false)
-		expectedCostType := reflect.FuncOf(needs[1:], uint64Type, false)
+		errorType := []reflect.Type{reflect.TypeOf((*error)(nil)).Elem()}
+		expectedFieldType := reflect.FuncOf(needs, errorType, false)
+		expectedCostType := reflect.FuncOf(needs[2:], uint64Type, false)
 
 		context := "Precompile " + contract + "'s implementer"
 		missing := context + " is missing a field for "
@@ -247,12 +251,44 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		// we can't capture `event` since the for loop will change its value
 		capturedEvent := event
 
+		gascost := func(args []reflect.Value) []reflect.Value {
+
+			cost := params.LogGas
+			cost += params.LogTopicGas * uint64(1+len(topicInputs))
+
+			var dataValues []interface{}
+
+			for i := 0; i < len(args); i++ {
+				if !capturedEvent.Inputs[i].Indexed {
+					dataValues = append(dataValues, args[i].Interface())
+				}
+			}
+
+			data, err := dataInputs.PackValues(dataValues)
+			if err != nil {
+				// in production we'll just revert, but for now this
+				// will catch implementation errors
+				log.Fatal("Could not pack values for event ", name+"'s GasCost")
+			}
+
+			// charge for the number of bytes
+			cost += params.LogDataGas * uint64(len(data))
+
+			return []reflect.Value{reflect.ValueOf(cost)}
+		}
+
 		emit := func(args []reflect.Value) []reflect.Value {
 
-			//nolint:errcheck
-			evm := args[0].Interface().(*vm.EVM)
+			callerCtx := args[0].Interface().(ctx) //nolint:errcheck
+			evm := args[1].Interface().(*vm.EVM)   //nolint:errcheck
 			state := evm.StateDB
-			args = args[1:]
+			args = args[2:]
+
+			//nolint:errcheck
+			cost := (gascost(args)[0].Interface()).(uint64)
+			if err := callerCtx.Burn(cost); err != nil {
+				return []reflect.Value{reflect.ValueOf(vm.ErrOutOfGas)}
+			}
 
 			// Filter by index'd into data and topics. Indexed values, even if ultimately hashed,
 			// aren't supposed to have their contents stored in the general-purpose data portion.
@@ -316,33 +352,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			}
 
 			state.AddLog(event)
-			return []reflect.Value{}
-		}
-
-		gascost := func(args []reflect.Value) []reflect.Value {
-
-			cost := params.LogGas
-			cost += params.LogTopicGas * uint64(1+len(topicInputs))
-
-			var dataValues []interface{}
-
-			for i := 0; i < len(args); i++ {
-				if !capturedEvent.Inputs[i].Indexed {
-					dataValues = append(dataValues, args[i].Interface())
-				}
-			}
-
-			data, err := dataInputs.PackValues(dataValues)
-			if err != nil {
-				// in production we'll just revert, but for now this
-				// will catch implementation errors
-				log.Fatal("Could not pack values for event ", name+"'s GasCost")
-			}
-
-			// charge for the number of bytes
-			cost += params.LogDataGas * uint64(len(data))
-
-			return []reflect.Value{reflect.ValueOf(cost)}
+			return []reflect.Value{reflect.Zero(reflect.TypeOf((*error)(nil)).Elem())}
 		}
 
 		fieldPointer.Set(reflect.MakeFunc(field.Type, emit))
@@ -440,6 +450,18 @@ func (p Precompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 	}
+
+	var burner burn.Burner
+	if method.purity == pure {
+		burner = burn.NewSafetyBurner("a pure method must not access state", false)
+	} else {
+		burner = callerCtx
+	}
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, 0, err
+	}
+	callerCtx.state = state
 
 	switch txProcessor := evm.ProcessingHook.(type) {
 	case *arbos.TxProcessor:

@@ -18,84 +18,84 @@ import (
 )
 
 func TestArbAddressTableInit(t *testing.T) {
-	st := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
-	context := testContext(common.Address{})
+	context := testContext(common.Address{}, evm)
 
-	size, err := atab.Size(context, st)
+	size, err := atab.Size(context, evm)
 	Require(t, err)
 	if (!size.IsInt64()) || (size.Int64() != 0) {
 		t.Fatal()
 	}
 
-	_, shouldErr := atab.Lookup(context, st, common.Address{})
+	_, shouldErr := atab.Lookup(context, evm, common.Address{})
 	if shouldErr == nil {
 		t.Fatal()
 	}
 
-	_, shouldErr = atab.LookupIndex(context, st, big.NewInt(0))
+	_, shouldErr = atab.LookupIndex(context, evm, big.NewInt(0))
 	if shouldErr == nil {
 		t.Fatal()
 	}
 }
 
 func TestAddressTable1(t *testing.T) {
-	st := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
-	context := testContext(common.Address{})
+	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// register addr
-	slot, err := atab.Register(context, st, addr)
+	slot, err := atab.Register(context, evm, addr)
 	Require(t, err)
 	if (!slot.IsInt64()) || (slot.Int64() != 0) {
 		t.Fatal()
 	}
 
 	// verify Size() is 1
-	size, err := atab.Size(context, st)
+	size, err := atab.Size(context, evm)
 	Require(t, err)
 	if (!size.IsInt64()) || (size.Int64() != 1) {
 		t.Fatal()
 	}
 
 	// verify Lookup of addr returns 0
-	index, err := atab.Lookup(context, st, addr)
+	index, err := atab.Lookup(context, evm, addr)
 	Require(t, err)
 	if (!index.IsInt64()) || (index.Int64() != 0) {
 		t.Fatal()
 	}
 
 	// verify Lookup of nonexistent address returns error
-	_, shouldErr := atab.Lookup(context, st, common.Address{})
+	_, shouldErr := atab.Lookup(context, evm, common.Address{})
 	if shouldErr == nil {
 		t.Fatal()
 	}
 
 	// verify LookupIndex of 0 returns addr
-	addr2, err := atab.LookupIndex(context, st, big.NewInt(0))
+	addr2, err := atab.LookupIndex(context, evm, big.NewInt(0))
 	Require(t, err)
 	if addr2 != addr {
 		t.Fatal()
 	}
 
 	// verify LookupIndex of 1 returns error
-	_, shouldErr = atab.LookupIndex(context, st, big.NewInt(1))
+	_, shouldErr = atab.LookupIndex(context, evm, big.NewInt(1))
 	if shouldErr == nil {
 		t.Fatal()
 	}
 }
 
 func TestAddressTableCompressNotInTable(t *testing.T) {
-	st := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
-	context := testContext(common.Address{})
+	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// verify that compressing addr produces the 21-byte format
-	res, err := atab.Compress(context, st, addr)
+	res, err := atab.Compress(context, evm, addr)
 	Require(t, err)
 	if len(res) != 21 {
 		t.Fatal()
@@ -105,7 +105,7 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 	}
 
 	// verify that decompressing res consumes 21 bytes and returns the original addr
-	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(0))
+	dec, nbytes, err := atab.Decompress(context, evm, res, big.NewInt(0))
 	Require(t, err)
 	if (!nbytes.IsInt64()) || (nbytes.Int64() != 21) {
 		t.Fatal()
@@ -116,19 +116,19 @@ func TestAddressTableCompressNotInTable(t *testing.T) {
 }
 
 func TestAddressTableCompressInTable(t *testing.T) {
-	st := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting(t)
 	atab := ArbAddressTable{}
-	context := testContext(common.Address{})
+	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// Register addr
-	if _, err := atab.Register(context, st, addr); err != nil {
+	if _, err := atab.Register(context, evm, addr); err != nil {
 		t.Fatal(err)
 	}
 
 	// verify that compressing addr yields the <= 9 byte format
-	res, err := atab.Compress(context, st, addr)
+	res, err := atab.Compress(context, evm, addr)
 	Require(t, err)
 	if len(res) > 9 {
 		Fail(t, len(res))
@@ -139,7 +139,7 @@ func TestAddressTableCompressInTable(t *testing.T) {
 	res = append(res, 33)
 
 	// verify that decompressing res consumes all but two bytes of res and produces addr
-	dec, nbytes, err := atab.Decompress(context, st, res, big.NewInt(1))
+	dec, nbytes, err := atab.Decompress(context, evm, res, big.NewInt(1))
 	Require(t, err)
 	if (!nbytes.IsInt64()) || (nbytes.Int64()+2 != int64(len(res))) {
 		Fail(t)

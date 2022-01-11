@@ -19,15 +19,18 @@ const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
 
 func (state *ArbosState) AddToGasPools(gas int64) {
-	state.SetGasPool(util.SaturatingAdd(state.GasPool(), gas))
-	state.SetSmallGasPool(util.SaturatingAdd(state.SmallGasPool(), gas))
+	gasPool, _ := state.GasPool()
+	smallGasPool, _ := state.SmallGasPool()
+	state.Restrict(state.SetGasPool(util.SaturatingAdd(gasPool, gas)))
+	state.Restrict(state.SetSmallGasPool(util.SaturatingAdd(smallGasPool, gas)))
 }
 
 func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
-	gasPool := state.GasPool()
-	smallGasPool := state.SmallGasPool()
-	price := state.GasPriceWei()
-	maxPrice := state.MaxGasPriceWei()
+	gasPool, _ := state.GasPool()
+	smallGasPool, _ := state.SmallGasPool()
+	price, _ := state.GasPriceWei()
+	maxPrice, err := state.MaxGasPriceWei()
+	state.Restrict(err)
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -42,9 +45,9 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
 				// price is already at the minimum, so no need to iterate further
-				state.SetGasPool(GasPoolMax)
-				state.SetSmallGasPool(SmallGasPoolMax)
-				state.SetGasPriceWei(minPrice)
+				_ = state.SetGasPool(GasPoolMax)
+				_ = state.SetSmallGasPool(SmallGasPoolMax)
+				_ = state.SetGasPriceWei(minPrice)
 				return
 			} else {
 				if secondsLeft >= 83 {
@@ -104,19 +107,19 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 		)
 		price = maxPrice
 	}
-	state.SetGasPool(gasPool)
-	state.SetSmallGasPool(smallGasPool)
-	state.SetGasPriceWei(price)
+	state.Restrict(state.SetGasPool(gasPool))
+	state.Restrict(state.SetSmallGasPool(smallGasPool))
+	state.Restrict(state.SetGasPriceWei(price))
 }
 
-func (state *ArbosState) CurrentPerBlockGasLimit() uint64 {
-	pool := state.GasPool()
-	if pool < 0 {
-		return 0
+func (state *ArbosState) CurrentPerBlockGasLimit() (uint64, error) {
+	pool, err := state.GasPool()
+	if pool < 0 || err != nil {
+		return 0, err
 	} else if pool > int64(PerBlockGasLimit) {
-		return PerBlockGasLimit
+		return PerBlockGasLimit, nil
 	} else {
-		return uint64(pool)
+		return uint64(pool), nil
 	}
 }
 

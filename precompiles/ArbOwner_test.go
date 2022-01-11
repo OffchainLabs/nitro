@@ -5,8 +5,10 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"testing"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -16,14 +18,16 @@ import (
 func TestAddressSet(t *testing.T) {
 	evm := newMockEVMForTesting(t)
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	arbosState.OpenArbosState(evm.StateDB).ChainOwners().Add(caller)
+	state, err := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	Require(t, err)
+	Require(t, state.ChainOwners().Add(caller))
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
 	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
 	addr3 := common.BytesToAddress(crypto.Keccak256([]byte{3})[:20])
 
 	prec := &ArbOwner{}
-	callCtx := testContext(caller)
+	callCtx := testContext(caller, evm)
 
 	// the zero address is an owner by default
 	ZeroAddressL2 := util.RemapL1Address(common.Address{})
