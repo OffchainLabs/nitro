@@ -35,7 +35,9 @@ func TestOutboxProofs(t *testing.T) {
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 	arbSysAddress := common.HexToAddress("0x64")
 
-	_, _, client, auth := CreateTestL2(t, ctx)
+	l2info, _, client := CreateTestL2(t, ctx)
+	auth := l2info.GetDefaultTransactOpts("Owner")
+
 	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
 	Require(t, err)
 
@@ -60,7 +62,7 @@ func TestOutboxProofs(t *testing.T) {
 	for i := int64(0); i < txnCount; i++ {
 		auth.Value = big.NewInt(i * 1000000000)
 		auth.Nonce = big.NewInt(i + 1)
-		tx, err := arbSys.WithdrawEth(auth, common.Address{})
+		tx, err := arbSys.WithdrawEth(&auth, common.Address{})
 		Require(t, err, "ArbSys failed")
 		txns = append(txns, tx.Hash())
 
