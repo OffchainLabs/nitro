@@ -28,10 +28,6 @@ jobs:
           sudo apt-get update && sudo apt-get install -y \
             build-essential cmake nodejs ethereum lld-10 golang-go libudev-dev
           sudo ln -s /usr/bin/wasm-ld-10 /usr/local/bin/wasm-ld
-          echo LLVM_PROFILE_FILE="your_name-%p-%m.profraw" >> $GITHUB_ENV
-          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
-          echo RUSTFLAGS="-Zinstrument-coverage" >> $GITHUB_ENV
-          echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
 
       - name: Install rust nightly
         uses: actions-rs/toolchain@v1
@@ -87,6 +83,18 @@ jobs:
       - name: Add wabt to path
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
+      - name: Make arbitrator libraries
+        run: |
+          echo LIB="arbitrator/target/env/lib"
+          make -j $LIB/wasi_stub.wasm $LIB/soft-float.wasm $LIB/go_stub.wasm $LIB/host_io.wasm
+
+      - name: Enable rust instrumentation
+        run: |
+          echo LLVM_PROFILE_FILE="your_name-%p-%m.profraw" >> $GITHUB_ENV
+          echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+          echo RUSTFLAGS="-Zinstrument-coverage" >> $GITHUB_ENV
+          echo RUSTDOCFLAGS="-Cpanic=abort" >> $GITHUB_ENV
+        
       - name: Run rust tests
         uses: actions-rs/cargo@v1
         with:
