@@ -93,6 +93,9 @@ jobs:
           command: test
           args: --all --manifest-path arbitrator/Cargo.toml
 
+      - name: Make proofs from test cases
+        run: make -j test-gen-proofs
+
       - name: Create code-coverage files
         run: |
           grcov . --binary-path arbitrator/target/release/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
@@ -101,6 +104,6 @@ jobs:
         uses: codecov/codecov-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info,./lcov-mini.info
+          files: ./lcov.info
           fail_ci_if_error: true
           verbose: false
