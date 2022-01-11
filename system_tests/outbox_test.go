@@ -62,7 +62,6 @@ func TestOutboxProofs(t *testing.T) {
 	for i := int64(0); i < txnCount; i++ {
 		auth.Value = big.NewInt(i * 1000000000)
 		auth.Nonce = big.NewInt(i + 1)
-		auth.GasLimit = 100_000
 		tx, err := arbSys.WithdrawEth(&auth, common.Address{})
 		Require(t, err, "ArbSys failed")
 		txns = append(txns, tx.Hash())

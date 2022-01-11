@@ -49,7 +49,6 @@ func TestEstimate(t *testing.T) {
 	l2info, _, client := CreateTestL2(t, ctx)
 	auth := l2info.GetDefaultTransactOpts("Owner")
 	precompileAuth := l2info.GetDefaultTransactOpts("Owner")
-	precompileAuth.GasLimit = 100_000
 
 	gasPrice := big.NewInt(2 * params.GWei)
 

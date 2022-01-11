@@ -209,7 +209,6 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbno
 	client := l2info.Client
 	debugAuth := l2info.GetDefaultTransactOpts("Owner")
 
-	debugAuth.GasLimit = 100_000
 	// make auth a chain owner
 	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
 	Require(t, err, "failed to deploy ArbDebug")
