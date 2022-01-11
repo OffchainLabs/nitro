@@ -20,12 +20,12 @@ type ArbRetryableTx struct {
 	Address                 addr
 	TicketCreated           func(mech, [32]byte)
 	LifetimeExtended        func(mech, [32]byte, huge)
-	RedeemScheduled         func(mech, [32]byte, [32]byte, uint64, uint64, addr)
+	RedeemScheduled         func(mech, [32]byte, [32]byte, uint64, uint64, addr, [32]byte)
 	Redeemed                func(mech, [32]byte)
 	Canceled                func(mech, [32]byte)
 	TicketCreatedGasCost    func([32]byte) uint64
 	LifetimeExtendedGasCost func([32]byte, huge) uint64
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) uint64
+	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, [32]byte) uint64
 	RedeemedGasCost         func([32]byte) uint64
 	CanceledGasCost         func([32]byte) uint64
 }
@@ -112,8 +112,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, e
 }
 
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, error) {
-
-	eventCost := con.RedeemScheduledGasCost(ticketId, ticketId, 0, 0, c.caller)
+	eventCost := con.RedeemScheduledGasCost(ticketId, ticketId, 0, 0, c.caller, common.Hash{})
 	if err := c.burn(5*params.SloadGas + params.SstoreSetGas + eventCost); err != nil {
 		return common.Hash{}, err
 	}
@@ -129,15 +128,32 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return common.Hash{}, NotFoundError
 	}
 	sequenceNum := retryable.IncrementNumTries()
-	redeemTxId := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
-	con.RedeemScheduled(evm, ticketId, redeemTxId, sequenceNum, c.gasLeft, c.caller)
+	attemptUniquifier := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
 
-	// now donate all of the remaining gas to the retry
+	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
+	//     by that much, so that we'll donate the correct amount of gas
+	gasToDonate := c.gasLeft - eventCost
+	if gasToDonate < params.TxGas {
+		return common.Hash{}, errors.New("Not enough gas to redeem retryable")
+	}
+
+	retryTxHash := retryable.MakeTx(
+		evm.ChainConfig().ChainID,
+		attemptUniquifier,
+		evm.GasPrice,
+		gasToDonate,
+		ticketId,
+		c.caller,
+	).Hash()
+
+	con.RedeemScheduled(evm, ticketId, attemptUniquifier, sequenceNum, gasToDonate, c.caller, retryTxHash)
+
+	// now donate the remaining gas to the retry
 	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
 	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
-	if err := c.burn(c.gasLeft); err != nil {
+	if err := c.burn(gasToDonate); err != nil {
 		return common.Hash{}, err
 	}
 
-	return redeemTxId, nil
+	return attemptUniquifier, nil
 }
