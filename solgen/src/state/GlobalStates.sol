@@ -14,6 +14,7 @@ library GlobalStates {
 		return keccak256(abi.encodePacked(
 			"Global state:",
 			state.bytes32_vals[0],
+			state.bytes32_vals[1],
 			state.u64_vals[0],
 			state.u64_vals[1]
 		));
