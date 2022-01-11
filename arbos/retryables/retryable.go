@@ -286,19 +286,35 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 	return nil
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, requestId common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) *types.Transaction {
-	return types.NewTx(&types.ArbitrumRetryTx{
+func (retryable *Retryable) MakeTx(chainId *big.Int, requestId common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+	from, err := retryable.From()
+	if err != nil {
+		return nil, err
+	}
+	to, err := retryable.To()
+	if err != nil {
+		return nil, err
+	}
+	callvalue, err := retryable.Callvalue()
+	if err != nil {
+		return nil, err
+	}
+	calldata, err := retryable.Calldata()
+	if err != nil {
+		return nil, err
+	}
+	return &types.ArbitrumRetryTx{
 		ArbitrumContractTx: types.ArbitrumContractTx{
 			ChainId:   chainId,
 			RequestId: requestId,
-			From:      retryable.From(),
+			From:      from,
 			GasPrice:  gasPrice,
 			Gas:       gas,
-			To:        retryable.To(),
-			Value:     retryable.Callvalue(),
-			Data:      retryable.Calldata(),
+			To:        to,
+			Value:     callvalue,
+			Data:      calldata,
 		},
 		TicketId: ticketId,
 		RefundTo: refundTo,
-	})
+	}, nil
 }

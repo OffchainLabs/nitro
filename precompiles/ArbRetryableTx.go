@@ -6,6 +6,7 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -149,22 +150,34 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	}
 	attemptUniquifier := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
 
+	retryTxInner, err := retryable.MakeTx(
+		evm.ChainConfig().ChainID,
+		attemptUniquifier,
+		evm.GasPrice,
+		0, // will fill this in below
+		ticketId,
+		c.caller,
+	)
+
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
 	eventCost := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, hash{})
+	if c.gasLeft < eventCost {
+		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
+	}
 	gasToDonate := c.gasLeft - eventCost
 	if gasToDonate < params.TxGas {
 		return hash{}, errors.New("Not enough gas to redeem retryable")
 	}
 
-	retryTxHash := retryable.MakeTx(
-		evm.ChainConfig().ChainID,
-		attemptUniquifier,
-		evm.GasPrice,
-		gasToDonate,
-		ticketId,
-		c.caller,
-	).Hash()
+	// fix up the gas in the retry
+	retryTxInner.Gas = gasToDonate
+
+	retryTx := types.NewTx(retryTxInner)
+	if err != nil {
+		return hash{}, err
+	}
+	retryTxHash := retryTx.Hash()
 
 	err = con.RedeemScheduled(c, evm, ticketId, attemptUniquifier, sequenceNum, c.gasLeft, c.caller, retryTxHash)
 	if err != nil {
@@ -175,7 +188,6 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
 	if err := c.Burn(gasToDonate); err != nil {
 		return hash{}, err
-
 	}
 
 	return retryTxHash, nil

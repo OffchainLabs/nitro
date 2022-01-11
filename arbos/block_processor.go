@@ -207,7 +207,7 @@ func ProduceBlock(
 				ticketId := txLog.Topics[1]
 				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
 
-				redeem := retryable.MakeTx(
+				redeem, _ := retryable.MakeTx(
 					chainConfig.ChainID,
 					txLog.Topics[2],
 					gasPrice,
@@ -215,7 +215,7 @@ func ProduceBlock(
 					ticketId,
 					common.BytesToAddress(txLog.Data[64:96]),
 				)
-				redeems = append(redeems, redeem)
+				redeems = append(redeems, types.NewTx(redeem))
 			}
 		}
 

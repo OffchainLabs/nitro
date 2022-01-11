@@ -155,7 +155,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	arbRetryableAddress := common.BigToAddress(big.NewInt(0x6e))
 	txData := &types.DynamicFeeTx{
 		To:        &arbRetryableAddress,
-		Gas:       100001,
+		Gas:       1000001,
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     big.NewInt(0),
 		Nonce:     0,
