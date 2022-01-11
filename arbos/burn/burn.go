@@ -7,6 +7,8 @@ package burn
 import (
 	"errors"
 	"log"
+
+	glog "github.com/ethereum/go-ethereum/log"
 )
 
 type Burner interface {
@@ -28,7 +30,7 @@ func (burner *SystemBurner) Burned() uint64 {
 }
 
 func (burner *SystemBurner) Restrict(err error) {
-	// A system burner
+	glog.Error("Restrict() received an error", "err", err)
 }
 
 type SafetyBurner struct {
