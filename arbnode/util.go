@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -48,11 +49,17 @@ func EnsureTxSucceeded(ctx context.Context, client L1Interface, tx *types.Transa
 	return EnsureTxSucceededWithTimeout(ctx, client, tx, time.Second)
 }
 
-func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int) ([]byte, error) {
+func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
+	var gas uint64
+	if unlimitedGas {
+		gas = 0
+	} else {
+		gas = tx.Gas()
+	}
 	callMsg := ethereum.CallMsg{
 		From:       from,
 		To:         tx.To(),
-		Gas:        tx.Gas(),
+		Gas:        gas,
 		GasPrice:   tx.GasPrice(),
 		GasFeeCap:  tx.GasFeeCap(),
 		GasTipCap:  tx.GasTipCap(),
@@ -77,11 +84,15 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 		if err != nil {
 			return txRes, fmt.Errorf("TransactionSender got: %w", err)
 		}
-		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber)
-		if err != nil {
-			return txRes, fmt.Errorf("SendTxAsCall got: %w", err)
+		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
+		if err == nil {
+			return txRes, errors.New("tx failed but call succeeded")
 		}
-		return txRes, errors.New("tx failed but call succeeded")
+		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
+		if err == nil {
+			return txRes, core.ErrGasLimitReached
+		}
+		return txRes, fmt.Errorf("SendTxAsCall got: %w", err)
 	}
 	return txRes, nil
 }

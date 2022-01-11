@@ -195,11 +195,11 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *bind.TransactOpts) {
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *bind.TransactOpts) {
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
@@ -207,19 +207,19 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbno
 	l2info.Client = ClientForArbBackend(t, node.Backend)
 
 	client := l2info.Client
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	debugAuth := l2info.GetDefaultTransactOpts("Owner")
 
 	// make auth a chain owner
 	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
 	Require(t, err, "failed to deploy ArbDebug")
 
-	tx, err := arbdebug.BecomeChainOwner(&auth)
+	tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 	Require(t, err, "failed to deploy ArbDebug")
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	return l2info, node, client, &auth
+	return l2info, node, client
 }
 
 func Require(t *testing.T, err error, text ...string) {
