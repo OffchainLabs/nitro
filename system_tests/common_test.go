@@ -167,6 +167,11 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	conf := arbnode.NodeConfigL1Test
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
+}
+
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
 	addresses := DeployOnTestL1(t, ctx, l1info)
@@ -176,11 +181,11 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
-	conf := arbnode.NodeConfigL1Test
 	if !isSequencer {
-		conf.BatchPoster = false
+		nodeConfig.BatchPoster = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, &conf, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+
 	Require(t, err)
 	Require(t, node.Start(ctx))
 
@@ -189,12 +194,14 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(
-	t *testing.T,
-	ctx context.Context,
-) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+// Requires precompiles.AllowDebugPrecompiles = true
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
+}
+
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
-	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	l2info.Client = ClientForArbBackend(t, node.Backend)
@@ -224,4 +231,32 @@ func Require(t *testing.T, err error, text ...string) {
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
+	nodeConf := arbnode.NodeConfigL1Test
+	nodeConf.BatchPoster = false
+	nodeConf.BlockValidator = blockValidator
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, &nodeConf)
+}
+
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+	l1rpcClient, err := l1stack.Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l1client := ethclient.NewClient(l1rpcClient)
+	l2stack, err := arbnode.CreateDefaultStack()
+	Require(t, err)
+
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
+	Require(t, err)
+
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	Require(t, err)
+
+	err = node.Start(ctx)
+	Require(t, err)
+	l2client := ClientForArbBackend(t, node.Backend)
+	return l2client, node
 }

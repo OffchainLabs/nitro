@@ -24,8 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -103,10 +106,14 @@ type NodeConfig struct {
 	ForwardingTarget       string // "" if not forwarding
 	BlockValidator         bool
 	BlockValidatorConfig   validator.BlockValidatorConfig
+	Broadcaster            bool
+	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
+	BroadcastClient        bool
+	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -120,10 +127,17 @@ type Node struct {
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
 	BlockValidator   *validator.BlockValidator
+	BroadcastServer  *broadcaster.Broadcaster
+	BroadcastClient  *broadcastclient.BroadcastClient
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
-	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain)
+	var broadcastServer *broadcaster.Broadcaster
+	if config.Broadcaster {
+		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
+	}
+
+	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
 	}
@@ -149,9 +163,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-
+	var broadcastClient *broadcastclient.BroadcastClient
+	if config.BroadcastClient {
+		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
+	}
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient}, nil
 	}
 
 	if deployInfo == nil {
@@ -180,7 +197,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, broadcastServer, broadcastClient}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -194,7 +211,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, broadcastServer, broadcastClient}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -212,7 +229,6 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
-
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return err
@@ -232,6 +248,15 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+	}
+	if n.BroadcastServer != nil {
+		err = n.BroadcastServer.Start(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	if n.BroadcastClient != nil {
+		n.BroadcastClient.Start(ctx)
 	}
 	return nil
 }
