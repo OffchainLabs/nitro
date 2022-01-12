@@ -183,7 +183,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	retryTx := types.NewTx(retryTxInner)
 	retryTxHash := retryTx.Hash()
 
-	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, sequenceNum, c.gasLeft, c.caller, attemptUniquifier)
+	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, sequenceNum, gasToDonate, c.caller, attemptUniquifier)
 	if err != nil {
 		return hash{}, err
 	}
