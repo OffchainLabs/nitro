@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 
 	"github.com/pkg/errors"
@@ -191,9 +192,11 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	var sendRoot common.Hash
-	copy(sendRoot[:], header.Extra) // Assumes the send root is stored in the header Extra field
-	return GoGlobalState{header.Hash(), sendRoot, batch, msgCount - batchMsgCount}, nil
+	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return GoGlobalState{}, err
+	}
+	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, msgCount - batchMsgCount}, nil
 }
 
 const STATUS_FINISHED uint8 = 1

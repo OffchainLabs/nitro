@@ -259,6 +259,25 @@ func ProduceBlock(
 	return block, receipts
 }
 
+type HeaderExtraInformation struct {
+	SendRoot common.Hash
+}
+
+func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
+	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
+		// The genesis block doesn't have an ArbOS encoded extra field
+		return HeaderExtraInformation{}, nil
+	}
+	if len(header.Extra) != 32 {
+		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
+	}
+	var sendRoot common.Hash
+	copy(sendRoot[:], header.Extra)
+	return HeaderExtraInformation{
+		SendRoot: sendRoot,
+	}, nil
+}
+
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
 		state := arbosState.OpenArbosState(statedb)
@@ -269,7 +288,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
-		// other code depends on the send root being in the extra field, and will need changed too if this is changed
+		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed
 		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
 	}
 }

@@ -115,6 +115,7 @@ type validationEntry struct {
 	PrevBlockHash common.Hash
 	BlockHash     common.Hash
 	SendRoot      common.Hash
+	PrevSendRoot  common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
 	HasDelayedMsg bool
@@ -123,19 +124,26 @@ type validationEntry struct {
 	Valid         uint32 // Atomic, either 0 or 1
 }
 
-func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
-	var sendRoot common.Hash
-	copy(sendRoot[:], header.Extra) // Assumes the send root is stored in the header Extra field
+func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
+	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, err
+	}
+	prevExtraInfo, err := arbos.DeserializeHeaderExtraInformation(prevHeader)
+	if err != nil {
+		return nil, err
+	}
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
-		SendRoot:      sendRoot,
+		SendRoot:      extraInfo.SendRoot,
+		PrevSendRoot:  prevExtraInfo.SendRoot,
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
-	}
+	}, nil
 }
 
 func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
@@ -206,10 +214,16 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
-		log.Error("failed to set up validation", "err", err, "header", header)
+		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
+		return
 	}
 	hashlist := v.preimageCache.PourToCache(preimages)
-	v.validationEntries.Store(header.Number.Uint64(), newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist))
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, hashlist)
+	if err != nil {
+		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
+		return
+	}
+	v.validationEntries.Store(header.Number.Uint64(), validationEntry)
 	v.sendValidationsChan <- struct{}{}
 }
 
