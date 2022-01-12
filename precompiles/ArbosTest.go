@@ -17,7 +17,7 @@ func (con ArbosTest) BurnArbGas(c ctx, evm mech, gasAmount huge) error {
 		return errors.New("Not a uint64")
 	}
 	//nolint:errcheck
-	c.burn(gasAmount.Uint64()) // burn the amount, even if it's more than the user has
+	c.Burn(gasAmount.Uint64()) // burn the amount, even if it's more than the user has
 	return nil
 }
 

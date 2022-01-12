@@ -53,9 +53,9 @@ func TestEstimate(t *testing.T) {
 	gasPrice := big.NewInt(2 * params.GWei)
 
 	// set the gas price
-	arbowner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err := arbowner.SetL2GasPrice(&precompileAuth, gasPrice)
+	tx, err := arbOwner.SetL2GasPrice(&precompileAuth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
