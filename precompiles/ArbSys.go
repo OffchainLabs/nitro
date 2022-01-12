@@ -51,8 +51,7 @@ func (con *ArbSys) GetTransactionCount(c ctx, evm mech, account addr) (huge, err
 }
 
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	// need to modify EVM to add a getter for its depth field
-	return false, errors.New("unimplemented")
+	return evm.Depth() <= 1, nil
 }
 
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
