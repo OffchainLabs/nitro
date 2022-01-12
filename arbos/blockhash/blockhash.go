@@ -5,6 +5,7 @@
 package blockhash
 
 import (
+	"encoding/binary"
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -48,18 +49,19 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		// we already have a stored hash for the block, so just return
 		return nil
 	}
+	lastHash, err := bh.backingStorage.GetByUint64(1 + ((nextNumber + 255) % 256))
+	if err != nil {
+		return err
+	}
 	if nextNumber+256 < number {
 		nextNumber = number - 256 // no need to record hashes that we're just going to discard
 	}
 	for nextNumber+1 < number {
 		// fill in hashes for any "skipped over" blocks
-		oldHash, err := bh.backingStorage.GetByUint64(1 + (nextNumber % 256))
-		if err != nil {
-			return err
-		}
-		newHash := crypto.Keccak256(oldHash.Bytes())
 		nextNumber++
-		err = bh.backingStorage.SetByUint64(1+(nextNumber%256), common.BytesToHash(newHash))
+		var nextNumBuf [8]byte
+		binary.LittleEndian.Uint64(nextNumBuf[:])
+		err = bh.backingStorage.SetByUint64(1+(nextNumber%256), common.BytesToHash(crypto.Keccak256(lastHash.Bytes(), nextNumBuf[:])))
 		if err != nil {
 			return err
 		}
