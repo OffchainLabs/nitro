@@ -5,8 +5,10 @@
 package arbosState
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
@@ -39,14 +41,21 @@ type ArbosState struct {
 	sendMerkle       *merkleAccumulator.MerkleAccumulator
 	timestamp        storage.StorageBackedUint64
 	backingStorage   *storage.Storage
+	Burner           burn.Burner
 }
 
-func OpenArbosState(stateDB vm.StateDB) *ArbosState {
-	backingStorage := storage.NewGeth(stateDB)
-	initializeStorageIfNecessary(backingStorage)
-
+func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
+	backingStorage := storage.NewGeth(stateDB, burner)
+	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		return nil, err
+	}
+	if arbosVersion == 0 {
+		// we found a zero at storage location 0, so storage hasn't been initialized yet
+		initializeStorage(backingStorage)
+	}
 	return &ArbosState{
-		backingStorage.GetByUint64(uint64(versionOffset)).Big().Uint64(),
+		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
@@ -60,7 +69,14 @@ func OpenArbosState(stateDB vm.StateDB) *ArbosState {
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		backingStorage,
-	}
+		burner,
+	}, nil
+}
+
+func OpenSystemArbosState(stateDB vm.StateDB) *ArbosState {
+	state, err := OpenArbosState(stateDB, &burn.SystemBurner{})
+	state.Restrict(err)
+	return state
 }
 
 type ArbosStateOffset uint64
@@ -89,35 +105,35 @@ var (
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
-func initializeStorageIfNecessary(backingStorage *storage.Storage) {
-	if backingStorage.GetByUint64(uint64(versionOffset)) == (common.Hash{}) {
-		// we found a zero at storage location 0, so storage hasn't been initialized yet
-		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
-		backingStorage.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
-		backingStorage.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-		backingStorage.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
-		backingStorage.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
-		backingStorage.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
-		backingStorage.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
-		backingStorage.SetUint64ByUint64(uint64(timestampOffset), 0)
-		l1pricing.InitializeL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace))
-		retryables.InitializeRetryableState(backingStorage.OpenSubStorage(retryablesSubspace))
-		addressTable.Initialize(backingStorage.OpenSubStorage(addressTableSubspace))
-		merkleAccumulator.InitializeMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace))
+func initializeStorage(backingStorage *storage.Storage) {
+	sto := backingStorage
+	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
+	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
+	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
+	_ = sto.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
+	_ = sto.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
+	_ = sto.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
+	_ = sto.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
+	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
+	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
+	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
+	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
+	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 
-		// the zero address is the initial chain owner
-		ZeroAddressL2 := util.RemapL1Address(common.Address{})
-		ownersStorage := backingStorage.OpenSubStorage(chainOwnerSubspace)
-		addressSet.Initialize(ownersStorage)
-		addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+	// the zero address is the initial chain owner
+	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
+	_ = addressSet.Initialize(ownersStorage)
+	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
-		backingStorage.SetUint64ByUint64(uint64(versionOffset), 1)
-	}
+	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
-	upgradeTo := state.upgradeVersion.Get()
-	if upgradeTo > state.arbosVersion && currentTimestamp >= state.upgradeTimestamp.Get() {
+	upgradeTo, err := state.upgradeVersion.Get()
+	state.Restrict(err)
+	flagday, _ := state.upgradeTimestamp.Get()
+	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		// code to upgrade to future versions will be put here
 		// for now, no upgrades are enabled
 		panic("Unable to perform requested ArbOS upgrade")
@@ -128,45 +144,49 @@ func (state *ArbosState) BackingStorage() *storage.Storage {
 	return state.backingStorage
 }
 
+func (state *ArbosState) Restrict(err error) {
+	state.Burner.Restrict(err)
+}
+
 func (state *ArbosState) FormatVersion() uint64 {
 	return state.arbosVersion
 }
 
 func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.arbosVersion = val
-	state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val)
+	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val))
 }
 
-func (state *ArbosState) GasPool() int64 {
+func (state *ArbosState) GasPool() (int64, error) {
 	return state.gasPool.Get()
 }
 
-func (state *ArbosState) SetGasPool(val int64) {
-	state.gasPool.Set(val)
+func (state *ArbosState) SetGasPool(val int64) error {
+	return state.gasPool.Set(val)
 }
 
-func (state *ArbosState) SmallGasPool() int64 {
+func (state *ArbosState) SmallGasPool() (int64, error) {
 	return state.smallGasPool.Get()
 }
 
-func (state *ArbosState) SetSmallGasPool(val int64) {
-	state.smallGasPool.Set(val)
+func (state *ArbosState) SetSmallGasPool(val int64) error {
+	return state.smallGasPool.Set(val)
 }
 
-func (state *ArbosState) GasPriceWei() *big.Int {
+func (state *ArbosState) GasPriceWei() (*big.Int, error) {
 	return state.gasPriceWei.Get()
 }
 
-func (state *ArbosState) SetGasPriceWei(val *big.Int) {
-	state.gasPriceWei.Set(val)
+func (state *ArbosState) SetGasPriceWei(val *big.Int) error {
+	return state.gasPriceWei.Set(val)
 }
 
-func (state *ArbosState) MaxGasPriceWei() *big.Int { // the max gas price ArbOS can set without breaking geth
+func (state *ArbosState) MaxGasPriceWei() (*big.Int, error) { // the max gas price ArbOS can set without breaking geth
 	return state.maxGasPriceWei.Get()
 }
 
 func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
-	state.maxGasPriceWei.Set(val)
+	state.Restrict(state.maxGasPriceWei.Set(val))
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
@@ -204,18 +224,19 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 	return state.sendMerkle
 }
 
-func (state *ArbosState) LastTimestampSeen() uint64 {
+func (state *ArbosState) LastTimestampSeen() (uint64, error) {
 	return state.timestamp.Get()
 }
 
 func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	ts := state.timestamp.Get()
+	ts, err := state.timestamp.Get()
+	state.Restrict(err)
 	if val < ts {
 		panic("timestamp decreased")
 	}
 	if val > ts {
 		delta := val - ts
-		state.timestamp.Set(val)
+		state.Restrict(state.timestamp.Set(val))
 		state.NotifyGasPricerThatTimeElapsed(delta)
 	}
 }
