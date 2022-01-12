@@ -343,7 +343,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  validationEntry.PrevBlockHash,
-		SendRoot:   common.Hash{}, // Assumes the replay binary never reads the send root
+		SendRoot:   validationEntry.PrevSendRoot,
 	}
 
 	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
