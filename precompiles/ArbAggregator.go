@@ -42,7 +42,25 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFe
 }
 
 func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) error {
-	return c.state.L1PricingState().SetDefaultAggregator(newDefault)
+	l1State := c.state.L1PricingState()
+	defaultAgg, err := l1State.DefaultAggregator()
+	if err != nil {
+		return err
+	}
+	collector, err := l1State.AggregatorFeeCollector(defaultAgg)
+	if err != nil {
+		return err
+	}
+	if (c.caller != defaultAgg) || (c.caller != collector) {
+		member, err := c.state.ChainOwners().IsMember(c.caller)
+		if err != nil {
+			return err
+		}
+		if !member {
+			return errors.New("Only chain owners and the current default aggregator may use this method")
+		}
+	}
+	return l1State.SetDefaultAggregator(newDefault)
 }
 
 func (con ArbAggregator) SetPreferredAggregator(c ctx, evm mech, prefAgg addr) error {
@@ -50,5 +68,14 @@ func (con ArbAggregator) SetPreferredAggregator(c ctx, evm mech, prefAgg addr) e
 }
 
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
+	if c.caller != aggregator {
+		member, err := c.state.ChainOwners().IsMember(c.caller)
+		if err != nil {
+			return err
+		}
+		if !member {
+			return errors.New("Only an aggregator (or a chain owner) may change its fixed fee")
+		}
+	}
 	return c.state.L1PricingState().SetFixedChargeForAggregatorL1Gas(aggregator, feeInL1Gas)
 }

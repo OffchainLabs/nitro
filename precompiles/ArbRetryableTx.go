@@ -21,11 +21,11 @@ type ArbRetryableTx struct {
 	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr, [32]byte) error
 	Redeemed                func(ctx, mech, [32]byte) error
 	Canceled                func(ctx, mech, [32]byte) error
-	TicketCreatedGasCost    func([32]byte) uint64
-	LifetimeExtendedGasCost func([32]byte, huge) uint64
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, [32]byte) uint64
-	RedeemedGasCost         func([32]byte) uint64
-	CanceledGasCost         func([32]byte) uint64
+	TicketCreatedGasCost    func([32]byte) (uint64, error)
+	LifetimeExtendedGasCost func([32]byte, huge) (uint64, error)
+	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, [32]byte) (uint64, error)
+	RedeemedGasCost         func([32]byte) (uint64, error)
+	CanceledGasCost         func([32]byte) (uint64, error)
 }
 
 var NotFoundError = errors.New("ticketId not found")
@@ -164,11 +164,15 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
-	eventCost := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, hash{})
-	if c.gasLeft < eventCost {
+	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, hash{})
+	if err != nil {
+		return hash{}, err
+	}
+	gasCostToReturnResult := 32 * params.CopyGas
+	if c.gasLeft < eventCost+gasCostToReturnResult {
 		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
 	}
-	gasToDonate := c.gasLeft - eventCost
+	gasToDonate := c.gasLeft - (eventCost + gasCostToReturnResult)
 	if gasToDonate < params.TxGas {
 		return hash{}, errors.New("Not enough gas to redeem retryable")
 	}
@@ -184,12 +188,11 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return hash{}, err
 	}
 
-	// now donate the remaining gas to the retry
-	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
-	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
+	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
+	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
+	// We burn as much gas as we can, leaving only enough to pay for copying out the return data.
 	if err := c.Burn(gasToDonate); err != nil {
 		return hash{}, err
 	}
-
 	return retryTxHash, nil
 }

@@ -213,12 +213,9 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
-	deployerTxOpts.GasLimit = 15_000_000
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
-	asserterTxOpts.GasLimit = 15_000_000
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger")
-	challengerTxOpts.GasLimit = 15_000_000
 	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, backend)
 	if err != nil {
 		t.Fatal(err)
@@ -325,32 +322,32 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	for i := 0; i < 100; i++ {
 		var tx *types.Transaction
 		var currentCorrect bool
+		// Gas cost is slightly reduced if done in the same timestamp or block as previous call.
+		// This might make gas estimation undersestimate next move.
+		// Invoke a new L1 block, with a new timestamp, before estimating.
+		time.Sleep(time.Second)
+		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
+			l1Info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+		})
+
 		if i%2 == 0 {
 			currentCorrect = !asserterIsCorrect
 			tx, err = challengerManager.Act(ctx)
-			if err != nil {
-				if asserterIsCorrect && strings.Contains(err.Error(), "SAME_OSP_END") {
-					t.Log("challenge completed! challenger hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
-			}
-			if tx == nil {
-				t.Fatal("challenger didn't move")
-			}
 		} else {
 			currentCorrect = asserterIsCorrect
 			tx, err = asserterManager.Act(ctx)
-			if err != nil {
-				if !asserterIsCorrect && strings.Contains(err.Error(), "lost challenge") {
-					t.Log("challenge completed! asserter hit expected error:", err)
-					return
-				}
-				t.Fatal(err)
+		}
+		if err != nil {
+			if !currentCorrect && (strings.Contains(err.Error(), "lost challenge") ||
+				strings.Contains(err.Error(), "SAME_OSP_END") ||
+				strings.Contains(err.Error(), "BAD_SEQINBOX_MESSAGE")) {
+				t.Log("challenge completed! asserter hit expected error:", err)
+				return
 			}
-			if tx == nil {
-				t.Fatal("asserter didn't move")
-			}
+			t.Fatal(err)
+		}
+		if tx == nil {
+			t.Fatal("no move")
 		}
 		_, err = arbnode.EnsureTxSucceeded(ctx, backend, tx)
 		if err != nil {

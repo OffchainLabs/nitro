@@ -13,32 +13,32 @@ import (
 )
 
 func TestDefaultAggregator(t *testing.T) {
-	evm := newMockEVMForTesting(t)
-	agg := ArbAggregator{}
+	evm := newMockEVMForTesting()
 	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
 
 	// initial default aggregator should be zero address
-	def, err := agg.GetDefaultAggregator(context, evm)
+	def, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
 	Require(t, err)
 	if def != (common.Address{}) {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// set default aggregator to addr
-	Require(t, agg.SetDefaultAggregator(context, evm, addr))
+	Require(t, ArbDebug{}.BecomeChainOwner(context, evm))
+	Require(t, ArbAggregator{}.SetDefaultAggregator(context, evm, addr))
 
 	// default aggregator should now be addr
-	res, err := agg.GetDefaultAggregator(context, evm)
+	res, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
 	Require(t, err)
 	if res != addr {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
 func TestPreferredAggregator(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
 	userAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
@@ -49,28 +49,27 @@ func TestPreferredAggregator(t *testing.T) {
 	userCtx := testContext(userAddr, evm)
 
 	// initial preferred aggregator should be the default of zero address
-	res, isNonDefault, err := agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isNonDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
 	if isNonDefault {
-		t.Fatal()
+		Fail(t)
 	}
 	if res != (common.Address{}) {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// set default aggregator
-	if err := agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr); err != nil {
-		t.Fatal(err)
-	}
+	Require(t, ArbDebug{}.BecomeChainOwner(callerCtx, evm))
+	Require(t, agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr))
 
 	// preferred aggregator should be the new default address
 	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
 	if isNonDefault {
-		t.Fatal()
+		Fail(t)
 	}
 	if res != defaultAggAddr {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// set preferred aggregator
@@ -80,15 +79,15 @@ func TestPreferredAggregator(t *testing.T) {
 	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
 	if !isNonDefault {
-		t.Fatal()
+		Fail(t)
 	}
 	if res != prefAggAddr {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
 func TestFeeCollector(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
 	aggAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
@@ -104,7 +103,7 @@ func TestFeeCollector(t *testing.T) {
 	coll, err := agg.GetFeeCollector(callerCtx, evm, aggAddr)
 	Require(t, err)
 	if coll != aggAddr {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// set fee collector to collectorAddr
@@ -114,13 +113,13 @@ func TestFeeCollector(t *testing.T) {
 	coll, err = agg.GetFeeCollector(callerCtx, evm, aggAddr)
 	Require(t, err)
 	if coll != collectorAddr {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// trying to set someone else's collector is an error
 	shouldErr := agg.SetFeeCollector(imposterCtx, evm, aggAddr, impostorAddr)
 	if shouldErr == nil {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// but the fee collector can replace itself
@@ -128,7 +127,7 @@ func TestFeeCollector(t *testing.T) {
 }
 
 func TestTxBaseFee(t *testing.T) {
-	evm := newMockEVMForTesting(t)
+	evm := newMockEVMForTesting()
 	agg := ArbAggregator{}
 
 	aggAddr := common.BytesToAddress(crypto.Keccak256([]byte{0})[:20])
@@ -141,18 +140,18 @@ func TestTxBaseFee(t *testing.T) {
 	fee, err := agg.GetTxBaseFee(callerCtx, evm, aggAddr)
 	Require(t, err)
 	if fee.Cmp(big.NewInt(0)) != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	// set base fee to value
 	if err := agg.SetTxBaseFee(aggCtx, evm, aggAddr, targetFee); err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 
 	// base fee should now be targetFee
 	fee, err = agg.GetTxBaseFee(callerCtx, evm, aggAddr)
 	Require(t, err)
 	if fee.Cmp(targetFee) != 0 {
-		t.Fatal(fee, targetFee)
+		Fail(t, fee, targetFee)
 	}
 }
