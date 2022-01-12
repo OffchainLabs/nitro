@@ -3,6 +3,8 @@
 /replay
 /cmd/replay/replay
 /*.bin
+/cmd/run-evm/run-evm
+/run-evm
 .idea
 .vscode
 cmd/node/data
