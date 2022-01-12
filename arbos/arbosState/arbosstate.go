@@ -5,6 +5,7 @@
 package arbosState
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/blockhash"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
@@ -40,6 +41,7 @@ type ArbosState struct {
 	chainOwners      *addressSet.AddressSet
 	sendMerkle       *merkleAccumulator.MerkleAccumulator
 	timestamp        storage.StorageBackedUint64
+	blockhashes      *blockhash.Blockhashes
 	backingStorage   *storage.Storage
 	Burner           burn.Burner
 }
@@ -68,6 +70,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
+		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage,
 		burner,
 	}, nil
@@ -100,6 +103,7 @@ var (
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
 	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
 	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
+	blockhashesSubspace  ArbosStateSubspaceID = []byte{5}
 )
 
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
@@ -119,6 +123,7 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
+	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
 	// the zero address is the initial chain owner
 	ZeroAddressL2 := util.RemapL1Address(common.Address{})
