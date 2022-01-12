@@ -221,7 +221,7 @@ The Sequencer is a specially designated full node, which is given limited power 
 
 Clients interact with the Sequencer in exactly the same way they would interact with any full node, for example by giving their wallet software a network URL that happens to point to the sequencer.
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/sequencer_flow.png)
+![](NitroAssets/sequencer_flow.png)
 
 ### Instant confirmation
 
@@ -237,7 +237,7 @@ To give the Sequencer the power it needs, we add new new feature to the chain’
 
 The Sequencer can put messages, or more often batches of messages, directly into the chain’s Inbox. Non-sequencer parties can’t insert directly into the Inbox but must instead put their messages into the Delayed Inbox, a separate queue that is maintained by the L1 Inbox contract.
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/two_inboxes.png))
+![](NitroAssets/two_inboxes.png))
 
 Messages in the Delayed Inbox will wait there until they're promoted into the main Inbox queue. They can be promoted in two ways: by the Sequencer or on demand after a time delay. 
 
@@ -283,7 +283,7 @@ How to achieve this is more complicated. Research by a team at Cornell Tech, inc
 
 The diagram below shows how the two programs that implement Nitro are built.  The left compilation path builds the code used in the slower proving mode, and the right compilation path builds the node executable that is used in the common case, the faster execution mode. Because these are built from the same code, and that code is deterministic, there will be an equivalence between the two compilation products, as described in more detail below.
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/compilation.png)
+![](NitroAssets/compilation.png)
 
 Compilation starts with three bodies of code, shown at the top of the diagram. The geth core is the core of geth, which implements the Ethereum virtual machine and manages the Ethereum-compatible state tree and block format.  ArbOS is the remaining code that is needed to build Arbitrum blocks, which handles functions like L1 fee collection, cross-chain messaging, and Arbitrum-specific precompiles.  The node code is the rest of what is needed to build an Ethereum-compatible node; much of this code comes from geth.
 
@@ -344,7 +344,7 @@ The block is assigned a deadline, which says how long other validators have to r
 
 In the normal case, the rollup chain will look like this:
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/rollup_terminology.jpg)
+![](NitroAssets/rollup_terminology.jpg)
 
 On the left, representing an earlier part of the chain’s history, we have confirmed rollup blocks. These have been fully accepted and recorded by the EthBridge. The newest of the confirmed blocks, block 94, is called the “latest confirmed block.” On the right, we see a set of newer proposed rollup blocks. The EthBridge can’t yet confirm or reject them, because their deadlines haven’t run out yet. The oldest block whose fate has yet to be determined, block 95, is called the “first unresolved block.”
 
@@ -352,7 +352,7 @@ Notice that a proposed block can build on an earlier proposed block. This allows
 
 Here’s another example of what the chain state might look like, if several validators are being malicious. It’s a contrived example, designed to illustrate a variety of cases that can come up in the protocol, all smashed into a single scenario.
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/chain_cases.jpg)
+![](NitroAssets/chain_cases.jpg)
 
 There’s a lot going on here, so let’s unpack it.
 
@@ -413,7 +413,7 @@ A consequence of these rules is that once the first unresolved block’s deadlin
 
 Suppose the rollup chain looks like this:
 
-![](/Users/ed/OffchainLabs/nitro/doc/NitroAssets/alice_bob_staked.png)
+![](NitroAssets/alice_bob_staked.png)
 
 Blocks 93 and 95 are sibling blocks (they both have 92 as predecessor). Alice is staked on 93 and Bob is staked on 95.
 
