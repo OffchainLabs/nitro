@@ -149,11 +149,11 @@ func main() {
 
 	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
-	wavmio.SetLastBlockHash(newBlockHash)
 	extraInfo, err := arbos.DeserializeHeaderExtraInformation(newBlock.Header())
 	if err != nil {
 		panic(fmt.Sprintf("Error deserializing header extra info: %v", err))
 	}
+	wavmio.SetLastBlockHash(newBlockHash)
 	wavmio.SetSendRoot(extraInfo.SendRoot)
 
 	wavmio.StubFinal()
