@@ -5,6 +5,9 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math"
 	"math/big"
 
@@ -12,10 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -185,4 +186,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
+}
+
+func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return 0, err
+	}
+	return state.Blockhashes().NextBlockNumber()
+}
+
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
