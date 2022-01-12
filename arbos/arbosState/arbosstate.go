@@ -229,6 +229,13 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 	return state.sendMerkle
 }
 
+func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
+	if state.blockhashes == nil {
+		state.blockhashes = blockhash.OpenBlockhashes(state.backingStorage.OpenSubStorage(blockhashesSubspace))
+	}
+	return state.blockhashes
+}
+
 func (state *ArbosState) LastTimestampSeen() (uint64, error) {
 	return state.timestamp.Get()
 }
