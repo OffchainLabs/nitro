@@ -154,12 +154,21 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 		return hash{}, err
 	}
 
-	// now donate all of the remaining gas to the retry
-	// to do this, we burn the gas here, but add it back into the gas pool just before the retry runs
-	// the gas payer for this transaction will get a credit for the wei they paid for this gas, when the retry occurs
-	if err := c.Burn(c.gasLeft); err != nil {
-		return hash{}, err
+	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
+	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
+
+	// We want to donate as much gas as we can to the retry, but to do this safely the user must not run out
+	// of gas later. Since the only charge that happens after this method returns is for encoding the return
+	// result, we'll donate all but that known cost to the retry.
+
+	// ensure the user will be able to pay for the return result
+	gasCostToReturnResult := 32 * params.CopyGas
+	if c.gasLeft < gasCostToReturnResult {
+		return hash{}, c.Burn(gasCostToReturnResult)
 	}
 
+	if err := c.Burn(c.gasLeft - gasCostToReturnResult); err != nil {
+		return hash{}, err
+	}
 	return redeemTxId, nil
 }

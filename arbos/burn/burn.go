@@ -5,9 +5,6 @@
 package burn
 
 import (
-	"errors"
-	"log"
-
 	glog "github.com/ethereum/go-ethereum/log"
 )
 
@@ -30,25 +27,7 @@ func (burner *SystemBurner) Burned() uint64 {
 }
 
 func (burner *SystemBurner) Restrict(err error) {
-	glog.Error("Restrict() received an error", "err", err)
-}
-
-type SafetyBurner struct {
-	message string
-	panics  bool
-}
-
-func NewSafetyBurner(message string, panics bool) *SafetyBurner {
-	return &SafetyBurner{message, panics}
-}
-
-func (burner *SafetyBurner) Burn(amount uint64) error {
-	if burner.panics {
-		panic(burner.message)
+	if err != nil {
+		glog.Error("Restrict() received an error", "err", err)
 	}
-	return errors.New(burner.message)
-}
-
-func (burner *SafetyBurner) Restrict(err error) {
-	log.Fatal("A metered burner was used for access-controlled work", err)
 }

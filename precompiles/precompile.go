@@ -15,7 +15,6 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -456,17 +455,20 @@ func (p Precompile) Call(
 		gasLeft:     gasSupplied,
 	}
 
-	var burner burn.Burner
-	if method.purity == pure {
-		burner = burn.NewSafetyBurner("a pure method must not access state", false)
-	} else {
-		burner = callerCtx
+	argsCost := params.CopyGas * uint64(len(input)-4)
+	if err := callerCtx.Burn(argsCost); err != nil {
+		// user cannot afford the argument data supplied
+		return nil, 0, vm.ErrExecutionReverted
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
-	if err != nil {
-		return nil, 0, err
+
+	if method.purity != pure {
+		// impure methods may need the ArbOS state, so open & update the call context now
+		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
+		if err != nil {
+			return nil, 0, err
+		}
+		callerCtx.state = state
 	}
-	callerCtx.state = state
 
 	switch txProcessor := evm.ProcessingHook.(type) {
 	case *arbos.TxProcessor:
@@ -523,6 +525,13 @@ func (p Precompile) Call(
 		// will catch implementation errors
 		log.Fatal("Could not encode precompile result ", err)
 	}
+
+	resultCost := params.CopyGas * uint64(len(encoded))
+	if err := callerCtx.Burn(resultCost); err != nil {
+		// user cannot afford the result data returned
+		return nil, 0, vm.ErrExecutionReverted
+	}
+
 	return encoded, callerCtx.gasLeft, nil
 }
 
