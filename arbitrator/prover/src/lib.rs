@@ -110,6 +110,7 @@ unsafe fn arbitrator_load_machine_impl(
         main_mod,
         false,
         false,
+        Vec::new(),
         Default::default(),
         Default::default(),
         Default::default(),

@@ -64,6 +64,10 @@ struct Opts {
     /// Require that the machine end in the Finished state
     #[structopt(long)]
     require_success: bool,
+    /// CLI args passed into the guest (determines the machine's initial state).
+    /// Currently only supported for Go guests.
+    #[structopt(long, use_delimiter = true)]
+    guest_cli_args: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -172,6 +176,7 @@ fn main() -> Result<()> {
         main_mod.clone(),
         opts.always_merkleize,
         opts.allow_hostapi,
+        opts.guest_cli_args,
         global_state,
         inbox_contents,
         preimages,

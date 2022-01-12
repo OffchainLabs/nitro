@@ -806,6 +806,7 @@ impl Machine {
         bin: WasmBinary,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        guest_cli_args: Vec<String>,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
@@ -922,29 +923,42 @@ impl Machine {
             // These memory stores also assume that the Go module's memory is large enough to begin with.
             // That's also handled by the Go compiler. Go 1.17.5 in the compilation of the arbitrator go test case
             // initializes its memory to 272 pages long (about 18MB), much larger than the required space.
-            let free_memory_base = 4096;
-            let name_str_ptr = free_memory_base;
-            let argv_ptr = name_str_ptr + 8;
+            let mut ptr = 4096;
             assert!(main_module.internals_offset != 0);
             let main_module_idx = u32::try_from(main_module_idx).unwrap();
             let main_module_store32 =
                 HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
-            // Write "js\0" to name_str_ptr, to match what the actual JS environment does
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
-            entrypoint.push(HirInstruction::I32Const(0x736a)); // b"js\0"
-            entrypoint.push(main_module_store32.clone());
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr + 4));
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(main_module_store32.clone());
-            // Write name_str_ptr to argv_ptr
-            entrypoint.push(HirInstruction::I32Const(argv_ptr));
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
-            entrypoint.push(main_module_store32.clone());
-            entrypoint.push(HirInstruction::I32Const(argv_ptr + 4));
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(main_module_store32);
-            // Launch main with an argument count of 1 and argv_ptr
-            entrypoint.push(HirInstruction::I32Const(1));
+
+            let argc = 1 + guest_cli_args.len();
+            let mut arg_pointers = Vec::with_capacity(argc);
+            for mut arg in std::iter::once(String::from("js")).chain(guest_cli_args) {
+                arg_pointers.push(ptr);
+                arg.push('\0');
+                for window in arg.as_bytes().chunks(4) {
+                    let mut i32_bytes = [0u8; 4];
+                    i32_bytes[..window.len()].copy_from_slice(&window);
+                    entrypoint.push(HirInstruction::I32Const(ptr));
+                    entrypoint.push(HirInstruction::I32Const(i32::from_le_bytes(i32_bytes)));
+                    entrypoint.push(main_module_store32.clone());
+                    ptr += 4;
+                }
+                if ptr % 8 != 0 {
+                    ptr += 8 - (ptr % 8);
+                }
+            }
+            let argv_ptr = ptr;
+            for arg in arg_pointers {
+                entrypoint.push(HirInstruction::I32Const(ptr));
+                entrypoint.push(HirInstruction::I32Const(arg));
+                entrypoint.push(main_module_store32.clone());
+                ptr += 8;
+            }
+            if ptr >= 4096 + 8192 {
+                panic!("Too many guest arguments: overflowed allocated memory for arguments");
+            }
+
+            // Launch main with the argument count and argv_ptr
+            entrypoint.push(HirInstruction::I32Const(i32::try_from(argc).unwrap()));
             entrypoint.push(HirInstruction::I32Const(argv_ptr));
             entrypoint.push(HirInstruction::CrossModuleCall(main_module_idx, f));
             if let Some(i) = available_imports.get("wavm__go_after_run") {
