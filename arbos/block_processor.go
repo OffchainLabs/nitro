@@ -27,10 +27,12 @@ import (
 var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, statedb *state.StateDB) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+	baseFee, err := state.GasPriceWei()
+	state.Restrict(err)
+
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := arbosState.OpenArbosState(statedb).GasPriceWei()
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
@@ -87,9 +89,9 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenArbosState(statedb)
-	gasLeft := state.CurrentPerBlockGasLimit()
-	header := createNewHeader(lastBlockHeader, l1Info, statedb)
+	state := arbosState.OpenSystemArbosState(statedb)
+	gasLeft, _ := state.CurrentPerBlockGasLimit()
+	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 
 	complete := types.Transactions{}
@@ -115,7 +117,7 @@ func ProduceBlock(
 			if !ok {
 				panic("retryable tx is somehow not a retryable")
 			}
-			retryable := retryableState.OpenRetryable(retry.TicketId, time)
+			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted, so just refund the gas
 				retryGas := new(big.Int).SetUint64(retry.Gas)
@@ -143,7 +145,7 @@ func ProduceBlock(
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
 			pricing := state.L1PricingState()
-			posterCost := pricing.PosterDataCost(sender, aggregator, tx.Data())
+			posterCost, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
 			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
 			if posterCostInL2Gas.IsUint64() {
 				dataGas = posterCostInL2Gas.Uint64()
@@ -203,20 +205,23 @@ func ProduceBlock(
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
 
 				ticketId := txLog.Topics[1]
+				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
 
-				retryableState = arbosState.OpenArbosState(statedb).RetryableState()
-				retryable := retryableState.OpenRetryable(ticketId, time)
+				from, _ := retryable.From()
+				to, _ := retryable.To()
+				value, _ := retryable.Callvalue()
+				data, _ := retryable.Calldata()
 
 				reedem := types.NewTx(&types.ArbitrumRetryTx{
 					ArbitrumContractTx: types.ArbitrumContractTx{
 						ChainId:   chainConfig.ChainID,
 						RequestId: txLog.Topics[2],
-						From:      retryable.From(),
+						From:      from,
 						GasPrice:  gasPrice,
 						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
-						To:        retryable.To(),
-						Value:     retryable.Callvalue(),
-						Data:      retryable.Calldata(),
+						To:        to,
+						Value:     value,
+						Data:      data,
 					},
 					TicketId: ticketId,
 					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
@@ -261,14 +266,15 @@ func ProduceBlock(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenArbosState(statedb)
+		state := arbosState.OpenSystemArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
-		state.RetryableState().TryToReapOneRetryable(header.Time)
+		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
 		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
 		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
-		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
+		root, _ := state.SendMerkleAccumulator().Root()
+		header.Extra = root.Bytes()
 	}
 }

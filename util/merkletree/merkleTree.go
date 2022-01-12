@@ -56,10 +56,7 @@ func NewMerkleLeaf(hash common.Hash) MerkleTree {
 
 func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 	hash, err := util.HashFromReader(rd)
-	if err != nil {
-		return nil, err
-	}
-	return NewMerkleLeaf(hash), nil
+	return NewMerkleLeaf(hash), err
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
@@ -100,10 +97,7 @@ func NewMerkleEmpty(capacity uint64) MerkleTree {
 
 func newMerkleEmptyFromReader(rd io.Reader) (MerkleTree, error) {
 	capacity, err := util.Uint64FromReader(rd)
-	if err != nil {
-		return nil, err
-	}
-	return NewMerkleEmpty(capacity), nil
+	return NewMerkleEmpty(capacity), err
 }
 
 func (me *merkleEmpty) Hash() common.Hash {
