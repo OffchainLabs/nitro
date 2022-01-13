@@ -57,6 +57,6 @@ interface ArbAddressTable {
     * @param startChain hash value to start the chained hash with
     * @return chained hash result
     */
-    function hashRange(uint start, uint end, bytes32 startChain) external returns(bytes32);
+    function hashRange(uint start, uint end, bytes32 startChain) external view returns(bytes32);
 }
 

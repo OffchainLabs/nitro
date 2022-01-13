@@ -21,6 +21,8 @@ interface ArbosTest {
 
     function getAllAccountAddresses() external view returns (bytes memory);
 
+    function getAllAccountHashes() external view returns (bytes memory);
+
     function getSerializedEVMState(address addr) external view returns (bytes memory);
 }
 

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
@@ -12,10 +13,18 @@ import (
 const SampleRate = 0.00001
 
 func main() {
-	sampleRate := SampleRate
-	jsonState, err := statetransfer.GetDataFromClassicAsJson(nil, &sampleRate)
+	nodeUrl := flag.String("nodeurl", "", "URL of classic chain node")
+	cachePath := flag.String("cachepath", "cache", "path to state cache directory")
+	sampleRate := flag.Float64("samplerate", SampleRate, "fraction of accounts to load")
+	flag.Parse()
+
+	var maybeUrl *string
+	if *nodeUrl != "" {
+		maybeUrl = nodeUrl
+	}
+	jsonState, err := statetransfer.GetDataFromClassicAsJson(maybeUrl, cachePath, sampleRate)
 	if err != nil {
-		panic("failed to get state from Arbitrum One")
+		panic(err)
 	}
 	fmt.Print(jsonState)
 }

@@ -16,18 +16,17 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/classicgen"
 	"io"
 	"math/big"
-	"math/rand"
 )
 
-func GetDataFromClassicAsJson(maybeUrl *string, sampleRate *float64) ([]byte, error) {
-	data, err := getDataFromClassic(maybeUrl, sampleRate)
+func GetDataFromClassicAsJson(maybeUrl *string, cachePath *string, sampleRate *float64) ([]byte, error) {
+	data, err := getDataFromClassic(maybeUrl, cachePath)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(data)
 }
 
-func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializationInfo, error) {
+func getDataFromClassic(maybeUrl *string, cachePath *string) (*ArbosInitializationInfo, error) {
 	ctx := context.Background()
 	client, err := openClassicClient(maybeUrl)
 	if err != nil {
@@ -45,7 +44,7 @@ func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializa
 	if err != nil {
 		return nil, err
 	}
-	addressTableData, err := getAddressTableContents(classicArbAddressTable, callopts)
+	addressTableData, err := getAddressTableContents(classicArbAddressTable, callopts, cachePath)
 	if err != nil {
 		return nil, err
 	}
@@ -60,16 +59,28 @@ func getDataFromClassic(maybeUrl *string, sampleRate *float64) (*ArbosInitializa
 		return nil, err
 	}
 
-	accounts := []AccountInitializationInfo{}
-	for _, addr := range accountAddresses {
-		if sampleRate == nil || rand.Float64() < *sampleRate {
-			acctInfo, err := getAccountInfo(classicArbosTest, callopts, addr)
-			if err != nil {
-				return nil, err
-			}
-			accounts = append(accounts, acctInfo)
-		}
+	accountHashes, err := getAccountHashesAsMap(classicArbosTest, callopts)
+	if err != nil {
+		return nil, err
 	}
+
+	accountMap, missingAddresses, err := getAccountsAndDiff(accountAddresses, accountHashes, cachePath)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, addr := range missingAddresses {
+		acctInfo, err := getAccountInfo(classicArbosTest, callopts, addr)
+		if err != nil {
+			return nil, err
+		}
+		accountMap[addr] = acctInfo
+	}
+	accounts := []AccountInitializationInfo{}
+	for _, acct := range accountMap {
+		accounts = append(accounts, acct)
+	}
+	_ = flushAccountDataCache(cachePath, accountMap) // ignore errors
 
 	classicArbRetryableTx, err := openClassicArbRetryableTx(client)
 	if err != nil {
@@ -114,6 +125,19 @@ func getAccountAddresses(arbosTest *classicgen.ArbosTestCaller, callopts *bind.C
 	for len(serializedAccountAddresses) > 0 {
 		ret = append(ret, common.BytesToAddress(serializedAccountAddresses[:32]))
 		serializedAccountAddresses = serializedAccountAddresses[32:]
+	}
+	return ret, nil
+}
+
+func getAccountHashesAsMap(arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpts) (map[common.Hash]struct{}, error) {
+	serializedAccountHashes, err := arbosTest.GetAllAccountHashes(callopts)
+	if err != nil {
+		return nil, err
+	}
+	ret := make(map[common.Hash]struct{})
+	for len(serializedAccountHashes) > 0 {
+		ret[common.BytesToHash(serializedAccountHashes[:32])] = struct{}{}
+		serializedAccountHashes = serializedAccountHashes[32:]
 	}
 	return ret, nil
 }
@@ -183,6 +207,11 @@ func getAccountInfo(arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOp
 		aggregatorToPay = &atp
 	}
 
+	classicHash, err := util.HashFromReader(rd)
+	if err != nil {
+		return AccountInitializationInfo{}, err
+	}
+
 	return AccountInitializationInfo{
 		Addr:            addr,
 		Nonce:           nonce.Big().Uint64(),
@@ -190,6 +219,7 @@ func getAccountInfo(arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOp
 		ContractInfo:    contractInfo,
 		AggregatorInfo:  aggInfo,
 		AggregatorToPay: aggregatorToPay,
+		ClassicHash:     classicHash,
 	}, nil
 }
 

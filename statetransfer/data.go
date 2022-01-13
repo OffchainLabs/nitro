@@ -34,6 +34,7 @@ type AccountInitializationInfo struct {
 	ContractInfo    *AccountInitContractInfo
 	AggregatorInfo  *AccountInitAggregatorInfo
 	AggregatorToPay *common.Address
+	ClassicHash     common.Hash
 }
 
 type AccountInitContractInfo struct {
