@@ -50,11 +50,10 @@ struct Opts {
     inbox_position: u64,
     #[structopt(long, default_value = "0")]
     position_within_message: u64,
-    #[structopt(
-        long,
-        default_value = "0000000000000000000000000000000000000000000000000000000000000000"
-    )]
-    last_block_hash: String,
+    #[structopt(long)]
+    last_block_hash: Option<String>,
+    #[structopt(long)]
+    last_send_root: Option<String>,
     #[structopt(long)]
     inbox: Vec<PathBuf>,
     #[structopt(long)]
@@ -95,6 +94,21 @@ fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
     let mut msg = vec![0u8; headerlength];
     File::open(path).unwrap().read_to_end(&mut msg)?;
     Ok(msg)
+}
+
+fn decode_hex_arg(arg: &Option<String>, name: &str) -> Result<Bytes32> {
+    if let Some(arg) = arg {
+        let mut arg = arg.as_str();
+        if arg.starts_with("0x") {
+            arg = &arg[2..];
+        }
+        let mut bytes32 = Bytes32::default();
+        hex::decode_to_slice(arg, &mut bytes32.0)
+            .wrap_err_with(|| format!("failed to parse {} contents", name))?;
+        Ok(bytes32)
+    } else {
+        Ok(Bytes32::default())
+    }
 }
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
@@ -154,17 +168,12 @@ fn main() -> Result<()> {
             .collect();
     }
 
-    let mut last_block_hash_string = opts.last_block_hash.as_str();
-    if last_block_hash_string.starts_with("0x") {
-        last_block_hash_string = &last_block_hash_string[2..];
-    }
-    let mut last_block_hash = Bytes32::default();
-    hex::decode_to_slice(last_block_hash_string, &mut last_block_hash.0)
-        .wrap_err("failed to parse --last-block-hash contents")?;
+    let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
+    let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
 
     let global_state = GlobalState {
         u64_vals: [opts.inbox_position, opts.position_within_message],
-        bytes32_vals: [last_block_hash],
+        bytes32_vals: [last_block_hash, last_send_root],
     };
 
     let mut mach = Machine::from_binary(

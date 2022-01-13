@@ -5,7 +5,7 @@ extern "C" {
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
 }
 
-const BYTES32_VALS_NUM: usize = 1;
+const BYTES32_VALS_NUM: usize = 2;
 const U64_VALS_NUM: usize = 2;
 
 #[repr(C, align(32))]
