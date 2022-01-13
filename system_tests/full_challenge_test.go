@@ -87,9 +87,14 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	challenge, tx, _, err := challengegen.DeployBlockChallenge(
+	challengeAddr, tx, challenge, err := challengegen.DeployBlockChallenge(auth, client)
+	_, err = arbnode.EnsureTxSucceeded(context.Background(), client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err = challenge.Initialize(
 		auth,
-		client,
 		executionChallengeFactoryAddr,
 		resultReceiverAddr,
 		wasmModuleRoot,
@@ -115,7 +120,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	return resultReceiver, challenge
+	return resultReceiver, challengeAddr
 }
 
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
@@ -151,7 +156,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 		t.Fatal(err)
 	}
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), batchBuffer.Bytes(), big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
 	if err != nil {
 		t.Fatal(err)
 	}

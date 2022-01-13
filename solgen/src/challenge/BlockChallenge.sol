@@ -21,7 +21,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     IChallenge public executionChallenge;
     uint256 public executionChallengeAtSteps;
 
-    constructor(
+    function initialize(
         IExecutionChallengeFactory executionChallengeFactory_,
         IChallengeResultReceiver resultReceiver_,
         bytes32 wasmModuleRoot_,
@@ -32,7 +32,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) {
+    ) external {
         executionChallengeFactory = executionChallengeFactory_;
         resultReceiver = resultReceiver_;
         wasmModuleRoot = wasmModuleRoot_;
