@@ -193,7 +193,7 @@ library Deserialize {
 		offset = startOffset;
 
 		// using constant ints for array size requires newer solidity
-		bytes32[1] memory bytes32_vals;
+		bytes32[2] memory bytes32_vals;
 		uint64[2] memory u64_vals;
 
 		for (uint8 i = 0; i< GlobalStates.BYTES32_VALS_NUM; i++) {

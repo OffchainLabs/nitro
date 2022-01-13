@@ -114,6 +114,8 @@ type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
 	BlockHash     common.Hash
+	SendRoot      common.Hash
+	PrevSendRoot  common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
 	HasDelayedMsg bool
@@ -122,16 +124,26 @@ type validationEntry struct {
 	Valid         uint32 // Atomic, either 0 or 1
 }
 
-func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
+func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
+	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, err
+	}
+	prevExtraInfo, err := arbos.DeserializeHeaderExtraInformation(prevHeader)
+	if err != nil {
+		return nil, err
+	}
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
+		SendRoot:      extraInfo.SendRoot,
+		PrevSendRoot:  prevExtraInfo.SendRoot,
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
-	}
+	}, nil
 }
 
 func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
@@ -202,10 +214,16 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
-		log.Error("failed to set up validation", "err", err, "header", header)
+		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
+		return
 	}
 	hashlist := v.preimageCache.PourToCache(preimages)
-	v.validationEntries.Store(header.Number.Uint64(), newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist))
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, hashlist)
+	if err != nil {
+		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
+		return
+	}
+	v.validationEntries.Store(header.Number.Uint64(), validationEntry)
 	v.sendValidationsChan <- struct{}{}
 }
 
@@ -325,6 +343,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  validationEntry.PrevBlockHash,
+		SendRoot:   validationEntry.PrevSendRoot,
 	}
 
 	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
@@ -394,7 +413,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	gsEnd := mach.GetGlobalState()
 
-	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash}
+	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash, SendRoot: validationEntry.SendRoot}
 
 	writeThisBlock := false
 
