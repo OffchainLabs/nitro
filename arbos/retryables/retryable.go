@@ -304,17 +304,15 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, uniqifier common.Hash, gasP
 		return nil, err
 	}
 	return &types.ArbitrumRetryTx{
-		ArbitrumContractTx: types.ArbitrumContractTx{
-			ChainId:   chainId,
-			RequestId: uniqifier,
-			From:      from,
-			GasPrice:  gasPrice,
-			Gas:       gas,
-			To:        to,
-			Value:     callvalue,
-			Data:      calldata,
-		},
-		TicketId: ticketId,
-		RefundTo: refundTo,
+		ChainId:   chainId,
+		RequestId: uniqifier,
+		From:      from,
+		GasPrice:  gasPrice,
+		Gas:       gas,
+		To:        to,
+		Value:     callvalue,
+		Data:      calldata,
+		TicketId:  ticketId,
+		RefundTo:  refundTo,
 	}, nil
 }
