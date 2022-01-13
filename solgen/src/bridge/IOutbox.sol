@@ -19,16 +19,14 @@
 pragma solidity ^0.8.0;
 
 interface IOutbox {
-    event OutboxEntryCreated(
-        uint256 indexed batchNum,
-        uint256 outboxEntryIndex,
-        bytes32 outputRoot,
-        uint256 numInBatch
+    event SendRootUpdated(
+        bytes32 indexed blockHash,
+        bytes32 indexed outputRoot
     );
     event OutBoxTransactionExecuted(
         address indexed destAddr,
         address indexed l2Sender,
-        uint256 indexed outboxEntryIndex,
+        uint256 indexed zero,
         uint256 transactionIndex
     );
 
@@ -44,7 +42,5 @@ interface IOutbox {
 
     function l2ToL1OutputId() external view returns (bytes32);
 
-    function updateSendRoot(bytes32 sendRoot) external;
-
-    function outboxEntryExists(uint256 batchNum) external view returns (bool);
+    function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
 }

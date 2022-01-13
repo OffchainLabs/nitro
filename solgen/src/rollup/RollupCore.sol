@@ -322,7 +322,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         );
 
         // trusted external call to outbox
-        outbox.updateSendRoot(sendRoot);
+        outbox.updateSendRoot(sendRoot, blockHash);
 
         destroyNode(_latestConfirmed);
         _latestConfirmed = nodeNum;

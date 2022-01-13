@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -87,8 +88,25 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 }
 
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
+	l1Block, err := c.state.Blockhashes().NextBlockNumber()
+	if err != nil {
+		return nil, err
+	}
+	if l1Block > 0 {
+		// Change NextBlockNumber into the current block number
+		l1Block--
+	}
+	bigL1Block := new(big.Int).SetUint64(l1Block)
 
-	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
+	sendHash := crypto.Keccak256Hash(
+		c.caller.Bytes(),
+		destination.Bytes(),
+		math.U256Bytes(evm.Context.BlockNumber),
+		math.U256Bytes(bigL1Block),
+		math.U256Bytes(evm.Context.Time),
+		common.BigToHash(value).Bytes(),
+		calldataForL1,
+	)
 	arbosState := c.state
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
@@ -133,7 +151,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
-		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
+		bigL1Block,
 		big.NewInt(int64(timestamp)),
 		value,
 		calldataForL1,
