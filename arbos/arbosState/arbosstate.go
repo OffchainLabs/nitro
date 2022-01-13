@@ -195,30 +195,18 @@ func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
-	if state.retryableState == nil {
-		state.retryableState = retryables.OpenRetryableState(state.backingStorage.OpenSubStorage(retryablesSubspace))
-	}
 	return state.retryableState
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
-	if state.l1PricingState == nil {
-		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.OpenSubStorage(l1PricingSubspace))
-	}
 	return state.l1PricingState
 }
 
 func (state *ArbosState) AddressTable() *addressTable.AddressTable {
-	if state.addressTable == nil {
-		state.addressTable = addressTable.Open(state.backingStorage.OpenSubStorage(addressTableSubspace))
-	}
 	return state.addressTable
 }
 
 func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
-	if state.chainOwners == nil {
-		state.chainOwners = addressSet.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
-	}
 	return state.chainOwners
 }
 
@@ -230,9 +218,6 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 }
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
-	if state.blockhashes == nil {
-		state.blockhashes = blockhash.OpenBlockhashes(state.backingStorage.OpenSubStorage(blockhashesSubspace))
-	}
 	return state.blockhashes
 }
 

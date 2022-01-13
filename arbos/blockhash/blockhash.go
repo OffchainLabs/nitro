@@ -61,7 +61,10 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		nextNumber++
 		var nextNumBuf [8]byte
 		binary.LittleEndian.Uint64(nextNumBuf[:])
-		err = bh.backingStorage.SetByUint64(1+(nextNumber%256), common.BytesToHash(crypto.Keccak256(lastHash.Bytes(), nextNumBuf[:])))
+		err = bh.backingStorage.SetByUint64(
+			1+(nextNumber%256),
+			common.BytesToHash(crypto.Keccak256(lastHash.Bytes(), blockHash.Bytes(), nextNumBuf[:])),
+		)
 		if err != nil {
 			return err
 		}
