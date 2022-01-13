@@ -32,6 +32,8 @@ type TxProcessor struct {
 	state        *arbosState.ArbosState
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
+	Callers      []common.Address
+	TopTxType    *byte // set once in StartTxHook
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -44,7 +46,17 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		state:        arbosState,
 		PosterFee:    new(big.Int),
 		posterGas:    0,
+		Callers:      []common.Address{},
+		TopTxType:    nil,
 	}
+}
+
+func (p *TxProcessor) PushCaller(addr common.Address) {
+	p.Callers = append(p.Callers, addr)
+}
+
+func (p *TxProcessor) PopCaller() {
+	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
 func isAggregated(l1Address, l2Address common.Address) bool {
@@ -68,6 +80,9 @@ func (p *TxProcessor) StartTxHook() bool {
 	if underlyingTx == nil {
 		return false
 	}
+
+	tipe := underlyingTx.Type()
+	p.TopTxType = &tipe
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
