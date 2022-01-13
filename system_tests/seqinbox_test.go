@@ -7,9 +7,9 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/big"
 	"math/rand"
-	"strconv"
 	"testing"
 	"time"
 
@@ -34,10 +34,12 @@ type blockTestState struct {
 	l1BlockNumber uint64
 }
 
+const seqInboxTestIters = 40
+
 func TestSequencerInboxReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, false)
 	l2Backend := arbNode.Backend
 	defer stack.Close()
 	l1Client := l1Info.Client
@@ -45,18 +47,14 @@ func TestSequencerInboxReader(t *testing.T) {
 	l1BlockChain := l1backend.BlockChain()
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
 	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	startOwnerBalance := startState.GetBalance(ownerAddress).Uint64()
 	startOwnerNonce := startState.GetNonce(ownerAddress)
 
@@ -76,16 +74,22 @@ func TestSequencerInboxReader(t *testing.T) {
 		if x == 0 {
 			return "Owner"
 		} else {
-			return "Account" + strconv.Itoa(x)
+			return fmt.Sprintf("Account%v", x)
 		}
 	}
 
-	l1Info.GenerateAccount("ReorgPadding")
-	SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{
-		l1Info.PrepareTx("faucet", "ReorgPadding", 30000, big.NewInt(1e14), nil),
-	})
+	accounts := []string{"ReorgPadding"}
+	for i := 1; i <= (seqInboxTestIters-1)/10; i++ {
+		accounts = append(accounts, fmt.Sprintf("ReorgSacrifice%v", i))
+	}
+	var faucetTxs []*types.Transaction
+	for _, acct := range accounts {
+		l1Info.GenerateAccount(acct)
+		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e14), nil))
+	}
+	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
 
-	for i := 1; i < 40; i++ {
+	for i := 1; i < seqInboxTestIters; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
 			if reorgTo == 0 {
@@ -96,7 +100,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			// However, this code doesn't run on reorgs larger than 64 blocks for performance reasons.
 			// Therefore, we make a bunch of small blocks to prevent the code from running.
 			padAddr := l1Info.GetAddress("ReorgPadding")
-			for j := uint64(0); j < 65; j++ {
+			for j := uint64(0); j < 70; j++ {
 				rawTx := &types.DynamicFeeTx{
 					To:        &padAddr,
 					Gas:       21000,
@@ -105,23 +109,29 @@ func TestSequencerInboxReader(t *testing.T) {
 					Nonce:     j,
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
-				SendWaitTestTransactions(t, ctx, l1Client, []*types.Transaction{tx})
+				Require(t, l1Client.SendTransaction(ctx, tx))
+				_, _ = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
-				t.Fatal("Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
+				Fail(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
 			t.Logf("Reorganizing to L1 block %v", reorgTargetNumber)
 			reorgTarget := l1BlockChain.GetBlockByNumber(reorgTargetNumber)
 			err = l1BlockChain.ReorgToOldBlock(reorgTarget)
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			blockStates = blockStates[:(reorgTo + 1)]
+
+			// Geth's miner's mempool might not immediately process the reorg.
+			// Sometimes, this causes it to drop the next tx.
+			// To work around this, we create a sacrificial tx, which may or may not succeed.
+			// Whichever happens, by the end of this block, the miner will have processed the reorg.
+			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "faucet", 30000, big.NewInt(0), nil)
+			err = l1Client.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, _ = arbnode.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]uint64)
@@ -149,7 +159,9 @@ func TestSequencerInboxReader(t *testing.T) {
 				var dest common.Address
 				if j == 0 && amount >= params.InitialBaseFee*1000000 {
 					name := accountName(len(state.accounts))
-					l2Info.GenerateAccount(name)
+					if !l2Info.HasAccount(name) {
+						l2Info.GenerateAccount(name)
+					}
 					dest = l2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
 				} else {
@@ -166,40 +178,51 @@ func TestSequencerInboxReader(t *testing.T) {
 				state.nonces[source]++
 				tx := l2Info.SignTxAs(accountName(sourceNum), rawTx)
 				txData, err := tx.MarshalBinary()
-				if err != nil {
-					t.Fatal(err)
-				}
+				Require(t, err)
 				var segment []byte
 				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
 				err = rlp.Encode(batchWriter, segment)
-				if err != nil {
-					t.Fatal(err)
-				}
+				Require(t, err)
 
 				state.balances[source] -= amount
 				state.balances[dest] += amount
 			}
 
-			err = batchWriter.Close()
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, batchWriter.Close())
 			batchData := batchBuffer.Bytes()
 
+			seqNonce := len(blockStates) - 1
+			for j := 0; ; j++ {
+				haveNonce, err := l1Client.PendingNonceAt(ctx, seqOpts.From)
+				Require(t, err)
+				if haveNonce == uint64(seqNonce) {
+					break
+				}
+				if j >= 10 {
+					t.Fatal("timed out with sequencer nonce", haveNonce, "waiting for expected nonce", seqNonce)
+				}
+				time.Sleep(time.Millisecond * 100)
+			}
+			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
 			} else {
 				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
 			if err != nil {
-				t.Fatal(err)
+				// Geth's clique miner is finicky.
+				// Unfortunately this is so rare that I haven't had an opportunity to test this workaround.
+				// Specifically, I suspect there's a race where it thinks there's no txs to put in the new block,
+				// if a new tx arrives at the same time as it tries to create a block.
+				// Resubmit the transaction in an attempt to get the miner going again.
+				_ = l1Client.SendTransaction(ctx, tx)
+				txRes, err = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
+				Require(t, err)
 			}
 
 			state.l2BlockNumber += uint64(numMessages)
@@ -212,12 +235,12 @@ func TestSequencerInboxReader(t *testing.T) {
 		for i := 0; ; i++ {
 			batchCount, err := seqInbox.BatchCount(&bind.CallOpts{})
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 			if batchCount.Cmp(big.NewInt(int64(len(blockStates)-1))) == 0 {
 				break
 			} else if i >= 100 {
-				t.Fatal("timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
+				Fail(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -228,27 +251,23 @@ func TestSequencerInboxReader(t *testing.T) {
 			if blockNumber == expectedBlockNumber {
 				break
 			} else if i >= 1000 {
-				t.Fatal("timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
+				Fail(t, "timed out waiting for l2 block update; have", blockNumber, "want", expectedBlockNumber)
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
 
 		for _, state := range blockStates {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			if block == nil {
-				t.Fatal("missing state block", state.l2BlockNumber)
+				Fail(t, "missing state block", state.l2BlockNumber)
 			}
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
-			if err != nil {
-				t.Fatal(err)
-			}
+			Require(t, err)
 			for acct, balance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
 				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
-					t.Fatal("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
+					Fail(t, "unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}
 		}

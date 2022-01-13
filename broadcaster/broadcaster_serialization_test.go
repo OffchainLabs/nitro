@@ -23,7 +23,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:        0,
-							Sender:      [20]byte{},
+							Poster:      [20]byte{},
 							BlockNumber: [32]byte{},
 							Timestamp:   [32]byte{},
 							RequestId:   [32]byte{},
@@ -31,7 +31,6 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},
 					},
-					MustEndBlock:        true,
 					DelayedMessagesRead: 3333,
 				},
 			},
@@ -41,7 +40,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 	encoder := json.NewEncoder(&buf)
 	_ = encoder.Encode(msg)
 	fmt.Println(buf.String())
-	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":"0x0000000000000000000000000000000000000000000000000000000000000000","timestamp":"0x0000000000000000000000000000000000000000000000000000000000000000","requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","gasPriceL1":"0x0000000000000000000000000000000000000000000000000000000000000000"},"l2Msg":"3q2+7w=="},"mustEndBlock":true,"delayedMessagesRead":3333}}]}
+	// Output: {"version":1,"messages":[{"sequenceNumber":12345,"message":{"message":{"header":{"kind":0,"sender":"0x0000000000000000000000000000000000000000","blockNumber":"0x0000000000000000000000000000000000000000000000000000000000000000","timestamp":"0x0000000000000000000000000000000000000000000000000000000000000000","requestId":"0x0000000000000000000000000000000000000000000000000000000000000000","gasPriceL1":"0x0000000000000000000000000000000000000000000000000000000000000000"},"l2Msg":"3q2+7w=="},"delayedMessagesRead":3333}}]}
 }
 
 func ExampleBroadcastMessage_emptymessage() {

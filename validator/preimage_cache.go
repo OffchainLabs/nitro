@@ -1,31 +1,32 @@
 package validator
 
-/*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
-#include "arbitrator.h"
-#include <stdlib.h>
-*/
-import "C"
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )
 
+// deletion without maitenance leaves a preimageEntry in memory
+// A few MBs of those should be o.k.
+const maintenanceEvery int32 = 100000
+
 type preimageCache struct {
-	cacheMap    sync.Map
-	maintenance sync.RWMutex
+	cacheMap                  sync.Map
+	maintenance               sync.RWMutex
+	deletionsSinceMaintenance int32
 }
 
 type preimageEntry struct {
 	Mutex    sync.Mutex
 	Refcount int
-	Data     C.CByteArray
+	Data     []byte
 }
 
 func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.Hash {
+	// multiple can be done in parallel, but cannot be done during maintenance
 	p.maintenance.RLock()
 	defer p.maintenance.RUnlock()
 	var newEntry *preimageEntry = nil
@@ -37,7 +38,7 @@ func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.H
 		actual, found := p.cacheMap.LoadOrStore(hash, newEntry)
 		var curEntry *preimageEntry
 		if found {
-			ok := true
+			var ok bool
 			curEntry, ok = actual.(*preimageEntry)
 			if !ok {
 				p.cacheMap.Store(hash, newEntry)
@@ -50,7 +51,7 @@ func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.H
 		}
 		curEntry.Mutex.Lock()
 		if curEntry.Refcount == 0 {
-			curEntry.Data = CreateCByteArray(val)
+			curEntry.Data = val
 		}
 		curEntry.Refcount += 1
 		curEntry.Mutex.Unlock()
@@ -60,7 +61,7 @@ func (p *preimageCache) PourToCache(preimages map[common.Hash][]byte) []common.H
 }
 
 func (p *preimageCache) RemoveFromCache(hashlist []common.Hash) error {
-	// don't need maintenance because we only decrease refcount
+	// don't need maintenance lock because we only decrease refcount
 	for _, hash := range hashlist {
 		actual, found := p.cacheMap.Load(hash)
 		if !found {
@@ -74,7 +75,11 @@ func (p *preimageCache) RemoveFromCache(hashlist []common.Hash) error {
 		prevref := curEntry.Refcount
 		curEntry.Refcount -= 1
 		if curEntry.Refcount == 0 {
-			DestroyCByteArray(curEntry.Data)
+			curEntry.Data = nil
+			deletionsNum := atomic.AddInt32(&p.deletionsSinceMaintenance, 1)
+			if deletionsNum%maintenanceEvery == 0 {
+				go p.CacheMaintenance()
+			}
 		}
 		curEntry.Mutex.Unlock()
 		if prevref <= 0 {
@@ -101,17 +106,18 @@ func (p *preimageCache) CacheMaintenance() {
 	})
 }
 
-func (p *preimageCache) PrepareMultByteArrays(hashlist []common.Hash) (C.CMultipleByteArrays, error) {
+// The top-level CMultipleByteArrays returned must be freed, but the inner byte arrays must **not** be freed.
+func (p *preimageCache) FillHashedValues(hashlist []common.Hash) (map[common.Hash][]byte, error) {
 	length := len(hashlist)
-	array := AllocateMultipleCByteArrays(length)
-	for i, hash := range hashlist {
+	res := make(map[common.Hash][]byte, length)
+	for _, hash := range hashlist {
 		actual, found := p.cacheMap.Load(hash)
 		if !found {
-			return C.CMultipleByteArrays{}, errors.New("preimage not in cache")
+			return nil, errors.New("preimage not in cache")
 		}
 		curEntry, ok := actual.(*preimageEntry)
 		if !ok {
-			return C.CMultipleByteArrays{}, errors.New("preimage malformed in cache")
+			return nil, errors.New("preimage malformed in cache")
 		}
 
 		curEntry.Mutex.Lock()
@@ -119,9 +125,9 @@ func (p *preimageCache) PrepareMultByteArrays(hashlist []common.Hash) (C.CMultip
 		curRefCount := curEntry.Refcount
 		curEntry.Mutex.Unlock()
 		if curRefCount <= 0 {
-			return C.CMultipleByteArrays{}, errors.New("preimage cache in bad state")
+			return nil, errors.New("preimage cache in bad state")
 		}
-		UpdateCByteArrayInMultiple(array, i, curData)
+		res[hash] = curData
 	}
-	return array, nil
+	return res, nil
 }

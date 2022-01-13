@@ -15,70 +15,98 @@ import (
 //   members of the set are stored sequentially from 1 onward
 type AddressSet struct {
 	backingStorage *storage.Storage
-	size           *storage.StorageBackedUint64
-	cachedMembers  map[common.Address]struct{}
+	size           storage.StorageBackedUint64
 	byAddress      *storage.Storage
 }
 
-func Initialize(sto *storage.Storage) {
-	sto.SetByUint64(0, util.UintToHash(0))
+func Initialize(sto *storage.Storage) error {
+	return sto.SetUint64ByUint64(0, 0)
 }
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
 	return &AddressSet{
 		sto,
-		sto.OpenStorageBackedUint64(util.UintToHash(0)),
-		make(map[common.Address]struct{}),
+		sto.OpenStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
 	}
 }
 
-func (aset *AddressSet) Size() uint64 {
+func (aset *AddressSet) Size() (uint64, error) {
 	return aset.size.Get()
 }
 
-func (aset *AddressSet) IsMember(addr common.Address) bool {
-	if _, cached := aset.cachedMembers[addr]; cached {
-		return true
-	}
-	if aset.byAddress.Get(common.BytesToHash(addr.Bytes())) != (common.Hash{}) {
-		aset.cachedMembers[addr] = struct{}{}
-		return true
-	}
-	return false
+func (aset *AddressSet) IsMember(addr common.Address) (bool, error) {
+	value, err := aset.byAddress.Get(util.AddressToHash(addr))
+	return value != (common.Hash{}), err
 }
 
-func (aset *AddressSet) AllMembers() []common.Address {
-	ret := make([]common.Address, aset.size.Get())
+func (aset *AddressSet) AllMembers() ([]common.Address, error) {
+	size, err := aset.size.Get()
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]common.Address, size)
 	for i := range ret {
-		ret[i] = common.BytesToAddress(aset.backingStorage.GetByUint64(uint64(i + 1)).Bytes())
+		bytes, err := aset.backingStorage.GetByUint64(uint64(i + 1))
+		if err != nil {
+			return nil, err
+		}
+		ret[i] = common.BytesToAddress(bytes.Bytes())
 	}
-	return ret
+	return ret, nil
 }
 
-func (aset *AddressSet) Add(addr common.Address) {
-	if aset.IsMember(addr) {
-		return
+func (aset *AddressSet) Add(addr common.Address) error {
+	present, err := aset.IsMember(addr)
+	if present || err != nil {
+		return err
 	}
-	slot := util.UintToHash(1 + aset.size.Get())
+	size, err := aset.size.Get()
+	if err != nil {
+		return err
+	}
+	slot := util.UintToHash(1 + size)
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	aset.byAddress.Set(addrAsHash, slot)
-	aset.backingStorage.Set(slot, addrAsHash)
-	aset.size.Set(aset.size.Get() + 1)
+	err = aset.byAddress.Set(addrAsHash, slot)
+	if err != nil {
+		return err
+	}
+	err = aset.backingStorage.Set(slot, addrAsHash)
+	if err != nil {
+		return err
+	}
+	_, err = aset.size.Increment()
+	return err
 }
 
-func (aset *AddressSet) Remove(addr common.Address) {
+func (aset *AddressSet) Remove(addr common.Address) error {
 	addrAsHash := common.BytesToHash(addr.Bytes())
-	slot := aset.byAddress.Get(addrAsHash).Big().Uint64()
-	if slot == 0 {
-		return
+	slot, err := aset.byAddress.GetUint64(addrAsHash)
+	if slot == 0 || err != nil {
+		return err
 	}
-	delete(aset.cachedMembers, addr)
-	aset.byAddress.Set(addrAsHash, common.Hash{})
-	sz := aset.size.Get()
-	if slot < sz {
-		aset.backingStorage.SetByUint64(slot, aset.backingStorage.GetByUint64(sz))
+	err = aset.byAddress.Clear(addrAsHash)
+	if err != nil {
+		return err
 	}
-	aset.backingStorage.SetByUint64(sz, common.Hash{})
-	aset.size.Set(sz - 1)
+	size, err := aset.size.Get()
+	if err != nil {
+		return err
+	}
+	if slot < size {
+		atSize, err := aset.backingStorage.GetByUint64(size)
+		if err != nil {
+			return err
+		}
+		err = aset.backingStorage.SetByUint64(slot, atSize)
+		if err != nil {
+			return err
+		}
+	}
+	err = aset.backingStorage.ClearByUint64(size)
+	if err != nil {
+		return err
+	}
+	_, err = aset.size.Decrement()
+	return err
 }

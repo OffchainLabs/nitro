@@ -3,7 +3,7 @@ fn main() {
 
     macro_rules! compute {
 		($t:ty) => {
-			let mut pi = 0.;
+			let mut estimate = 0.;
 			let multiplier = 2. * (2 as $t).sqrt() / 9801.;
 			let mut fact = 1.;
 			let mut quad_fact = 1.;
@@ -18,8 +18,10 @@ fn main() {
 					quad_fact *= quad;
 				}
 				let fact_square = fact * fact;
-				pi += multiplier * quad_fact * (1103. + 26390. * k) / (fact_square * fact_square * (396 as $t).powf(quad));
-				println!("Estimation with {} after iteration {}: {}", stringify!($t), k, 1./pi);
+				estimate += multiplier * quad_fact * (1103. + 26390. * k) / (fact_square * fact_square * (396 as $t).powf(quad));
+				let pi = 1./estimate;
+				println!("Estimation with {} after iteration {}: {}", stringify!($t), k, pi);
+				assert!(pi.is_nan() || (pi > 3.13 && pi < 3.15));
 				k += 1.;
 			}
 		}

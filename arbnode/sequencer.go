@@ -12,7 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/pkg/errors"
@@ -48,7 +47,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
-			Sender:      arbstate.SequencerAddress,
+			Poster:      arbstate.SequencerAddress,
 			BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
 			Timestamp:   timestamp,
 			RequestId:   common.Hash{},
@@ -83,34 +82,18 @@ func (s *Sequencer) Start(ctx context.Context) error {
 		return errors.New("ArbInterface: not initialized")
 	}
 
-	headerChan := make(chan *types.Header)
-	headerSubscription, err := s.l1Client.SubscribeNewHead(ctx, headerChan)
-	if err != nil {
-		return err
-	}
+	headerChan, cancel := HeaderSubscribeWithRetry(ctx, s.l1Client)
+	defer cancel()
 
 	go (func() {
 		for {
 			select {
-			case header := <-headerChan:
-				atomic.StoreUint64(&s.l1BlockNumber, header.Number.Uint64())
-			case err := <-headerSubscription.Err():
-				log.Warn("error in subscription to L1 headers", "err", err)
-				for {
-					headerSubscription, err = s.l1Client.SubscribeNewHead(ctx, headerChan)
-					if err != nil {
-						log.Warn("error re-subscribing to L1 headers", "err", err)
-						select {
-						case <-ctx.Done():
-							return
-						case <-time.After(time.Second):
-						}
-					} else {
-						break
-					}
+			case header, ok := <-headerChan:
+				if !ok {
+					return
 				}
+				atomic.StoreUint64(&s.l1BlockNumber, header.Number.Uint64())
 			case <-ctx.Done():
-				headerSubscription.Unsubscribe()
 				return
 			}
 		}

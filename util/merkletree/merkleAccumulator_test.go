@@ -11,16 +11,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 )
 
 func TestEmptyAccumulator(t *testing.T) {
 	acc := initializedMerkleAccumulatorForTesting()
-	if acc.Root() != (common.Hash{}) {
-		t.Fatal()
+	if root(t, acc) != (common.Hash{}) {
+		Fail(t)
 	}
 	mt := NewEmptyMerkleTree()
-	if acc.Root() != mt.Hash() {
-		t.Fatal()
+	if root(t, acc) != mt.Hash() {
+		Fail(t)
 	}
 	testAllSummarySizes(mt, t)
 	testSerDe(mt, t)
@@ -28,25 +29,25 @@ func TestEmptyAccumulator(t *testing.T) {
 
 func TestAccumulator1(t *testing.T) {
 	acc := initializedMerkleAccumulatorForTesting()
-	if acc.Root() != (common.Hash{}) {
-		t.Fatal()
+	if root(t, acc) != (common.Hash{}) {
+		Fail(t)
 	}
 	mt := NewEmptyMerkleTree()
 
 	itemHash := pseudorandomForTesting(0)
-	_ = acc.Append(itemHash)
-	if acc.Size() != 1 {
-		t.Fatal()
+	accAppend(t, acc, itemHash)
+	if size(t, acc) != 1 {
+		Fail(t)
 	}
 	mt = mt.Append(itemHash)
 	if mt.Size() != 1 {
 		t.Fatal(mt.Size())
 	}
-	if acc.Root() != itemHash {
-		t.Fatal()
+	if root(t, acc) != itemHash {
+		Fail(t)
 	}
-	if acc.Root() != mt.Hash() {
-		t.Fatal()
+	if root(t, acc) != mt.Hash() {
+		Fail(t)
 	}
 	testAllSummarySizes(mt, t)
 	testSerDe(mt, t)
@@ -54,8 +55,8 @@ func TestAccumulator1(t *testing.T) {
 
 func TestAccumulator3(t *testing.T) {
 	acc := initializedMerkleAccumulatorForTesting()
-	if acc.Root() != (common.Hash{}) {
-		t.Fatal()
+	if root(t, acc) != (common.Hash{}) {
+		Fail(t)
 	}
 	mt := NewEmptyMerkleTree()
 
@@ -63,29 +64,29 @@ func TestAccumulator3(t *testing.T) {
 	itemHash1 := pseudorandomForTesting(1)
 	itemHash2 := pseudorandomForTesting(2)
 
-	_ = acc.Append(itemHash0)
+	accAppend(t, acc, itemHash0)
 	mt = mt.Append(itemHash0)
-	_ = acc.Append(itemHash1)
+	accAppend(t, acc, itemHash1)
 	mt = mt.Append(itemHash1)
-	_ = acc.Append(itemHash2)
+	accAppend(t, acc, itemHash2)
 	mt = mt.Append(itemHash2)
 
-	if acc.Size() != 3 {
-		t.Fatal()
+	if size(t, acc) != 3 {
+		Fail(t)
 	}
 	if mt.Size() != 3 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	expectedHash := crypto.Keccak256(
 		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
 		crypto.Keccak256(itemHash2.Bytes(), make([]byte, 32)),
 	)
-	if acc.Root() != common.BytesToHash(expectedHash) {
-		t.Fatal()
+	if root(t, acc) != common.BytesToHash(expectedHash) {
+		Fail(t)
 	}
-	if acc.Root() != mt.Hash() {
-		t.Fatal()
+	if root(t, acc) != mt.Hash() {
+		Fail(t)
 	}
 	testAllSummarySizes(mt, t)
 	testSerDe(mt, t)
@@ -93,8 +94,8 @@ func TestAccumulator3(t *testing.T) {
 
 func TestAccumulator4(t *testing.T) {
 	acc := initializedMerkleAccumulatorForTesting()
-	if acc.Root() != (common.Hash{}) {
-		t.Fatal()
+	if root(t, acc) != (common.Hash{}) {
+		Fail(t)
 	}
 	mt := NewEmptyMerkleTree()
 
@@ -103,31 +104,31 @@ func TestAccumulator4(t *testing.T) {
 	itemHash2 := pseudorandomForTesting(2)
 	itemHash3 := pseudorandomForTesting(3)
 
-	_ = acc.Append(itemHash0)
+	accAppend(t, acc, itemHash0)
 	mt = mt.Append(itemHash0)
-	_ = acc.Append(itemHash1)
+	accAppend(t, acc, itemHash1)
 	mt = mt.Append(itemHash1)
-	_ = acc.Append(itemHash2)
+	accAppend(t, acc, itemHash2)
 	mt = mt.Append(itemHash2)
-	_ = acc.Append(itemHash3)
+	accAppend(t, acc, itemHash3)
 	mt = mt.Append(itemHash3)
 
-	if acc.Size() != 4 {
-		t.Fatal()
+	if size(t, acc) != 4 {
+		Fail(t)
 	}
 	if mt.Size() != 4 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	expectedHash := crypto.Keccak256(
 		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
 		crypto.Keccak256(itemHash2.Bytes(), itemHash3.Bytes()),
 	)
-	if acc.Root() != common.BytesToHash(expectedHash) {
-		t.Fatal()
+	if root(t, acc) != common.BytesToHash(expectedHash) {
+		Fail(t)
 	}
-	if acc.Root() != mt.Hash() {
-		t.Fatal()
+	if root(t, acc) != mt.Hash() {
+		Fail(t)
 	}
 	testAllSummarySizes(mt, t)
 	testSerDe(mt, t)
@@ -137,13 +138,13 @@ func testAllSummarySizes(tree MerkleTree, t *testing.T) {
 	for i := uint64(1); i <= tree.Size(); i++ {
 		sum := tree.SummarizeUpTo(i)
 		if tree.Hash() != sum.Hash() {
-			t.Fatal()
+			Fail(t)
 		}
 		if tree.Size() != sum.Size() {
-			t.Fatal()
+			Fail(t)
 		}
 		if tree.Capacity() != sum.Capacity() {
-			t.Fatal()
+			Fail(t)
 		}
 		testSerDe(sum, t)
 	}
@@ -152,15 +153,15 @@ func testAllSummarySizes(tree MerkleTree, t *testing.T) {
 func testSerDe(tree MerkleTree, t *testing.T) {
 	var wr bytes.Buffer
 	if err := tree.Serialize(&wr); err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	rd := bytes.NewReader(wr.Bytes())
 	result, err := NewMerkleTreeFromReader(rd)
 	if err != nil {
-		t.Fatal(err)
+		Fail(t, err)
 	}
 	if tree.Hash() != result.Hash() {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -168,4 +169,24 @@ func pseudorandomForTesting(x uint64) common.Hash {
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], x)
 	return crypto.Keccak256Hash(buf[:])
+}
+
+func accAppend(t *testing.T, acc *merkleAccumulator.MerkleAccumulator, itemHash common.Hash) {
+	t.Helper()
+	_, err := acc.Append(itemHash)
+	Require(t, err)
+}
+
+func root(t *testing.T, acc *merkleAccumulator.MerkleAccumulator) common.Hash {
+	t.Helper()
+	root, err := acc.Root()
+	Require(t, err)
+	return root
+}
+
+func size(t *testing.T, acc *merkleAccumulator.MerkleAccumulator) uint64 {
+	t.Helper()
+	size, err := acc.Size()
+	Require(t, err)
+	return size
 }

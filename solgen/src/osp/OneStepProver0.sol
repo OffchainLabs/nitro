@@ -338,10 +338,6 @@ contract OneStepProver0 is IOneStepProver {
 		ValueStacks.push(mach.valueStack, val);
 	}
 
-	function handleTrap(Machine memory mach) internal pure {
-		mach.status = MachineStatus.ERRORED;
-	}
-
 	function executeOneStep(ExecutionContext calldata, Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {
 		mach = startMach;
 		mod = startMod;

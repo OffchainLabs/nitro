@@ -6,8 +6,12 @@ package arbos
 
 import (
 	"encoding/binary"
+	"fmt"
+	"math"
 	"math/big"
-	"time"
+	"strconv"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -19,110 +23,25 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-var ChainConfig = &params.ChainConfig{
-	ChainID:             big.NewInt(412345),
-	HomesteadBlock:      big.NewInt(0),
-	DAOForkBlock:        nil,
-	DAOForkSupport:      true,
-	EIP150Block:         big.NewInt(0),
-	EIP150Hash:          common.Hash{},
-	EIP155Block:         big.NewInt(0),
-	EIP158Block:         big.NewInt(0),
-	ByzantiumBlock:      big.NewInt(0),
-	ConstantinopleBlock: big.NewInt(0),
-	PetersburgBlock:     big.NewInt(0),
-	IstanbulBlock:       big.NewInt(0),
-	MuirGlacierBlock:    big.NewInt(0),
-	BerlinBlock:         big.NewInt(0),
-	LondonBlock:         big.NewInt(0),
-	Arbitrum:            true,
+// set by the precompile module, to avoid a package dependence cycle
+var ArbRetryableTxAddress common.Address
+var RedeemScheduledEventID common.Hash
 
-	Clique: &params.CliqueConfig{
-		Period: 0,
-		Epoch:  0,
-	},
-}
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+	baseFee, err := state.GasPriceWei()
+	state.Restrict(err)
 
-type BlockBuilder struct {
-	statedb         *state.StateDB
-	lastBlockHeader *types.Header
-	chainContext    core.ChainContext
-
-	// Setup based on first segment
-	blockInfo *L1Info
-	header    *types.Header
-	gasPool   core.GasPool
-
-	txes     types.Transactions
-	receipts types.Receipts
-
-	isDone bool
-}
-
-type BlockData struct {
-	Txes   types.Transactions
-	Header *types.Header
-}
-
-func NewBlockBuilder(lastBlockHeader *types.Header, statedb *state.StateDB, chainContext core.ChainContext) *BlockBuilder {
-	return &BlockBuilder{
-		statedb:         statedb,
-		lastBlockHeader: lastBlockHeader,
-		chainContext:    chainContext,
-	}
-}
-
-// Must always return true if the block is empty
-func (b *BlockBuilder) CanAddMessage(segment MessageSegment) bool {
-	if b.isDone {
-		return false
-	}
-	if b.blockInfo == nil {
-		return true
-	}
-	info := segment.L1Info
-	// End current block without including segment
-	// TODO: This would split up all delayed messages
-	// If we distinguish between segments that might be aggregated from ones that definitely aren't
-	// we could handle coinbases differently
-	return info.l1Sender == b.blockInfo.l1Sender &&
-		info.l1BlockNumber.Cmp(b.blockInfo.l1BlockNumber) <= 0 &&
-		info.l1Timestamp.Cmp(b.blockInfo.l1Timestamp) <= 0
-}
-
-// Must always return true if the block is empty
-func (b *BlockBuilder) ShouldAddMessage(segment MessageSegment) bool {
-	if !b.CanAddMessage(segment) {
-		return false
-	}
-	if b.blockInfo == nil {
-		return true
-	}
-	newGasUsed := b.header.GasUsed
-	for _, tx := range segment.Txes {
-		oldGasUsed := newGasUsed
-		newGasUsed += tx.Gas()
-		if newGasUsed < oldGasUsed {
-			newGasUsed = ^uint64(0)
-		}
-	}
-	return newGasUsed <= PerBlockGasLimit
-}
-
-func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 	var lastBlockHash common.Hash
 	blockNumber := big.NewInt(0)
-	baseFee := big.NewInt(params.InitialBaseFee / 100)
-	timestamp := uint64(time.Now().Unix())
+	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
 		timestamp = l1info.l1Timestamp.Uint64()
-		coinbase = l1info.l1Sender
+		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
 		lastBlockHash = prevHeader.Hash()
 		blockNumber.Add(prevHeader.Number, big.NewInt(1))
-		baseFee = prevHeader.BaseFee
 		if timestamp < prevHeader.Time {
 			timestamp = prevHeader.Time
 		}
@@ -137,101 +56,245 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info) *types.Header {
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    PerBlockGasLimit,
+		GasLimit:    arbosState.PerBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
 		MixDigest:   [32]byte{}, // Unused
 		Nonce:       [8]byte{},  // Filled in later
-		BaseFee:     baseFee,    //TODO: parameter
+		BaseFee:     baseFee,
 	}
 }
 
-func (b *BlockBuilder) AddMessage(segment MessageSegment) {
-	if !b.CanAddMessage(segment) {
-		log.Warn("attempted to add incompatible message to block")
-		return
+func ProduceBlock(
+	message *L1IncomingMessage,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+	chainConfig *params.ChainConfig,
+) (*types.Block, types.Receipts) {
+
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
+	if err != nil {
+		log.Warn("error parsing incoming message", "err", err)
+		txes = types.Transactions{}
 	}
-	if b.blockInfo == nil {
-		l1Info := segment.L1Info
-		b.blockInfo = &L1Info{
-			l1Sender:      l1Info.l1Sender,
-			l1BlockNumber: new(big.Int).Set(l1Info.l1BlockNumber),
-			l1Timestamp:   new(big.Int).Set(l1Info.l1Timestamp),
+
+	poster := message.Header.Poster
+
+	l1Info := &L1Info{
+		poster:        poster,
+		l1BlockNumber: message.Header.BlockNumber.Big(),
+		l1Timestamp:   message.Header.Timestamp.Big(),
+	}
+
+	state := arbosState.OpenSystemArbosState(statedb)
+	gasLeft, _ := state.CurrentPerBlockGasLimit()
+	header := createNewHeader(lastBlockHeader, l1Info, state)
+	signer := types.MakeSigner(chainConfig, header.Number)
+
+	complete := types.Transactions{}
+	receipts := types.Receipts{}
+	gasPrice := header.BaseFee
+	time := header.Time
+
+	redeems := types.Transactions{}
+
+	// We'll check that the block can fit each message, so this pool is set to not run out
+	gethGas := core.GasPool(1 << 63)
+
+	for len(txes) > 0 || len(redeems) > 0 {
+		// repeatedly process the next tx, doing redeems created along the way in FIFO order
+		retryableState := state.RetryableState()
+
+		var tx *types.Transaction
+		if len(redeems) > 0 {
+			tx = redeems[0]
+			redeems = redeems[1:]
+
+			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
+			if !ok {
+				panic("retryable tx is somehow not a retryable")
+			}
+			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
+			if retryable == nil {
+				// retryable was already deleted, so just refund the gas
+				retryGas := new(big.Int).SetUint64(retry.Gas)
+				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
+				statedb.AddBalance(retry.RefundTo, gasGiven)
+				continue
+			}
+		} else {
+			tx = txes[0]
+			txes = txes[1:]
 		}
 
-		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
-		b.gasPool = core.GasPool(b.header.GasLimit)
-	}
-
-	for _, tx := range segment.Txes {
-		if tx.Gas() > PerBlockGasLimit || tx.Gas() > b.gasPool.Gas() {
-			// Ignore and transactions with higher than the max possible gas
+		sender, err := signer.Sender(tx)
+		if err != nil {
 			continue
 		}
-		snap := b.statedb.Snapshot()
-		b.statedb.Prepare(tx.Hash(), len(b.txes))
+
+		aggregator := &poster
+
+		if !isAggregated(*aggregator, sender) {
+			aggregator = nil
+		}
+
+		var dataGas uint64 = 0
+		if gasPrice.Sign() > 0 {
+			dataGas = math.MaxUint64
+			pricing := state.L1PricingState()
+			posterCost, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
+			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+			if posterCostInL2Gas.IsUint64() {
+				dataGas = posterCostInL2Gas.Uint64()
+			} else {
+				log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+			}
+		}
+
+		if dataGas > tx.Gas() {
+			// this txn is going to be rejected later
+			dataGas = 0
+		}
+
+		computeGas := tx.Gas() - dataGas
+
+		if computeGas > gasLeft {
+			continue
+		}
+
+		snap := statedb.Snapshot()
+		statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
+
+		gasLeft -= computeGas
+		gasPool := gethGas
+
 		receipt, err := core.ApplyTransaction(
-			ChainConfig,
-			b.chainContext,
-			&b.header.Coinbase,
-			&b.gasPool,
-			b.statedb,
-			b.header,
+			chainConfig,
+			chainContext,
+			&header.Coinbase,
+			&gasPool,
+			statedb,
+			header,
 			tx,
-			&b.header.GasUsed,
+			&header.GasUsed,
 			vm.Config{},
 		)
 		if err != nil {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
-			b.statedb.RevertToSnapshot(snap)
+			statedb.RevertToSnapshot(snap)
 			continue
 		}
-		b.txes = append(b.txes, tx)
-		b.receipts = append(b.receipts, receipt)
-	}
-}
 
-func (b *BlockBuilder) ConstructBlock(delayedMessagesRead uint64) (*types.Block, types.Receipts, *state.StateDB) {
-	if b.header == nil {
-		b.header = createNewHeader(b.lastBlockHeader, b.blockInfo)
+		if gasPool > gethGas {
+			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
+			panic("ApplyTransaction() gave back " + delta + " gas")
+		}
+
+		gasUsed := gethGas.Gas() - gasPool.Gas()
+		gethGas = gasPool
+
+		if gasUsed > computeGas {
+			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+			panic("ApplyTransaction() used " + delta + " more gas than it should have")
+		}
+
+		for _, txLog := range receipt.Logs {
+			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
+
+				ticketId := txLog.Topics[1]
+				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
+
+				from, _ := retryable.From()
+				to, _ := retryable.To()
+				value, _ := retryable.Callvalue()
+				data, _ := retryable.Calldata()
+
+				reedem := types.NewTx(&types.ArbitrumRetryTx{
+					ArbitrumContractTx: types.ArbitrumContractTx{
+						ChainId:   chainConfig.ChainID,
+						RequestId: txLog.Topics[2],
+						From:      from,
+						GasPrice:  gasPrice,
+						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+						To:        to,
+						Value:     value,
+						Data:      data,
+					},
+					TicketId: ticketId,
+					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
+				})
+
+				redeems = append(redeems, reedem)
+			}
+		}
+
+		complete = append(complete, tx)
+		receipts = append(receipts, receipt)
+		gasLeft -= gasUsed
 	}
 
-	binary.BigEndian.PutUint64(b.header.Nonce[:], delayedMessagesRead)
-	b.header.Root = b.statedb.IntermediateRoot(true)
+	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
+	header.Root = statedb.IntermediateRoot(true)
 
 	// Touch up the block hashes in receipts
-	tmpBlock := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+	tmpBlock := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
 	blockHash := tmpBlock.Hash()
 
-	for _, receipt := range b.receipts {
+	for _, receipt := range receipts {
 		receipt.BlockHash = blockHash
 		for _, txLog := range receipt.Logs {
 			txLog.BlockHash = blockHash
 		}
 	}
 
-	block := types.NewBlock(b.header, b.txes, nil, b.receipts, trie.NewStackTrie(nil))
+	state.UpgradeArbosVersionIfNecessary(header.Time)
 
-	FinalizeBlock(b.header, b.txes, b.receipts, b.statedb)
+	FinalizeBlock(header, complete, receipts, statedb)
+	header.Root = statedb.IntermediateRoot(true)
 
-	b.isDone = true
-	// Reset the block builder for the next block
-	receipts := b.receipts
-	return block, receipts, b.statedb
+	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
+
+	if len(block.Transactions()) != len(receipts) {
+		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
+	}
+
+	return block, receipts
+}
+
+type HeaderExtraInformation struct {
+	SendRoot common.Hash
+}
+
+func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
+	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
+		// The genesis block doesn't have an ArbOS encoded extra field
+		return HeaderExtraInformation{}, nil
+	}
+	if len(header.Extra) != 32 {
+		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
+	}
+	var sendRoot common.Hash
+	copy(sendRoot[:], header.Extra)
+	return HeaderExtraInformation{
+		SendRoot: sendRoot,
+	}, nil
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := OpenArbosState(statedb)
+		state := arbosState.OpenSystemArbosState(statedb)
 		state.SetLastTimestampSeen(header.Time)
-		state.RetryableState().TryToReapOneRetryable(header.Time)
+		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
+
+		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+		state.SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
-		header.Extra = state.SendMerkleAccumulator().Root().Bytes()
+		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed
+		root, _ := state.SendMerkleAccumulator().Root()
+		header.Extra = root.Bytes()
 	}
-}
-
-func (b *BlockBuilder) ChainContext() core.ChainContext {
-	return b.chainContext
 }

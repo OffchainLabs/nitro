@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
@@ -15,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -81,53 +83,48 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-func BuildBlock(statedb *state.StateDB, lastBlockHeader *types.Header, chainContext core.ChainContext, inbox arbstate.InboxBackend) (*types.Block, error) {
+func BuildBlock(
+	statedb *state.StateDB,
+	lastBlockHeader *types.Header,
+	chainContext core.ChainContext,
+	chainConfig *params.ChainConfig,
+	inbox arbstate.InboxBackend,
+) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
-	blockBuilder := arbos.NewBlockBuilder(lastBlockHeader, statedb, chainContext)
-	for {
-		message, err := inboxMultiplexer.Peek()
-		if err != nil {
-			return nil, err
-		}
-		segment, err := arbos.IncomingMessageToSegment(message.Message, arbos.ChainConfig.ChainID)
-		if err != nil {
-			log.Warn("error parsing incoming message", "err", err)
-			err = inboxMultiplexer.Advance()
-			if err != nil {
-				return nil, err
-			}
-			break
-		}
-		// Always passes if the block is empty
-		if !blockBuilder.ShouldAddMessage(segment) {
-			break
-		}
-		err = inboxMultiplexer.Advance()
-		if err != nil {
-			return nil, err
-		}
-		blockBuilder.AddMessage(segment)
-		if message.MustEndBlock {
-			break
-		}
+
+	message, err := inboxMultiplexer.Pop()
+	if err != nil {
+		return nil, err
 	}
-	block, _, _ := blockBuilder.ConstructBlock(inboxMultiplexer.DelayedMessagesRead())
+
+	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
+	l1Message := message.Message
+
+	block, _ := arbos.ProduceBlock(
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
+	)
 	return block, nil
 }
 
 func main() {
+	wavmio.StubInit()
+
+	// We initialize the elliptic curve before calling into wavmio.
+	// This allows the validator to cache the elliptic curve initialization.
+	btcec.S256()
+
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
-	lastBlockHash := wavmio.GetLastBlockHash()
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
+	glogger.Verbosity(log.LvlError)
 	log.Root().SetHandler(glogger)
 
-	fmt.Printf("Previous block hash: %v\n", lastBlockHash)
+	lastBlockHash := wavmio.GetLastBlockHash()
+
 	var lastBlockHeader *types.Header
 	var lastBlockStateRoot common.Hash
 	if lastBlockHash != (common.Hash{}) {
@@ -135,25 +132,29 @@ func main() {
 		lastBlockStateRoot = lastBlockHeader.Root
 	}
 
-	fmt.Printf("Previous block state root: %v\n", lastBlockStateRoot)
+	log.Info("Initial State", "lastBlockHash", lastBlockHash, "lastBlockStateRoot", lastBlockStateRoot)
 	statedb, err := state.New(lastBlockStateRoot, db, nil)
 	if err != nil {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
+	chainConfig := params.ArbitrumOneChainConfig()
 	chainContext := WavmChainContext{}
-	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, WavmInbox{})
+	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, chainConfig, WavmInbox{})
 	if err != nil {
 		panic(fmt.Sprintf("Error building block: %v", err.Error()))
 	}
-	if newBlock == nil {
-		// failed to parse message, move on without creating block
-		return
-	}
 
-	fmt.Printf("New state root: %v\n", newBlock.Root())
 	newBlockHash := newBlock.Hash()
-	fmt.Printf("New block hash: %v\n", newBlockHash)
 
+	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
+
+	extraInfo, err := arbos.DeserializeHeaderExtraInformation(newBlock.Header())
+	if err != nil {
+		panic(fmt.Sprintf("Error deserializing header extra info: %v", err))
+	}
 	wavmio.SetLastBlockHash(newBlockHash)
+	wavmio.SetSendRoot(extraInfo.SendRoot)
+
+	wavmio.StubFinal()
 }

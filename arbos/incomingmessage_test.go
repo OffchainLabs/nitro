@@ -37,12 +37,12 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	segment, err := IncomingMessageToSegment(newMsg, chainId)
+	txes, err := newMsg.ParseL2Transactions(chainId)
 	if err != nil {
 		t.Error(err)
 	}
-	if len(segment.Txes) != 0 {
-		t.Fatal("unexpected tx count")
+	if len(txes) != 0 {
+		Fail(t, "unexpected tx count")
 	}
 }
 
@@ -60,7 +60,7 @@ func TestBrotli(t *testing.T) {
 	}
 	compressed := outBuf.Bytes()
 	if len(compressed) >= len(orig) {
-		t.Fatal("compression didn't make it smaller")
+		Fail(t, "compression didn't make it smaller")
 	}
 	decompressor := brotli.NewReader(bytes.NewReader(compressed))
 	result, err := io.ReadAll(decompressor)
@@ -68,6 +68,6 @@ func TestBrotli(t *testing.T) {
 		t.Error(err)
 	}
 	if !bytes.Equal(orig, result) {
-		t.Fatal("decompressed data doesn't match original")
+		Fail(t, "decompressed data doesn't match original")
 	}
 }

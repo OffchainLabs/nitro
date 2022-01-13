@@ -13,8 +13,6 @@ contract OneStepProofEntry is IOneStepProofEntry {
     IOneStepProver proverMath;
     IOneStepProver proverHostIo;
 
-    uint256 constant MAX_STEPS = 1 << 43;
-
     constructor(
         IOneStepProver prover0_,
         IOneStepProver proverMem_,
@@ -48,7 +46,7 @@ contract OneStepProofEntry is IOneStepProofEntry {
                 return Machines.hash(mach);
             }
 
-            if (machineStep + 1 == MAX_STEPS) {
+            if (machineStep + 1 == OneStepProofEntryLib.MAX_STEPS) {
                 mach.status = MachineStatus.ERRORED;
                 return Machines.hash(mach);
             }

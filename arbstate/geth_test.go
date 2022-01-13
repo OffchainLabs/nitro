@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
@@ -49,7 +50,7 @@ var testChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
-	Arbitrum:            true,
+	ArbitrumChainParams: params.ArbitrumTestParams(),
 }
 
 func TestEthDepositMessage(t *testing.T) {
@@ -60,17 +61,17 @@ func TestEthDepositMessage(t *testing.T) {
 		panic("failed to init empty statedb")
 	}
 
-	addr := common.BigToAddress(big.NewInt(51395080))
+	addr := common.HexToAddress("0x32abcdeffffff")
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))
 
-	if statedb.GetBalance(addr).Cmp(big.NewInt(0)) != 0 {
-		t.Fatal()
+	if statedb.GetBalance(addr).Sign() != 0 {
+		Fail(t)
 	}
 
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
-		Sender:      addr,
+		Poster:      addr,
 		BlockNumber: common.BigToHash(big.NewInt(864513)),
 		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
 		RequestId:   common.BigToHash(big.NewInt(3)),
@@ -108,7 +109,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	balanceAfter := statedb.GetBalance(addr)
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 }
 
@@ -119,7 +120,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		segment, err := arbos.IncomingMessageToSegment(msg, chainId)
+		txes, err := msg.ParseL2Transactions(chainId)
 		if err != nil {
 			t.Error(err)
 		}
@@ -129,13 +130,23 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 			Difficulty: big.NewInt(1000),
 		}
 		gasPool := core.GasPool(100000)
-		for _, tx := range segment.Txes {
+		for _, tx := range txes {
 			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 			if err != nil {
-				t.Fatal(err)
+				Fail(t, err)
 			}
 		}
 
 		arbos.FinalizeBlock(nil, nil, nil, statedb)
 	}
+}
+
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

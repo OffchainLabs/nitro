@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -23,9 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
+// Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
+// The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
@@ -35,14 +37,16 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
-	validator *validator.BlockValidator
+	broadcastServer *broadcaster.Broadcaster
+	validator       *validator.BlockValidator
 }
 
-func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain) (*TransactionStreamer, error) {
+func NewTransactionStreamer(db ethdb.Database, bc *core.BlockChain, broadcastServer *broadcaster.Broadcaster) (*TransactionStreamer, error) {
 	inbox := &TransactionStreamer{
 		db:                 rawdb.NewTable(db, arbitrumPrefix),
 		bc:                 bc,
 		newMessageNotifier: make(chan struct{}, 1),
+		broadcastServer:    broadcastServer,
 	}
 	return inbox, nil
 }
@@ -56,28 +60,11 @@ func uint64ToBytes(x uint64) []byte {
 	return data
 }
 
-func bytesToUint64(b []byte) (uint64, error) {
-	if len(b) != 8 {
-		return 0, errors.New("decoding wrong length bytes to uint64")
-	}
-	return binary.BigEndian.Uint64(b), nil
-}
-
 func (s *TransactionStreamer) SetBlockValidator(validator *validator.BlockValidator) {
 	s.validator = validator
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
-	// Insert a messageCountToBlockPrefix entry for the genesis block
-	key := dbKey(messageCountToBlockPrefix, 0)
-	blockNumBytes, err := rlp.EncodeToBytes(uint64(0))
-	if err != nil {
-		return err
-	}
-	err = s.db.Put(key, blockNumBytes)
-	if err != nil {
-		return err
-	}
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
 	if err != nil {
@@ -95,38 +82,6 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	}
 	// TODO remove trailing messageCountToMessage and messageCountToBlockPrefix entries
 	return nil
-}
-
-var errBlockForMessageNotFound = errors.New("block for message count not found")
-
-func (s *TransactionStreamer) LookupBlockNumByMessageCount(count uint64, roundUp bool) (uint64, uint64, error) {
-	minKey := uint64ToBytes(count)
-	iter := s.db.NewIterator(messageCountToBlockPrefix, minKey)
-	defer iter.Release()
-	if iter.Error() != nil {
-		return 0, 0, iter.Error()
-	}
-	key := iter.Key()
-	if len(key) == 0 {
-		return 0, 0, errBlockForMessageNotFound
-	}
-	if !bytes.HasPrefix(key, messageCountToBlockPrefix) {
-		return 0, 0, errors.New("iterated key missing prefix")
-	}
-	key = key[len(messageCountToBlockPrefix):]
-	actualCount, err := bytesToUint64(key)
-	if err != nil {
-		return 0, 0, err
-	}
-	var block uint64
-	err = rlp.DecodeBytes(iter.Value(), &block)
-	if err != nil {
-		return 0, 0, err
-	}
-	if !roundUp && actualCount > count && block > 0 {
-		block--
-	}
-	return block, actualCount, nil
 }
 
 func (s *TransactionStreamer) ReorgTo(count uint64) error {
@@ -170,24 +125,16 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) e
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
-	targetBlockNumber, _, err := s.LookupBlockNumByMessageCount(count, false)
-	if err != nil {
-		return err
-	}
-	targetBlock := s.bc.GetBlockByNumber(targetBlockNumber)
+	targetBlock := s.bc.GetBlockByNumber(count)
 	if targetBlock == nil {
-		return errors.New("message count block not found")
+		return errors.New("reorg target block not found")
 	}
 
-	err = s.bc.ReorgToOldBlock(targetBlock)
+	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}
 
-	err = deleteStartingAt(s.db, batch, messageCountToBlockPrefix, uint64ToBytes(count+1))
-	if err != nil {
-		return err
-	}
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(count))
 	if err != nil {
 		return err
@@ -209,60 +156,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	key = append(key, prefix...)
 	key = append(key, uint64ToBytes(pos)...)
 	return key
-}
-
-func (s *TransactionStreamer) closeBlock(blockBuilder *arbos.BlockBuilder, firstMessage uint64, lastMessage uint64, delayedMessageCount uint64, recordingBlockBuilder *arbos.BlockBuilder, recordingKV *arbitrum.RecordingKV) (*types.Block, error) {
-	messageCount := lastMessage + 1
-	block, receipts, statedb := blockBuilder.ConstructBlock(delayedMessageCount)
-	if len(block.Transactions()) != len(receipts) {
-		return nil, errors.New("mismatch between number of transactions and number of receipts")
-	}
-	key := dbKey(messageCountToBlockPrefix, messageCount)
-	blockNumBytes, err := rlp.EncodeToBytes(block.NumberU64())
-	if err != nil {
-		return nil, err
-	}
-	err = s.db.Put(key, blockNumBytes)
-	if err != nil {
-		return nil, err
-	}
-	var logs []*types.Log
-	for _, receipt := range receipts {
-		logs = append(logs, receipt.Logs...)
-	}
-	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
-	if err != nil {
-		return nil, err
-	}
-	if status == core.SideStatTy {
-		return nil, errors.New("geth rejected block as non-canonical")
-	}
-	if s.validator != nil {
-		recordingBlockBuilder.ConstructBlock(delayedMessageCount)
-		preimages, err := arbitrum.PreimagesFromRecording(recordingBlockBuilder.ChainContext(), recordingKV)
-		if err != nil {
-			return nil, fmt.Errorf("failed getting records: %w", err)
-		}
-		s.validator.NewBlock(block, preimages, firstMessage, lastMessage)
-	}
-	return block, nil
-}
-
-// we don't use startpos - just passing it from input to output, so it'd be updated with blockbuilder
-func (s *TransactionStreamer) startNewBlock(lastHeader *types.Header, startPos uint64) (*arbos.BlockBuilder, uint64, *arbos.BlockBuilder, *arbitrum.RecordingKV, error) {
-	statedb, err := s.bc.StateAt(lastHeader.Root)
-	if err != nil {
-		return nil, startPos, nil, nil, err
-	}
-	blockbuilder := arbos.NewBlockBuilder(lastHeader, statedb, s.bc)
-	if s.validator == nil {
-		return blockbuilder, startPos, nil, nil, nil
-	}
-	statedb, chaincontext, recordingkv, err := arbitrum.PrepareRecording(s.bc, lastHeader)
-	if err != nil {
-		return nil, startPos, nil, nil, err
-	}
-	return blockbuilder, startPos, arbos.NewBlockBuilder(lastHeader, statedb, chaincontext), recordingkv, nil
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
@@ -337,6 +230,13 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 			messages = messages[1:]
 			pos++
 		} else {
+			var dbMessageParsed arbstate.MessageWithMetadata
+			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
+			if err != nil {
+				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
+			} else {
+				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-read", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-read", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
+			}
 			reorg = true
 			break
 		}
@@ -389,12 +289,22 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 	for _, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        true,
 			DelayedMessagesRead: delayedMessagesRead,
 		})
 	}
 
-	return s.writeMessages(pos, messagesWithMeta, nil)
+	if err := s.writeMessages(pos, messagesWithMeta, nil); err != nil {
+		return err
+	}
+
+	if s.broadcastServer != nil {
+		for i, message := range messagesWithMeta {
+			// TODO method for broadcasting more than one?
+			s.broadcastServer.BroadcastSingle(message, pos+uint64(i))
+		}
+	}
+
+	return nil
 }
 
 func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
@@ -416,14 +326,13 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 	}
 
 	if delayedMessagesRead != firstDelayedSeqNum {
-		return errors.New("attempted to insert delayed messages at incorrect position")
+		return fmt.Errorf("attempted to insert delayed messages at incorrect position got %d expected %d", firstDelayedSeqNum, delayedMessagesRead)
 	}
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
 		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
 			Message:             message,
-			MustEndBlock:        i == len(messages)-1,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
 		})
 	}
@@ -469,75 +378,27 @@ func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.Mess
 	return nil
 }
 
-// Only safe to call from createBlocks and while the reorg mutex is held
-func (s *TransactionStreamer) getLastBlockPosition() (uint64, uint64, error) {
-	count, err := s.GetMessageCount()
-	if err != nil {
-		return 0, 0, err
-	}
-
-	lastBlockNumber, startPos, err := s.LookupBlockNumByMessageCount(count, true)
-	if err == nil && startPos != count {
-		return 0, 0, errors.New("found block after last message")
-	}
-	if errors.Is(err, errBlockForMessageNotFound) {
-		// We couldn't find a block at or after the target position.
-		// Clear the error and search backwards for the last message count with a block.
-		err = nil
-		startPos = count
-		for startPos > 0 {
-			startPos--
-			key := dbKey(messageCountToBlockPrefix, startPos)
-			hasKey, err := s.db.Has(key)
-			if err != nil {
-				return 0, 0, err
-			}
-			if !hasKey {
-				continue
-			}
-			blockNumBytes, err := s.db.Get(key)
-			if err != nil {
-				return 0, 0, err
-			}
-			err = rlp.DecodeBytes(blockNumBytes, &lastBlockNumber)
-			if err != nil {
-				return 0, 0, err
-			}
-			break
-		}
-	}
-	if err != nil {
-		return 0, 0, err
-	}
-	if startPos > count {
-		return 0, 0, errors.New("found block for future message count")
-	}
-
-	return startPos, lastBlockNumber, nil
-}
-
+// Produce and record blocks for all available messages
 func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	pos, lastBlockNumber, err := s.getLastBlockPosition()
-	if err != nil {
-		return err
-	}
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
-
-	lastBlockHeader := s.bc.GetHeaderByNumber(lastBlockNumber)
+	lastBlockHeader := s.bc.CurrentHeader()
 	if lastBlockHeader == nil {
-		return errors.New("last block header not found")
+		return errors.New("current block header not found")
 	}
-	blockBuilder, startPos, recordingbuilder, recordingKV, err := s.startNewBlock(lastBlockHeader, pos)
+	pos := lastBlockHeader.Number.Uint64()
+	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
 	}
+
 	for pos < msgCount {
+
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg
 			return nil
@@ -552,57 +413,36 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		segment, err := arbos.IncomingMessageToSegment(msg.Message, arbos.ChainConfig.ChainID)
-		if err != nil {
-			// If we've failed to parse the incoming message, make a new block and move on to the next message
-			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
-			if err != nil {
-				return err
-			}
-			log.Warn("TransactionStreamer: closeblock and skipping message", "pos", pos)
-			// Skip this invalid message
-			pos++
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
-			if err != nil {
-				return err
-			}
-			continue
-		}
 
-		// If we shouldn't put the next message in the current block,
-		// make a new block before adding the next message.
-		if !blockBuilder.ShouldAddMessage(segment) {
-			block, err := s.closeBlock(blockBuilder, startPos, pos-1, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
-			if err != nil {
-				return err
-			}
-			log.Info("TransactionStreamer: closed block - should not add message", "pos", pos)
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos)
-			if err != nil {
-				return err
-			}
-			// Notice we fall through here to the AddMessage call
-		}
+		block, receipts := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			lastBlockHeader,
+			statedb,
+			s.bc,
+			s.bc.Config(),
+		)
 
-		// Add the message to the block
-		blockBuilder.AddMessage(segment)
-		if recordingbuilder != nil {
-			recordingbuilder.AddMessage(segment)
-		}
-
-		if msg.MustEndBlock {
-			// If this message must end the block, end it now
-			block, err := s.closeBlock(blockBuilder, startPos, pos, msg.DelayedMessagesRead, recordingbuilder, recordingKV)
-			if err != nil {
-				return err
-			}
-			log.Info("TransactionStreamer: closed block - must end block", "pos", pos)
-			blockBuilder, startPos, recordingbuilder, recordingKV, err = s.startNewBlock(block.Header(), pos+1)
-			if err != nil {
-				return err
-			}
-		}
+		// ProduceBlock advances one message
 		pos++
+
+		var logs []*types.Log
+		for _, receipt := range receipts {
+			logs = append(logs, receipt.Logs...)
+		}
+		status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+		if err != nil {
+			return err
+		}
+		if status == core.SideStatTy {
+			return errors.New("geth rejected block as non-canonical")
+		}
+
+		if s.validator != nil {
+			s.validator.NewBlock(block, lastBlockHeader, msg)
+		}
+
+		lastBlockHeader = block.Header()
 	}
 
 	return nil

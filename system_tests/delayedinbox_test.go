@@ -30,14 +30,10 @@ func init() {
 
 func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainTestInfo, delayedSender string, gas uint64) *types.Transaction {
 	txbytes, err := l2Tx.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	delayedInboxTxData, err := inboxABI.Pack("sendL2Message", txwrapped)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	return l1info.PrepareTx(delayedSender, "Inbox", gas, big.NewInt(0), delayedInboxTxData)
 }
 
@@ -54,23 +50,15 @@ func TestDelayInboxSimple(t *testing.T) {
 	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
 
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	usertxopts := l1info.GetDefaultTransactOpts("User")
 	txbytes, err := delayedTx.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
@@ -79,14 +67,10 @@ func TestDelayInboxSimple(t *testing.T) {
 		})
 	}
 	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
+		Fail(t, "Unexpected balance:", l2balance)
 	}
 }

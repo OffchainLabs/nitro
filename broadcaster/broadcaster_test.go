@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbitrum/packages/arb-util/configuration"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 type predicate interface {
@@ -53,7 +54,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	broadcasterSettings := configuration.FeedOutput{
+	broadcasterSettings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9642",
@@ -64,10 +65,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	}
 
 	b := NewBroadcaster(broadcasterSettings)
-	err := b.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, b.Start(ctx))
 	defer b.Stop()
 
 	dummyMessage := arbstate.MessageWithMetadata{}
@@ -126,4 +124,14 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	waitUntilUpdated(t, expectMessageCount(1,
 		"1 message after duplicates and already seen messages"))
 
+}
+
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

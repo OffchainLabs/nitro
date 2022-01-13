@@ -30,20 +30,18 @@ func TestOutboxProofs(t *testing.T) {
 	defer cancel()
 
 	arbSysAbi, err := precompilesgen.ArbSysMetaData.GetAbi()
-	failOnError(t, err, "failed to get abi")
+	Require(t, err, "failed to get abi")
 	withdrawTopic := arbSysAbi.Events["L2ToL1Transaction"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
 	arbSysAddress := common.HexToAddress("0x64")
 
-	l2info, _ := CreateTestL2(t, ctx)
-	client := l2info.Client
-	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ownerOps := l2info.GetDefaultTransactOpts("Owner")
+	l2info, _, client := CreateTestL2(t, ctx)
+	auth := l2info.GetDefaultTransactOpts("Owner")
 
-	txnCount := int64(1 + rand.Intn(128))
+	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
+	Require(t, err)
+
+	txnCount := int64(1 + rand.Intn(64))
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -62,17 +60,17 @@ func TestOutboxProofs(t *testing.T) {
 	txns := []common.Hash{}
 
 	for i := int64(0); i < txnCount; i++ {
-		ownerOps.Value = big.NewInt(i * 1000000000)
-		ownerOps.Nonce = big.NewInt(i)
-		tx, err := arbSys.WithdrawEth(&ownerOps, common.Address{})
-		failOnError(t, err, "ArbSys failed")
+		auth.Value = big.NewInt(i * 1000000000)
+		auth.Nonce = big.NewInt(i + 1)
+		tx, err := arbSys.WithdrawEth(&auth, common.Address{})
+		Require(t, err, "ArbSys failed")
 		txns = append(txns, tx.Hash())
 
 		time.Sleep(4 * time.Millisecond) // Geth takes a few ms for the receipt to show up
 		_, err = client.TransactionReceipt(ctx, tx.Hash())
 		if err == nil {
 			merkleState, err := arbSys.SendMerkleTreeState(&bind.CallOpts{})
-			failOnError(t, err, "could not get merkle root")
+			Require(t, err, "could not get merkle root")
 
 			root := proofRoot{
 				root: merkleState.Root,          // we assume the user knows the root and size
@@ -85,20 +83,20 @@ func TestOutboxProofs(t *testing.T) {
 	for _, tx := range txns {
 		var receipt *types.Receipt
 		receipt, err = client.TransactionReceipt(ctx, tx)
-		failOnError(t, err, "No receipt for txn")
+		Require(t, err, "No receipt for txn")
 
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			t.Fatal("Tx failed with status code:", receipt)
+			Fail(t, "Tx failed with status code:", receipt)
 		}
 		if len(receipt.Logs) == 0 {
-			t.Fatal("Tx didn't emit any logs")
+			Fail(t, "Tx didn't emit any logs")
 		}
 
 		for _, log := range receipt.Logs {
 
 			if log.Topics[0] == withdrawTopic {
 				parsedLog, err := arbSys.ParseL2ToL1Transaction(*log)
-				failOnError(t, err, "Failed to parse log")
+				Require(t, err, "Failed to parse log")
 
 				provables = append(provables, proofPair{
 					hash: common.BigToHash(parsedLog.Hash),
@@ -196,7 +194,7 @@ func TestOutboxProofs(t *testing.T) {
 						query,
 					},
 				})
-				failOnError(t, err, "couldn't get logs")
+				Require(t, err, "couldn't get logs")
 			}
 
 			t.Log("Querried for", len(query), "positions", query)
@@ -224,7 +222,7 @@ func TestOutboxProofs(t *testing.T) {
 
 				if zero, ok := partials[place]; ok {
 					if zero != (common.Hash{}) {
-						t.Fatal("Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
+						Fail(t, "Somehow got 2 partials for the same level\n\t1st:", zero, "\n\t2nd:", hash)
 					}
 					partials[place] = hash
 					partialsByLevel[level] = hash
@@ -258,7 +256,7 @@ func TestOutboxProofs(t *testing.T) {
 
 					curr, ok := known[step]
 					if !ok {
-						t.Fatal("We should know the current node's value")
+						Fail(t, "We should know the current node's value")
 					}
 
 					left := curr
@@ -270,7 +268,7 @@ func TestOutboxProofs(t *testing.T) {
 						step.Leaf -= 1 << step.Level
 						partial, ok := known[step]
 						if !ok {
-							t.Fatal("There should be a partial here")
+							Fail(t, "There should be a partial here")
 						}
 						left = partial
 					} else {
@@ -303,7 +301,7 @@ func TestOutboxProofs(t *testing.T) {
 			for i, place := range nodes {
 				hash, ok := known[place]
 				if !ok {
-					t.Fatal("We're missing data for the node at position", place)
+					Fail(t, "We're missing data for the node at position", place)
 				}
 				hashes[i] = hash
 				t.Log("node", place, hash)
@@ -317,14 +315,8 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			if !proof.IsCorrect() {
-				t.Fatal("Proof is wrong")
+				Fail(t, "Proof is wrong")
 			}
 		}
-	}
-}
-
-func failOnError(t *testing.T, err error, msg string) {
-	if err != nil {
-		t.Fatal(msg+":", err)
 	}
 }
