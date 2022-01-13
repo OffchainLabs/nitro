@@ -37,7 +37,7 @@ contract BridgeCreator is Ownable {
 
     event TemplatesUpdated();
 
-    constructor() public Ownable() {
+    constructor() Ownable() {
         delayedBridgeTemplate = new Bridge();
         sequencerInboxTemplate = new SequencerInbox();
         inboxTemplate = new Inbox();
