@@ -2,7 +2,7 @@
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 //
 
-package arbos
+package arbosState
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/statetransfer"
@@ -51,14 +52,15 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 		t.Fatal(output)
 	}
 
-	db, err := OpenStateDBForTest()
+	db := OpenStateDBForTesting(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := InitializeArbosFromJSON(db, marshaled); err != nil {
 		t.Fatal(err)
 	}
-	arbState := OpenArbosState(db)
+	arbState, err := OpenArbosState(db, &burn.SystemBurner{})
+	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkSendAccum(arbState, input.SendPartials, t)
 	checkDefaultAgg(arbState, input.DefaultAggregator, t)
@@ -138,23 +140,27 @@ func pseudorandomHashHashMapForTesting(salt *common.Hash, x uint64, maxItems uin
 
 func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *testing.T) {
 	atab := arbState.AddressTable()
-	if atab.Size() != uint64(len(addrTable)) {
-		t.Fatal()
+	atabSize, err := atab.Size()
+	Require(t, err)
+	if atabSize != uint64(len(addrTable)) {
+		Fail(t)
 	}
 	for i, addr := range addrTable {
-		res, exists := atab.LookupIndex(uint64(i))
+		res, exists, err := atab.LookupIndex(uint64(i))
+		Require(t, err)
 		if !exists {
-			t.Fatal()
+			Fail(t)
 		}
 		if res != addr {
-			t.Fatal()
+			Fail(t)
 		}
 	}
 }
 
 func checkSendAccum(arbState *ArbosState, expected []common.Hash, t *testing.T) {
 	sa := arbState.SendMerkleAccumulator()
-	partials := sa.GetPartials()
+	partials, err := sa.GetPartials()
+	Require(t, err)
 	if len(partials) != len(expected) {
 		t.Fatal()
 	}
@@ -165,24 +171,32 @@ func checkSendAccum(arbState *ArbosState, expected []common.Hash, t *testing.T) 
 		}
 		pexp[i] = &expected[i]
 	}
-	acc2 := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(pexp)
-	if acc2.Root() != sa.Root() {
+	acc2, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(pexp)
+	Require(t, err)
+	a2Root, err := acc2.Root()
+	Require(t, err)
+	saRoot, err := sa.Root()
+	Require(t, err)
+	if a2Root != saRoot {
 		t.Fatal()
 	}
 }
 
 func checkDefaultAgg(arbState *ArbosState, expected common.Address, t *testing.T) {
-	if arbState.L1PricingState().DefaultAggregator() != expected {
-		t.Fatal()
+	da, err := arbState.L1PricingState().DefaultAggregator()
+	Require(t, err)
+	if da != expected {
+		Fail(t)
 	}
 }
 
 func checkRetryables(arbState *ArbosState, expected []statetransfer.InitializationDataForRetryable, t *testing.T) {
 	ret := arbState.RetryableState()
 	for _, exp := range expected {
-		found := ret.OpenRetryable(exp.Id, 0)
+		found, err := ret.OpenRetryable(exp.Id, 0)
+		Require(t, err)
 		if found == nil {
-			t.Fatal()
+			Fail(t)
 		}
 		// TODO: detailed comparison
 	}
@@ -217,17 +231,22 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			}
 		}
 		if acct.AggregatorInfo != nil {
-			if l1p.AggregatorFeeCollector(addr) != acct.AggregatorInfo.FeeCollector {
+			fc, err := l1p.AggregatorFeeCollector(addr)
+			Require(t, err)
+			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()
 			}
-			if l1p.FixedChargeForAggregatorL1Gas(addr).Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
-				t.Fatal()
+			charge, err := l1p.FixedChargeForAggregatorL1Gas(addr)
+			Require(t, err)
+			if charge.Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
+				Fail(t)
 			}
 		}
 		if acct.AggregatorToPay != nil {
-			prefAgg, _ := l1p.PreferredAggregator(addr)
+			prefAgg, _, err := l1p.PreferredAggregator(addr)
+			Require(t, err)
 			if prefAgg != *acct.AggregatorToPay {
-				t.Fatal()
+				Fail(t)
 			}
 		}
 	}

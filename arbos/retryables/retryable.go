@@ -60,7 +60,7 @@ const (
 )
 
 func (rs *RetryableState) CreateRetryable(
-	currentTimestamp *uint64,
+	currentTimestamp uint64,
 	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,

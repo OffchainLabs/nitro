@@ -1,4 +1,4 @@
-pragma solidity ^0.7.5;
+pragma solidity >=0.4.21 <0.9.0;
 
 /**
 * @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E 
