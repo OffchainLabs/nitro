@@ -112,7 +112,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
      * @notice Set number of blocks until a node is considered confirmed
      * @param newConfirmPeriod new number of blocks
      */
-    function setConfirmPeriodBlocks(uint256 newConfirmPeriod) external override {
+    function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external override {
         confirmPeriodBlocks = newConfirmPeriod;
         emit OwnerFunctionCalled(9);
     }
@@ -121,7 +121,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
      * @notice Set number of extra blocks after a challenge
      * @param newExtraTimeBlocks new number of blocks
      */
-    function setExtraChallengeTimeBlocks(uint256 newExtraTimeBlocks) external override {
+    function setExtraChallengeTimeBlocks(uint64 newExtraTimeBlocks) external override {
         extraChallengeTimeBlocks = newExtraTimeBlocks;
         emit OwnerFunctionCalled(10);
     }
@@ -243,7 +243,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
         uint256 inboxMaxCount,
         uint64 numBlocks,
         bool errored,
-        uint256 prevNode
+        uint64 prevNode
     ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
@@ -268,7 +268,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     function forceConfirmNode(
-        uint256 nodeNum,
+        uint64 nodeNum,
         bytes32 blockHash,
         bytes32 sendRoot
     ) external override whenPaused {

@@ -25,8 +25,8 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
         whenNotPaused
     {
         requireUnresolvedExists();
-        uint256 latestConfirmedNodeNum = latestConfirmed();
-        uint256 firstUnresolvedNodeNum = firstUnresolvedNode();
+        uint64 latestConfirmedNodeNum = latestConfirmed();
+        uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
         Node storage firstUnresolvedNode_ = getNodeStorage(
             firstUnresolvedNodeNum
         );
@@ -88,7 +88,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
 
         // There is at least one non-zombie staker
         require(stakerCount() > 0, "NO_STAKERS");
-        uint256 nodeNum = firstUnresolvedNode();
+        uint64 nodeNum = firstUnresolvedNode();
         Node storage node = getNodeStorage(nodeNum);
 
         // Verify the block's deadline has passed
@@ -134,7 +134,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      * @param nodeNum Index of the node to move stake to. This must by a child of the node the staker is currently staked on
      * @param nodeHash Node hash of nodeNum (protects against reorgs)
      */
-    function stakeOnExistingNode(uint256 nodeNum, bytes32 nodeHash)
+    function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash)
         external
         onlyValidator
         whenNotPaused
@@ -174,7 +174,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
-        uint256 prevNode = latestStakedNode(msg.sender);
+        uint64 prevNode = latestStakedNode(msg.sender);
 
         RollupLib.Assertion memory assertion = RollupLib.decodeAssertion(
             assertionBytes32Fields,
@@ -281,7 +281,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      */
     function createChallenge(
         address[2] calldata stakers,
-        uint256[2] calldata nodeNums,
+        uint64[2] calldata nodeNums,
         MachineStatus[2][2] calldata machineStatuses,
         GlobalState[2][2] calldata globalStates,
         uint64[2] calldata numBlocks,
@@ -442,7 +442,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
     {
         require(zombieNum <= zombieCount(), "NO_SUCH_ZOMBIE");
         address zombieStakerAddress = zombieAddress(zombieNum);
-        uint256 latestNodeStaked = zombieLatestStakedNode(zombieNum);
+        uint64 latestNodeStaked = zombieLatestStakedNode(zombieNum);
         uint256 nodesRemoved = 0;
         uint256 firstUnresolved = firstUnresolvedNode();
         while (latestNodeStaked >= firstUnresolved && nodesRemoved < maxNodes) {
@@ -488,7 +488,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      */
     function currentRequiredStake(
         uint256 _blockNumber,
-        uint256 _firstUnresolvedNodeNum,
+        uint64 _firstUnresolvedNodeNum,
         uint256 _latestCreatedNode
     ) internal view returns (uint256) {
         // If there are no unresolved nodes, then you can use the base stake
@@ -557,8 +557,8 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      */
     function requiredStake(
         uint256 blockNumber,
-        uint256 firstUnresolvedNodeNum,
-        uint256 latestCreatedNode
+        uint64 firstUnresolvedNodeNum,
+        uint64 latestCreatedNode
     ) external view returns (uint256) {
         return
             currentRequiredStake(
@@ -569,7 +569,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
     }
 
     function currentRequiredStake() public view returns (uint256) {
-        uint256 firstUnresolvedNodeNum = firstUnresolvedNode();
+        uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
 
         return
             currentRequiredStake(
@@ -589,7 +589,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      * @param nodeNum The node on which to count staked zombies
      * @return The number of zombies staked on the node
      */
-    function countStakedZombies(uint256 nodeNum)
+    function countStakedZombies(uint64 nodeNum)
         public
         view
         override

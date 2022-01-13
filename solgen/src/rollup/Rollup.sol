@@ -31,7 +31,7 @@ import "../libraries/ProxyUtil.sol";
 contract Rollup is Proxy, RollupCore {
     using Address for address;
 
-    constructor(uint256 _confirmPeriodBlocks) Cloneable() Pausable() {
+    constructor(uint64 _confirmPeriodBlocks) Cloneable() Pausable() {
         // constructor is used so logic contract can't be init'ed
         confirmPeriodBlocks = _confirmPeriodBlocks;
         require(isInit(), "CONSTRUCTOR_NOT_INIT");
@@ -80,8 +80,8 @@ contract Rollup is Proxy, RollupCore {
         Node memory node = createInitialNode();
         initializeCore(node);
 
-        confirmPeriodBlocks = _rollupParams[0];
-        extraChallengeTimeBlocks = _rollupParams[1];
+        confirmPeriodBlocks = uint64(_rollupParams[0]);
+        extraChallengeTimeBlocks = uint64(_rollupParams[1]);
         chainId = _rollupParams[2];
         baseStake = _rollupParams[3];
         owner = _owner;
@@ -127,7 +127,7 @@ contract Rollup is Proxy, RollupCore {
                 0, // challenge hash (not challengeable)
                 0, // confirm data
                 0, // prev node
-                block.number // deadline block (not challengeable)
+                uint64(block.number) // deadline block (not challengeable)
             );
     }
 

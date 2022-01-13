@@ -26,19 +26,19 @@ struct Node {
     // Hash of the data that will be committed if this node is confirmed
     bytes32 confirmData;
     // Index of the node previous to this one
-    uint256 prevNum;
+    uint64 prevNum;
     // Deadline at which this node can be confirmed
-    uint256 deadlineBlock;
+    uint64 deadlineBlock;
     // Deadline at which a child of this node can be confirmed
-    uint256 noChildConfirmedBeforeBlock;
+    uint64 noChildConfirmedBeforeBlock;
     // Number of stakers staked on this node. This includes real stakers and zombies
-    uint256 stakerCount;
+    uint64 stakerCount;
     // This value starts at zero and is set to a value when the first child is created. After that it is constant until the node is destroyed or the owner destroys pending nodes
-    uint256 firstChildBlock;
+    uint64 firstChildBlock;
     // The number of the latest child of this node to be created
-    uint256 latestChildNumber;
+    uint64 latestChildNumber;
     // The block number when this node was created
-    uint256 createdAtBlock;
+    uint64 createdAtBlock;
 }
 
 /**
@@ -57,8 +57,8 @@ library NodeLib {
         bytes32 _stateHash,
         bytes32 _challengeHash,
         bytes32 _confirmData,
-        uint256 _prevNum,
-        uint256 _deadlineBlock
+        uint64 _prevNum,
+        uint64 _deadlineBlock
     ) internal view returns (Node memory) {
         Node memory node;
         node.stateHash = _stateHash;
@@ -67,7 +67,7 @@ library NodeLib {
         node.prevNum = _prevNum;
         node.deadlineBlock = _deadlineBlock;
         node.noChildConfirmedBeforeBlock = _deadlineBlock;
-        node.createdAtBlock = block.number;
+        node.createdAtBlock = uint64(block.number);
         return node;
     }
 
@@ -75,9 +75,9 @@ library NodeLib {
      * @notice Update child properties
      * @param number The child number to set
      */
-    function childCreated(Node storage self, uint256 number) internal {
+    function childCreated(Node storage self, uint64 number) internal {
         if (self.firstChildBlock == 0) {
-            self.firstChildBlock = block.number;
+            self.firstChildBlock = uint64(block.number);
         }
         self.latestChildNumber = number;
     }
@@ -86,7 +86,7 @@ library NodeLib {
      * @notice Update the child confirmed deadline
      * @param deadline The new deadline to set
      */
-    function newChildConfirmDeadline(Node storage self, uint256 deadline) internal {
+    function newChildConfirmDeadline(Node storage self, uint64 deadline) internal {
         self.noChildConfirmedBeforeBlock = deadline;
     }
 
