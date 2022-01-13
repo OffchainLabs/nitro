@@ -241,4 +241,20 @@ contract SequencerInbox is ISequencerInbox {
     function batchCount() external view override returns (uint256) {
         return inboxAccs.length;
     }
+
+    function setMaxTimeVariation(
+        uint256 maxDelayBlocks_,
+        uint256 maxFutureBlocks_,
+        uint256 maxDelaySeconds_,
+        uint256 maxFutureSeconds_
+    ) external override {
+        maxDelayBlocks = maxDelayBlocks_;
+        maxFutureBlocks = maxFutureBlocks_;
+        maxDelaySeconds = maxDelaySeconds_;
+        maxFutureSeconds = maxFutureSeconds_;
+    }
+
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external override {
+        isBatchPoster[addr] = isBatchPoster_;
+    }
 }

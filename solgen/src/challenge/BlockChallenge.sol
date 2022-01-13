@@ -1,24 +1,24 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+import "../libraries/Cloneable.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalStates.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
-import "./IExecutionChallenge.sol";
+import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
-import "./Cloneable.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
-    event ExecutionChallengeBegun(IExecutionChallenge indexed challenge, uint256 blockSteps);
+contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
+    event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
 
     IExecutionChallengeFactory public executionChallengeFactory;
 
     bytes32 public wasmModuleRoot;
     GlobalState[2] internal startAndEndGlobalStates;
 
-    IExecutionChallenge public executionChallenge;
+    IChallenge public executionChallenge;
     uint256 public executionChallengeAtSteps;
 
     constructor(
@@ -225,7 +225,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         }
     }
 
-    function clearChallenge() external {
+    function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         if (address(executionChallenge) != address(0)) {
             executionChallenge.clearChallenge();

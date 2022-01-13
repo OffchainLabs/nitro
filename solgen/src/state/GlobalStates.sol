@@ -19,4 +19,20 @@ library GlobalStates {
 			state.u64_vals[1]
 		));
 	}
+
+	function getBlockHash(GlobalState memory state) internal pure returns (bytes32) {
+		return state.bytes32_vals[0];
+	}
+
+	function getSendRoot(GlobalState memory state) internal pure returns (bytes32) {
+		return state.bytes32_vals[1];
+	}
+
+	function getInboxPosition(GlobalState memory state) internal pure returns (uint64) {
+		return state.u64_vals[0];
+	}
+
+	function getPositionInMessage(GlobalState memory state) internal pure returns (uint64) {
+		return state.u64_vals[1];
+	}
 }
