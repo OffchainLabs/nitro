@@ -47,7 +47,7 @@ contract RollupCreator is Ownable {
     address public rollupAdminLogic;
     address public rollupUserLogic;
 
-    constructor() public Ownable() {}
+    constructor() Ownable() {}
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
@@ -64,33 +64,28 @@ contract RollupCreator is Ownable {
         emit TemplatesUpdated();
     }
 
+    // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     function createRollup(
-        bytes32 _machineHash,
-        uint256 _confirmPeriodBlocks,
-        uint256 _extraChallengeTimeBlocks,
-        uint256 _avmGasSpeedLimitPerBlock,
-        uint256 _baseStake,
-        address _stakeToken,
-        address _rollupOwner,
-        address _sequencer,
-        uint256 _sequencerDelayBlocks,
-        uint256 _sequencerDelaySeconds,
-        bytes calldata _extraConfig
+        uint256 confirmPeriodBlocks,
+        uint256 extraChallengeTimeBlocks,
+        address stakeToken,
+        uint256 baseStake,
+        bytes32 wasmModuleRoot,
+        address owner,
+        uint256 chainId,
+        uint256[4] memory sequencerInboxParams
     ) external returns (address) {
         return
             createRollup(
                 RollupLib.Config(
-                    _machineHash,
-                    _confirmPeriodBlocks,
-                    _extraChallengeTimeBlocks,
-                    _avmGasSpeedLimitPerBlock,
-                    _baseStake,
-                    _stakeToken,
-                    _rollupOwner,
-                    _sequencer,
-                    _sequencerDelayBlocks,
-                    _sequencerDelaySeconds,
-                    _extraConfig
+                    confirmPeriodBlocks,
+                    extraChallengeTimeBlocks,
+                    stakeToken,
+                    baseStake,
+                    wasmModuleRoot,
+                    owner,
+                    chainId,
+                    sequencerInboxParams
                 )
             );
     }
@@ -123,20 +118,19 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), frame.rollup, config.sequencer);
+        ) = bridgeCreator.createBridge(address(frame.admin), frame.rollup);
 
         frame.admin.transferOwnership(config.owner);
         Rollup(payable(frame.rollup)).initialize(
-            config.machineHash,
+            config.wasmModuleRoot,
             [
                 config.confirmPeriodBlocks,
                 config.extraChallengeTimeBlocks,
-                config.avmGasSpeedLimitPerBlock,
+                config.chainId,
                 config.baseStake
             ],
             config.stakeToken,
             config.owner,
-            config.extraConfig,
             [
                 address(frame.delayedBridge),
                 address(frame.sequencerInbox),
@@ -145,7 +139,7 @@ contract RollupCreator is Ownable {
                 challengeFactory
             ],
             [rollupAdminLogic, rollupUserLogic],
-            [config.sequencerDelayBlocks, config.sequencerDelaySeconds]
+            config.sequencerInboxParams
         );
 
         emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin));

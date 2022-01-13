@@ -23,9 +23,15 @@ import "../state/GlobalStates.sol";
 
 library RollupLib {
     struct Config {
+        uint256 confirmPeriodBlocks;
+        uint256 extraChallengeTimeBlocks;
+        address stakeToken;
+        uint256 baseStake;
         bytes32 wasmModuleRoot;
         address owner;
         uint256 chainId;
+        // maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds
+        uint256[4] sequencerInboxParams;
     }
 
     struct ExecutionState {

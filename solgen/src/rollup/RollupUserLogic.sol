@@ -280,7 +280,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      * @param maxMessageCounts Total number of messages consumed by the two nodes
      */
     function createChallenge(
-        address payable[2] calldata stakers,
+        address[2] calldata stakers,
         uint256[2] calldata nodeNums,
         MachineStatus[2][2] calldata machineStatuses,
         GlobalState[2][2] calldata globalStates,
@@ -348,14 +348,12 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
             return;
         }
         // Start a challenge between staker1 and staker2. Staker1 will defend the correctness of node1, and staker2 will challenge it.
-        IChallenge challengeAddress = challengeFactory.createChallenge(
-            this,
-            wasmModuleRoots[0],
-            machineStatuses[0],
-            globalStates[0],
-            numBlocks[0],
-            stakers[0],
-            stakers[1],
+        IChallenge challengeAddress = createChallengeHelper(
+            stakers,
+            machineStatuses,
+            globalStates,
+            numBlocks,
+            wasmModuleRoots,
             commonEndTime - proposedTimes[0],
             commonEndTime - proposedTimes[1]
         ); // trusted external call
@@ -367,6 +365,28 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
             stakers[0],
             stakers[1],
             nodeNums[0]
+        );
+    }
+
+    function createChallengeHelper(
+        address[2] calldata stakers,
+        MachineStatus[2][2] calldata machineStatuses,
+        GlobalState[2][2] calldata globalStates,
+        uint64[2] calldata numBlocks,
+        bytes32[2] calldata wasmModuleRoots,
+        uint256 asserterTimeLeft,
+        uint256 challengerTimeLeft
+    ) internal returns (IChallenge) {
+        return challengeFactory.createChallenge(
+            this,
+            wasmModuleRoots[0],
+            machineStatuses[0],
+            globalStates[0],
+            numBlocks[0],
+            stakers[0],
+            stakers[1],
+            asserterTimeLeft,
+            challengerTimeLeft
         );
     }
 

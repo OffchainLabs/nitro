@@ -216,13 +216,13 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     {
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
-            address chall = inChallenge(stakerA[i], stakerB[i]);
+            IChallenge chall = inChallenge(stakerA[i], stakerB[i]);
 
-            require(address(0) != chall, "NOT_IN_CHALL");
+            require(address(0) != address(chall), "NOT_IN_CHALL");
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
 
-            IChallenge(chall).clearChallenge();
+            chall.clearChallenge();
         }
         emit OwnerFunctionCalled(21);
     }

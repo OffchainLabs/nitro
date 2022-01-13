@@ -72,8 +72,7 @@ contract BridgeCreator is Ownable {
 
     function createBridge(
         address adminProxy,
-        address rollup,
-        address sequencer
+        address rollup
     )
         external
         returns (
@@ -114,7 +113,7 @@ contract BridgeCreator is Ownable {
         }
 
         frame.delayedBridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), sequencer, rollup);
+        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup);
         frame.inbox.initialize(IBridge(frame.delayedBridge));
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));
