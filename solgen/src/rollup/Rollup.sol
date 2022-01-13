@@ -73,6 +73,7 @@ contract Rollup is Proxy, RollupCore {
         delayedBridge.setInbox(connectedContracts[3], true);
 
         rollupEventBridge.rollupInitialized(_owner, _rollupParams[2]);
+        sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
         challengeFactory = IBlockChallengeFactory(connectedContracts[4]);
 

@@ -8,6 +8,7 @@ pragma solidity ^0.8.0;
 import "../bridge/IBridge.sol";
 import "../bridge/Messages.sol";
 import "../bridge/ISequencerInbox.sol";
+import "../utils/IGasRefunder.sol";
 
 contract SequencerInboxStub is ISequencerInbox {
 	bytes32[] public override inboxAccs;
@@ -58,7 +59,7 @@ contract SequencerInboxStub is ISequencerInbox {
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        uint256 gasRefunder
+        IGasRefunder
     ) external {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
@@ -84,18 +85,14 @@ contract SequencerInboxStub is ISequencerInbox {
             totalDelayedMessagesRead,
             emptyTimeBounds
         );
-
-        if (gasRefunder != 0) {
-            revert("NOT_SUPPORTED");
-        }
     }
 
     function addSequencerL2Batch(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        uint256 gasRefunder
-    ) external {
+        IGasRefunder
+    ) external override {
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
@@ -113,10 +110,6 @@ contract SequencerInboxStub is ISequencerInbox {
             emptyTimeBounds,
             data
         );
-
-        if (gasRefunder != 0) {
-            revert("NOT_SUPPORTED");
-        }
     }
 
     function addSequencerL2BatchImpl(

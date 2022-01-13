@@ -5,6 +5,8 @@
 
 pragma solidity ^0.8.0;
 
+import "../utils/IGasRefunder.sol";
+
 interface ISequencerInbox {
     function inboxAccs(uint256 index) external view returns (bytes32);
 
@@ -18,4 +20,11 @@ interface ISequencerInbox {
     ) external;
 
     function setIsBatchPoster(address addr, bool isBatchPoster_) external;
+
+    function addSequencerL2Batch(
+        uint256 sequenceNumber,
+        bytes calldata data,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder
+    ) external;
 }

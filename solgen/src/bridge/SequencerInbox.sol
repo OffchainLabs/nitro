@@ -190,8 +190,8 @@ contract SequencerInbox is ISequencerInbox {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external {
-        require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
+    ) external override {
+        require(isBatchPoster[msg.sender] || msg.sender == rollup, "NOT_BATCH_POSTER");
 
         uint256 startGasLeft = gasleft();
 
