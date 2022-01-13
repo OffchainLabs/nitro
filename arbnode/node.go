@@ -79,13 +79,29 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		return nil, fmt.Errorf("error executing set inbox tx: %w", err)
 	}
 
-	sequencerInboxAddr, tx, _, err := bridgegen.DeploySequencerInbox(deployAuth, l1client, bridgeAddr, sequencer)
+	sequencerInboxAddr, tx, seqInbox, err := bridgegen.DeploySequencerInbox(deployAuth, l1client)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting sequencer inbox deploy tx: %w", err)
 	}
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing sequencer inbox deploy tx: %w", err)
+	}
+
+	tx, err = seqInbox.Initialize(deployAuth, bridgeAddr, deployAuth.From)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting seq inbox initialize tx: %w", err)
+	}
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing seq inbox initialize tx: %w", err)
+	}
+
+	tx, err = seqInbox.SetIsBatchPoster(deployAuth, sequencer, true)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting set is batch poster tx: %w", err)
+	}
 	txRes, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("error executing sequencer inbox deploy tx: %w", err)
+		return nil, fmt.Errorf("error executing set is batch poster tx: %w", err)
 	}
 
 	return &RollupAddresses{
