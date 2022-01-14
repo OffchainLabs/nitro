@@ -49,10 +49,6 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		// we already have a stored hash for the block, so just return
 		return nil
 	}
-	lastHash, err := bh.backingStorage.GetByUint64(1 + ((nextNumber + 255) % 256))
-	if err != nil {
-		return err
-	}
 	if nextNumber+256 < number {
 		nextNumber = number - 256 // no need to record hashes that we're just going to discard
 	}
@@ -63,7 +59,7 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		binary.LittleEndian.Uint64(nextNumBuf[:])
 		err = bh.backingStorage.SetByUint64(
 			1+(nextNumber%256),
-			common.BytesToHash(crypto.Keccak256(lastHash.Bytes(), blockHash.Bytes(), nextNumBuf[:])),
+			common.BytesToHash(crypto.Keccak256(blockHash.Bytes(), nextNumBuf[:])),
 		)
 		if err != nil {
 			return err

@@ -4,18 +4,14 @@
 
 package precompiles
 
-import (
-	"errors"
-)
-
 type ArbBLS struct {
 	Address addr
 }
 
-func (con ArbBLS) GetPublicKey(c ctx, evm mech, addr addr) (huge, huge, huge, huge, error) {
-	return nil, nil, nil, nil, errors.New("unimplemented")
+func (con ArbBLS) GetPublicKey(c ctx, evm mech, address addr) (huge, huge, huge, huge, error) {
+	return c.state.BLSTable().GetPublicKey(address)
 }
 
 func (con ArbBLS) Register(c ctx, evm mech, x0, x1, y0, y1 huge) error {
-	return errors.New("unimplemented")
+	return c.state.BLSTable().Register(c.caller, x0, x1, y0, y1)
 }
