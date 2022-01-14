@@ -13,14 +13,6 @@ contract OneStepProverHostIo is IOneStepProver {
     uint256 constant LEAF_SIZE = 32;
     uint256 constant INBOX_NUM = 2;
 
-    ISequencerInbox seqInbox;
-    IBridge delayedInbox;
-
-    constructor(ISequencerInbox _seqInbox, IBridge _delayedInbox) {
-        seqInbox = _seqInbox;
-        delayedInbox = _delayedInbox;
-    }
-
     function setLeafByte(
         bytes32 oldLeaf,
         uint256 idx,
@@ -161,7 +153,7 @@ contract OneStepProverHostIo is IOneStepProver {
         ValueStacks.push(mach.valueStack, Values.newI32(uint32(extracted.length)));
     }
 
-    function validateSequencerInbox(uint64 msgIndex, bytes calldata message)
+    function validateSequencerInbox(ExecutionContext calldata execCtx, uint64 msgIndex, bytes calldata message)
         internal
         view
         returns (bool)
@@ -174,36 +166,30 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes32 beforeAcc;
         bytes32 delayedAcc;
 
-        if (msgIndex > seqInbox.batchCount()) {
-            return false;
-        }
         if (msgIndex > 0) {
-            beforeAcc = seqInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.sequencerInbox.inboxAccs(msgIndex - 1);
         }
         if (afterDelayedMsg > 0) {
-            delayedAcc = delayedInbox.inboxAccs(afterDelayedMsg - 1);
+            delayedAcc = execCtx.delayedBridge.inboxAccs(afterDelayedMsg - 1);
         }
         bytes32 acc = keccak256(
             abi.encodePacked(beforeAcc, messageHash, delayedAcc)
         );
-        require(acc == seqInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
+        require(acc == execCtx.sequencerInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
         return true;
     }
 
-    function validateDelayedInbox(uint64 msgIndex, bytes calldata message)
+    function validateDelayedInbox(ExecutionContext calldata execCtx, uint64 msgIndex, bytes calldata message)
         internal
         view
         returns (bool)
     {
-        if (msgIndex > delayedInbox.messageCount()) {
-            return false;
-        }
         require(message.length >= 161, "BAD_DELAYED_PROOF");
 
         bytes32 beforeAcc;
 
         if (msgIndex > 0) {
-            beforeAcc = delayedInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.delayedBridge.inboxAccs(msgIndex - 1);
         }
 
         bytes32 messageDataHash = keccak256(message[161:]);
@@ -221,7 +207,7 @@ contract OneStepProverHostIo is IOneStepProver {
         );
         bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
 
-        require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
+        require(acc == execCtx.delayedBridge.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
         return true;
     }
 
@@ -261,7 +247,7 @@ contract OneStepProverHostIo is IOneStepProver {
             require(proof[proofOffset] == 0, "UNKNOWN_INBOX_PROOF");
             proofOffset++;
 
-            function(uint64, bytes calldata)
+            function(ExecutionContext calldata, uint64, bytes calldata)
                 internal
                 view
                 returns (bool) inboxValidate;
@@ -275,7 +261,7 @@ contract OneStepProverHostIo is IOneStepProver {
                 mach.status = MachineStatus.ERRORED;
                 return;
             }
-            success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
+            success = inboxValidate(execCtx, uint64(msgIndex), proof[proofOffset:]);
             if (!success) {
                 mach.status = MachineStatus.ERRORED;
                 return;

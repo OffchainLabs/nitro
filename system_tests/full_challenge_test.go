@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
-func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client, delayedBridge common.Address, seqInbox common.Address) common.Address {
+func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, seqInbox, delayedBridge)
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +66,8 @@ func CreateChallenge(
 	auth *bind.TransactOpts,
 	client *ethclient.Client,
 	ospEntry common.Address,
+	sequencerInbox common.Address,
+	delayedBridge common.Address,
 	wasmModuleRoot common.Hash,
 	startGlobalState validator.GoGlobalState,
 	endGlobalState validator.GoGlobalState,
@@ -96,7 +98,11 @@ func CreateChallenge(
 	tx, err = challenge.Initialize(
 		auth,
 		executionChallengeFactoryAddr,
-		resultReceiverAddr,
+		[3]common.Address{
+			resultReceiverAddr,
+			sequencerInbox,
+			delayedBridge,
+		},
 		wasmModuleRoot,
 		[2]uint8{
 			validator.STATUS_FINISHED,
@@ -305,6 +311,8 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		&deployerTxOpts,
 		backend,
 		ospEntry,
+		trueSeqInboxAddr,
+		delayedBridge,
 		wasmModuleRoot,
 		asserterStartGlobalState,
 		asserterEndGlobalState,

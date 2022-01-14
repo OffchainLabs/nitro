@@ -17,11 +17,12 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
         beacon.transferOwnership(msg.sender);
     }
 
+    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function createChallenge(
-        IChallengeResultReceiver resultReceiver_,
+        address[3] calldata contractAddresses,
         bytes32 wasmModuleRoot_,
-        MachineStatus[2] memory startAndEndMachineStatuses_,
-        GlobalState[2] memory startAndEndGlobalStates_,
+        MachineStatus[2] calldata startAndEndMachineStatuses_,
+        GlobalState[2] calldata startAndEndGlobalStates_,
         uint64 numBlocks,
         address asserter_,
         address challenger_,
@@ -31,7 +32,7 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
         address clone = address(new BeaconProxy(address(beacon), ""));
         BlockChallenge(clone).initialize(
             executionChallengeFactory,
-            resultReceiver_,
+            contractAddresses,
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
             startAndEndGlobalStates_,

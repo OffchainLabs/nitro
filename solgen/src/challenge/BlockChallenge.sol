@@ -21,9 +21,13 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     IChallenge public executionChallenge;
     uint256 public executionChallengeAtSteps;
 
+    ISequencerInbox public sequencerInbox;
+    IBridge public delayedBridge;
+
+    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
         IExecutionChallengeFactory executionChallengeFactory_,
-        IChallengeResultReceiver resultReceiver_,
+        address[3] memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
@@ -34,7 +38,9 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         uint256 challengerTimeLeft_
     ) external {
         executionChallengeFactory = executionChallengeFactory_;
-        resultReceiver = resultReceiver_;
+        resultReceiver = IChallengeResultReceiver(contractAddresses[0]);
+        sequencerInbox = ISequencerInbox(contractAddresses[1]);
+        delayedBridge = IBridge(contractAddresses[2]);
         wasmModuleRoot = wasmModuleRoot_;
         startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
@@ -149,7 +155,9 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         );
 
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: startAndEndGlobalStates[1].u64_vals[0] + 1
+            maxInboxMessagesRead: startAndEndGlobalStates[1].u64_vals[0] + 1,
+            sequencerInbox: sequencerInbox,
+            delayedBridge: delayedBridge
         });
 
         executionChallenge = executionChallengeFactory.createChallenge(

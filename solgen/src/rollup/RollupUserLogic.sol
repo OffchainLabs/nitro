@@ -378,7 +378,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
         uint256 challengerTimeLeft
     ) internal returns (IChallenge) {
         return challengeFactory.createChallenge(
-            this,
+            [address(this), address(sequencerBridge), address(delayedBridge)],
             wasmModuleRoots[0],
             machineStatuses[0],
             globalStates[0],

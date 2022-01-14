@@ -31,9 +31,9 @@ import "../libraries/ProxyUtil.sol";
 contract Rollup is Proxy, RollupCore {
     using Address for address;
 
-    constructor(uint64 _confirmPeriodBlocks) Cloneable() Pausable() {
+    constructor() Cloneable() Pausable() {
         // constructor is used so logic contract can't be init'ed
-        confirmPeriodBlocks = _confirmPeriodBlocks;
+        confirmPeriodBlocks = 1;
         require(isInit(), "CONSTRUCTOR_NOT_INIT");
     }
 

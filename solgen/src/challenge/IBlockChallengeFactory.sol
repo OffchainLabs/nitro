@@ -6,8 +6,9 @@ import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
 interface IBlockChallengeFactory {
+    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function createChallenge(
-        IChallengeResultReceiver resultReceiver_,
+        address[3] calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
