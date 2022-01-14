@@ -35,6 +35,12 @@ interface ArbSys {
     function arbBlockNumber() external view returns (uint);
 
     /**
+    * @notice Get Arbitrum block hash (reverts unless currentBlockNum-256 <= arbBlockNum < currentBlockNum)
+    * @return block hash
+     */
+    function arbBlockHash(uint arbBlockNum) external view returns (bytes32);
+
+    /**
     * @notice Send given amount of Eth to dest from sender.
     * This is a convenience function, which is equivalent to calling sendTxToL1 with empty calldataForL1.
     * @param destination recipient address on L1
