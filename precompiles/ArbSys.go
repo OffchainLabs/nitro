@@ -9,7 +9,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -33,7 +32,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 }
 
 func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
-	return big.NewInt(53), nil
+	return big.NewInt(1000), nil
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
@@ -61,15 +60,8 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
 
-	if evm.Depth() == 2 {
-		switch *c.txProcessor.TopTxType {
-		case types.ArbitrumUnsignedTxType:
-		case types.ArbitrumContractTxType:
-		case types.ArbitrumRetryTxType:
-			return true, nil
-		default:
-			return false, nil
-		}
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+		return true, nil
 	}
 	return false, nil
 }
@@ -83,13 +75,8 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 		address = c.txProcessor.Callers[evm.Depth()-2]
 	}
 
-	if evm.Depth() == 2 {
-		switch *c.txProcessor.TopTxType {
-		case types.ArbitrumUnsignedTxType:
-		case types.ArbitrumContractTxType:
-		case types.ArbitrumRetryTxType:
-			address = util.InverseRemapL1Address(address)
-		}
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+		address = util.InverseRemapL1Address(address)
 	}
 
 	return address, nil

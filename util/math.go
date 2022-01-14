@@ -41,8 +41,8 @@ func BigMulByFrac(value *big.Int, numerator int64, denominator int64) *big.Int {
 // multiply a huge by a rational whose components are non-negative
 func BigMulByUfrac(value *big.Int, numerator uint64, denominator uint64) *big.Int {
 	value = new(big.Int).Set(value)
-	value.Mul(value, big.NewInt(SaturatingCast(numerator)))
-	value.Div(value, big.NewInt(SaturatingCast(denominator)))
+	value.Mul(value, new(big.Int).SetUint64(numerator))
+	value.Div(value, new(big.Int).SetUint64(denominator))
 	return value
 }
 
@@ -53,7 +53,7 @@ func BigMulByInt(multiplicand *big.Int, multiplier int64) *big.Int {
 
 // multiply a huge by a unsigned integer
 func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
-	return new(big.Int).Mul(multiplicand, big.NewInt(SaturatingCast(multiplier)))
+	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }
 
 // add two int64's without overflow

@@ -25,10 +25,15 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 	t.Fatal(colors.Red, printables, colors.Clear)
 }
 
-func RandomAddress() common.Address {
-	bytes := []byte{}
-	for i := 0; i < 20; i++ {
-		bytes = append(bytes, byte(rand.Intn(256)))
+func RandomizeSlice(slice []byte) {
+	_, err := rand.Read(slice)
+	if err != nil {
+		panic(err)
 	}
-	return common.BytesToAddress(bytes)
+}
+
+func RandomAddress() common.Address {
+	var address common.Address
+	RandomizeSlice(address[:])
+	return address
 }

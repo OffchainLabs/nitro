@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var AddressAliasOffset *big.Int
@@ -134,4 +135,14 @@ func InverseRemapL1Address(l1Addr common.Address) common.Address {
 		sumBytes = sumBytes[len(sumBytes)-20:]
 	}
 	return common.BytesToAddress(sumBytes)
+}
+
+func DoesTxTypeAlias(txType byte) bool {
+	switch txType {
+	case types.ArbitrumUnsignedTxType:
+	case types.ArbitrumContractTxType:
+	case types.ArbitrumRetryTxType:
+		return true
+	}
+	return false
 }
