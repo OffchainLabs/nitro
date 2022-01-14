@@ -31,8 +31,9 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 	return evm.ChainConfig().ChainID, nil
 }
 
-func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
-	return big.NewInt(1000), nil
+func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
+	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // nitro starts at version 53
+	return version, nil
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
