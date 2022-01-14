@@ -54,7 +54,7 @@ interface ArbRetryableTx {
 
     event TicketCreated(bytes32 indexed ticketId);
     event LifetimeExtended(bytes32 indexed ticketId, uint newTimeout);
-    event RedeemScheduled(bytes32 indexed ticketId, bytes32 indexed retryTxHash, uint64 sequenceNum, uint64 donatedGas, address gasDonor, bytes32 uniquifier);
+    event RedeemScheduled(bytes32 indexed ticketId, bytes32 indexed retryTxHash, uint64 sequenceNum, uint64 donatedGas, address gasDonor, uint64 nonce);
     event Redeemed(bytes32 indexed ticketId);
     event Canceled(bytes32 indexed ticketId);
 }

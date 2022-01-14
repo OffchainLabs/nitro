@@ -6,7 +6,6 @@ package retryables
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
@@ -156,16 +155,6 @@ func (retryable *Retryable) IncrementNumTries() (uint64, error) {
 	return retryable.numTries.Increment()
 }
 
-func UniquifierForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {
-	// Since tickets & sequence numbers are assigned sequentially, each is expressible as a uint64.
-	// Relying on this, we can set the upper and lower 8 bytes for the ticket & sequence number, respectively.
-
-	bytes := make([]byte, 32)
-	binary.BigEndian.PutUint64(bytes[0:], ticketId.Big().Uint64())
-	binary.BigEndian.PutUint64(bytes[24:], trySequenceNum)
-	return common.BytesToHash(bytes)
-}
-
 func (retryable *Retryable) Beneficiary() (common.Address, error) {
 	return retryable.beneficiary.Get()
 }
@@ -286,7 +275,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 	return nil
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, uniqifier common.Hash, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {
 		return nil, err
@@ -304,15 +293,15 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, uniqifier common.Hash, gasP
 		return nil, err
 	}
 	return &types.ArbitrumRetryTx{
-		ChainId:   chainId,
-		RequestId: uniqifier,
-		From:      from,
-		GasPrice:  gasPrice,
-		Gas:       gas,
-		To:        to,
-		Value:     callvalue,
-		Data:      calldata,
-		TicketId:  ticketId,
-		RefundTo:  refundTo,
+		ChainId:  chainId,
+		Nonce:    nonce,
+		From:     from,
+		GasPrice: gasPrice,
+		Gas:      gas,
+		To:       to,
+		Value:    callvalue,
+		Data:     calldata,
+		TicketId: ticketId,
+		RefundTo: refundTo,
 	}, nil
 }

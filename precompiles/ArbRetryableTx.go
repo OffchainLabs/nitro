@@ -18,12 +18,12 @@ type ArbRetryableTx struct {
 	Address                 addr
 	TicketCreated           func(ctx, mech, [32]byte) error
 	LifetimeExtended        func(ctx, mech, [32]byte, huge) error
-	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr, [32]byte) error
+	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr, uint64) error
 	Redeemed                func(ctx, mech, [32]byte) error
 	Canceled                func(ctx, mech, [32]byte) error
 	TicketCreatedGasCost    func([32]byte) (uint64, error)
 	LifetimeExtendedGasCost func([32]byte, huge) (uint64, error)
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, [32]byte) (uint64, error)
+	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, uint64) (uint64, error)
 	RedeemedGasCost         func([32]byte) (uint64, error)
 	CanceledGasCost         func([32]byte) (uint64, error)
 }
@@ -144,15 +144,14 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	if retryable == nil {
 		return hash{}, NotFoundError
 	}
-	sequenceNum, err := retryable.IncrementNumTries()
+	nonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err
 	}
-	attemptUniquifier := retryables.UniquifierForRedeemAttempt(ticketId, sequenceNum)
 
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
-		attemptUniquifier,
+		nonce,
 		evm.GasPrice,
 		0, // will fill this in below
 		ticketId,
@@ -164,7 +163,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 
 	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
 	//     by that much, so that we'll donate the correct amount of gas
-	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, hash{})
+	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, 0)
 	if err != nil {
 		return hash{}, err
 	}
@@ -183,7 +182,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, 
 	retryTx := types.NewTx(retryTxInner)
 	retryTxHash := retryTx.Hash()
 
-	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, sequenceNum, gasToDonate, c.caller, attemptUniquifier)
+	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller, nonce)
 	if err != nil {
 		return hash{}, err
 	}
