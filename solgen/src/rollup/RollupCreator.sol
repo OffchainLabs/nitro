@@ -38,7 +38,7 @@ import "./RollupLib.sol";
 import "../utils/ICloneable.sol";
 
 contract RollupCreator is Ownable {
-    event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy);
+    event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address delayedBridge);
     event TemplatesUpdated();
 
     BridgeCreator public bridgeCreator;
@@ -142,7 +142,7 @@ contract RollupCreator is Ownable {
             config.sequencerInboxParams
         );
 
-        emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin));
+        emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
         return frame.rollup;
     }
 }

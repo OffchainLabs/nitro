@@ -51,7 +51,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
-	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
+	var startL2BlockNumber uint64 = 1
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)
@@ -208,9 +208,9 @@ func TestSequencerInboxReader(t *testing.T) {
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			}
 			Require(t, err)
 			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
@@ -237,7 +237,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			if err != nil {
 				Fail(t, err)
 			}
-			if batchCount.Cmp(big.NewInt(int64(len(blockStates)-1))) == 0 {
+			if batchCount.Cmp(big.NewInt(int64(len(blockStates)))) == 0 {
 				break
 			} else if i >= 100 {
 				Fail(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)

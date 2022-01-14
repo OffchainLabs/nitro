@@ -44,7 +44,8 @@ interface IRollupCore {
         uint256 inboxMaxCount,
         bytes32 afterInboxBatchAcc,
         bytes32[2][2] assertionBytes32Fields,
-        uint64[2][2] assertionIntFields
+        uint64[2][2] assertionIntFields,
+        bytes32 wasmModuleRoot
     );
 
     event NodeConfirmed(

@@ -278,7 +278,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				reorgingDelayed = true
 			}
 
-			log.Trace("looking up messages", "from", from.String(), "to", to.String())
+			log.Trace("looking up messages", "from", from.String(), "to", to.String(), "reorgingDelayed", reorgingDelayed, "reorgingSequencer", reorgingSequencer)
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
 				delayedMismatch, err := ir.addMessages(ctx, sequencerBatches, delayedMessages)
 				if err != nil {

@@ -647,7 +647,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
 
             memoryFrame.node = NodeLib.initialize(
                 RollupLib.stateHash(assertion.afterState),
-                memoryFrame.executionHash,
+                RollupLib.challengeRoot(assertion, memoryFrame.executionHash, block.number, wasmModuleRoot),
                 RollupLib.confirmHash(assertion),
                 prevNodeNum,
                 memoryFrame.deadlineBlock
@@ -687,7 +687,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             memoryFrame.currentInboxSize,
             memoryFrame.sequencerBatchAcc,
             assertionBytes32Fields,
-            assertionIntFields
+            assertionIntFields,
+            wasmModuleRoot
         );
 
         return newNodeHash;
