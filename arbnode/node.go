@@ -184,10 +184,10 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	confirmPeriodBlocks := big.NewInt(20)
 	extraChallengeTimeBlocks := big.NewInt(20)
 	seqInboxParams := [4]*big.Int{
-		big.NewInt(100),    // maxDelayBlocks
-		big.NewInt(10),     // maxFutureBlocks
-		big.NewInt(5 * 60), // maxDelaySeconds
-		big.NewInt(60),     // maxFutureSeconds
+		big.NewInt(60 * 60 * 24 * 15), // maxDelayBlocks
+		big.NewInt(12),                // maxFutureBlocks
+		big.NewInt(60 * 60 * 24),      // maxDelaySeconds
+		big.NewInt(60 * 60),           // maxFutureSeconds
 	}
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
@@ -363,13 +363,16 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	n.TxStreamer.Start(ctx)
+	if n.InboxReader != nil {
+		err = n.InboxReader.Start(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return err
-	}
-	n.TxStreamer.Start(ctx)
-	if n.InboxReader != nil {
-		n.InboxReader.Start(ctx)
 	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)

@@ -159,7 +159,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     big.NewInt(0),
 		Nonce:     0,
-		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, make([]byte, 32)...),
+		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, l2TxId.Bytes()...),
 	}
 	tx := l2info.SignTxAs("Owner", txData)
 	txbytes, err := tx.MarshalBinary()
@@ -175,11 +175,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	// wait for redeem transaction to complete successfully
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
-	receipt, err = arbnode.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+	receipt, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2client, tx, time.Second*5)
 	Require(t, err)
-	if receipt.Status != 1 {
-		Fail(t)
-	}
 
 	// verify that balance transfer happened, so we know the retry succeeded
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
