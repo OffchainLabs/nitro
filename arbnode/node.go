@@ -176,6 +176,11 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 }
 
 func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+	// Deployment sometimes fails without a manually set gas limit
+	oldGasLimit := deployAuth.GasLimit
+	deployAuth.GasLimit = 15_000_000
+	defer (func() { deployAuth.GasLimit = oldGasLimit })()
+
 	rollupCreator, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
