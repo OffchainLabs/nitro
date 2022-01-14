@@ -35,15 +35,9 @@ func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) ([32]b
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
-	var upper, lower uint64
-	upper = evm.Context.BlockNumber.Uint64()
-	if upper < 257 {
-		lower = 0
-	} else {
-		lower = upper - 256
-	}
-	if requestedBlockNum < lower || requestedBlockNum >= upper {
-		return [32]byte{}, InvalidBlockNum
+	currentNumber := evm.Context.BlockNumber.Uint64()
+	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
 	}
 
 	return evm.Context.GetHash(requestedBlockNum), nil
