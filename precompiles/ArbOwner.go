@@ -37,6 +37,10 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	return c.state.ChainOwners().Remove(addr)
 }
 
+func (con ArbOwner) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L1PricingState().SetL1GasPriceEstimateWei(priceInWei)
+}
+
 func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
 	return c.state.SetGasPriceWei(priceInWei)
 }
