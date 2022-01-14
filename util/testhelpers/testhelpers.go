@@ -5,8 +5,10 @@
 package testhelpers
 
 import (
+	"math/rand"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/util/colors"
 )
 
@@ -21,4 +23,17 @@ func RequireImpl(t *testing.T, err error, text ...string) {
 func FailImpl(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	t.Fatal(colors.Red, printables, colors.Clear)
+}
+
+func RandomizeSlice(slice []byte) {
+	_, err := rand.Read(slice)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func RandomAddress() common.Address {
+	var address common.Address
+	RandomizeSlice(address[:])
+	return address
 }

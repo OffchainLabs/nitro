@@ -6,6 +6,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type ArbInfo struct {
@@ -24,7 +25,7 @@ func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
 		return nil, err
 	}
 	code := evm.StateDB.GetCode(account)
-	if err := c.Burn(params.CopyGas * uint64((len(code)+31)/32)); err != nil {
+	if err := c.Burn(params.CopyGas * util.WordsForBytes(uint64(len(code)))); err != nil {
 		return nil, err
 	}
 	return code, nil
