@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -180,6 +179,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	if receipt.Status != 1 {
 		Fail(t)
 	}
+	retryTxId := receipt.Logs[0].Topics[2]
 
 	// verify that balance transfer happened, so we know the retry succeeded
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
@@ -190,7 +190,6 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 
 	// check the receipt for the retry
-	retryTxId := retryables.UniquifierForRedeemAttempt(*l2TxId, 1)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
