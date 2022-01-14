@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 
@@ -29,6 +31,8 @@ import (
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
+	chainConfig := params.ArbitrumTestChainConfig()
+
 	genesisAlloc := make(map[common.Address]core.GenesisAccount)
 	genesisAlloc[rewrittenOwnerAddress] = core.GenesisAccount{
 		Balance:    big.NewInt(params.Ether),
@@ -36,7 +40,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		PrivateKey: nil,
 	}
 	genesis := &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     chainConfig,
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumTest"),
@@ -48,18 +52,18 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 
 	db := rawdb.NewMemoryDatabase()
 	genesis.MustCommit(db)
 	shouldPreserve := func(_ *types.Block) bool { return false }
-	bc, err := core.NewBlockChain(db, nil, arbos.ChainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
+	bc, err := core.NewBlockChain(db, nil, chainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
 	if err != nil {
 		Fail(t, err)
 	}
 
-	inbox, err := NewTransactionStreamer(db, bc)
+	inbox, err := NewTransactionStreamer(db, bc, nil)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -84,7 +88,7 @@ func TestTransactionStreamer(t *testing.T) {
 	defer cancel()
 	inbox.Start(ctx)
 
-	maxExpectedGasCost := big.NewInt(arbos.InitialGasPriceWei)
+	maxExpectedGasCost := big.NewInt(arbosState.InitialGasPriceWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
 
 	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
@@ -134,7 +138,7 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbos.InitialGasPriceWei))...)
+				l2Message = append(l2Message, math.U256Bytes(big.NewInt(arbosState.InitialGasPriceWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(amount)...)
 				messages = append(messages, arbstate.MessageWithMetadata{

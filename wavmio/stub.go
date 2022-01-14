@@ -147,6 +147,9 @@ func SetLastBlockHash(hash [32]byte) {
 	lastBlockHash = hash
 }
 
+func SetSendRoot(hash [32]byte) {
+}
+
 func GetPositionWithinMessage() uint64 {
 	return posWithinMsg
 }

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -21,14 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
-
-var simulatedChainID = big.NewInt(1337)
 
 var (
 	l1Genesys, l2Genesys *core.Genesis
@@ -45,9 +45,13 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 	}
 }
 
-func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info := NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), 0)
+func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	if l1info == nil {
+		l1info = NewL1TestInfo(t)
+	}
 	l1info.GenerateAccount("faucet")
+
+	chainConfig := params.ArbitrumTestChainConfig()
 
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
@@ -63,8 +67,12 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	Require(t, err)
 
 	nodeConf := ethconfig.Defaults
-	nodeConf.NetworkId = arbos.ChainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, arbos.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
+	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	infoGenesys := l1info.GetGenesysAlloc()
+	for acct, info := range infoGenesys {
+		l1Genesys.Alloc[acct] = info
+	}
 	nodeConf.Genesis = l1Genesys
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
@@ -89,7 +97,7 @@ func CreateTestL1BlockChain(t *testing.T) (*BlockchainTestInfo, *eth.Ethereum, *
 	return l1info, l1backend, stack
 }
 
-func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
+func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
@@ -109,7 +117,7 @@ func TestDeployOnL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 }
 
 func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
-	l2info := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(arbos.ChainConfig.ChainID)), 1e6)
+	l2info := NewArbTestInfo(t)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
 	l2GenesysAlloc := make(map[common.Address]core.GenesisAccount)
@@ -124,7 +132,7 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		PrivateKey: nil,
 	}
 	l2Genesys = &core.Genesis{
-		Config:     arbos.ChainConfig,
+		Config:     params.ArbitrumTestChainConfig(),
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),
@@ -136,7 +144,7 @@ func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Da
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbos.InitialGasPriceWei),
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
 	}
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
@@ -159,16 +167,25 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
-	l1info, l1backend, l1stack := CreateTestL1BlockChain(t)
+	conf := arbnode.NodeConfigL1Test
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
+}
+
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
-	addresses := TestDeployOnL1(t, ctx, l1info)
+	addresses := DeployOnTestL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, &arbnode.NodeConfigL1Test, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+	if !isSequencer {
+		nodeConfig.BatchPoster = false
+	}
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1info.Client, addresses, sequencerTxOptsPtr)
+
 	Require(t, err)
 	Require(t, node.Start(ctx))
 
@@ -177,30 +194,32 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 }
 
 // L2 -Only. Enough for tests that needs no interface to L1
-func CreateTestL2(
-	t *testing.T,
-	ctx context.Context,
-) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client, *bind.TransactOpts) {
+// Requires precompiles.AllowDebugPrecompiles = true
+func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
+}
+
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
-	node, err := arbnode.CreateNode(stack, chainDb, &arbnode.NodeConfigL2Test, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	l2info.Client = ClientForArbBackend(t, node.Backend)
 
 	client := l2info.Client
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	debugAuth := l2info.GetDefaultTransactOpts("Owner")
 
 	// make auth a chain owner
 	arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
 	Require(t, err, "failed to deploy ArbDebug")
 
-	tx, err := arbdebug.BecomeChainOwner(&auth)
+	tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 	Require(t, err, "failed to deploy ArbDebug")
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	return l2info, node, client, &auth
+	return l2info, node, client
 }
 
 func Require(t *testing.T, err error, text ...string) {
@@ -211,4 +230,32 @@ func Require(t *testing.T, err error, text ...string) {
 func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
+	nodeConf := arbnode.NodeConfigL1Test
+	nodeConf.BatchPoster = false
+	nodeConf.BlockValidator = blockValidator
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, &nodeConf)
+}
+
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+	l1rpcClient, err := l1stack.Attach()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l1client := ethclient.NewClient(l1rpcClient)
+	l2stack, err := arbnode.CreateDefaultStack()
+	Require(t, err)
+
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
+	Require(t, err)
+
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	Require(t, err)
+
+	err = node.Start(ctx)
+	Require(t, err)
+	l2client := ClientForArbBackend(t, node.Backend)
+	return l2client, node
 }

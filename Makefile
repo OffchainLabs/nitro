@@ -75,10 +75,17 @@ lint: .make/lint
 test-go: .make/test-go
 	@printf $(done)
 
+test-go-challenge: test-go-deps
+	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	solgen/test/proofs/go.json
+
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms)
+	@printf $(done)
 
 clean:
 	go clean -testcache
@@ -232,10 +239,10 @@ solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prov
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(arbitrator_output_root)/lib/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --always-merkleize
+	$(arbitrator_prover_bin) $< -l $(arbitrator_output_root)/lib/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 solgen/test/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
-	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --inbox arbitrator/prover/test-cases/rust/messages/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/messages/msg1.bin
+	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin
 
 solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000

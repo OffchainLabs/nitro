@@ -24,7 +24,7 @@ interface ArbSys {
     * @notice Get internal version number identifying an ArbOS build
     * @return version number as int
      */
-    function arbOSVersion() external pure returns (uint);
+    function arbOSVersion() external view returns (uint);
 
     function arbChainID() external view returns(uint);
 

@@ -551,10 +551,11 @@ impl Module {
 }
 
 // Globalstate holds:
-// bytes32 - lastblockhash
+// bytes32 - last_block_hash
+// bytes32 - send_root
 // uint64 - inbox_position
 // uint64 - position_within_message
-pub const GLOBAL_STATE_BYTES32_NUM: usize = 1;
+pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
 pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -904,6 +905,7 @@ impl Machine {
                 f,
             ));
             entrypoint.push(HirInstruction::Simple(Opcode::Drop));
+            entrypoint.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
         }
         // Go support
         if let Some(&f) = main_module.exports.get("run") {
@@ -1107,6 +1109,13 @@ impl Machine {
             .code
             .get(self.pc.inst)
             .cloned()
+    }
+
+    pub fn get_pc(&self) -> Option<ProgramCounter> {
+        if self.is_halted() {
+            return None;
+        }
+        Some(self.pc)
     }
 
     fn test_next_instruction(module: &Module, pc: &ProgramCounter) {
@@ -1759,6 +1768,10 @@ impl Machine {
         }
     }
 
+    pub fn get_modules_root(&self) -> Bytes32 {
+        self.get_modules_merkle().root()
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
@@ -1772,7 +1785,7 @@ impl Machine {
                 h.update(&(self.pc.module as u32).to_be_bytes());
                 h.update(&(self.pc.func as u32).to_be_bytes());
                 h.update(&(self.pc.inst as u32).to_be_bytes());
-                h.update(self.get_modules_merkle().root());
+                h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
                 h.update("Machine finished:");
@@ -2014,6 +2027,7 @@ impl Machine {
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
+                            data.push(0); // inbox proof type
                             data.extend(msg_data);
                         }
                     } else {
@@ -2044,6 +2058,10 @@ impl Machine {
 
     pub fn add_inbox_msg(&mut self, identifier: InboxIdentifier, index: u64, data: Vec<u8>) {
         self.inbox_contents.insert((identifier, index), data);
+    }
+
+    pub fn get_module_names(&self, module: usize) -> Option<&NameCustomSection> {
+        self.modules.get(module).map(|m| &*m.names)
     }
 
     pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {

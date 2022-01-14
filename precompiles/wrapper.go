@@ -8,19 +8,16 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
 )
 
 // A precompile wrapper for those not allowed in production
 type DebugPrecompile struct {
 	precompile ArbosPrecompile
 }
-
-// A test may set this to true to enable debug-only precompiles
-var AllowDebugPrecompiles = false
 
 // create a debug-only precompile wrapper
 func debugOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
@@ -38,7 +35,9 @@ func (wrapper *DebugPrecompile) Call(
 	evm *vm.EVM,
 ) ([]byte, uint64, error) {
 
-	if AllowDebugPrecompiles {
+	debugMode := evm.ChainConfig().DebugMode()
+
+	if debugMode {
 		con := wrapper.precompile
 		return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
 	} else {
@@ -72,18 +71,27 @@ func (wrapper *OwnerPrecompile) Call(
 ) ([]byte, uint64, error) {
 	con := wrapper.precompile
 
-	if gasSupplied < 3*params.SloadGas {
-		// the user can't pay for the ownership check
-		return nil, 0, vm.ErrOutOfGas
+	burner := &context{
+		gasSupplied: gasSupplied,
+		gasLeft:     gasSupplied,
 	}
-	owners := arbos.OpenArbosState(evm.StateDB).ChainOwners()
-	if !owners.IsMember(caller) {
-		gasLeft := gasSupplied - 3*params.SloadGas
-		return nil, gasLeft, errors.New("unauthorized caller to access-controlled method")
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	if err != nil {
+		return nil, burner.gasLeft, err
 	}
 
-	// we don't deduct gas since we don't want to charge the owner
-	return con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	owners := state.ChainOwners()
+	isOwner, err := owners.IsMember(caller)
+	if err != nil {
+		return nil, burner.gasLeft, err
+	}
+
+	if !isOwner {
+		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
+	}
+
+	output, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
+	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 
 }
 
