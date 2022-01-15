@@ -1,5 +1,5 @@
 # Overview
-ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference exaustively documents the specific calls ArbOS makes available. For more details on the infrustructure that makes this possible, please refer to the [ArbOS documentation](ArbOS.md). For an abbreviated reference on the precompiles we expect users to most often use, please see the [common precompiles documentation](CommonPrecompiles.md)
+ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference exhaustively documents the specific calls ArbOS makes available. For more details on the infrastructure that makes this possible, please refer to the [ArbOS documentation](ArbOS.md). For an abbreviated reference on the precompiles we expect users to most often use, please see the [common precompiles documentation](CommonPrecompiles.md)
 
 From the perspective of user applications, precompiles live as contracts at the following addresses. Click on any to jump to their section.
 
@@ -16,7 +16,7 @@ From the perspective of user applications, precompiles live as contracts at the 
 | [`ArbOwnerPublic`](#ArbOwnerPublic)            | `0x6b`         | Info about owners                  |
 | [`ArbosTest`](#ArbosTest)                      | `0x69`         | No longer used                     |
 | [`ArbRetryableTx`](#ArbRetryableTx)            | `0x6e`         | Managing retryables                |
-| [`ArbStatistics`](#ArbStatistics)              | `0x6f`         | Info about the pre-nitro state     |
+| [`ArbStatistics`](#ArbStatistics)              | `0x6f`         | Info about the pre-Nitro state     |
 | [`ArbSys`](#ArbSys)                            | `0x64`         | System-level functionality         |
 
 [ArbAddressTable_link]: https://github.com/OffchainLabs/nitro/blob/master/precompiles/ArbAddressTable.go
@@ -112,11 +112,11 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 # [ArbFunctionTable][ArbFunctionTable_link]<a name=ArbFunctionTable></a>
 Provided aggregator's the ability to manage function tables. Aggregation works differently in Nitro, so these methods have been stubbed and their effects disabled. They are kept for backwards compatibility.
 
-| Methods                               |                                             |
-| :------------------------------------ | :------------------------------------------ |
-| [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty            |
-| [`Size`][FT1]`(address)`              | Return's the empty table's size, which is 0 |
-| [`Upload`][FT2]`(bytes)`              | Does nothing                                |
+| Methods                               |                                            |
+| :------------------------------------ | :----------------------------------------- |
+| [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty           |
+| [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
+| [`Upload`][FT2]`(bytes)`              | Does nothing                               |
 
 [FT0]: todo
 [FT1]: todo
@@ -262,10 +262,10 @@ Provides info about
 [S9]: todo
 [S10]: todo
 
-| Events                            |                                                                  |
-| :-------------------------------- | :--------------------------------------------------------------- |
-| [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox prooving |
-| [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs   |
+| Events                            |                                                                 |
+| :-------------------------------- | :-------------------------------------------------------------- |
+| [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
+| [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs  |
 
 [Se0]: todo
 [Se1]: todo

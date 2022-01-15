@@ -59,13 +59,6 @@ interface ArbSys {
     function sendMerkleTreeState() external view returns(uint size, bytes32 root, bytes32[] memory partials);
 
     /**
-    * @notice get the number of transactions issued by the given external account or the account sequence number of the given contract
-    * @param account target account
-    * @return the number of transactions issued by the given external account or the account sequence number of the given contract
-    */
-    function getTransactionCount(address account) external view returns(uint256);
-
-    /**
     * @notice check if current call is coming from l1
     * @return true if the caller of this was called directly from L1
     */

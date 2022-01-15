@@ -21,7 +21,7 @@ func (con ArbFunctionTable) Upload(c ctx, evm mech, buf []byte) error {
 	return nil
 }
 
-// Return’s the empty table’s size, which is 0
+// Returns the empty table's size, which is 0
 func (con ArbFunctionTable) Size(c ctx, evm mech, addr addr) (huge, error) {
 	return big.NewInt(0), nil
 }
