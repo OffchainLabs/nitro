@@ -1,7 +1,3 @@
-codecov:
-  fixes:
-    - "github.com/offchainlabs/arbstate/::"
-    - "github.com/ethereum/::"
 coverage:
   status:
     project:
