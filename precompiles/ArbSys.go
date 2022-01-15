@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -34,13 +33,6 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
 	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // nitro starts at version 53
 	return version, nil
-}
-
-func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
-	if err := c.Burn(storage.StorageReadCost); err != nil {
-		return nil, err
-	}
-	return evm.StateDB.GetState(address, common.BigToHash(index)).Big(), nil
 }
 
 func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
