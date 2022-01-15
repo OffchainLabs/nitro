@@ -9,7 +9,7 @@ We store ArbOS's state at an address inside a geth `statedb`. In doing so, ArbOS
 
 ## Hooks
 
-A call to [`ReadyEVMForL2`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbstate/geth-hook.go#L40) installs the following transaction-specific hooks into each geth [`EVM`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/evm.go#L101) right before it performs a state transition. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Without this call, the state transition will instead use the default [`DefaultTxProcessor`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/arbitrum_evm.go#L26) and get exactly the same results as vanilla Geth. A [`TxProcessor`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L26) object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime. What follows is an overview of each hook, in chronological order.
+A call to [`ReadyEVMForL2`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbstate/geth-hook.go#L40) installs the following transaction-specific hooks into each geth [`EVM`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/evm.go#L101) right before it performs a state transition. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Without this call, the state transition will instead use the default [`DefaultTxProcessor`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/arbitrum_evm.go#L26) and get exactly the same results as vanilla geth. A [`TxProcessor`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L26) object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime. What follows is an overview of each hook, in chronological order.
 
 ### [`StartTxHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L63)
 The [`StartTxHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L63) prepares ArbOS for arbitrum-specific transaction types: retryables are accounted for, and deposits are made.
@@ -48,3 +48,16 @@ This interface is the main interaction-point between geth-standard APIs and the 
 RecordingKV is a read-only key-value store, which retrieves values from an internal trie database. All values accessed by a RecordingKV are also recorded internally. This is used to record all preimages accessed during block creation, which will be needed to proove execution of this particular block.
 A [`RecordingChainContext`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L101) should also be used, to record which block headers the block execution reads (another option would be to always assume the last 256 block headers were accessed).
 The process is simplified using two functions: [`PrepareRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L133) creates a stateDB and chaincontext objects, running block creation process using these objects records the required preimages, and [`PreimagesFromRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L148) function extracts the preimages recorded.
+
+## Arbitrum Chain Parameters
+Arbitrum One is not 
+A Nitro rollup can be configured at genesis with 
+
+### `EnableArbos` 
+Introduces ArbOS, creating an
+
+### `AllowDebugPrecompiles` 
+Allows access to debug precompiles. Not enabled for Arbitrum One. When false, calls to debug precompiles will always revert.
+
+### `DataAvailabilityCommittee`
+Currently does nothing besides indicate that the rollup will access a data availability service for preimage resolution. This is not enabled for Arbitrum One, which is a strict state-function of its L1 inbox messages.

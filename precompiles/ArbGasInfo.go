@@ -14,13 +14,15 @@ import (
 	"github.com/offchainlabs/arbstate/util"
 )
 
+// Provides insight into the cost of using the rollup.
+type ArbGasInfo struct {
+	Address addr // 0x6c
+}
+
 var zero = big.NewInt(0)
 var storageArbGas = big.NewInt(int64(storage.StorageWriteCost))
 
-type ArbGasInfo struct {
-	Address addr
-}
-
+// Gets prices in wei when using the provided aggregator
 func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	c ctx,
 	evm mech,
@@ -56,6 +58,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	return perL2Tx, perL1CalldataUnit, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
 
+// Gets prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
 	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
 	if err != nil {
@@ -64,6 +67,7 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 	return con.GetPricesInWeiWithAggregator(c, evm, aggregator)
 }
 
+// Gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
 	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
 	if err != nil {
@@ -87,6 +91,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
 }
 
+// Gets prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
 	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
 	if err != nil {
@@ -95,6 +100,7 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 	return con.GetPricesInArbGasWithAggregator(c, evm, aggregator)
 }
 
+// Gets the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
 	speedLimit := big.NewInt(arbosState.SpeedLimitPerSecond)
 	gasPoolMax := big.NewInt(arbosState.GasPoolMax)
@@ -102,10 +108,12 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return speedLimit, gasPoolMax, maxTxGasLimit, nil
 }
 
+// Gets the current estimate of the L1 gas price
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return c.state.L1PricingState().L1GasPriceEstimateWei()
 }
 
+// Gets the fee paid to the aggregator for posting this tx
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }

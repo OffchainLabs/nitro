@@ -4,7 +4,7 @@ ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment o
 
 ## Precompiles
 
-ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, refer to the solidity interfaces and go source code.
+ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](Precompiles.md).
 
 A precompile consists of a of solidity interface in [`solgen/src/precompiles/`](https://github.com/OffchainLabs/nitro/tree/new-retryables/solgen/src/precompiles) and a corresponding golang implementation in [`precompiles/`](https://github.com/OffchainLabs/nitro/tree/new-retryables/precompiles). Using geth's abi generator, [`solgen/gen.go`](https://github.com/OffchainLabs/nitro/blob/new-retryables/solgen/gen.go) generates [`solgen/go/precompilesgen/precompilesgen.go`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/solgen/gen.go#L55), which collects the ABI data of the precompiles. The [runtime installer](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L365) uses this generated file to check the validity of each precompile's implementer.
 

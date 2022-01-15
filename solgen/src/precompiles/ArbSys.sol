@@ -66,15 +66,6 @@ interface ArbSys {
     function getTransactionCount(address account) external view returns(uint256);
 
     /**
-    * @notice get the value of target L2 storage slot
-    * This function is only callable from address 0 to prevent contracts from being able to call it
-    * @param account target account
-    * @param index target index of storage slot
-    * @return stotage value for the given account at the given index
-    */
-    function getStorageAt(address account, uint256 index) external view returns (uint256);
-
-    /**
     * @notice check if current call is coming from l1
     * @return true if the caller of this was called directly from L1
     */
