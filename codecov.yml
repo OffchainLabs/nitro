@@ -2,3 +2,13 @@ codecov:
   fixes:
     - "github.com/offchainlabs/arbstate/::"
     - "github.com/ethereum/::"
+coverage:
+  status:
+    project:
+      default: false
+github_checks:
+  annotations: false
+comment:
+  layout: ""
+  behavior: once
+  after_n_builds: 2
