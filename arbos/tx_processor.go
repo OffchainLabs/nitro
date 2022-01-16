@@ -5,6 +5,10 @@
 package arbos
 
 import (
+	"encoding/binary"
+	"fmt"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math"
 	"math/big"
 
@@ -12,10 +16,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -72,13 +74,13 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 // returns whether message is a successful deposit
-func (p *TxProcessor) StartTxHook() bool {
+func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// Changes to the statedb in this hook will be discarded should the tx later revert.
 	// Hence, modifications can be made with the assumption that the tx will succeed.
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
-		return false
+		return false, 0, nil, nil
 	}
 
 	tipe := underlyingTx.Type()
@@ -87,17 +89,17 @@ func (p *TxProcessor) StartTxHook() bool {
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		if p.msg.From() != arbAddress {
-			return false
+			return false, 0, nil, nil
 		}
 		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
-		return true
+		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		p.stateDB.AddBalance(tx.From, tx.DepositValue)
 
 		time := p.blockContext.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
-		_, err := p.state.RetryableState().CreateRetryable(
+		retryable, err := p.state.RetryableState().CreateRetryable(
 			time,
 			underlyingTx.Hash(),
 			timeout,
@@ -108,14 +110,55 @@ func (p *TxProcessor) StartTxHook() bool {
 			tx.Data,
 		)
 		p.state.Restrict(err)
+		fmt.Println("======= creating ticketId ", underlyingTx.Hash())
 
+		retryTxInner, err := retryable.MakeTx(
+			underlyingTx.ChainId(),
+			0,
+			p.blockContext.BaseFee,
+			p.msg.Gas(),
+			underlyingTx.Hash(),
+			p.msg.From(),
+		)
+		p.state.Restrict(err)
+
+		_, err = retryable.IncrementNumTries()
+		p.state.Restrict(err)
+
+		buf8 := make([]byte, 8)
+		empty24 := make([]byte, 24)
+		data := []byte{}
+		data = append(data, empty24...)
+		binary.BigEndian.PutUint64(buf8, 0)
+		data = append(data, buf8...)
+		data = append(data, empty24...)
+		binary.BigEndian.PutUint64(buf8, p.msg.Gas())
+		data = append(data, buf8...)
+		data = append(data, common.BytesToHash(p.msg.From().Bytes()).Bytes()...)
+		data = append(data, empty24...)
+		binary.BigEndian.PutUint64(buf8, 0)
+		data = append(data, buf8...)
+
+		event := &types.Log{
+			Address:     ArbRetryableTxAddress,
+			Topics:      []common.Hash{RedeemScheduledEventID, underlyingTx.Hash(), types.NewTx(retryTxInner).Hash()},
+			Data:        data,
+			BlockNumber: p.blockContext.BlockNumber.Uint64(),
+			// Geth will set all other fields, which include
+			//   TxHash, TxIndex, Index, and Removed
+		}
+		p.stateDB.AddLog(event)
+
+		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
-		_, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		fmt.Println("======= running ArbitrumRetryTx")
+		// deleted, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		// fmt.Println("======= deleted? ", deleted)
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
 	}
-	return false
+	return false, 0, nil, nil
 }
 
 func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {

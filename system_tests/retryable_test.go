@@ -52,7 +52,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != 1 {
+	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
 
@@ -76,7 +76,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
 	Require(t, err)
-	if receipt.Status != 1 {
+	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
 	}
 
@@ -120,7 +120,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
-	if l1receipt.Status != 1 {
+	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
 
@@ -143,7 +143,16 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
 	Require(t, err)
-	if receipt.Status != 0 {
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fail(t)
+	}
+	ticketId := receipt.Logs[0].Topics[1]
+	firstRetryTxId := receipt.Logs[0].Topics[2]
+
+	// get receipt for the auto-redeem, make sure it failed
+	receipt, err = arbnode.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusFailed {
 		Fail(t)
 	}
 
@@ -154,11 +163,11 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	arbRetryableAddress := common.BigToAddress(big.NewInt(0x6e))
 	txData := &types.DynamicFeeTx{
 		To:        &arbRetryableAddress,
-		Gas:       1000001,
+		Gas:       10000001,
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     big.NewInt(0),
 		Nonce:     0,
-		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, make([]byte, 32)...),
+		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, ticketId.Bytes()...),
 	}
 	tx := l2info.SignTxAs("Owner", txData)
 	txbytes, err := tx.MarshalBinary()
@@ -176,8 +185,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	receipt, err = arbnode.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)
-	if receipt.Status != 1 {
-		Fail(t)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fail(t, *receipt)
 	}
 	retryTxId := receipt.Logs[0].Topics[2]
 
