@@ -5,6 +5,9 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math"
 	"math/big"
 
@@ -12,10 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -32,6 +33,8 @@ type TxProcessor struct {
 	state        *arbosState.ArbosState
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
+	Callers      []common.Address
+	TopTxType    *byte // set once in StartTxHook
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -44,7 +47,17 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		state:        arbosState,
 		PosterFee:    new(big.Int),
 		posterGas:    0,
+		Callers:      []common.Address{},
+		TopTxType:    nil,
 	}
+}
+
+func (p *TxProcessor) PushCaller(addr common.Address) {
+	p.Callers = append(p.Callers, addr)
+}
+
+func (p *TxProcessor) PopCaller() {
+	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
 func isAggregated(l1Address, l2Address common.Address) bool {
@@ -68,6 +81,9 @@ func (p *TxProcessor) StartTxHook() bool {
 	if underlyingTx == nil {
 		return false
 	}
+
+	tipe := underlyingTx.Type()
+	p.TopTxType = &tipe
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
@@ -185,4 +201,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
+}
+
+func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return 0, err
+	}
+	return state.Blockhashes().NextBlockNumber()
+}
+
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }

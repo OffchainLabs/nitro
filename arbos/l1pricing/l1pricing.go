@@ -162,6 +162,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 // Values greater than DataWasNotCompressed are treated as equivalent to DataWasNotCompressed.
 
 const DataWasNotCompressed uint64 = 1000000
+const TxFixedCost = 64 // TODO: Pick a better fixed cost
 
 func (ps *L1PricingState) PosterDataCost(
 	sender common.Address,
@@ -179,7 +180,7 @@ func (ps *L1PricingState) PosterDataCost(
 		return big.NewInt(0), nil
 	}
 
-	bytesToCharge := uint64(len(data) + 64) // TODO: Pick a better fixed cost
+	bytesToCharge := uint64(len(data) + TxFixedCost)
 
 	ratio, err := ps.AggregatorCompressionRatio(preferredAggregator)
 	if err != nil {

@@ -24,7 +24,7 @@ interface ArbSys {
     * @notice Get internal version number identifying an ArbOS build
     * @return version number as int
      */
-    function arbOSVersion() external pure returns (uint);
+    function arbOSVersion() external view returns (uint);
 
     function arbChainID() external view returns(uint);
 
@@ -33,6 +33,12 @@ interface ArbSys {
     * @return block number as int
      */
     function arbBlockNumber() external view returns (uint);
+
+    /**
+    * @notice Get Arbitrum block hash (reverts unless currentBlockNum-256 <= arbBlockNum < currentBlockNum)
+    * @return block hash
+     */
+    function arbBlockHash(uint arbBlockNum) external view returns (bytes32);
 
     /**
     * @notice Send given amount of Eth to dest from sender.

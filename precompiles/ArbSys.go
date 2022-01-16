@@ -23,16 +23,33 @@ type ArbSys struct {
 	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) (uint64, error)
 }
 
+var InvalidBlockNum = errors.New("Invalid block number")
+
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return evm.Context.BlockNumber, nil
+}
+
+func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) ([32]byte, error) {
+	if !arbBlockNumber.IsUint64() {
+		return [32]byte{}, InvalidBlockNum
+	}
+	requestedBlockNum := arbBlockNumber.Uint64()
+
+	currentNumber := evm.Context.BlockNumber.Uint64()
+	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+	}
+
+	return evm.Context.GetHash(requestedBlockNum), nil
 }
 
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 	return evm.ChainConfig().ChainID, nil
 }
 
-func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
-	return big.NewInt(1000), nil
+func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
+	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // nitro starts at version 53
+	return version, nil
 }
 
 func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
@@ -51,20 +68,35 @@ func (con *ArbSys) GetTransactionCount(c ctx, evm mech, account addr) (huge, err
 }
 
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	// need to modify EVM to add a getter for its depth field
-	return false, errors.New("unimplemented")
+	return evm.Depth() <= 2, nil
 }
 
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
 	return util.RemapL1Address(sender), nil
 }
 
-func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-	// need special support to enable this
-	return addr{}, errors.New("unimplemented")
+func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
+	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType)
+	return aliased, nil
 }
 
-func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
+func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
+	// this precompile retrieves the unaliased caller's caller
+
+	address := addr{}
+
+	if evm.Depth() > 1 {
+		address = c.txProcessor.Callers[evm.Depth()-2]
+	}
+
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+		address = util.InverseRemapL1Address(address)
+	}
+
+	return address, nil
+}
+
+func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 
 	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := c.state
@@ -120,8 +152,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	return sendHash.Big(), err
 }
 
-func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
-	if c.caller != (common.Address{}) {
+func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, [32]byte, [][32]byte, error) {
+	if c.caller != (addr{}) {
 		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
 	}
 
@@ -135,10 +167,6 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][3
 	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
 }
 
-func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
-func (con ArbSys) WithdrawEth(c ctx, evm mech, value *big.Int, destination common.Address) (*big.Int, error) {
+func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (huge, error) {
 	return con.SendTxToL1(c, evm, value, destination, []byte{})
 }

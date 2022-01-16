@@ -5,7 +5,7 @@
 package precompiles
 
 import (
-	"errors"
+	"math/big"
 )
 
 type ArbStatistics struct {
@@ -13,5 +13,11 @@ type ArbStatistics struct {
 }
 
 func (con ArbStatistics) GetStats(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	return nil, nil, nil, nil, nil, nil, errors.New("unimplemented")
+	blockNum := evm.Context.BlockNumber
+	classicNumAccounts := big.NewInt(0)  // TODO: hardcode the final value from Arbitrum Classic
+	classicStorageSum := big.NewInt(0)   // TODO: hardcode the final value from Arbitrum Classic
+	classicGasSum := big.NewInt(0)       // TODO: hardcode the final value from Arbitrum Classic
+	classicNumTxes := big.NewInt(0)      // TODO: hardcode the final value from Arbitrum Classic
+	classicNumContracts := big.NewInt(0) // TODO: hardcode the final value from Arbitrum Classic
+	return blockNum, classicNumAccounts, classicStorageSum, classicGasSum, classicNumTxes, classicNumContracts, nil
 }
