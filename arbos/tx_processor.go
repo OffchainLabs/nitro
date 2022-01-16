@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
@@ -111,7 +110,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.Data,
 		)
 		p.state.Restrict(err)
-		fmt.Println("======= creating ticketId ", underlyingTx.Hash())
 
 		retryTxInner, err := retryable.MakeTx(
 			underlyingTx.ChainId(),
