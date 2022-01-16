@@ -2,10 +2,10 @@ coverage:
   status:
     project:
       default: false
-      patch: false
+    patch: false
 github_checks:
   annotations: false
 comment:
-  layout: ""
+  layout: "diff"
   behavior: once
   after_n_builds: 2
