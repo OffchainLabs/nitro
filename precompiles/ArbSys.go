@@ -23,8 +23,24 @@ type ArbSys struct {
 	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) (uint64, error)
 }
 
+var InvalidBlockNum = errors.New("Invalid block number")
+
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return evm.Context.BlockNumber, nil
+}
+
+func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) ([32]byte, error) {
+	if !arbBlockNumber.IsUint64() {
+		return [32]byte{}, InvalidBlockNum
+	}
+	requestedBlockNum := arbBlockNumber.Uint64()
+
+	currentNumber := evm.Context.BlockNumber.Uint64()
+	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+	}
+
+	return evm.Context.GetHash(requestedBlockNum), nil
 }
 
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {

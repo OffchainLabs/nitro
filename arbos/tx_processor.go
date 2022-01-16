@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math"
 	"math/big"
@@ -151,10 +152,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
-		// another tx already burnt gas for this one
-		fmt.Println("======= running ArbitrumRetryTx")
-		// deleted, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
-		// fmt.Println("======= deleted? ", deleted)
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
 	}
@@ -243,4 +240,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
+}
+
+func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return 0, err
+	}
+	return state.Blockhashes().NextBlockNumber()
+}
+
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
