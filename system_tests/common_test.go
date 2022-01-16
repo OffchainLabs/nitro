@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -31,7 +32,8 @@ import (
 )
 
 var (
-	l1Genesys, l2Genesys *core.Genesis
+	l1Genesys  *core.Genesis
+	l2InitData statetransfer.ArbosInitializationInfo
 )
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
@@ -116,39 +118,24 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 	return addresses
 }
 
-func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
-	l2info := NewArbTestInfo(t)
-	l2info.GenerateAccount("Owner")
-	l2info.GenerateAccount("Faucet")
-	l2GenesysAlloc := make(map[common.Address]core.GenesisAccount)
-	l2GenesysAlloc[l2info.GetAddress("Owner")] = core.GenesisAccount{
-		Balance:    big.NewInt(9223372036854775807),
-		Nonce:      0,
-		PrivateKey: nil,
+func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
+	if l2info == nil {
+		l2info = NewArbTestInfo(t)
 	}
-	l2GenesysAlloc[l2info.GetAddress("Faucet")] = core.GenesisAccount{
-		Balance:    new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)),
-		Nonce:      0,
-		PrivateKey: nil,
+	l2info.GenerateGenesysAccount("Owner", big.NewInt(9223372036854775807))
+	l2info.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	accounts := make([]statetransfer.AccountInitializationInfo, 0, len(l2info.GenesisAlloc))
+	for addr, accountData := range l2info.GenesisAlloc {
+		accounts = append(accounts, statetransfer.AccountInitializationInfo{
+			Addr:       addr,
+			EthBalance: accountData.Balance,
+		})
 	}
-	l2Genesys = &core.Genesis{
-		Config:     params.ArbitrumTestChainConfig(),
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      l2GenesysAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
-	}
+	l2InitData.Accounts = accounts
+
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
-	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
+	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, &l2InitData)
 	Require(t, err)
 	return l2info, stack, chainDb, blockchain
 }
@@ -173,7 +160,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*B
 
 func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
-	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
+	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil)
 	addresses := DeployOnTestL1(t, ctx, l1info)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
@@ -200,7 +187,7 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 }
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
+	l2info, stack, chainDb, blockchain := createL2BlockChain(t, nil)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -248,7 +235,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 
-	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2Genesys)
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, &l2InitData)
 	Require(t, err)
 
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)

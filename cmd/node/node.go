@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -214,29 +214,17 @@ func main() {
 		URL:     *feedInputUrl,
 	}
 
-	genesisAlloc := make(core.GenesisAlloc)
-	genesisAlloc[devAddr] = core.GenesisAccount{
-		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-		Nonce:      0,
-		PrivateKey: nil,
-	}
-	l2Genesys := &core.Genesis{
-		Config:     params.ArbitrumOneChainConfig(),
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+	initData := statetransfer.ArbosInitializationInfo{
+		Accounts: []statetransfer.AccountInitializationInfo{
+			{
+				Addr:       devAddr,
+				EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+				Nonce:      0,
+			},
+		},
 	}
 
-	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
+	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, &initData)
 	if err != nil {
 		panic(err)
 	}
