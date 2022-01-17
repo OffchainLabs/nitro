@@ -99,10 +99,10 @@ Provides aggregators and their users methods for configuring how they participat
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
 Provides a registry of BLS public keys for accounts.
 
-| Methods                                                                 |                                                       |
-|:------------------------------------------------------------------------|:------------------------------------------------------|
-| [<img src=e height=16>][Bs0] [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
-| [<img src=e height=16>][Bs1] [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
+| Methods                                                                |                                                       |
+|:-----------------------------------------------------------------------|:------------------------------------------------------|
+| [<img src=e height=16>][Bs0] [`GetPublicKey`][B0]`(account)`           | Retrieves the BLS public key for the account provided |
+| [<img src=e height=16>][Bs1] [`Register`][B1]`(x0, x1, y0, y1)` &nbsp; | Sets the caller's BLS public key                      |
 
 [B0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L13
 [B1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L18
