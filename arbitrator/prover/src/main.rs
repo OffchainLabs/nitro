@@ -63,6 +63,9 @@ struct Opts {
     /// Require that the machine end in the Finished state
     #[structopt(long)]
     require_success: bool,
+    /// Output the initial WAVM module root hash and exit
+    #[structopt(long)]
+    output_module_root: bool,
 }
 
 #[derive(Serialize)]
@@ -185,6 +188,11 @@ fn main() -> Result<()> {
         inbox_contents,
         preimages,
     );
+    if opts.output_module_root {
+        println!("{}", mach.get_modules_root());
+        return Ok(());
+    }
+
     println!("Starting machine hash: {}", mach.hash());
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
