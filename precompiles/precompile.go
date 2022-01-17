@@ -407,6 +407,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
+	arbos.RedeemTicketCreatedEventID = ArbRetryable.events["TicketCreated"].template.ID
 
 	return contracts
 }

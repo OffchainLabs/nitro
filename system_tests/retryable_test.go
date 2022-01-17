@@ -147,7 +147,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fail(t)
 	}
 	ticketId := receipt.Logs[0].Topics[1]
-	firstRetryTxId := receipt.Logs[0].Topics[2]
+	firstRetryTxId := receipt.Logs[1].Topics[2]
 
 	// get receipt for the auto-redeem, make sure it failed
 	receipt, err = arbnode.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)

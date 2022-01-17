@@ -108,42 +108,56 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		)
 		p.state.Restrict(err)
 
-		retryTxInner, err := retryable.MakeTx(
-			underlyingTx.ChainId(),
-			0,
-			p.blockContext.BaseFee,
-			p.msg.Gas(),
-			underlyingTx.Hash(),
-			p.msg.From(),
-		)
-		p.state.Restrict(err)
-
-		_, err = retryable.IncrementNumTries()
-		p.state.Restrict(err)
-
-		buf8 := make([]byte, 8)
-		empty24 := make([]byte, 24)
-		data := []byte{}
-		data = append(data, empty24...)
-		binary.BigEndian.PutUint64(buf8, 0)
-		data = append(data, buf8...)
-		data = append(data, empty24...)
-		binary.BigEndian.PutUint64(buf8, p.msg.Gas())
-		data = append(data, buf8...)
-		data = append(data, common.BytesToHash(p.msg.From().Bytes()).Bytes()...)
-		data = append(data, empty24...)
-		binary.BigEndian.PutUint64(buf8, 0)
-		data = append(data, buf8...)
-
+		// emit TicketCreated event
 		event := &types.Log{
 			Address:     ArbRetryableTxAddress,
-			Topics:      []common.Hash{RedeemScheduledEventID, underlyingTx.Hash(), types.NewTx(retryTxInner).Hash()},
-			Data:        data,
+			Topics:      []common.Hash{RedeemTicketCreatedEventID, underlyingTx.Hash()},
+			Data:        []byte{},
 			BlockNumber: p.blockContext.BlockNumber.Uint64(),
 			// Geth will set all other fields, which include
 			//   TxHash, TxIndex, Index, and Removed
 		}
 		p.stateDB.AddLog(event)
+
+		if p.msg.Gas() > 0 {
+			// emit RedeemScheduled event
+			retryTxInner, err := retryable.MakeTx(
+				underlyingTx.ChainId(),
+				0,
+				p.blockContext.BaseFee,
+				p.msg.Gas(),
+				underlyingTx.Hash(),
+				p.msg.From(),
+			)
+			p.state.Restrict(err)
+
+			_, err = retryable.IncrementNumTries()
+			p.state.Restrict(err)
+
+			buf8 := make([]byte, 8)
+			empty24 := make([]byte, 24)
+			data := []byte{}
+			data = append(data, empty24...)
+			binary.BigEndian.PutUint64(buf8, 0)
+			data = append(data, buf8...)
+			data = append(data, empty24...)
+			binary.BigEndian.PutUint64(buf8, p.msg.Gas())
+			data = append(data, buf8...)
+			data = append(data, common.BytesToHash(p.msg.From().Bytes()).Bytes()...)
+			data = append(data, empty24...)
+			binary.BigEndian.PutUint64(buf8, 0)
+			data = append(data, buf8...)
+
+			event = &types.Log{
+				Address:     ArbRetryableTxAddress,
+				Topics:      []common.Hash{RedeemScheduledEventID, underlyingTx.Hash(), types.NewTx(retryTxInner).Hash()},
+				Data:        data,
+				BlockNumber: p.blockContext.BlockNumber.Uint64(),
+				// Geth will set all other fields, which include
+				//   TxHash, TxIndex, Index, and Removed
+			}
+			p.stateDB.AddLog(event)
+		}
 
 		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:

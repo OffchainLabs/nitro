@@ -26,6 +26,7 @@ import (
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
+var RedeemTicketCreatedEventID common.Hash
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
 	baseFee, err := state.GasPriceWei()
