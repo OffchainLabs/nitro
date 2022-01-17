@@ -36,15 +36,15 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAddressTable][ArbAddressTable_link]<a name=ArbAddressTable></a>
 Provides the ability to create short-hands for commonly used accounts.
 
-| Methods                                                               |                                                                                           |
-|:----------------------------------------------------------------------|:------------------------------------------------------------------------------------------|
-| [![](e | height=12)][ATs0] [`AddressExists`][AT0]`(address)`            | Check if an address exists in the table                                                   |
-| [![](e | height=12)][ATs1] [`Compress`][AT1]`(address)`                 | Gets bytes that represent the address                                                     |
-| [![](e | height=12)][ATs2] [`Decompress`][AT2]`(buffer, offset)` &nbsp; | Replaces the compressed bytes at the given offset with those of the corresponding account |
-| [![](e | height=12)][ATs3] [`Lookup`][AT3]`(address)`                   | Looks up the index of an address in the table                                             |
-| [![](e | height=12)][ATs4] [`LookupIndex`][AT4]`(index)`                | Looks up an address in the table by index                                                 |
-| [![](e | height=12)][ATs5] [`Register`][AT5]`(address)`                 | Adds an account to the table, shrinking its compressed representation                     |
-| [![](e | height=12)][ATs6] [`Size`][AT6]`()`                            | Gets the number of addresses in the table                                                 |
+| Methods                                                                    |                                                                                           |
+|:---------------------------------------------------------------------------|:------------------------------------------------------------------------------------------|
+| [<img src=e height=16>][ATs0] [`AddressExists`][AT0]`(address)`            | Check if an address exists in the table                                                   |
+| [<img src=e height=16>][ATs1] [`Compress`][AT1]`(address)`                 | Gets bytes that represent the address                                                     |
+| [<img src=e height=16>][ATs2] [`Decompress`][AT2]`(buffer, offset)` &nbsp; | Replaces the compressed bytes at the given offset with those of the corresponding account |
+| [<img src=e height=16>][ATs3] [`Lookup`][AT3]`(address)`                   | Looks up the index of an address in the table                                             |
+| [<img src=e height=16>][ATs4] [`LookupIndex`][AT4]`(index)`                | Looks up an address in the table by index                                                 |
+| [<img src=e height=16>][ATs5] [`Register`][AT5]`(address)`                 | Adds an account to the table, shrinking its compressed representation                     |
+| [<img src=e height=16>][ATs6] [`Size`][AT6]`()`                            | Gets the number of addresses in the table                                                 |
 
 [AT0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L18
 [AT1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L23
@@ -66,16 +66,16 @@ Provides the ability to create short-hands for commonly used accounts.
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                                         |                                                               | Caller must be                |
-|:--------------------------------------------------------------------------------|:--------------------------------------------------------------|:------------------------------|
-| [![](e | height=12)][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                        |                               |
-| [![](e | height=12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided       |                               |
-| [![](e | height=12)][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the rollup's default aggregator                          |                               |
-| [![](e | height=12)][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the rollup's default aggregator                          | chain owner or the current    |
-| [![](e | height=12)][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                            |                               |
-| [![](e | height=12)][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                            | the aggregator                |
-| [![](e | height=12)][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed cost charge to submit a tx |                               |
-| [![](e | height=12)][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed cost                               | chain owner or the aggergator |
+| Methods                                                                              |                                                               | Caller must be                |
+|:-------------------------------------------------------------------------------------|:--------------------------------------------------------------|:------------------------------|
+| [<img src=e height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                        |                               |
+| [<img src=e height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided       |                               |
+| [<img src=e height=16>][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the rollup's default aggregator                          |                               |
+| [<img src=e height=16>][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the rollup's default aggregator                          | chain owner or the current    |
+| [<img src=e height=16>][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                            |                               |
+| [<img src=e height=16>][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                            | the aggregator                |
+| [<img src=e height=16>][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed cost charge to submit a tx |                               |
+| [<img src=e height=16>][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed cost                               | chain owner or the aggergator |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
@@ -99,10 +99,10 @@ Provides aggregators and their users methods for configuring how they participat
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
 Provides a registry of BLS public keys for accounts.
 
-| Methods                                                            |                                                       |
-|:-------------------------------------------------------------------|:------------------------------------------------------|
-| [![](e | height=12)][Bs0] [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
-| [![](e | height=12)][Bs1] [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
+| Methods                                                                 |                                                       |
+|:------------------------------------------------------------------------|:------------------------------------------------------|
+| [<img src=e height=16>][Bs0] [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
+| [<img src=e height=16>][Bs1] [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
 
 [B0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L13
 [B1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L18
@@ -114,10 +114,10 @@ Provides a registry of BLS public keys for accounts.
 # [ArbDebug][ArbDebug_link]<a name=ArbDebug></a>
 Provides mechanisms useful for testing. The methods of `ArbDebug` are only available for rollups with the `AllowDebugPrecompiles` chain parameter set. Otherwise, calls to this precompile will revert.
 
-| Methods                                                      |                                                    |
-|:-------------------------------------------------------------|:---------------------------------------------------|
-| [![](e | height=12)][Ds0] [`BecomeChainOwner`][D0]`()`         | Caller becomes a chain owner                       |
-| [![](e | height=12)][Ds1] [`Events`][D1]`(flag, value)` &nbsp; | Emit events with values based on the args provided |
+| Methods                                                           |                                                    |
+|:------------------------------------------------------------------|:---------------------------------------------------|
+| [<img src=e height=16>][Ds0] [`BecomeChainOwner`][D0]`()`         | Caller becomes a chain owner                       |
+| [<img src=e height=16>][Ds1] [`Events`][D1]`(flag, value)` &nbsp; | Emit events with values based on the args provided |
 
 [D0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L37
 [D1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L19
@@ -126,11 +126,11 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 [Ds1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L19
 
 
-| Events                                         |                                            |
-|:-----------------------------------------------|:-------------------------------------------|
-| [![](e | height=12)][Des0] [`Basic`][De0] &nbsp; | Emitted in `Events` for testing            |
-| [![](e | height=12)][Des1] [`Mixed`][De1]        | Emitted in `Events` for testing            |
-| [![](e | height=12)][Des2] [`Store`][De2]        | Never emitted (used for testing log sizes) |
+| Events                                              |                                            |
+|:----------------------------------------------------|:-------------------------------------------|
+| [<img src=e height=16>][Des0] [`Basic`][De0] &nbsp; | Emitted in `Events` for testing            |
+| [<img src=e height=16>][Des1] [`Mixed`][De1]        | Emitted in `Events` for testing            |
+| [<img src=e height=16>][Des2] [`Store`][De2]        | Never emitted (used for testing log sizes) |
 
 [De0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L24
 [De1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L29
@@ -144,11 +144,11 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 # [ArbFunctionTable][ArbFunctionTable_link]<a name=ArbFunctionTable></a>
 Provided aggregator's the ability to manage function tables. Aggregation works differently in Nitro, so these methods have been stubbed and their effects disabled. They are kept for backwards compatibility.
 
-| Methods                                                        |                                            |
-|:---------------------------------------------------------------|:-------------------------------------------|
-| [![](e | height=12)][FTs0] [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty           |
-| [![](e | height=12)][FTs1] [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
-| [![](e | height=12)][FTs2] [`Upload`][FT2]`(bytes)`              | Does nothing                               |
+| Methods                                                             |                                            |
+|:--------------------------------------------------------------------|:-------------------------------------------|
+| [<img src=e height=16>][FTs0] [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty           |
+| [<img src=e height=16>][FTs1] [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
+| [<img src=e height=16>][FTs2] [`Upload`][FT2]`(bytes)`              | Does nothing                               |
 
 [FT0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbFunctionTable.go#L30
 [FT1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbFunctionTable.go#L25
@@ -162,15 +162,15 @@ Provided aggregator's the ability to manage function tables. Aggregation works d
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
 Provides insight into the cost of using the rollup. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
 
-| Methods                                                                                |                                                                    |
-|:---------------------------------------------------------------------------------------|:-------------------------------------------------------------------|
-| [![](e | height=12)][GIs0] [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)`           | Gets prices in wei when using the provided aggregator              |
-| [![](e | height=12)][GIs1] [`GetPricesInWei`][GI1]`()`                                   | Gets prices in wei when using the caller's preferred aggregator    |
-| [![](e | height=12)][GIs2] [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator           |
-| [![](e | height=12)][GIs3] [`GetPricesInArbGas`][GI3]`()`                                | Gets prices in ArbGas when using the caller's preferred aggregator |
-| [![](e | height=12)][GIs4] [`GetGasAccountingParams`][GI4]`()`                           | Gets the rollup's speed limit, pool size, and tx gas limit         |
-| [![](e | height=12)][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`                            | Gets the current estimate of the L1 gas price                      |
-| [![](e | height=12)][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()`                            | Gets the fee paid to the aggregator for posting this tx            |
+| Methods                                                                                     |                                                                    |
+|:--------------------------------------------------------------------------------------------|:-------------------------------------------------------------------|
+| [<img src=e height=16>][GIs0] [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)`           | Gets prices in wei when using the provided aggregator              |
+| [<img src=e height=16>][GIs1] [`GetPricesInWei`][GI1]`()`                                   | Gets prices in wei when using the caller's preferred aggregator    |
+| [<img src=e height=16>][GIs2] [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator           |
+| [<img src=e height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`                                | Gets prices in ArbGas when using the caller's preferred aggregator |
+| [<img src=e height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()`                           | Gets the rollup's speed limit, pool size, and tx gas limit         |
+| [<img src=e height=16>][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`                            | Gets the current estimate of the L1 gas price                      |
+| [<img src=e height=16>][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()`                            | Gets the fee paid to the aggregator for posting this tx            |
 
 [GI0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L26
 [GI1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L62
@@ -192,10 +192,10 @@ Provides insight into the cost of using the rollup. These methods have been adju
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
 Provides the ability to lookup basic info about accounts and contracts.
 
-| Methods                                                      |                                       |
-|:-------------------------------------------------------------|:--------------------------------------|
-| [![](e | height=12)][Is0] [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance        |
-| [![](e | height=12)][Is1] [`GetCode`][I1]`(account)`           | Retrieves a contract's source program |
+| Methods                                                           |                                       |
+|:------------------------------------------------------------------|:--------------------------------------|
+| [<img src=e height=16>][Is0] [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance        |
+| [<img src=e height=16>][Is1] [`GetCode`][I1]`(account)`           | Retrieves a contract's source program |
 
 [I0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L18
 [I1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L26
@@ -207,9 +207,9 @@ Provides the ability to lookup basic info about accounts and contracts.
 # [ArbosTest][ArbosTest_link]<a name=ArbosTest></a>
 Provides a method of burning arbitrary amounts of gas, which exists for historical reasons. In Classic, `ArbosTest` had additional methods only the zero address could call. These have been removed since users don't use them and calls to missing methods revert.
 
-| Methods                                                     |                                                     | Nitro changes |
-|:------------------------------------------------------------|:----------------------------------------------------|---------------|
-| [![](e | height=12)][Ts0] [`BurnArbGas`][T0]`(amount)` &nbsp; | unproductively burns the amount of L2 ArbGas &nbsp; | Now pure      |
+| Methods                                                          |                                                     | Nitro changes |
+|:-----------------------------------------------------------------|:----------------------------------------------------|---------------|
+| [<img src=e height=16>][Ts0] [`BurnArbGas`][T0]`(amount)` &nbsp; | unproductively burns the amount of L2 ArbGas &nbsp; | Now pure      |
 
 [T0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbosTest.go#L17
 
@@ -225,14 +225,14 @@ Most of Classic's owner methods have been removed since they no longer make sens
 - ArbOS upgrades happen with the rest of the system rather than being independent
 - No one asked to be exept from address aliasing so address remapping is unconditional
 
-| Methods                                                               |                                                                       |
-|:----------------------------------------------------------------------|:----------------------------------------------------------------------|
-| [![](e | height=12)][Os0] [`AddChainOwner`][O0]`(account)`              | Promotes the user to chain owner                                      |
-| [![](e | height=12)][Os1] [`RemoveChainOwner`][O1]`(account)`           | Demotes the user from chain owner                                     |
-| [![](e | height=12)][Os2] [`IsChainOwner`][O2]`(account)`               | See if the user is a chain owner                                      |
-| [![](e | height=12)][Os3] [`GetAllChainOwners`][O3]`()`                 | Retrieves the list of chain owners                                    |
-| [![](e | height=12)][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
-| [![](e | height=12)][Os5] [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus           |
+| Methods                                                                    |                                                                       |
+|:---------------------------------------------------------------------------|:----------------------------------------------------------------------|
+| [<img src=e height=16>][Os0] [`AddChainOwner`][O0]`(account)`              | Promotes the user to chain owner                                      |
+| [<img src=e height=16>][Os1] [`RemoveChainOwner`][O1]`(account)`           | Demotes the user from chain owner                                     |
+| [<img src=e height=16>][Os2] [`IsChainOwner`][O2]`(account)`               | See if the user is a chain owner                                      |
+| [<img src=e height=16>][Os3] [`GetAllChainOwners`][O3]`()`                 | Retrieves the list of chain owners                                    |
+| [<img src=e height=16>][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
+| [<img src=e height=16>][Os5] [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus           |
 
 [O0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L22
 [O1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L27
@@ -252,10 +252,10 @@ Most of Classic's owner methods have been removed since they no longer make sens
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
 Provides non-owners with info about the current chain owners.
 
-| Methods                                                          |                                    |
-|:-----------------------------------------------------------------|:-----------------------------------|
-| [![](e | height=12)][OPs0] [`GetAllChainOwners`][OP0]`()`          | Retrieves the list of chain owners |
-| [![](e | height=12)][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if the user is a chain owner   |
+| Methods                                                               |                                    |
+|:----------------------------------------------------------------------|:-----------------------------------|
+| [<img src=e height=16>][OPs0] [`GetAllChainOwners`][OP0]`()`          | Retrieves the list of chain owners |
+| [<img src=e height=16>][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if the user is a chain owner   |
 
 [OP0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L19
 [OP1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L24
@@ -265,14 +265,14 @@ Provides non-owners with info about the current chain owners.
 
 
 # [ArbRetryableTx][ArbRetryableTx_link]<a name=ArbRetryableTx></a>
-| Methods                                                           |                                |
-|:------------------------------------------------------------------|:-------------------------------|
-| [![](e | height=12)][RTs0] [`Cancel`][RT0]`(ticket)`                | TODO: document when stabilized |
-| [![](e | height=12)][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | TODO: document when stabilized |
-| [![](e | height=12)][RTs2] [`GetLifetime`][RT2]`()`                 | TODO: document when stabilized |
-| [![](e | height=12)][RTs3] [`GetTimeout`][RT3]`(ticket)`            | TODO: document when stabilized |
-| [![](e | height=12)][RTs4] [`Keepalive`][RT4]`(ticket)`             | TODO: document when stabilized |
-| [![](e | height=12)][RTs5] [`Redeem`][RT5]`(ticket)`                | TODO: document when stabilized |
+| Methods                                                                |                                |
+|:-----------------------------------------------------------------------|:-------------------------------|
+| [<img src=e height=16>][RTs0] [`Cancel`][RT0]`(ticket)`                | TODO: document when stabilized |
+| [<img src=e height=16>][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | TODO: document when stabilized |
+| [<img src=e height=16>][RTs2] [`GetLifetime`][RT2]`()`                 | TODO: document when stabilized |
+| [<img src=e height=16>][RTs3] [`GetTimeout`][RT3]`(ticket)`            | TODO: document when stabilized |
+| [<img src=e height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | TODO: document when stabilized |
+| [<img src=e height=16>][RTs5] [`Redeem`][RT5]`(ticket)`                | TODO: document when stabilized |
 
 [RT0]: todo
 [RT1]: todo
@@ -289,13 +289,13 @@ Provides non-owners with info about the current chain owners.
 [RTs5]: todo
 
 
-| Events                                                      |
-|:------------------------------------------------------------|
-| [![](e | height=12)][RTes0] [`TicketCreated`][RTe0]           |
-| [![](e | height=12)][RTes1] [`LifetimeExtended`][RTe1] &nbsp; |
-| [![](e | height=12)][RTes2] [`RedeemScheduled`][RTe2]         |
-| [![](e | height=12)][RTes3] [`Redeemed`][RTe3]                |
-| [![](e | height=12)][RTes4] [`Canceled`][RTe4]                |
+| Events                                                           |
+|:-----------------------------------------------------------------|
+| [<img src=e height=16>][RTes0] [`TicketCreated`][RTe0]           |
+| [<img src=e height=16>][RTes1] [`LifetimeExtended`][RTe1] &nbsp; |
+| [<img src=e height=16>][RTes2] [`RedeemScheduled`][RTe2]         |
+| [<img src=e height=16>][RTes3] [`Redeemed`][RTe3]                |
+| [<img src=e height=16>][RTes4] [`Canceled`][RTe4]                |
 
 [RTe0]: todo
 [RTe1]: todo
@@ -313,9 +313,9 @@ Provides non-owners with info about the current chain owners.
 # [ArbStatistics][ArbStatistics_link]<a name=ArbStatistics></a>
 Provides statistics about the rollup right before the Nitro upgrade. In Classic, this was how a user would get info such as the total number of accounts, but there's now better ways to do that with geth.
 
-| Methods                                               |                                                                                         |
-|:------------------------------------------------------|:----------------------------------------------------------------------------------------|
-| [![](e | height=12)][STs0] [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
+| Methods                                                    |                                                                                         |
+|:-----------------------------------------------------------|:----------------------------------------------------------------------------------------|
+| [<img src=e height=16>][STs0] [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
 
 [ST0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbStatistics.go#L19
 
@@ -325,19 +325,19 @@ Provides statistics about the rollup right before the Nitro upgrade. In Classic,
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
 Provides system-level functionality for interacting with L1 and understanding the call stack.
 
-| Methods                                                                                        |                                                                   | Nitro changes     |
-|:-----------------------------------------------------------------------------------------------|:------------------------------------------------------------------|:------------------|
-| [![](e | height=12)][Ss0] [`ArbBlockNumber`][S0]`()`                                             | Gets the current L2 block number                                  |                   |
-| [![](e | height=12)][Ss1] [`ArbChainID`][S1]`()`                                                 | Gets the rollup's unique chain identifier                         |                   |
-| [![](e | height=12)][Ss2] [`ArbOSVersion`][S2]`()`                                               | Gets the current ArbOS version                                    | Now view          |
-| [![](e | height=12)][Ss3] [`GetStorageGasAvailable`][S3]`()`                                     | Returns 0 since Nitro has no concept of storage gas               | Now always 0      |
-| [![](e | height=12)][Ss4] [`IsTopLevelCall`][S4]`()`                                             | Checks if the call is top-level                                   |                   |
-| [![](e | height=12)][Ss5] [`MapL1SenderContractAddressToL2Alias`][S5]`(contract, unused)` &nbsp; | Gets the contract's L2 alias                                      | 2nd arg is unused |
-| [![](e | height=12)][Ss6] [`WasMyCallersAddressAliased`][S6]`()`                                 | Checks if the caller's caller was aliased                         |                   |
-| [![](e | height=12)][Ss7] [`MyCallersAddressWithoutAliasing`][S7]`()`                            | Gets the caller's caller without any potential aliasing           | New outbox scheme |
-| [![](e | height=12)][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)`                       | Sends a transaction to L1, adding it to the outbox                | New outbox scheme |
-| [![](e | height=12)][Ss9] [`SendMerkleTreeState`][S9]`()`                                        | Gets the root, size, and partials of the outbox Merkle tree state | New outbox scheme |
-| [![](e | height=12)][Ss10] [`WithdrawEth`][S10]`(destination)`                                   | Send paid eth to the destination on L1                            |                   |
+| Methods                                                                                             |                                                                   | Nitro changes     |
+|:----------------------------------------------------------------------------------------------------|:------------------------------------------------------------------|:------------------|
+| [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                                             | Gets the current L2 block number                                  |                   |
+| [<img src=e height=16>][Ss1] [`ArbChainID`][S1]`()`                                                 | Gets the rollup's unique chain identifier                         |                   |
+| [<img src=e height=16>][Ss2] [`ArbOSVersion`][S2]`()`                                               | Gets the current ArbOS version                                    | Now view          |
+| [<img src=e height=16>][Ss3] [`GetStorageGasAvailable`][S3]`()`                                     | Returns 0 since Nitro has no concept of storage gas               | Now always 0      |
+| [<img src=e height=16>][Ss4] [`IsTopLevelCall`][S4]`()`                                             | Checks if the call is top-level                                   |                   |
+| [<img src=e height=16>][Ss5] [`MapL1SenderContractAddressToL2Alias`][S5]`(contract, unused)` &nbsp; | Gets the contract's L2 alias                                      | 2nd arg is unused |
+| [<img src=e height=16>][Ss6] [`WasMyCallersAddressAliased`][S6]`()`                                 | Checks if the caller's caller was aliased                         |                   |
+| [<img src=e height=16>][Ss7] [`MyCallersAddressWithoutAliasing`][S7]`()`                            | Gets the caller's caller without any potential aliasing           | New outbox scheme |
+| [<img src=e height=16>][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)`                       | Sends a transaction to L1, adding it to the outbox                | New outbox scheme |
+| [<img src=e height=16>][Ss9] [`SendMerkleTreeState`][S9]`()`                                        | Gets the root, size, and partials of the outbox Merkle tree state | New outbox scheme |
+| [<img src=e height=16>][Ss10] [`WithdrawEth`][S10]`(destination)`                                   | Send paid eth to the destination on L1                            |                   |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
 [S1]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L32
@@ -364,10 +364,10 @@ Provides system-level functionality for interacting with L1 and understanding th
 [Ss10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L79
 
 
-| Events                                                     |                                                                 |
-|:-----------------------------------------------------------|:----------------------------------------------------------------|
-| [![](e | height=12)][Ses0] [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
-| [![](e | height=12)][Ses1] [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs  |
+| Events                                                          |                                                                 |
+|:----------------------------------------------------------------|:----------------------------------------------------------------|
+| [<img src=e height=16>][Ses0] [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
+| [<img src=e height=16>][Ses1] [`SendMerkleUpdate`][Se1]         | Logs a new merkle branch needed for constructing outbox proofs  |
 
 [Se0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L118
 [Se1]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L98
@@ -375,10 +375,10 @@ Provides system-level functionality for interacting with L1 and understanding th
 [Ses0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L101
 [Ses1]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L120
 
-| Removed                                                                 |                                                                             |
-|:------------------------------------------------------------------------|:----------------------------------------------------------------------------|
-| [![](e | height=12)][Srs0] [`GetStorageAt`][Sr0]`(account, index)` &nbsp; | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
-| [![](e | height=12)][Srs1] [`GetTransactionCount`][Sr1]`(account)`        | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
+| Removed                                                                      |                                                                             |
+|:-----------------------------------------------------------------------------|:----------------------------------------------------------------------------|
+| [<img src=e height=16>][Srs0] [`GetStorageAt`][Sr0]`(account, index)` &nbsp; | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
+| [<img src=e height=16>][Srs1] [`GetTransactionCount`][Sr1]`(account)`        | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
 
 [Sr0]: https://github.com/OffchainLabs/arb-os/blob/89e36db597c4857a4dac3efd7cc01b13c7845cc0/arb_os/arbsys.mini#L335
 [Sr1]: https://github.com/OffchainLabs/arb-os/blob/89e36db597c4857a4dac3efd7cc01b13c7845cc0/arb_os/arbsys.mini#L315
