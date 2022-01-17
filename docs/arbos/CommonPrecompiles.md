@@ -55,7 +55,7 @@ Provides insight into the cost of using the rollup.
 
 
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
-Provides info about 
+Provides system-level functionality for interacting with L1 and understanding the call stack.
 
 | Methods                                                                       |                                                             |
 |:------------------------------------------------------------------------------|:------------------------------------------------------------|
