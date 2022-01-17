@@ -20,9 +20,9 @@ Provides aggregator's and their users methods for configuring how they participa
 
 | Methods                                                              |                                                         |
 |:---------------------------------------------------------------------|:--------------------------------------------------------|
-| [![](e | height=12)][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
-| [![](e | height=12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
-| [![](e | height=12)][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
+| [![](e.png =7x12)][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
+| [![](e.png =x12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
+| [![](e.png)][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
