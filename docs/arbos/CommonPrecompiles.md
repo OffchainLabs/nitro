@@ -57,19 +57,22 @@ Provides insight into the cost of using the rollup.
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
 Provides info about 
 
-| Methods                                                                       |                                                    |
-|:------------------------------------------------------------------------------|:---------------------------------------------------|
-| [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                   |
-| [<img src=e height=16>][Ss4] [`IsTopLevelCall`][S4]`()`                       | Checks if the call is top-level                    |
-| [<img src=e height=16>][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox |
-| [<img src=e height=16>][Ss10] [`WithdrawEth`][S10]`(destination)`             | Send paid eth to the destination on L1             |
+| Methods                                                                       |                                                             |   |
+|:------------------------------------------------------------------------------|:------------------------------------------------------------|
+| [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
+| [<img src=e height=16>][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
+| [<img src=e height=16>][Ss5] [`IsTopLevelCall`][S5]`()`                       | Checks if the call is top-level                             |
+| [<img src=e height=16>][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox          |
+| [<img src=e height=16>][Ss11] [`WithdrawEth`][S11]`(destination)`             | Send paid eth to the destination on L1                      |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
-[S4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
-[S8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L80
-[S10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L153
+[S1]: https://github.com/OffchainLabs/nitro/blob/d27b2e270fe0a608ee1b4e2f272b895229a57e0e/precompiles/ArbSys.go#L34
+[S5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
+[S9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L80
+[S11]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L153
 
 [Ss0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L27
-[Ss4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L51
-[Ss8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L87
-[Ss10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L79
+[Ss1]: https://github.com/OffchainLabs/nitro/blob/d27b2e270fe0a608ee1b4e2f272b895229a57e0e/solgen/src/precompiles/ArbSys.sol#L33
+[Ss5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L51
+[Ss9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L87
+[Ss11]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L79
