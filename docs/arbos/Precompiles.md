@@ -1,5 +1,5 @@
 # Overview
-ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference exhaustively documents the specific calls ArbOS makes available. For more details on the infrastructure that makes this possible, please refer to the [ArbOS documentation](ArbOS.md). For an abbreviated reference on the precompiles we expect users to most often use, please see the [common precompiles documentation](CommonPrecompiles.md)
+ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This reference exhaustively documents the specific calls ArbOS makes available. For more details on the infrastructure that makes this possible, please refer to the [ArbOS documentation](ArbOS.md). For an abbreviated reference on the precompiles we expect users to most often use, please see the [common precompiles documentation](CommonPrecompiles.md).
 
 From the perspective of user applications, precompiles live as contracts at the following addresses. Click on any to jump to their section.
 
@@ -36,37 +36,46 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAddressTable][ArbAddressTable_link]<a name=ArbAddressTable></a>
 Provides the ability to create short-hands for commonly used accounts.
 
-| Methods                                      |                                                           |
-| :------------------------------------------- | :-------------------------------------------------------- |
-| [`AddressExists`][AT0]`(address)`            | Check if an address exists in the table                   |
-| [`Compress`][AT1]`(address)`                 | Gets bytes that represent the address                     |
-| [`Decompress`][AT2]`(buffer, offset)` &nbsp; | Replaces the compressed bytes at the given offset with those of the corresponding account |
-| [`Lookup`][AT3]`(address)`         | Looks up the index of an address in the table                         |
-| [`LookupIndex`][AT4]`(index)`      | Looks up an address in the table by index                             |
-| [`Register`][AT5]`(address)`       | Adds an account to the table, shrinking its compressed representation |
-| [`Size`][AT6]`()`                  | Gets the number of addresses in the table                             |
+| Methods                                                          |                                                                                           |
+|:-----------------------------------------------------------------|:------------------------------------------------------------------------------------------|
+| [![](e =x12)][ATs0] [`AddressExists`][AT0]`(address)`            | Check if an address exists in the table                                                   |
+| [![](e =x12)][ATs1] [`Compress`][AT1]`(address)`                 | Gets bytes that represent the address                                                     |
+| [![](e =x12)][ATs2] [`Decompress`][AT2]`(buffer, offset)` &nbsp; | Replaces the compressed bytes at the given offset with those of the corresponding account |
+| [![](e =x12)][ATs3] [`Lookup`][AT3]`(address)`                   | Looks up the index of an address in the table                                             |
+| [![](e =x12)][ATs4] [`LookupIndex`][AT4]`(index)`                | Looks up an address in the table by index                                                 |
+| [![](e =x12)][ATs5] [`Register`][AT5]`(address)`                 | Adds an account to the table, shrinking its compressed representation                     |
+| [![](e =x12)][ATs6] [`Size`][AT6]`()`                            | Gets the number of addresses in the table                                                 |
 
-[AT0]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L16
-[AT1]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L20
-[AT2]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L24
-[AT3]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L36
-[AT4]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L47
-[AT5]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L61
-[AT6]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L66
+[AT0]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L18
+[AT1]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L23
+[AT2]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L28
+[AT3]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L41
+[AT4]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L53
+[AT5]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L68
+[AT6]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L74
+
+[ATs0]: todo
+[ATs1]: todo
+[ATs2]: todo
+[ATs3]: todo
+[ATs4]: todo
+[ATs5]: todo
+[ATs6]: todo
+
 
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                      |                                        | Caller must be              |
-| :------------------------------------------- | :------------------------------------- | :-------------------------- |
-| [`GetFeeCollector`][A0]`(aggregator)`        | Gets an aggregator's fee collector     |                             |
-| [`SetFeeCollector`][A1]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector | the aggregator       |
-| [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator   |                             |
-| [`SetDefaultAggregator`][A3]`(default)`      | Sets the rollup's default aggregator   | chain owner or the current  |
-| [`GetPreferredAggregator`][A4]`(account)`    | Gets an account's preferred aggregator |                             |
-| [`SetPreferredAggregator`][A5]`(aggregator)` | Sets the caller's preferred aggregator to that provided              |
-| [`GetTxBaseFee`][A6]`(aggregator)`           | Gets an aggregator's current fixed cost charge to submit a tx        |
-| [`SetTxBaseFee`][A7]`(aggregator, fee)`      | Sets an aggregator's fixed cost      | chain owner or the aggergator |
+| Methods                                                                    |                                                               | Caller must be                |
+|:---------------------------------------------------------------------------|:--------------------------------------------------------------|:------------------------------|
+| [![](e =x12)][As0] [`GetPreferredAggregator`][A4]`(account)`               | Gets an account's preferred aggregator                        |                               |
+| [![](e =x12)][As1] [`SetPreferredAggregator`][A5]`(aggregator)`            | Sets the caller's preferred aggregator to that provided       |                               |
+| [![](e =x12)][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the rollup's default aggregator                          |                               |
+| [![](e =x12)][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the rollup's default aggregator                          | chain owner or the current    |
+| [![](e =x12)][As4] [`GetFeeCollector`][A0]`(aggregator)`                   | Gets an aggregator's fee collector                            |                               |
+| [![](e =x12)][As5] [`SetFeeCollector`][A1]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                            | the aggregator                |
+| [![](e =x12)][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed cost charge to submit a tx |                               |
+| [![](e =x12)][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed cost                               | chain owner or the aggergator |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L15
 [A1]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L19
@@ -77,63 +86,91 @@ Provides aggregators and their users methods for configuring how they participat
 [A6]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L66
 [A7]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L70
 
+[As0]: todo
+[As1]: todo
+[As2]: todo
+[As3]: todo
+[As4]: todo
+[As5]: todo
+[As6]: todo
+[As7]: todo
+
+
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
 Provides a registry of BLS public keys for accounts.
 
-| Methods                                    |                                                       |
-| :----------------------------------------- | :---------------------------------------------------- |
-| [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
-| [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
+| Methods                                                       |                                                       |
+|:--------------------------------------------------------------|:------------------------------------------------------|
+| [![](e =x12)][Bs0] [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
+| [![](e =x12)][Bs1] [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
 
 [B0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbBLS.go#L11
 [B1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbBLS.go#L15
 
+[Bs0]: todo
+[Bs1]: todo
+
+
 # [ArbDebug][ArbDebug_link]<a name=ArbDebug></a>
 Provides mechanisms useful for testing. The methods of `ArbDebug` are only available for rollups with the `AllowDebugPrecompiles` chain parameter set. Otherwise, calls to this precompile will revert.
 
-| Methods                              |                                                    |
-| :----------------------------------- | :------------------------------------------------- |
-| [`BecomeChainOwner`][D0]`()`         | Caller becomes a chain owner                       |
-| [`Events`][D1]`(flag, value)` &nbsp; | Emit events with values based on the args provided |
+| Methods                                                 |                                                    |
+|:--------------------------------------------------------|:---------------------------------------------------|
+| [![](e =x12)][Ds0] [`BecomeChainOwner`][D0]`()`         | Caller becomes a chain owner                       |
+| [![](e =x12)][Ds1] [`Events`][D1]`(flag, value)` &nbsp; | Emit events with values based on the args provided |
 
 [D0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L37
 [D1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L19
 
-| Events                |                                            |
-| :-------------------- | :----------------------------------------- |
-| [`Basic`][De0] &nbsp; | Emitted in `Events` for testing            |
-| [`Mixed`][De1]        | Emitted in `Events` for testing            |
-| [`Store`][De2]        | Never emitted (used for testing log sizes) |
+[Ds0]: todo
+[Ds1]: todo
+
+
+| Events                                    |                                            |
+|:------------------------------------------|:-------------------------------------------|
+| [![](e =x12)][Des0] [`Basic`][De0] &nbsp; | Emitted in `Events` for testing            |
+| [![](e =x12)][Des1] [`Mixed`][De1]        | Emitted in `Events` for testing            |
+| [![](e =x12)][Des2] [`Store`][De2]        | Never emitted (used for testing log sizes) |
 
 [De0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L8
 [De1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L9
 [De2]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L10
 
+[Des0]: todo
+[Des1]: todo
+[Des2]: todo
+
+
 # [ArbFunctionTable][ArbFunctionTable_link]<a name=ArbFunctionTable></a>
 Provided aggregator's the ability to manage function tables. Aggregation works differently in Nitro, so these methods have been stubbed and their effects disabled. They are kept for backwards compatibility.
 
-| Methods                               |                                            |
-| :------------------------------------ | :----------------------------------------- |
-| [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty           |
-| [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
-| [`Upload`][FT2]`(bytes)`              | Does nothing                               |
+| Methods                                                  |                                            |
+|:---------------------------------------------------------|:-------------------------------------------|
+| [![](e =x12)][FTs0] [`Get`][FT0]`(address, index)` &nbsp; | Reverts since the table is empty           |
+| [![](e =x12)][FTs1] [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
+| [![](e =x12)][FTs2] [`Upload`][FT2]`(bytes)`              | Does nothing                               |
 
 [FT0]: todo
 [FT1]: todo
 [FT2]: todo
 
-# [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
-Provides insight into the cost of using the rollup.
+[FTs0]: todo
+[FTs1]: todo
+[FTs2]: todo
 
-| Methods                                              |                                                       |
-| :--------------------------------------------------- | :---------------------------------------------------- |
-| [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)`  | Gets prices in wei when using the provided aggregator |
-| [`GetPricesInWei`][GI1]`()`                          | Gets prices in wei when using the caller's preferred aggregator |
-| [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator |
-| [`GetPricesInArbGas`][GI3]`()`                       | Gets prices in ArbGas when using the caller's preferred aggregator |
-| [`GetGasAccountingParams`][GI4]`()`                  | Gets the rollup's speed limit, pool size, and tx gas limit |
-| [`GetL1GasPriceEstimate`][GI5]`()`                   | Gets the current estimate of the L1 gas price              |
-| [`GetCurrentTxL1GasFees`][GI6]`()`                   | Gets the fee paid to the aggregator for posting this tx    |
+
+# [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
+Provides insight into the cost of using the rollup. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
+
+| Methods                                                                           |                                                                    |
+|:----------------------------------------------------------------------------------|:-------------------------------------------------------------------|
+| [![](e =x12)][GIs0] [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)`           | Gets prices in wei when using the provided aggregator              |
+| [![](e =x12)][GIs1] [`GetPricesInWei`][GI1]`()`                                   | Gets prices in wei when using the caller's preferred aggregator    |
+| [![](e =x12)][GIs2] [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator           |
+| [![](e =x12)][GIs3] [`GetPricesInArbGas`][GI3]`()`                                | Gets prices in ArbGas when using the caller's preferred aggregator |
+| [![](e =x12)][GIs4] [`GetGasAccountingParams`][GI4]`()`                           | Gets the rollup's speed limit, pool size, and tx gas limit         |
+| [![](e =x12)][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`                            | Gets the current estimate of the L1 gas price                      |
+| [![](e =x12)][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()`                            | Gets the fee paid to the aggregator for posting this tx            |
 
 [GI0]: todo
 [GI1]: todo
@@ -143,37 +180,60 @@ Provides insight into the cost of using the rollup.
 [GI5]: todo
 [GI6]: todo
 
+[GIs0]: todo
+[GIs1]: todo
+[GIs2]: todo
+[GIs3]: todo
+[GIs4]: todo
+[GIs5]: todo
+[GIs6]: todo
+
+
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
 Provides the ability to lookup basic info about accounts and contracts.
 
-| Methods                              |                                       |
-| :----------------------------------- | :------------------------------------ |
-| [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance        |
-| [`GetCode`][I1]`(account)`           | Retrieves a contract's source program |
+| Methods                                                 |                                       |
+|:--------------------------------------------------------|:--------------------------------------|
+| [![](e =x12)][Is0] [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance        |
+| [![](e =x12)][Is1] [`GetCode`][I1]`(account)`           | Retrieves a contract's source program |
 
 [I0]: todo
 [I1]: todo
 
+[Is0]: todo
+[Is1]: todo
+
+
 # [ArbosTest][ArbosTest_link]<a name=ArbosTest></a>
 Provides a method of burning arbitrary amounts of gas, which exists for historical reasons. In Classic, `ArbosTest` had additional methods only the zero address could call. These have been removed since users don't use them and calls to missing methods revert.
 
-| Methods                     |                                                     | Nitro changes |
-| :-------------------------- | :-------------------------------------------------- |               |
-| [`BurnArbGas`][T0]`(amount)` &nbsp; | unproductively burns the amount of L2 ArbGas &nbsp; | Now pure      |
+| Methods                                                |                                                     | Nitro changes |
+|:-------------------------------------------------------|:----------------------------------------------------|---------------|
+| [![](e =x12)][Ts0] [`BurnArbGas`][T0]`(amount)` &nbsp; | unproductively burns the amount of L2 ArbGas &nbsp; | Now pure      |
+|                                                        |                                                     |               |
 
 [T0]: todo
+
+[Ts0]: todo
+
 
 # [ArbOwner][ArbOwner_link]<a name=ArbOwner></a>
 Provides owners with tools for managing the rollup. Calls by non-owners will always revert.
 
-| Methods                               |                                                                     |
-| :------------------------------------ | :------------------------------------------------------------------ |
-| [`AddChainOwner`][O0]`(account)`              | Promotes the user to chain owner                            |
-| [`GetAllChainOwners`][O1]`()`                 | Retrieves the list of chain owners                          |
-| [`IsChainOwner`][O2]`(account)`               | See if the user is a chain owner                            |
-| [`RemoveChainOwner`][O3]`(account)`           | Demotes the user from chain owner                           |
-| [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
-| [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus |
+Most of Classic's owner methods have been removed since they no longer make sense in Nitro:
+
+- What were once chain parameters are now parts of ArbOS's state, and those that remain are set at genesis. 
+- ArbOS upgrades happen with the rest of the system rather than being independent
+- No one asked to be exept from address aliasing so address remapping is unconditional
+
+| Methods                                                          |                                                                       |
+|:-----------------------------------------------------------------|:----------------------------------------------------------------------|
+| [![](e =x12)][Os0] [`AddChainOwner`][O0]`(account)`              | Promotes the user to chain owner                                      |
+| [![](e =x12)][Os1] [`RemoveChainOwner`][O1]`(account)`           | Demotes the user from chain owner                                     |
+| [![](e =x12)][Os2] [`IsChainOwner`][O2]`(account)`               | See if the user is a chain owner                                      |
+| [![](e =x12)][Os3] [`GetAllChainOwners`][O3]`()`                 | Retrieves the list of chain owners                                    |
+| [![](e =x12)][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
+| [![](e =x12)][Os5] [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus           |
 
 [O0]: todo
 [O1]: todo
@@ -182,26 +242,38 @@ Provides owners with tools for managing the rollup. Calls by non-owners will alw
 [O4]: todo
 [O5]: todo
 
+[Os0]: todo
+[Os1]: todo
+[Os2]: todo
+[Os3]: todo
+[Os4]: todo
+[Os5]: todo
+
+
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
 Provides non-owners with info about the current chain owners.
 
-| Methods                        |                                    |
-| :----------------------------- | :--------------------------------- |
-| [`GetAllChainOwners`][OP0]`()`          | Retrieves the list of chain owners |
-| [`IsChainOwner`][OP1]`(account)` &nbsp; | See if the user is a chain owner   |
+| Methods                                                     |                                    |
+|:------------------------------------------------------------|:-----------------------------------|
+| [![](e =x12)][OPs0] [`GetAllChainOwners`][OP0]`()`          | Retrieves the list of chain owners |
+| [![](e =x12)][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if the user is a chain owner   |
 
 [OP0]: todo
 [OP1]: todo
 
+[OPs0]: todo
+[OPs1]: todo
+
+
 # [ArbRetryableTx][ArbRetryableTx_link]<a name=ArbRetryableTx></a>
 | Methods                         |                                    |
 | :------------------------------ | :--------------------------------- |
-| [`Cancel`][RT0]`(ticket)`                |  |
-| [`GetBeneficiary`][RT1]`(ticket)` &nbsp; |  |
-| [`GetLifetime`][RT2]`()`                 |  |
-| [`GetTimeout`][RT3]`(ticket)`            |  |
-| [`Keepalive`][RT4]`(ticket)`             |  |
-| [`Redeem`][RT5]`(ticket)`                |  |
+| [![](e =x12)][RTs0] [`Cancel`][RT0]`(ticket)`                | TODO: document when stabilized |
+| [![](e =x12)][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | TODO: document when stabilized |
+| [![](e =x12)][RTs2] [`GetLifetime`][RT2]`()`                 | TODO: document when stabilized |
+| [![](e =x12)][RTs3] [`GetTimeout`][RT3]`(ticket)`            | TODO: document when stabilized |
+| [![](e =x12)][RTs4] [`Keepalive`][RT4]`(ticket)`             | TODO: document when stabilized |
+| [![](e =x12)][RTs5] [`Redeem`][RT5]`(ticket)`                | TODO: document when stabilized |
 
 [RT0]: todo
 [RT1]: todo
@@ -210,13 +282,21 @@ Provides non-owners with info about the current chain owners.
 [RT4]: todo
 [RT5]: todo
 
+[RTs0]: todo
+[RTs1]: todo
+[RTs2]: todo
+[RTs3]: todo
+[RTs4]: todo
+[RTs5]: todo
+
+
 | Events                           |                                                                  |
 | :------------------------------- | :--------------------------------------------------------------- |
-| [`TicketCreated`][RTe0]           |     |
-| [`LifetimeExtended`][RTe1] &nbsp; |     |
-| [`RedeemScheduled`][RTe2]         |     |
-| [`Redeemed`][RTe3]                |     |
-| [`Canceled`][RTe4]                |     |
+| [![](e =x12)][RTes0] [`TicketCreated`][RTe0]           |     |
+| [![](e =x12)][RTes1] [`LifetimeExtended`][RTe1] &nbsp; |     |
+| [![](e =x12)][RTes2] [`RedeemScheduled`][RTe2]         |     |
+| [![](e =x12)][RTes3] [`Redeemed`][RTe3]                |     |
+| [![](e =x12)][RTes4] [`Canceled`][RTe4]                |     |
 
 [RTe0]: todo
 [RTe1]: todo
@@ -224,31 +304,41 @@ Provides non-owners with info about the current chain owners.
 [RTe3]: todo
 [RTe4]: todo
 
+[RTes0]: todo
+[RTes1]: todo
+[RTes2]: todo
+[RTes3]: todo
+[RTes4]: todo
+
+
 # [ArbStatistics][ArbStatistics_link]<a name=ArbStatistics></a>
 Provides statistics about the rollup right before the Nitro upgrade. In Classic, this was how a user would get info such as the total number of accounts, but there's now better ways to do that with geth.
 
 | Methods             |                                                                            |
 | :------------------ | :------------------------------------------------------------------------- |
-| [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
+| [![](e =x12)][STs0] [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
 
 [ST0]: todo
 
-# [ArbSys][ArbSys_link]<a name=ArbSys></a>
-Provides info about 
+[STs0]: todo
 
-| Methods                            |                                                     | Nitro changes  |
-| :----------------------------------| :-------------------------------------------------- | :------------- |
-| [`ArbBlockNumber`][S0]`()`         | Gets the current L2 block number                    |                |
-| [`ArbChainID`][S1]`()`             | Gets the rollup's unique chain identifier           |                |
-| [`ArbOSVersion`][S2]`()`           | Gets the current ArbOS version                      | Now view       |
-| [`GetStorageGasAvailable`][S3]`()` | Returns 0 since Nitro has no concept of storage gas | Now always 0   |
-| [`IsTopLevelCall`][S4]`()`         | Checks if the call is top-level                                      |
-| [`MapL1SenderContractAddressToL2Alias`][S5]`(contract, unused)` &nbsp; | Gets the contract's L2 alias | 2nd arg is unused |
-| [`WasMyCallersAddressAliased`][S6]`()`           | Checks if the caller's caller was aliased               |
-| [`MyCallersAddressWithoutAliasing`][S7]`()`      | Gets the caller's caller without any potential aliasing |
-| [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox      |
-| [`SendMerkleTreeState`][S9]`()`                  | Gets the root, size, and partials of the outbox Merkle tree state  |
-| [`WithdrawEth`][S10]`(destination)`              | Send paid eth to the destination on L1                  |
+
+# [ArbSys][ArbSys_link]<a name=ArbSys></a>
+Provides system-level functionality for interacting with L1 and understanding the call stack.
+
+| Methods                                                                                   |                                                                   | Nitro changes     |
+|:------------------------------------------------------------------------------------------|:------------------------------------------------------------------|:------------------|
+| [![](e =x12)][Ss0] [`ArbBlockNumber`][S0]`()`                                             | Gets the current L2 block number                                  |                   |
+| [![](e =x12)][Ss1] [`ArbChainID`][S1]`()`                                                 | Gets the rollup's unique chain identifier                         |                   |
+| [![](e =x12)][Ss2] [`ArbOSVersion`][S2]`()`                                               | Gets the current ArbOS version                                    | Now view          |
+| [![](e =x12)][Ss3] [`GetStorageGasAvailable`][S3]`()`                                     | Returns 0 since Nitro has no concept of storage gas               | Now always 0      |
+| [![](e =x12)][Ss4] [`IsTopLevelCall`][S4]`()`                                             | Checks if the call is top-level                                   |                   |
+| [![](e =x12)][Ss5] [`MapL1SenderContractAddressToL2Alias`][S5]`(contract, unused)` &nbsp; | Gets the contract's L2 alias                                      | 2nd arg is unused |
+| [![](e =x12)][Ss6] [`WasMyCallersAddressAliased`][S6]`()`                                 | Checks if the caller's caller was aliased                         |                   |
+| [![](e =x12)][Ss7] [`MyCallersAddressWithoutAliasing`][S7]`()`                            | Gets the caller's caller without any potential aliasing           | New outbox scheme |
+| [![](e =x12)][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)`                       | Sends a transaction to L1, adding it to the outbox                | New outbox scheme |
+| [![](e =x12)][Ss9] [`SendMerkleTreeState`][S9]`()`                                        | Gets the root, size, and partials of the outbox Merkle tree state | New outbox scheme |
+| [![](e =x12)][Ss10] [`WithdrawEth`][S10]`(destination)`                                   | Send paid eth to the destination on L1                            |                   |
 
 [S0]: todo
 [S1]: todo
@@ -262,6 +352,19 @@ Provides info about
 [S9]: todo
 [S10]: todo
 
+[Ss0]: todo
+[Ss1]: todo
+[Ss2]: todo
+[Ss3]: todo
+[Ss4]: todo
+[Ss5]: todo
+[Ss6]: todo
+[Ss7]: todo
+[Ss8]: todo
+[Ss9]: todo
+[Ss10]: todo
+
+
 | Events                            |                                                                 |
 | :-------------------------------- | :-------------------------------------------------------------- |
 | [`L2ToL1Transaction`][Se0] &nbsp; | Logs a send tx from L2 to L1, including data for outbox proving |
@@ -270,10 +373,14 @@ Provides info about
 [Se0]: todo
 [Se1]: todo
 
-| Removed                               |                                                                             |
-| :------------------------------------ | :-------------------------------------------------------------------------- |
+| Removed                                        |                                                                             |
+|:-----------------------------------------------|:----------------------------------------------------------------------------|
 | [`GetStorageAt`][Sr0]`(account, index)` &nbsp; | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
 | [`GetTransactionCount`][Sr1]`(account)`        | Nitro doesn't need Classic's `eth_getStorageAt`, and users couldn't call it |
 
+
 [Sr0]: todo
 [Sr1]: todo
+
+[Ssr0]: todo
+[Ssr1]: todo

@@ -10,8 +10,8 @@ type ArbBLS struct {
 }
 
 // Retrieves the BLS public key for the account provided
-func (con ArbBLS) GetPublicKey(c ctx, evm mech, address addr) (huge, huge, huge, huge, error) {
-	return c.state.BLSTable().GetPublicKey(address)
+func (con ArbBLS) GetPublicKey(c ctx, evm mech, account addr) (huge, huge, huge, huge, error) {
+	return c.state.BLSTable().GetPublicKey(account)
 }
 
 // Sets the caller's BLS public key

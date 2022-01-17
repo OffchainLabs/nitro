@@ -4,7 +4,7 @@ interface ArbGasInfo {
     // return gas prices in wei, assuming the specified aggregator is used
     //        (
     //            per L2 tx,
-    //            per L1 calldata unit, (zero byte = 4 units, nonzero byte = 16 units)
+    //            per L1 calldata unit, (a byte, non-zero or otherwise, is 16 units)
     //            per storage allocation,
     //            per ArbGas base,
     //            per ArbGas congestion,

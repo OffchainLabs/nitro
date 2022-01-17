@@ -23,16 +23,6 @@ func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.state.ChainOwners().Add(newOwner)
 }
 
-// Retrieves the list of chain owners
-func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
-	return c.state.ChainOwners().AllMembers()
-}
-
-// See if the user is a chain owner
-func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
-	return c.state.ChainOwners().IsMember(addr)
-}
-
 // Demotes the user from chain owner
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	member, _ := con.IsChainOwner(c, evm, addr)
@@ -40,6 +30,16 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 		return errors.New("tried to remove non-owner")
 	}
 	return c.state.ChainOwners().Remove(addr)
+}
+
+// See if the user is a chain owner
+func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
+	return c.state.ChainOwners().IsMember(addr)
+}
+
+// Retrieves the list of chain owners
+func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error) {
+	return c.state.ChainOwners().AllMembers()
 }
 
 // Sets the L1 gas price estimate directly, bypassing the autoregression

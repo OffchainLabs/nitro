@@ -5,6 +5,7 @@
 package bls
 
 import (
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -27,13 +28,19 @@ func Open(sto *storage.Storage) *BLSTable {
 	return &BLSTable{sto, sto.OpenSubStorage(byAddressKey)}
 }
 
-func (tab *BLSTable) GetPublicKey(addr common.Address) (*big.Int, *big.Int, *big.Int, *big.Int, error) {
-	key := common.BytesToHash(append(addr.Bytes(), byte(0)))
+func (tab *BLSTable) GetPublicKey(account common.Address) (*big.Int, *big.Int, *big.Int, *big.Int, error) {
+	key := common.BytesToHash(append(account.Bytes(), byte(0)))
 
 	x0, _ := tab.byAddress.Get(key)
 	x1, _ := tab.byAddress.Get(util.HashPlusInt(key, 1))
 	y0, _ := tab.byAddress.Get(util.HashPlusInt(key, 2))
 	y1, err := tab.byAddress.Get(util.HashPlusInt(key, 3))
+
+	zero := common.Hash{}
+
+	if x0 == zero && x1 == zero && y0 == zero && y1 == zero {
+		return nil, nil, nil, nil, errors.New("User has no public key")
+	}
 
 	return x0.Big(), x1.Big(), y0.Big(), y1.Big(), err
 }

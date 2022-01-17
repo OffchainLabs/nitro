@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
 
+// Provides system-level functionality for interacting with L1 and understanding the call stack.
 type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
