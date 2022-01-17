@@ -59,10 +59,10 @@ Provides info about
 
 | Methods                                                                  |                                                    |
 |:-------------------------------------------------------------------------|:---------------------------------------------------|
-| [![](e | height=12)][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                   |
-| [![](e | height=12)][Ss4] [`IsTopLevelCall`][S4]`()`                       | Checks if the call is top-level                    |
-| [![](e | height=12)][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox |
-| [![](e | height=12)][Ss10] [`WithdrawEth`][S10]`(destination)`             | Send paid eth to the destination on L1             |
+| [![](e =7x12)][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                   |
+| [![](e =x12)][Ss4] [`IsTopLevelCall`][S4]`()`                       | Checks if the call is top-level                    |
+| [![](e =7x12)[Ss8]] [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox |
+| ![](e =x12)[Ss10] [`WithdrawEth`][S10]`(destination)`             | Send paid eth to the destination on L1             |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
 [S4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
