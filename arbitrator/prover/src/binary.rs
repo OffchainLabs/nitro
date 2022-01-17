@@ -11,7 +11,7 @@ use nom::{
     error::{Error, ErrorKind, FromExternalError},
     multi::{count, length_data, many0, many_till},
     sequence::{preceded, tuple},
-    Err, Finish, Needed,
+    Err, Needed,
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
 use std::{hash::Hash, str::FromStr};
@@ -969,14 +969,14 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
         preceded(
             tag(&[0x43]),
             map(
-                map(nom::number::streaming::le_u32, f32::from_bits),
+                map(nom::number::complete::le_u32, f32::from_bits),
                 HirInstruction::F32Const,
             ),
         ),
         preceded(
             tag(&[0x44]),
             map(
-                map(nom::number::streaming::le_u64, f64::from_bits),
+                map(nom::number::complete::le_u64, f64::from_bits),
                 HirInstruction::F64Const,
             ),
         ),
@@ -1313,5 +1313,11 @@ fn module(mut input: &[u8]) -> IResult<WasmBinary> {
 }
 
 pub fn parse(input: &[u8]) -> Result<WasmBinary, nom::error::VerboseError<&[u8]>> {
-    all_consuming(module)(input).finish().map(|(_, x)| x)
+    match all_consuming(module)(input) {
+        Ok(res) => Ok(res.1),
+        Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(e),
+        Err(Err::Incomplete(_)) => {
+            return Err(VerboseError::from_error_kind(&[], ErrorKind::Complete));
+        }
+    }
 }
