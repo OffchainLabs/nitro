@@ -75,9 +75,6 @@ func (p *TxProcessor) getAggregator() *common.Address {
 
 // returns whether message is a successful deposit
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
-	// Changes to the statedb in this hook will be discarded should the tx later revert.
-	// Hence, modifications can be made with the assumption that the tx will succeed.
-
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
 		return false, 0, nil, nil
