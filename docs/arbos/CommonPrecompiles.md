@@ -57,7 +57,7 @@ Provides insight into the cost of using the rollup.
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
 Provides info about 
 
-| Methods                                                                       |                                                             |   |
+| Methods                                                                       |                                                             |
 |:------------------------------------------------------------------------------|:------------------------------------------------------------|
 | [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
 | [<img src=e height=16>][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
