@@ -73,7 +73,6 @@ func (p *TxProcessor) getAggregator() *common.Address {
 	return nil
 }
 
-// returns whether message is a successful deposit
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
