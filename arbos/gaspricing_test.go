@@ -1,31 +1,31 @@
 package arbos
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"math/big"
 	"testing"
+
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 )
 
 func TestGasPricingGasPool(t *testing.T) {
-	st := arbosState.OpenArbosStateForTesting(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 	expectedSmallGasPool := int64(arbosState.SmallGasPoolMax)
 	expectedGasPool := int64(arbosState.GasPoolMax)
 
 	checkGasPools := func() {
 		t.Helper()
-		if st.SmallGasPool() != expectedSmallGasPool {
-			Fail(t, "wrong small gas pool, expected", expectedSmallGasPool, "but got", st.SmallGasPool())
+		if smallGasPool(t, state) != expectedSmallGasPool {
+			Fail(t, "wrong small gas pool, expected", expectedSmallGasPool, "but got", smallGasPool(t, state))
 		}
 
-		if st.GasPool() != expectedGasPool {
-			Fail(t, "wrong gas pool, expected", expectedGasPool, "but got", st.GasPool())
+		if gasPool(t, state) != expectedGasPool {
+			Fail(t, "wrong gas pool, expected", expectedGasPool, "but got", gasPool(t, state))
 		}
 	}
 
 	checkGasPools()
 
 	initialSub := int64(arbosState.SmallGasPoolMax / 2)
-	st.AddToGasPools(-initialSub)
+	state.AddToGasPools(-initialSub)
 
 	expectedSmallGasPool -= initialSub
 	expectedGasPool -= initialSub
@@ -42,14 +42,14 @@ func TestGasPricingGasPool(t *testing.T) {
 	}
 
 	for _, t := range elapseTimesToCheck {
-		st.NotifyGasPricerThatTimeElapsed(uint64(t))
+		state.NotifyGasPricerThatTimeElapsed(uint64(t))
 		expectedSmallGasPool += arbosState.SpeedLimitPerSecond * t
 		expectedGasPool += arbosState.SpeedLimitPerSecond * t
 
 		checkGasPools()
 	}
 
-	st.NotifyGasPricerThatTimeElapsed(10000000)
+	state.NotifyGasPricerThatTimeElapsed(10000000)
 
 	expectedSmallGasPool = int64(arbosState.SmallGasPoolMax)
 	expectedGasPool = int64(arbosState.GasPoolMax)
@@ -58,28 +58,49 @@ func TestGasPricingGasPool(t *testing.T) {
 }
 
 func TestGasPricingPoolPrice(t *testing.T) {
-	st := arbosState.OpenArbosStateForTesting(t)
+	state := arbosState.OpenArbosStateForTesting(t)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if gasPriceWei(t, state) != arbosState.MinimumGasPriceWei {
 		Fail(t, "wrong initial gas price")
 	}
 
 	initialSub := int64(arbosState.SmallGasPoolMax * 4)
-	st.AddToGasPools(-initialSub)
+	state.AddToGasPools(-initialSub)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if gasPriceWei(t, state) != arbosState.MinimumGasPriceWei {
 		Fail(t, "price should not be changed")
 	}
 
-	st.NotifyGasPricerThatTimeElapsed(20)
+	state.NotifyGasPricerThatTimeElapsed(20)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) <= 0 {
+	if gasPriceWei(t, state) <= arbosState.MinimumGasPriceWei {
 		Fail(t, "price should be above minimum")
 	}
 
-	st.NotifyGasPricerThatTimeElapsed(500)
+	state.NotifyGasPricerThatTimeElapsed(500)
 
-	if st.GasPriceWei().Cmp(big.NewInt(arbosState.MinimumGasPriceWei)) != 0 {
+	if gasPriceWei(t, state) != arbosState.MinimumGasPriceWei {
 		Fail(t, "price should return to minimum")
 	}
+}
+
+func gasPriceWei(t *testing.T, state *arbosState.ArbosState) uint64 {
+	t.Helper()
+	price, err := state.GasPriceWei()
+	Require(t, err)
+	return price.Uint64()
+}
+
+func gasPool(t *testing.T, state *arbosState.ArbosState) int64 {
+	t.Helper()
+	pool, err := state.GasPool()
+	Require(t, err)
+	return pool
+}
+
+func smallGasPool(t *testing.T, state *arbosState.ArbosState) int64 {
+	t.Helper()
+	pool, err := state.SmallGasPool()
+	Require(t, err)
+	return pool
 }

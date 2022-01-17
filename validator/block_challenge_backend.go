@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 
 	"github.com/pkg/errors"
@@ -23,6 +24,7 @@ import (
 
 type GoGlobalState struct {
 	BlockHash  common.Hash
+	SendRoot   common.Hash
 	Batch      uint64
 	PosInBatch uint64
 }
@@ -36,6 +38,7 @@ func u64ToBe(x uint64) []byte {
 func (s GoGlobalState) Hash() common.Hash {
 	data := []byte("Global state:")
 	data = append(data, s.BlockHash.Bytes()...)
+	data = append(data, s.SendRoot.Bytes()...)
 	data = append(data, u64ToBe(s.Batch)...)
 	data = append(data, u64ToBe(s.PosInBatch)...)
 	return crypto.Keccak256Hash(data)
@@ -44,6 +47,7 @@ func (s GoGlobalState) Hash() common.Hash {
 func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 	return GoGlobalState{
 		BlockHash:  gs.Bytes32Vals[0],
+		SendRoot:   gs.Bytes32Vals[1],
 		Batch:      gs.U64Vals[0],
 		PosInBatch: gs.U64Vals[1],
 	}
@@ -51,7 +55,7 @@ func GoGlobalStateFromSolidity(gs challengegen.GlobalState) GoGlobalState {
 
 func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 	return challengegen.GlobalState{
-		Bytes32Vals: [1][32]byte{s.BlockHash},
+		Bytes32Vals: [2][32]byte{s.BlockHash, s.SendRoot},
 		U64Vals:     [2]uint64{s.Batch, s.PosInBatch},
 	}
 }
@@ -188,7 +192,11 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	return GoGlobalState{header.Hash(), batch, msgCount - batchMsgCount}, nil
+	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return GoGlobalState{}, err
+	}
+	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, msgCount - batchMsgCount}, nil
 }
 
 const STATUS_FINISHED uint8 = 1

@@ -84,6 +84,9 @@ test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	solgen/test/proofs/go.json
 
+wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms)
+	@printf $(done)
+
 clean:
 	go clean -testcache
 	rm -rf arbitrator/prover/test-cases/rust/target

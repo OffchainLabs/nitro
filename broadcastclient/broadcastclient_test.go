@@ -6,18 +6,19 @@ package broadcastclient
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
-/* TODO port these tests to use new message type
 func TestReceiveMessages(t *testing.T) {
 	ctx := context.Background()
 
-	settings := configuration.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9742",
@@ -28,7 +29,6 @@ func TestReceiveMessages(t *testing.T) {
 	}
 
 	messageCount := 1000
-	messageDelay := 0 * time.Millisecond
 	clientCount := 2
 
 	b := broadcaster.NewBroadcaster(settings)
@@ -39,49 +39,59 @@ func TestReceiveMessages(t *testing.T) {
 	}
 	defer b.Stop()
 
-	// this will send test messages to the clients at an interval
-	tmb := broadcaster.NewRandomMessageGenerator(messageCount, messageDelay)
-	tmb.SetBroadcaster(b)
-
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
 		wg.Add(1)
 		startMakeBroadcastClient(ctx, t, i, messageCount, &wg)
 	}
 
-	errChan := tmb.Start(ctx)
+	go func() {
+		for i := 0; i < messageCount; i++ {
+			b.BroadcastSingle(arbstate.MessageWithMetadata{}, uint64(i))
+		}
+	}()
+
 	wg.Wait()
 
-	select {
-	case err := <-errChan:
-		t.Fatal(err)
-	default:
+}
+
+type dummyTransactionStreamer struct {
+	messageReceiver chan broadcaster.BroadcastFeedMessage
+}
+
+func NewDummyTransactionStreamer() *dummyTransactionStreamer {
+	return &dummyTransactionStreamer{
+		messageReceiver: make(chan broadcaster.BroadcastFeedMessage),
 	}
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expectedCount int, wg *sync.WaitGroup) {
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9742/", nil, 20*time.Second)
-	messageCount := 0
-
-	// connect returns
-	messageReceiver, err := broadcastClient.Connect(ctx)
-	if err != nil {
-		t.Fatal(err)
+func (ts *dummyTransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+	for i, message := range messages {
+		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
+			SequenceNumber: pos + uint64(i),
+			Message:        message,
+		}
 	}
-	accListener := broadcastClient.ConfirmedAccumulatorListener
+	return nil
+}
+
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expectedCount int, wg *sync.WaitGroup) {
+	ts := NewDummyTransactionStreamer()
+	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9742/", nil, 20*time.Second, ts)
+	broadcastClient.Start(ctx)
+	messageCount := 0
 
 	go func() {
 		defer wg.Done()
 		defer broadcastClient.Close()
 		for {
 			select {
-			case <-messageReceiver:
+			case <-ts.messageReceiver:
 				messageCount++
 
 				if messageCount == expectedCount {
 					return
 				}
-			case <-accListener:
 			case <-time.After(60 * time.Second):
 				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
 				return
@@ -94,7 +104,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expe
 func TestServerClientDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -112,21 +122,16 @@ func TestServerClientDisconnect(t *testing.T) {
 	}
 	defer b.Stop()
 
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 20*time.Second)
+	ts := NewDummyTransactionStreamer()
+	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 20*time.Second, ts)
+	broadcastClient.Start(ctx)
 
-	client, err := broadcastClient.Connect(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	newBroadcastMessage := broadcaster.SequencedMessages()
-	hash1, feedItem1, signature1 := newBroadcastMessage()
-	err = b.BroadcastSingle(hash1, feedItem1.BatchItem, signature1.Bytes())
+	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
 
 	// Wait for client to receive batch to ensure it is connected
 	select {
-	case receivedMsg := <-client:
-		t.Logf("Received Message, Sequence Message: %v\n", receivedMsg.FeedItem.BatchItem.SequencerMessage)
+	case receivedMsg := <-ts.messageReceiver:
+		t.Logf("Received Message, Sequence Message: %v\n", receivedMsg)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Client did not receive batch item")
 	}
@@ -146,12 +151,11 @@ func TestServerClientDisconnect(t *testing.T) {
 		}
 	}
 }
-*/
 
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9743",
@@ -169,13 +173,9 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.Stop()
 
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second)
+	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second, nil)
 
-	// connect returns
-	_, err = broadcastClient.Connect(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	broadcastClient.Start(ctx)
 
 	// Client set to timeout connection at 2 seconds, and server set to send ping every 50 seconds,
 	// so at least one timeout/reconnect should happen after 4 seconds
@@ -186,11 +186,10 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 }
 
-/*
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	ctx := context.Background()
 
-	settings := wsbroadcastserver.FeedOutput{
+	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
 		Port:          "9842",
@@ -208,19 +207,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	}
 	defer b.Stop()
 
-	newBroadcastMessage := broadcaster.SequencedMessages()
-
-	hash1, feedItem1, signature1 := newBroadcastMessage()
-	err = b.BroadcastSingle(hash1, feedItem1.BatchItem, signature1.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	hash2, feedItem2, signature2 := newBroadcastMessage()
-	err = b.BroadcastSingle(hash2, feedItem2.BatchItem, signature2.Bytes())
-	if err != nil {
-		t.Fatal(err)
-	}
+	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
+	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 1)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -234,14 +222,11 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	time.Sleep(4 * time.Second)
 
 	// Confirmed Accumulator will also broadcast to the clients.
-	b.ConfirmedAccumulator(feedItem1.BatchItem.Accumulator) // remove the first message we generated
-
-	// Send next accumulator because only previous accumulator is sent to clients
-	b.ConfirmedAccumulator(feedItem2.BatchItem.Accumulator) // remove the first message we generated
+	b.Confirm(0) // remove the first message we generated
 
 	updateTimeout := time.After(2 * time.Second)
 	for {
-		if b.MessageCacheCount() == 1 { // should have left the second message
+		if b.GetCachedMessageCount() == 1 { // should have left the second message
 			break
 		}
 
@@ -253,11 +238,11 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	}
 
 	// Send second accumulator again so that the previously added accumulator is sent
-	b.ConfirmedAccumulator(feedItem2.BatchItem.Accumulator)
+	b.Confirm(1)
 
 	updateTimeout = time.After(2 * time.Second)
 	for {
-		if b.MessageCacheCount() == 0 { // should have left the second message
+		if b.GetCachedMessageCount() == 0 { // should have left the second message
 			break
 		}
 
@@ -270,22 +255,18 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 }
 
 func connectAndGetCachedMessages(ctx context.Context, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9842/", nil, 60*time.Second)
-	testClient, err := broadcastClient.Connect(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	ts := NewDummyTransactionStreamer()
+	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9842/", nil, 60*time.Second, ts)
+	broadcastClient.Start(ctx)
 
 	go func() {
 		defer wg.Done()
 		defer broadcastClient.Close()
 
-		t.Logf("client %d %v connected\n", clientIndex, (*broadcastClient).conn.LocalAddr())
-
 		// Wait for client to receive first item
 		select {
-		case receivedMsg := <-testClient:
-			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg.FeedItem.BatchItem.SequencerMessage)
+		case receivedMsg := <-ts.messageReceiver:
+			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg)
 		case <-time.After(10 * time.Second):
 			t.Errorf("client %d did not receive first batch item\n", clientIndex)
 			return
@@ -293,12 +274,11 @@ func connectAndGetCachedMessages(ctx context.Context, t *testing.T, clientIndex 
 
 		// Wait for client to receive second item
 		select {
-		case receivedMsg := <-testClient:
-			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg.FeedItem.BatchItem.SequencerMessage)
+		case receivedMsg := <-ts.messageReceiver:
+			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg)
 		case <-time.After(10 * time.Second):
 			t.Errorf("client %d did not receive second batch item\n", clientIndex)
 			return
 		}
 	}()
 }
-*/

@@ -5,6 +5,9 @@
 package arbos
 
 import (
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"math"
 	"math/big"
 
@@ -12,10 +15,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -32,10 +33,12 @@ type TxProcessor struct {
 	state        *arbosState.ArbosState
 	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas    uint64
+	Callers      []common.Address
+	TopTxType    *byte // set once in StartTxHook
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := arbosState.OpenArbosState(evm.StateDB)
+	arbosState := arbosState.OpenSystemArbosState(evm.StateDB)
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:          msg,
@@ -44,7 +47,17 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		state:        arbosState,
 		PosterFee:    new(big.Int),
 		posterGas:    0,
+		Callers:      []common.Address{},
+		TopTxType:    nil,
 	}
+}
+
+func (p *TxProcessor) PushCaller(addr common.Address) {
+	p.Callers = append(p.Callers, addr)
+}
+
+func (p *TxProcessor) PopCaller() {
+	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
 func isAggregated(l1Address, l2Address common.Address) bool {
@@ -69,6 +82,9 @@ func (p *TxProcessor) StartTxHook() bool {
 		return false
 	}
 
+	tipe := underlyingTx.Type()
+	p.TopTxType = &tipe
+
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		if p.msg.From() != arbAddress {
@@ -82,7 +98,7 @@ func (p *TxProcessor) StartTxHook() bool {
 		time := p.blockContext.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
-		p.state.RetryableState().CreateRetryable(
+		_, err := p.state.RetryableState().CreateRetryable(
 			time,
 			underlyingTx.Hash(),
 			timeout,
@@ -92,10 +108,13 @@ func (p *TxProcessor) StartTxHook() bool {
 			tx.Beneficiary,
 			tx.Data,
 		)
+		p.state.Restrict(err)
+
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
-		p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
+		_, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
+		p.state.Restrict(err)
 	}
 	return false
 }
@@ -109,7 +128,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.blockContext.BaseFee
 	pricing := p.state.L1PricingState()
-	posterCost := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	p.state.Restrict(err)
 
 	if p.msg.GasPrice().Sign() == 0 {
 		// TODO: Review when doing eth_call's
@@ -181,4 +201,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		p.state.AddToGasPools(-int64(computeGas))
 	}
+}
+
+func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return 0, err
+	}
+	return state.Blockhashes().NextBlockNumber()
+}
+
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
