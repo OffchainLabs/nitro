@@ -46,21 +46,21 @@ Provides the ability to create short-hands for commonly used accounts.
 | [![](e =x12)][ATs5] [`Register`][AT5]`(address)`                 | Adds an account to the table, shrinking its compressed representation                     |
 | [![](e =x12)][ATs6] [`Size`][AT6]`()`                            | Gets the number of addresses in the table                                                 |
 
-[AT0]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L18
-[AT1]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L23
-[AT2]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L28
-[AT3]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L41
-[AT4]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L53
-[AT5]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L68
-[AT6]: https://github.com/OffchainLabs/nitro/blob/0cc34f548483d59f445d3744c9d912b58a87e563/precompiles/ArbAddressTable.go#L74
+[AT0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L18
+[AT1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L23
+[AT2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L28
+[AT3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L41
+[AT4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L53
+[AT5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L68
+[AT6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L74
 
-[ATs0]: todo
-[ATs1]: todo
-[ATs2]: todo
-[ATs3]: todo
-[ATs4]: todo
-[ATs5]: todo
-[ATs6]: todo
+[ATs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L12
+[ATs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L19
+[ATs2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L27
+[ATs3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L33
+[ATs4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L39
+[ATs5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L46
+[ATs6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L51
 
 
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
@@ -68,32 +68,32 @@ Provides aggregators and their users methods for configuring how they participat
 
 | Methods                                                                    |                                                               | Caller must be                |
 |:---------------------------------------------------------------------------|:--------------------------------------------------------------|:------------------------------|
-| [![](e =x12)][As0] [`GetPreferredAggregator`][A4]`(account)`               | Gets an account's preferred aggregator                        |                               |
-| [![](e =x12)][As1] [`SetPreferredAggregator`][A5]`(aggregator)`            | Sets the caller's preferred aggregator to that provided       |                               |
+| [![](e =x12)][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                        |                               |
+| [![](e =x12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided       |                               |
 | [![](e =x12)][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the rollup's default aggregator                          |                               |
 | [![](e =x12)][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the rollup's default aggregator                          | chain owner or the current    |
-| [![](e =x12)][As4] [`GetFeeCollector`][A0]`(aggregator)`                   | Gets an aggregator's fee collector                            |                               |
-| [![](e =x12)][As5] [`SetFeeCollector`][A1]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                            | the aggregator                |
+| [![](e =x12)][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                            |                               |
+| [![](e =x12)][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                            | the aggregator                |
 | [![](e =x12)][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed cost charge to submit a tx |                               |
 | [![](e =x12)][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed cost                               | chain owner or the aggergator |
 
-[A0]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L15
-[A1]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L19
-[A2]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L32
-[A3]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L36
-[A4]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L58
-[A5]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L62
-[A6]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L66
-[A7]: https://github.com/OffchainLabs/nitro/blob/0089a13e21ab9cd8b7ba78806a30f626fb2dbc52/precompiles/ArbAggregator.go#L70
+[A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
+[A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
+[A2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L29
+[A3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L34
+[A4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L57
+[A5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L62
+[A6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L76
+[A7]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L81
 
-[As0]: todo
-[As1]: todo
-[As2]: todo
-[As3]: todo
-[As4]: todo
-[As5]: todo
-[As6]: todo
-[As7]: todo
+[As0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L7
+[As1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L11
+[As2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L14
+[As3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L18
+[As4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L22
+[As5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L27
+[As6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L30
+[As7]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAggregator.sol#L35
 
 
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
@@ -104,11 +104,11 @@ Provides a registry of BLS public keys for accounts.
 | [![](e =x12)][Bs0] [`GetPublicKey`][B0]`(account)`]           | Retrieves the BLS public key for the account provided |
 | [![](e =x12)][Bs1] [`Register`][B1]`(x0, x1, y0, y1)`] &nbsp; | Sets the caller's BLS public key                      |
 
-[B0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbBLS.go#L11
-[B1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbBLS.go#L15
+[B0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L13
+[B1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L18
 
-[Bs0]: todo
-[Bs1]: todo
+[Bs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbBLS.sol#L5
+[Bs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbBLS.sol#L8
 
 
 # [ArbDebug][ArbDebug_link]<a name=ArbDebug></a>
@@ -122,8 +122,8 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 [D0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L37
 [D1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/precompiles/ArbDebug.go#L19
 
-[Ds0]: todo
-[Ds1]: todo
+[Ds0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L38
+[Ds1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L19
 
 
 | Events                                    |                                            |
@@ -132,13 +132,13 @@ Provides mechanisms useful for testing. The methods of `ArbDebug` are only avail
 | [![](e =x12)][Des1] [`Mixed`][De1]        | Emitted in `Events` for testing            |
 | [![](e =x12)][Des2] [`Store`][De2]        | Never emitted (used for testing log sizes) |
 
-[De0]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L8
-[De1]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L9
-[De2]: https://github.com/OffchainLabs/nitro/blob/2845cc9a29a9c19e107d56ac2c3980c462e395ed/solgen/src/precompiles/ArbDebug.sol#L10
+[De0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L24
+[De1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L29
+[De2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbDebug.go#L13
 
-[Des0]: todo
-[Des1]: todo
-[Des2]: todo
+[Des0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbDebug.sol#L8
+[Des1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbDebug.sol#L9
+[Des2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbDebug.sol#L10
 
 
 # [ArbFunctionTable][ArbFunctionTable_link]<a name=ArbFunctionTable></a>
@@ -150,13 +150,13 @@ Provided aggregator's the ability to manage function tables. Aggregation works d
 | [![](e =x12)][FTs1] [`Size`][FT1]`(address)`              | Returns the empty table's size, which is 0 |
 | [![](e =x12)][FTs2] [`Upload`][FT2]`(bytes)`              | Does nothing                               |
 
-[FT0]: todo
-[FT1]: todo
-[FT2]: todo
+[FT0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbFunctionTable.go#L30
+[FT1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbFunctionTable.go#L25
+[FT2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbFunctionTable.go#L20
 
-[FTs0]: todo
-[FTs1]: todo
-[FTs2]: todo
+[FTs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbFunctionTable.sol#L15
+[FTs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbFunctionTable.sol#L12
+[FTs2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbFunctionTable.sol#L9
 
 
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
@@ -172,21 +172,21 @@ Provides insight into the cost of using the rollup. These methods have been adju
 | [![](e =x12)][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`                            | Gets the current estimate of the L1 gas price                      |
 | [![](e =x12)][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()`                            | Gets the fee paid to the aggregator for posting this tx            |
 
-[GI0]: todo
-[GI1]: todo
-[GI2]: todo
-[GI3]: todo
-[GI4]: todo
-[GI5]: todo
-[GI6]: todo
+[GI0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L26
+[GI1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L62
+[GI2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L71
+[GI3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L95
+[GI4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L104
+[GI5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L112
+[GI6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L117
 
-[GIs0]: todo
-[GIs1]: todo
-[GIs2]: todo
-[GIs3]: todo
-[GIs4]: todo
-[GIs5]: todo
-[GIs6]: todo
+[GIs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L13
+[GIs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L17
+[GIs2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L21
+[GIs3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L25
+[GIs4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L28
+[GIs5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L31
+[GIs6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbGasInfo.sol#L34
 
 
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
@@ -197,11 +197,11 @@ Provides the ability to lookup basic info about accounts and contracts.
 | [![](e =x12)][Is0] [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance        |
 | [![](e =x12)][Is1] [`GetCode`][I1]`(account)`           | Retrieves a contract's source program |
 
-[I0]: todo
-[I1]: todo
+[I0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L18
+[I1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L26
 
-[Is0]: todo
-[Is1]: todo
+[Is0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbInfo.sol#L5
+[Is1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbInfo.sol#L8
 
 
 # [ArbosTest][ArbosTest_link]<a name=ArbosTest></a>
@@ -210,11 +210,10 @@ Provides a method of burning arbitrary amounts of gas, which exists for historic
 | Methods                                                |                                                     | Nitro changes |
 |:-------------------------------------------------------|:----------------------------------------------------|---------------|
 | [![](e =x12)][Ts0] [`BurnArbGas`][T0]`(amount)` &nbsp; | unproductively burns the amount of L2 ArbGas &nbsp; | Now pure      |
-|                                                        |                                                     |               |
 
-[T0]: todo
+[T0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbosTest.go#L17
 
-[Ts0]: todo
+[Ts0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbosTest.sol#L4
 
 
 # [ArbOwner][ArbOwner_link]<a name=ArbOwner></a>
@@ -235,19 +234,19 @@ Most of Classic's owner methods have been removed since they no longer make sens
 | [![](e =x12)][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
 | [![](e =x12)][Os5] [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus           |
 
-[O0]: todo
-[O1]: todo
-[O2]: todo
-[O3]: todo
-[O4]: todo
-[O5]: todo
+[O0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L22
+[O1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L27
+[O2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L36
+[O3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L41
+[O4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L46
+[O5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L51
 
-[Os0]: todo
-[Os1]: todo
-[Os2]: todo
-[Os3]: todo
-[Os4]: todo
-[Os5]: todo
+[Os0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L8
+[Os1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L11
+[Os2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L14
+[Os3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L17
+[Os4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L20
+[Os5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L23
 
 
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
@@ -258,11 +257,11 @@ Provides non-owners with info about the current chain owners.
 | [![](e =x12)][OPs0] [`GetAllChainOwners`][OP0]`()`          | Retrieves the list of chain owners |
 | [![](e =x12)][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if the user is a chain owner   |
 
-[OP0]: todo
-[OP1]: todo
+[OP0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L19
+[OP1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L24
 
-[OPs0]: todo
-[OPs1]: todo
+[OPs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwnerPublic.sol#L10
+[OPs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwnerPublic.sol#L7
 
 
 # [ArbRetryableTx][ArbRetryableTx_link]<a name=ArbRetryableTx></a>
@@ -318,7 +317,7 @@ Provides statistics about the rollup right before the Nitro upgrade. In Classic,
 | :------------------ | :------------------------------------------------------------------------- |
 | [![](e =x12)][STs0] [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
 
-[ST0]: todo
+[ST0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbStatistics.go#L19
 
 [STs0]: todo
 
