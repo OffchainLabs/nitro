@@ -328,40 +328,43 @@ Provides system-level functionality for interacting with L1 and understanding th
 | Methods                                                                                             |                                                                   | Nitro changes     |
 |:----------------------------------------------------------------------------------------------------|:------------------------------------------------------------------|:------------------|
 | [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                                             | Gets the current L2 block number                                  |                   |
-| [<img src=e height=16>][Ss1] [`ArbChainID`][S1]`()`                                                 | Gets the rollup's unique chain identifier                         |                   |
-| [<img src=e height=16>][Ss2] [`ArbOSVersion`][S2]`()`                                               | Gets the current ArbOS version                                    | Now view          |
-| [<img src=e height=16>][Ss3] [`GetStorageGasAvailable`][S3]`()`                                     | Returns 0 since Nitro has no concept of storage gas               | Now always 0      |
-| [<img src=e height=16>][Ss4] [`IsTopLevelCall`][S4]`()`                                             | Checks if the call is top-level                                   |                   |
-| [<img src=e height=16>][Ss5] [`MapL1SenderContractAddressToL2Alias`][S5]`(contract, unused)` &nbsp; | Gets the contract's L2 alias                                      | 2nd arg is unused |
-| [<img src=e height=16>][Ss6] [`WasMyCallersAddressAliased`][S6]`()`                                 | Checks if the caller's caller was aliased                         |                   |
-| [<img src=e height=16>][Ss7] [`MyCallersAddressWithoutAliasing`][S7]`()`                            | Gets the caller's caller without any potential aliasing           | New outbox scheme |
-| [<img src=e height=16>][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)`                       | Sends a transaction to L1, adding it to the outbox                | New outbox scheme |
-| [<img src=e height=16>][Ss9] [`SendMerkleTreeState`][S9]`()`                                        | Gets the root, size, and partials of the outbox Merkle tree state | New outbox scheme |
-| [<img src=e height=16>][Ss10] [`WithdrawEth`][S10]`(destination)`                                   | Send paid eth to the destination on L1                            |                   |
+| [<img src=e height=16>][Ss1] [`ArbBlockHash`][S1]`()`                                               | Gets the L2 block hash, if the block is sufficiently recent       |                   |
+| [<img src=e height=16>][Ss2] [`ArbChainID`][S2]`()`                                                 | Gets the rollup's unique chain identifier                         |                   |
+| [<img src=e height=16>][Ss3] [`ArbOSVersion`][S3]`()`                                               | Gets the current ArbOS version                                    | Now view          |
+| [<img src=e height=16>][Ss4] [`GetStorageGasAvailable`][S4]`()`                                     | Returns 0 since Nitro has no concept of storage gas               | Now always 0      |
+| [<img src=e height=16>][Ss5] [`IsTopLevelCall`][S5]`()`                                             | Checks if the call is top-level                                   |                   |
+| [<img src=e height=16>][Ss6] [`MapL1SenderContractAddressToL2Alias`][S6]`(contract, unused)` &nbsp; | Gets the contract's L2 alias                                      | 2nd arg is unused |
+| [<img src=e height=16>][Ss7] [`WasMyCallersAddressAliased`][S7]`()`                                 | Checks if the caller's caller was aliased                         |                   |
+| [<img src=e height=16>][Ss8] [`MyCallersAddressWithoutAliasing`][S8]`()`                            | Gets the caller's caller without any potential aliasing           | New outbox scheme |
+| [<img src=e height=16>][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)`                       | Sends a transaction to L1, adding it to the outbox                | New outbox scheme |
+| [<img src=e height=16>][Ss10] [`SendMerkleTreeState`][S10]`()`                                        | Gets the root, size, and partials of the outbox Merkle tree state | New outbox scheme |
+| [<img src=e height=16>][Ss11] [`WithdrawEth`][S11]`(destination)`                                   | Send paid eth to the destination on L1                            |                   |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
 [S1]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L32
-[S2]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L37
-[S3]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L43
-[S4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
-[S5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L53
-[S6]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L58
-[S7]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L64
-[S8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L80
-[S9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L137
-[S10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L153
+[S2]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L32
+[S3]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L37
+[S4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L43
+[S5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
+[S6]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L53
+[S7]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L58
+[S8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L64
+[S9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L80
+[S10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L137
+[S11]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L153
 
 [Ss0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L27
 [Ss1]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L33
-[Ss2]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L39
-[Ss3]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L45
-[Ss4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L51
-[Ss5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L59
-[Ss6]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L65
-[Ss7]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L71
-[Ss8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L87
-[Ss9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L95
-[Ss10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L79
+[Ss2]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L33
+[Ss3]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L39
+[Ss4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L45
+[Ss5]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L51
+[Ss6]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L59
+[Ss7]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L65
+[Ss8]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L71
+[Ss9]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L87
+[Ss10]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L95
+[Ss11]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/solgen/src/precompiles/ArbSys.sol#L79
 
 
 | Events                                                          |                                                                 |

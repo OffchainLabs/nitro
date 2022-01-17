@@ -27,6 +27,12 @@ interface ArbSys {
     function arbBlockNumber() external view returns (uint);
 
     /**
+    * @notice Get Arbitrum block hash (reverts unless currentBlockNum-256 <= arbBlockNum < currentBlockNum)
+    * @return block hash
+     */
+    function arbBlockHash(uint arbBlockNum) external view returns (bytes32);
+
+    /**
     * @notice Gets the rollup's unique chain identifier
     * @return Chain identifier as int
      */
