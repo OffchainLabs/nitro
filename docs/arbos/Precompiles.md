@@ -319,7 +319,7 @@ Provides statistics about the rollup right before the Nitro upgrade. In Classic,
 
 [ST0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbStatistics.go#L19
 
-[STs0]: todo
+[STs0]: https://github.com/OffchainLabs/nitro/blob/b010c466db6c772b6e4b8f4b79854297177fe457/solgen/src/precompiles/ArbStatistics.sol#L11
 
 
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
@@ -341,7 +341,7 @@ Provides system-level functionality for interacting with L1 and understanding th
 
 [S0]: todo
 [S1]: todo
-[S2]: todo
+[S2]: https://github.com/OffchainLabs/nitro/blob/b010c466db6c772b6e4b8f4b79854297177fe457/solgen/src/precompiles/ArbSys.sol#L27
 [S3]: todo
 [S4]: todo
 [S5]: todo

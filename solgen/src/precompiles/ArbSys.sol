@@ -21,18 +21,54 @@ pragma solidity >=0.4.21 <0.9.0;
  */
 interface ArbSys {
     /**
+    * @notice Get Arbitrum block number (distinct from L1 block number; Arbitrum genesis block has block number 0)
+    * @return block number as int
+     */
+    function arbBlockNumber() external view returns (uint);
+
+    /**
+    * @notice Gets the rollup's unique chain identifier
+    * @return Chain identifier as int
+     */
+    function arbChainID() external view returns(uint);
+
+    /**
     * @notice Get internal version number identifying an ArbOS build
     * @return version number as int
      */
     function arbOSVersion() external view returns (uint);
 
-    function arbChainID() external view returns(uint);
+    /**
+     * @notice Returns 0 since Nitro has no concept of storage gas
+     * @return int 0
+     */
+    function getStorageGasAvailable() external returns(uint);
 
     /**
-    * @notice Get Arbitrum block number (distinct from L1 block number; Arbitrum genesis block has block number 0)
-    * @return block number as int
+    * @notice check if current call is coming from l1
+    * @return true if the caller of this was called directly from L1
+    */
+    function isTopLevelCall() external view returns (bool);
+
+    /**
+     * @notice map L1 sender contract address to its L2 alias
+     * @param sender sender address
+     * @param unused argument no longer used
+     * @return aliased sender address
      */
-    function arbBlockNumber() external view returns (uint);
+    function mapL1SenderContractAddressToL2Alias(address sender, address unused) external pure returns(address);
+
+    /**
+     * @notice check if the caller (of this caller of this) is an aliased L1 contract address
+     * @return true iff the caller's address is an alias for an L1 contract address
+     */
+    function wasMyCallersAddressAliased() external view returns (bool);
+
+    /**
+     * @notice return the address of the caller (of this caller of this), without applying L1 contract address aliasing
+     * @return address of the caller's caller, without applying L1 contract address aliasing
+     */
+    function myCallersAddressWithoutAliasing() external view returns (address);
 
     /**
     * @notice Send given amount of Eth to dest from sender.
@@ -57,38 +93,6 @@ interface ArbSys {
     * @return partials hashes of partial subtrees in the send history tree
     */
     function sendMerkleTreeState() external view returns(uint size, bytes32 root, bytes32[] memory partials);
-
-    /**
-    * @notice check if current call is coming from l1
-    * @return true if the caller of this was called directly from L1
-    */
-    function isTopLevelCall() external view returns (bool);
-
-    /**
-     * @notice check if the caller (of this caller of this) is an aliased L1 contract address
-     * @return true iff the caller's address is an alias for an L1 contract address
-     */
-    function wasMyCallersAddressAliased() external view returns (bool);
-
-    /**
-     * @notice return the address of the caller (of this caller of this), without applying L1 contract address aliasing
-     * @return address of the caller's caller, without applying L1 contract address aliasing
-     */
-    function myCallersAddressWithoutAliasing() external view returns (address);
-
-    /**
-     * @notice map L1 sender contract address to its L2 alias
-     * @param sender sender address
-     * @param dest destination address
-     * @return aliased sender address
-     */
-    function mapL1SenderContractAddressToL2Alias(address sender, address dest) external pure returns(address);
-
-    /**
-     * @notice get the caller's amount of available storage gas
-     * @return amount of storage gas available to the caller
-     */
-    function getStorageGasAvailable() external returns(uint);
 
     /**
      * @notice creates a send txn from L2 to L1
