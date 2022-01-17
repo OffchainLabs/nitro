@@ -22,6 +22,8 @@ Because a revert will discard changes made here, modifications to ArbOS's state 
 
 The hook returns `true` in the case of an `ArbitrumDepositTx`, signifying that the state transition is complete. This is the simplest kind of arbitrum transaction and requires no additional work after the balance update.
 
+TODO: fix the above once we've settled on how retryables work
+
 ### [`GasChargingHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L100)
 
 This fallible hook ensures the user has enough funds to pay their poster's L1 calldata costs. If not, the tx is reverted and the [`EVM`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/evm.go#L101) does not start. In the common case that the user can pay, the amount paid for calldata is set aside for later reimbursement of the poster. All other fees go to the network account, as they represent the tx's burden on validators and nodes more generally.

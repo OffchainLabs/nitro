@@ -18,11 +18,11 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregator's and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                         |                                                         |
-|:----------------------------------------------------------------|:--------------------------------------------------------|
-| [![](e =x12)][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
-| [![](e =x12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
-| [![](e =x12)][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
+| Methods                                                              |                                                         |
+|:---------------------------------------------------------------------|:--------------------------------------------------------|
+| [![](e height=12)][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
+| [![](e height=12)][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
+| [![](e height=12)][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
@@ -36,12 +36,12 @@ Provides aggregator's and their users methods for configuring how they participa
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
 Provides insight into the cost of using the rollup.
 
-| Methods                                                 |                                                                    |
-|:--------------------------------------------------------|:-------------------------------------------------------------------|
-| [![](e =x12)][GIs1] [`GetPricesInWei`][GI1]`()`         | Gets prices in wei when using the caller's preferred aggregator    |
-| [![](e =x12)][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Gets prices in ArbGas when using the caller's preferred aggregator |
-| [![](e =x12)][GIs4] [`GetGasAccountingParams`][GI4]`()` | Gets the rollup's speed limit, pool size, and tx gas limit         |
-| [![](e =x12)][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`  | Gets the current estimate of the L1 gas price                      |
+| Methods                                                      |                                                                    |
+|:-------------------------------------------------------------|:-------------------------------------------------------------------|
+| [![](e height=12)][GIs1] [`GetPricesInWei`][GI1]`()`         | Gets prices in wei when using the caller's preferred aggregator    |
+| [![](e height=12)][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Gets prices in ArbGas when using the caller's preferred aggregator |
+| [![](e height=12)][GIs4] [`GetGasAccountingParams`][GI4]`()` | Gets the rollup's speed limit, pool size, and tx gas limit         |
+| [![](e height=12)][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`  | Gets the current estimate of the L1 gas price                      |
 
 [GI1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L62
 [GI3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L95
@@ -57,12 +57,12 @@ Provides insight into the cost of using the rollup.
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
 Provides info about 
 
-| Methods                                                             |                                                    |
-|:--------------------------------------------------------------------|:---------------------------------------------------|
-| [![](e =x12)][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                   |
-| [![](e =x12)][Ss4] [`IsTopLevelCall`][S4]`()`                       | Checks if the call is top-level                    |
-| [![](e =x12)][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox |
-| [![](e =x12)][Ss10] [`WithdrawEth`][S10]`(destination)`             | Send paid eth to the destination on L1             |
+| Methods                                                                  |                                                    |
+|:-------------------------------------------------------------------------|:---------------------------------------------------|
+| [![](e height=12)][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                   |
+| [![](e height=12)][Ss4] [`IsTopLevelCall`][S4]`()`                       | Checks if the call is top-level                    |
+| [![](e height=12)][Ss8] [`SendTxToL1`][S8]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox |
+| [![](e height=12)][Ss10] [`WithdrawEth`][S10]`(destination)`             | Send paid eth to the destination on L1             |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
 [S4]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L48
