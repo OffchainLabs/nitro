@@ -187,7 +187,7 @@ fn main() -> Result<()> {
         global_state,
         inbox_contents,
         preimages,
-    );
+    )?;
     if opts.output_module_root {
         println!("{}", mach.get_modules_root());
         return Ok(());
