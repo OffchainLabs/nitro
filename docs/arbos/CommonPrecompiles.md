@@ -18,11 +18,11 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregator's and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                                   |                                                         |
-|:--------------------------------------------------------------------------|:--------------------------------------------------------|
-| [<img src=e height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
-| [<img src=e height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
-| [<img src=e height=16>][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
+| Methods                                                                       |                                                         |
+|:------------------------------------------------------------------------------|:--------------------------------------------------------|
+| [<img src=e.png height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`    | Gets an account's preferred aggregator                  |
+| [<img src=e.png height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |
+| [<img src=e.png height=16>][As2] [`GetDefaultAggregator`][A2]`()`             | Gets the rollup's default aggregator                    |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
@@ -36,12 +36,12 @@ Provides aggregator's and their users methods for configuring how they participa
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
 Provides insight into the cost of using the rollup.
 
-| Methods                                                           |                                                                    |
-|:------------------------------------------------------------------|:-------------------------------------------------------------------|
-| [<img src=e height=16>][GIs1] [`GetPricesInWei`][GI1]`()`         | Gets prices in wei when using the caller's preferred aggregator    |
-| [<img src=e height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Gets prices in ArbGas when using the caller's preferred aggregator |
-| [<img src=e height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()` | Gets the rollup's speed limit, pool size, and tx gas limit         |
-| [<img src=e height=16>][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`  | Gets the current estimate of the L1 gas price                      |
+| Methods                                                               |                                                                    |
+|:----------------------------------------------------------------------|:-------------------------------------------------------------------|
+| [<img src=e.png height=16>][GIs1] [`GetPricesInWei`][GI1]`()`         | Gets prices in wei when using the caller's preferred aggregator    |
+| [<img src=e.png height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Gets prices in ArbGas when using the caller's preferred aggregator |
+| [<img src=e.png height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()` | Gets the rollup's speed limit, pool size, and tx gas limit         |
+| [<img src=e.png height=16>][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`  | Gets the current estimate of the L1 gas price                      |
 
 [GI1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L62
 [GI3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L95
@@ -57,13 +57,13 @@ Provides insight into the cost of using the rollup.
 # [ArbSys][ArbSys_link]<a name=ArbSys></a>
 Provides system-level functionality for interacting with L1 and understanding the call stack.
 
-| Methods                                                                       |                                                             |
-|:------------------------------------------------------------------------------|:------------------------------------------------------------|
-| [<img src=e height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
-| [<img src=e height=16>][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
-| [<img src=e height=16>][Ss5] [`IsTopLevelCall`][S5]`()`                       | Checks if the call is top-level                             |
-| [<img src=e height=16>][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox          |
-| [<img src=e height=16>][Ss11] [`WithdrawEth`][S11]`(destination)`             | Send paid eth to the destination on L1                      |
+| Methods                                                                           |                                                             |
+|:----------------------------------------------------------------------------------|:------------------------------------------------------------|
+| [<img src=e.png height=16>][Ss0] [`ArbBlockNumber`][S0]`()`                       | Gets the current L2 block number                            |
+| [<img src=e.png height=16>][Ss1] [`ArbBlockHash`][S1]`()`                         | Gets the L2 block hash, if the block is sufficiently recent |
+| [<img src=e.png height=16>][Ss5] [`IsTopLevelCall`][S5]`()`                       | Checks if the call is top-level                             |
+| [<img src=e.png height=16>][Ss9] [`SendTxToL1`][S9]`(destination, calldataForL1)` | Sends a transaction to L1, adding it to the outbox          |
+| [<img src=e.png height=16>][Ss11] [`WithdrawEth`][S11]`(destination)`             | Send paid eth to the destination on L1                      |
 
 [S0]: https://github.com/OffchainLabs/nitro/blob/a9f2030de70460f65377174895836d3e4e33519e/precompiles/ArbSys.go#L27
 [S1]: https://github.com/OffchainLabs/nitro/blob/d27b2e270fe0a608ee1b4e2f272b895229a57e0e/precompiles/ArbSys.go#L34
