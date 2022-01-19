@@ -5,12 +5,12 @@
 package arbos
 
 import (
-	"encoding/binary"
+	"math"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"math"
-	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -36,6 +36,7 @@ type TxProcessor struct {
 	posterGas    uint64
 	Callers      []common.Address
 	TopTxType    *byte // set once in StartTxHook
+	evm          *vm.EVM
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -50,6 +51,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		posterGas:    0,
 		Callers:      []common.Address{},
 		TopTxType:    nil,
+		evm:          evm,
 	}
 }
 
@@ -107,16 +109,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		)
 		p.state.Restrict(err)
 
-		// emit TicketCreated event
-		event := &types.Log{
-			Address:     ArbRetryableTxAddress,
-			Topics:      []common.Hash{RedeemTicketCreatedEventID, underlyingTx.Hash()},
-			Data:        []byte{},
-			BlockNumber: p.blockContext.BlockNumber.Uint64(),
-			// Geth will set all other fields, which include
-			//   TxHash, TxIndex, Index, and Removed
+		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
+		if err != nil {
+			log.Error("failed to emit RedeemScheduled event", "err", err)
 		}
-		p.stateDB.AddLog(event)
 
 		if p.msg.Gas() > 0 {
 			// emit RedeemScheduled event
@@ -133,29 +129,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			_, err = retryable.IncrementNumTries()
 			p.state.Restrict(err)
 
-			buf8 := make([]byte, 8)
-			empty24 := make([]byte, 24)
-			data := []byte{}
-			data = append(data, empty24...)
-			binary.BigEndian.PutUint64(buf8, 0)
-			data = append(data, buf8...)
-			data = append(data, empty24...)
-			binary.BigEndian.PutUint64(buf8, p.msg.Gas())
-			data = append(data, buf8...)
-			data = append(data, common.BytesToHash(p.msg.From().Bytes()).Bytes()...)
-			data = append(data, empty24...)
-			binary.BigEndian.PutUint64(buf8, 0)
-			data = append(data, buf8...)
-
-			event = &types.Log{
-				Address:     ArbRetryableTxAddress,
-				Topics:      []common.Hash{RedeemScheduledEventID, underlyingTx.Hash(), types.NewTx(retryTxInner).Hash()},
-				Data:        data,
-				BlockNumber: p.blockContext.BlockNumber.Uint64(),
-				// Geth will set all other fields, which include
-				//   TxHash, TxIndex, Index, and Removed
+			err = EmitReedeemScheduledEvent(
+				p.evm,
+				retryTxInner.Nonce,
+				p.msg.Gas(),
+				retryTxInner.Nonce,
+				underlyingTx.Hash(),
+				types.NewTx(retryTxInner).Hash(),
+				p.msg.From(),
+			)
+			if err != nil {
+				log.Error("failed to emit RedeemScheduled event", "err", err)
 			}
-			p.stateDB.AddLog(event)
 		}
 
 		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
