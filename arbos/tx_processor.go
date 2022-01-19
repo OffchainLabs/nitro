@@ -28,30 +28,26 @@ var networkAddress = common.HexToAddress("0x01")
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg          core.Message
-	blockContext vm.BlockContext
-	stateDB      vm.StateDB
-	state        *arbosState.ArbosState
-	PosterFee    *big.Int // set once in GasChargingHook to track L1 calldata costs
-	posterGas    uint64
-	Callers      []common.Address
-	TopTxType    *byte // set once in StartTxHook
-	evm          *vm.EVM
+	msg       core.Message
+	state     *arbosState.ArbosState
+	PosterFee *big.Int // set once in GasChargingHook to track L1 calldata costs
+	posterGas uint64
+	Callers   []common.Address
+	TopTxType *byte // set once in StartTxHook
+	evm       *vm.EVM
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	arbosState := arbosState.OpenSystemArbosState(evm.StateDB)
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
-		msg:          msg,
-		blockContext: evm.Context,
-		stateDB:      evm.StateDB,
-		state:        arbosState,
-		PosterFee:    new(big.Int),
-		posterGas:    0,
-		Callers:      []common.Address{},
-		TopTxType:    nil,
-		evm:          evm,
+		msg:       msg,
+		state:     arbosState,
+		PosterFee: new(big.Int),
+		posterGas: 0,
+		Callers:   []common.Address{},
+		TopTxType: nil,
+		evm:       evm,
 	}
 }
 
@@ -68,7 +64,7 @@ func isAggregated(l1Address, l2Address common.Address) bool {
 }
 
 func (p *TxProcessor) getAggregator() *common.Address {
-	coinbase := p.blockContext.Coinbase
+	coinbase := p.evm.Context.Coinbase
 	if isAggregated(coinbase, p.msg.From()) {
 		return &coinbase
 	}
@@ -89,12 +85,12 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, nil, nil
 		}
-		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		p.evm.StateDB.AddBalance(*p.msg.To(), p.msg.Value())
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		p.stateDB.AddBalance(tx.From, tx.DepositValue)
+		p.evm.StateDB.AddBalance(tx.From, tx.DepositValue)
 
-		time := p.blockContext.Time.Uint64()
+		time := p.evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
 		retryable, err := p.state.RetryableState().CreateRetryable(
@@ -119,7 +115,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			retryTxInner, err := retryable.MakeTx(
 				underlyingTx.ChainId(),
 				0,
-				p.blockContext.BaseFee,
+				p.evm.Context.BaseFee,
 				p.msg.Gas(),
 				underlyingTx.Hash(),
 				p.msg.From(),
@@ -157,7 +153,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	var gasNeededToStartEVM uint64
 
-	gasPrice := p.blockContext.BaseFee
+	gasPrice := p.evm.Context.BaseFee
 	pricing := p.state.L1PricingState()
 	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 	p.state.Restrict(err)
@@ -200,12 +196,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if success && underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
-		state := arbosState.OpenSystemArbosState(p.stateDB) // we don't want to charge for this
+		state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 	}
 
-	gasPrice := p.blockContext.BaseFee
+	gasPrice := p.evm.Context.BaseFee
 
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
@@ -222,8 +218,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	p.stateDB.AddBalance(networkAddress, computeCost)
-	p.stateDB.AddBalance(p.blockContext.Coinbase, p.PosterFee)
+	p.evm.StateDB.AddBalance(networkAddress, computeCost)
+	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
@@ -242,11 +238,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state := arbosState.OpenSystemArbosState(p.stateDB)
+	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
 	return state.Blockhashes().NextBlockNumber()
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state := arbosState.OpenSystemArbosState(p.stateDB)
+	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
