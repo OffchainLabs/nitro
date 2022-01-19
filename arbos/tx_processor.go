@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
@@ -244,17 +243,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
-	if err != nil {
-		return 0, err
-	}
+	state := arbosState.OpenSystemArbosState(p.stateDB)
 	return state.Blockhashes().NextBlockNumber()
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state, err := arbosState.OpenArbosState(p.stateDB, &burn.SystemBurner{})
-	if err != nil {
-		return common.Hash{}, err
-	}
+	state := arbosState.OpenSystemArbosState(p.stateDB)
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
