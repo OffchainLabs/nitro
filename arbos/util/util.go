@@ -7,15 +7,20 @@ package util
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
+var ParseRedeemScheduledLog func(*types.Log) (*precompilesgen.ArbRetryableTxRedeemScheduled, error)
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -24,6 +29,33 @@ func init() {
 	}
 	AddressAliasOffset = offset
 	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
+
+	// Create a mechanism for parsing a RedeemScheduled event log
+	ArbRetryableTx, err := abi.JSON(strings.NewReader(precompilesgen.ArbRetryableTxABI))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ArbRetryableTx's ABI %s", err))
+	}
+	ArbRetryableTxRedeemScheduledInputs := ArbRetryableTx.Events["RedeemScheduled"].Inputs
+	ArbRetryableTxRedeemScheduledIndexed := abi.Arguments{}
+	for _, input := range ArbRetryableTxRedeemScheduledInputs {
+		if input.Indexed {
+			ArbRetryableTxRedeemScheduledIndexed = append(ArbRetryableTxRedeemScheduledIndexed, input)
+		}
+	}
+
+	ParseRedeemScheduledLog = func(log *types.Log) (*precompilesgen.ArbRetryableTxRedeemScheduled, error) {
+		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+		unpacked, err := ArbRetryableTxRedeemScheduledInputs.Unpack(log.Data)
+		if err != nil {
+			return nil, err
+		}
+		err = ArbRetryableTxRedeemScheduledInputs.Copy(event, unpacked)
+		if err != nil {
+			return nil, err
+		}
+		err = abi.ParseTopics(event, ArbRetryableTxRedeemScheduledIndexed, log.Topics[1:])
+		return event, err
+	}
 }
 
 func AddressToHash(address common.Address) common.Hash {

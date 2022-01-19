@@ -20,6 +20,11 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
+// check huge equality
+func BigEquals(first, second *big.Int) bool {
+	return first.Cmp(second) == 0
+}
+
 // multiply a huge by another
 func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 	return new(big.Int).Mul(multiplicand, multiplier)
