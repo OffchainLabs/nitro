@@ -20,28 +20,3 @@ func (con ArbosTest) BurnArbGas(c ctx, evm mech, gasAmount huge) error {
 	c.Burn(gasAmount.Uint64()) // burn the amount, even if it's more than the user has
 	return nil
 }
-
-func (con ArbosTest) GetAccountInfo(c ctx, evm mech, addr addr) error {
-	return errors.New("unimplemented")
-}
-
-func (con ArbosTest) GetMarshalledStorage(c ctx, evm mech, addr addr) error {
-	return errors.New("unimplemented")
-}
-
-func (con ArbosTest) InstallAccount(
-	c ctx,
-	evm mech,
-	addr addr,
-	isEOA bool,
-	balance huge,
-	nonce huge,
-	code []byte,
-	initStorage []byte,
-) error {
-	return errors.New("unimplemented")
-}
-
-func (con ArbosTest) SetNonce(c ctx, evm mech, addr addr, nonce huge) error {
-	return errors.New("unimplemented")
-}

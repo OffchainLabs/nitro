@@ -90,6 +90,7 @@ func ProduceBlock(
 	}
 
 	state := arbosState.OpenSystemArbosState(statedb)
+	_ = state.Blockhashes().RecordNewL1Block(l1Info.l1BlockNumber.Uint64(), lastBlockHeader.Hash())
 	gasLeft, _ := state.CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
