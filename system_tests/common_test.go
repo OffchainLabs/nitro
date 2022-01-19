@@ -123,7 +123,7 @@ func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo) (*BlockchainTe
 	if l2info == nil {
 		l2info = NewArbTestInfo(t)
 	}
-	l2info.GenerateGenesysAccount("Owner", big.NewInt(9223372036854775807))
+	l2info.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	l2info.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	accounts := make([]statetransfer.AccountInitializationInfo, 0, len(l2info.GenesisAlloc))
 	for addr, accountData := range l2info.GenesisAlloc {
