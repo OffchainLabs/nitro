@@ -419,9 +419,9 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.RedeemTicketCreatedEventID = ArbRetryable.events["TicketCreated"].template.ID
-	emitReedeemScheduled := func(evm mech, seq, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
-		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}, 0))
-		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor, nonce)
+	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
+		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}))
+		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor)
 	}
 	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
 	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {

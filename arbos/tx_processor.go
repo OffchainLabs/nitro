@@ -131,7 +131,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 			err = EmitReedeemScheduledEvent(
 				p.evm,
-				retryTxInner.Nonce,
 				p.msg.Gas(),
 				retryTxInner.Nonce,
 				underlyingTx.Hash(),
