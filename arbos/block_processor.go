@@ -26,7 +26,6 @@ import (
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
-var RedeemTicketCreatedEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
@@ -213,11 +212,11 @@ func ProduceBlock(
 
 				redeem, _ := retryable.MakeTx(
 					chainConfig.ChainID,
-					binary.BigEndian.Uint64(txLog.Data[24:32]),
+					binary.BigEndian.Uint64(txLog.Topics[3][24:32]),
 					gasPrice,
-					common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
+					common.BytesToHash(txLog.Data[0:32]).Big().Uint64(),
 					ticketId,
-					common.BytesToAddress(txLog.Data[64:96]),
+					common.BytesToAddress(txLog.Data[32:64]),
 				)
 				redeems = append(redeems, types.NewTx(redeem))
 			}
