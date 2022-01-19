@@ -85,7 +85,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	var faucetTxs []*types.Transaction
 	for _, acct := range accounts {
 		l1Info.GenerateAccount(acct)
-		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e14), nil))
+		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
 	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
 
@@ -104,7 +104,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				rawTx := &types.DynamicFeeTx{
 					To:        &padAddr,
 					Gas:       21000,
-					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					GasFeeCap: big.NewInt(params.GWei * 100),
 					Value:     new(big.Int),
 					Nonce:     j,
 				}

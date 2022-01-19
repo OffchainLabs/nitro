@@ -75,6 +75,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
 	}
+	l1Genesys.BaseFee = big.NewInt(50 * params.GWei)
 	nodeConf.Genesis = l1Genesys
 	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
 
