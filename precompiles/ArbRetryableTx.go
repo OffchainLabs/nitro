@@ -6,8 +6,9 @@ package precompiles
 
 import (
 	"errors"
-	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
@@ -16,21 +17,21 @@ import (
 
 type ArbRetryableTx struct {
 	Address                 addr
-	TicketCreated           func(ctx, mech, [32]byte) error
-	LifetimeExtended        func(ctx, mech, [32]byte, huge) error
-	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr, uint64) error
-	Redeemed                func(ctx, mech, [32]byte) error
-	Canceled                func(ctx, mech, [32]byte) error
-	TicketCreatedGasCost    func([32]byte) (uint64, error)
-	LifetimeExtendedGasCost func([32]byte, huge) (uint64, error)
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr, uint64) (uint64, error)
-	RedeemedGasCost         func([32]byte) (uint64, error)
-	CanceledGasCost         func([32]byte) (uint64, error)
+	TicketCreated           func(ctx, mech, bytes32) error
+	LifetimeExtended        func(ctx, mech, bytes32, huge) error
+	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr, uint64) error
+	Redeemed                func(ctx, mech, bytes32) error
+	Canceled                func(ctx, mech, bytes32) error
+	TicketCreatedGasCost    func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr, uint64) (uint64, error)
+	RedeemedGasCost         func(bytes32) (uint64, error)
+	CanceledGasCost         func(bytes32) (uint64, error)
 }
 
 var NotFoundError = errors.New("ticketId not found")
 
-func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
+func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -55,7 +56,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
 	return con.Canceled(c, evm, ticketId)
 }
 
-func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
+func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -72,7 +73,7 @@ func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
-func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -88,7 +89,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	return big.NewInt(int64(timeout)), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
 
 	// charge for the expiry update
 	retryableState := c.state.RetryableState()
@@ -126,7 +127,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, e
 	return big.NewInt(int64(newTimeout)), nil
 }
 
-func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, error) {
+func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	retryableState := c.state.RetryableState()
 	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
