@@ -60,7 +60,7 @@ const NumSignaturesToAggregate = 12
 
 func TestSignatureAggregation(t *testing.T) {
 	message := []byte("The quick brown fox jumped over the lazy dog.")
-	pubKeys := []PublicKey{}
+	pubKeys := []*PublicKey{}
 	sigs := []Signature{}
 	for i := 0; i < NumSignaturesToAggregate; i++ {
 		pub, priv, err := GenerateKeys()

@@ -6,6 +6,7 @@ package blsSignatures
 
 import (
 	cryptorand "crypto/rand"
+	"errors"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 	"math/big"
@@ -27,32 +28,65 @@ func init() {
 	}
 }
 
-type PublicKey *bls12381.PointG2
+type PublicKey struct {
+	key           *bls12381.PointG2
+	validityProof *bls12381.PointG1 // if this is nil, PK was made by aggregating verified keys
+}
 
 type PrivateKey *big.Int
 
 type Signature *bls12381.PointG1
 
-func GenerateKeys() (PublicKey, PrivateKey, error) {
-	privateKey, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
+func GenerateKeys() (*PublicKey, PrivateKey, error) {
+	seed, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
 	if err != nil {
 		return nil, nil, err
 	}
-	publicKey := &bls12381.PointG2{}
-	blsState.g2.MulScalar(publicKey, blsState.g2.One(), privateKey)
-	return publicKey, privateKey, nil
+	return InsecureDeterministicGenerateKeys(seed)
 }
 
 // Use for testing only.
-func InsecureDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
+func InsecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
 	privateKey := seed
-	publicKey := &bls12381.PointG2{}
-	blsState.g2.MulScalar(publicKey, blsState.g2.One(), privateKey)
+	pubKey := &bls12381.PointG2{}
+	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
+	proof, err := KeyValidityProof(pubKey, privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	publicKey, err := NewPublicKey(pubKey, proof)
+	if err != nil {
+		return nil, nil, err
+	}
 	return publicKey, privateKey, nil
 }
 
+func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signature, error) {
+	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
+}
+
+func NewPublicKey(pubKey *bls12381.PointG2, proof *bls12381.PointG1) (*PublicKey, error) {
+	unverifiedPublicKey := &PublicKey{pubKey, proof}
+	verified, err := verifySignature2(proof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
+	if err != nil {
+		return nil, err
+	}
+	if !verified {
+		return nil, errors.New("public key validation failed")
+	}
+	return unverifiedPublicKey, nil
+}
+
+func NewTrustedPublicKey(pubKey *bls12381.PointG2) *PublicKey {
+	return &PublicKey{pubKey, nil}
+}
+
 func SignMessage(priv PrivateKey, message []byte) (Signature, error) {
-	pointOnCurve, err := hashToG1Curve(message)
+	return signMessage2(priv, message, false)
+}
+
+func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Signature, error) {
+	pointOnCurve, err := hashToG1Curve(message, keyValidationMode)
 	if err != nil {
 		return nil, err
 	}
@@ -61,27 +95,31 @@ func SignMessage(priv PrivateKey, message []byte) (Signature, error) {
 	return Signature(result), nil
 }
 
-func VerifySignature(sig Signature, message []byte, publicKey PublicKey) (bool, error) {
-	pointOnCurve, err := hashToG1Curve(message)
+func VerifySignature(sig Signature, message []byte, publicKey *PublicKey) (bool, error) {
+	return verifySignature2(sig, message, publicKey, false)
+}
+
+func verifySignature2(sig Signature, message []byte, publicKey *PublicKey, keyValidationMode bool) (bool, error) {
+	pointOnCurve, err := hashToG1Curve(message, keyValidationMode)
 	if err != nil {
 		return false, err
 	}
 
 	engine := blsState.pairingEngine
 	engine.Reset()
-	engine.AddPair(pointOnCurve, publicKey)
+	engine.AddPair(pointOnCurve, publicKey.key)
 	leftSide := engine.Result()
 	engine.AddPair(sig, blsState.g2.One())
 	rightSide := engine.Result()
 	return leftSide.Equal(rightSide), nil
 }
 
-func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
+func AggregatePublicKeys(pubKeys []*PublicKey) *PublicKey {
 	ret := blsState.g2.Zero()
 	for _, pk := range pubKeys {
-		blsState.g2.Add(ret, ret, pk)
+		blsState.g2.Add(ret, ret, pk.key)
 	}
-	return ret
+	return NewTrustedPublicKey(ret)
 }
 
 func AggregateSignatures(sigs []Signature) Signature {
@@ -92,21 +130,59 @@ func AggregateSignatures(sigs []Signature) Signature {
 	return ret
 }
 
-func VerifyAggregatedSignature(sig Signature, message []byte, pubKeys []PublicKey) (bool, error) {
+func VerifyAggregatedSignature(sig Signature, message []byte, pubKeys []*PublicKey) (bool, error) {
 	return VerifySignature(sig, message, AggregatePublicKeys(pubKeys))
 }
 
-func hashToG1Curve(message []byte) (*bls12381.PointG1, error) {
+func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
 	var empty [16]byte
-	return blsState.g1.MapToCurve(append(empty[:], crypto.Keccak256(message)...))
+	h := crypto.Keccak256(message)
+	if keyValidationMode {
+		h = append(h[16:], h[:16]...) // tweak the hash, so result won't collide with ordinary hash
+	}
+	return blsState.g1.MapToCurve(append(empty[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
-	return blsState.g2.ToBytes(pub)
+	if pub.validityProof == nil {
+		return append([]byte{0}, blsState.g2.ToBytes(pub.key)...)
+	} else {
+		keyBytes := blsState.g2.ToBytes(pub.key)
+		sigBytes := SignatureToBytes(pub.validityProof)
+		if len(sigBytes) > 255 {
+			panic("validity proof too large to serialize")
+		}
+		return append(append([]byte{byte(len(sigBytes))}, sigBytes...), keyBytes...)
+	}
 }
 
-func PublicKeyFromBytes(in []byte) (PublicKey, error) {
-	return blsState.g2.FromBytes(in)
+func PublicKeyFromBytes(in []byte, trustedSource bool) (*PublicKey, error) {
+	sigLen := int(in[0])
+	if sigLen == 0 {
+		if !trustedSource {
+			return nil, errors.New("tried to deserialize unvalidated public key from untrusted source")
+		}
+		key, err := blsState.g2.FromBytes(in[1:])
+		if err != nil {
+			return nil, err
+		}
+		return NewTrustedPublicKey(key), nil
+	} else {
+		if len(in) < 1+sigLen {
+			return nil, errors.New("invalid serialized public key")
+		}
+		sigBytes := in[1 : 1+sigLen]
+		sig, err := blsState.g1.FromBytes(sigBytes)
+		if err != nil {
+			return nil, err
+		}
+		keyBytes := in[1+sigLen:]
+		key, err := blsState.g2.FromBytes(keyBytes)
+		if err != nil {
+			return nil, err
+		}
+		return NewPublicKey(key, sig)
+	}
 }
 
 func PrivateKeyToBytes(priv PrivateKey) []byte {
