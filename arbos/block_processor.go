@@ -191,9 +191,6 @@ func ProduceBlock(
 			statedb.RevertToSnapshot(snap)
 			continue
 		}
-		if tx.Type() == types.ArbitrumRetryTxType && receipt.Status == types.ReceiptStatusSuccessful {
-			_, _ = state.RetryableState().DeleteRetryable(tx.GetInner().(*types.ArbitrumRetryTx).TicketId)
-		}
 
 		if gasPool > gethGas {
 			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)

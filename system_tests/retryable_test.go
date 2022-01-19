@@ -146,6 +146,9 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
 	}
+	if len(receipt.Logs) != 2 {
+		Fail(t, len(receipt.Logs))
+	}
 	ticketId := receipt.Logs[0].Topics[1]
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 

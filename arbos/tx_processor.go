@@ -199,6 +199,13 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
+	underlyingTx := p.msg.UnderlyingTransaction()
+	if success && underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
+		state := arbosState.OpenSystemArbosState(p.stateDB) // we don't want to charge for this
+		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
+		_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
+	}
+
 	gasPrice := p.blockContext.BaseFee
 
 	if gasLeft > p.msg.Gas() {
