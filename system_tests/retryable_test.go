@@ -112,9 +112,9 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		big.NewInt(1e6),
 		user2Address,
 		user2Address,
-		big.NewInt(1), // send inadequate L2 gas
+		big.NewInt(int64(params.TxGas)+1), // send inadequate L2 gas
 		big.NewInt(params.InitialBaseFee*2),
-		[]byte{},
+		[]byte{0x00},
 	)
 	Require(t, err)
 
@@ -156,7 +156,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	receipt, err = arbnode.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
-		Fail(t)
+		Fail(t, receipt.GasUsed)
 	}
 
 	// send tx to redeem the retryable

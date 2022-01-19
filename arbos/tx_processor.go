@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 
@@ -114,7 +115,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			log.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
-		if p.msg.Gas() > 0 {
+		if p.msg.Gas() > params.TxGas {
 			// emit RedeemScheduled event
 			retryTxInner, err := retryable.MakeTx(
 				underlyingTx.ChainId(),
