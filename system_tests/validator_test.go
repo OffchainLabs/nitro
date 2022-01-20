@@ -37,7 +37,7 @@ func TestValidatorSimple(t *testing.T) {
 	Require(t, err)
 
 	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 100002, big.NewInt(1e12), nil), l1info, "User", 100000),
+		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
 	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
