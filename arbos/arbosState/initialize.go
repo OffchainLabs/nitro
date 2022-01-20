@@ -99,6 +99,7 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 	}
 	genesysAlloc[arbosAccount] = core.GenesisAccount{
 		Balance: big.NewInt(0),
+		Nonce:   1,
 		Storage: arbosStorage,
 	}
 	return genesysAlloc, nil
