@@ -52,14 +52,13 @@ A [`RecordingChainContext`](https://github.com/OffchainLabs/go-ethereum/blob/f79
 The process is simplified using two functions: [`PrepareRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L133) creates a stateDB and chaincontext objects, running block creation process using these objects records the required preimages, and [`PreimagesFromRecording`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/arbitrum/recordingdb.go#L148) function extracts the preimages recorded.
 
 ## Arbitrum Chain Parameters
-Arbitrum One is not 
-A Nitro rollup can be configured at genesis with 
+Nitro's geth may be configured with the following l2-specific chain parameters. These allow the rollup creator to customize their rollup at genesis.
 
 ### `EnableArbos` 
-Introduces ArbOS, creating an
+Introduces [ArbOS](#ArbOS.md), converting what would otherwise be a vanilla L1 chain into an L2 Arbitrum rollup.
 
 ### `AllowDebugPrecompiles` 
 Allows access to debug precompiles. Not enabled for Arbitrum One. When false, calls to debug precompiles will always revert.
 
 ### `DataAvailabilityCommittee`
-Currently does nothing besides indicate that the rollup will access a data availability service for preimage resolution. This is not enabled for Arbitrum One, which is a strict state-function of its L1 inbox messages.
+Currently does nothing besides indicate that the rollup will access a data availability service for preimage resolution in the future. This is not enabled for Arbitrum One, which is a strict state-function of its L1 inbox messages.
