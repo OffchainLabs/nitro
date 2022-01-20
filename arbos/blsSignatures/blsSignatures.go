@@ -133,7 +133,7 @@ func AggregateSignatures(sigs []Signature) Signature {
 	return ret
 }
 
-func VerifyAggregatedSignature(sig Signature, message []byte, pubKeys []*PublicKey) (bool, error) {
+func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys []*PublicKey) (bool, error) {
 	return VerifySignature(sig, message, AggregatePublicKeys(pubKeys))
 }
 

@@ -77,7 +77,7 @@ func TestSignatureAggregation(t *testing.T) {
 		Fail(t, "First aggregated signature check failed")
 	}
 
-	verified, err = VerifyAggregatedSignature(AggregateSignatures(sigs), message, pubKeys)
+	verified, err = VerifyAggregatedSignatureSameMessage(AggregateSignatures(sigs), message, pubKeys)
 	Require(t, err)
 	if !verified {
 		Fail(t, "Second aggregated signature check failed")
