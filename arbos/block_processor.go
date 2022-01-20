@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -206,17 +207,18 @@ func ProduceBlock(
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
-
-				ticketId := txLog.Topics[1]
-				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
-
+				event, err := util.ParseRedeemScheduledLog(txLog)
+				if err != nil {
+					log.Error("Failed to parse log", "err", err)
+				}
+				retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
 				redeem, _ := retryable.MakeTx(
 					chainConfig.ChainID,
-					binary.BigEndian.Uint64(txLog.Topics[3][24:32]),
+					event.SequenceNum,
 					gasPrice,
-					common.BytesToHash(txLog.Data[0:32]).Big().Uint64(),
-					ticketId,
-					common.BytesToAddress(txLog.Data[32:64]),
+					event.DonatedGas,
+					event.TicketId,
+					event.GasDonor,
 				)
 				redeems = append(redeems, types.NewTx(redeem))
 			}
