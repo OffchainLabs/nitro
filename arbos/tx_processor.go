@@ -110,7 +110,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			log.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
-		if p.msg.Gas() > params.TxGas {
+		if p.msg.Gas() >= params.TxGas {
 			// emit RedeemScheduled event
 			retryTxInner, err := retryable.MakeTx(
 				underlyingTx.ChainId(),
