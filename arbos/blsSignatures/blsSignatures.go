@@ -61,6 +61,9 @@ func InsecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, e
 	return publicKey, privateKey, nil
 }
 
+// This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
+//     that come from untrusted sources.
+// See Theorem 1 in Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
 func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signature, error) {
 	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
 }
