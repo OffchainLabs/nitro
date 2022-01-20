@@ -13,6 +13,7 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -207,7 +208,8 @@ func ProduceBlock(
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
-				event, err := util.ParseRedeemScheduledLog(txLog)
+				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+				err := util.ParseRedeemScheduledLog(event, txLog)
 				if err != nil {
 					log.Error("Failed to parse log", "err", err)
 				}
