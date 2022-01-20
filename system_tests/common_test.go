@@ -31,11 +31,6 @@ import (
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
-var (
-	l1Genesys  *core.Genesis
-	l2InitData statetransfer.ArbosInitializationInfo
-)
-
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
 	t.Helper()
 	for _, tx := range txs {
@@ -70,7 +65,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	l1Genesys := core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
@@ -125,18 +120,10 @@ func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo) (*BlockchainTe
 	}
 	l2info.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	l2info.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
-	accounts := make([]statetransfer.AccountInitializationInfo, 0, len(l2info.GenesisAlloc))
-	for addr, accountData := range l2info.GenesisAlloc {
-		accounts = append(accounts, statetransfer.AccountInitializationInfo{
-			Addr:       addr,
-			EthBalance: accountData.Balance,
-		})
-	}
-	l2InitData.Accounts = accounts
 
 	stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
-	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, &l2InitData)
+	chainDb, blockchain, err := arbnode.CreateDefaultBlockChain(stack, &l2info.ArbInitData)
 	Require(t, err)
 	return l2info, stack, chainDb, blockchain
 }
@@ -184,11 +171,11 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
+	return CreateTestL2WithConfig(t, ctx, nil, &arbnode.NodeConfigL2Test)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	l2info, stack, chainDb, blockchain := createL2BlockChain(t, nil)
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -220,14 +207,14 @@ func Fail(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
-func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
 	nodeConf := arbnode.NodeConfigL1Test
 	nodeConf.BatchPoster = false
 	nodeConf.BlockValidator = blockValidator
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, &nodeConf)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, &nodeConf)
 }
 
-func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +223,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 
-	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, &l2InitData)
+	l2chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(l2stack, l2InitData)
 	Require(t, err)
 
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)

@@ -24,7 +24,7 @@ func TestValidatorSimple(t *testing.T) {
 	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, true)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, true)
 
 	l2info.GenerateAccount("User2")
 

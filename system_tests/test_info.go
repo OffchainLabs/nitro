@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -31,6 +32,7 @@ type BlockchainTestInfo struct {
 	Accounts     map[string]*AccountInfo
 	Client       *ethclient.Client
 	GenesisAlloc core.GenesisAlloc
+	ArbInitData  statetransfer.ArbosInitializationInfo
 	GasPrice     *big.Int
 }
 
@@ -86,6 +88,10 @@ func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.In
 	b.GenesisAlloc[b.Accounts[name].Address] = core.GenesisAccount{
 		Balance: new(big.Int).Set(balance),
 	}
+	b.ArbInitData.Accounts = append(b.ArbInitData.Accounts, statetransfer.AccountInitializationInfo{
+		Addr:       b.Accounts[name].Address,
+		EthBalance: new(big.Int).Set(balance),
+	})
 }
 
 func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
