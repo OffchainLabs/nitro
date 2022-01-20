@@ -84,6 +84,29 @@ func TestSignatureAggregation(t *testing.T) {
 	}
 }
 
+func TestSignatureAggregationDifferentMessages(t *testing.T) {
+	messages := [][]byte{}
+	pubKeys := []*PublicKey{}
+	sigs := []Signature{}
+
+	for i := 0; i < NumSignaturesToAggregate; i++ {
+		msg := []byte{byte(i)}
+		pubKey, privKey, err := GenerateKeys()
+		Require(t, err)
+		sig, err := SignMessage(privKey, msg)
+		Require(t, err)
+		messages = append(messages, msg)
+		pubKeys = append(pubKeys, pubKey)
+		sigs = append(sigs, sig)
+	}
+
+	verified, err := VerifyAggregatedSignatureDifferentMessages(AggregateSignatures(sigs), messages, pubKeys)
+	Require(t, err)
+	if !verified {
+		Fail(t, "First aggregated signature check failed")
+	}
+}
+
 func Require(t *testing.T, err error, text ...string) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)

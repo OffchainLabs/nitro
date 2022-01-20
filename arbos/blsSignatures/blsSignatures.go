@@ -137,6 +137,27 @@ func VerifyAggregatedSignature(sig Signature, message []byte, pubKeys []*PublicK
 	return VerifySignature(sig, message, AggregatePublicKeys(pubKeys))
 }
 
+func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []*PublicKey) (bool, error) {
+	if len(messages) != len(pubKeys) {
+		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
+	}
+	engine := blsState.pairingEngine
+	engine.Reset()
+	for i, msg := range messages {
+		pointOnCurve, err := hashToG1Curve(msg, false)
+		if err != nil {
+			return false, err
+		}
+		engine.AddPair(pointOnCurve, pubKeys[i].key)
+	}
+	leftSide := engine.Result()
+
+	engine.Reset()
+	engine.AddPair(sig, blsState.g2.One())
+	rightSide := engine.Result()
+	return leftSide.Equal(rightSide), nil
+}
+
 func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
 	var empty [16]byte
 	h := crypto.Keccak256(message)
