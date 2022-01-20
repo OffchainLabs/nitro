@@ -27,7 +27,6 @@ import (
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
-var RedeemTicketCreatedEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
