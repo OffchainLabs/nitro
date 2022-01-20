@@ -268,7 +268,15 @@ func ProduceBlock(
 }
 
 type HeaderExtraInformation struct {
-	SendRoot common.Hash
+	SendRoot  common.Hash
+	SendCount uint64
+}
+
+func (extra HeaderExtraInformation) Serialize() []byte {
+	out := [32 + 8]byte{}
+	copy(out[:], extra.SendRoot[:])
+	binary.BigEndian.PutUint64(out[32:], extra.SendCount)
+	return out[:]
 }
 
 func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
@@ -276,14 +284,13 @@ func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInforma
 		// The genesis block doesn't have an ArbOS encoded extra field
 		return HeaderExtraInformation{}, nil
 	}
-	if len(header.Extra) != 32 {
+	if len(header.Extra) != 40 {
 		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
 	}
-	var sendRoot common.Hash
-	copy(sendRoot[:], header.Extra)
-	return HeaderExtraInformation{
-		SendRoot: sendRoot,
-	}, nil
+	extra := HeaderExtraInformation{}
+	copy(extra.SendRoot[:], header.Extra)
+	extra.SendCount = binary.BigEndian.Uint64(header.Extra[32:])
+	return extra, nil
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
@@ -295,9 +302,10 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
 		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
-		// write send merkle accumulator hash into extra data field of the header
-		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed
-		root, _ := state.SendMerkleAccumulator().Root()
-		header.Extra = root.Bytes()
+		// Add outbox info to the header for client-side proving
+		acc := state.SendMerkleAccumulator()
+		root, _ := acc.Root()
+		size, _ := acc.Size()
+		header.Extra = HeaderExtraInformation{root, size}.Serialize()
 	}
 }

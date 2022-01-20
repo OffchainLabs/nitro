@@ -19,6 +19,9 @@ import (
 )
 
 func TestValidatorSimple(t *testing.T) {
+
+	println("Starting test")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
