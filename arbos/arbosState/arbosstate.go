@@ -5,9 +5,11 @@
 package arbosState
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/blockhash"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/arbstate/arbos/bls"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
@@ -37,9 +39,11 @@ type ArbosState struct {
 	l1PricingState   *l1pricing.L1PricingState
 	retryableState   *retryables.RetryableState
 	addressTable     *addressTable.AddressTable
+	blsTable         *bls.BLSTable
 	chainOwners      *addressSet.AddressSet
 	sendMerkle       *merkleAccumulator.MerkleAccumulator
 	timestamp        storage.StorageBackedUint64
+	blockhashes      *blockhash.Blockhashes
 	backingStorage   *storage.Storage
 	Burner           burn.Burner
 }
@@ -65,9 +69,11 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
+		bls.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
+		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage,
 		burner,
 	}, nil
@@ -98,8 +104,10 @@ var (
 	l1PricingSubspace    ArbosStateSubspaceID = []byte{0}
 	retryablesSubspace   ArbosStateSubspaceID = []byte{1}
 	addressTableSubspace ArbosStateSubspaceID = []byte{2}
-	chainOwnerSubspace   ArbosStateSubspaceID = []byte{3}
-	sendMerkleSubspace   ArbosStateSubspaceID = []byte{4}
+	blsTableSubspace     ArbosStateSubspaceID = []byte{3}
+	chainOwnerSubspace   ArbosStateSubspaceID = []byte{4}
+	sendMerkleSubspace   ArbosStateSubspaceID = []byte{5}
+	blockhashesSubspace  ArbosStateSubspaceID = []byte{6}
 )
 
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
@@ -118,7 +126,9 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
+	bls.InitializeBLSTable()
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
+	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
 	// the zero address is the initial chain owner
 	ZeroAddressL2 := util.RemapL1Address(common.Address{})
@@ -190,30 +200,22 @@ func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
 }
 
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
-	if state.retryableState == nil {
-		state.retryableState = retryables.OpenRetryableState(state.backingStorage.OpenSubStorage(retryablesSubspace))
-	}
 	return state.retryableState
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
-	if state.l1PricingState == nil {
-		state.l1PricingState = l1pricing.OpenL1PricingState(state.backingStorage.OpenSubStorage(l1PricingSubspace))
-	}
 	return state.l1PricingState
 }
 
 func (state *ArbosState) AddressTable() *addressTable.AddressTable {
-	if state.addressTable == nil {
-		state.addressTable = addressTable.Open(state.backingStorage.OpenSubStorage(addressTableSubspace))
-	}
 	return state.addressTable
 }
 
+func (state *ArbosState) BLSTable() *bls.BLSTable {
+	return state.blsTable
+}
+
 func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
-	if state.chainOwners == nil {
-		state.chainOwners = addressSet.OpenAddressSet(state.backingStorage.OpenSubStorage(chainOwnerSubspace))
-	}
 	return state.chainOwners
 }
 
@@ -222,6 +224,10 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
+}
+
+func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
+	return state.blockhashes
 }
 
 func (state *ArbosState) LastTimestampSeen() (uint64, error) {
