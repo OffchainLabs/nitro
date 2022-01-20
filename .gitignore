@@ -17,4 +17,8 @@ solgen/node_modules/
 solgen/deployments/
 solgen/test/proofs/*.json
 .make/
+<<<<<<< HEAD
 /cmd/statetransfer/statetransfer
+=======
+/reproducible-wasm/*.wasm
+>>>>>>> origin/master
