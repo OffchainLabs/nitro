@@ -89,6 +89,10 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	)
 }
 
+func (store *Storage) Account() common.Address {
+	return store.account
+}
+
 func (store *Storage) Get(key common.Hash) (common.Hash, error) {
 	err := store.burner.Burn(StorageReadCost)
 	if err != nil {

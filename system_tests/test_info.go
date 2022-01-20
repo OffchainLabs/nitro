@@ -31,24 +31,26 @@ type BlockchainTestInfo struct {
 	Accounts     map[string]*AccountInfo
 	Client       *ethclient.Client
 	GenesisAlloc core.GenesisAlloc
+	GasPrice     *big.Int
 }
 
-func NewBlockChainTestInfo(t *testing.T, signer types.Signer) *BlockchainTestInfo {
+func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
 		T:            t,
 		Signer:       signer,
 		Accounts:     make(map[string]*AccountInfo),
 		GenesisAlloc: make(core.GenesisAlloc),
+		GasPrice:     new(big.Int).Set(gasPrice),
 	}
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
 	chainConfig := params.ArbitrumOneChainConfig()
-	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)))
+	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2))
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
-	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID))
+	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), big.NewInt(params.GWei*100))
 }
 
 func (b *BlockchainTestInfo) GenerateAccount(name string) {
@@ -160,7 +162,7 @@ func (b *BlockchainTestInfo) PrepareTx(from, to string, gas uint64, value *big.I
 	txData := &types.DynamicFeeTx{
 		To:        &addr,
 		Gas:       gas,
-		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+		GasFeeCap: new(big.Int).Set(b.GasPrice),
 		Value:     value,
 		Nonce:     info.Nonce,
 		Data:      data,

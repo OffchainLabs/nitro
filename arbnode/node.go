@@ -23,10 +23,12 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -274,7 +276,7 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Database, *core.BlockChain, error) {
+func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInitializationInfo) (ethdb.Database, *core.BlockChain, error) {
 	arbstate.RequireHookedGeth()
 
 	defaultConf := ethconfig.Defaults
@@ -286,6 +288,28 @@ func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Dat
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
+
+	l2GenesysAlloc, err := arbosState.GetGenesisAllocFromArbos(initData)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	genesis := &core.Genesis{
+		Config:     params.ArbitrumTestChainConfig(),
+		Nonce:      0,
+		Timestamp:  1633932474,
+		ExtraData:  []byte("ArbitrumMainnet"),
+		GasLimit:   arbosState.PerBlockGasLimit,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.Hash{},
+		Coinbase:   common.Address{},
+		Alloc:      l2GenesysAlloc,
+		Number:     0,
+		GasUsed:    0,
+		ParentHash: common.Hash{},
+		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
+	}
+
 	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideArrowGlacier)
 	var configCompatError *params.ConfigCompatError
 	if errors.As(genesisErr, &configCompatError) {

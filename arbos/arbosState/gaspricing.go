@@ -3,6 +3,7 @@ package arbosState
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/util"
@@ -13,7 +14,7 @@ const GasPoolMax = SpeedLimitPerSecond * 10 * 60
 const SmallGasPoolSeconds = 60
 const SmallGasPoolMax = SpeedLimitPerSecond * SmallGasPoolSeconds
 
-const PerBlockGasLimit uint64 = 20 * 1000000
+const PerBlockGasLimit uint64 = math.MaxInt64 // so we can cast it to int
 
 const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
@@ -116,8 +117,6 @@ func (state *ArbosState) CurrentPerBlockGasLimit() (uint64, error) {
 	pool, err := state.GasPool()
 	if pool < 0 || err != nil {
 		return 0, err
-	} else if pool > int64(PerBlockGasLimit) {
-		return PerBlockGasLimit, nil
 	} else {
 		return uint64(pool), nil
 	}

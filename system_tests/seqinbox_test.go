@@ -55,13 +55,14 @@ func TestSequencerInboxReader(t *testing.T) {
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)
-	startOwnerBalance := startState.GetBalance(ownerAddress).Uint64()
+	startOwnerBalance := startState.GetBalance(ownerAddress)
+	startOwnerBalance_uint64 := startOwnerBalance.Uint64()
 	startOwnerNonce := startState.GetNonce(ownerAddress)
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]uint64{
-			ownerAddress: startOwnerBalance,
+			ownerAddress: startOwnerBalance_uint64,
 		},
 		nonces: map[common.Address]uint64{
 			ownerAddress: startOwnerNonce,
@@ -85,7 +86,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	var faucetTxs []*types.Transaction
 	for _, acct := range accounts {
 		l1Info.GenerateAccount(acct)
-		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e14), nil))
+		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
 	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
 
@@ -104,7 +105,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				rawTx := &types.DynamicFeeTx{
 					To:        &padAddr,
 					Gas:       21000,
-					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					GasFeeCap: big.NewInt(params.GWei * 100),
 					Value:     new(big.Int),
 					Nonce:     j,
 				}
@@ -266,7 +267,12 @@ func TestSequencerInboxReader(t *testing.T) {
 			Require(t, err)
 			for acct, balance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
-				if new(big.Int).SetUint64(balance).Cmp(haveBalance) < 0 {
+				// initial owner balance is not uint64
+				expectedBalance := new(big.Int).SetUint64(balance)
+				if acct == ownerAddress {
+					expectedBalance = new(big.Int).Sub(startOwnerBalance, big.NewInt(int64(startOwnerBalance_uint64-balance)))
+				}
+				if expectedBalance.Cmp(haveBalance) < 0 {
 					Fail(t, "unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}

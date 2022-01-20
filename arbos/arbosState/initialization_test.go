@@ -8,14 +8,17 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/statetransfer"
-	"testing"
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {
@@ -52,20 +55,25 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 		t.Fatal(output)
 	}
 
-	db := OpenStateDBForTesting(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := InitializeArbosFromJSON(db, marshaled); err != nil {
-		t.Fatal(err)
-	}
-	arbState, err := OpenArbosState(db, &burn.SystemBurner{})
+	genesisAlloc, err := GetGenesisAllocFromJSON(marshaled)
+	Require(t, err)
+	genesis := core.Genesis{Alloc: genesisAlloc}
+
+	raw := rawdb.NewMemoryDatabase()
+	Require(t, err)
+
+	block, err := genesis.Commit(raw)
+	Require(t, err)
+	stateDb, err := state.New(block.Header().Root, state.NewDatabase(raw), nil)
+	Require(t, err)
+
+	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
 	checkSendAccum(arbState, input.SendPartials, t)
 	checkDefaultAgg(arbState, input.DefaultAggregator, t)
 	checkRetryables(arbState, input.RetryableData, t)
-	checkAccounts(db, arbState, input.Accounts, t)
+	checkAccounts(stateDb, arbState, input.Accounts, t)
 }
 
 func pseudorandomHashForTesting(salt *common.Hash, x uint64) common.Hash {
