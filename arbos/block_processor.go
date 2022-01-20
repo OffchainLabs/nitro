@@ -265,29 +265,32 @@ func ProduceBlock(
 	return block, receipts
 }
 
-type HeaderExtraInformation struct {
+type ArbitrumHeaderInfo struct {
 	SendRoot  common.Hash
 	SendCount uint64
 }
 
-func (extra HeaderExtraInformation) Serialize() []byte {
-	out := [32 + 8]byte{}
-	copy(out[:], extra.SendRoot[:])
-	binary.BigEndian.PutUint64(out[32:], extra.SendCount)
-	return out[:]
+func (info ArbitrumHeaderInfo) Extra() []byte {
+	return info.SendRoot[:]
 }
 
-func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
+func (info ArbitrumHeaderInfo) MixDigest() [32]byte {
+	mixDigest := common.Hash{}
+	binary.BigEndian.PutUint64(mixDigest[:8], info.SendCount)
+	return mixDigest
+}
+
+func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo, error) {
 	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
 		// The genesis block doesn't have an ArbOS encoded extra field
-		return HeaderExtraInformation{}, nil
+		return ArbitrumHeaderInfo{}, nil
 	}
-	if len(header.Extra) != 40 {
-		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
+	if len(header.Extra) != 32 {
+		return ArbitrumHeaderInfo{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
 	}
-	extra := HeaderExtraInformation{}
+	extra := ArbitrumHeaderInfo{}
 	copy(extra.SendRoot[:], header.Extra)
-	extra.SendCount = binary.BigEndian.Uint64(header.Extra[32:])
+	extra.SendCount = binary.BigEndian.Uint64(header.MixDigest[:8])
 	return extra, nil
 }
 
@@ -304,6 +307,8 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		acc := state.SendMerkleAccumulator()
 		root, _ := acc.Root()
 		size, _ := acc.Size()
-		header.Extra = HeaderExtraInformation{root, size}.Serialize()
+		arbitrumHeader := ArbitrumHeaderInfo{root, size}
+		header.Extra = arbitrumHeader.Extra()
+		header.MixDigest = arbitrumHeader.MixDigest()
 	}
 }
