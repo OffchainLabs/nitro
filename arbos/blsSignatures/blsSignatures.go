@@ -42,11 +42,11 @@ func GenerateKeys() (*PublicKey, PrivateKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return InsecureDeterministicGenerateKeys(seed)
+	return insecureDeterministicGenerateKeys(seed)
 }
 
-// Use for testing only.
-func InsecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
+// Don't call this directly, except in testing.
+func insecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
 	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
@@ -68,9 +68,9 @@ func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signatur
 	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
 }
 
-func NewPublicKey(pubKey *bls12381.PointG2, proof *bls12381.PointG1) (*PublicKey, error) {
-	unverifiedPublicKey := &PublicKey{pubKey, proof}
-	verified, err := verifySignature2(proof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
+func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (*PublicKey, error) {
+	unverifiedPublicKey := &PublicKey{pubKey, validityProof}
+	verified, err := verifySignature2(validityProof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +181,8 @@ func PublicKeyToBytes(pub PublicKey) []byte {
 }
 
 func PublicKeyFromBytes(in []byte, trustedSource bool) (*PublicKey, error) {
-	sigLen := int(in[0])
-	if sigLen == 0 {
+	proofLen := int(in[0])
+	if proofLen == 0 {
 		if !trustedSource {
 			return nil, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
@@ -192,20 +192,20 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (*PublicKey, error) {
 		}
 		return NewTrustedPublicKey(key), nil
 	} else {
-		if len(in) < 1+sigLen {
+		if len(in) < 1+proofLen {
 			return nil, errors.New("invalid serialized public key")
 		}
-		sigBytes := in[1 : 1+sigLen]
-		sig, err := blsState.g1.FromBytes(sigBytes)
+		proofBytes := in[1 : 1+proofLen]
+		validityProof, err := blsState.g1.FromBytes(proofBytes)
 		if err != nil {
 			return nil, err
 		}
-		keyBytes := in[1+sigLen:]
+		keyBytes := in[1+proofLen:]
 		key, err := blsState.g2.FromBytes(keyBytes)
 		if err != nil {
 			return nil, err
 		}
-		return NewPublicKey(key, sig)
+		return NewPublicKey(key, validityProof)
 	}
 }
 
