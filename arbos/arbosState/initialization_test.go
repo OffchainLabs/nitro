@@ -6,7 +6,6 @@ package arbosState
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"testing"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -22,13 +20,14 @@ import (
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {
+	prand := util.NewPseudoRandomDataSource(1)
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
-			AddressTableContents: []common.Address{pseudorandomAddressForTesting(nil, 0)},
-			SendPartials:         []common.Hash{pseudorandomHashForTesting(nil, 1), pseudorandomHashForTesting(nil, 2)},
-			DefaultAggregator:    pseudorandomAddressForTesting(nil, 3),
-			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(nil, 4)},
-			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(nil, 5)},
+			AddressTableContents: []common.Address{prand.GetAddress()},
+			SendPartials:         []common.Hash{prand.GetHash(), prand.GetHash()},
+			DefaultAggregator:    prand.GetAddress(),
+			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(prand)},
+			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(prand)},
 		},
 		t,
 	)
@@ -76,72 +75,41 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAccounts(stateDb, arbState, input.Accounts, t)
 }
 
-func pseudorandomHashForTesting(salt *common.Hash, x uint64) common.Hash {
-	if salt == nil {
-		return crypto.Keccak256Hash(common.Hash{}.Bytes(), util.IntToHash(int64(x)).Bytes())
-	} else {
-		return crypto.Keccak256Hash(salt.Bytes(), util.IntToHash(int64(x)).Bytes())
-	}
-}
-
-func pseudorandomAddressForTesting(salt *common.Hash, x uint64) common.Address {
-	return common.BytesToAddress(pseudorandomHashForTesting(salt, x).Bytes()[:20])
-}
-
-func pseudorandomUint64ForTesting(salt *common.Hash, x uint64) uint64 {
-	return binary.BigEndian.Uint64(pseudorandomHashForTesting(salt, x).Bytes()[:8])
-}
-
-func pseudorandomRetryableInitForTesting(salt *common.Hash, x uint64) statetransfer.InitializationDataForRetryable {
-	newSalt := pseudorandomHashForTesting(salt, x)
-	salt = &newSalt
+func pseudorandomRetryableInitForTesting(prand *util.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
 	return statetransfer.InitializationDataForRetryable{
-		Id:          pseudorandomHashForTesting(salt, 0),
-		Timeout:     pseudorandomUint64ForTesting(salt, 1),
-		From:        pseudorandomAddressForTesting(salt, 2),
-		To:          pseudorandomAddressForTesting(salt, 3),
-		Callvalue:   pseudorandomHashForTesting(salt, 4).Big(),
-		Beneficiary: pseudorandomAddressForTesting(salt, 5),
-		Calldata:    pseudorandomDataForTesting(salt, 6, 256),
+		Id:          prand.GetHash(),
+		Timeout:     prand.GetUint64(),
+		From:        prand.GetAddress(),
+		To:          prand.GetAddress(),
+		Callvalue:   prand.GetHash().Big(),
+		Beneficiary: prand.GetAddress(),
+		Calldata:    prand.GetData(256),
 	}
 }
 
-func pseudorandomAccountInitInfoForTesting(salt *common.Hash, x uint64) statetransfer.AccountInitializationInfo {
-	newSalt := pseudorandomHashForTesting(salt, x)
-	salt = &newSalt
-	aggToPay := pseudorandomAddressForTesting(salt, 7)
+func pseudorandomAccountInitInfoForTesting(prand *util.PseudoRandomDataSource) statetransfer.AccountInitializationInfo {
+	aggToPay := prand.GetAddress()
 	return statetransfer.AccountInitializationInfo{
-		Addr:       pseudorandomAddressForTesting(salt, 0),
-		Nonce:      pseudorandomUint64ForTesting(salt, 1),
-		EthBalance: pseudorandomHashForTesting(salt, 2).Big(),
+		Addr:       prand.GetAddress(),
+		Nonce:      prand.GetUint64(),
+		EthBalance: prand.GetHash().Big(),
 		ContractInfo: &statetransfer.AccountInitContractInfo{
-			Code:            pseudorandomDataForTesting(salt, 3, 256),
-			ContractStorage: pseudorandomHashHashMapForTesting(salt, 4, 16),
+			Code:            prand.GetData(256),
+			ContractStorage: pseudorandomHashHashMapForTesting(prand, 16),
 		},
 		AggregatorInfo: &statetransfer.AccountInitAggregatorInfo{
-			FeeCollector: pseudorandomAddressForTesting(salt, 5),
-			BaseFeeL1Gas: pseudorandomHashForTesting(salt, 6).Big(),
+			FeeCollector: prand.GetAddress(),
+			BaseFeeL1Gas: prand.GetHash().Big(),
 		},
 		AggregatorToPay: &aggToPay,
 	}
 }
 
-func pseudorandomDataForTesting(salt *common.Hash, x uint64, maxSize uint64) []byte {
-	newSalt := pseudorandomHashForTesting(salt, x)
-	salt = &newSalt
-	size := pseudorandomUint64ForTesting(salt, 1) % maxSize
-	ret := []byte{}
-	for uint64(len(ret)) < size {
-		ret = append(ret, pseudorandomHashForTesting(salt, uint64(len(ret))).Bytes()...)
-	}
-	return ret[:size]
-}
-
-func pseudorandomHashHashMapForTesting(salt *common.Hash, x uint64, maxItems uint64) map[common.Hash]common.Hash {
-	size := int(pseudorandomUint64ForTesting(salt, 0) % maxItems)
+func pseudorandomHashHashMapForTesting(prand *util.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
+	size := int(prand.GetUint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {
-		ret[pseudorandomHashForTesting(salt, 2*x+1)] = pseudorandomHashForTesting(salt, 2*x+2)
+		ret[prand.GetHash()] = prand.GetHash()
 	}
 	return ret
 }
