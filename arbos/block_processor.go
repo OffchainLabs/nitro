@@ -28,7 +28,9 @@ var ArbRetryableTxAddress common.Address
 var RedeemScheduledEventID common.Hash
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
-	baseFee, err := state.GasPriceWei()
+	l2Pricing := state.L2PricingState()
+	baseFee, _ := l2Pricing.GasPriceWei()
+	gasLimit, err := l2Pricing.CurrentPerBlockGasLimit()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -56,7 +58,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    arbosState.PerBlockGasLimit,
+		GasLimit:    gasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -91,7 +93,7 @@ func ProduceBlock(
 
 	state := arbosState.OpenSystemArbosState(statedb)
 	_ = state.Blockhashes().RecordNewL1Block(l1Info.l1BlockNumber.Uint64(), lastBlockHeader.Hash())
-	gasLeft, _ := state.CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 
@@ -291,7 +293,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
 		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.SetMaxGasPriceWei(maxSafePrice)
+		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
 		// write send merkle accumulator hash into extra data field of the header
 		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed

@@ -5,11 +5,12 @@
 package arbos
 
 import (
+	"math"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"math"
-	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -113,7 +114,7 @@ func (p *TxProcessor) StartTxHook() bool {
 	case *types.ArbitrumRetryTx:
 		// another tx already burnt gas for this one
 		_, err := p.state.RetryableState().DeleteRetryable(tx.TicketId) // undone on revert
-		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
+		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
 	}
 	return false
@@ -199,7 +200,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		if computeGas > math.MaxInt64 {
 			computeGas = math.MaxInt64
 		}
-		p.state.AddToGasPools(-int64(computeGas))
+		p.state.L2PricingState().AddToGasPools(-int64(computeGas))
 	}
 }
 
