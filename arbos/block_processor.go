@@ -286,10 +286,14 @@ func ProduceBlock(
 	}
 
 	balanceDelta := statedb.GetTotalBalanceDelta()
-	if balanceDelta.Cmp(expectedBalanceDelta) > 0 {
-		panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
-	} else if balanceDelta.Cmp(expectedBalanceDelta) < 0 {
-		log.Warn("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
+		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
+			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
+		} else {
+			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
+			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+		}
 	}
 
 	return block, receipts
