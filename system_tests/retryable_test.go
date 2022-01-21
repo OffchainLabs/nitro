@@ -248,7 +248,8 @@ func TestSubmissionGasCosts(t *testing.T) {
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 
-	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, retryableGas)) {
+	expectedGasDeduction := new(big.Int).Mul(retryableGas, big.NewInt(params.InitialBaseFee))
+	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, expectedGasDeduction)) {
 		Fail(t, "Supplied gas was improperly deducted", "\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
 }
