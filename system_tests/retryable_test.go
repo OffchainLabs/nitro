@@ -18,26 +18,45 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 )
 
-func TestSubmitRetryableImmediateSuccess(t *testing.T) {
+func retryableSetup(t *testing.T) (
+	*BlockchainTestInfo,
+	*BlockchainTestInfo,
+	*ethclient.Client,
+	*ethclient.Client,
+	*bridgegen.Inbox,
+	*bridgegen.InboxFilterer,
+	context.Context,
+	func(),
+) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
-	defer stack.Close()
-
-	l2client := l2info.Client
-	l1client := l1info.Client
 	l2info.GenerateAccount("User2")
-	user2Address := l2info.GetAddress("User2")
+	l1client := l1info.Client
 
-	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
 
-	usertxopts := l1info.GetDefaultTransactOpts("faucet")
-	usertxopts.Value = new(big.Int).Mul(big.NewInt(1e12), big.NewInt(1e12))
+	teardown := func() {
+		cancel()
+		stack.Close()
+	}
+	return l2info, l1info, l2info.Client, l1client, delayedInbox, inboxFilterer, ctx, teardown
+}
 
-	l1tx, err := delayedInboxContract.CreateRetryableTicket(
+func TestSubmitRetryableImmediateSuccess(t *testing.T) {
+	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+
+	user2Address := l2info.GetAddress("User2")
+	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,
 		big.NewInt(1e6),
@@ -56,10 +75,6 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
-	if err != nil {
-		Fail(t, err)
-	}
 	var l2TxId *common.Hash
 	for _, log := range l1receipt.Logs {
 		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
@@ -83,29 +98,20 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 
-	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
+	if !util.BigEquals(l2balance, big.NewInt(1e6)) {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
-	defer stack.Close()
+	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
+	defer teardown()
 
-	l2client := l2info.Client
-	l1client := l1info.Client
-	l2info.GenerateAccount("User2")
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+
 	user2Address := l2info.GetAddress("User2")
-
-	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
-	Require(t, err)
-
-	usertxopts := l1info.GetDefaultTransactOpts("faucet")
-	usertxopts.Value = new(big.Int).Mul(big.NewInt(1e12), big.NewInt(1e12))
-
-	l1tx, err := delayedInboxContract.CreateRetryableTicket(
+	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,
 		big.NewInt(1e6),
@@ -123,9 +129,6 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
 	}
-
-	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
-	Require(t, err)
 
 	var l2TxId *common.Hash
 	for _, log := range l1receipt.Logs {
@@ -177,8 +180,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
-	usertxopts = l1info.GetDefaultTransactOpts("faucet")
-	l1tx, err = delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
+	usertxopts = l1info.GetDefaultTransactOpts("Faucet")
+	l1tx, err = delayedInbox.SendL2Message(&usertxopts, txwrapped)
 	Require(t, err)
 
 	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
@@ -197,7 +200,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 
-	if l2balance.Cmp(big.NewInt(1e6)) != 0 {
+	if !util.BigEquals(l2balance, big.NewInt(1e6)) {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
 
@@ -209,11 +212,52 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 }
 
+func TestSubmissionGasCosts(t *testing.T) {
+	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+
+	faucetAddress := l2info.GetAddress("Faucet")
+	user2Address := l2info.GetAddress("User2")
+
+	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
+	Require(t, err)
+
+	retryableGas := new(big.Int).SetUint64(params.TxGas) // just enough to schedule a redeem
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxopts,
+		user2Address,
+		big.NewInt(1e6),
+		big.NewInt(1e6),
+		user2Address,
+		user2Address,
+		retryableGas,
+		big.NewInt(params.InitialBaseFee*2),
+		[]byte{},
+	)
+	Require(t, err)
+
+	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+	if l1receipt.Status != types.ReceiptStatusSuccessful {
+		Fail(t, "l1receipt indicated failure")
+	}
+
+	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
+	Require(t, err)
+
+	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, retryableGas)) {
+		Fail(t, "Supplied gas was improperly deducted", "\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
+	}
+}
+
 func waitForL1DelayBlocks(t *testing.T, ctx context.Context, l1client *ethclient.Client, l1info *BlockchainTestInfo) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 }
