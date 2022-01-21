@@ -226,6 +226,10 @@ func (store *Storage) ClearBytes() error {
 	return store.SetByUint64(0, common.Hash{})
 }
 
+func (sto *Storage) Burner() burn.Burner {
+	return sto.burner // not public because these should never be changed once set
+}
+
 type StorageSlot struct {
 	account common.Address
 	db      vm.StateDB
