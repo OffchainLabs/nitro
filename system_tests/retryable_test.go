@@ -35,6 +35,7 @@ func retryableSetup(t *testing.T) (
 	ctx, cancel := context.WithCancel(context.Background())
 	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
 	l2info.GenerateAccount("User2")
+	l2info.GenerateAccount("Beneficiary")
 	l2info.GenerateAccount("Burn")
 	l1client := l1info.Client
 
@@ -62,13 +63,15 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	user2Address := l2info.GetAddress("User2")
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,
 		big.NewInt(1e6),
 		big.NewInt(1e6),
-		user2Address,
-		user2Address,
+		beneficiaryAddress,
+		beneficiaryAddress,
 		big.NewInt(50001),
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
@@ -117,13 +120,15 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	user2Address := l2info.GetAddress("User2")
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,
 		big.NewInt(1e6),
 		big.NewInt(1e6),
-		user2Address,
-		user2Address,
+		beneficiaryAddress,
+		beneficiaryAddress,
 		big.NewInt(int64(params.TxGas)+1), // send inadequate L2 gas
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{0x00},
@@ -225,23 +230,30 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
+	l2info.GenerateAccount("Recieve")
 	faucetAddress := l2info.GetAddress("Faucet")
-	user2Address := l2info.GetAddress("User2")
-	colors.PrintBlue("Faucet ", faucetAddress)
-	colors.PrintBlue("User2  ", user2Address)
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	receiveAddress := l2info.GetAddress("Recieve")
+
+	colors.PrintBlue("Faucet      ", faucetAddress)
+	colors.PrintBlue("Receive     ", receiveAddress)
+	colors.PrintBlue("Beneficiary ", beneficiaryAddress)
 
 	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 
-	retryableGas := new(big.Int).SetUint64(params.TxGas) // just enough to schedule a redeem
-	retryableCallValue := big.NewInt(1e4)
+	usefulGas := params.TxGas
+	excessGas := uint64(808)
+
+	retryableGas := new(big.Int).SetUint64(usefulGas + excessGas) // will only burn the intrinsic cost
+	retryableL2CallValue := big.NewInt(1e4)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
-		user2Address,
-		retryableCallValue,
+		receiveAddress,
+		retryableL2CallValue,
 		big.NewInt(1e6),
-		user2Address,
-		user2Address,
+		beneficiaryAddress,
+		beneficiaryAddress,
 		retryableGas,
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
@@ -256,22 +268,42 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 	l2GasPrice := GetBaseFee(t, l2client, ctx)
+	excessWei := util.BigMulByUint(l2GasPrice, excessGas)
 
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
+	beneficiaryFunds, err := l2client.BalanceAt(ctx, beneficiaryAddress, nil)
+	Require(t, err)
+	receiveFunds, err := l2client.BalanceAt(ctx, receiveAddress, nil)
+	Require(t, err)
 
-	colors.PrintMint(fundsBeforeSubmit)
-	colors.PrintMint(fundsAfterSubmit)
+	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
+	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
+
+	// the retryable should pay the receiver the supplied callvalue
+	colors.PrintMint("Receive       ", receiveFunds)
+	colors.PrintBlue("L2 Call Value ", retryableL2CallValue)
+	if !util.BigEquals(receiveFunds, retryableL2CallValue) {
+		Fail(t, "Recipient didn't receive the right funds")
+	}
+
+	// the beneficiary should recieve the excess gas
+	colors.PrintBlue("Base Fee      ", l2GasPrice)
+	colors.PrintBlue("Excess Gas    ", excessGas)
+	colors.PrintBlue("Excess Wei    ", excessWei)
+	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
+	if !util.BigEquals(beneficiaryFunds, excessWei) {
+		Fail(t, "Beneficiary didn't receive the right funds")
+	}
 
 	// the faucet must pay for both the gas used and the call value supplied
-	expectedGasChange := util.BigMul(retryableGas, l2GasPrice)
+	expectedGasChange := util.BigMul(l2GasPrice, retryableGas)
 	expectedGasChange = util.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
-	expectedGasChange = util.BigAdd(expectedGasChange, retryableCallValue)
+	expectedGasChange = util.BigAdd(expectedGasChange, retryableL2CallValue)
 
-	colors.PrintBlue("BaseFee  ", l2GasPrice)
-	colors.PrintBlue("CallGas  ", retryableGas)
-	colors.PrintMint("Gas cost ", util.BigMul(retryableGas, l2GasPrice))
-	colors.PrintBlue("Payment  ", usertxopts.Value)
+	colors.PrintBlue("CallGas    ", retryableGas)
+	colors.PrintMint("Gas cost   ", util.BigMul(retryableGas, l2GasPrice))
+	colors.PrintBlue("Payment    ", usertxopts.Value)
 
 	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, expectedGasChange)) {
 		diff := util.BigSub(fundsBeforeSubmit, fundsAfterSubmit)

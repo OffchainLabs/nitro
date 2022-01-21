@@ -7,8 +7,10 @@ package retryables
 import (
 	"bytes"
 	"errors"
-	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -304,4 +306,8 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big
 		TicketId: ticketId,
 		RefundTo: refundTo,
 	}, nil
+}
+
+func RetryableEscrow(ticketId common.Hash) common.Address {
+	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
 }

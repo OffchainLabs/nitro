@@ -50,8 +50,10 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 
 func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info, ctx context.Context) {
 	tx := l2info.PrepareTx(from, to, 100000, amount, nil)
-	l2info.Client.SendTransaction(ctx, tx)
-	arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
+	err := l2info.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
+	Require(t, err)
 }
 
 func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {

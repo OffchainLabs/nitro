@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -93,11 +92,15 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		statedb := p.evm.StateDB
+		ticketId := underlyingTx.Hash()
+		escrow := retryables.RetryableEscrow(ticketId)
+
 		statedb.AddBalance(tx.From, tx.DepositValue)
 		if util.BigLessThan(statedb.GetBalance(tx.From), tx.Value) {
 			return true, 0, vm.ErrInsufficientBalance, nil
 		}
-		statedb.SubBalance(tx.From, tx.Value) // pay for the retryable's callvalue
+		statedb.SubBalance(tx.From, tx.Value) // pay for the retryable's callvalue,
+		statedb.AddBalance(escrow, tx.Value)  // moving it into escrow
 
 		time := p.evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
@@ -105,7 +108,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// we charge for creating the retryable and reaping the next expired one on L1
 		retryable, err := p.state.RetryableState().CreateRetryable(
 			time,
-			underlyingTx.Hash(),
+			ticketId,
 			timeout,
 			tx.From,
 			underlyingTx.To(),
@@ -143,8 +146,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			0,
 			basefee,
 			usergas,
-			underlyingTx.Hash(),
-			p.msg.From(),
+			ticketId,
+			tx.FeeRefundAddr,
 		)
 		p.state.Restrict(err)
 
@@ -155,9 +158,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			p.evm,
 			usergas,
 			retryTxInner.Nonce,
-			underlyingTx.Hash(),
+			ticketId,
 			types.NewTx(retryTxInner).Hash(),
-			p.msg.From(),
+			tx.FeeRefundAddr,
 		)
 		if err != nil {
 			log.Error("failed to emit RedeemScheduled event", "err", err)
@@ -170,9 +173,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		basefee := p.evm.Context.BaseFee
 		prepaid := util.BigAdd(tx.Value, util.BigMulByUint(basefee, tx.Gas))
 		p.evm.StateDB.AddBalance(tx.From, prepaid)
+		p.evm.StateDB.SubBalance(retryables.RetryableEscrow(tx.TicketId), tx.Value)
 
+		// Undo the second time this gas was removed from the pool
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
-		p.state.Restrict(err)
 	}
 	return false, 0, nil, nil
 }
@@ -233,16 +237,14 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := util.BigMulByUint(gasPrice, gasLeft)
 		p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
 		p.evm.StateDB.AddBalance(inner.RefundTo, refund)
-		colors.PrintBlue(inner.To)
-		colors.PrintBlue(inner.RefundTo)
-		colors.PrintBlue(inner.From)
-		colors.PrintBlue(refund)
 		if success {
 			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
+			escrow := retryables.RetryableEscrow(inner.TicketId)
 			p.evm.StateDB.SubBalance(inner.From, inner.Value)
+			p.evm.StateDB.AddBalance(escrow, inner.Value)
 		}
 	}
 
