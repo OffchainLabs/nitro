@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -124,8 +123,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		basefee := p.evm.Context.BaseFee
 		usergas := p.msg.Gas()
 		gascost := util.BigMulByUint(basefee, usergas)
-
-		colors.PrintBlue(gascost)
 
 		if util.BigLessThan(balance, gascost) || usergas < params.TxGas {
 			// user didn't have or provide enough gas to do an initial redeem
