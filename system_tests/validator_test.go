@@ -52,6 +52,10 @@ func TestValidatorSimple(t *testing.T) {
 
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
+
+	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)
+	time.Sleep(time.Millisecond * 100)
+
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
