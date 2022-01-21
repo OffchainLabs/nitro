@@ -132,6 +132,11 @@ func ProduceBlock(
 			txes = txes[1:]
 		}
 
+		if tx.GasPrice().Cmp(gasPrice) < 0 || tx.GasFeeCap().Cmp(gasPrice) < 0 {
+			// This tx has too low of a gas price bid; skip it
+			continue
+		}
+
 		sender, err := signer.Sender(tx)
 		if err != nil {
 			continue
