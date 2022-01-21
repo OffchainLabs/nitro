@@ -206,11 +206,6 @@ func ProduceBlock(
 		case *types.ArbitrumSubmitRetryableTx:
 			// Retryable submission can include a deposit which adds eth to the system
 			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
-		case *types.ArbitrumRetryTx:
-			if receipt.Status == types.ReceiptStatusSuccessful {
-				// These funds were held in escrow
-				expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
-			}
 		}
 
 		if gasPool > gethGas {
@@ -253,8 +248,6 @@ func ProduceBlock(
 				})
 
 				redeems = append(redeems, reedem)
-				// These funds are held in escrow
-				expectedBalanceDelta.Sub(expectedBalanceDelta, value)
 			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
 				callValue := new(big.Int).SetBytes(txLog.Data[(5 * 32):(6 * 32)])
@@ -292,12 +285,11 @@ func ProduceBlock(
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
-	// TODO: this doesn't capture retryable deletion callvalue refunds
 	balanceDelta := statedb.GetTotalBalanceDelta()
 	if balanceDelta.Cmp(expectedBalanceDelta) > 0 {
 		panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
 	} else if balanceDelta.Cmp(expectedBalanceDelta) < 0 {
-		log.Warn("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
+		log.Warn("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
 	}
 
 	return block, receipts
