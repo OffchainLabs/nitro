@@ -38,6 +38,8 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.
 	t.Helper()
 	for _, tx := range txs {
 		Require(t, client.SendTransaction(ctx, tx))
+	}
+	for _, tx := range txs {
 		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
