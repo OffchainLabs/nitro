@@ -25,7 +25,9 @@ import (
 
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
+var ArbSysAddress common.Address
 var RedeemScheduledEventID common.Hash
+var L2ToL1TransactionEventID common.Hash
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
 	l2Pricing := state.L2PricingState()
@@ -77,6 +79,10 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
+	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
+		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
+	}
+
 	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -101,6 +107,7 @@ func ProduceBlock(
 	receipts := types.Receipts{}
 	gasPrice := header.BaseFee
 	time := header.Time
+	expectedBalanceDelta := new(big.Int)
 
 	redeems := types.Transactions{}
 
@@ -191,6 +198,21 @@ func ProduceBlock(
 			continue
 		}
 
+		// Update expectedTotalBalanceDelta (also done in logs loop)
+		switch txInner := tx.GetInner().(type) {
+		case *types.ArbitrumDepositTx:
+			// L1->L2 deposits add eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
+		case *types.ArbitrumSubmitRetryableTx:
+			// Retryable submission can include a deposit which adds eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
+		case *types.ArbitrumRetryTx:
+			if receipt.Status == types.ReceiptStatusSuccessful {
+				// These funds were held in escrow
+				expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
+			}
+		}
+
 		if gasPool > gethGas {
 			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
 			panic("ApplyTransaction() gave back " + delta + " gas")
@@ -231,6 +253,12 @@ func ProduceBlock(
 				})
 
 				redeems = append(redeems, reedem)
+				// These funds are held in escrow
+				expectedBalanceDelta.Sub(expectedBalanceDelta, value)
+			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
+				// L2->L1 withdrawals remove eth from the system
+				callValue := new(big.Int).SetBytes(txLog.Data[(5 * 32):(6 * 32)])
+				expectedBalanceDelta.Sub(expectedBalanceDelta, callValue)
 			}
 		}
 
@@ -262,6 +290,14 @@ func ProduceBlock(
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
+	}
+
+	// TODO: this doesn't capture retryable deletion callvalue refunds
+	balanceDelta := statedb.GetTotalBalanceDelta()
+	if balanceDelta.Cmp(expectedBalanceDelta) > 0 {
+		panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
+	} else if balanceDelta.Cmp(expectedBalanceDelta) < 0 {
+		log.Warn("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta)
 	}
 
 	return block, receipts
