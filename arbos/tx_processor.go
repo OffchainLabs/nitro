@@ -107,7 +107,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
 		if err != nil {
-			log.Error("failed to emit RedeemScheduled event", "err", err)
+			log.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		if p.msg.Gas() >= params.TxGas {

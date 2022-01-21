@@ -49,7 +49,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	l1info.GenerateAccount("faucet")
+	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumTestChainConfig()
 
@@ -68,22 +68,22 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	l1Genesys = core.DeveloperGenesisBlock(0, arbosState.PerBlockGasLimit, l1info.GetAddress("Faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
 	}
 	nodeConf.Genesis = l1Genesys
-	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
+	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
-	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["faucet"].PrivateKey, "passphrase")
+	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
 	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
 	l1backend.AccountManager().AddBackend(tempKeyStore)
-	l1backend.SetEtherbase(l1info.GetAddress("faucet"))
+	l1backend.SetEtherbase(l1info.GetAddress("Faucet"))
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining(1))
 
@@ -103,9 +103,9 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 	l1info.GenerateAccount("User")
 
 	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
+		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	addresses, err := arbnode.DeployOnL1(ctx, l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), time.Second)
