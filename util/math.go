@@ -25,9 +25,19 @@ func BigEquals(first, second *big.Int) bool {
 	return first.Cmp(second) == 0
 }
 
+// check if a huge is less than another
+func BigLessThan(first, second *big.Int) bool {
+	return first.Cmp(second) < 0
+}
+
 // add a huge to another
 func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
 	return new(big.Int).Add(augend, addend)
+}
+
+// add a huge to another
+func BigSub(minuend *big.Int, subtrahend *big.Int) *big.Int {
+	return new(big.Int).Sub(minuend, subtrahend)
 }
 
 // multiply a huge by another

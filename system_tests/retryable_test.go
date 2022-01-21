@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/arbstate/util/colors"
 )
 
 func retryableSetup(t *testing.T) (
@@ -34,12 +35,17 @@ func retryableSetup(t *testing.T) (
 	ctx, cancel := context.WithCancel(context.Background())
 	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
 	l2info.GenerateAccount("User2")
+	l2info.GenerateAccount("Burn")
 	l1client := l1info.Client
 
 	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
 	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
+
+	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
+	discard := util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	TransferBalance(t, "Faucet", "Burn", discard, l2info, ctx)
 
 	teardown := func() {
 		cancel()
@@ -226,10 +232,11 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 
 	retryableGas := new(big.Int).SetUint64(params.TxGas) // just enough to schedule a redeem
+	retryableCallValue := big.NewInt(1e3)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,
-		big.NewInt(1e6),
+		retryableCallValue,
 		big.NewInt(1e6),
 		user2Address,
 		user2Address,
@@ -245,12 +252,30 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fail(t, "l1receipt indicated failure")
 	}
 
+	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	l2GasPrice := GetBaseFee(t, l2client, ctx)
+
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 
-	expectedGasDeduction := new(big.Int).Mul(retryableGas, big.NewInt(params.InitialBaseFee))
-	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, expectedGasDeduction)) {
-		Fail(t, "Supplied gas was improperly deducted", "\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
+	colors.PrintMint(fundsBeforeSubmit)
+	colors.PrintMint(fundsAfterSubmit)
+
+	// the faucet must pay for both the gas used and the call value supplied
+	expectedGasChange := util.BigMul(retryableGas, l2GasPrice)
+	expectedGasChange = util.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
+	expectedGasChange = util.BigAdd(expectedGasChange, retryableCallValue)
+
+	colors.PrintBlue("BaseFee  ", l2GasPrice)
+	colors.PrintBlue("CallGas  ", retryableGas)
+	colors.PrintMint("Gas cost ", util.BigMul(retryableGas, l2GasPrice))
+	colors.PrintBlue("Payment  ", usertxopts.Value)
+
+	if !util.BigEquals(fundsBeforeSubmit, util.BigAdd(fundsAfterSubmit, expectedGasChange)) {
+		diff := util.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
+		colors.PrintRed("Expected ", expectedGasChange)
+		colors.PrintRed("Observed ", diff)
+		Fail(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
 }
 

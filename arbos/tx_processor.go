@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -72,6 +73,9 @@ func (p *TxProcessor) getAggregator() *common.Address {
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
+	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
+	// Hence, we must charge for any l2 resources if endTxNow is returned true
+
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
 		return false, 0, nil, nil
@@ -88,11 +92,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.evm.StateDB.AddBalance(*p.msg.To(), p.msg.Value())
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		p.evm.StateDB.AddBalance(tx.From, tx.DepositValue)
+		statedb := p.evm.StateDB
+		statedb.AddBalance(tx.From, tx.DepositValue)
+		if util.BigLessThan(statedb.GetBalance(tx.From), tx.Value) {
+			return true, 0, vm.ErrInsufficientBalance, nil
+		}
+		statedb.SubBalance(tx.From, tx.Value) // pay for the retryable's callvalue
 
 		time := p.evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
+		// we charge for creating the retryable and reaping the next expired one on L1
 		retryable, err := p.state.RetryableState().CreateRetryable(
 			time,
 			underlyingTx.Hash(),
@@ -110,35 +120,52 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			log.Error("failed to emit TicketCreated event", "err", err)
 		}
 
-		if p.msg.Gas() >= params.TxGas {
-			// emit RedeemScheduled event
-			retryTxInner, err := retryable.MakeTx(
-				underlyingTx.ChainId(),
-				0,
-				p.evm.Context.BaseFee,
-				p.msg.Gas(),
-				underlyingTx.Hash(),
-				p.msg.From(),
-			)
-			p.state.Restrict(err)
+		balance := statedb.GetBalance(tx.From)
+		basefee := p.evm.Context.BaseFee
+		usergas := p.msg.Gas()
+		gascost := util.BigMulByUint(basefee, usergas)
 
-			_, err = retryable.IncrementNumTries()
-			p.state.Restrict(err)
+		colors.PrintBlue(gascost)
 
-			err = EmitReedeemScheduledEvent(
-				p.evm,
-				p.msg.Gas(),
-				retryTxInner.Nonce,
-				underlyingTx.Hash(),
-				types.NewTx(retryTxInner).Hash(),
-				p.msg.From(),
-			)
-			if err != nil {
-				log.Error("failed to emit RedeemScheduled event", "err", err)
-			}
+		if util.BigLessThan(balance, gascost) || usergas < params.TxGas {
+			// user didn't have or provide enough gas to do an initial redeem
+			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
+		if util.BigLessThan(tx.GasPrice, basefee) {
+			// user's bid was too low
+			return true, 0, nil, underlyingTx.Hash().Bytes()
+		}
+
+		statedb.SubBalance(tx.From, gascost) // pay for the retryable's gas
+
+		// emit RedeemScheduled event
+		retryTxInner, err := retryable.MakeTx(
+			underlyingTx.ChainId(),
+			0,
+			basefee,
+			usergas,
+			underlyingTx.Hash(),
+			p.msg.From(),
+		)
+		p.state.Restrict(err)
+
+		_, err = retryable.IncrementNumTries()
+		p.state.Restrict(err)
+
+		err = EmitReedeemScheduledEvent(
+			p.evm,
+			usergas,
+			retryTxInner.Nonce,
+			underlyingTx.Hash(),
+			types.NewTx(retryTxInner).Hash(),
+			p.msg.From(),
+		)
+		if err != nil {
+			log.Error("failed to emit RedeemScheduled event", "err", err)
+		}
+
+		return true, usergas, nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
