@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/arbstate/util/colors"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 
@@ -164,6 +165,12 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
+
+		// The redeemer has pre-paid for this tx's gas
+		basefee := p.evm.Context.BaseFee
+		prepaid := util.BigMulByUint(basefee, tx.Gas)
+		p.evm.StateDB.AddBalance(tx.From, prepaid)
+
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
 	}
@@ -219,13 +226,21 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
-	if success && underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
-		state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
-		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
-		_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
-	}
-
 	gasPrice := p.evm.Context.BaseFee
+
+	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
+		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
+		refund := util.BigMulByUint(gasPrice, gasLeft)
+		p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
+		p.evm.StateDB.AddBalance(inner.RefundTo, refund)
+		colors.PrintBlue(inner.RefundTo)
+		colors.PrintBlue(inner.From)
+		colors.PrintBlue(refund)
+		if success {
+			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
+			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
+		}
+	}
 
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")

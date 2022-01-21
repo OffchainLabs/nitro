@@ -35,7 +35,7 @@ func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
 	return new(big.Int).Add(augend, addend)
 }
 
-// add a huge to another
+// subtract from a huge another
 func BigSub(minuend *big.Int, subtrahend *big.Int) *big.Int {
 	return new(big.Int).Sub(minuend, subtrahend)
 }

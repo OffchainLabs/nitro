@@ -227,6 +227,8 @@ func TestSubmissionGasCosts(t *testing.T) {
 
 	faucetAddress := l2info.GetAddress("Faucet")
 	user2Address := l2info.GetAddress("User2")
+	colors.PrintBlue("Faucet ", faucetAddress)
+	colors.PrintBlue("User2  ", user2Address)
 
 	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
@@ -275,6 +277,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		diff := util.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
 		colors.PrintRed("Expected ", expectedGasChange)
 		colors.PrintRed("Observed ", diff)
+		colors.PrintRed("Off by   ", util.BigSub(expectedGasChange, diff))
 		Fail(t, "Supplied gas was improperly deducted\n", fundsBeforeSubmit, "\n", fundsAfterSubmit)
 	}
 }
