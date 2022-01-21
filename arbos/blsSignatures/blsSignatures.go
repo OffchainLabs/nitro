@@ -30,7 +30,7 @@ func init() {
 
 type PublicKey struct {
 	key           *bls12381.PointG2
-	validityProof *bls12381.PointG1 // if this is nil, PK was made by aggregating verified keys
+	validityProof *bls12381.PointG1 // if this is nil, key came from a trusted source
 }
 
 type PrivateKey *big.Int
@@ -62,8 +62,12 @@ func insecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, e
 }
 
 // This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
-//     that come from untrusted sources.
-// See Theorem 1 in Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
+// that come from untrusted sources. We use the private key to sign the public key, but in the
+// signature algorithm we use a tweaked version of the hash function so that the result cannot be
+// re-used as an ordinary signature.
+//
+// For a proof that this is sufficient, see Theorem 1 in
+// Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
 func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signature, error) {
 	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
 }
@@ -158,6 +162,14 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 	return leftSide.Equal(rightSide), nil
 }
 
+// This hashes a message to a [32]byte, then maps the result to the G1 curve using
+// the Simplified Shallue-van de Woestijne-Ulas Method, described in Section 6.6.2 of
+// https://tools.ietf.org/html/draft-irtf-cfrg-hash-to-curve-06
+//
+// If keyValidationMode is true, this uses a tweaked version of the hash function,
+// so that the result will not collide with a hash generated in an ordinary signature.
+// The tweaked hash function is the same as keccak256, except that the two halves
+// of the output are interchanged.
 func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
 	var empty [16]byte
 	h := crypto.Keccak256(message)
