@@ -234,7 +234,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 
 	retryableGas := new(big.Int).SetUint64(params.TxGas) // just enough to schedule a redeem
-	retryableCallValue := big.NewInt(1e3)
+	retryableCallValue := big.NewInt(1e4)
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		user2Address,

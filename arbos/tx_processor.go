@@ -168,7 +168,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// The redeemer has pre-paid for this tx's gas
 		basefee := p.evm.Context.BaseFee
-		prepaid := util.BigMulByUint(basefee, tx.Gas)
+		prepaid := util.BigAdd(tx.Value, util.BigMulByUint(basefee, tx.Gas))
 		p.evm.StateDB.AddBalance(tx.From, prepaid)
 
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
@@ -233,12 +233,16 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := util.BigMulByUint(gasPrice, gasLeft)
 		p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
 		p.evm.StateDB.AddBalance(inner.RefundTo, refund)
+		colors.PrintBlue(inner.To)
 		colors.PrintBlue(inner.RefundTo)
 		colors.PrintBlue(inner.From)
 		colors.PrintBlue(refund)
 		if success {
 			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
+		} else {
+			// return the Callvalue to escrow
+			p.evm.StateDB.SubBalance(inner.From, inner.Value)
 		}
 	}
 
