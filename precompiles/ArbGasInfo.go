@@ -8,8 +8,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -30,7 +30,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.GasPriceWei()
+	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -69,7 +69,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.GasPriceWei()
+	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -96,9 +96,9 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 }
 
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	speedLimit := big.NewInt(arbosState.SpeedLimitPerSecond)
-	gasPoolMax := big.NewInt(arbosState.GasPoolMax)
-	maxTxGasLimit := big.NewInt(int64(arbosState.MaxPerBlockGasLimit()))
+	speedLimit := big.NewInt(l2pricing.SpeedLimitPerSecond)
+	gasPoolMax := big.NewInt(l2pricing.GasPoolMax)
+	maxTxGasLimit := new(big.Int).SetUint64(l2pricing.MaxPerBlockGasLimit())
 	return speedLimit, gasPoolMax, maxTxGasLimit, nil
 }
 

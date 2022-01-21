@@ -42,5 +42,5 @@ func (con ArbOwner) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) erro
 }
 
 func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.SetGasPriceWei(priceInWei)
+	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
 }
