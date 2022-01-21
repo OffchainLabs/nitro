@@ -80,7 +80,7 @@ func TestTwoNodesLong(t *testing.T) {
 				delayedTxs = append(delayedTxs, delayedTx)
 				delayedTransfers++
 			} else {
-				l1tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
@@ -113,7 +113,7 @@ func TestTwoNodesLong(t *testing.T) {
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
 			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
 	}
@@ -127,7 +127,7 @@ func TestTwoNodesLong(t *testing.T) {
 	for i := 0; i < finalPropagateLoops; i++ {
 		var tx *types.Transaction
 		for j := 0; j < 30; j++ {
-			tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+			tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			err := l1info.Client.SendTransaction(ctx, tx)
 			if err != nil {
 				Fail(t, err)

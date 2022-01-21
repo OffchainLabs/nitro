@@ -25,6 +25,11 @@ func BigEquals(first, second *big.Int) bool {
 	return first.Cmp(second) == 0
 }
 
+// add a huge to another
+func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
+	return new(big.Int).Add(augend, addend)
+}
+
 // multiply a huge by another
 func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 	return new(big.Int).Mul(multiplicand, multiplier)
