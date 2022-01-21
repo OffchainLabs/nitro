@@ -12,17 +12,13 @@ We store ArbOS's state at an address inside a geth `statedb`. In doing so, ArbOS
 A call to [`ReadyEVMForL2`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbstate/geth-hook.go#L40) installs the following transaction-specific hooks into each geth [`EVM`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/evm.go#L101) right before it performs a state transition. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Without this call, the state transition will instead use the default [`DefaultTxProcessor`](https://github.com/OffchainLabs/go-ethereum/blob/f796d1a6abc99ff0d4ff668e1213a7dfe2d27a0d/core/vm/arbitrum_evm.go#L26) and get exactly the same results as vanilla geth. A [`TxProcessor`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L26) object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime. What follows is an overview of each hook, in chronological order.
 
 ### [`StartTxHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L63)
-The [`StartTxHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L63) prepares ArbOS for arbitrum-specific transaction types: retryables are accounted for, and deposits are made.
+The [`StartTxHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L63) is called by geth before a transaction starts executing. This allows ArbOS to handle two arbitrum-specific transaction types. 
 
-Because a revert will discard changes made here, modifications to ArbOS's state are done as if the tx succeeded:
+If the transaction is `ArbitrumDepositTx`, ArbOS adds balance to the destination account.  This is safe because the L1 bridge submits such a transaction only after collecting the same amount of funds on L1.
 
-* `ArbitrumRetryTx` immediately deletes its underlying retryable and adds its gas back to the pools
-* `ArbitrumSubmitRetryableTx` creates its retryable
-* `ArbitrumDepositTx` adds balance to a user's account (the bridge submits these only after collecting funds on L1)
+If the transaction is an `ArbitrumSubmitRetryableTx`, ArbOS creates a retryable based on the transaction's fields. If the transaction includes sufficient gas, ArbOS schedules a retry of the new retryable.
 
-The hook returns `true` in the case of an `ArbitrumDepositTx`, signifying that the state transition is complete. This is the simplest kind of arbitrum transaction and requires no additional work after the balance update.
-
-TODO: fix the above once we've settled on how retryables work
+The hook returns `true` for both of these transaction types, signifying that the state transition is complete. 
 
 ### [`GasChargingHook`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L100)
 
