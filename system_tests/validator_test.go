@@ -50,9 +50,6 @@ func TestValidatorSimple(t *testing.T) {
 		})
 	}
 
-	// Bug: Sleep to avoid CI failure (Unexpected balance: 1000000000000)
-	time.Sleep(time.Millisecond * 100)
-
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
