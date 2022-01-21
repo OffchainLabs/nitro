@@ -10,6 +10,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -22,6 +23,7 @@ const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 type RetryableState struct {
 	retryables   *storage.Storage
 	timeoutQueue *storage.Queue
+	escrow       func(common.Hash, common.Address)
 }
 
 var (
@@ -33,10 +35,17 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
-func OpenRetryableState(sto *storage.Storage) *RetryableState {
+func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
+	escrow := func(ticketId common.Hash, destination common.Address) {
+		escrow := RetryableEscrow(ticketId)
+		balance := statedb.GetBalance(escrow)
+		statedb.SubBalance(escrow, balance)
+		statedb.AddBalance(destination, balance)
+	}
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
+		escrow,
 	}
 }
 
@@ -139,6 +148,11 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 	if timeout == (common.Hash{}) || err != nil {
 		return false, err
 	}
+
+	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
+	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
+	rs.escrow(id, common.BytesToAddress(beneficiary[:]))
+
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
 	_ = retStorage.SetByUint64(fromOffset, common.Hash{})

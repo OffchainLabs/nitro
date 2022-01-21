@@ -5,8 +5,9 @@
 package arbosState
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/blockhash"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/blockhash"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"github.com/offchainlabs/arbstate/arbos/bls"
@@ -67,7 +68,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
 		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		bls.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
