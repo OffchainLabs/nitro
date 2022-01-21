@@ -213,7 +213,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 }
 
 func TestSubmissionGasCosts(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
@@ -243,6 +243,25 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
+	}
+
+	// wait for L2 submit tx to complete
+	var l2TxId *common.Hash
+	for _, log := range l1receipt.Logs {
+		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
+		if msg != nil {
+			id := common.BigToHash(msg.MessageNum)
+			l2TxId = &id
+		}
+	}
+	if l2TxId == nil {
+		Fail(t)
+	}
+	waitForL1DelayBlocks(t, ctx, l1client, l1info)
+	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fail(t)
 	}
 
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)

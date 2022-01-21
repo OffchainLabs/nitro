@@ -71,7 +71,7 @@ func (p *TxProcessor) getAggregator() *common.Address {
 	return nil
 }
 
-func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
+func (p *TxProcessor) StartTxHook(buyGasFunc func() error) (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	underlyingTx := p.msg.UnderlyingTransaction()
 	if underlyingTx == nil {
 		return false, 0, nil, nil
@@ -110,35 +110,40 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			log.Error("failed to emit TicketCreated event", "err", err)
 		}
 
+		donatedGas := uint64(0)
 		if p.msg.Gas() >= params.TxGas {
-			// emit RedeemScheduled event
-			retryTxInner, err := retryable.MakeTx(
-				underlyingTx.ChainId(),
-				0,
-				p.evm.Context.BaseFee,
-				p.msg.Gas(),
-				underlyingTx.Hash(),
-				p.msg.From(),
-			)
-			p.state.Restrict(err)
+			if buyGasFunc() == nil {
+				donatedGas = p.msg.Gas()
 
-			_, err = retryable.IncrementNumTries()
-			p.state.Restrict(err)
+				// emit RedeemScheduled event
+				retryTxInner, err := retryable.MakeTx(
+					underlyingTx.ChainId(),
+					0,
+					p.evm.Context.BaseFee,
+					donatedGas,
+					underlyingTx.Hash(),
+					p.msg.From(),
+				)
+				p.state.Restrict(err)
 
-			err = EmitReedeemScheduledEvent(
-				p.evm,
-				p.msg.Gas(),
-				retryTxInner.Nonce,
-				underlyingTx.Hash(),
-				types.NewTx(retryTxInner).Hash(),
-				p.msg.From(),
-			)
-			if err != nil {
-				log.Error("failed to emit RedeemScheduled event", "err", err)
+				_, err = retryable.IncrementNumTries()
+				p.state.Restrict(err)
+
+				err = EmitReedeemScheduledEvent(
+					p.evm,
+					donatedGas,
+					retryTxInner.Nonce,
+					underlyingTx.Hash(),
+					types.NewTx(retryTxInner).Hash(),
+					p.msg.From(),
+				)
+				if err != nil {
+					log.Error("failed to emit RedeemScheduled event", "err", err)
+				}
 			}
 		}
 
-		return true, p.msg.Gas(), nil, underlyingTx.Hash().Bytes()
+		return true, donatedGas, nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
 		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
 		p.state.Restrict(err)
