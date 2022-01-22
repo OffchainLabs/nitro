@@ -93,7 +93,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	case *types.ArbitrumSubmitRetryableTx:
 		statedb := p.evm.StateDB
 		ticketId := underlyingTx.Hash()
-		escrow := retryables.RetryableEscrow(ticketId)
+		escrow := retryables.RetryableEscrowAddress(ticketId)
 
 		statedb.AddBalance(tx.From, tx.DepositValue)
 		if util.BigLessThan(statedb.GetBalance(tx.From), tx.Value) {
@@ -173,7 +173,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	case *types.ArbitrumRetryTx:
 
 		// Ensure the escrow has enough funds
-		escrow := retryables.RetryableEscrow(tx.TicketId)
+		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
 		escrowBalance := p.evm.StateDB.GetBalance(escrow)
 		if util.BigLessThan(escrowBalance, tx.Value) {
 			return true, 0, core.ErrInsufficientFundsForTransfer, nil
@@ -249,7 +249,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
-			escrow := retryables.RetryableEscrow(inner.TicketId)
+			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
 			p.evm.StateDB.SubBalance(inner.From, inner.Value)
 			p.evm.StateDB.AddBalance(escrow, inner.Value)
 		}

@@ -37,7 +37,7 @@ func InitializeRetryableState(sto *storage.Storage) error {
 
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
 	escrow := func(ticketId common.Hash, destination common.Address) {
-		escrow := RetryableEscrow(ticketId)
+		escrow := RetryableEscrowAddress(ticketId)
 		balance := statedb.GetBalance(escrow)
 		statedb.SubBalance(escrow, balance)
 		statedb.AddBalance(destination, balance)
@@ -322,6 +322,6 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big
 	}, nil
 }
 
-func RetryableEscrow(ticketId common.Hash) common.Address {
+func RetryableEscrowAddress(ticketId common.Hash) common.Address {
 	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
 }
