@@ -32,7 +32,9 @@ var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, 
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
-	baseFee, err := state.GasPriceWei()
+	l2Pricing := state.L2PricingState()
+	baseFee, _ := l2Pricing.GasPriceWei()
+	gasLimit, err := l2Pricing.CurrentPerBlockGasLimit()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -60,7 +62,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    arbosState.PerBlockGasLimit,
+		GasLimit:    gasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -95,7 +97,7 @@ func ProduceBlock(
 
 	state := arbosState.OpenSystemArbosState(statedb)
 	_ = state.Blockhashes().RecordNewL1Block(l1Info.l1BlockNumber.Uint64(), lastBlockHeader.Hash())
-	gasLeft, _ := state.CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 
@@ -256,23 +258,33 @@ func ProduceBlock(
 	return block, receipts
 }
 
-type HeaderExtraInformation struct {
-	SendRoot common.Hash
+type ArbitrumHeaderInfo struct {
+	SendRoot  common.Hash
+	SendCount uint64
 }
 
-func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
+func (info ArbitrumHeaderInfo) Extra() []byte {
+	return info.SendRoot[:]
+}
+
+func (info ArbitrumHeaderInfo) MixDigest() [32]byte {
+	mixDigest := common.Hash{}
+	binary.BigEndian.PutUint64(mixDigest[:8], info.SendCount)
+	return mixDigest
+}
+
+func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo, error) {
 	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
 		// The genesis block doesn't have an ArbOS encoded extra field
-		return HeaderExtraInformation{}, nil
+		return ArbitrumHeaderInfo{}, nil
 	}
 	if len(header.Extra) != 32 {
-		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
+		return ArbitrumHeaderInfo{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
 	}
-	var sendRoot common.Hash
-	copy(sendRoot[:], header.Extra)
-	return HeaderExtraInformation{
-		SendRoot: sendRoot,
-	}, nil
+	extra := ArbitrumHeaderInfo{}
+	copy(extra.SendRoot[:], header.Extra)
+	extra.SendCount = binary.BigEndian.Uint64(header.MixDigest[:8])
+	return extra, nil
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
@@ -282,11 +294,14 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
 		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.SetMaxGasPriceWei(maxSafePrice)
+		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
-		// write send merkle accumulator hash into extra data field of the header
-		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed
-		root, _ := state.SendMerkleAccumulator().Root()
-		header.Extra = root.Bytes()
+		// Add outbox info to the header for client-side proving
+		acc := state.SendMerkleAccumulator()
+		root, _ := acc.Root()
+		size, _ := acc.Size()
+		arbitrumHeader := ArbitrumHeaderInfo{root, size}
+		header.Extra = arbitrumHeader.Extra()
+		header.MixDigest = arbitrumHeader.MixDigest()
 	}
 }

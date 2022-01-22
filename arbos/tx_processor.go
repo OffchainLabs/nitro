@@ -141,7 +141,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// pay for the retryable's gas and update the pools
 		statedb.SubBalance(tx.From, gascost)
 		statedb.AddBalance(networkAddress, gascost)
-		p.state.AddToGasPools(-util.SaturatingCast(usergas))
+		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -254,7 +254,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			p.evm.StateDB.AddBalance(escrow, inner.Value)
 		}
 		// we've already credited the network fee account and updated the gas pool
-		p.state.AddToGasPools(util.SaturatingCast(gasLeft))
+		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(gasLeft))
 		return
 	}
 
@@ -288,7 +288,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		if computeGas > math.MaxInt64 {
 			computeGas = math.MaxInt64
 		}
-		p.state.AddToGasPools(-int64(computeGas))
+		p.state.L2PricingState().AddToGasPools(-int64(computeGas))
 	}
 }
 
