@@ -33,8 +33,7 @@ var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
 	l2Pricing := state.L2PricingState()
-	baseFee, _ := l2Pricing.GasPriceWei()
-	gasLimit, err := l2Pricing.CurrentPerBlockGasLimit()
+	baseFee, err := l2Pricing.GasPriceWei()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -62,7 +61,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    gasLimit,
+		GasLimit:    1 << 63,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused

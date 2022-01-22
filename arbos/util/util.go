@@ -12,6 +12,9 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/arbstate/util"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -178,4 +181,19 @@ func DoesTxTypeAlias(txType byte) bool {
 		return true
 	}
 	return false
+}
+
+func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
+	if util.BigLessThan(statedb.GetBalance(from), amount) {
+		return vm.ErrInsufficientBalance
+	}
+	statedb.SubBalance(from, amount)
+	statedb.AddBalance(to, amount)
+	return nil
+}
+
+func TransferEverything(from, to common.Address, statedb vm.StateDB) {
+	amount := statedb.GetBalance(from)
+	statedb.SubBalance(from, amount)
+	statedb.AddBalance(to, amount)
 }
