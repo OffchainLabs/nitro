@@ -9,7 +9,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
-	"github.com/offchainlabs/arbstate/arbos/bls"
+	"github.com/offchainlabs/arbstate/arbos/blsTable"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 
 	"github.com/offchainlabs/arbstate/arbos/addressTable"
@@ -37,7 +37,7 @@ type ArbosState struct {
 	l2PricingState    *l2pricing.L2PricingState
 	retryableState    *retryables.RetryableState
 	addressTable      *addressTable.AddressTable
-	blsTable          *bls.BLSTable
+	blsTable          *blsTable.BLSTable
 	chainOwners       *addressSet.AddressSet
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	timestamp         storage.StorageBackedUint64
@@ -65,7 +65,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
-		bls.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
+		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
@@ -118,7 +118,7 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
-	bls.InitializeBLSTable()
+	_ = blsTable.InitializeBLSTable(sto.OpenSubStorage(blsTableSubspace))
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
@@ -175,7 +175,7 @@ func (state *ArbosState) AddressTable() *addressTable.AddressTable {
 	return state.addressTable
 }
 
-func (state *ArbosState) BLSTable() *bls.BLSTable {
+func (state *ArbosState) BLSTable() *blsTable.BLSTable {
 	return state.blsTable
 }
 
