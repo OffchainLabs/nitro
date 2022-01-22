@@ -6,7 +6,7 @@ package arbosState
 
 import (
 	"github.com/offchainlabs/arbstate/arbos/blockhash"
-	"math/big"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"github.com/offchainlabs/arbstate/arbos/blsTable"
@@ -32,11 +32,8 @@ type ArbosState struct {
 	arbosVersion     uint64                      // version of the ArbOS storage format and semantics
 	upgradeVersion   storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
 	upgradeTimestamp storage.StorageBackedUint64 // when to do the planned upgrade
-	gasPool          storage.StorageBackedInt64
-	smallGasPool     storage.StorageBackedInt64
-	gasPriceWei      storage.StorageBackedBigInt
-	maxGasPriceWei   storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 	l1PricingState   *l1pricing.L1PricingState
+	l2PricingState   *l2pricing.L2PricingState
 	retryableState   *retryables.RetryableState
 	addressTable     *addressTable.AddressTable
 	blsTable         *blsTable.BLSTable
@@ -62,12 +59,9 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
-		backingStorage.OpenStorageBackedInt64(uint64(gasPoolOffset)),
-		backingStorage.OpenStorageBackedInt64(uint64(smallGasPoolOffset)),
-		backingStorage.OpenStorageBackedBigInt(uint64(gasPriceOffset)),
-		backingStorage.OpenStorageBackedBigInt(uint64(maxPriceOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
+		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
@@ -91,10 +85,6 @@ const (
 	versionOffset ArbosStateOffset = iota
 	upgradeVersionOffset
 	upgradeTimestampOffset
-	gasPoolOffset
-	smallGasPoolOffset
-	gasPriceOffset
-	maxPriceOffset
 	timestampOffset
 )
 
@@ -102,12 +92,13 @@ type ArbosStateSubspaceID []byte
 
 var (
 	l1PricingSubspace    ArbosStateSubspaceID = []byte{0}
-	retryablesSubspace   ArbosStateSubspaceID = []byte{1}
-	addressTableSubspace ArbosStateSubspaceID = []byte{2}
-	blsTableSubspace     ArbosStateSubspaceID = []byte{3}
-	chainOwnerSubspace   ArbosStateSubspaceID = []byte{4}
-	sendMerkleSubspace   ArbosStateSubspaceID = []byte{5}
-	blockhashesSubspace  ArbosStateSubspaceID = []byte{6}
+	l2PricingSubspace    ArbosStateSubspaceID = []byte{1}
+	retryablesSubspace   ArbosStateSubspaceID = []byte{2}
+	addressTableSubspace ArbosStateSubspaceID = []byte{3}
+	blsTableSubspace     ArbosStateSubspaceID = []byte{4}
+	chainOwnerSubspace   ArbosStateSubspaceID = []byte{5}
+	sendMerkleSubspace   ArbosStateSubspaceID = []byte{6}
+	blockhashesSubspace  ArbosStateSubspaceID = []byte{7}
 )
 
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
@@ -118,12 +109,9 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	_ = sto.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
-	_ = sto.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
-	_ = sto.SetUint64ByUint64(uint64(gasPriceOffset), InitialGasPriceWei)
-	_ = sto.SetUint64ByUint64(uint64(maxPriceOffset), 2*InitialGasPriceWei)
 	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
+	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
 	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
 	blsTable.InitializeBLSTable()
@@ -167,44 +155,16 @@ func (state *ArbosState) SetFormatVersion(val uint64) {
 	state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), val))
 }
 
-func (state *ArbosState) GasPool() (int64, error) {
-	return state.gasPool.Get()
-}
-
-func (state *ArbosState) SetGasPool(val int64) error {
-	return state.gasPool.Set(val)
-}
-
-func (state *ArbosState) SmallGasPool() (int64, error) {
-	return state.smallGasPool.Get()
-}
-
-func (state *ArbosState) SetSmallGasPool(val int64) error {
-	return state.smallGasPool.Set(val)
-}
-
-func (state *ArbosState) GasPriceWei() (*big.Int, error) {
-	return state.gasPriceWei.Get()
-}
-
-func (state *ArbosState) SetGasPriceWei(val *big.Int) error {
-	return state.gasPriceWei.Set(val)
-}
-
-func (state *ArbosState) MaxGasPriceWei() (*big.Int, error) { // the max gas price ArbOS can set without breaking geth
-	return state.maxGasPriceWei.Get()
-}
-
-func (state *ArbosState) SetMaxGasPriceWei(val *big.Int) {
-	state.Restrict(state.maxGasPriceWei.Set(val))
-}
-
 func (state *ArbosState) RetryableState() *retryables.RetryableState {
 	return state.retryableState
 }
 
 func (state *ArbosState) L1PricingState() *l1pricing.L1PricingState {
 	return state.l1PricingState
+}
+
+func (state *ArbosState) L2PricingState() *l2pricing.L2PricingState {
+	return state.l2PricingState
 }
 
 func (state *ArbosState) AddressTable() *addressTable.AddressTable {
@@ -243,6 +203,6 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 	if val > ts {
 		delta := val - ts
 		state.Restrict(state.timestamp.Set(val))
-		state.NotifyGasPricerThatTimeElapsed(delta)
+		state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
 	}
 }
