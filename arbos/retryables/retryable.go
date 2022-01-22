@@ -36,16 +36,16 @@ func InitializeRetryableState(sto *storage.Storage) error {
 }
 
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
-	escrow := func(ticketId common.Hash, destination common.Address) {
-		escrow := RetryableEscrowAddress(ticketId)
-		balance := statedb.GetBalance(escrow)
-		statedb.SubBalance(escrow, balance)
+	payFromEscrow := func(ticketId common.Hash, destination common.Address) {
+		escrowAddress := RetryableEscrowAddress(ticketId)
+		balance := statedb.GetBalance(escrowAddress)
+		statedb.SubBalance(escrowAddress, balance)
 		statedb.AddBalance(destination, balance)
 	}
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
-		escrow,
+		payFromEscrow,
 	}
 }
 
