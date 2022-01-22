@@ -29,20 +29,21 @@ import (
 // persisted beyond the end of the test.)
 
 type ArbosState struct {
-	arbosVersion     uint64                      // version of the ArbOS storage format and semantics
-	upgradeVersion   storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
-	upgradeTimestamp storage.StorageBackedUint64 // when to do the planned upgrade
-	l1PricingState   *l1pricing.L1PricingState
-	l2PricingState   *l2pricing.L2PricingState
-	retryableState   *retryables.RetryableState
-	addressTable     *addressTable.AddressTable
-	blsTable         *bls.BLSTable
-	chainOwners      *addressSet.AddressSet
-	sendMerkle       *merkleAccumulator.MerkleAccumulator
-	timestamp        storage.StorageBackedUint64
-	blockhashes      *blockhash.Blockhashes
-	backingStorage   *storage.Storage
-	Burner           burn.Burner
+	arbosVersion      uint64                      // version of the ArbOS storage format and semantics
+	upgradeVersion    storage.StorageBackedUint64 // version we're planning to upgrade to, or 0 if not planning to upgrade
+	upgradeTimestamp  storage.StorageBackedUint64 // when to do the planned upgrade
+	networkFeeAccount storage.StorageBackedAddress
+	l1PricingState    *l1pricing.L1PricingState
+	l2PricingState    *l2pricing.L2PricingState
+	retryableState    *retryables.RetryableState
+	addressTable      *addressTable.AddressTable
+	blsTable          *bls.BLSTable
+	chainOwners       *addressSet.AddressSet
+	sendMerkle        *merkleAccumulator.MerkleAccumulator
+	timestamp         storage.StorageBackedUint64
+	blockhashes       *blockhash.Blockhashes
+	backingStorage    *storage.Storage
+	Burner            burn.Burner
 }
 
 func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
@@ -59,6 +60,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
+		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
 		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
@@ -86,6 +88,7 @@ const (
 	upgradeVersionOffset
 	upgradeTimestampOffset
 	timestampOffset
+	networkFeeAccountOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -110,6 +113,7 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
+	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
@@ -205,4 +209,12 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 		state.Restrict(state.timestamp.Set(val))
 		state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
 	}
+}
+
+func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
+	return state.networkFeeAccount.Get()
+}
+
+func (state *ArbosState) SetNetworkFeeAccount(account common.Address) error {
+	return state.networkFeeAccount.Set(account)
 }

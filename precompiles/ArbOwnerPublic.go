@@ -21,3 +21,7 @@ func (con ArbOwnerPublic) GetAllChainOwners(c ctx, evm mech) ([]common.Address, 
 func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	return c.state.ChainOwners().IsMember(addr)
 }
+
+func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
+	return c.state.NetworkFeeAccount()
+}
