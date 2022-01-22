@@ -261,8 +261,6 @@ func ProduceBlock(
 		}
 	}
 
-	state.UpgradeArbosVersionIfNecessary(header.Time)
-
 	FinalizeBlock(header, complete, receipts, statedb)
 	header.Root = statedb.IntermediateRoot(true)
 
@@ -320,5 +318,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.
 		arbitrumHeader := ArbitrumHeaderInfo{root, size}
 		header.Extra = arbitrumHeader.Extra()
 		header.MixDigest = arbitrumHeader.MixDigest()
+
+		state.UpgradeArbosVersionIfNecessary(header.Time)
 	}
 }
