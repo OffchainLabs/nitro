@@ -226,22 +226,28 @@ func ProduceBlock(
 				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
 				err := util.ParseRedeemScheduledLog(event, txLog)
 				if err != nil {
-					log.Error("Failed to parse log", "err", err)
+					log.Error("Failed to parse RedeemScheduled log", "err", err)
+				} else {
+					retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
+					redeem, _ := retryable.MakeTx(
+						chainConfig.ChainID,
+						event.SequenceNum,
+						gasPrice,
+						event.DonatedGas,
+						event.TicketId,
+						event.GasDonor,
+					)
+					redeems = append(redeems, types.NewTx(redeem))
 				}
-				retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
-				redeem, _ := retryable.MakeTx(
-					chainConfig.ChainID,
-					event.SequenceNum,
-					gasPrice,
-					event.DonatedGas,
-					event.TicketId,
-					event.GasDonor,
-				)
-				redeems = append(redeems, types.NewTx(redeem))
 			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
-				callValue := new(big.Int).SetBytes(txLog.Data[(5 * 32):(6 * 32)])
-				expectedBalanceDelta.Sub(expectedBalanceDelta, callValue)
+				event := &precompilesgen.ArbSysL2ToL1Transaction{}
+				err := util.ParseL2ToL1TransactionLog(event, txLog)
+				if err != nil {
+					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
+				} else {
+					expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+				}
 			}
 		}
 

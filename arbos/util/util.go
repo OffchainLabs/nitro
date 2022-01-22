@@ -21,6 +21,7 @@ import (
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
+var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -57,6 +58,7 @@ func init() {
 	}
 
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
+	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
 }
 
 func AddressToHash(address common.Address) common.Hash {
