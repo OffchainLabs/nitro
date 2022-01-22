@@ -8,6 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/arbstate/util"
 	"io"
 	"math/big"
 	"strings"
@@ -178,4 +180,13 @@ func DoesTxTypeAlias(txType byte) bool {
 		return true
 	}
 	return false
+}
+
+func TransferBalance(from, to common.Address, amount *big.Int, stateDB vm.StateDB) error {
+	if util.BigLessThan(stateDB.GetBalance(from), amount) {
+		return vm.ErrInsufficientBalance
+	}
+	stateDB.SubBalance(from, amount)
+	stateDB.AddBalance(to, amount)
+	return nil
 }

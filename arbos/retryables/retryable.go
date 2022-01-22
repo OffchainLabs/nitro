@@ -7,6 +7,7 @@ package retryables
 import (
 	"bytes"
 	"errors"
+	util2 "github.com/offchainlabs/arbstate/arbos/util"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -39,8 +40,7 @@ func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableStat
 	payFromEscrow := func(ticketId common.Hash, destination common.Address) {
 		escrowAddress := RetryableEscrowAddress(ticketId)
 		balance := statedb.GetBalance(escrowAddress)
-		statedb.SubBalance(escrowAddress, balance)
-		statedb.AddBalance(destination, balance)
+		_ = util2.TransferBalance(escrowAddress, destination, balance, statedb) // ignore error because balance is known
 	}
 	return &RetryableState{
 		sto,
