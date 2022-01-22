@@ -9,6 +9,8 @@ import (
 	"errors"
 	"math/big"
 
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -36,16 +38,14 @@ func InitializeRetryableState(sto *storage.Storage) error {
 }
 
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
-	escrow := func(ticketId common.Hash, destination common.Address) {
-		escrow := RetryableEscrowAddress(ticketId)
-		balance := statedb.GetBalance(escrow)
-		statedb.SubBalance(escrow, balance)
-		statedb.AddBalance(destination, balance)
+	payFromEscrow := func(ticketId common.Hash, destination common.Address) {
+		escrowAddress := RetryableEscrowAddress(ticketId)
+		arbos_util.TransferEverything(escrowAddress, destination, statedb)
 	}
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
-		escrow,
+		payFromEscrow,
 	}
 }
 
