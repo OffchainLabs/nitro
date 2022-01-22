@@ -186,8 +186,9 @@ func DoesTxTypeAlias(txType byte) bool {
 }
 
 func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
-	if util.BigLessThan(statedb.GetBalance(from), amount) {
-		return vm.ErrInsufficientBalance
+	balance := statedb.GetBalance(from)
+	if util.BigLessThan(balance, amount) {
+		return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, from, balance, amount)
 	}
 	statedb.SubBalance(from, amount)
 	statedb.AddBalance(to, amount)
