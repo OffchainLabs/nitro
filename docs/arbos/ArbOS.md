@@ -16,6 +16,23 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`](h
 
 ## Retryables
 
-TODO: fill in their lifetime, usage, etc
+A Retryable is a transaction whose *submission* is separate from its *execution*.   A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1.  If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
 
-TODO: decide on scheme for txids and detail it here
+After a Retryable is submitted, anyone can try to *redeem* it, by calling the `redeem` method of the `ArbRetryableTx` precompile.  The party requesting the redeem provides the gas that will be used to execute the Retryable.  If execution of the Retryable succeeds, the Retryable is deleted.  If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will automatically be discarded, unless some party has paid a fee to *renew* the Retryable for another full period.  A Retryable can live indefinitely as long as it is renewed each time before it expires.
+
+### Submitting a Retryable
+
+A transaction to submit a Retryable does the following:
+
+* create a new Retryable with the caller, destination, callvalue, and calldata of the submit transaction
+* deduct funds to cover the callvalue from the caller (as usual) and place them into escrow for later use in redeeming the Retryable
+* assign a unique TicketID to the Retryable
+* cause the ArbRetryableTx precompiled contract to emit a TicketCreated event containing the TicketID
+* if the submit transaction contains gas, schedule a redeem of the new Retryable, using the supplied gas, as if the `redeem` method of the `ArbRetryableTx` precompile had been called.
+
+In many use cases, the submitter will provide gas and will intend for the immediate redeem to succeed, with later retries available only as a backup mechanism should the immediate redeem fail. (It might fail, for example, because the L2 gas price has increased unexpectedly.) In this way, an L1 contract can submit a transaction to L2 in such a way that the transaction will normally run immediately at L2 but allowing any party to retry the transaction should it fail.
+
+When a Retryable is redeemed, it will execute with the sender, destination, callvalue, and calldata of the original submission. The callvalue will have been escrowed during the initial submission of the Retryable, for this purpose.  If a Retryable with callvalue is eventually discarded, having never successfully run, the escrowed callvalue will be paid out to a "beneficiary" account that is specified in the initial submission.
+
+### Redeeming a Retryable
+
