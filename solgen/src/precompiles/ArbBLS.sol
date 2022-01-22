@@ -1,6 +1,5 @@
 pragma solidity >=0.4.21 <0.9.0;
 
-//This functionality has been disabled for now.  Calls to these methods will revert.
 interface ArbBLS {
     // Deprecated -- equivalent to registerAltBN128
     function register(uint x0, uint x1, uint y0, uint y1) external;  // DEPRECATED

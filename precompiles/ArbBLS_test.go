@@ -5,8 +5,9 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/arbstate/blsSignatures"
 	"testing"
+
+	"github.com/offchainlabs/arbstate/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -40,6 +41,6 @@ func TestArbBLS_12381(t *testing.T) {
 	success, err := blsSignatures.VerifySignature(sig, msg, recoveredPubKey2)
 	Require(t, err)
 	if !success {
-		t.Fail()
+		Fail(t, "verification did not succeed")
 	}
 }

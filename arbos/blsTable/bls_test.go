@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
-func TestBLS(t *testing.T) {
+func TestLegacyBLS(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
 	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	tab := Open(sto)
