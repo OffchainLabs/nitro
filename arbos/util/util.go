@@ -7,15 +7,20 @@ package util
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
+	"strings"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
 
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
+var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -24,6 +29,34 @@ func init() {
 	}
 	AddressAliasOffset = offset
 	InverseAddressAliasOffset = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
+
+	// Create a mechanism for parsing event logs
+	logParser := func(source string, name string) func(interface{}, *types.Log) error {
+		precompile, err := abi.JSON(strings.NewReader(source))
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+		}
+		inputs := precompile.Events[name].Inputs
+		indexed := abi.Arguments{}
+		for _, input := range inputs {
+			if input.Indexed {
+				indexed = append(indexed, input)
+			}
+		}
+
+		return func(event interface{}, log *types.Log) error {
+			unpacked, err := inputs.Unpack(log.Data)
+			if err != nil {
+				return err
+			}
+			if err := inputs.Copy(event, unpacked); err != nil {
+				return err
+			}
+			return abi.ParseTopics(event, indexed, log.Topics[1:])
+		}
+	}
+
+	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 }
 
 func AddressToHash(address common.Address) common.Hash {

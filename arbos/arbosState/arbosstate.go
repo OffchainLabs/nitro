@@ -61,7 +61,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
 		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
 		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
 		bls.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),

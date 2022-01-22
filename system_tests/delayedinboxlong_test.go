@@ -49,7 +49,7 @@ func TestDelayInboxLong(t *testing.T) {
 				lastDelayedMessage = delayedTx
 				delayedMessages++
 			} else {
-				l1tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
@@ -71,7 +71,7 @@ func TestDelayInboxLong(t *testing.T) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 100; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 

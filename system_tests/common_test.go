@@ -30,26 +30,43 @@ import (
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
+type info = *BlockchainTestInfo
+type client = arbnode.L1Interface
+
 var (
 	l1Genesys, l2Genesys *core.Genesis
 )
 
-func SendWaitTestTransactions(t *testing.T, ctx context.Context, client arbnode.L1Interface, txs []*types.Transaction) {
+func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
 	for _, tx := range txs {
 		Require(t, client.SendTransaction(ctx, tx))
 	}
-	if len(txs) > 0 {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, txs[len(txs)-1])
+	for _, tx := range txs {
+		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
 
-func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info, ctx context.Context) {
+	tx := l2info.PrepareTx(from, to, 100000, amount, nil)
+	err := l2info.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
+	Require(t, err)
+}
+
+func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
+	header, err := client.HeaderByNumber(ctx, nil)
+	Require(t, err)
+	return header.BaseFee
+}
+
+func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *eth.Ethereum, *node.Node) {
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	l1info.GenerateAccount("faucet")
+	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumTestChainConfig()
 
@@ -68,22 +85,22 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, l2pricing.PerBlockGasLimit, l1info.GetAddress("faucet"))
+	l1Genesys = core.DeveloperGenesisBlock(0, l2pricing.PerBlockGasLimit, l1info.GetAddress("Faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
 	}
 	nodeConf.Genesis = l1Genesys
-	nodeConf.Miner.Etherbase = l1info.GetAddress("faucet")
+	nodeConf.Miner.Etherbase = l1info.GetAddress("Faucet")
 
 	l1backend, err := eth.New(stack, &nodeConf)
 	Require(t, err)
 	tempKeyStore := keystore.NewPlaintextKeyStore(t.TempDir())
-	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["faucet"].PrivateKey, "passphrase")
+	faucetAccount, err := tempKeyStore.ImportECDSA(l1info.Accounts["Faucet"].PrivateKey, "passphrase")
 	Require(t, err)
 	Require(t, tempKeyStore.Unlock(faucetAccount, "passphrase"))
 	l1backend.AccountManager().AddBackend(tempKeyStore)
-	l1backend.SetEtherbase(l1info.GetAddress("faucet"))
+	l1backend.SetEtherbase(l1info.GetAddress("Faucet"))
 	Require(t, stack.Start())
 	Require(t, l1backend.StartMining(1))
 
@@ -97,15 +114,15 @@ func CreateTestL1BlockChain(t *testing.T, l1info *BlockchainTestInfo) (*Blockcha
 	return l1info, l1backend, stack
 }
 
-func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo) *arbnode.RollupAddresses {
+func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info) *arbnode.RollupAddresses {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
 	l1info.GenerateAccount("User")
 
 	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-		l1info.PrepareTx("faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
-		l1info.PrepareTx("faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
+		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	addresses, err := arbnode.DeployOnL1(ctx, l1info.Client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), time.Second)
@@ -116,7 +133,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInf
 	return addresses
 }
 
-func createL2BlockChain(t *testing.T) (*BlockchainTestInfo, *node.Node, ethdb.Database, *core.BlockChain) {
+func createL2BlockChain(t *testing.T) (info, *node.Node, ethdb.Database, *core.BlockChain) {
 	l2info := NewArbTestInfo(t)
 	l2info.GenerateAccount("Owner")
 	l2info.GenerateAccount("Faucet")
@@ -166,12 +183,12 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 }
 
 // Create and deploy L1 and arbnode for L2
-func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (info, *arbnode.Node, info, *eth.Ethereum, *node.Node) {
 	conf := arbnode.NodeConfigL1Test
 	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
 }
 
-func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *BlockchainTestInfo, *eth.Ethereum, *node.Node) {
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (info, *arbnode.Node, info, *eth.Ethereum, *node.Node) {
 	l1info, l1backend, l1stack := CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t)
 	addresses := DeployOnTestL1(t, ctx, l1info)
@@ -195,11 +212,11 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
-func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2(t *testing.T, ctx context.Context) (info, *arbnode.Node, *ethclient.Client) {
 	return CreateTestL2WithConfig(t, ctx, &arbnode.NodeConfigL2Test)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, nodeConfig *arbnode.NodeConfig) (info, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
