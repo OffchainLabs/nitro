@@ -138,7 +138,10 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		statedb.SubBalance(tx.From, gascost) // pay for the retryable's gas
+		// pay for the retryable's gas and update the pools
+		statedb.SubBalance(tx.From, gascost)
+		statedb.AddBalance(networkAddress, gascost)
+		p.state.AddToGasPools(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -169,14 +172,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
 
+		// Ensure the escrow has enough funds
+		escrow := retryables.RetryableEscrow(tx.TicketId)
+		escrowBalance := p.evm.StateDB.GetBalance(escrow)
+		if util.BigLessThan(escrowBalance, tx.Value) {
+			return true, 0, core.ErrInsufficientFundsForTransfer, nil
+		}
+
 		// The redeemer has pre-paid for this tx's gas
 		basefee := p.evm.Context.BaseFee
 		prepaid := util.BigAdd(tx.Value, util.BigMulByUint(basefee, tx.Gas))
 		p.evm.StateDB.AddBalance(tx.From, prepaid)
-		p.evm.StateDB.SubBalance(retryables.RetryableEscrow(tx.TicketId), tx.Value)
-
-		// Undo the second time this gas was removed from the pool
-		p.state.AddToGasPools(util.SaturatingCast(tx.Gas))
+		p.evm.StateDB.SubBalance(escrow, tx.Value)
 	}
 	return false, 0, nil, nil
 }
@@ -246,6 +253,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			p.evm.StateDB.SubBalance(inner.From, inner.Value)
 			p.evm.StateDB.AddBalance(escrow, inner.Value)
 		}
+		// we've already credited the network fee account and updated the gas pool
+		p.state.AddToGasPools(util.SaturatingCast(gasLeft))
+		return
 	}
 
 	if gasLeft > p.msg.Gas() {

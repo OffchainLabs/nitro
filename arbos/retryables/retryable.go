@@ -21,9 +21,9 @@ import (
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 type RetryableState struct {
-	retryables   *storage.Storage
-	timeoutQueue *storage.Queue
-	escrow       func(common.Hash, common.Address)
+	retryables    *storage.Storage
+	timeoutQueue  *storage.Queue
+	payFromEscrow func(common.Hash, common.Address)
 }
 
 var (
@@ -151,7 +151,7 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
 	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	rs.escrow(id, common.BytesToAddress(beneficiary[:]))
+	rs.payFromEscrow(id, common.BytesToAddress(beneficiary[:]))
 
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
