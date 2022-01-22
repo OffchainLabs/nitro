@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/arbstate/util"
 )
 
-var arbAddress = common.HexToAddress("0xabc")
+var arbAddress = common.HexToAddress("0xa4b05")
 var networkAddress = common.HexToAddress("0x01")
 
 // A TxProcessor is created and freed for every L2 transaction.
