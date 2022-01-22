@@ -8,6 +8,9 @@ import (
 	"math"
 	"math/big"
 
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
@@ -18,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/util"
 )
 
 var arbAddress = common.HexToAddress("0xabc")
@@ -96,11 +98,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 
 		statedb.AddBalance(tx.From, tx.DepositValue)
-		if util.BigLessThan(statedb.GetBalance(tx.From), tx.Value) {
-			return true, 0, vm.ErrInsufficientBalance, nil
+
+		err := arbos_util.TransferBalance(tx.From, escrow, tx.Value, statedb)
+		if err != nil {
+			return true, 0, err, nil
 		}
-		statedb.SubBalance(tx.From, tx.Value) // pay for the retryable's callvalue,
-		statedb.AddBalance(escrow, tx.Value)  // moving it into escrow
 
 		time := p.evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
@@ -139,8 +141,11 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		statedb.SubBalance(tx.From, gascost)
-		statedb.AddBalance(networkAddress, gascost)
+		err = arbos_util.TransferBalance(tx.From, networkAddress, gascost, statedb)
+		if err != nil {
+			// should be impossible because we just checked the tx.From balance
+			panic(err)
+		}
 		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
@@ -172,18 +177,16 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
 	case *types.ArbitrumRetryTx:
 
-		// Ensure the escrow has enough funds
+		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		escrowBalance := p.evm.StateDB.GetBalance(escrow)
-		if util.BigLessThan(escrowBalance, tx.Value) {
-			return true, 0, core.ErrInsufficientFundsForTransfer, nil
+		err = arbos_util.TransferBalance(escrow, tx.From, tx.Value, p.evm.StateDB)
+		if err != nil {
+			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
 		basefee := p.evm.Context.BaseFee
-		prepaid := util.BigAdd(tx.Value, util.BigMulByUint(basefee, tx.Gas))
-		p.evm.StateDB.AddBalance(tx.From, prepaid)
-		p.evm.StateDB.SubBalance(escrow, tx.Value)
+		p.evm.StateDB.AddBalance(tx.From, util.BigMulByUint(basefee, tx.Gas))
 	}
 	return false, 0, nil, nil
 }
@@ -242,16 +245,23 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
-		p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
-		p.evm.StateDB.AddBalance(inner.RefundTo, refund)
+		err := arbos_util.TransferBalance(inner.From, inner.RefundTo, refund, p.evm.StateDB)
+		if err != nil {
+			// should be impossible because geth has already credited the gas refund to inner.From
+			panic(err)
+		}
 		if success {
 			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			p.evm.StateDB.SubBalance(inner.From, inner.Value)
-			p.evm.StateDB.AddBalance(escrow, inner.Value)
+			err = arbos_util.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
+			if err != nil {
+				// should be impossible because geth credited the inner.Value to inner.From before the transaction
+				// and the transaction reverted
+				panic(err)
+			}
 		}
 		// we've already credited the network fee account and updated the gas pool
 		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(gasLeft))
