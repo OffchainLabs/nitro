@@ -19,8 +19,8 @@ type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
-	SendMerkleUpdate         func(ctx, mech, huge, [32]byte, huge) error
-	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) (uint64, error)
+	SendMerkleUpdate         func(ctx, mech, huge, bytes32, huge) error
+	SendMerkleUpdateGasCost  func(huge, bytes32, huge) (uint64, error)
 }
 
 var InvalidBlockNum = errors.New("Invalid block number")
@@ -29,9 +29,9 @@ func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return evm.Context.BlockNumber, nil
 }
 
-func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) ([32]byte, error) {
+func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
 	if !arbBlockNumber.IsUint64() {
-		return [32]byte{}, InvalidBlockNum
+		return bytes32{}, InvalidBlockNum
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
@@ -152,19 +152,19 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	return sendHash.Big(), err
 }
 
-func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, [32]byte, [][32]byte, error) {
+func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32, error) {
 	if c.caller != (addr{}) {
-		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
+		return nil, bytes32{}, nil, errors.New("method can only be called by address zero")
 	}
 
 	// OK to not charge gas, because method is only callable by address zero
 
 	size, rootHash, rawPartials, _ := c.state.SendMerkleAccumulator().StateForExport()
-	partials := make([][32]byte, len(rawPartials))
+	partials := make([]bytes32, len(rawPartials))
 	for i, par := range rawPartials {
-		partials[i] = [32]byte(par)
+		partials[i] = bytes32(par)
 	}
-	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
+	return big.NewInt(int64(size)), bytes32(rootHash), partials, nil
 }
 
 func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (huge, error) {
