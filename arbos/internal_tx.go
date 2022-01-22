@@ -5,12 +5,12 @@
 package arbos
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 )
 
@@ -21,9 +21,8 @@ const (
 )
 
 func InternalTxUpdateL1BlockNumber(l1BlockNumber uint64) []byte {
-	data := make([]byte, 9)
-	data[0] = arbInternalTxUpdateL1BlockNumber
-	binary.BigEndian.PutUint64(data[1:], l1BlockNumber)
+	data := []byte{arbInternalTxUpdateL1BlockNumber}
+	data = rlp.AppendUint64(data, l1BlockNumber)
 	return data
 }
 
@@ -34,14 +33,16 @@ func ApplyInternalTxUpdate(data []byte, state *arbosState.ArbosState, blockConte
 	tipe := data[0]
 	data = data[1:]
 	if tipe == arbInternalTxUpdateL1BlockNumber {
-		if len(data) != 8 {
-			return fmt.Errorf("bad data length of UpdateL1BlockNumber: %v", len(data))
+		var l1BlockNumber uint64
+		err := rlp.DecodeBytes(data, &l1BlockNumber)
+		if err != nil {
+			return err
 		}
 		var prevHash common.Hash
 		if blockContext.BlockNumber.Sign() > 0 {
 			prevHash = blockContext.GetHash(blockContext.BlockNumber.Uint64() - 1)
 		}
-		return state.Blockhashes().RecordNewL1Block(binary.BigEndian.Uint64(data), prevHash)
+		return state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash)
 	} else {
 		return fmt.Errorf("unknown ArbitrumInternalTx type %v", tipe)
 	}
