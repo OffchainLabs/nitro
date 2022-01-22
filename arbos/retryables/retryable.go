@@ -6,9 +6,12 @@ package retryables
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -18,8 +21,9 @@ import (
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 type RetryableState struct {
-	retryables   *storage.Storage
-	timeoutQueue *storage.Queue
+	retryables    *storage.Storage
+	timeoutQueue  *storage.Queue
+	payFromEscrow func(common.Hash, common.Address)
 }
 
 var (
@@ -31,10 +35,17 @@ func InitializeRetryableState(sto *storage.Storage) error {
 	return storage.InitializeQueue(sto.OpenSubStorage(timeoutQueueKey))
 }
 
-func OpenRetryableState(sto *storage.Storage) *RetryableState {
+func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
+	escrow := func(ticketId common.Hash, destination common.Address) {
+		escrow := RetryableEscrowAddress(ticketId)
+		balance := statedb.GetBalance(escrow)
+		statedb.SubBalance(escrow, balance)
+		statedb.AddBalance(destination, balance)
+	}
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
+		escrow,
 	}
 }
 
@@ -137,6 +148,11 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 	if timeout == (common.Hash{}) || err != nil {
 		return false, err
 	}
+
+	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
+	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
+	rs.payFromEscrow(id, common.BytesToAddress(beneficiary[:]))
+
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
 	_ = retStorage.SetByUint64(fromOffset, common.Hash{})
@@ -153,16 +169,6 @@ func (retryable *Retryable) NumTries() (uint64, error) {
 
 func (retryable *Retryable) IncrementNumTries() (uint64, error) {
 	return retryable.numTries.Increment()
-}
-
-func TxIdForRedeemAttempt(ticketId common.Hash, trySequenceNum uint64) common.Hash {
-	// Since tickets & sequence numbers are assigned sequentially, each is expressible as a uint64.
-	// Relying on this, we can set the upper and lower 8 bytes for the ticket & sequence number, respectively.
-
-	bytes := make([]byte, 32)
-	binary.BigEndian.PutUint64(bytes[0:], ticketId.Big().Uint64())
-	binary.BigEndian.PutUint64(bytes[24:], trySequenceNum)
-	return common.BytesToHash(bytes)
 }
 
 func (retryable *Retryable) Beneficiary() (common.Address, error) {
@@ -283,4 +289,39 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 		}
 	}
 	return nil
+}
+
+func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+	from, err := retryable.From()
+	if err != nil {
+		return nil, err
+	}
+	to, err := retryable.To()
+	if err != nil {
+		return nil, err
+	}
+	callvalue, err := retryable.Callvalue()
+	if err != nil {
+		return nil, err
+	}
+	calldata, err := retryable.Calldata()
+	if err != nil {
+		return nil, err
+	}
+	return &types.ArbitrumRetryTx{
+		ChainId:  chainId,
+		Nonce:    nonce,
+		From:     from,
+		GasPrice: gasPrice,
+		Gas:      gas,
+		To:       to,
+		Value:    callvalue,
+		Data:     calldata,
+		TicketId: ticketId,
+		RefundTo: refundTo,
+	}, nil
+}
+
+func RetryableEscrowAddress(ticketId common.Hash) common.Address {
+	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
 }

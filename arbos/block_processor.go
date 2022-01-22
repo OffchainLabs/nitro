@@ -12,6 +12,8 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -28,6 +30,8 @@ var ArbRetryableTxAddress common.Address
 var ArbSysAddress common.Address
 var RedeemScheduledEventID common.Hash
 var L2ToL1TransactionEventID common.Hash
+var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
+var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
 	l2Pricing := state.L2PricingState()
@@ -129,10 +133,7 @@ func ProduceBlock(
 			}
 			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
-				// retryable was already deleted, so just refund the gas
-				retryGas := new(big.Int).SetUint64(retry.Gas)
-				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
-				statedb.AddBalance(retry.RefundTo, gasGiven)
+				// retryable was already deleted
 				continue
 			}
 		} else {
@@ -223,31 +224,21 @@ func ProduceBlock(
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
-
-				ticketId := txLog.Topics[1]
-				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
-
-				from, _ := retryable.From()
-				to, _ := retryable.To()
-				value, _ := retryable.Callvalue()
-				data, _ := retryable.Calldata()
-
-				reedem := types.NewTx(&types.ArbitrumRetryTx{
-					ArbitrumContractTx: types.ArbitrumContractTx{
-						ChainId:   chainConfig.ChainID,
-						RequestId: txLog.Topics[2],
-						From:      from,
-						GasPrice:  gasPrice,
-						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
-						To:        to,
-						Value:     value,
-						Data:      data,
-					},
-					TicketId: ticketId,
-					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
-				})
-
-				redeems = append(redeems, reedem)
+				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+				err := util.ParseRedeemScheduledLog(event, txLog)
+				if err != nil {
+					log.Error("Failed to parse log", "err", err)
+				}
+				retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
+				redeem, _ := retryable.MakeTx(
+					chainConfig.ChainID,
+					event.SequenceNum,
+					gasPrice,
+					event.DonatedGas,
+					event.TicketId,
+					event.GasDonor,
+				)
+				redeems = append(redeems, types.NewTx(redeem))
 			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
 				callValue := new(big.Int).SetBytes(txLog.Data[(5 * 32):(6 * 32)])

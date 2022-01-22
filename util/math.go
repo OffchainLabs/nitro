@@ -20,6 +20,26 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
+// check huge equality
+func BigEquals(first, second *big.Int) bool {
+	return first.Cmp(second) == 0
+}
+
+// check if a huge is less than another
+func BigLessThan(first, second *big.Int) bool {
+	return first.Cmp(second) < 0
+}
+
+// add a huge to another
+func BigAdd(augend *big.Int, addend *big.Int) *big.Int {
+	return new(big.Int).Add(augend, addend)
+}
+
+// subtract from a huge another
+func BigSub(minuend *big.Int, subtrahend *big.Int) *big.Int {
+	return new(big.Int).Sub(minuend, subtrahend)
+}
+
 // multiply a huge by another
 func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 	return new(big.Int).Mul(multiplicand, multiplier)

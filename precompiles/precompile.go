@@ -403,9 +403,29 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
 	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
-	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	eventCtx := func(gasLimit uint64, err error) *context {
+		if err != nil {
+			glog.Error("call to event's GasCost field failed", "err", err)
+		}
+		return &context{
+			gasSupplied: gasLimit,
+			gasLeft:     gasLimit,
+		}
+	}
+
+	ArbRetryableImpl := &ArbRetryableTx{Address: hex("6e")}
+	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
+	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
+		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}))
+		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor)
+	}
+	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
+	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {
+		context := eventCtx(ArbRetryableImpl.TicketCreatedGasCost(hash{}))
+		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
+	}
 
 	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
 	arbos.ArbSysAddress = ArbSys.address
