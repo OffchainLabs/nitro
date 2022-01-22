@@ -41,17 +41,24 @@ func TestValidatorSimple(t *testing.T) {
 	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
-	time.Sleep(time.Millisecond * 100)
+	time.Sleep(time.Millisecond * 500)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 
+	// this is needed to stop the 1000000 balance error in CI (BUG)
+	time.Sleep(time.Millisecond * 500)
+
 	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
+
+	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)
+	time.Sleep(time.Millisecond * 100)
+
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(2e12)) != 0 {
