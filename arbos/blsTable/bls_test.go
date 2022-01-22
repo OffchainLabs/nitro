@@ -33,8 +33,8 @@ func TestBLS(t *testing.T) {
 	}
 
 	for index, test := range cases {
-		Require(t, tab.Register(address, test[0], test[1], test[2], test[3]))
-		x0, x1, y0, y1, err := tab.GetPublicKey(address)
+		Require(t, tab.RegisterLegacyPublicKey(address, test[0], test[1], test[2], test[3]))
+		x0, x1, y0, y1, err := tab.GetLegacyPublicKey(address)
 		Require(t, err, fmt.Sprintf(
 			"failed to set public key %d %s %s %s %s",
 			index, x0.String(), x1.String(), y0.String(), y1.String()),

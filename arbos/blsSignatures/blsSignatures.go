@@ -37,26 +37,26 @@ type PrivateKey *big.Int
 
 type Signature *bls12381.PointG1
 
-func GenerateKeys() (*PublicKey, PrivateKey, error) {
+func GenerateKeys() (PublicKey, PrivateKey, error) {
 	seed, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
 	return insecureDeterministicGenerateKeys(seed)
 }
 
 // Don't call this directly, except in testing.
-func insecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
+func insecureDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
 	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
 	publicKey, err := NewPublicKey(pubKey, proof)
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
 	return publicKey, privateKey, nil
 }
@@ -72,20 +72,27 @@ func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signatur
 	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
 }
 
-func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (*PublicKey, error) {
-	unverifiedPublicKey := &PublicKey{pubKey, validityProof}
+func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (PublicKey, error) {
+	unverifiedPublicKey := PublicKey{pubKey, validityProof}
 	verified, err := verifySignature2(validityProof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
 	if err != nil {
-		return nil, err
+		return PublicKey{}, err
 	}
 	if !verified {
-		return nil, errors.New("public key validation failed")
+		return PublicKey{}, errors.New("public key validation failed")
 	}
 	return unverifiedPublicKey, nil
 }
 
-func NewTrustedPublicKey(pubKey *bls12381.PointG2) *PublicKey {
-	return &PublicKey{pubKey, nil}
+func NewTrustedPublicKey(pubKey *bls12381.PointG2) PublicKey {
+	return PublicKey{pubKey, nil}
+}
+
+func (pubKey PublicKey) ToTrusted() PublicKey {
+	if pubKey.validityProof == nil {
+		return pubKey
+	}
+	return NewTrustedPublicKey(pubKey.key)
 }
 
 func SignMessage(priv PrivateKey, message []byte) (Signature, error) {
@@ -102,11 +109,11 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	return Signature(result), nil
 }
 
-func VerifySignature(sig Signature, message []byte, publicKey *PublicKey) (bool, error) {
+func VerifySignature(sig Signature, message []byte, publicKey PublicKey) (bool, error) {
 	return verifySignature2(sig, message, publicKey, false)
 }
 
-func verifySignature2(sig Signature, message []byte, publicKey *PublicKey, keyValidationMode bool) (bool, error) {
+func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyValidationMode bool) (bool, error) {
 	pointOnCurve, err := hashToG1Curve(message, keyValidationMode)
 	if err != nil {
 		return false, err
@@ -121,7 +128,7 @@ func verifySignature2(sig Signature, message []byte, publicKey *PublicKey, keyVa
 	return leftSide.Equal(rightSide), nil
 }
 
-func AggregatePublicKeys(pubKeys []*PublicKey) *PublicKey {
+func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
 	ret := blsState.g2.Zero()
 	for _, pk := range pubKeys {
 		blsState.g2.Add(ret, ret, pk.key)
@@ -137,11 +144,11 @@ func AggregateSignatures(sigs []Signature) Signature {
 	return ret
 }
 
-func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys []*PublicKey) (bool, error) {
+func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys []PublicKey) (bool, error) {
 	return VerifySignature(sig, message, AggregatePublicKeys(pubKeys))
 }
 
-func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []*PublicKey) (bool, error) {
+func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []PublicKey) (bool, error) {
 	if len(messages) != len(pubKeys) {
 		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
 	}
@@ -192,30 +199,30 @@ func PublicKeyToBytes(pub PublicKey) []byte {
 	}
 }
 
-func PublicKeyFromBytes(in []byte, trustedSource bool) (*PublicKey, error) {
+func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 	proofLen := int(in[0])
 	if proofLen == 0 {
 		if !trustedSource {
-			return nil, errors.New("tried to deserialize unvalidated public key from untrusted source")
+			return PublicKey{}, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
 		key, err := blsState.g2.FromBytes(in[1:])
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		return NewTrustedPublicKey(key), nil
 	} else {
 		if len(in) < 1+proofLen {
-			return nil, errors.New("invalid serialized public key")
+			return PublicKey{}, errors.New("invalid serialized public key")
 		}
 		proofBytes := in[1 : 1+proofLen]
 		validityProof, err := blsState.g1.FromBytes(proofBytes)
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		keyBytes := in[1+proofLen:]
 		key, err := blsState.g2.FromBytes(keyBytes)
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		return NewPublicKey(key, validityProof)
 	}
