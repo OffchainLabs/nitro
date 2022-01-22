@@ -5,7 +5,7 @@
 package precompiles
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/blsSignatures"
+	"github.com/offchainlabs/arbstate/blsSignatures"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"

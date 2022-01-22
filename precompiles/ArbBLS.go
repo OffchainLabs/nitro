@@ -4,7 +4,9 @@
 
 package precompiles
 
-import "github.com/offchainlabs/arbstate/arbos/blsSignatures"
+import (
+	"github.com/offchainlabs/arbstate/blsSignatures"
+)
 
 type ArbBLS struct {
 	Address addr

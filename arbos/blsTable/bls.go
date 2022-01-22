@@ -7,7 +7,7 @@ package blsTable
 import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
-	"github.com/offchainlabs/arbstate/arbos/blsSignatures"
+	"github.com/offchainlabs/arbstate/blsSignatures"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
