@@ -42,11 +42,11 @@ func GenerateKeys() (*PublicKey, PrivateKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return insecureDeterministicGenerateKeys(seed)
+	return internalDeterministicGenerateKeys(seed)
 }
 
 // Don't call this directly, except in testing.
-func insecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
+func internalDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
 	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
