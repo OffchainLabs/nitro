@@ -5,7 +5,6 @@
 package blsTable
 
 import (
-	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -65,12 +64,6 @@ func (tab *BLSTable) GetLegacyPublicKey(addr common.Address) (*big.Int, *big.Int
 	x1, _ := tab.legacyTableByAddress.Get(util.HashPlusInt(key, 1))
 	y0, _ := tab.legacyTableByAddress.Get(util.HashPlusInt(key, 2))
 	y1, err := tab.legacyTableByAddress.Get(util.HashPlusInt(key, 3))
-
-	zero := common.Hash{}
-
-	if x0 == zero && x1 == zero && y0 == zero && y1 == zero {
-		return nil, nil, nil, nil, errors.New("Account not registered")
-	}
 
 	return x0.Big(), x1.Big(), y0.Big(), y1.Big(), err
 }
