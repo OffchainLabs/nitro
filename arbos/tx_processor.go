@@ -234,7 +234,7 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSuccess bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	gasPrice := p.evm.Context.BaseFee
@@ -242,9 +242,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
-		p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
-		p.evm.StateDB.AddBalance(inner.RefundTo, refund)
-		if success {
+		if transitionSuccess {
+			p.evm.StateDB.SubBalance(inner.From, refund) // geth has already credited this user back
+			p.evm.StateDB.SubBalance(networkAddress, refund)
+			p.evm.StateDB.AddBalance(inner.RefundTo, refund)
+		}
+		if evmSuccess {
 			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
