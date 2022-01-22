@@ -26,7 +26,6 @@ import (
 )
 
 var arbAddress = common.HexToAddress("0xa4b05")
-var networkAddress = common.HexToAddress("0x01")
 
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
@@ -152,7 +151,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		err = arbos_util.TransferBalance(tx.From, networkAddress, gascost, statedb)
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		err = arbos_util.TransferBalance(tx.From, networkFeeAccount, gascost, statedb)
 		if err != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -294,7 +294,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	p.evm.StateDB.AddBalance(networkAddress, computeCost)
+	networkFeeAccount, _ := p.state.NetworkFeeAccount()
+	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
 	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
