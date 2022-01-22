@@ -92,7 +92,15 @@ func ProduceBlock(
 	}
 
 	state := arbosState.OpenSystemArbosState(statedb)
-	_ = state.Blockhashes().RecordNewL1Block(l1Info.l1BlockNumber.Uint64(), lastBlockHeader.Hash())
+	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
+		// Make an ArbitrumInternalTx the first tx to update the L1 block number
+		tx := &types.ArbitrumInternalTx{
+			ChainId: chainConfig.ChainID,
+			Data:    InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber.Uint64()),
+		}
+		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
+	}
 	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)

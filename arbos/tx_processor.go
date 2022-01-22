@@ -5,6 +5,7 @@
 package arbos
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 
@@ -92,6 +93,15 @@ func (p *TxProcessor) StartTxHook() bool {
 			return false
 		}
 		p.stateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		return true
+	case *types.ArbitrumInternalTx:
+		if p.msg.From() != arbAddress {
+			return false
+		}
+		err := ApplyInternalTxUpdate(tx.Data, p.state, p.blockContext)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
+		}
 		return true
 	case *types.ArbitrumSubmitRetryableTx:
 		p.stateDB.AddBalance(tx.From, tx.DepositValue)
