@@ -5,9 +5,11 @@
 package arbos
 
 import (
-	util2 "github.com/offchainlabs/arbstate/arbos/util"
 	"math"
 	"math/big"
+
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -19,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/util"
 )
 
 var arbAddress = common.HexToAddress("0xabc")
@@ -98,7 +99,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		statedb.AddBalance(tx.From, tx.DepositValue)
 
-		err := util2.TransferBalance(tx.From, escrow, tx.Value, statedb)
+		err := arbos_util.TransferBalance(tx.From, escrow, tx.Value, statedb)
 		if err != nil {
 			return true, 0, err, nil
 		}
@@ -140,7 +141,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		err = util2.TransferBalance(tx.From, networkAddress, gascost, statedb)
+		err = arbos_util.TransferBalance(tx.From, networkAddress, gascost, statedb)
 		if err != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -178,7 +179,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util2.TransferBalance(escrow, tx.From, tx.Value, p.evm.StateDB)
+		err = arbos_util.TransferBalance(escrow, tx.From, tx.Value, p.evm.StateDB)
 		if err != nil {
 			return true, 0, err, nil
 		}
@@ -244,7 +245,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
-		err := util2.TransferBalance(inner.From, inner.RefundTo, refund, p.evm.StateDB)
+		err := arbos_util.TransferBalance(inner.From, inner.RefundTo, refund, p.evm.StateDB)
 		if err != nil {
 			// should be impossible because geth has already credited the gas refund to inner.From
 			panic(err)
@@ -255,7 +256,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			err = util2.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
+			err = arbos_util.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
