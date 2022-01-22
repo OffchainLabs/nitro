@@ -124,10 +124,7 @@ func ProduceBlock(
 			}
 			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
-				// retryable was already deleted, so just refund the gas
-				retryGas := new(big.Int).SetUint64(retry.Gas)
-				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
-				statedb.AddBalance(retry.RefundTo, gasGiven)
+				// retryable was already deleted
 				continue
 			}
 		} else {
