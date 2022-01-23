@@ -63,7 +63,7 @@ func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, er
 
 // This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
 // that come from untrusted sources. We use the private key to sign the public key, but in the
-// signature algorithm we use a tweaked version of the hash function so that the result cannot be
+// signature algorithm we use a tweaked version of the hash-to-curve function so that the result cannot be
 // re-used as an ordinary signature.
 //
 // For a proof that this is sufficient, see Theorem 1 in
@@ -173,17 +173,16 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 // the Simplified Shallue-van de Woestijne-Ulas Method, described in Section 6.6.2 of
 // https://tools.ietf.org/html/draft-irtf-cfrg-hash-to-curve-06
 //
-// If keyValidationMode is true, this uses a tweaked version of the hash function,
-// so that the result will not collide with a hash generated in an ordinary signature.
-// The tweaked hash function is the same as keccak256, except that the two halves
-// of the output are interchanged.
+// If keyValidationMode is true, this uses a tweaked version of the padding,
+// so that the result will not collide with a result generated in an ordinary signature.
 func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
-	var empty [16]byte
+	var padding [16]byte
 	h := crypto.Keccak256(message)
 	if keyValidationMode {
-		h = append(h[16:], h[:16]...) // tweak the hash, so result won't collide with ordinary hash
+		// modify padding, for domain separation
+		padding[0] = 1
 	}
-	return blsState.g1.MapToCurve(append(empty[:], h...))
+	return blsState.g1.MapToCurve(append(padding[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {

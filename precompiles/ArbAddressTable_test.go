@@ -159,8 +159,8 @@ func newMockEVMForTesting() *vm.EVM {
 		GasLimit:    ^uint64(0),
 	}
 
-	// open now to induce an upgrade
-	arbosState.OpenSystemArbosState(statedb, true)
+	// open now to induce initialization
+	_, _ = arbosState.OpenOrInitializeSystemArbosState(statedb, false)
 
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}

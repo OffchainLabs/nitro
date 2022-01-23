@@ -16,12 +16,12 @@ import (
 )
 
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosStateForTesting(t)
+	storage := NewArbosMemoryBackedArbOSState()
 	_ = storage
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(true))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	value, err := sto.Get(common.Hash{})
 	Require(t, err)
 	if value != (common.Hash{}) {
@@ -46,7 +46,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageBackedInt64(t *testing.T) {
-	state := OpenArbosStateForTesting(t)
+	state := NewArbosMemoryBackedArbOSState()
 	storage := state.backingStorage
 	offset := uint64(7895463)
 
@@ -65,7 +65,7 @@ func TestStorageBackedInt64(t *testing.T) {
 }
 
 func TestStorageSlots(t *testing.T) {
-	state := OpenArbosStateForTesting(t)
+	state := NewArbosMemoryBackedArbOSState()
 	sto := state.BackingStorage().OpenSubStorage([]byte{})
 
 	println("nil address", colors.Blue, storage.NilAddressRepresentation.String(), colors.Clear)

@@ -15,7 +15,7 @@ import (
 )
 
 func TestBlockhash(t *testing.T) {
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(true))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	InitializeBlockhashes(sto)
 
 	bh := OpenBlockhashes(sto)
