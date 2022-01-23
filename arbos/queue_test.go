@@ -14,7 +14,7 @@ import (
 )
 
 func TestQueue(t *testing.T) {
-	state := arbosState.OpenArbosMemoryBackedArbOSState()
+	state := arbosState.NewArbosMemoryBackedArbOSState()
 	sto := state.BackingStorage().OpenSubStorage([]byte{})
 	Require(t, storage.InitializeQueue(sto))
 	q := storage.OpenQueue(sto)

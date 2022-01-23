@@ -5,6 +5,7 @@
 package arbosState
 
 import (
+	"errors"
 	"log"
 
 	"github.com/offchainlabs/arbstate/arbos/blockhash"
@@ -50,11 +51,17 @@ type ArbosState struct {
 	Burner            burn.Burner
 }
 
+var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
+var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
+
 func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
 	backingStorage := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
 		return nil, err
+	}
+	if arbosVersion == 0 {
+		return nil, ErrUninitializedArbOS
 	}
 	return &ArbosState{
 		arbosVersion,
@@ -75,21 +82,45 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB, write bool) *ArbosState {
-	state, err := OpenArbosState(stateDB, burn.NewSystemBurner(write))
-	state.Restrict(err)
-	return state
+func OpenSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(write)
+	state, err := OpenArbosState(stateDB, burner)
+	burner.Restrict(err)
+	return state, err
 }
 
-// Create a memory-backed ArbOS state
-func OpenArbosMemoryBackedArbOSState() *ArbosState {
+func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(write)
+	state, err := OpenArbosState(stateDB, burner)
+	if errors.Is(err, ErrUninitializedArbOS) {
+		state, err = InitializeArbosState(stateDB, burner)
+	}
+	burner.Restrict(err)
+	return state, err
+}
+
+func OpenOrGetMemoryBackedArbOSState(statedb *state.StateDB) (*ArbosState, bool) {
+	burner := burn.NewSystemBurner(false)
+	state, err := OpenArbosState(statedb, burner)
+	if errors.Is(err, ErrUninitializedArbOS) {
+		return NewArbosMemoryBackedArbOSState(), true
+	}
+	if err != nil {
+		panic(err)
+	}
+	return state, false
+}
+
+// Create and initialize a memory-backed ArbOS state
+func NewArbosMemoryBackedArbOSState() *ArbosState {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		log.Fatal("failed to init empty statedb", err)
 	}
-	state, err := OpenArbosState(statedb, burn.NewSystemBurner(true))
+	burner := burn.NewSystemBurner(true)
+	state, err := InitializeArbosState(statedb, burner)
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
 	}
@@ -122,8 +153,17 @@ var (
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
-func (state *ArbosState) InitializeStorage() {
-	sto := state.backingStorage
+
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
+	sto := storage.NewGeth(stateDB, burner)
+	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		return nil, err
+	}
+	if arbosVersion != 0 {
+		return nil, ErrAlreadyInitialized
+	}
+
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
@@ -144,7 +184,8 @@ func (state *ArbosState) InitializeStorage() {
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
-	state.arbosVersion = 1
+
+	return OpenArbosState(stateDB, burner)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {

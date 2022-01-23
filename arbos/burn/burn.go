@@ -37,6 +37,7 @@ func (burner *SystemBurner) Burned() uint64 {
 func (burner *SystemBurner) Restrict(err error) {
 	if err != nil {
 		glog.Error("Restrict() received an error", "err", err)
+		panic(err)
 	}
 }
 

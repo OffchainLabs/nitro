@@ -82,12 +82,9 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	state := arbosState.OpenSystemArbosState(statedb, false)
-	bootArbOS := state.FormatVersion() == 0
-	if bootArbOS {
-		state = arbosState.OpenArbosMemoryBackedArbOSState()
-		state.InitializeStorage() // upgrade this memory-backed version
-	}
+	// ArbOS may be uninitialized for the first tx. If so, we use a memory-backed, temporary version
+	// until an initialization occurs during StartTxHook in the first tx.
+	state, arbOSIsUninitialized := arbosState.OpenOrGetMemoryBackedArbOSState(statedb)
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
@@ -117,11 +114,6 @@ func ProduceBlock(
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
-	if bootArbOS {
-		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
-		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-	}
-
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
 	gasPrice := header.BaseFee
@@ -135,7 +127,6 @@ func ProduceBlock(
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
-		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
 		if len(redeems) > 0 {
@@ -146,7 +137,7 @@ func ProduceBlock(
 			if !ok {
 				panic("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
+			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
@@ -214,11 +205,13 @@ func ProduceBlock(
 			continue
 		}
 
-		if bootArbOS {
-			// The first tx included the initialization, so we can switch
-			// to persistent state.
-			state = arbosState.OpenSystemArbosState(statedb, false)
-			bootArbOS = false
+		if arbOSIsUninitialized {
+			// ArbOS will now have been initialized, so switch to using the real, initialized version
+			state, err = arbosState.OpenSystemArbosState(statedb, false)
+			if err != nil {
+				panic(err)
+			}
+			arbOSIsUninitialized = false
 		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
@@ -347,7 +340,10 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenSystemArbosState(statedb, true)
+		state, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			panic(err)
+		}
 		state.SetLastTimestampSeen(header.Time)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
