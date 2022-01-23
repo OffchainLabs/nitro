@@ -97,7 +97,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		err := ApplyInternalTxUpdate(tx.Data, p.state, p.evm.Context)
+		err := ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
 		}

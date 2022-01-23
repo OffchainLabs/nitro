@@ -5,6 +5,8 @@
 package arbosState
 
 import (
+	"log"
+
 	"github.com/offchainlabs/arbstate/arbos/blockhash"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 
@@ -20,6 +22,8 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
@@ -52,12 +56,12 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	if err != nil {
 		return nil, err
 	}
-	if arbosVersion == 0 {
+	/*if arbosVersion == 0 {
 		// We found a zero at storage location 0, so storage hasn't been initialized yet.
 		// Since this is a one-time action, we won't charge anyone
 		systemStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(true))
 		initializeStorage(systemStorage)
-	}
+	}*/
 	return &ArbosState{
 		arbosVersion,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
@@ -80,6 +84,21 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 func OpenSystemArbosState(stateDB vm.StateDB, write bool) *ArbosState {
 	state, err := OpenArbosState(stateDB, burn.NewSystemBurner(write))
 	state.Restrict(err)
+	return state
+}
+
+// Create a memory-backed ArbOS state
+func OpenArbosMemoryBackedArbOSState() *ArbosState {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	statedb, err := state.New(common.Hash{}, db, nil)
+	if err != nil {
+		log.Fatal("failed to init empty statedb", err)
+	}
+	state, err := OpenArbosState(statedb, burn.NewSystemBurner(true))
+	if err != nil {
+		log.Fatal("failed to open the ArbOS state", err)
+	}
 	return state
 }
 
@@ -109,8 +128,8 @@ var (
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
-func initializeStorage(backingStorage *storage.Storage) {
-	sto := backingStorage
+func (state *ArbosState) InitializeStorage() {
+	sto := state.backingStorage
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
@@ -131,6 +150,7 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
+	state.arbosVersion = 1
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {

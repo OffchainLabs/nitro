@@ -82,6 +82,13 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
+	state := arbosState.OpenSystemArbosState(statedb, false)
+	bootArbOS := state.FormatVersion() == 0
+	if bootArbOS {
+		state = arbosState.OpenArbosMemoryBackedArbOSState()
+		state.InitializeStorage() // upgrade this memory-backed version
+	}
+
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
 	}
@@ -100,20 +107,20 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenSystemArbosState(statedb, false)
 	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		tx := &types.ArbitrumInternalTx{
-			ChainId:     chainConfig.ChainID,
-			Data:        InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber.Uint64()),
-			BlockNumber: header.Number.Uint64(),
-			TxIndex:     0,
-		}
+		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
+	}
+
+	if bootArbOS {
+		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
+		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
+		state = arbosState.OpenSystemArbosState(statedb, false) // switch back to a real statedb
 	}
 
 	complete := types.Transactions{}
