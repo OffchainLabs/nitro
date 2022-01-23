@@ -20,6 +20,7 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
+// clip an int to within (-infinity, bound]
 func UpperBoundInt(value, bound int64) int64 {
 	if value > bound {
 		return bound
@@ -27,6 +28,7 @@ func UpperBoundInt(value, bound int64) int64 {
 	return value
 }
 
+// clip an int to within [bound, infinity)
 func LowerBoundInt(value, bound int64) int64 {
 	if value < bound {
 		return bound

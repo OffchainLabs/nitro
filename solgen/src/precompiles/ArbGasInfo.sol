@@ -35,4 +35,7 @@ interface ArbGasInfo {
 
     // get the minimum gas price needed for a transaction to succeed
     function getMinimumGasPrice() external view returns(uint);
+
+    // get the degree to which long-term resource consumption affects price escalation
+    function getPoolMemoryFactor() external view returns(uint);
 }

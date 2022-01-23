@@ -101,7 +101,7 @@ func ProduceBlock(
 	}
 
 	state := arbosState.OpenSystemArbosState(statedb, false)
-	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()

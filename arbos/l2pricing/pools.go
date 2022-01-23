@@ -94,7 +94,7 @@ func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) 
 	ps.Restrict(ps.SetGasPriceWei(price))
 }
 
-func (ps *L2PricingState) CurrentPerBlockGasLimit() (uint64, error) {
+func (ps *L2PricingState) PerBlockGasLimit() (uint64, error) {
 	pool, _ := ps.GasPool()
 	maxLimit, err := ps.MaxPerBlockGasLimit()
 	if pool < 0 || err != nil {

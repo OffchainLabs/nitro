@@ -102,14 +102,19 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return util.UintToHuge(speedLimit), big.NewInt(gasPoolMax), util.UintToHuge(maxTxGasLimit), err
 }
 
+func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
+	return c.state.L2PricingState().MinGasPriceWei()
+}
+
+func (con ArbGasInfo) GetPoolMemoryFactor(c ctx, evm mech) (huge, error) {
+	factor, err := c.state.L2PricingState().PerBlockGasLimit()
+	return util.UintToHuge(factor), err
+}
+
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return c.state.L1PricingState().L1GasPriceEstimateWei()
 }
 
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
-}
-
-func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
-	return c.state.L2PricingState().MinGasPriceWei()
 }
