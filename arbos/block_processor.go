@@ -83,12 +83,12 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	state, err := arbosState.OpenSystemArbosState(statedb, false, false)
-	arbOSIsUnbooted := errors.Is(err, arbosState.ErrUninitializedArbOS)
-	if arbOSIsUnbooted {
+	state, err := arbosState.OpenSystemArbosState(statedb, false)
+	arbOSIsUninitialized := errors.Is(err, arbosState.ErrUninitializedArbOS)
+	if arbOSIsUninitialized {
 		// ArbOS is uninitialized, so we'll operate on an (initialized) memory-backed temporary version of
-		//     the ArbOS state.
-		state = arbosState.OpenArbosMemoryBackedArbOSState()
+		//     the ArbOS state, until an initialization tx runs.
+		state = arbosState.NewArbosMemoryBackedArbOSState()
 	}
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
@@ -119,7 +119,7 @@ func ProduceBlock(
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
-	if arbOSIsUnbooted {
+	if arbOSIsUninitialized {
 		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
@@ -215,13 +215,13 @@ func ProduceBlock(
 			continue
 		}
 
-		if arbOSIsUnbooted {
-			// ArbOS will now have been booted, so switch to using the real, booted version
-			state, err = arbosState.OpenSystemArbosState(statedb, false, false)
+		if arbOSIsUninitialized {
+			// ArbOS will now have been initialized, so switch to using the real, initialized version
+			state, err = arbosState.OpenSystemArbosState(statedb, false)
 			if err != nil {
 				panic(err)
 			}
-			arbOSIsUnbooted = false
+			arbOSIsUninitialized = false
 		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
@@ -350,7 +350,7 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state, err := arbosState.OpenSystemArbosState(statedb, true, false)
+		state, err := arbosState.OpenSystemArbosState(statedb, true)
 		if err != nil {
 			panic(err)
 		}

@@ -61,7 +61,7 @@ func testContext(caller addr, evm mech) *context {
 		gasLeft:     ^uint64(0),
 		write:       true,
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true), true)
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true))
 	if err != nil {
 		panic(err)
 	}

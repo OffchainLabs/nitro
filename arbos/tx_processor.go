@@ -41,7 +41,7 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState, err := arbosState.OpenSystemArbosState(evm.StateDB, true, true)
+	arbosState, err := arbosState.OpenOrInitializeSystemArbosState(evm.StateDB, true)
 	if err != nil {
 		panic(err)
 	}
@@ -273,7 +273,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			}
 		}
 		if evmSuccess {
-			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true) // we don't want to charge for this
+			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true) // we don't want to charge for this
 			if err != nil {
 				panic(err)
 			}
@@ -328,7 +328,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true)
 	if err != nil {
 		return 0, err
 	}
@@ -336,7 +336,7 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true)
 	if err != nil {
 		return common.Hash{}, err
 	}
