@@ -241,6 +241,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	gasPrice := p.evm.Context.BaseFee
+	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
@@ -249,7 +250,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			// undo Geth's refund to the From address
 			p.evm.StateDB.SubBalance(inner.From, refund)
 			// refund the RefundTo by taking fees back from the network address
-			err := arbos_util.TransferBalance(networkAddress, inner.RefundTo, refund, p.evm.StateDB)
+			err := arbos_util.TransferBalance(networkFeeAccount, inner.RefundTo, refund, p.evm.StateDB)
 			if err != nil {
 				// Normally the network fee address should be holding the gas funds.
 				// However, in theory, they could've been transfered out during the redeem attempt.
@@ -290,7 +291,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		computeCost = totalCost
 	}
 
-	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
 	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
 
