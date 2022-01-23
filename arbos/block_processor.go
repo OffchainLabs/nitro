@@ -120,7 +120,6 @@ func ProduceBlock(
 	if bootArbOS {
 		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-		state = arbosState.OpenSystemArbosState(statedb, false) // switch back to a real statedb
 	}
 
 	complete := types.Transactions{}
@@ -213,6 +212,13 @@ func ProduceBlock(
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			statedb.RevertToSnapshot(snap)
 			continue
+		}
+
+		if bootArbOS {
+			// The first tx included the initialization, so we can switch
+			// to persistent state.
+			state = arbosState.OpenSystemArbosState(statedb, false)
+			bootArbOS = false
 		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
