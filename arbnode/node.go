@@ -58,20 +58,20 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
 	}
 
-	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
-	}
-
 	tx, err = bridgeContract.Initialize(deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting bridge initialize tx: %w", err)
 	}
 	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
 		return nil, fmt.Errorf("error executing bridge initialize tx: %w", err)
+	}
+
+	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
+	}
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
 	}
 
 	tx, err = bridgeContract.SetInbox(deployAuth, inboxAddr, true)
