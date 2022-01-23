@@ -45,6 +45,10 @@ func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
 }
 
+func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+}
+
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.state.NetworkFeeAccount()
 }

@@ -74,26 +74,26 @@ func TestGasPricingGasPool(t *testing.T) {
 func TestGasPricingPoolPrice(t *testing.T) {
 	pricing := PricingForTest(t)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "wrong initial gas price")
 	}
 
 	initialSub := int64(SmallGasPoolMax * 4)
 	pricing.AddToGasPools(-initialSub)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "price should not be changed")
 	}
 
 	pricing.NotifyGasPricerThatTimeElapsed(20)
 
-	if gasPriceWei(t, pricing) <= MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) <= InitialMinimumGasPriceWei {
 		Fail(t, "price should be above minimum")
 	}
 
 	pricing.NotifyGasPricerThatTimeElapsed(500)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "price should return to minimum")
 	}
 }

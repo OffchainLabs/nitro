@@ -15,6 +15,7 @@ type L2PricingState struct {
 	gasPool        storage.StorageBackedInt64
 	smallGasPool   storage.StorageBackedInt64
 	gasPriceWei    storage.StorageBackedBigInt
+	minGasPriceWei storage.StorageBackedBigInt
 	maxGasPriceWei storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 }
 
@@ -22,6 +23,7 @@ const (
 	gasPoolOffset uint64 = iota
 	smallGasPoolOffset
 	gasPriceWeiOffset
+	minGasPriceWeiOffset
 	maxGasPriceWeiOffset
 )
 
@@ -29,6 +31,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(uint64(gasPoolOffset), GasPoolMax)
 	_ = sto.SetUint64ByUint64(uint64(smallGasPoolOffset), SmallGasPoolMax)
 	_ = sto.SetUint64ByUint64(uint64(gasPriceWeiOffset), InitialGasPriceWei)
+	_ = sto.SetUint64ByUint64(uint64(minGasPriceWeiOffset), InitialMinimumGasPriceWei)
 	return sto.SetUint64ByUint64(uint64(maxGasPriceWeiOffset), 2*InitialGasPriceWei)
 }
 
@@ -38,6 +41,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedInt64(gasPoolOffset),
 		sto.OpenStorageBackedInt64(smallGasPoolOffset),
 		sto.OpenStorageBackedBigInt(gasPriceWeiOffset),
+		sto.OpenStorageBackedBigInt(minGasPriceWeiOffset),
 		sto.OpenStorageBackedBigInt(maxGasPriceWeiOffset),
 	}
 }
@@ -64,6 +68,14 @@ func (ps *L2PricingState) GasPriceWei() (*big.Int, error) {
 
 func (ps *L2PricingState) SetGasPriceWei(val *big.Int) error {
 	return ps.gasPriceWei.Set(val)
+}
+
+func (ps *L2PricingState) MinGasPriceWei() (*big.Int, error) {
+	return ps.minGasPriceWei.Get()
+}
+
+func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) {
+	ps.Restrict(ps.minGasPriceWei.Set(val))
 }
 
 func (ps *L2PricingState) MaxGasPriceWei() (*big.Int, error) { // the max gas price ArbOS can set without breaking geth

@@ -207,17 +207,21 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	var gasNeededToStartEVM uint64
 
 	gasPrice := p.evm.Context.BaseFee
-	pricing := p.state.L1PricingState()
-	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	l1Pricing := p.state.L1PricingState()
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.GasPrice().Sign() == 0 {
-		// TODO: Review when doing eth_call's
-
+	if p.msg.UnderlyingTransaction() == nil {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
+
+		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+
 		adjustedPrice := util.BigMulByFrac(gasPrice, 15, 16)
+		if util.BigLessThan(adjustedPrice, minGasPrice) {
+			adjustedPrice = minGasPrice
+		}
 		gasPrice = adjustedPrice
 	}
 	if gasPrice.Sign() > 0 {

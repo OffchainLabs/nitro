@@ -19,8 +19,8 @@ const SmallGasPoolMax = SpeedLimitPerSecond * SmallGasPoolSeconds
 
 const PerBlockGasLimit uint64 = 20 * 1000000
 
-const MinimumGasPriceWei = 1 * params.GWei
-const InitialGasPriceWei = MinimumGasPriceWei
+const InitialMinimumGasPriceWei = 1 * params.GWei
+const InitialGasPriceWei = InitialMinimumGasPriceWei
 
 func (ps *L2PricingState) AddToGasPools(gas int64) {
 	gasPool, _ := ps.GasPool()
@@ -36,7 +36,7 @@ func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) 
 	maxPrice, err := ps.MaxGasPriceWei()
 	ps.Restrict(err)
 
-	minPrice := big.NewInt(MinimumGasPriceWei)
+	minPrice := big.NewInt(InitialMinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
 	maxSmallPoolAsBig := big.NewInt(SmallGasPoolMax)
 	maxProd := new(big.Int).Mul(maxPoolAsBig, maxSmallPoolAsBig)

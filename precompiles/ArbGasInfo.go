@@ -109,3 +109,7 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }
+
+func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
+	return c.state.L2PricingState().MinGasPriceWei()
+}
