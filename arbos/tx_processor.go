@@ -218,7 +218,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
 
-		adjustedPrice := util.BigMulByFrac(gasPrice, 15, 16)
+		adjustedPrice := util.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if util.BigLessThan(adjustedPrice, minGasPrice) {
 			adjustedPrice = minGasPrice
 		}
