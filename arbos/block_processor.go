@@ -104,7 +104,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
@@ -153,11 +153,6 @@ func ProduceBlock(
 		}
 
 		aggregator := &poster
-
-		if !isAggregated(*aggregator, sender) {
-			aggregator = nil
-		}
-
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64

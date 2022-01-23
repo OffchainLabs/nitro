@@ -9,7 +9,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -96,10 +95,20 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 }
 
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	speedLimit := big.NewInt(l2pricing.SpeedLimitPerSecond)
-	gasPoolMax := big.NewInt(l2pricing.GasPoolMax)
-	maxTxGasLimit := new(big.Int).SetUint64(l2pricing.MaxPerBlockGasLimit())
-	return speedLimit, gasPoolMax, maxTxGasLimit, nil
+	l2pricing := c.state.L2PricingState()
+	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
+	gasPoolMax, _ := l2pricing.GasPoolMax()
+	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
+	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
+}
+
+func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
+	return c.state.L2PricingState().MinGasPriceWei()
+}
+
+func (con ArbGasInfo) GetPoolMemoryFactor(c ctx, evm mech) (huge, error) {
+	factor, err := c.state.L2PricingState().PerBlockGasLimit()
+	return util.UintToBig(factor), err
 }
 
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {

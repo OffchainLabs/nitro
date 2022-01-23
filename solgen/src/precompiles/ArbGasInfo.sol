@@ -32,4 +32,10 @@ interface ArbGasInfo {
 
     // get L1 gas fees paid by the current transaction
     function getCurrentTxL1GasFees() external view returns(uint);
+
+    // get the minimum gas price needed for a transaction to succeed
+    function getMinimumGasPrice() external view returns(uint);
+
+    // get the degree to which long-term resource consumption affects price escalation
+    function getPoolMemoryFactor() external view returns(uint);
 }

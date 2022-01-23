@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -127,7 +128,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	size, _ := merkleAcc.Size()
-	timestamp, err := arbosState.LastTimestampSeen()
+	timestamp, _ := arbosState.LastTimestampSeen()
+	blockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +145,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
-		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
+		big.NewInt(int64(blockNum)),
 		big.NewInt(int64(timestamp)),
 		value,
 		calldataForL1,
