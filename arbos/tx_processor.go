@@ -5,6 +5,8 @@
 package arbos
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"math/big"
 
@@ -23,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-var arbAddress = common.HexToAddress("0xabc")
+var arbAddress = common.HexToAddress("0xa4b05")
 
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
@@ -87,9 +89,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		if p.msg.From() != arbAddress {
-			return false, 0, nil, nil
+			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		p.evm.StateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		return true, 0, nil, nil
+	case *types.ArbitrumInternalTx:
+		if p.msg.From() != arbAddress {
+			return false, 0, errors.New("internal tx not from arbAddress"), nil
+		}
+		err := ApplyInternalTxUpdate(tx.Data, p.state, p.evm.Context)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
+		}
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		statedb := p.evm.StateDB
