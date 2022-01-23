@@ -62,13 +62,10 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func isAggregated(l1Address, l2Address common.Address) bool {
-	return true // TODO
-}
-
 func (p *TxProcessor) getAggregator() *common.Address {
 	coinbase := p.evm.Context.Coinbase
-	if isAggregated(coinbase, p.msg.From()) {
+	preferredAggregator, found, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+	if err != nil && found && preferredAggregator == coinbase {
 		return &coinbase
 	}
 	return nil
