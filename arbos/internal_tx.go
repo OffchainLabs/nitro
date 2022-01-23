@@ -45,7 +45,8 @@ func InternalTxUpdateL1BlockNumber(l1BlockNumber, l2BlockNumber, chainId *big.In
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) error {
 	switch tx.Type {
 	case arbInternalTxBootArbOS:
-		state.InitializeStorage()
+		// no need to do anything, the TxProcessor already initialized ArbOS
+		// this is just a dummy tx to allow that to happen
 		return nil
 	case arbInternalTxUpdateL1BlockNumber:
 		var l1BlockNumber uint64

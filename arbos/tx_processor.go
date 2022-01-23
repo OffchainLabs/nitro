@@ -41,7 +41,10 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := arbosState.OpenSystemArbosState(evm.StateDB, true)
+	arbosState, err := arbosState.OpenSystemArbosState(evm.StateDB, true, true)
+	if err != nil {
+		panic(err)
+	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:       msg,
@@ -270,7 +273,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			}
 		}
 		if evmSuccess {
-			state := arbosState.OpenSystemArbosState(p.evm.StateDB, true) // we don't want to charge for this
+			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true) // we don't want to charge for this
+			if err != nil {
+				panic(err)
+			}
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
@@ -322,11 +328,17 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB, true)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true)
+	if err != nil {
+		return 0, err
+	}
 	return state.Blockhashes().NextBlockNumber()
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB, true)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, true, true)
+	if err != nil {
+		return common.Hash{}, err
+	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }

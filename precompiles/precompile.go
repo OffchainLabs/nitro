@@ -487,7 +487,7 @@ func (p Precompile) Call(
 
 	if method.purity != pure {
 		// impure methods may need the ArbOS state, so open & update the call context now
-		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx)
+		state, err := arbosState.OpenArbosState(evm.StateDB, callerCtx, true)
 		if err != nil {
 			return nil, 0, err
 		}

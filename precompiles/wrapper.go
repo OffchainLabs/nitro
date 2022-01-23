@@ -75,7 +75,7 @@ func (wrapper *OwnerPrecompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burner)
+	state, err := arbosState.OpenArbosState(evm.StateDB, burner, true)
 	if err != nil {
 		return nil, burner.gasLeft, err
 	}

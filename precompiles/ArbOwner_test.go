@@ -18,7 +18,7 @@ import (
 func TestAddressSet(t *testing.T) {
 	evm := newMockEVMForTesting()
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true))
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true), true)
 	Require(t, err)
 	Require(t, state.ChainOwners().Add(caller))
 

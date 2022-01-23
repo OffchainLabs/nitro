@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -82,11 +83,12 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	state := arbosState.OpenSystemArbosState(statedb, false)
-	bootArbOS := state.FormatVersion() == 0
-	if bootArbOS {
+	state, err := arbosState.OpenSystemArbosState(statedb, false, false)
+	arbOSIsUnbooted := errors.Is(err, arbosState.ErrUninitializedArbOS)
+	if arbOSIsUnbooted {
+		// ArbOS is uninitialized, so we'll operate on an (initialized) memory-backed temporary version of
+		//     the ArbOS state.
 		state = arbosState.OpenArbosMemoryBackedArbOSState()
-		state.InitializeStorage() // upgrade this memory-backed version
 	}
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
@@ -117,10 +119,9 @@ func ProduceBlock(
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
-	if bootArbOS {
+	if arbOSIsUnbooted {
 		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-		state = arbosState.OpenSystemArbosState(statedb, false) // switch back to a real statedb
 	}
 
 	complete := types.Transactions{}
@@ -136,7 +137,6 @@ func ProduceBlock(
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
-		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
 		if len(redeems) > 0 {
@@ -147,7 +147,7 @@ func ProduceBlock(
 			if !ok {
 				panic("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
+			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
@@ -213,6 +213,15 @@ func ProduceBlock(
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			statedb.RevertToSnapshot(snap)
 			continue
+		}
+
+		if arbOSIsUnbooted {
+			// ArbOS will now have been booted, so switch to using the real, booted version
+			state, err = arbosState.OpenSystemArbosState(statedb, false, false)
+			if err != nil {
+				panic(err)
+			}
+			arbOSIsUnbooted = false
 		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
@@ -341,7 +350,10 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenSystemArbosState(statedb, true)
+		state, err := arbosState.OpenSystemArbosState(statedb, true, false)
+		if err != nil {
+			panic(err)
+		}
 		state.SetLastTimestampSeen(header.Time)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
