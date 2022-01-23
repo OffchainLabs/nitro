@@ -390,7 +390,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
 	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
 	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
@@ -427,6 +426,10 @@ func Precompiles() map[addr]ArbosPrecompile {
 		context := eventCtx(ArbRetryableImpl.TicketCreatedGasCost(hash{}))
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
+
+	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	arbos.ArbSysAddress = ArbSys.address
+	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 
 	return contracts
 }

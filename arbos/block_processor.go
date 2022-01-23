@@ -27,7 +27,9 @@ import (
 
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
+var ArbSysAddress common.Address
 var RedeemScheduledEventID common.Hash
+var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
@@ -80,6 +82,10 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
+	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
+		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
+	}
+
 	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -114,6 +120,7 @@ func ProduceBlock(
 	receipts := types.Receipts{}
 	gasPrice := header.BaseFee
 	time := header.Time
+	expectedBalanceDelta := new(big.Int)
 
 	redeems := types.Transactions{}
 
@@ -201,6 +208,16 @@ func ProduceBlock(
 			continue
 		}
 
+		// Update expectedTotalBalanceDelta (also done in logs loop)
+		switch txInner := tx.GetInner().(type) {
+		case *types.ArbitrumDepositTx:
+			// L1->L2 deposits add eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
+		case *types.ArbitrumSubmitRetryableTx:
+			// Retryable submission can include a deposit which adds eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
+		}
+
 		if gasPool > gethGas {
 			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
 			panic("ApplyTransaction() gave back " + delta + " gas")
@@ -219,18 +236,28 @@ func ProduceBlock(
 				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
 				err := util.ParseRedeemScheduledLog(event, txLog)
 				if err != nil {
-					log.Error("Failed to parse log", "err", err)
+					log.Error("Failed to parse RedeemScheduled log", "err", err)
+				} else {
+					retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
+					redeem, _ := retryable.MakeTx(
+						chainConfig.ChainID,
+						event.SequenceNum,
+						gasPrice,
+						event.DonatedGas,
+						event.TicketId,
+						event.GasDonor,
+					)
+					redeems = append(redeems, types.NewTx(redeem))
 				}
-				retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
-				redeem, _ := retryable.MakeTx(
-					chainConfig.ChainID,
-					event.SequenceNum,
-					gasPrice,
-					event.DonatedGas,
-					event.TicketId,
-					event.GasDonor,
-				)
-				redeems = append(redeems, types.NewTx(redeem))
+			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
+				// L2->L1 withdrawals remove eth from the system
+				event := &precompilesgen.ArbSysL2ToL1Transaction{}
+				err := util.ParseL2ToL1TransactionLog(event, txLog)
+				if err != nil {
+					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
+				} else {
+					expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+				}
 			}
 		}
 
@@ -260,6 +287,17 @@ func ProduceBlock(
 
 	if len(block.Transactions()) != len(receipts) {
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
+	}
+
+	balanceDelta := statedb.GetTotalBalanceDelta()
+	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
+		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
+			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
+		} else {
+			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
+			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+		}
 	}
 
 	return block, receipts

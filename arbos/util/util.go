@@ -24,6 +24,7 @@ import (
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
+var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -60,6 +61,7 @@ func init() {
 	}
 
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
+	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
 }
 
 func AddressToHash(address common.Address) common.Hash {
@@ -184,8 +186,9 @@ func DoesTxTypeAlias(txType byte) bool {
 }
 
 func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
-	if util.BigLessThan(statedb.GetBalance(from), amount) {
-		return vm.ErrInsufficientBalance
+	balance := statedb.GetBalance(from)
+	if util.BigLessThan(balance, amount) {
+		return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, from, balance, amount)
 	}
 	statedb.SubBalance(from, amount)
 	statedb.AddBalance(to, amount)

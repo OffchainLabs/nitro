@@ -248,26 +248,34 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
+func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSuccess bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	gasPrice := p.evm.Context.BaseFee
+	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
-		err := arbos_util.TransferBalance(inner.From, inner.RefundTo, refund, p.evm.StateDB)
-		if err != nil {
-			// should be impossible because geth has already credited the gas refund to inner.From
-			panic(err)
+		if transitionSuccess {
+			// undo Geth's refund to the From address
+			p.evm.StateDB.SubBalance(inner.From, refund)
+			// refund the RefundTo by taking fees back from the network address
+			err := arbos_util.TransferBalance(networkFeeAccount, inner.RefundTo, refund, p.evm.StateDB)
+			if err != nil {
+				// Normally the network fee address should be holding the gas funds.
+				// However, in theory, they could've been transfered out during the redeem attempt.
+				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
+				log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
+			}
 		}
-		if success {
+		if evmSuccess {
 			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			err = arbos_util.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
+			err := arbos_util.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
@@ -294,7 +302,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
 	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
 
