@@ -55,7 +55,7 @@ type BlockValidatorConfig struct {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	OutputPath:          "./arbitrator/target/env/output",
+	OutputPath:          "./target/output",
 	ConcurrentRunsLimit: 0,
 	BlocksToRecord:      []uint64{},
 }

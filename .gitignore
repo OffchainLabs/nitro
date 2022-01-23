@@ -18,3 +18,4 @@ solgen/deployments/
 solgen/test/proofs/*.json
 .make/
 /reproducible-wasm/*.wasm
+target/
