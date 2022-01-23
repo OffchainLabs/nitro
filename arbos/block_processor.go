@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -83,13 +82,9 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	state, err := arbosState.OpenSystemArbosState(statedb, false)
-	arbOSIsUninitialized := errors.Is(err, arbosState.ErrUninitializedArbOS)
-	if arbOSIsUninitialized {
-		// ArbOS is uninitialized, so we'll operate on an (initialized) memory-backed temporary version of
-		//     the ArbOS state, until an initialization tx runs.
-		state = arbosState.NewArbosMemoryBackedArbOSState()
-	}
+	// ArbOS may be uninitialized for the first tx. If so, we use a memory-backed, temporary version
+	// until an initialization occurs during StartTxHook in the first tx.
+	state, arbOSIsUninitialized := arbosState.OpenOrGetMemoryBackedArbOSState(statedb)
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
@@ -116,11 +111,6 @@ func ProduceBlock(
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
 		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
-		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-	}
-
-	if arbOSIsUninitialized {
-		tx := InternalTxBootArbOS(header.Number, chainConfig.ChainID)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
