@@ -12,15 +12,11 @@ import (
 	"github.com/offchainlabs/arbstate/util"
 )
 
-const SpeedLimitPerSecond = 1000000
-const GasPoolMax = SpeedLimitPerSecond * 10 * 60
-const SmallGasPoolSeconds = 60
-const SmallGasPoolMax = SpeedLimitPerSecond * SmallGasPoolSeconds
-
-const PerBlockGasLimit uint64 = 20 * 1000000
-
+const InitialSpeedLimitPerSecond = 1000000
+const InitialPerBlockGasLimit uint64 = 20 * 1000000
 const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = InitialMinimumGasPriceWei
+const InitialPoolMemoryFactor = 10
 
 func (ps *L2PricingState) AddToGasPools(gas int64) {
 	gasPool, _ := ps.GasPool()
@@ -32,78 +28,60 @@ func (ps *L2PricingState) AddToGasPools(gas int64) {
 func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 	gasPool, _ := ps.GasPool()
 	smallGasPool, _ := ps.SmallGasPool()
+	gasPoolMax, _ := ps.GasPoolMax()
+	smallGasPoolMax, _ := ps.SmallGasPoolMax()
+	speedLimit, _ := ps.SpeedLimitPerSecond()
 	price, _ := ps.GasPriceWei()
+	minPrice, _ := ps.MinGasPriceWei()
 	maxPrice, err := ps.MaxGasPriceWei()
 	ps.Restrict(err)
 
-	minPrice := big.NewInt(InitialMinimumGasPriceWei)
-	maxPoolAsBig := big.NewInt(GasPoolMax)
-	maxSmallPoolAsBig := big.NewInt(SmallGasPoolMax)
-	maxProd := new(big.Int).Mul(maxPoolAsBig, maxSmallPoolAsBig)
-	numeratorBase := new(big.Int).Mul(big.NewInt(121), maxProd)
-	denominator := new(big.Int).Mul(big.NewInt(120), maxProd)
+	maxPoolAsBig := big.NewInt(gasPoolMax)
+	maxSmallPoolAsBig := big.NewInt(smallGasPoolMax)
+	maxPoolProduct := util.BigMul(maxPoolAsBig, maxSmallPoolAsBig)
 
 	secondsLeft := secondsElapsed
 	for secondsLeft > 0 {
-		if (gasPool == GasPoolMax) && (smallGasPool == SmallGasPoolMax) {
+		if (gasPool == gasPoolMax) && (smallGasPool == smallGasPoolMax) {
 			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
 				// price is already at the minimum, so no need to iterate further
-				_ = ps.SetGasPool(GasPoolMax)
-				_ = ps.SetSmallGasPool(SmallGasPoolMax)
+				_ = ps.SetGasPool(gasPoolMax)
+				_ = ps.SetSmallGasPool(smallGasPoolMax)
 				_ = ps.SetGasPriceWei(minPrice)
 				return
 			} else {
 				if secondsLeft >= 83 {
 					// price is cut in half every 83 seconds, when both gas pools are full
-					price = new(big.Int).Div(price, big.NewInt(2))
+					price = util.BigMulByFrac(price, 1, 2)
 					secondsLeft -= 83
 				} else {
-					price = new(big.Int).Div(new(big.Int).Mul(price, big.NewInt(119)), big.NewInt(120))
+					price = util.BigMulByFrac(price, 119, 120)
 					secondsLeft -= 1
 				}
 			}
 		} else {
-			gasPool = gasPool + SpeedLimitPerSecond
-			if gasPool > GasPoolMax {
-				gasPool = GasPoolMax
-			}
-			smallGasPool = smallGasPool + SpeedLimitPerSecond
-			if smallGasPool > SmallGasPoolMax {
-				smallGasPool = SmallGasPoolMax
-			}
+			gasPool = util.UpperBoundInt(gasPool+int64(speedLimit), gasPoolMax)
+			smallGasPool = util.UpperBoundInt(smallGasPool+int64(speedLimit), smallGasPoolMax)
+			clippedGasPool := util.LowerBoundInt(gasPool, 0)
+			clippedSmallGasPool := util.LowerBoundInt(smallGasPool, 0)
 
-			clippedGasPool := gasPool
-			if clippedGasPool < 0 {
-				clippedGasPool = 0
-			}
-			clippedSmallGasPool := smallGasPool
-			if clippedSmallGasPool < 0 {
-				clippedSmallGasPool = 0
-			}
-
-			numerator := new(big.Int).Sub(
-				numeratorBase,
-				new(big.Int).Add(
-					new(big.Int).Mul(big.NewInt(clippedGasPool), maxSmallPoolAsBig),
-					new(big.Int).Mul(big.NewInt(clippedSmallGasPool), maxPoolAsBig),
-				),
+			cross := util.BigAdd(
+				util.BigMulByInt(maxSmallPoolAsBig, clippedGasPool),
+				util.BigMulByInt(maxPoolAsBig, clippedSmallGasPool),
 			)
+			ratio := util.BigDiv(util.BigSub(maxPoolProduct, cross), maxPoolProduct)
 
 			// no need to clip the price here, because we'll do that on exit from the loop
-			price = new(big.Int).Div(
-				new(big.Int).Mul(price, numerator),
-				denominator,
-			)
-
+			price = util.BigMulByFrac(ratio, 121, 120)
 			secondsLeft--
 		}
 	}
 
-	if price.Cmp(minPrice) < 0 {
+	if util.BigLessThan(price, minPrice) {
 		price = minPrice
 	}
-	if price.Cmp(maxPrice) > 0 {
+	if util.BigGreaterThan(price, maxPrice) {
 		log.Warn(
 			"ArbOS is trying to set a price that's unsafe for geth",
 			"attempted", price,
@@ -117,16 +95,13 @@ func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) 
 }
 
 func (ps *L2PricingState) CurrentPerBlockGasLimit() (uint64, error) {
-	pool, err := ps.GasPool()
+	pool, _ := ps.GasPool()
+	maxLimit, err := ps.MaxPerBlockGasLimit()
 	if pool < 0 || err != nil {
 		return 0, err
-	} else if pool > int64(PerBlockGasLimit) {
-		return PerBlockGasLimit, nil
+	} else if uint64(pool) > maxLimit {
+		return maxLimit, nil
 	} else {
 		return uint64(pool), nil
 	}
-}
-
-func MaxPerBlockGasLimit() uint64 {
-	return PerBlockGasLimit
 }
