@@ -420,9 +420,9 @@ impl Module {
                     .values
                     .into_iter()
                     .map(|v| match v {
-                        v @ Value::RefNull => TableElement {
+                        Value::RefNull => TableElement {
                             func_ty: FunctionType::default(),
-                            val: v,
+                            val: Value::RefNull,
                         },
                         Value::FuncRef(x) => TableElement {
                             func_ty: func_types[usize::try_from(x).unwrap()].clone(),
