@@ -4,7 +4,10 @@ on:
   pull_request:
     paths-ignore:
       - 'arbitrator/**'
-      - 'solgen/**'
+      - 'solgen/src/osp/**'
+      - 'solgen/src/mock/**'
+      - 'solgen/test/**'
+      - 'solgen/hardhat.config.ts'
 
 jobs:
   rustfmt:

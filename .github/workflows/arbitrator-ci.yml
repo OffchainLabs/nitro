@@ -5,7 +5,10 @@ on:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'solgen/**'
+      - 'solgen/src/osp/**'
+      - 'solgen/src/mock/**'
+      - 'solgen/test/**'
+      - 'solgen/hardhat.config.ts'
   push:
     branches:
       - master
