@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'arbitrator/**'
+      - 'solgen/**'
+
+jobs:
+  rustfmt:
+    name: Rust formatting check
+    runs-on: ubuntu-latest
+  coverage:
+    name: Run Arbitrator tests
+    runs-on: ubuntu-latest
