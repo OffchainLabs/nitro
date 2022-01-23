@@ -16,12 +16,12 @@ type Burner interface {
 
 type SystemBurner struct {
 	gasBurnt uint64
-	write    bool
+	readOnly bool
 }
 
-func NewSystemBurner(write bool) *SystemBurner {
+func NewSystemBurner(readOnly bool) *SystemBurner {
 	return &SystemBurner{
-		write: write,
+		readOnly: readOnly,
 	}
 }
 
@@ -41,5 +41,5 @@ func (burner *SystemBurner) Restrict(err error) {
 }
 
 func (burner *SystemBurner) ReadOnly() bool {
-	return !burner.write
+	return burner.readOnly
 }

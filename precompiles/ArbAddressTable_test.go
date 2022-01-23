@@ -160,7 +160,7 @@ func newMockEVMForTesting() *vm.EVM {
 	}
 
 	// open now to induce initialization
-	_, _ = arbosState.OpenOrInitializeSystemArbosState(statedb, true)
+	_, _ = arbosState.OpenOrInitializeSystemArbosState(statedb, false)
 
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}

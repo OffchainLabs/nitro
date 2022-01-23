@@ -207,7 +207,7 @@ func ProduceBlock(
 
 		if arbOSIsUninitialized {
 			// ArbOS will now have been initialized, so switch to using the real, initialized version
-			state, err = arbosState.OpenSystemArbosState(statedb, false)
+			state, err = arbosState.OpenSystemArbosState(statedb, true)
 			if err != nil {
 				panic(err)
 			}
@@ -340,7 +340,7 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state, err := arbosState.OpenSystemArbosState(statedb, true)
+		state, err := arbosState.OpenSystemArbosState(statedb, false)
 		if err != nil {
 			panic(err)
 		}

@@ -13,7 +13,7 @@ import (
 )
 
 func PricingForTest(t *testing.T) *L2PricingState {
-	storage := storage.NewMemoryBacked(burn.NewSystemBurner(true))
+	storage := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
 	return OpenL2PricingState(storage)

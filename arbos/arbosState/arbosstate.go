@@ -82,15 +82,15 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosState, error) {
-	burner := burn.NewSystemBurner(write)
+func OpenSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(readOnly)
 	state, err := OpenArbosState(stateDB, burner)
 	burner.Restrict(err)
 	return state, err
 }
 
-func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosState, error) {
-	burner := burn.NewSystemBurner(write)
+func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(readOnly)
 	state, err := OpenArbosState(stateDB, burner)
 	if errors.Is(err, ErrUninitializedArbOS) {
 		state, err = InitializeArbosState(stateDB, burner)
@@ -100,7 +100,7 @@ func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosSta
 }
 
 func OpenOrGetMemoryBackedArbOSState(statedb *state.StateDB) (*ArbosState, bool) {
-	burner := burn.NewSystemBurner(false)
+	burner := burn.NewSystemBurner(true)
 	state, err := OpenArbosState(statedb, burner)
 	if errors.Is(err, ErrUninitializedArbOS) {
 		return NewArbosMemoryBackedArbOSState(), true
@@ -119,7 +119,7 @@ func NewArbosMemoryBackedArbOSState() *ArbosState {
 	if err != nil {
 		log.Fatal("failed to init empty statedb", err)
 	}
-	burner := burn.NewSystemBurner(true)
+	burner := burn.NewSystemBurner(false)
 	state, err := InitializeArbosState(statedb, burner)
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)

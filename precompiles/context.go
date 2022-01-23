@@ -29,7 +29,7 @@ type context struct {
 	gasLeft     uint64
 	txProcessor *arbos.TxProcessor
 	state       *arbosState.ArbosState
-	write       bool
+	readOnly    bool
 }
 
 func (c *context) Burn(amount uint64) error {
@@ -51,7 +51,7 @@ func (c *context) Restrict(err error) {
 }
 
 func (c *context) ReadOnly() bool {
-	return !c.write
+	return c.readOnly
 }
 
 func testContext(caller addr, evm mech) *context {
@@ -59,9 +59,9 @@ func testContext(caller addr, evm mech) *context {
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
-		write:       true,
+		readOnly:    false,
 	}
-	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true))
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(false))
 	if err != nil {
 		panic(err)
 	}

@@ -476,7 +476,7 @@ func (p Precompile) Call(
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
-		write:       method.purity >= write,
+		readOnly:    method.purity <= view,
 	}
 
 	argsCost := params.CopyGas * uint64(len(input)-4)
