@@ -100,7 +100,7 @@ func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, write bool) (*ArbosSta
 	return state, err
 }
 
-// Create a memory-backed ArbOS state, automatically initializing it if necessary
+// Create and initialize a memory-backed ArbOS state
 func NewArbosMemoryBackedArbOSState() *ArbosState {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
