@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 )
 
 func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulator {
-	sto := storage.NewMemoryBacked()
+	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
 	merkleAccumulator.InitializeMerkleAccumulator(sto)
 	return merkleAccumulator.OpenMerkleAccumulator(sto)
 }
@@ -26,19 +27,23 @@ func TestProofForNext(t *testing.T) {
 
 	acc := initializedMerkleAccumulatorForTesting()
 	for i, leaf := range leaves {
-		proof := ProofFromAccumulator(acc, leaf)
+		proof, err := ProofFromAccumulator(acc, leaf)
+		Require(t, err)
 		if proof == nil {
-			t.Fatal(i)
+			Fail(t, i)
 		}
 		if proof.LeafHash != leaf {
-			t.Fatal(i)
+			Fail(t, i)
 		}
 		if !proof.IsCorrect() {
-			t.Fatal(proof)
+			Fail(t, proof)
 		}
-		acc.Append(leaf)
-		if proof.RootHash != acc.Root() {
-			t.Fatal(i)
+		_, err = acc.Append(leaf)
+		Require(t, err)
+		root, err := acc.Root()
+		Require(t, err)
+		if proof.RootHash != root {
+			Fail(t, i)
 		}
 	}
 }

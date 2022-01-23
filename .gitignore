@@ -17,3 +17,4 @@ solgen/node_modules/
 solgen/deployments/
 solgen/test/proofs/*.json
 .make/
+/reproducible-wasm/*.wasm

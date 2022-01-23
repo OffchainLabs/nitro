@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
@@ -38,22 +40,27 @@ type Storage struct {
 	account    common.Address
 	db         vm.StateDB
 	storageKey []byte
+	burner     burn.Burner
 }
 
+var StorageReadCost = params.SloadGasEIP2200
+var StorageWriteCost = params.SstoreSetGasEIP2200
+
 // Use a Geth database to create an evm key-value store
-func NewGeth(statedb vm.StateDB) *Storage {
+func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	account := common.HexToAddress("0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")
 	statedb.SetNonce(account, 1) // setting the nonce ensures Geth won't treat ArbOS as empty
 	return &Storage{
 		account:    account,
 		db:         statedb,
 		storageKey: []byte{},
+		burner:     burner,
 	}
 }
 
 // Use Geth's memory-backed database to create an evm key-value store
-func NewMemoryBacked() *Storage {
-	return NewGeth(NewMemoryBackedStateDB())
+func NewMemoryBacked(burner burn.Burner) *Storage {
+	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
 // Use Geth's memory-backed database to create a statedb
@@ -82,42 +89,62 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	)
 }
 
-func (store *Storage) Get(key common.Hash) common.Hash {
-	return store.db.GetState(store.account, mapAddress(store.storageKey, key))
+func (store *Storage) Get(key common.Hash) (common.Hash, error) {
+	err := store.burner.Burn(StorageReadCost)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return store.db.GetState(store.account, mapAddress(store.storageKey, key)), nil
 }
 
 func (store *Storage) GetStorageSlot(key common.Hash) common.Hash {
 	return mapAddress(store.storageKey, key)
 }
 
-func (store *Storage) GetUint64(key common.Hash) uint64 {
-	return store.Get(key).Big().Uint64()
+func (store *Storage) GetUint64(key common.Hash) (uint64, error) {
+	value, err := store.Get(key)
+	return value.Big().Uint64(), err
 }
 
-func (store *Storage) GetByUint64(key uint64) common.Hash {
+func (store *Storage) GetByUint64(key uint64) (common.Hash, error) {
 	return store.Get(util.UintToHash(key))
 }
 
-func (store *Storage) GetUint64ByUint64(key uint64) uint64 {
-	return store.Get(util.UintToHash(key)).Big().Uint64()
+func (store *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
+	return store.GetUint64(util.UintToHash(key))
 }
 
-func (store *Storage) Set(key common.Hash, value common.Hash) {
+func (store *Storage) Set(key common.Hash, value common.Hash) error {
+	err := store.burner.Burn(StorageWriteCost)
+	if err != nil {
+		return err
+	}
 	store.db.SetState(store.account, mapAddress(store.storageKey, key), value)
+	return nil
 }
 
-func (store *Storage) SetByUint64(key uint64, value common.Hash) {
-	store.Set(util.UintToHash(key), value)
+func (store *Storage) SetByUint64(key uint64, value common.Hash) error {
+	return store.Set(util.UintToHash(key), value)
 }
 
-func (store *Storage) SetUint64ByUint64(key uint64, value uint64) {
-	store.Set(util.UintToHash(key), util.UintToHash(value))
+func (store *Storage) SetUint64ByUint64(key uint64, value uint64) error {
+	return store.Set(util.UintToHash(key), util.UintToHash(value))
 }
 
-func (store *Storage) Swap(key common.Hash, newValue common.Hash) common.Hash {
-	oldValue := store.Get(key)
-	store.Set(key, newValue)
-	return oldValue
+func (store *Storage) Clear(key common.Hash) error {
+	return store.Set(key, common.Hash{})
+}
+
+func (store *Storage) ClearByUint64(key uint64) error {
+	return store.Set(util.UintToHash(key), common.Hash{})
+}
+
+func (store *Storage) Swap(key common.Hash, newValue common.Hash) (common.Hash, error) {
+	oldValue, err := store.Get(key)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return oldValue, store.Set(key, newValue)
 }
 
 func (store *Storage) OpenSubStorage(id []byte) *Storage {
@@ -125,43 +152,70 @@ func (store *Storage) OpenSubStorage(id []byte) *Storage {
 		store.account,
 		store.db,
 		crypto.Keccak256(store.storageKey, id),
+		store.burner,
 	}
 }
 
-func (store *Storage) SetBytes(b []byte) {
-	store.ClearBytes()
-	store.SetUint64ByUint64(0, uint64(len(b)))
+func (store *Storage) SetBytes(b []byte) error {
+	err := store.ClearBytes()
+	if err != nil {
+		return err
+	}
+	err = store.SetUint64ByUint64(0, uint64(len(b)))
+	if err != nil {
+		return err
+	}
 	offset := uint64(1)
 	for len(b) >= 32 {
-		store.SetByUint64(offset, common.BytesToHash(b[:32]))
+		err = store.SetByUint64(offset, common.BytesToHash(b[:32]))
+		if err != nil {
+			return err
+		}
 		b = b[32:]
 		offset++
 	}
-	store.SetByUint64(offset, common.BytesToHash(b))
+	return store.SetByUint64(offset, common.BytesToHash(b))
 }
 
-func (store *Storage) GetBytes() []byte {
-	bytesLeft := store.GetUint64ByUint64(0)
+func (store *Storage) GetBytes() ([]byte, error) {
+	bytesLeft, err := store.GetUint64ByUint64(0)
+	if err != nil {
+		return nil, err
+	}
 	ret := []byte{}
 	offset := uint64(1)
 	for bytesLeft >= 32 {
-		ret = append(ret, store.GetByUint64(offset).Bytes()...)
+		next, err := store.GetByUint64(offset)
+		if err != nil {
+			return nil, err
+		}
+		ret = append(ret, next.Bytes()...)
 		bytesLeft -= 32
 		offset++
 	}
-	ret = append(ret, store.GetByUint64(offset).Bytes()[32-bytesLeft:]...)
-	return ret
+	next, err := store.GetByUint64(offset)
+	if err != nil {
+		return nil, err
+	}
+	ret = append(ret, next.Bytes()[32-bytesLeft:]...)
+	return ret, nil
 }
 
-func (store *Storage) GetBytesSize() uint64 {
+func (store *Storage) GetBytesSize() (uint64, error) {
 	return store.GetUint64ByUint64(0)
 }
 
-func (store *Storage) ClearBytes() {
-	bytesLeft := store.GetUint64ByUint64(0)
+func (store *Storage) ClearBytes() error {
+	bytesLeft, err := store.GetUint64ByUint64(0)
+	if err != nil {
+		return err
+	}
 	offset := uint64(1)
 	for bytesLeft > 0 {
-		store.SetByUint64(offset, common.Hash{})
+		err := store.SetByUint64(offset, common.Hash{})
+		if err != nil {
+			return err
+		}
 		offset++
 		if bytesLeft < 32 {
 			bytesLeft = 0
@@ -169,25 +223,39 @@ func (store *Storage) ClearBytes() {
 			bytesLeft -= 32
 		}
 	}
-	store.SetByUint64(0, common.Hash{})
+	return store.SetByUint64(0, common.Hash{})
+}
+
+func (sto *Storage) Burner() burn.Burner {
+	return sto.burner // not public because these should never be changed once set
 }
 
 type StorageSlot struct {
 	account common.Address
 	db      vm.StateDB
 	slot    common.Hash
+	burner  burn.Burner
 }
 
 func (sto *Storage) NewSlot(offset uint64) StorageSlot {
-	return StorageSlot{sto.account, sto.db, mapAddress(sto.storageKey, util.UintToHash(offset))}
+	return StorageSlot{sto.account, sto.db, mapAddress(sto.storageKey, util.UintToHash(offset)), sto.burner}
 }
 
-func (ss *StorageSlot) Get() common.Hash {
-	return ss.db.GetState(ss.account, ss.slot)
+func (ss *StorageSlot) Get() (common.Hash, error) {
+	err := ss.burner.Burn(StorageReadCost)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return ss.db.GetState(ss.account, ss.slot), nil
 }
 
-func (ss *StorageSlot) Set(val common.Hash) {
+func (ss *StorageSlot) Set(val common.Hash) error {
+	err := ss.burner.Burn(StorageWriteCost)
+	if err != nil {
+		return err
+	}
 	ss.db.SetState(ss.account, ss.slot, val)
+	return nil
 }
 
 // Implementation note for StorageBackedInt64: Conversions between big.Int and common.Hash give weird results
@@ -202,16 +270,16 @@ func (sto *Storage) OpenStorageBackedInt64(offset uint64) StorageBackedInt64 {
 	return StorageBackedInt64{sto.NewSlot(offset)}
 }
 
-func (sbu *StorageBackedInt64) Get() int64 {
-	raw := sbu.StorageSlot.Get().Big()
-	if !raw.IsUint64() {
+func (sbu *StorageBackedInt64) Get() (int64, error) {
+	raw, err := sbu.StorageSlot.Get()
+	if !raw.Big().IsUint64() {
 		panic("invalid value found in StorageBackedInt64 storage")
 	}
-	return int64(raw.Uint64()) // see implementation note above
+	return int64(raw.Big().Uint64()), err // see implementation note above
 }
 
-func (sbu *StorageBackedInt64) Set(value int64) {
-	sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
+func (sbu *StorageBackedInt64) Set(value int64) error {
+	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
 type StorageBackedUint64 struct {
@@ -222,72 +290,75 @@ func (sto *Storage) OpenStorageBackedUint64(offset uint64) StorageBackedUint64 {
 	return StorageBackedUint64{sto.NewSlot(offset)}
 }
 
-func (sbu *StorageBackedUint64) Get() uint64 {
-	raw := sbu.StorageSlot.Get().Big()
-	if !raw.IsUint64() {
+func (sbu *StorageBackedUint64) Get() (uint64, error) {
+	raw, err := sbu.StorageSlot.Get()
+	if !raw.Big().IsUint64() {
 		panic("expected uint64 compatible value in storage")
 	}
-	return raw.Uint64()
+	return raw.Big().Uint64(), err
 }
 
-func (sbu *StorageBackedUint64) Set(value uint64) {
+func (sbu *StorageBackedUint64) Set(value uint64) error {
 	bigValue := new(big.Int).SetUint64(value)
-	sbu.StorageSlot.Set(common.BigToHash(bigValue))
+	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
-func (sbu *StorageBackedUint64) Increment() uint64 {
-	old := sbu.Get()
+func (sbu *StorageBackedUint64) Increment() (uint64, error) {
+	old, err := sbu.Get()
+	if err != nil {
+		return 0, err
+	}
 	if old+1 < old {
 		panic("Overflow in StorageBackedUint64::Increment")
 	}
-	sbu.Set(old + 1)
-	return old + 1
+	return old + 1, sbu.Set(old + 1)
 }
 
-func (sbu *StorageBackedUint64) Decrement() uint64 {
-	old := sbu.Get()
+func (sbu *StorageBackedUint64) Decrement() (uint64, error) {
+	old, err := sbu.Get()
+	if err != nil {
+		return 0, err
+	}
 	if old == 0 {
 		panic("Underflow in StorageBackedUint64::Decrement")
 	}
-	sbu.Set(old - 1)
-	return old - 1
+	return old - 1, sbu.Set(old - 1)
 }
 
 type MemoryBackedUint64 struct {
 	contents uint64
 }
 
-func (mbu *MemoryBackedUint64) Get() uint64 {
-	return mbu.contents
+func (mbu *MemoryBackedUint64) Get() (uint64, error) {
+	return mbu.contents, nil
 }
 
-func (mbu *MemoryBackedUint64) Set(val uint64) {
+func (mbu *MemoryBackedUint64) Set(val uint64) error {
 	mbu.contents = val
+	return nil
 }
 
-func (mbu *MemoryBackedUint64) Increment() uint64 {
-	old := mbu.Get()
+func (mbu *MemoryBackedUint64) Increment() (uint64, error) {
+	old := mbu.contents
 	if old+1 < old {
-		panic("Overflow in StorageBackedUint64::Increment")
+		panic("Overflow in MemoryBackedUint64::Increment")
 	}
-	mbu.Set(old + 1)
-	return old + 1
+	return old + 1, mbu.Set(old + 1)
 }
 
-func (mbu *MemoryBackedUint64) Decrement() uint64 {
-	old := mbu.Get()
+func (mbu *MemoryBackedUint64) Decrement() (uint64, error) {
+	old := mbu.contents
 	if old == 0 {
-		panic("Underflow in StorageBackedUint64::Decrement")
+		panic("Underflow in MemoryBackedUint64::Decrement")
 	}
-	mbu.Set(old - 1)
-	return old - 1
+	return old - 1, mbu.Set(old - 1)
 }
 
 type WrappedUint64 interface {
-	Get() uint64
-	Set(uint64)
-	Increment() uint64
-	Decrement() uint64
+	Get() (uint64, error)
+	Set(uint64) error
+	Increment() (uint64, error)
+	Decrement() (uint64, error)
 }
 
 type StorageBackedBigInt struct {
@@ -298,12 +369,13 @@ func (sto *Storage) OpenStorageBackedBigInt(offset uint64) StorageBackedBigInt {
 	return StorageBackedBigInt{sto.NewSlot(offset)}
 }
 
-func (sbbi *StorageBackedBigInt) Get() *big.Int {
-	return sbbi.StorageSlot.Get().Big()
+func (sbbi *StorageBackedBigInt) Get() (*big.Int, error) {
+	value, err := sbbi.StorageSlot.Get()
+	return value.Big(), err
 }
 
-func (sbbi *StorageBackedBigInt) Set(val *big.Int) {
-	sbbi.StorageSlot.Set(common.BigToHash(val))
+func (sbbi *StorageBackedBigInt) Set(val *big.Int) error {
+	return sbbi.StorageSlot.Set(common.BigToHash(val))
 }
 
 type StorageBackedAddress struct {
@@ -314,12 +386,13 @@ func (sto *Storage) OpenStorageBackedAddress(offset uint64) StorageBackedAddress
 	return StorageBackedAddress{sto.NewSlot(offset)}
 }
 
-func (sba *StorageBackedAddress) Get() common.Address {
-	return common.BytesToAddress(sba.StorageSlot.Get().Bytes())
+func (sba *StorageBackedAddress) Get() (common.Address, error) {
+	value, err := sba.StorageSlot.Get()
+	return common.BytesToAddress(value.Bytes()), err
 }
 
-func (sba *StorageBackedAddress) Set(val common.Address) {
-	sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+func (sba *StorageBackedAddress) Set(val common.Address) error {
+	return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 }
 
 type StorageBackedAddressOrNil struct {
@@ -336,21 +409,21 @@ func (sto *Storage) OpenStorageBackedAddressOrNil(offset uint64) StorageBackedAd
 	return StorageBackedAddressOrNil{sto.NewSlot(offset)}
 }
 
-func (sba *StorageBackedAddressOrNil) Get() *common.Address {
-	asHash := sba.StorageSlot.Get()
-	if asHash == NilAddressRepresentation {
-		return nil
+func (sba *StorageBackedAddressOrNil) Get() (*common.Address, error) {
+	asHash, err := sba.StorageSlot.Get()
+	if asHash == NilAddressRepresentation || err != nil {
+		return nil, err
 	} else {
-		ret := common.BytesToAddress(sba.StorageSlot.Get().Bytes())
-		return &ret
+		ret := common.BytesToAddress(asHash.Bytes())
+		return &ret, nil
 	}
 }
 
-func (sba *StorageBackedAddressOrNil) Set(val *common.Address) {
+func (sba *StorageBackedAddressOrNil) Set(val *common.Address) error {
 	if val == nil {
-		sba.StorageSlot.Set(NilAddressRepresentation)
+		return sba.StorageSlot.Set(NilAddressRepresentation)
 	} else {
-		sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
+		return sba.StorageSlot.Set(common.BytesToHash(val.Bytes()))
 	}
 }
 
@@ -364,18 +437,18 @@ func (sto *Storage) OpenStorageBackedBytes(id []byte) StorageBackedBytes {
 	}
 }
 
-func (sbb *StorageBackedBytes) Get() []byte {
+func (sbb *StorageBackedBytes) Get() ([]byte, error) {
 	return sbb.Storage.GetBytes()
 }
 
-func (sbb *StorageBackedBytes) Set(val []byte) {
-	sbb.Storage.SetBytes(val)
+func (sbb *StorageBackedBytes) Set(val []byte) error {
+	return sbb.Storage.SetBytes(val)
 }
 
-func (sbb *StorageBackedBytes) Clear() {
-	sbb.Storage.ClearBytes()
+func (sbb *StorageBackedBytes) Clear() error {
+	return sbb.Storage.ClearBytes()
 }
 
-func (sbb *StorageBackedBytes) Size() uint64 {
+func (sbb *StorageBackedBytes) Size() (uint64, error) {
 	return sbb.Storage.GetBytesSize()
 }

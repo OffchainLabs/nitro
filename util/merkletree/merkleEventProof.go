@@ -9,10 +9,13 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 )
 
-func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) MerkleTree {
-	partials := acc.GetPartials()
+func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) (MerkleTree, error) {
+	partials, err := acc.GetPartials()
+	if err != nil {
+		return nil, err
+	}
 	if len(partials) == 0 {
-		return NewEmptyMerkleTree()
+		return NewEmptyMerkleTree(), nil
 	}
 	var tree MerkleTree
 	capacity := uint64(1)
@@ -36,16 +39,23 @@ func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) Merk
 		capacity *= 2
 	}
 
-	return tree
+	return tree, nil
 }
 
 func NewMerkleTreeFromEvents(
 	events []merkleAccumulator.MerkleTreeNodeEvent, // latest event at each Level
-) MerkleTree {
-	return NewMerkleTreeFromAccumulator(NewNonPersistentMerkleAccumulatorFromEvents(events))
+) (MerkleTree, error) {
+	acc, err := NewNonPersistentMerkleAccumulatorFromEvents(events)
+	if err != nil {
+		return nil, err
+	}
+	return NewMerkleTreeFromAccumulator(acc)
 }
 
-func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.MerkleTreeNodeEvent) *merkleAccumulator.MerkleAccumulator {
+func NewNonPersistentMerkleAccumulatorFromEvents(
+	events []merkleAccumulator.MerkleTreeNodeEvent,
+) (*merkleAccumulator.MerkleAccumulator, error) {
+
 	partials := make([]*common.Hash, len(events))
 	zero := common.Hash{}
 	for i := range partials {
@@ -63,18 +73,33 @@ func NewNonPersistentMerkleAccumulatorFromEvents(events []merkleAccumulator.Merk
 	return merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(partials)
 }
 
-func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) *MerkleProof {
-	origPartials := acc.GetPartials()
+func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) (*MerkleProof, error) {
+	origPartials, err := acc.GetPartials()
+	if err != nil {
+		return nil, err
+	}
 	partials := make([]common.Hash, len(origPartials))
 	for i, orig := range origPartials {
 		partials[i] = *orig
 	}
-	clone := acc.NonPersistentClone()
-	_ = clone.Append(nextHash)
-	return &MerkleProof{
-		RootHash:  clone.Root(),
-		LeafHash:  nextHash,
-		LeafIndex: acc.Size(),
-		Proof:     partials,
+	clone, err := acc.NonPersistentClone()
+	if err != nil {
+		return nil, err
 	}
+	_, err = clone.Append(nextHash)
+	if err != nil {
+		return nil, err
+	}
+	root, _ := clone.Root()
+	size, err := acc.Size()
+	if err != nil {
+		return nil, err
+	}
+
+	return &MerkleProof{
+		RootHash:  root,
+		LeafHash:  nextHash,
+		LeafIndex: size,
+		Proof:     partials,
+	}, nil
 }
