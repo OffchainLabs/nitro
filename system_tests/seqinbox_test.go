@@ -86,7 +86,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	var faucetTxs []*types.Transaction
 	for _, acct := range accounts {
 		l1Info.GenerateAccount(acct)
-		faucetTxs = append(faucetTxs, l1Info.PrepareTx("faucet", acct, 30000, big.NewInt(1e16), nil))
+		faucetTxs = append(faucetTxs, l1Info.PrepareTx("Faucet", acct, 30000, big.NewInt(1e16), nil))
 	}
 	SendWaitTestTransactions(t, ctx, l1Client, faucetTxs)
 
@@ -129,7 +129,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			// Sometimes, this causes it to drop the next tx.
 			// To work around this, we create a sacrificial tx, which may or may not succeed.
 			// Whichever happens, by the end of this block, the miner will have processed the reorg.
-			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "faucet", 30000, big.NewInt(0), nil)
+			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "Faucet", 30000, big.NewInt(0), nil)
 			err = l1Client.SendTransaction(ctx, tx)
 			Require(t, err)
 			_, _ = arbnode.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)

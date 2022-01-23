@@ -11,5 +11,4 @@ interface ArbDebug {
 
     function events(bool flag, bytes32 value) external payable returns(address, uint256);
     function becomeChainOwner() external;
-    function getL2GasPrice() external view returns(uint256);
 }

@@ -1,4 +1,8 @@
-package arbosState
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
+package l2pricing
 
 import (
 	"math/big"
@@ -19,19 +23,19 @@ const PerBlockGasLimit uint64 = math.MaxInt64 // so we can cast it to int
 const MinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = MinimumGasPriceWei
 
-func (state *ArbosState) AddToGasPools(gas int64) {
-	gasPool, _ := state.GasPool()
-	smallGasPool, _ := state.SmallGasPool()
-	state.Restrict(state.SetGasPool(util.SaturatingAdd(gasPool, gas)))
-	state.Restrict(state.SetSmallGasPool(util.SaturatingAdd(smallGasPool, gas)))
+func (ps *L2PricingState) AddToGasPools(gas int64) {
+	gasPool, _ := ps.GasPool()
+	smallGasPool, _ := ps.SmallGasPool()
+	ps.Restrict(ps.SetGasPool(util.SaturatingAdd(gasPool, gas)))
+	ps.Restrict(ps.SetSmallGasPool(util.SaturatingAdd(smallGasPool, gas)))
 }
 
-func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
-	gasPool, _ := state.GasPool()
-	smallGasPool, _ := state.SmallGasPool()
-	price, _ := state.GasPriceWei()
-	maxPrice, err := state.MaxGasPriceWei()
-	state.Restrict(err)
+func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
+	gasPool, _ := ps.GasPool()
+	smallGasPool, _ := ps.SmallGasPool()
+	price, _ := ps.GasPriceWei()
+	maxPrice, err := ps.MaxGasPriceWei()
+	ps.Restrict(err)
 
 	minPrice := big.NewInt(MinimumGasPriceWei)
 	maxPoolAsBig := big.NewInt(GasPoolMax)
@@ -46,9 +50,9 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 			// both gas pools are full, so we should multiply the price by 119/120 for each second that elapses
 			if price.Cmp(minPrice) <= 0 {
 				// price is already at the minimum, so no need to iterate further
-				_ = state.SetGasPool(GasPoolMax)
-				_ = state.SetSmallGasPool(SmallGasPoolMax)
-				_ = state.SetGasPriceWei(minPrice)
+				_ = ps.SetGasPool(GasPoolMax)
+				_ = ps.SetSmallGasPool(SmallGasPoolMax)
+				_ = ps.SetGasPriceWei(minPrice)
 				return
 			} else {
 				if secondsLeft >= 83 {
@@ -108,13 +112,13 @@ func (state *ArbosState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {
 		)
 		price = maxPrice
 	}
-	state.Restrict(state.SetGasPool(gasPool))
-	state.Restrict(state.SetSmallGasPool(smallGasPool))
-	state.Restrict(state.SetGasPriceWei(price))
+	ps.Restrict(ps.SetGasPool(gasPool))
+	ps.Restrict(ps.SetSmallGasPool(smallGasPool))
+	ps.Restrict(ps.SetGasPriceWei(price))
 }
 
-func (state *ArbosState) CurrentPerBlockGasLimit() (uint64, error) {
-	pool, err := state.GasPool()
+func (ps *L2PricingState) CurrentPerBlockGasLimit() (uint64, error) {
+	pool, err := ps.GasPool()
 	if pool < 0 || err != nil {
 		return 0, err
 	} else {

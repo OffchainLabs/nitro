@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
@@ -299,7 +300,7 @@ func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInit
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   arbosState.PerBlockGasLimit,
+		GasLimit:   l2pricing.PerBlockGasLimit,
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.Hash{},
 		Coinbase:   common.Address{},
@@ -307,7 +308,7 @@ func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInit
 		Number:     0,
 		GasUsed:    0,
 		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(arbosState.InitialGasPriceWei),
+		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
 	}
 
 	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideArrowGlacier)

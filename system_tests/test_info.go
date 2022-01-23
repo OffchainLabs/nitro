@@ -147,6 +147,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 			info.Nonce += 1 // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
+		GasMargin: 2000, // adjust by 20%
 	}
 }
 
