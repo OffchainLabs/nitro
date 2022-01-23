@@ -37,7 +37,7 @@ func LowerBoundInt(value, bound int64) int64 {
 }
 
 // casts int to huge
-func UintToHuge(value uint64) *big.Int {
+func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
 }
 

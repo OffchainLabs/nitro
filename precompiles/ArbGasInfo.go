@@ -99,7 +99,7 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
 	gasPoolMax, _ := l2pricing.GasPoolMax()
 	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
-	return util.UintToHuge(speedLimit), big.NewInt(gasPoolMax), util.UintToHuge(maxTxGasLimit), err
+	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
 }
 
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
@@ -108,7 +108,7 @@ func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 
 func (con ArbGasInfo) GetPoolMemoryFactor(c ctx, evm mech) (huge, error) {
 	factor, err := c.state.L2PricingState().PerBlockGasLimit()
-	return util.UintToHuge(factor), err
+	return util.UintToBig(factor), err
 }
 
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
