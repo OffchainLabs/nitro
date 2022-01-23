@@ -16,7 +16,7 @@ func OpenArbosStateForTesting(t *testing.T) *ArbosState {
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	Require(t, err, "failed to init empty statedb")
-	state, err := OpenArbosState(statedb, &burn.SystemBurner{})
+	state, err := OpenArbosState(statedb, burn.NewSystemBurner(true))
 	Require(t, err, "failed to open the ArbOS state")
 	return state
 }

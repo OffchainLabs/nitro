@@ -49,13 +49,17 @@ func (c *context) Restrict(err error) {
 	log.Fatal("A metered burner was used for access-controlled work", err)
 }
 
+func (c *context) ReadOnly() bool {
+	return false
+}
+
 func testContext(caller addr, evm mech) *context {
 	ctx := &context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
 		gasLeft:     ^uint64(0),
 	}
-	state, _ := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	state, _ := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(true))
 	ctx.state = state
 	return ctx
 }

@@ -53,8 +53,10 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		return nil, err
 	}
 	if arbosVersion == 0 {
-		// we found a zero at storage location 0, so storage hasn't been initialized yet
-		initializeStorage(backingStorage)
+		// We found a zero at storage location 0, so storage hasn't been initialized yet.
+		// Since this is a one-time action, we won't charge anyone
+		systemStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(true))
+		initializeStorage(systemStorage)
 	}
 	return &ArbosState{
 		arbosVersion,
@@ -75,8 +77,8 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB) *ArbosState {
-	state, err := OpenArbosState(stateDB, &burn.SystemBurner{})
+func OpenSystemArbosState(stateDB vm.StateDB, write bool) *ArbosState {
+	state, err := OpenArbosState(stateDB, burn.NewSystemBurner(write))
 	state.Restrict(err)
 	return state
 }

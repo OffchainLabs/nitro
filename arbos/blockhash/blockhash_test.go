@@ -5,16 +5,17 @@
 package blockhash
 
 import (
+	"testing"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
-	"testing"
 )
 
 func TestBlockhash(t *testing.T) {
-	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(true))
 	InitializeBlockhashes(sto)
 
 	bh := OpenBlockhashes(sto)

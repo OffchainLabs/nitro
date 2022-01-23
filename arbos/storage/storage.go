@@ -115,6 +115,10 @@ func (store *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) error {
+	if store.burner.ReadOnly() {
+		panic("set when view")
+		// return vm.ErrWriteProtection
+	}
 	err := store.burner.Burn(StorageWriteCost)
 	if err != nil {
 		return err
@@ -250,6 +254,9 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 }
 
 func (ss *StorageSlot) Set(val common.Hash) error {
+	if ss.burner.ReadOnly() {
+		return vm.ErrWriteProtection
+	}
 	err := ss.burner.Burn(StorageWriteCost)
 	if err != nil {
 		return err

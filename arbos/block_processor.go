@@ -100,7 +100,7 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenSystemArbosState(statedb)
+	state := arbosState.OpenSystemArbosState(statedb, false)
 	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
@@ -334,7 +334,7 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenSystemArbosState(statedb)
+		state := arbosState.OpenSystemArbosState(statedb, true)
 		state.SetLastTimestampSeen(header.Time)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
