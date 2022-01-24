@@ -23,10 +23,13 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -55,20 +58,20 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
 	}
 
-	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
-	}
-
 	tx, err = bridgeContract.Initialize(deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting bridge initialize tx: %w", err)
 	}
 	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
 		return nil, fmt.Errorf("error executing bridge initialize tx: %w", err)
+	}
+
+	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
+	}
+	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
+		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
 	}
 
 	tx, err = bridgeContract.SetInbox(deployAuth, inboxAddr, true)
@@ -274,7 +277,7 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Database, *core.BlockChain, error) {
+func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInitializationInfo, config *params.ChainConfig) (ethdb.Database, *core.BlockChain, error) {
 	arbstate.RequireHookedGeth()
 
 	defaultConf := ethconfig.Defaults
@@ -286,6 +289,28 @@ func CreateDefaultBlockChain(stack *node.Node, genesis *core.Genesis) (ethdb.Dat
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
+
+	l2GenesysAlloc, err := arbosState.GetGenesisAllocFromArbos(initData)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	genesis := &core.Genesis{
+		Config:     config,
+		Nonce:      0,
+		Timestamp:  1633932474,
+		ExtraData:  []byte("ArbitrumMainnet"),
+		GasLimit:   l2pricing.L2GasLimit,
+		Difficulty: big.NewInt(1),
+		Mixhash:    common.Hash{},
+		Coinbase:   common.Address{},
+		Alloc:      l2GenesysAlloc,
+		Number:     0,
+		GasUsed:    0,
+		ParentHash: common.Hash{},
+		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
+	}
+
 	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideArrowGlacier)
 	var configCompatError *params.ConfigCompatError
 	if errors.As(genesisErr, &configCompatError) {

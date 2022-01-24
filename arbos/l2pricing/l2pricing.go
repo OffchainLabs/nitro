@@ -36,6 +36,8 @@ const (
 	maxPerBlockGasLimitOffset
 )
 
+const L2GasLimit = 1 << 63
+
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(smallGasPoolOffset, InitialSmallGasPoolSeconds*InitialSpeedLimitPerSecond)
