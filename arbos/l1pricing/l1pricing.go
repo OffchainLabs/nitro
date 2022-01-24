@@ -162,7 +162,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 // Values greater than DataWasNotCompressed are treated as equivalent to DataWasNotCompressed.
 
 const DataWasNotCompressed uint64 = 1000000
-const TxFixedCost = 64 // TODO: Pick a better fixed cost
+const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(
 	sender common.Address,
@@ -189,7 +189,7 @@ func (ps *L1PricingState) PosterDataCost(
 
 	dataGas := 16 * bytesToCharge * ratio / DataWasNotCompressed
 
-	// add 5% to protect the aggregator bad price fluctuation luck
+	// add 5% to protect the aggregator from bad price fluctuation luck
 	dataGas = dataGas * 21 / 20
 
 	price, err := ps.L1GasPriceEstimateWei()

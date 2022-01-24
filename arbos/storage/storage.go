@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -119,6 +120,10 @@ func (store *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
 }
 
 func (store *Storage) Set(key common.Hash, value common.Hash) error {
+	if store.burner.ReadOnly() {
+		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
+		return vm.ErrWriteProtection
+	}
 	err := store.burner.Burn(StorageWriteCost)
 	if err != nil {
 		return err
@@ -254,6 +259,10 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 }
 
 func (ss *StorageSlot) Set(val common.Hash) error {
+	if ss.burner.ReadOnly() {
+		log.Error("Read-only burner attempted to mutate state", "value", val)
+		return vm.ErrWriteProtection
+	}
 	err := ss.burner.Burn(StorageWriteCost)
 	if err != nil {
 		return err
