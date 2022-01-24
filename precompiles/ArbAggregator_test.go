@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 )
 
 func TestDefaultAggregator(t *testing.T) {
@@ -21,7 +22,7 @@ func TestDefaultAggregator(t *testing.T) {
 	// initial default aggregator should be zero address
 	def, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
 	Require(t, err)
-	if def != (common.Address{}) {
+	if def != (l1pricing.SequencerAddress) {
 		Fail(t)
 	}
 
@@ -54,7 +55,7 @@ func TestPreferredAggregator(t *testing.T) {
 	if isNonDefault {
 		Fail(t)
 	}
-	if res != (common.Address{}) {
+	if res != (l1pricing.SequencerAddress) {
 		Fail(t)
 	}
 

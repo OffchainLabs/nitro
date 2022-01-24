@@ -41,7 +41,7 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState, err := arbosState.OpenOrInitializeSystemArbosState(evm.StateDB, false)
+	arbosState, err := arbosState.OpenSystemArbosState(evm.StateDB, false)
 	if err != nil {
 		panic(err)
 	}

@@ -24,7 +24,7 @@ type L1PricingState struct {
 }
 
 var (
-	initialDefaultAggregator = common.Address{} // assume this will be set up during chain initialization
+	SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
 
 	preferredAggregatorKey        = []byte{0}
 	aggregatorFixedChargeKey      = []byte{1}
@@ -38,7 +38,7 @@ const (
 )
 
 func InitializeL1PricingState(sto *storage.Storage) error {
-	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(initialDefaultAggregator.Bytes()))
+	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
 	if err != nil {
 		return err
 	}
