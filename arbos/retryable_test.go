@@ -1,3 +1,7 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
 package arbos
 
 import (
@@ -10,7 +14,7 @@ import (
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
-	state := arbosState.OpenArbosStateForTesting(t)
+	state := arbosState.NewArbosMemoryBackedArbOSState()
 	id := common.BigToHash(big.NewInt(978645611142))
 	lastTimestamp, err := state.LastTimestampSeen()
 	Require(t, err)
@@ -22,7 +26,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
-	state := arbosState.OpenArbosStateForTesting(t)
+	state := arbosState.NewArbosMemoryBackedArbOSState()
 	originalTimestamp, err := state.LastTimestampSeen()
 	Require(t, err)
 	newTimestamp := originalTimestamp + 42
@@ -52,7 +56,7 @@ func TestOpenExpiredRetryable(t *testing.T) {
 }
 
 func TestRetryableCreate(t *testing.T) {
-	state := arbosState.OpenArbosStateForTesting(t)
+	state := arbosState.NewArbosMemoryBackedArbOSState()
 	id := common.BigToHash(big.NewInt(978645611142))
 	lastTimestamp, err := state.LastTimestampSeen()
 	Require(t, err)

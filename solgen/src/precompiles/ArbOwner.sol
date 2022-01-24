@@ -21,4 +21,10 @@ interface ArbOwner {
 
     // Sets the L2 gas price directly, bypassing the pool calculus
     function setL2GasPrice(uint256 priceInWei) external;
+    function setMinimumGasPrice(uint256 priceInWei) external view;
+    function setSpeedLimit(uint64 limit) external view;
+    function setPoolMemoryFactor(uint64 factor) external view;
+    function setMaxTxGasLimit(uint64 factor) external view;
+    function getNetworkFeeAccount() external view returns(address);
+    function setNetworkFeeAccount(address newNetworkFeeAccount) external view;
 }

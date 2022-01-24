@@ -12,6 +12,8 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -25,10 +27,15 @@ import (
 
 // set by the precompile module, to avoid a package dependence cycle
 var ArbRetryableTxAddress common.Address
+var ArbSysAddress common.Address
 var RedeemScheduledEventID common.Hash
+var L2ToL1TransactionEventID common.Hash
+var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
+var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
-	baseFee, err := state.GasPriceWei()
+	l2Pricing := state.L2PricingState()
+	baseFee, err := l2Pricing.GasPriceWei()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -56,7 +63,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    arbosState.PerBlockGasLimit,
+		GasLimit:    1 << 63,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -75,6 +82,14 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
+	// ArbOS may be uninitialized for the first tx. If so, we use a memory-backed, temporary version
+	// until an initialization occurs during StartTxHook in the first tx.
+	state, arbOSIsUninitialized := arbosState.OpenOrGetMemoryBackedArbOSState(statedb)
+
+	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
+		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
+	}
+
 	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
@@ -89,16 +104,21 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenSystemArbosState(statedb)
-	_ = state.Blockhashes().RecordNewL1Block(l1Info.l1BlockNumber.Uint64(), lastBlockHeader.Hash())
-	gasLeft, _ := state.CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
+	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
+		// Make an ArbitrumInternalTx the first tx to update the L1 block number
+		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
+		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
+	}
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
 	gasPrice := header.BaseFee
 	time := header.Time
+	expectedBalanceDelta := new(big.Int)
 
 	redeems := types.Transactions{}
 
@@ -107,7 +127,6 @@ func ProduceBlock(
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
-		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
 		if len(redeems) > 0 {
@@ -118,12 +137,9 @@ func ProduceBlock(
 			if !ok {
 				panic("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
+			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
-				// retryable was already deleted, so just refund the gas
-				retryGas := new(big.Int).SetUint64(retry.Gas)
-				gasGiven := new(big.Int).Mul(retryGas, gasPrice)
-				statedb.AddBalance(retry.RefundTo, gasGiven)
+				// retryable was already deleted
 				continue
 			}
 		} else {
@@ -137,11 +153,6 @@ func ProduceBlock(
 		}
 
 		aggregator := &poster
-
-		if !isAggregated(*aggregator, sender) {
-			aggregator = nil
-		}
-
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
@@ -189,6 +200,25 @@ func ProduceBlock(
 			continue
 		}
 
+		if arbOSIsUninitialized {
+			// ArbOS will now have been initialized, so switch to using the real, initialized version
+			state, err = arbosState.OpenSystemArbosState(statedb, true)
+			if err != nil {
+				panic(err)
+			}
+			arbOSIsUninitialized = false
+		}
+
+		// Update expectedTotalBalanceDelta (also done in logs loop)
+		switch txInner := tx.GetInner().(type) {
+		case *types.ArbitrumDepositTx:
+			// L1->L2 deposits add eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.Value)
+		case *types.ArbitrumSubmitRetryableTx:
+			// Retryable submission can include a deposit which adds eth to the system
+			expectedBalanceDelta.Add(expectedBalanceDelta, txInner.DepositValue)
+		}
+
 		if gasPool > gethGas {
 			delta := strconv.FormatUint(gasPool.Gas()-gethGas.Gas(), 10)
 			panic("ApplyTransaction() gave back " + delta + " gas")
@@ -204,31 +234,31 @@ func ProduceBlock(
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
-
-				ticketId := txLog.Topics[1]
-				retryable, _ := state.RetryableState().OpenRetryable(ticketId, time)
-
-				from, _ := retryable.From()
-				to, _ := retryable.To()
-				value, _ := retryable.Callvalue()
-				data, _ := retryable.Calldata()
-
-				reedem := types.NewTx(&types.ArbitrumRetryTx{
-					ArbitrumContractTx: types.ArbitrumContractTx{
-						ChainId:   chainConfig.ChainID,
-						RequestId: txLog.Topics[2],
-						From:      from,
-						GasPrice:  gasPrice,
-						Gas:       common.BytesToHash(txLog.Data[32:64]).Big().Uint64(),
-						To:        to,
-						Value:     value,
-						Data:      data,
-					},
-					TicketId: ticketId,
-					RefundTo: common.BytesToAddress(txLog.Data[64:96]),
-				})
-
-				redeems = append(redeems, reedem)
+				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+				err := util.ParseRedeemScheduledLog(event, txLog)
+				if err != nil {
+					log.Error("Failed to parse RedeemScheduled log", "err", err)
+				} else {
+					retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
+					redeem, _ := retryable.MakeTx(
+						chainConfig.ChainID,
+						event.SequenceNum,
+						gasPrice,
+						event.DonatedGas,
+						event.TicketId,
+						event.GasDonor,
+					)
+					redeems = append(redeems, types.NewTx(redeem))
+				}
+			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
+				// L2->L1 withdrawals remove eth from the system
+				event := &precompilesgen.ArbSysL2ToL1Transaction{}
+				err := util.ParseL2ToL1TransactionLog(event, txLog)
+				if err != nil {
+					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
+				} else {
+					expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
+				}
 			}
 		}
 
@@ -251,8 +281,6 @@ func ProduceBlock(
 		}
 	}
 
-	state.UpgradeArbosVersionIfNecessary(header.Time)
-
 	FinalizeBlock(header, complete, receipts, statedb)
 	header.Root = statedb.IntermediateRoot(true)
 
@@ -262,40 +290,69 @@ func ProduceBlock(
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
+	balanceDelta := statedb.GetTotalBalanceDelta()
+	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
+		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
+			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
+		} else {
+			// This is a real chain and funds were burnt, not minted, so only log an error and don't panic
+			log.Error("Unexpected total balance delta", "delta", balanceDelta, "expected", expectedBalanceDelta)
+		}
+	}
+
 	return block, receipts
 }
 
-type HeaderExtraInformation struct {
-	SendRoot common.Hash
+type ArbitrumHeaderInfo struct {
+	SendRoot  common.Hash
+	SendCount uint64
 }
 
-func DeserializeHeaderExtraInformation(header *types.Header) (HeaderExtraInformation, error) {
+func (info ArbitrumHeaderInfo) Extra() []byte {
+	return info.SendRoot[:]
+}
+
+func (info ArbitrumHeaderInfo) MixDigest() [32]byte {
+	mixDigest := common.Hash{}
+	binary.BigEndian.PutUint64(mixDigest[:8], info.SendCount)
+	return mixDigest
+}
+
+func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo, error) {
 	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
 		// The genesis block doesn't have an ArbOS encoded extra field
-		return HeaderExtraInformation{}, nil
+		return ArbitrumHeaderInfo{}, nil
 	}
 	if len(header.Extra) != 32 {
-		return HeaderExtraInformation{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
+		return ArbitrumHeaderInfo{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
 	}
-	var sendRoot common.Hash
-	copy(sendRoot[:], header.Extra)
-	return HeaderExtraInformation{
-		SendRoot: sendRoot,
-	}, nil
+	extra := ArbitrumHeaderInfo{}
+	copy(extra.SendRoot[:], header.Extra)
+	extra.SendCount = binary.BigEndian.Uint64(header.MixDigest[:8])
+	return extra, nil
 }
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenSystemArbosState(statedb)
+		state, err := arbosState.OpenSystemArbosState(statedb, false)
+		if err != nil {
+			panic(err)
+		}
 		state.SetLastTimestampSeen(header.Time)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
 		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.SetMaxGasPriceWei(maxSafePrice)
+		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
-		// write send merkle accumulator hash into extra data field of the header
-		// DeserializeHeaderExtraInformation is the inverse of this and will need changed if this is changed
-		root, _ := state.SendMerkleAccumulator().Root()
-		header.Extra = root.Bytes()
+		// Add outbox info to the header for client-side proving
+		acc := state.SendMerkleAccumulator()
+		root, _ := acc.Root()
+		size, _ := acc.Size()
+		arbitrumHeader := ArbitrumHeaderInfo{root, size}
+		header.Extra = arbitrumHeader.Extra()
+		header.MixDigest = arbitrumHeader.MixDigest()
+
+		state.UpgradeArbosVersionIfNecessary(header.Time)
 	}
 }

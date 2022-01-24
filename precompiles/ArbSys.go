@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
@@ -19,8 +20,8 @@ type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
-	SendMerkleUpdate         func(ctx, mech, huge, [32]byte, huge) error
-	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) (uint64, error)
+	SendMerkleUpdate         func(ctx, mech, huge, bytes32, huge) error
+	SendMerkleUpdateGasCost  func(huge, bytes32, huge) (uint64, error)
 }
 
 var InvalidBlockNum = errors.New("Invalid block number")
@@ -31,9 +32,9 @@ func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 }
 
 // Gets the L2 block hash, if sufficiently recent
-func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) ([32]byte, error) {
+func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
 	if !arbBlockNumber.IsUint64() {
-		return [32]byte{}, InvalidBlockNum
+		return bytes32{}, InvalidBlockNum
 	}
 	requestedBlockNum := arbBlockNumber.Uint64()
 
@@ -125,7 +126,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 
 	size, _ := merkleAcc.Size()
-	timestamp, err := arbosState.LastTimestampSeen()
+	timestamp, _ := arbosState.LastTimestampSeen()
+	blockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +143,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
-		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
+		big.NewInt(int64(blockNum)),
 		big.NewInt(int64(timestamp)),
 		value,
 		calldataForL1,
@@ -151,19 +153,19 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 }
 
 // Gets the root, size, and partials of the outbox Merkle tree state (caller must be the 0 address)
-func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, [32]byte, [][32]byte, error) {
+func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32, error) {
 	if c.caller != (addr{}) {
-		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
+		return nil, bytes32{}, nil, errors.New("method can only be called by address zero")
 	}
 
 	// OK to not charge gas, because method is only callable by address zero
 
 	size, rootHash, rawPartials, _ := c.state.SendMerkleAccumulator().StateForExport()
-	partials := make([][32]byte, len(rawPartials))
+	partials := make([]bytes32, len(rawPartials))
 	for i, par := range rawPartials {
-		partials[i] = [32]byte(par)
+		partials[i] = bytes32(par)
 	}
-	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
+	return big.NewInt(int64(size)), bytes32(rootHash), partials, nil
 }
 
 // Send paid eth to the destination on L1
