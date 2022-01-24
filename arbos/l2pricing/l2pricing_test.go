@@ -13,7 +13,7 @@ import (
 )
 
 func PricingForTest(t *testing.T) *L2PricingState {
-	storage := storage.NewMemoryBacked(&burn.SystemBurner{})
+	storage := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	err := InitializeL2PricingState(storage)
 	Require(t, err)
 	return OpenL2PricingState(storage)
@@ -21,8 +21,10 @@ func PricingForTest(t *testing.T) *L2PricingState {
 
 func TestGasPricingGasPool(t *testing.T) {
 	pricing := PricingForTest(t)
-	expectedSmallGasPool := int64(SmallGasPoolMax)
-	expectedGasPool := int64(GasPoolMax)
+	expectedSmallGasPool, err := pricing.SmallGasPoolMax()
+	Require(t, err)
+	expectedGasPool, err := pricing.GasPoolMax()
+	Require(t, err)
 
 	checkGasPools := func() {
 		t.Helper()
@@ -38,7 +40,12 @@ func TestGasPricingGasPool(t *testing.T) {
 
 	checkGasPools()
 
-	initialSub := int64(SmallGasPoolMax / 2)
+	gasPoolMax, err := pricing.GasPoolMax()
+	Require(t, err)
+	smallGasPoolMax, err := pricing.SmallGasPoolMax()
+	Require(t, err)
+
+	initialSub := int64(smallGasPoolMax / 2)
 	pricing.AddToGasPools(-initialSub)
 
 	expectedSmallGasPool -= initialSub
@@ -51,49 +58,50 @@ func TestGasPricingGasPool(t *testing.T) {
 	for _, t := range elapseTimesToCheck {
 		totalTime += t
 	}
-	if totalTime > (SmallGasPoolMax-expectedSmallGasPool)/SpeedLimitPerSecond {
+	if totalTime > (smallGasPoolMax-expectedSmallGasPool)/InitialSpeedLimitPerSecond {
 		Fail(t, "should only test within small gas pool size")
 	}
 
 	for _, t := range elapseTimesToCheck {
 		pricing.NotifyGasPricerThatTimeElapsed(uint64(t))
-		expectedSmallGasPool += SpeedLimitPerSecond * t
-		expectedGasPool += SpeedLimitPerSecond * t
+		expectedSmallGasPool += InitialSpeedLimitPerSecond * t
+		expectedGasPool += InitialSpeedLimitPerSecond * t
 
 		checkGasPools()
 	}
 
 	pricing.NotifyGasPricerThatTimeElapsed(10000000)
 
-	expectedSmallGasPool = int64(SmallGasPoolMax)
-	expectedGasPool = int64(GasPoolMax)
+	expectedSmallGasPool = smallGasPoolMax
+	expectedGasPool = gasPoolMax
 
 	checkGasPools()
 }
 
 func TestGasPricingPoolPrice(t *testing.T) {
 	pricing := PricingForTest(t)
+	smallGasPoolMax, err := pricing.SmallGasPoolMax()
+	Require(t, err)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "wrong initial gas price")
 	}
 
-	initialSub := int64(SmallGasPoolMax * 4)
-	pricing.AddToGasPools(-initialSub)
+	pricing.AddToGasPools(-smallGasPoolMax * 4)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "price should not be changed")
 	}
 
 	pricing.NotifyGasPricerThatTimeElapsed(20)
 
-	if gasPriceWei(t, pricing) <= MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) <= InitialMinimumGasPriceWei {
 		Fail(t, "price should be above minimum")
 	}
 
 	pricing.NotifyGasPricerThatTimeElapsed(500)
 
-	if gasPriceWei(t, pricing) != MinimumGasPriceWei {
+	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "price should return to minimum")
 	}
 }

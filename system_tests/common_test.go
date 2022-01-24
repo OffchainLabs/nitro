@@ -86,7 +86,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *eth.Ethereum, *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesys = core.DeveloperGenesisBlock(0, l2pricing.PerBlockGasLimit, l1info.GetAddress("Faucet"))
+	l1Genesys = core.DeveloperGenesisBlock(0, l2pricing.InitialPerBlockGasLimit, l1info.GetAddress("Faucet"))
 	infoGenesys := l1info.GetGenesysAlloc()
 	for acct, info := range infoGenesys {
 		l1Genesys.Alloc[acct] = info
