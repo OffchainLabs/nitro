@@ -9,6 +9,7 @@ on:
       - 'solgen/src/mock/**'
       - 'solgen/test/**'
       - 'solgen/hardhat.config.ts'
+      - 'Makefile'
   push:
     branches:
       - master
