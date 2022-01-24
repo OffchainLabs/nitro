@@ -27,7 +27,7 @@ import (
 )
 
 type blockTestState struct {
-	balances      map[common.Address]uint64
+	balances      map[common.Address]*big.Int
 	nonces        map[common.Address]uint64
 	accounts      []common.Address
 	l2BlockNumber uint64
@@ -39,10 +39,9 @@ const seqInboxTestIters = 40
 func TestSequencerInboxReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Info, arbNode, l1Info, l1backend, stack := CreateTestNodeOnL1(t, ctx, false)
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1(t, ctx, false)
 	l2Backend := arbNode.Backend
 	defer stack.Close()
-	l1Client := l1Info.Client
 
 	l1BlockChain := l1backend.BlockChain()
 
@@ -56,13 +55,12 @@ func TestSequencerInboxReader(t *testing.T) {
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)
 	startOwnerBalance := startState.GetBalance(ownerAddress)
-	startOwnerBalance_uint64 := startOwnerBalance.Uint64()
 	startOwnerNonce := startState.GetNonce(ownerAddress)
 
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
-		balances: map[common.Address]uint64{
-			ownerAddress: startOwnerBalance_uint64,
+		balances: map[common.Address]*big.Int{
+			ownerAddress: startOwnerBalance,
 		},
 		nonces: map[common.Address]uint64{
 			ownerAddress: startOwnerNonce,
@@ -135,9 +133,9 @@ func TestSequencerInboxReader(t *testing.T) {
 			_, _ = arbnode.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
 		} else {
 			state := blockStates[len(blockStates)-1]
-			newBalances := make(map[common.Address]uint64)
+			newBalances := make(map[common.Address]*big.Int)
 			for k, v := range state.balances {
-				newBalances[k] = v
+				newBalances[k] = new(big.Int).Set(v)
 			}
 			state.balances = newBalances
 			newNonces := make(map[common.Address]uint64)
@@ -152,19 +150,21 @@ func TestSequencerInboxReader(t *testing.T) {
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
-				amount := uint64(rand.Int()) % state.balances[source]
-				if state.balances[source]-amount < params.InitialBaseFee*10000000 {
+				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
+				reserveAmount := new(big.Int).SetUint64(params.InitialBaseFee * 10000000)
+				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
-					amount = 1
+					amount = big.NewInt(1)
 				}
 				var dest common.Address
-				if j == 0 && amount >= params.InitialBaseFee*1000000 {
+				if j == 0 && amount.Cmp(reserveAmount) >= 0 {
 					name := accountName(len(state.accounts))
 					if !l2Info.HasAccount(name) {
 						l2Info.GenerateAccount(name)
 					}
 					dest = l2Info.GetAddress(name)
 					state.accounts = append(state.accounts, dest)
+					state.balances[dest] = big.NewInt(0)
 				} else {
 					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
@@ -173,7 +173,7 @@ func TestSequencerInboxReader(t *testing.T) {
 					To:        &dest,
 					Gas:       21000,
 					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
-					Value:     new(big.Int).SetUint64(amount),
+					Value:     amount,
 					Nonce:     state.nonces[source],
 				}
 				state.nonces[source]++
@@ -187,8 +187,8 @@ func TestSequencerInboxReader(t *testing.T) {
 				err = rlp.Encode(batchWriter, segment)
 				Require(t, err)
 
-				state.balances[source] -= amount
-				state.balances[dest] += amount
+				state.balances[source].Sub(state.balances[source], amount)
+				state.balances[dest].Add(state.balances[dest], amount)
 			}
 
 			Require(t, batchWriter.Close())
@@ -265,15 +265,10 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
-			for acct, balance := range state.balances {
+			for acct, expectedBalance := range state.balances {
 				haveBalance := stateDb.GetBalance(acct)
-				// initial owner balance is not uint64
-				expectedBalance := new(big.Int).SetUint64(balance)
-				if acct == ownerAddress {
-					expectedBalance = new(big.Int).Sub(startOwnerBalance, big.NewInt(int64(startOwnerBalance_uint64-balance)))
-				}
 				if expectedBalance.Cmp(haveBalance) < 0 {
-					Fail(t, "unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
+					Fail(t, "unexpected balance for account", acct, "; expected", expectedBalance, "got", haveBalance)
 				}
 			}
 		}

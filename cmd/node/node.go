@@ -224,7 +224,7 @@ func main() {
 		},
 	}
 
-	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, &initData)
+	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, &initData, params.ArbitrumOneChainConfig())
 	if err != nil {
 		panic(err)
 	}

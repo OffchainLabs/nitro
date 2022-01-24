@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/statetransfer"
@@ -27,28 +26,28 @@ type AccountInfo struct {
 }
 
 type BlockchainTestInfo struct {
-	T            *testing.T
-	Signer       types.Signer
-	Accounts     map[string]*AccountInfo
-	Client       *ethclient.Client
-	GenesisAlloc core.GenesisAlloc
-	ArbInitData  statetransfer.ArbosInitializationInfo
-	GasPrice     *big.Int
+	T           *testing.T
+	Signer      types.Signer
+	Accounts    map[string]*AccountInfo
+	ArbInitData statetransfer.ArbosInitializationInfo
+	GasPrice    *big.Int
 }
 
 func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
-		T:            t,
-		Signer:       signer,
-		Accounts:     make(map[string]*AccountInfo),
-		GenesisAlloc: make(core.GenesisAlloc),
-		GasPrice:     new(big.Int).Set(gasPrice),
+		T:        t,
+		Signer:   signer,
+		Accounts: make(map[string]*AccountInfo),
+		GasPrice: new(big.Int).Set(gasPrice),
 	}
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
 	chainConfig := params.ArbitrumOneChainConfig()
-	return NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2))
+	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2))
+	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	arbinfo.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
+	return arbinfo
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
@@ -85,9 +84,6 @@ func (b *BlockchainTestInfo) HasAccount(name string) bool {
 
 func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.Int) {
 	b.GenerateAccount(name)
-	b.GenesisAlloc[b.Accounts[name].Address] = core.GenesisAccount{
-		Balance: new(big.Int).Set(balance),
-	}
 	b.ArbInitData.Accounts = append(b.ArbInitData.Accounts, statetransfer.AccountInitializationInfo{
 		Addr:       b.Accounts[name].Address,
 		EthBalance: new(big.Int).Set(balance),
@@ -95,7 +91,13 @@ func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.In
 }
 
 func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
-	return b.GenesisAlloc
+	alloc := make(core.GenesisAlloc)
+	for _, info := range b.ArbInitData.Accounts {
+		alloc[info.Addr] = core.GenesisAccount{
+			Balance: new(big.Int).Set(info.EthBalance),
+		}
+	}
+	return alloc
 }
 
 func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {

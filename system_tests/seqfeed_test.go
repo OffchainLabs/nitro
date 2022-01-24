@@ -48,10 +48,9 @@ func TestSequencerFeed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info1, _, _ := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig)
-	l2info2, _, _ := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig)
+	l2info1, _, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, true)
+	_, _, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, false)
 
-	client1 := l2info1.Client
 	l2info1.GenerateAccount("User2")
 
 	tx := l2info1.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
@@ -62,9 +61,9 @@ func TestSequencerFeed(t *testing.T) {
 	_, err = arbnode.EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = arbnode.WaitForTx(ctx, l2info2.Client, tx.Hash(), time.Second*5)
+	_, err = arbnode.WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
 	Require(t, err)
-	l2balance, err := l2info2.Client.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
@@ -81,9 +80,8 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigA := arbnode.NodeConfigL1Test
 	nodeConfigA.BatchPoster = true
 	nodeConfigA.Broadcaster = false
-	l2infoA, nodeA, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
+	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
-	l2clientA := l2infoA.Client
 
 	// The lying sequencer
 	nodeConfigC := arbnode.NodeConfigL1Test

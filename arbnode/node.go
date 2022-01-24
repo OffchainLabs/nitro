@@ -277,7 +277,7 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInitializationInfo) (ethdb.Database, *core.BlockChain, error) {
+func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInitializationInfo, config *params.ChainConfig) (ethdb.Database, *core.BlockChain, error) {
 	arbstate.RequireHookedGeth()
 
 	defaultConf := ethconfig.Defaults
@@ -296,7 +296,7 @@ func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInit
 	}
 
 	genesis := &core.Genesis{
-		Config:     params.ArbitrumTestChainConfig(),
+		Config:     config,
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),
