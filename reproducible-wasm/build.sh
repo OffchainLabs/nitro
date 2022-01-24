@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 sudo docker build .. -f Dockerfile -t nitro-reproducible-wasm
 container=$(sudo docker create nitro-reproducible-wasm)
 sudo rm -rf lib
-sudo docker cp "$container:/usr/src/nitro/arbitrator/target/env/lib" lib
+sudo docker cp "$container:/usr/src/nitro/target/lib" lib
 sudo chown -R $(whoami) lib
 mv lib/*.wasm .
 rm -rf lib
