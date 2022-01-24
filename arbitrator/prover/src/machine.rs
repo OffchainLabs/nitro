@@ -1680,15 +1680,15 @@ impl Machine {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let msg_num = self.value_stack.pop().unwrap().assume_u64();
-                if ptr as u64 + 32 > module.memory.size() {
-                    self.status = MachineStatus::Errored;
-                } else {
-                    assert!(
-                        inst.argument_data <= (InboxIdentifier::Delayed as u64),
-                        "Bad inbox identifier"
-                    );
-                    let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
-                    if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
+                assert!(
+                    inst.argument_data <= (InboxIdentifier::Delayed as u64),
+                    "Bad inbox identifier"
+                );
+                let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
+                if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
+                    if ptr as u64 + 32 > module.memory.size() {
+                        self.status = MachineStatus::Errored;
+                    } else {
                         let offset = usize::try_from(offset).unwrap();
                         let len = std::cmp::min(32, message.len().saturating_sub(offset));
                         let read = message.get(offset..(offset + len)).unwrap_or_default();
@@ -1697,9 +1697,9 @@ impl Machine {
                         } else {
                             self.status = MachineStatus::Errored;
                         }
-                    } else {
-                        self.status = MachineStatus::TooFar;
                     }
+                } else {
+                    self.status = MachineStatus::TooFar;
                 }
             }
             Opcode::HaltAndSetFinished => {
