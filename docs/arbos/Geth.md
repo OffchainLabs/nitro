@@ -8,7 +8,7 @@ We store ArbOS's state at an address inside a geth `statedb`. In doing so, ArbOS
 <span style="font-size:smaller;">The fictional account representing ArbOS</span></p>
 
 
-## Hooks
+## Hooks<a name=Hooks></a>
 
 A call to [`ReadyEVMForL2`][ReadyEVMForL2_link] installs the following transaction-specific hooks into each geth [`EVM`][EVM_link] right before it performs a state transition. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Without this call, the state transition will instead use the default [`DefaultTxProcessor`][DefaultTxProcessor_link] and get exactly the same results as vanilla geth. A [`TxProcessor`][TxProcessor_link] object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime. What follows is an overview of each hook, in chronological order.
 

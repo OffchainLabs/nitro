@@ -47,6 +47,8 @@ When a Retryable is redeemed, it will execute with the sender, destination, call
 
 ### Redeeming a Retryable
 
+
+
 ## ArbOS State
 
 ArbOS's state is viewed and modified via [`ArbosState`][ArbosState_link] objects, which provide convenient abstractions for working with the underlying data of its [`backingStorage`][BackingStorage_link]. The backing storage's [keyed subspace strategy][subspace_link] makes possible [`ArbosState`][ArbosState_link]'s convenient getters and setters, minimizing the need to directly work with the specific keys and values of the underlying storage's [`stateDB`][stateDB_link].
@@ -84,10 +86,18 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 
 In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. Aggregators, whose compressed batches are the messages ArbOS uses to build L2 blocks, inform ArbOS of their compression ratios so that L2 fees can be fairly allocated between the network fee account and the aggregator posting a given transaction.
 
-Theoretically an aggregator can lie about its compression ratio to slightly inflate the fees their users (and only their users) pay, but a malicious aggregator already has the ability to extract MEV so no trust assumptions change. Lying about the ratio being higher than it is is self defeating since it burns money, as is choosing to not compress their user's transactions.
+Theoretically an aggregator can lie about its compression ratio to slightly inflate the fees their users (and only their users) pay, but a malicious aggregator already has the ability to extract MEV from them so no trust assumptions change. Lying about the ratio being higher than it is is self defeating since it burns money, as is choosing to not compress their users' transactions.
+
+The L1 pricing state also keeps a running estimate of the L1 gas price, which updates as ArbOS processes delayed messages.
 
 [l1PricingState_link]: todo
 
 ### [`l2PricingState`][l2PricingState_link]
 
+The L2 pricing state tracks L2 resource usage to determine a reasonable L2 gas price. This process considers a variety of factors, including user demand, the state of geth, and the computational speed limit. The primary mechanism for doing so consists of a pair of pools, one larger than the other, that drain as L2-specific resources are consumed and filled as time passes. L1-specific resources like L1 calldata are not tracked by the pools, as they have little bearing on the actual work done by the network actors that the speed limit is meant to keep stable and synced. 
+
+While much of this state is accessible through the [`ArbGasInfo`](Precompiles.md#ArbGasInfo) and [`ArbOwner`](Precompiles.md#ArbOwner) precompiles, most changes are automatic and happen during [block production][block_production_link] and [the transaction hooks](Geth.md#Hooks). Each of an incoming message's txes removes from the pool the L2 component of the gas it uses, and afterward the message's timestamp [informs the pricing mechanism][notify_pricer_link] of the time that's passed as ArbOS [finalizes the block][finalizeblock_link].
+
 [l2PricingState_link]: todo
+[block_production_link]: todo
+[notify_pricer_link]: todo
