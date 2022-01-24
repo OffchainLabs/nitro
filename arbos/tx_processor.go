@@ -41,7 +41,10 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := arbosState.OpenSystemArbosState(evm.StateDB)
+	arbosState, err := arbosState.OpenOrInitializeSystemArbosState(evm.StateDB, false)
+	if err != nil {
+		panic(err)
+	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:       msg,
@@ -62,13 +65,10 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func isAggregated(l1Address, l2Address common.Address) bool {
-	return true // TODO
-}
-
 func (p *TxProcessor) getAggregator() *common.Address {
 	coinbase := p.evm.Context.Coinbase
-	if isAggregated(coinbase, p.msg.From()) {
+	preferredAggregator, found, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+	if err != nil && found && preferredAggregator == coinbase {
 		return &coinbase
 	}
 	return nil
@@ -97,7 +97,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		err := ApplyInternalTxUpdate(tx.Data, p.state, p.evm.Context)
+		err := ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
 		}
@@ -210,17 +210,21 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	var gasNeededToStartEVM uint64
 
 	gasPrice := p.evm.Context.BaseFee
-	pricing := p.state.L1PricingState()
-	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	l1Pricing := p.state.L1PricingState()
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.GasPrice().Sign() == 0 {
-		// TODO: Review when doing eth_call's
-
+	if p.msg.UnderlyingTransaction() == nil {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
-		adjustedPrice := util.BigMulByFrac(gasPrice, 15, 16)
+
+		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+
+		adjustedPrice := util.BigMulByFrac(gasPrice, 7, 8) // assume congestion
+		if util.BigLessThan(adjustedPrice, minGasPrice) {
+			adjustedPrice = minGasPrice
+		}
 		gasPrice = adjustedPrice
 	}
 	if gasPrice.Sign() > 0 {
@@ -270,7 +274,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			}
 		}
 		if evmSuccess {
-			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
+			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false) // we don't want to charge for this
+			if err != nil {
+				panic(err)
+			}
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
@@ -322,11 +329,17 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+	if err != nil {
+		return 0, err
+	}
 	return state.Blockhashes().NextBlockNumber()
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+	if err != nil {
+		return common.Hash{}, err
+	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }

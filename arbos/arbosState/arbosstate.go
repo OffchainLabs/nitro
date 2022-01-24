@@ -5,6 +5,9 @@
 package arbosState
 
 import (
+	"errors"
+	"log"
+
 	"github.com/offchainlabs/arbstate/arbos/blockhash"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 
@@ -20,6 +23,8 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
@@ -46,6 +51,9 @@ type ArbosState struct {
 	Burner            burn.Burner
 }
 
+var ErrUninitializedArbOS = errors.New("ArbOS uninitialized")
+var ErrAlreadyInitialized = errors.New("ArbOS is already initialized")
+
 func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
 	backingStorage := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
@@ -53,8 +61,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		return nil, err
 	}
 	if arbosVersion == 0 {
-		// we found a zero at storage location 0, so storage hasn't been initialized yet
-		initializeStorage(backingStorage)
+		return nil, ErrUninitializedArbOS
 	}
 	return &ArbosState{
 		arbosVersion,
@@ -75,10 +82,50 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}, nil
 }
 
-func OpenSystemArbosState(stateDB vm.StateDB) *ArbosState {
-	state, err := OpenArbosState(stateDB, &burn.SystemBurner{})
-	state.Restrict(err)
-	return state
+func OpenSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(readOnly)
+	state, err := OpenArbosState(stateDB, burner)
+	burner.Restrict(err)
+	return state, err
+}
+
+func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
+	burner := burn.NewSystemBurner(readOnly)
+	state, err := OpenArbosState(stateDB, burner)
+	if errors.Is(err, ErrUninitializedArbOS) {
+		state, err = InitializeArbosState(stateDB, burner)
+	}
+	burner.Restrict(err)
+	return state, err
+}
+
+func OpenOrGetMemoryBackedArbOSState(statedb *state.StateDB) (*ArbosState, bool) {
+	burner := burn.NewSystemBurner(true)
+	state, err := OpenArbosState(statedb, burner)
+	if errors.Is(err, ErrUninitializedArbOS) {
+		state, _ := NewArbosMemoryBackedArbOSState()
+		return state, true
+	}
+	if err != nil {
+		panic(err)
+	}
+	return state, false
+}
+
+// Create and initialize a memory-backed ArbOS state
+func NewArbosMemoryBackedArbOSState() (*ArbosState, vm.StateDB) {
+	raw := rawdb.NewMemoryDatabase()
+	db := state.NewDatabase(raw)
+	statedb, err := state.New(common.Hash{}, db, nil)
+	if err != nil {
+		log.Fatal("failed to init empty statedb", err)
+	}
+	burner := burn.NewSystemBurner(false)
+	state, err := InitializeArbosState(statedb, burner)
+	if err != nil {
+		log.Fatal("failed to open the ArbOS state", err)
+	}
+	return state, statedb
 }
 
 type ArbosStateOffset uint64
@@ -107,8 +154,17 @@ var (
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
-func initializeStorage(backingStorage *storage.Storage) {
-	sto := backingStorage
+
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
+	sto := storage.NewGeth(stateDB, burner)
+	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		return nil, err
+	}
+	if arbosVersion != 0 {
+		return nil, ErrAlreadyInitialized
+	}
+
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
@@ -129,6 +185,8 @@ func initializeStorage(backingStorage *storage.Storage) {
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
+
+	return OpenArbosState(stateDB, burner)
 }
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
