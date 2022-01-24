@@ -57,13 +57,13 @@ COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \
 	go run -v solgen/gen.go
 COPY . ./
-COPY --from=prover-header-builder /workspace/arbitrator/target/env arbitrator/target/env/
-COPY --from=prover-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
+COPY --from=prover-header-builder /workspace/target/ target/
+COPY --from=prover-lib-builder /workspace/target/ target/
 RUN mkdir res && \
     go build -v -o res ./cmd/node ./cmd/deploy && \
-    GOOS=js GOARCH=wasm go build -o res/arbitrator/target/env/lib/replay.wasm ./cmd/replay/...
+    GOOS=js GOARCH=wasm go build -o res/target/lib/replay.wasm ./cmd/replay/...
 
 FROM debian:bullseye-slim
 COPY --from=node-builder /workspace/res .
-COPY --from=wasm-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
+COPY --from=wasm-lib-builder /workspace/target/ target/
 ENTRYPOINT [ "./node" ]
