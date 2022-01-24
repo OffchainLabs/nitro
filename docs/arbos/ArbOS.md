@@ -6,13 +6,24 @@ ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment o
 
 ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](Precompiles.md).
 
-A precompile consists of a of solidity interface in [`solgen/src/precompiles/`](https://github.com/OffchainLabs/nitro/tree/new-retryables/solgen/src/precompiles) and a corresponding golang implementation in [`precompiles/`](https://github.com/OffchainLabs/nitro/tree/new-retryables/precompiles). Using geth's abi generator, [`solgen/gen.go`](https://github.com/OffchainLabs/nitro/blob/new-retryables/solgen/gen.go) generates [`solgen/go/precompilesgen/precompilesgen.go`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/solgen/gen.go#L55), which collects the ABI data of the precompiles. The [runtime installer](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L365) uses this generated file to check the type safety of each precompile's implementer.
+A precompile consists of a of solidity interface in [`solgen/src/precompiles/`][solgen_precompiles_dir] and a corresponding golang implementation in [`precompiles/`][precompiles_dir]. Using geth's abi generator, [`solgen/gen.go`][gen_file] generates [`solgen/go/precompilesgen/precompilesgen.go`][precompilesgen_link], which collects the ABI data of the precompiles. The [runtime installer][installer_link] uses this generated file to check the type safety of each precompile's implementer.
 
-[The installer](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L365) uses runtime reflection to ensure each implementer has all the right methods and signatures. This includes restricting access to stateful objects like the EVM and statedb based on the declared purity. Additionally, the installer verifies and populates event function pointers to provide each precompile the ability to emit logs and know their gas costs. Additional configuration like restricting a precompile's methods to only be callable by chain owners is possible by adding precompile wrappers like [`ownerOnly`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L59) and [`debugOnly`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L26) to their [installation entry](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L390).
+[The installer][installer_link] uses runtime reflection to ensure each implementer has all the right methods and signatures. This includes restricting access to stateful objects like the EVM and statedb based on the declared purity. Additionally, the installer verifies and populates event function pointers to provide each precompile the ability to emit logs and know their gas costs. Additional configuration like restricting a precompile's methods to only be callable by chain owners is possible by adding precompile wrappers like [`ownerOnly`][ownerOnly_link] and [`debugOnly`][debugOnly_link] to their [installation entry][installation_link].
 
-The calling, dispatching, and recording of precompile methods is done via runtime reflection as well. This avoids any human error manually parsing and writing bytes could introduce, and uses geth's stable apis for [packing and unpacking](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L401) values.
+The calling, dispatching, and recording of precompile methods is done via runtime reflection as well. This avoids any human error manually parsing and writing bytes could introduce, and uses geth's stable apis for [packing and unpacking][packing_link] values.
 
-Each time a tx calls a method of an L2-specific precompile, a [`call context`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/context.go#L21) is created to track and record the gas burnt. For convenience, it also provides access to the public fields of the underlying [`TxProcessor`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L26). Because sub-transactions could revert without updates to this struct, the [`TxProcessor`](https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/arbos/tx_processor.go#L26) only makes public that which is safe, such as the amount of L1 calldata paid by the top level transaction.
+Each time a tx calls a method of an L2-specific precompile, a [`call context`][call_context_link] is created to track and record the gas burnt. For convenience, it also provides access to the public fields of the underlying [`TxProcessor`][TxProcessor_link]. Because sub-transactions could revert without updates to this struct, the [`TxProcessor`][TxProcessor_link] only makes public that which is safe, such as the amount of L1 calldata paid by the top level transaction.
+
+[solgen_precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/solgen/src/precompiles
+[precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/precompiles
+[installer_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L365
+[installation_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L390
+[gen_file]: https://github.com/OffchainLabs/nitro/blob/master/solgen/gen.go
+[ownerOnly_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L59
+[debugOnly_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L26
+[precompilesgen_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/solgen/gen.go#L55
+[packing_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L401
+[call_context_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/context.go#L21
 
 ## Retryables
 
@@ -73,13 +84,10 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 
 In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. Aggregators, whose compressed batches are the messages ArbOS uses to build L2 blocks, inform ArbOS of their compression ratios so that L2 fees can be fairly allocated between the network fee account and the aggregator posting a given transaction.
 
+Theoretically an aggregator can lie about its compression ratio to slightly inflate the fees their users (and only their users) pay, but a malicious aggregator already has the ability to extract MEV so no trust assumptions change. Lying about the ratio being higher than it is is self defeating since it burns money, as is choosing to not compress their user's transactions.
+
 [l1PricingState_link]: todo
 
 ### [`l2PricingState`][l2PricingState_link]
 
 [l2PricingState_link]: todo
-
-
-
-
-
