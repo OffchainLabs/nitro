@@ -14,4 +14,4 @@ RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 WORKDIR /usr/src/nitro
 COPY . /usr/src/nitro
 RUN . ~/.cargo/env && PATH="$PATH:/usr/local/go/bin" make build-replay-env
-RUN sha256sum arbitrator/target/env/lib/*.wasm
+RUN sha256sum target/lib/*.wasm
