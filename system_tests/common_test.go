@@ -69,6 +69,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *eth.Ethereum, *no
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumTestChainConfig()
+	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
