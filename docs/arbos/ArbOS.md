@@ -44,17 +44,42 @@ Because two [`ArbosState`][ArbosState_link] objects with the same [`backingStora
 
 Much of ArbOS's state exists to facilitate its [precompiles](Precompiles.md). The parts that aren't are detailed below.
 
-### `l1PricingState`
-
-### `l2PricingState`
-
-### `retryableState`
-
-[BackingStorage_link]: todo
 [ArbosState_link]: todo
+[BackingStorage_link]: todo
 [stateDB_link]: todo
 [subspace_link]: todo
 [OpenArbosState_link]: todo
 [Burner_link]: todo
+
+### [`arbosVersion`][arbosVersion_link], [`upgradeVersion`][upgradeVersion_link] and [`upgradeTimestamp`][upgradeTimestamp_link]
+
+ArbOS upgrades are scheduled to happen [when finalizing the first block][FinalizeBlock_link] after the [`upgradeTimestamp`][upgradeTimestamp_link].
+
+[arbosVersion_link]: todo
+[upgradeVersion_link]: todo
+[upgradeTimestamp_link]: todo
+[FinalizeBlock_link]: todo
+
+### [`blockhashes`][blockhashes_link]
+
+This component maintains the last 256 L1 block hashes in a circular buffer. This allows the [`TxProcessor`][TxProcessor_link] to implement the `BLOCKHASH` and `NUMBER` opcodes as well as support precompile methods that involve the outbox. To avoid changing ArbOS state outside of a transaction, blocks made from messages with a new L1 block number update this info during an [`InternalTxUpdateL1BlockNumber`][InternalTxUpdateL1BlockNumber_link] [`ArbitrumInternalTx`][ArbitrumInternalTx_link] that is included as the first tx in the block.
+
+[blockhashes_link]: todo
+[InternalTxUpdateL1BlockNumber_link]: todo
+[ArbitrumInternalTx_link]: todo
+[TxProcessor_link]: todo
+
+### [`l1PricingState`][l1PricingState_link]
+
+In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. Aggregators, whose compressed batches are the messages ArbOS uses to build L2 blocks, inform ArbOS of their compression ratios so that L2 fees can be fairly allocated between the network fee account and the aggregator posting a given transaction.
+
+[l1PricingState_link]: todo
+
+### [`l2PricingState`][l2PricingState_link]
+
+[l2PricingState_link]: todo
+
+
+
 
 
