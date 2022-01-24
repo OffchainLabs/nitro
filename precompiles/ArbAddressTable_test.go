@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
@@ -153,15 +152,11 @@ func TestAddressTableCompressInTable(t *testing.T) {
 
 func newMockEVMForTesting() *vm.EVM {
 	chainConfig := params.ArbitrumTestChainConfig()
-	statedb := storage.NewMemoryBackedStateDB()
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	context := vm.BlockContext{
 		BlockNumber: big.NewInt(0),
 		GasLimit:    ^uint64(0),
 	}
-
-	// open now to induce initialization
-	_, _ = arbosState.OpenOrInitializeSystemArbosState(statedb, false)
-
 	evm := vm.NewEVM(context, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 	evm.ProcessingHook = &arbos.TxProcessor{}
 	return evm

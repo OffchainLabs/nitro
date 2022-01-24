@@ -16,7 +16,8 @@ const InitialSpeedLimitPerSecond = 1000000
 const InitialPerBlockGasLimit uint64 = 20 * 1000000
 const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = InitialMinimumGasPriceWei
-const InitialPoolMemoryFactor = 10
+const InitialGasPoolSeconds = 10 * 60
+const InitialSmallGasPoolSeconds = 60
 
 func (ps *L2PricingState) AddToGasPools(gas int64) {
 	gasPool, _ := ps.GasPool()
