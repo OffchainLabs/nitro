@@ -15,7 +15,8 @@ type L2PricingState struct {
 	storage             *storage.Storage
 	gasPool             storage.StorageBackedInt64
 	smallGasPool        storage.StorageBackedInt64
-	poolMemoryFactor    storage.StorageBackedUint64
+	gasPoolSeconds      storage.StorageBackedUint64
+	smallGasPoolSeconds storage.StorageBackedUint64
 	gasPriceWei         storage.StorageBackedBigInt
 	minGasPriceWei      storage.StorageBackedBigInt
 	maxGasPriceWei      storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
@@ -26,7 +27,8 @@ type L2PricingState struct {
 const (
 	gasPoolOffset uint64 = iota
 	smallGasPoolOffset
-	poolMemoryFactorOffset
+	gasPoolSecondsOffset
+	smallGasPoolSecondsOffset
 	gasPriceWeiOffset
 	minGasPriceWeiOffset
 	maxGasPriceWeiOffset
@@ -34,10 +36,13 @@ const (
 	maxPerBlockGasLimitOffset
 )
 
+const L2GasLimit = 1 << 63
+
 func InitializeL2PricingState(sto *storage.Storage) error {
-	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialPoolMemoryFactor*60*InitialSpeedLimitPerSecond)
-	_ = sto.SetUint64ByUint64(smallGasPoolOffset, 60*InitialSpeedLimitPerSecond)
-	_ = sto.SetUint64ByUint64(poolMemoryFactorOffset, InitialPoolMemoryFactor)
+	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
+	_ = sto.SetUint64ByUint64(smallGasPoolOffset, InitialSmallGasPoolSeconds*InitialSpeedLimitPerSecond)
+	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
+	_ = sto.SetUint64ByUint64(smallGasPoolSecondsOffset, InitialSmallGasPoolSeconds)
 	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialGasPriceWei)
 	_ = sto.SetUint64ByUint64(minGasPriceWeiOffset, InitialMinimumGasPriceWei)
 	_ = sto.SetUint64ByUint64(maxGasPriceWeiOffset, 2*InitialGasPriceWei)
@@ -50,7 +55,8 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto,
 		sto.OpenStorageBackedInt64(gasPoolOffset),
 		sto.OpenStorageBackedInt64(smallGasPoolOffset),
-		sto.OpenStorageBackedUint64(poolMemoryFactorOffset),
+		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
+		sto.OpenStorageBackedUint64(smallGasPoolSecondsOffset),
 		sto.OpenStorageBackedBigInt(gasPriceWeiOffset),
 		sto.OpenStorageBackedBigInt(minGasPriceWeiOffset),
 		sto.OpenStorageBackedBigInt(maxGasPriceWeiOffset),
@@ -107,29 +113,38 @@ func (ps *L2PricingState) SetSpeedLimitPerSecond(speedLimit uint64) error {
 	return ps.speedLimitPerSecond.Set(speedLimit)
 }
 
-func (ps *L2PricingState) PoolMemoryFactor() (uint64, error) {
-	return ps.poolMemoryFactor.Get()
+func (ps *L2PricingState) GasPoolSeconds() (uint64, error) {
+	return ps.gasPoolSeconds.Get()
 }
 
-func (ps *L2PricingState) SetPoolMemoryFactor(factor uint64) error {
-	return ps.poolMemoryFactor.Set(factor)
+func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
+	return ps.gasPoolSeconds.Set(seconds)
+}
+
+func (ps *L2PricingState) SmallGasPoolSeconds() (uint64, error) {
+	return ps.smallGasPoolSeconds.Get()
+}
+
+func (ps *L2PricingState) SetSmallGasPoolSeconds(seconds uint64) error {
+	return ps.smallGasPoolSeconds.Set(seconds)
 }
 
 func (ps *L2PricingState) GasPoolMax() (int64, error) {
 	speedLimit, _ := ps.SpeedLimitPerSecond()
-	factor, err := ps.PoolMemoryFactor()
+	seconds, err := ps.GasPoolSeconds()
 	if err != nil {
 		return 0, err
 	}
-	return util.SaturatingCast(factor * 60 * speedLimit), nil
+	return util.SaturatingCast(seconds * speedLimit), nil
 }
 
 func (ps *L2PricingState) SmallGasPoolMax() (int64, error) {
-	speedLimit, err := ps.SpeedLimitPerSecond()
+	speedLimit, _ := ps.SpeedLimitPerSecond()
+	seconds, err := ps.SmallGasPoolSeconds()
 	if err != nil {
 		return 0, err
 	}
-	return util.SaturatingCast(60 * speedLimit), nil
+	return util.SaturatingCast(seconds * speedLimit), nil
 }
 
 func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 )
 
 type InboxBackend interface {
@@ -129,8 +130,6 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) Inbox
 		delayedMessagesRead: delayedMessagesRead,
 	}
 }
-
-var SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572") // TODO
 
 var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
@@ -291,7 +290,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
-					Poster:      SequencerAddress,
+					Poster:      l1pricing.SequencerAddress,
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,

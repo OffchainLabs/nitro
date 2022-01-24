@@ -60,8 +60,12 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.state.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-func (con ArbOwner) SetPoolMemoryFactor(c ctx, evm mech, factor uint64) error {
-	return c.state.L2PricingState().SetPoolMemoryFactor(factor)
+func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
+}
+
+func (con ArbOwner) SetSmallGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetSmallGasPoolSeconds(seconds)
 }
 
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {

@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
@@ -63,7 +64,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    1 << 63,
+		GasLimit:    l2pricing.L2GasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -82,9 +83,10 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	// ArbOS may be uninitialized for the first tx. If so, we use a memory-backed, temporary version
-	// until an initialization occurs during StartTxHook in the first tx.
-	state, arbOSIsUninitialized := arbosState.OpenOrGetMemoryBackedArbOSState(statedb)
+	state, err := arbosState.OpenSystemArbosState(statedb, true)
+	if err != nil {
+		panic(err)
+	}
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
@@ -198,15 +200,6 @@ func ProduceBlock(
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			statedb.RevertToSnapshot(snap)
 			continue
-		}
-
-		if arbOSIsUninitialized {
-			// ArbOS will now have been initialized, so switch to using the real, initialized version
-			state, err = arbosState.OpenSystemArbosState(statedb, true)
-			if err != nil {
-				panic(err)
-			}
-			arbOSIsUninitialized = false
 		}
 
 		// Update expectedTotalBalanceDelta (also done in logs loop)
