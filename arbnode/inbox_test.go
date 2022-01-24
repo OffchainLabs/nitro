@@ -50,7 +50,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumTest"),
-		GasLimit:   1 << 63,
+		GasLimit:   l2pricing.L2GasLimit,
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.Hash{},
 		Coinbase:   common.Address{},

@@ -300,7 +300,7 @@ func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInit
 		Nonce:      0,
 		Timestamp:  1633932474,
 		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   1 << 63,
+		GasLimit:   l2pricing.L2GasLimit,
 		Difficulty: big.NewInt(1),
 		Mixhash:    common.Hash{},
 		Coinbase:   common.Address{},

@@ -93,8 +93,19 @@ func (b *BlockchainTestInfo) GenerateGenesysAccount(name string, balance *big.In
 func (b *BlockchainTestInfo) GetGenesysAlloc() core.GenesisAlloc {
 	alloc := make(core.GenesisAlloc)
 	for _, info := range b.ArbInitData.Accounts {
+		var contractCode []byte
+		contractStorage := make(map[common.Hash]common.Hash)
+		if info.ContractInfo != nil {
+			contractCode = append([]byte{}, info.ContractInfo.Code...)
+			for k, v := range info.ContractInfo.ContractStorage {
+				contractStorage[k] = v
+			}
+		}
 		alloc[info.Addr] = core.GenesisAccount{
 			Balance: new(big.Int).Set(info.EthBalance),
+			Nonce:   info.Nonce,
+			Code:    contractCode,
+			Storage: contractStorage,
 		}
 	}
 	return alloc
