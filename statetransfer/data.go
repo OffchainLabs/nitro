@@ -5,13 +5,13 @@
 package statetransfer
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type ArbosInitializationInfo struct {
 	AddressTableContents []common.Address
-	SendPartials         []common.Hash
 	DefaultAggregator    common.Address
 	RetryableData        []InitializationDataForRetryable
 	Accounts             []AccountInitializationInfo

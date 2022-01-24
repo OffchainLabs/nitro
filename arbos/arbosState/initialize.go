@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
@@ -56,10 +55,6 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 		}
 	}
 
-	err = merkleAccumulator.InitializeMerkleAccumulatorFromPartials(arbosState.backingStorage.OpenSubStorage(sendMerkleSubspace), initData.SendPartials)
-	if err != nil {
-		return nil, err
-	}
 	err = arbosState.L1PricingState().SetDefaultAggregator(initData.DefaultAggregator)
 	if err != nil {
 		return nil, err

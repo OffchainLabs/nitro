@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	util_math "github.com/offchainlabs/arbstate/util"
 )
 
@@ -20,33 +19,6 @@ type MerkleAccumulator struct {
 
 func InitializeMerkleAccumulator(sto *storage.Storage) {
 	// no initialization needed
-}
-
-func InitializeMerkleAccumulatorFromPartials(sto *storage.Storage, partials []common.Hash) error {
-	numPartials := uint64(len(partials))
-	size := uint64(0)
-	levelSize := uint64(1)
-	for _, partial := range partials {
-		if partial != (common.Hash{}) {
-			size += levelSize
-		}
-	}
-
-	err := sto.SetByUint64(0, util.UintToHash(size))
-	if err != nil {
-		return err
-	}
-	err = sto.SetByUint64(1, util.UintToHash(numPartials))
-	if err != nil {
-		return err
-	}
-	for i, partial := range partials {
-		err = sto.SetByUint64(uint64(2+i), partial)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func OpenMerkleAccumulator(sto *storage.Storage) *MerkleAccumulator {

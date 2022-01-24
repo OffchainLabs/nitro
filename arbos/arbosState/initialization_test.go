@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
@@ -24,7 +23,6 @@ func TestJsonMarshalUnmarshal(t *testing.T) {
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
 			AddressTableContents: []common.Address{prand.GetAddress()},
-			SendPartials:         []common.Hash{prand.GetHash(), prand.GetHash()},
 			DefaultAggregator:    prand.GetAddress(),
 			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(prand)},
 			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(prand)},
@@ -69,7 +67,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
-	checkSendAccum(arbState, input.SendPartials, t)
 	checkDefaultAgg(arbState, input.DefaultAggregator, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
@@ -130,31 +127,6 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		if res != addr {
 			Fail(t)
 		}
-	}
-}
-
-func checkSendAccum(arbState *ArbosState, expected []common.Hash, t *testing.T) {
-	sa := arbState.SendMerkleAccumulator()
-	partials, err := sa.GetPartials()
-	Require(t, err)
-	if len(partials) != len(expected) {
-		t.Fatal()
-	}
-	pexp := make([]*common.Hash, len(expected))
-	for i, partial := range partials {
-		if *partial != expected[i] {
-			t.Fatal()
-		}
-		pexp[i] = &expected[i]
-	}
-	acc2, err := merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(pexp)
-	Require(t, err)
-	a2Root, err := acc2.Root()
-	Require(t, err)
-	saRoot, err := sa.Root()
-	Require(t, err)
-	if a2Root != saRoot {
-		t.Fatal()
 	}
 }
 
