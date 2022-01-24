@@ -10,9 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
@@ -27,15 +25,8 @@ func GetGenesisAllocFromJSON(encoded []byte) (map[common.Address]core.GenesisAcc
 }
 
 func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (map[common.Address]core.GenesisAccount, error) {
-	stateDBForArbos, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-	if err != nil {
-		return nil, err
-	}
 
-	arbosState, err := OpenArbosState(stateDBForArbos, &burn.SystemBurner{})
-	if err != nil {
-		return nil, err
-	}
+	arbosState, stateDBForArbos := NewArbosMemoryBackedArbOSState()
 
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()

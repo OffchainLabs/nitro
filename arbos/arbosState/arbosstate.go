@@ -113,7 +113,7 @@ func OpenOrGetMemoryBackedArbOSState(statedb *state.StateDB) (*ArbosState, bool)
 }
 
 // Create and initialize a memory-backed ArbOS state
-func NewArbosMemoryBackedArbOSState() (*ArbosState, vm.StateDB) {
+func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
