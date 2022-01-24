@@ -148,10 +148,10 @@ func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) 
 	}
 }
 
-func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio *uint64) error {
+func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio uint64) error {
 	val := DataWasNotCompressed
-	if (ratio != nil) && (*ratio < DataWasNotCompressed) {
-		val = *ratio
+	if ratio < DataWasNotCompressed {
+		val = ratio
 	}
 	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(val))
 }

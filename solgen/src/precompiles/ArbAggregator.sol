@@ -14,16 +14,22 @@ interface ArbAggregator {
     function getDefaultAggregator() external view returns (address);
 
     // Set the preferred aggregator.
-    // Reverts unless called by the chain owner or the current default aggregator.
+    // This reverts unless called by the aggregator, its fee collector, or a chain owner
     function setDefaultAggregator(address newDefault) external;
+
+    // Get the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
+    function getCompressionRatio(address aggregator) external view returns (uint64);
+
+    // Set the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
+    // This reverts unless called by the aggregator, its fee collector, or a chain owner
+    function setCompressionRatio(address aggregator, uint64 ratio) external;
 
     // Get the address where fees to aggregator are sent.
     // This will often but not always be the same as the aggregator's address.
     function getFeeCollector(address aggregator) external view returns (address);
 
     // Set the address where fees to aggregator are sent.
-    // This reverts unless called by the address that would be returned by getFeeCollector(aggregator),
-    //      or by the chain owner.
+    // This reverts unless called by the aggregator, its fee collector, or a chain owner
     function setFeeCollector(address aggregator, address newFeeCollector) external;
 
     // Get the tx base fee (in approximate L1 gas) for aggregator
