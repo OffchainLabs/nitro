@@ -96,6 +96,5 @@ func accountIsAggregatorOrCollectorOrOwner(account, aggregator addr, state *arbo
 	if account == collector || err != nil {
 		return true, err
 	}
-	member, err := state.ChainOwners().IsMember(account)
-	return member, err
+	return state.ChainOwners().IsMember(account)
 }
