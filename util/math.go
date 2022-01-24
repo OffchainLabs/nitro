@@ -53,7 +53,7 @@ func BigLessThan(first, second *big.Int) bool {
 
 // check if a huge is greater than another
 func BigGreaterThan(first, second *big.Int) bool {
-	return first.Cmp(second) < 0
+	return first.Cmp(second) > 0
 }
 
 // add a huge to another
