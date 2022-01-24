@@ -14,12 +14,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {
-	prand := util.NewPseudoRandomDataSource(1)
+	prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
 			AddressTableContents: []common.Address{prand.GetAddress()},
@@ -72,7 +72,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	checkAccounts(stateDb, arbState, input.Accounts, t)
 }
 
-func pseudorandomRetryableInitForTesting(prand *util.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
+func pseudorandomRetryableInitForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.InitializationDataForRetryable {
 	return statetransfer.InitializationDataForRetryable{
 		Id:          prand.GetHash(),
 		Timeout:     prand.GetUint64(),
@@ -84,7 +84,7 @@ func pseudorandomRetryableInitForTesting(prand *util.PseudoRandomDataSource) sta
 	}
 }
 
-func pseudorandomAccountInitInfoForTesting(prand *util.PseudoRandomDataSource) statetransfer.AccountInitializationInfo {
+func pseudorandomAccountInitInfoForTesting(prand *testhelpers.PseudoRandomDataSource) statetransfer.AccountInitializationInfo {
 	aggToPay := prand.GetAddress()
 	return statetransfer.AccountInitializationInfo{
 		Addr:       prand.GetAddress(),
@@ -102,7 +102,7 @@ func pseudorandomAccountInitInfoForTesting(prand *util.PseudoRandomDataSource) s
 	}
 }
 
-func pseudorandomHashHashMapForTesting(prand *util.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
+func pseudorandomHashHashMapForTesting(prand *testhelpers.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
 	size := int(prand.GetUint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {

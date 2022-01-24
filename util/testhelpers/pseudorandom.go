@@ -1,7 +1,13 @@
-package util
+//
+// Copyright 2022, Offchain Labs, Inc. All rights reserved.
+//
+
+package testhelpers
 
 import (
 	"encoding/binary"
+	"math/big"
+	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -12,8 +18,10 @@ type PseudoRandomDataSource struct {
 	index int64
 }
 
-func NewPseudoRandomDataSource(saltParam int) *PseudoRandomDataSource {
-	salt := crypto.Keccak256Hash([]byte{'s'}, IntToHash(int64(saltParam)).Bytes())
+// pseudorandom source that repeats on different executions
+// T param is to make sure it's only used in testing
+func NewPseudoRandomDataSource(_ *testing.T, saltParam int) *PseudoRandomDataSource {
+	salt := crypto.Keccak256Hash([]byte{'s'}, common.BigToHash(big.NewInt(int64(saltParam))).Bytes())
 	return &PseudoRandomDataSource{
 		salt:  salt,
 		index: 0,
@@ -22,7 +30,7 @@ func NewPseudoRandomDataSource(saltParam int) *PseudoRandomDataSource {
 
 func (r *PseudoRandomDataSource) GetHash() common.Hash {
 	r.index++
-	return crypto.Keccak256Hash(r.salt[:], IntToHash(r.index).Bytes())
+	return crypto.Keccak256Hash(r.salt[:], common.BigToHash(big.NewInt(r.index)).Bytes())
 }
 
 func (r *PseudoRandomDataSource) GetAddress() common.Address {

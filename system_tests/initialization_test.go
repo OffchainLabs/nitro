@@ -8,13 +8,13 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 // Each contract gets a set of storage cells with values, and code that returns a sum of their cell
 // Getting expectedsum proves both code and storage cells are correct
-func InitOneContract(prand *util.PseudoRandomDataSource) (*statetransfer.AccountInitContractInfo, *big.Int) {
+func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.AccountInitContractInfo, *big.Int) {
 	storageMap := make(map[common.Hash]common.Hash)
 	code := []byte{0x60, 0x0} // PUSH1 0
 	sum := big.NewInt(0)
@@ -44,7 +44,7 @@ func TestInitContract(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	expectedSums := make(map[common.Address]*big.Int)
-	prand := util.NewPseudoRandomDataSource(1)
+	prand := testhelpers.NewPseudoRandomDataSource(t, 1)
 	l2info := NewArbTestInfo(t)
 	for i := 0; i < 50; i++ {
 		contractData, sum := InitOneContract(prand)
