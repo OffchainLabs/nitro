@@ -36,3 +36,25 @@ When a Retryable is redeemed, it will execute with the sender, destination, call
 
 ### Redeeming a Retryable
 
+## ArbOS State
+
+ArbOS's state is viewed and modified via [`ArbosState`][ArbosState_link] objects, which provide convenient abstractions for working with the underlying data of its [`backingStorage`][BackingStorage_link]. The backing storage's [keyed subspace strategy][subspace_link] makes possible [`ArbosState`][ArbosState_link]'s convenient getters and setters, minimizing the need to directly work with the specific keys and values of the underlying storage's [`stateDB`][stateDB_link].
+
+Because two [`ArbosState`][ArbosState_link] objects with the same [`backingStorage`][BackingStorage_link] contain and mutate the same underlying state, different [`ArbosState`][ArbosState_link] objects can provide different views of ArbOS's contents. [`Burner`][Burner_link] objects, which track gas usage while working with the [`ArbosState`][ArbosState_link], provide the internal mechanism for doing so. Some are read-only, causing transactions to revert with `vm.ErrWriteProtection` upon a mutating request. Others demand the caller have elevated privileges. While yet others dynamically charge users when doing stateful work. For safety the kind of view is chosen when [`OpenArbosState()`][OpenArbosState_link] creates the object and may never change. 
+
+Much of ArbOS's state exists to facilitate its [precompiles](Precompiles.md). The parts that aren't are detailed below.
+
+### `l1PricingState`
+
+### `l2PricingState`
+
+### `retryableState`
+
+[BackingStorage_link]: todo
+[ArbosState_link]: todo
+[stateDB_link]: todo
+[subspace_link]: todo
+[OpenArbosState_link]: todo
+[Burner_link]: todo
+
+
