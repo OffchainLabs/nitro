@@ -21,13 +21,13 @@ const (
 	arbInternalTxUpdateL1BlockNumber uint8 = 0
 )
 
-func InternalTxUpdateL1BlockNumber(l1BlockNumber, l2BlockNumber, chainId *big.Int) *types.ArbitrumInternalTx {
+func InternalTxUpdateL1BlockNumber(chainId, l1BlockNumber, l2BlockNumber *big.Int, txIndex uint64) *types.ArbitrumInternalTx {
 	return &types.ArbitrumInternalTx{
 		ChainId:     chainId,
 		Type:        arbInternalTxUpdateL1BlockNumber,
 		Data:        rlp.AppendUint64([]byte{}, l1BlockNumber.Uint64()),
 		BlockNumber: l2BlockNumber.Uint64(),
-		TxIndex:     0,
+		TxIndex:     txIndex,
 	}
 }
 
