@@ -112,7 +112,8 @@ func ProduceBlock(
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
+		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
+		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
