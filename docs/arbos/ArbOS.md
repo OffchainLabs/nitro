@@ -25,7 +25,7 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`][c
 [packing_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L401
 [call_context_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/context.go#L21
 
-## Retryables
+## Retryables<a name=Retryables></a>
 
 A Retryable is a transaction whose *submission* is separate from its *execution*.  A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1.  If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
 
