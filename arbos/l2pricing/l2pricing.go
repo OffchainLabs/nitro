@@ -93,8 +93,8 @@ func (ps *L2PricingState) MinGasPriceWei() (*big.Int, error) {
 	return ps.minGasPriceWei.Get()
 }
 
-func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) {
-	ps.Restrict(ps.minGasPriceWei.Set(val))
+func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) error {
+	return ps.minGasPriceWei.Set(val)
 }
 
 func (ps *L2PricingState) MaxGasPriceWei() (*big.Int, error) { // the max gas price ArbOS can set without breaking geth

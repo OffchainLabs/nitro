@@ -10,7 +10,7 @@ interface ArbOwner {
     function getAllChainOwners() external view returns(address[] memory);
     function setL1GasPriceEstimate(uint priceInWei) external;
     function setL2GasPrice(uint256 priceInWei) external;
-    function setMinimumGasPrice(uint256 priceInWei) external view;
+    function setMinimumGasPrice(uint256 priceInWei) external;
     function setSpeedLimit(uint64 limit) external view;
     function setGasPoolSeconds(uint64 factor) external view;
     function setSmallGasPoolSeconds(uint64 factor) external view;

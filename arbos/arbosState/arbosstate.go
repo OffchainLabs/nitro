@@ -240,10 +240,10 @@ func (state *ArbosState) SetLastTimestampSeen(val uint64) {
 		panic("timestamp decreased")
 	}
 	if val > ts {
-		delta := val - ts
 		state.Restrict(state.timestamp.Set(val))
-		state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
 	}
+	delta := val - ts
+	state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {

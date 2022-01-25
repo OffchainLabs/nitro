@@ -46,7 +46,7 @@ func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
 }
 
 func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+	return c.state.L2PricingState().SetMinGasPriceWei(priceInWei)
 }
 
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
