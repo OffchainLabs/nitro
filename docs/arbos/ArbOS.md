@@ -27,9 +27,13 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`][c
 
 ## Retryables
 
-A Retryable is a transaction whose *submission* is separate from its *execution*.   A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1.  If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
+A Retryable is a transaction whose *submission* is separate from its *execution*.  A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1.  If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
 
-After a Retryable is submitted, anyone can try to *redeem* it, by calling the `redeem` method of the `ArbRetryableTx` precompile.  The party requesting the redeem provides the gas that will be used to execute the Retryable.  If execution of the Retryable succeeds, the Retryable is deleted.  If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will automatically be discarded, unless some party has paid a fee to *renew* the Retryable for another full period.  A Retryable can live indefinitely as long as it is renewed each time before it expires.
+After a Retryable is submitted, anyone can try to *redeem* it, by calling the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile.  The party requesting the redeem provides the gas that will be used to execute the Retryable.  If execution of the Retryable succeeds, the Retryable is deleted.  If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will be [automatically discarded][discard_link], unless some party has paid a fee to [*renew*][renew_link] the Retryable for another full period.  A Retryable can live indefinitely as long as it is renewed each time before it expires.
+
+[discard_link]: todo
+[renew_link]: todo
+
 
 ### Submitting a Retryable
 
@@ -39,15 +43,24 @@ A transaction to submit a Retryable does the following:
 * deduct funds to cover the callvalue from the caller (as usual) and place them into escrow for later use in redeeming the Retryable
 * assign a unique TicketID to the Retryable
 * cause the ArbRetryableTx precompiled contract to emit a TicketCreated event containing the TicketID
-* if the submit transaction contains gas, schedule a redeem of the new Retryable, using the supplied gas, as if the `redeem` method of the `ArbRetryableTx` precompile had been called.
+* if the submit transaction contains gas, schedule a redeem of the new Retryable, using the supplied gas, as if the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile had been called.
 
 In many use cases, the submitter will provide gas and will intend for the immediate redeem to succeed, with later retries available only as a backup mechanism should the immediate redeem fail. (It might fail, for example, because the L2 gas price has increased unexpectedly.) In this way, an L1 contract can submit a transaction to L2 in such a way that the transaction will normally run immediately at L2 but allowing any party to retry the transaction should it fail.
 
 When a Retryable is redeemed, it will execute with the sender, destination, callvalue, and calldata of the original submission. The callvalue will have been escrowed during the initial submission of the Retryable, for this purpose.  If a Retryable with callvalue is eventually discarded, having never successfully run, the escrowed callvalue will be paid out to a "beneficiary" account that is specified in the initial submission.
 
+A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbRetryableTx) the Retryable. This has the same effect as the Retryable timing out, except when done during a [`redeem`](Precompiles.md#ArbRetryableTx) in which case the escrowed funds  [will have already been moved][moved_link] to the Retryable's `From` address (which Geth then moves to the `To` address or the deployed contract if `To` is not specified). This ensures no additional funds are minted when a retry transaction cancels its own Retryable.
+
+[moved_link]: todo
+
 ### Redeeming a Retryable
 
+If a redeem is not done at submission or the submission's initial redeem fails, anyone can attempt to redeem the retryable again by calling [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx)'s [`redeem`](Precompiles.md#ArbRetryableTx) precompile method, which donates the call's gas to the next attempt. ArbOS will [enqueue the redeem][enqueue_link], which is its own special `ArbitrumRetryTx` type, to its list of redeems that ArbOS [guarantees to exhaust][exhaust_link] before moving on to the next non-redeem transaction in the block its forming. In this manner redeems are scheduled to happen as soon as possible, and will always be in the same block since the gas donated came from the pool.
 
+On success, the `To` address keeps the escrowed callvalue, and any unused gas is returned to the pools. On failure, the callvalue is returned to the escrow for the next redeemer. In either case, the network fee was paid during the scheduling tx, so no fees are charged and no refunds are made. 
+
+[enqueue_link]: todo
+[exhaust_link]: todo
 
 ## ArbOS State
 
