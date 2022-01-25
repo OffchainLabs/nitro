@@ -66,12 +66,14 @@ func (p *TxProcessor) PopCaller() {
 }
 
 func (p *TxProcessor) getAggregator() *common.Address {
-	coinbase := p.evm.Context.Coinbase
-	preferredAggregator, found, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
-	if err != nil && found && preferredAggregator == coinbase {
-		return &coinbase
+	if p.msg.UnderlyingTransaction() == nil {
+		// This is an eth_call/eth_estimateGas.
+		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
+		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+		p.state.Burner.Restrict(err)
+		return &agg
 	}
-	return nil
+	return &p.evm.Context.Coinbase
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
@@ -239,7 +241,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return vm.ErrOutOfGas
+		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 	return nil
@@ -297,14 +299,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
+	if !transitionSuccess && p.msg.Gas()-gasLeft < p.posterGas+params.TxGas {
+		gasLeft = 0
+	}
 	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 
 	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
 	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
-		// Uh oh, there's a bug in our charging code.
+		// The transaction doesn't have a high enough gas limit to pay for the poster fee.
 		// Give all funds to the network account and continue.
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		if transitionSuccess {
+			// Uh oh, there's a bug in our charging code.
+			log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		}
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
 	}
@@ -317,7 +325,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
 
-		if gasUsed.Uint64() < p.posterGas {
+		if gasUsed.Uint64() < p.posterGas && transitionSuccess {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 		}
 		computeGas := gasUsed.Uint64() - p.posterGas

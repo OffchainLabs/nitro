@@ -46,10 +46,6 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 		}
 	}
 
-	err = arbosState.L1PricingState().SetDefaultAggregator(initData.DefaultAggregator)
-	if err != nil {
-		return nil, err
-	}
 	err = initializeRetryables(arbosState.RetryableState(), initData.RetryableData, 0)
 	if err != nil {
 		return nil, err

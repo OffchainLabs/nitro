@@ -30,6 +30,9 @@ import (
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
+// Includes room for aggregator L1 costs
+const l2TxGas uint64 = 300_000
+
 type info = *BlockchainTestInfo
 type client = arbnode.L1Interface
 
@@ -45,7 +48,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 }
 
 func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context) {
-	tx := l2info.PrepareTx(from, to, 100000, amount, nil)
+	tx := l2info.PrepareTx(from, to, l2TxGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
