@@ -4,6 +4,6 @@ interface ArbInfo {
     // Retrieves an account's balance
     function getBalance(address account) external view returns (uint256);
 
-    // Retrieves a contract's source program
+    // Retrieves a contract's deployed code
     function getCode(address account) external view returns (bytes memory);
 }

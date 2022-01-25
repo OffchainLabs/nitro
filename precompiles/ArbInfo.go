@@ -22,7 +22,7 @@ func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 	return evm.StateDB.GetBalance(account), nil
 }
 
-// Retrieves a contract's source program
+// Retrieves a contract's deployed code
 func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
 	if err := c.Burn(params.ColdSloadCostEIP2929); err != nil {
 		return nil, err

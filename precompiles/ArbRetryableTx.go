@@ -20,11 +20,9 @@ type ArbRetryableTx struct {
 	TicketCreated           func(ctx, mech, bytes32) error
 	LifetimeExtended        func(ctx, mech, bytes32, huge) error
 	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr) error
-	Redeemed                func(ctx, mech, bytes32) error
 	Canceled                func(ctx, mech, bytes32) error
 	TicketCreatedGasCost    func(bytes32) (uint64, error)
 	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
-	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
 	RedeemedGasCost         func(bytes32) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
 }

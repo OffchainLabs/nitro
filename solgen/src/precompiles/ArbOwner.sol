@@ -4,10 +4,10 @@ interface ArbOwner {
     // Support actions that can be taken by the chain's owner.
     // All methods will revert, unless the caller is the chain's owner.
 
-    // Promotes the user to chain owner
+    // Add account as a chain owner
     function addChainOwner(address newOwner) external;
 
-    // Demotes the user from chain owner, reverting if user is not an owner
+    // Remove account from the list of chain owners
     function removeChainOwner(address ownerToRemove) external;
 
     // See if the user is a chain owner
