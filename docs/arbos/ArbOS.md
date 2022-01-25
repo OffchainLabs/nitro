@@ -16,14 +16,14 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`][c
 
 [solgen_precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/solgen/src/precompiles
 [precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/precompiles
-[installer_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L365
-[installation_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L390
+[installer_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L379
+[installation_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L403
 [gen_file]: https://github.com/OffchainLabs/nitro/blob/master/solgen/gen.go
-[ownerOnly_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L59
-[debugOnly_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/wrapper.go#L26
-[precompilesgen_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/solgen/gen.go#L55
-[packing_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/precompile.go#L401
-[call_context_link]: https://github.com/OffchainLabs/nitro/blob/ac5994e4ecf8c33a54d41c8a288494fbbdd207eb/precompiles/context.go#L21
+[ownerOnly_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/wrapper.go#L58
+[debugOnly_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/wrapper.go#L23
+[precompilesgen_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/gen.go#L55
+[packing_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L438
+[call_context_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/context.go#L26
 
 ## Retryables<a name=Retryables></a>
 
@@ -31,8 +31,8 @@ A Retryable is a transaction whose *submission* is separate from its *execution*
 
 After a Retryable is submitted, anyone can try to *redeem* it, by calling the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile.  The party requesting the redeem provides the gas that will be used to execute the Retryable.  If execution of the Retryable succeeds, the Retryable is deleted.  If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will be [automatically discarded][discard_link], unless some party has paid a fee to [*renew*][renew_link] the Retryable for another full period.  A Retryable can live indefinitely as long as it is renewed each time before it expires.
 
-[discard_link]: todo
-[renew_link]: todo
+[discard_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/retryables/retryable.go#L262
+[renew_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/retryables/retryable.go#L207
 
 
 ### Submitting a Retryable
@@ -49,9 +49,9 @@ In many use cases, the submitter will provide gas and will intend for the immedi
 
 When a Retryable is redeemed, it will execute with the sender, destination, callvalue, and calldata of the original submission. The callvalue will have been escrowed during the initial submission of the Retryable, for this purpose.  If a Retryable with callvalue is eventually discarded, having never successfully run, the escrowed callvalue will be paid out to a "beneficiary" account that is specified in the initial submission.
 
-A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbRetryableTx) the Retryable. This has the same effect as the Retryable timing out, except when done during a [`redeem`](Precompiles.md#ArbRetryableTx) in which case the escrowed funds  [will have already been moved][moved_link] to the Retryable's `From` address (which Geth then moves to the `To` address or the deployed contract if `To` is not specified). This ensures no additional funds are minted when a retry transaction cancels its own Retryable.
+A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbRetryableTx) the Retryable. This has the same effect as the Retryable timing out, except when done during a [`redeem`](Precompiles.md#ArbRetryableTx) in which case the escrowed funds [will have already been moved][moved_link] to the Retryable's `From` address (which Geth then moves to the `To` address or the deployed contract if `To` is not specified). This ensures no additional funds are minted when a retry transaction cancels its own Retryable.
 
-[moved_link]: todo
+[moved_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L191
 
 ### Redeeming a Retryable
 
@@ -59,8 +59,8 @@ If a redeem is not done at submission or the submission's initial redeem fails, 
 
 On success, the `To` address keeps the escrowed callvalue, and any unused gas is returned to the pools. On failure, the callvalue is returned to the escrow for the next redeemer. In either case, the network fee was paid during the scheduling tx, so no fees are charged and no refunds are made. 
 
-[enqueue_link]: todo
-[exhaust_link]: todo
+[enqueue_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L245
+[exhaust_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L135
 
 ## ArbOS State
 
@@ -70,30 +70,30 @@ Because two [`ArbosState`][ArbosState_link] objects with the same [`backingStora
 
 Much of ArbOS's state exists to facilitate its [precompiles](Precompiles.md). The parts that aren't are detailed below.
 
-[ArbosState_link]: todo
-[BackingStorage_link]: todo
-[stateDB_link]: todo
-[subspace_link]: todo
-[OpenArbosState_link]: todo
-[Burner_link]: todo
+[ArbosState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/arbosState/arbosstate.go#L36
+[BackingStorage_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/storage/storage.go#L51
+[stateDB_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/core/state/statedb.go#L66
+[subspace_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/storage/storage.go#L21
+[OpenArbosState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/arbosState/arbosstate.go#L57
+[Burner_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/burn/burn.go#L11
 
 ### [`arbosVersion`][arbosVersion_link], [`upgradeVersion`][upgradeVersion_link] and [`upgradeTimestamp`][upgradeTimestamp_link]
 
 ArbOS upgrades are scheduled to happen [when finalizing the first block][FinalizeBlock_link] after the [`upgradeTimestamp`][upgradeTimestamp_link].
 
-[arbosVersion_link]: todo
-[upgradeVersion_link]: todo
-[upgradeTimestamp_link]: todo
-[FinalizeBlock_link]: todo
+[arbosVersion_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/arbosState/arbosstate.go#L37
+[upgradeVersion_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/arbosState/arbosstate.go#L38
+[upgradeTimestamp_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/arbosState/arbosstate.go#L39
+[FinalizeBlock_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L350
 
 ### [`blockhashes`][blockhashes_link]
 
 This component maintains the last 256 L1 block hashes in a circular buffer. This allows the [`TxProcessor`][TxProcessor_link] to implement the `BLOCKHASH` and `NUMBER` opcodes as well as support precompile methods that involve the outbox. To avoid changing ArbOS state outside of a transaction, blocks made from messages with a new L1 block number update this info during an [`InternalTxUpdateL1BlockNumber`][InternalTxUpdateL1BlockNumber_link] [`ArbitrumInternalTx`][ArbitrumInternalTx_link] that is included as the first tx in the block.
 
-[blockhashes_link]: todo
-[InternalTxUpdateL1BlockNumber_link]: todo
-[ArbitrumInternalTx_link]: todo
-[TxProcessor_link]: todo
+[blockhashes_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/blockhash/blockhash.go#L15
+[InternalTxUpdateL1BlockNumber_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/internal_tx.go#L24
+[ArbitrumInternalTx_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L116
+[TxProcessor_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L33
 
 ### [`l1PricingState`][l1PricingState_link]
 
@@ -103,7 +103,7 @@ Theoretically an aggregator can lie about its compression ratio to slightly infl
 
 The L1 pricing state also keeps a running estimate of the L1 gas price, which updates as ArbOS processes delayed messages.
 
-[l1PricingState_link]: todo
+[l1PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l1pricing/l1pricing.go#L16
 
 ### [`l2PricingState`][l2PricingState_link]
 
@@ -111,6 +111,6 @@ The L2 pricing state tracks L2 resource usage to determine a reasonable L2 gas p
 
 While much of this state is accessible through the [`ArbGasInfo`](Precompiles.md#ArbGasInfo) and [`ArbOwner`](Precompiles.md#ArbOwner) precompiles, most changes are automatic and happen during [block production][block_production_link] and [the transaction hooks](Geth.md#Hooks). Each of an incoming message's txes removes from the pool the L2 component of the gas it uses, and afterward the message's timestamp [informs the pricing mechanism][notify_pricer_link] of the time that's passed as ArbOS [finalizes the block][finalizeblock_link].
 
-[l2PricingState_link]: todo
-[block_production_link]: todo
-[notify_pricer_link]: todo
+[l2PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l2pricing/l2pricing.go#L14
+[block_production_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L77
+[notify_pricer_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L336
