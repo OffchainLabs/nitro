@@ -49,13 +49,13 @@ func TestTwoNodesLong(t *testing.T) {
 	l2info.GenerateAccount("ErrorTxSender")
 
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", l2TxGas, big.NewInt(params.InitialBaseFee*int64(l2TxGas)), nil),
+		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(params.InitialBaseFee*int64(l2info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "DelayedFaucet", l2TxGas, delayedFaucetNeeds, nil),
+		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
 	})
 	delayedFaucetBalance, err := l2client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 	Require(t, err)
@@ -94,7 +94,7 @@ func TestTwoNodesLong(t *testing.T) {
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
 		l2Txs := make([]*types.Transaction, 0, l2TxsThisTime)
 		for len(l2Txs) < l2TxsThisTime {
-			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", l2TxGas, fundsPerDirect, nil))
+			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", l2info.TransferGas, fundsPerDirect, nil))
 		}
 		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)

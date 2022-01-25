@@ -24,7 +24,7 @@ func TestTwoNodesSimple(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 
-	tx := l2info.PrepareTx("Owner", "User2", l2TxGas, big.NewInt(1e12), nil)
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
