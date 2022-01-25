@@ -66,16 +66,20 @@ Provides the ability to create short-hands for commonly used accounts.
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                                                  |                                                         | Caller must be                |
-|:-----------------------------------------------------------------------------------------|:--------------------------------------------------------|:------------------------------|
-| [<img src=e.png height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                  |                               |
-| [<img src=e.png height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided |                               |
-| [<img src=e.png height=16>][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the chain's default aggregator                     |                               |
-| [<img src=e.png height=16>][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the chain's default aggregator                     | chain owner or the current    |
-| [<img src=e.png height=16>][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                      |                               |
-| [<img src=e.png height=16>][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                      | the aggregator                |
-| [<img src=e.png height=16>][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed fee to submit a tx   |                               |
-| [<img src=e.png height=16>][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed fee                          | chain owner or the aggergator |
+Compression ratios are measured in ppm. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
+
+| Methods                                                                                  |                                                         |  |
+|:-----------------------------------------------------------------------------------------|:--------------------------------------------------------|:------------------|
+| [<img src=e.png height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                  |                   |
+| [<img src=e.png height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided |                   |
+| [<img src=e.png height=16>][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the chain's default aggregator                     |                   |
+| [<img src=e.png height=16>][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the chain's default aggregator                     | ✔️                 |
+| [<img src=e.png height=16>][As4] [`GetCompressionRatio`][A4]`(aggregator)`               | Gets the aggregator's compression ratio                 |                   |
+| [<img src=e.png height=16>][As5] [`SetCompressionRatio`][A5]`(aggregator, ratio)`        | Set the aggregator's compression ratio                  | ✔️                 |
+| [<img src=e.png height=16>][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                      |                   |
+| [<img src=e.png height=16>][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                      | ✔️                 |
+| [<img src=e.png height=16>][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed fee to submit a tx   |                   |
+| [<img src=e.png height=16>][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed fee                          | ✔️                 |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
