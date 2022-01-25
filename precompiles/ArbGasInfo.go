@@ -8,7 +8,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util"
@@ -30,7 +29,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.GasPriceWei()
+	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -69,7 +68,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.GasPriceWei()
+	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -96,10 +95,25 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 }
 
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	speedLimit := big.NewInt(arbosState.SpeedLimitPerSecond)
-	gasPoolMax := big.NewInt(arbosState.GasPoolMax)
-	maxTxGasLimit := big.NewInt(int64(arbosState.MaxPerBlockGasLimit()))
-	return speedLimit, gasPoolMax, maxTxGasLimit, nil
+	l2pricing := c.state.L2PricingState()
+	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
+	gasPoolMax, _ := l2pricing.GasPoolMax()
+	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
+	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
+}
+
+func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
+	return c.state.L2PricingState().MinGasPriceWei()
+}
+
+func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (huge, error) {
+	seconds, err := c.state.L2PricingState().GasPoolSeconds()
+	return util.UintToBig(seconds), err
+}
+
+func (con ArbGasInfo) GetSmallGasPoolSeconds(c ctx, evm mech) (huge, error) {
+	seconds, err := c.state.L2PricingState().SmallGasPoolSeconds()
+	return util.UintToBig(seconds), err
 }
 
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {

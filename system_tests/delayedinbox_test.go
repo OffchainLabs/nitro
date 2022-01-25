@@ -40,11 +40,9 @@ func WrapL2ForDelayed(t *testing.T, l2Tx *types.Transaction, l1info *BlockchainT
 func TestDelayInboxSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	l2client := l2info.Client
-	l1client := l1info.Client
 	l2info.GenerateAccount("User2")
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
@@ -63,7 +61,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)

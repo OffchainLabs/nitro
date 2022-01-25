@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -20,6 +19,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
@@ -54,13 +54,8 @@ var testChainConfig = &params.ChainConfig{
 }
 
 func TestEthDepositMessage(t *testing.T) {
-	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
-	statedb, err := state.New(common.Hash{}, db, nil)
-	if err != nil {
-		panic("failed to init empty statedb")
-	}
 
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	addr := common.HexToAddress("0x32abcdeffffff")
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))

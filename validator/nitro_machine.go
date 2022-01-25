@@ -5,7 +5,7 @@
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
+#cgo CFLAGS: -g -Wall -I../target/include/
 #include "arbitrator.h"
 #include <stdlib.h>
 */
@@ -43,10 +43,10 @@ type NitroMachineConfig struct {
 }
 
 var StaticNitroMachineConfig = NitroMachineConfig{
-	RootPath:                "./arbitrator/target/env/",
+	RootPath:                "./target/",
 	ProverBinPath:           "lib/replay.wasm",
 	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm"},
-	InitialMachineCachePath: "initial-machine-cache",
+	InitialMachineCachePath: "etc/initial-machine-cache",
 }
 
 var zeroStepMachine staticMachineData
@@ -55,7 +55,7 @@ var hostIoMachine staticMachineData
 func init() {
 	_, thisfile, _, _ := runtime.Caller(0)
 	projectDir := filepath.Dir(filepath.Dir(thisfile))
-	StaticNitroMachineConfig.RootPath = filepath.Join(projectDir, "arbitrator", "target", "env")
+	StaticNitroMachineConfig.RootPath = filepath.Join(projectDir, "target")
 
 	zeroStepMachine.chanSignal = make(chan struct{})
 	hostIoMachine.chanSignal = make(chan struct{})

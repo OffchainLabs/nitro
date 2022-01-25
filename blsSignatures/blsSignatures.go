@@ -30,58 +30,69 @@ func init() {
 
 type PublicKey struct {
 	key           *bls12381.PointG2
-	validityProof *bls12381.PointG1 // if this is nil, PK was made by aggregating verified keys
+	validityProof *bls12381.PointG1 // if this is nil, key came from a trusted source
 }
 
 type PrivateKey *big.Int
 
 type Signature *bls12381.PointG1
 
-func GenerateKeys() (*PublicKey, PrivateKey, error) {
+func GenerateKeys() (PublicKey, PrivateKey, error) {
 	seed, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
-	return insecureDeterministicGenerateKeys(seed)
+	return internalDeterministicGenerateKeys(seed)
 }
 
 // Don't call this directly, except in testing.
-func insecureDeterministicGenerateKeys(seed *big.Int) (*PublicKey, PrivateKey, error) {
+func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
 	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
 	publicKey, err := NewPublicKey(pubKey, proof)
 	if err != nil {
-		return nil, nil, err
+		return PublicKey{}, nil, err
 	}
 	return publicKey, privateKey, nil
 }
 
 // This key validity proof mechanism is sufficient to prevent rogue key attacks, if applied to all keys
-//     that come from untrusted sources.
-// See Theorem 1 in Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
+// that come from untrusted sources. We use the private key to sign the public key, but in the
+// signature algorithm we use a tweaked version of the hash-to-curve function so that the result cannot be
+// re-used as an ordinary signature.
+//
+// For a proof that this is sufficient, see Theorem 1 in
+// Ristenpart & Yilek, "The Power of Proofs-of-Possession: ..." from EUROCRYPT 2007.
 func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signature, error) {
 	return signMessage2(privateKey, blsState.g2.ToBytes(pubKey), true)
 }
 
-func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (*PublicKey, error) {
-	unverifiedPublicKey := &PublicKey{pubKey, validityProof}
+func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (PublicKey, error) {
+	unverifiedPublicKey := PublicKey{pubKey, validityProof}
 	verified, err := verifySignature2(validityProof, blsState.g2.ToBytes(pubKey), unverifiedPublicKey, true)
 	if err != nil {
-		return nil, err
+		return PublicKey{}, err
 	}
 	if !verified {
-		return nil, errors.New("public key validation failed")
+		return PublicKey{}, errors.New("public key validation failed")
 	}
 	return unverifiedPublicKey, nil
 }
 
-func NewTrustedPublicKey(pubKey *bls12381.PointG2) *PublicKey {
-	return &PublicKey{pubKey, nil}
+func NewTrustedPublicKey(pubKey *bls12381.PointG2) PublicKey {
+	return PublicKey{pubKey, nil}
+}
+
+func (pubKey PublicKey) ToTrusted() PublicKey {
+	if pubKey.validityProof == nil {
+		return pubKey
+	}
+	return NewTrustedPublicKey(pubKey.key)
 }
 
 func SignMessage(priv PrivateKey, message []byte) (Signature, error) {
@@ -98,11 +109,11 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	return Signature(result), nil
 }
 
-func VerifySignature(sig Signature, message []byte, publicKey *PublicKey) (bool, error) {
+func VerifySignature(sig Signature, message []byte, publicKey PublicKey) (bool, error) {
 	return verifySignature2(sig, message, publicKey, false)
 }
 
-func verifySignature2(sig Signature, message []byte, publicKey *PublicKey, keyValidationMode bool) (bool, error) {
+func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyValidationMode bool) (bool, error) {
 	pointOnCurve, err := hashToG1Curve(message, keyValidationMode)
 	if err != nil {
 		return false, err
@@ -117,7 +128,7 @@ func verifySignature2(sig Signature, message []byte, publicKey *PublicKey, keyVa
 	return leftSide.Equal(rightSide), nil
 }
 
-func AggregatePublicKeys(pubKeys []*PublicKey) *PublicKey {
+func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
 	ret := blsState.g2.Zero()
 	for _, pk := range pubKeys {
 		blsState.g2.Add(ret, ret, pk.key)
@@ -133,11 +144,11 @@ func AggregateSignatures(sigs []Signature) Signature {
 	return ret
 }
 
-func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys []*PublicKey) (bool, error) {
+func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys []PublicKey) (bool, error) {
 	return VerifySignature(sig, message, AggregatePublicKeys(pubKeys))
 }
 
-func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []*PublicKey) (bool, error) {
+func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []PublicKey) (bool, error) {
 	if len(messages) != len(pubKeys) {
 		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
 	}
@@ -158,13 +169,20 @@ func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte
 	return leftSide.Equal(rightSide), nil
 }
 
+// This hashes a message to a [32]byte, then maps the result to the G1 curve using
+// the Simplified Shallue-van de Woestijne-Ulas Method, described in Section 6.6.2 of
+// https://tools.ietf.org/html/draft-irtf-cfrg-hash-to-curve-06
+//
+// If keyValidationMode is true, this uses a tweaked version of the padding,
+// so that the result will not collide with a result generated in an ordinary signature.
 func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, error) {
-	var empty [16]byte
+	var padding [16]byte
 	h := crypto.Keccak256(message)
 	if keyValidationMode {
-		h = append(h[16:], h[:16]...) // tweak the hash, so result won't collide with ordinary hash
+		// modify padding, for domain separation
+		padding[0] = 1
 	}
-	return blsState.g1.MapToCurve(append(empty[:], h...))
+	return blsState.g1.MapToCurve(append(padding[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
@@ -180,30 +198,30 @@ func PublicKeyToBytes(pub PublicKey) []byte {
 	}
 }
 
-func PublicKeyFromBytes(in []byte, trustedSource bool) (*PublicKey, error) {
+func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 	proofLen := int(in[0])
 	if proofLen == 0 {
 		if !trustedSource {
-			return nil, errors.New("tried to deserialize unvalidated public key from untrusted source")
+			return PublicKey{}, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
 		key, err := blsState.g2.FromBytes(in[1:])
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		return NewTrustedPublicKey(key), nil
 	} else {
 		if len(in) < 1+proofLen {
-			return nil, errors.New("invalid serialized public key")
+			return PublicKey{}, errors.New("invalid serialized public key")
 		}
 		proofBytes := in[1 : 1+proofLen]
 		validityProof, err := blsState.g1.FromBytes(proofBytes)
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		keyBytes := in[1+proofLen:]
 		key, err := blsState.g2.FromBytes(keyBytes)
 		if err != nil {
-			return nil, err
+			return PublicKey{}, err
 		}
 		return NewPublicKey(key, validityProof)
 	}

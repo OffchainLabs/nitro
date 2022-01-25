@@ -42,5 +42,33 @@ func (con ArbOwner) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) erro
 }
 
 func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.SetGasPriceWei(priceInWei)
+	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+}
+
+func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+}
+
+func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
+	return c.state.L2PricingState().SetSpeedLimitPerSecond(limit)
+}
+
+func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
+}
+
+func (con ArbOwner) SetSmallGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetSmallGasPoolSeconds(seconds)
+}
+
+func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
+	return c.state.L2PricingState().SetMaxPerBlockGasLimit(limit)
+}
+
+func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
+	return c.state.NetworkFeeAccount()
+}
+
+func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
+	return c.state.SetNetworkFeeAccount(newNetworkFeeAccount)
 }

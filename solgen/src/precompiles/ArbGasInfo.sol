@@ -32,4 +32,13 @@ interface ArbGasInfo {
 
     // get L1 gas fees paid by the current transaction
     function getCurrentTxL1GasFees() external view returns(uint);
+
+    // get the minimum gas price needed for a transaction to succeed
+    function getMinimumGasPrice() external view returns(uint);
+
+    // get the number of seconds worth of the speed limit the large gas pool contains
+    function getGasPoolSeconds() external view returns(uint);
+
+    // get the number of seconds worth of the speed limit the small gas pool contains
+    function getSmallGasPoolSeconds() external view returns(uint);
 }

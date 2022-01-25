@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/pkg/errors"
 )
 
@@ -47,7 +47,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	message := &arbos.L1IncomingMessage{
 		Header: &arbos.L1IncomingMessageHeader{
 			Kind:        arbos.L1MessageType_L2Message,
-			Poster:      arbstate.SequencerAddress,
+			Poster:      l1pricing.SequencerAddress,
 			BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
 			Timestamp:   timestamp,
 			RequestId:   common.Hash{},
