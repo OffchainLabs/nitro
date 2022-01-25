@@ -72,8 +72,13 @@ func (p *TxProcessor) getAggregator() *common.Address {
 		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
 		p.state.Burner.Restrict(err)
 		return &agg
+	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
+		// This is a non-aggregated message.
+		return nil
+	} else {
+		// This is an aggregated message. The poster is in the block's coinbase.
+		return &p.evm.Context.Coinbase
 	}
-	return &p.evm.Context.Coinbase
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
