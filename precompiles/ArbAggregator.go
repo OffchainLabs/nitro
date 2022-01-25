@@ -71,7 +71,7 @@ func (con ArbAggregator) GetFeeCollector(c ctx, evm mech, aggregator addr) (addr
 	return c.state.L1PricingState().AggregatorFeeCollector(aggregator)
 }
 
-// Sets an aggregator's fee collector (caller must be the aggregator)
+// Sets an aggregator's fee collector (caller must be the aggregator, its fee collector, or an owner)
 func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFeeCollector addr) error {
 	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.state)
 	if err != nil {
@@ -83,12 +83,12 @@ func (con ArbAggregator) SetFeeCollector(c ctx, evm mech, aggregator addr, newFe
 	return c.state.L1PricingState().SetAggregatorFeeCollector(aggregator, newFeeCollector)
 }
 
-// Gets an aggregator's current fixed cost charge to submit a tx
+// Gets an aggregator's current fixed fee to submit a tx
 func (con ArbAggregator) GetTxBaseFee(c ctx, evm mech, aggregator addr) (huge, error) {
 	return c.state.L1PricingState().FixedChargeForAggregatorL1Gas(aggregator)
 }
 
-// Sets an aggregator's fixed cost (caller must be the aggregator or a chain owner)
+// Sets an aggregator's fixed fee (caller must be the aggregator, its fee collector, or an owner)
 func (con ArbAggregator) SetTxBaseFee(c ctx, evm mech, aggregator addr, feeInL1Gas huge) error {
 	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.state)
 	if err != nil {
