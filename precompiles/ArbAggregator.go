@@ -49,10 +49,12 @@ func (con ArbAggregator) SetDefaultAggregator(c ctx, evm mech, newDefault addr) 
 	return l1State.SetDefaultAggregator(newDefault)
 }
 
+// Get the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
 func (con ArbAggregator) GetCompressionRatio(c ctx, evm mech, aggregator addr) (uint64, error) {
 	return c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
 }
 
+// Set the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
 func (con ArbAggregator) SetCompressionRatio(c ctx, evm mech, aggregator addr, newRatio uint64) error {
 	allowed, err := accountIsAggregatorOrCollectorOrOwner(c.caller, aggregator, c.state)
 	if err != nil {
