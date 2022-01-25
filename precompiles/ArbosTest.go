@@ -10,7 +10,7 @@ import (
 
 // Provides a method of burning arbitrary amounts of gas, which exists for historical reasons.
 type ArbosTest struct {
-	Address addr
+	Address addr // 0x69
 }
 
 // Unproductively burns the amount of L2 ArbGas

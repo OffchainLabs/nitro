@@ -25,6 +25,7 @@ func (con ArbOwnerPublic) IsChainOwner(c ctx, evm mech, addr addr) (bool, error)
 	return c.state.ChainOwners().IsMember(addr)
 }
 
+// Gets the network fee collector
 func (con ArbOwnerPublic) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.state.NetworkFeeAccount()
 }

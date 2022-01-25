@@ -36,46 +36,46 @@ From the perspective of user applications, precompiles live as contracts at the 
 # [ArbAddressTable][ArbAddressTable_link]<a name=ArbAddressTable></a>
 Provides the ability to create short-hands for commonly used accounts.
 
-| Methods                                                      |                                                              |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| [<img src=e.png height=16>][ATs0] [`AddressExists`][AT0]`(address)` | Checks if an address exists in the table                     |
-| [<img src=e.png height=16>][ATs1] [`Compress`][AT1]`(address)` | Gets bytes that represent the address                        |
+| Methods                                                                        |                                                                                                                |
+|:-------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------|
+| [<img src=e.png height=16>][ATs0] [`AddressExists`][AT0]`(address)`            | Checks if an address exists in the table                                                                       |
+| [<img src=e.png height=16>][ATs1] [`Compress`][AT1]`(address)`                 | Gets bytes that represent the address                                                                          |
 | [<img src=e.png height=16>][ATs2] [`Decompress`][AT2]`(buffer, offset)` &nbsp; | Replaces the compressed bytes at the given offset with those of the corresponding account; inverse of Compress |
-| [<img src=e.png height=16>][ATs3] [`Lookup`][AT3]`(address)` | Gets the index of an address in the table                    |
-| [<img src=e.png height=16>][ATs4] [`LookupIndex`][AT4]`(index)` | Gets the address at an index in the table                    |
-| [<img src=e.png height=16>][ATs5] [`Register`][AT5]`(address)` | Adds an address to the table, shrinking its compressed representation |
-| [<img src=e.png height=16>][ATs6] [`Size`][AT6]`()`          | Gets the number of addresses in the table                    |
+| [<img src=e.png height=16>][ATs3] [`Lookup`][AT3]`(address)`                   | Gets the index of an address in the table                                                                      |
+| [<img src=e.png height=16>][ATs4] [`LookupIndex`][AT4]`(index)`                | Gets the address at an index in the table                                                                      |
+| [<img src=e.png height=16>][ATs5] [`Register`][AT5]`(address)`                 | Adds an address to the table, shrinking its compressed representation                                          |
+| [<img src=e.png height=16>][ATs6] [`Size`][AT6]`()`                            | Gets the number of addresses in the table                                                                      |
 
-[AT0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L18
-[AT1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L23
-[AT2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L28
-[AT3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L41
-[AT4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L53
-[AT5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L68
-[AT6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAddressTable.go#L74
+[AT0]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L18
+[AT1]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L23
+[AT2]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L28
+[AT3]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L41
+[AT4]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L53
+[AT5]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L68
+[AT6]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/precompiles/ArbAddressTable.go#L74
 
-[ATs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L12
-[ATs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L19
-[ATs2]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L27
-[ATs3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L33
-[ATs4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L39
-[ATs5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L46
-[ATs6]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbAddressTable.sol#L51
+[ATs0]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L12
+[ATs1]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L19
+[ATs2]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L27
+[ATs3]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L33
+[ATs4]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L39
+[ATs5]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L46
+[ATs6]: https://github.com/OffchainLabs/nitro/blob/ee649a44553fb458b2b8441f307901d4d1a9a7e1/solgen/src/precompiles/ArbAddressTable.sol#L51
 
 
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-| Methods                                                      |                                                         | Caller must be                |
-| :----------------------------------------------------------- | :------------------------------------------------------ | :---------------------------- |
-| [<img src=e.png height=16>][As0] [`GetPreferredAggregator`][A0]`(account)` | Gets an account's preferred aggregator                  |                               |
-| [<img src=e.png height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)` | Sets the caller's preferred aggregator to that provided |                               |
-| [<img src=e.png height=16>][As2] [`GetDefaultAggregator`][A2]`()` | Gets the chain's default aggregator                     |                               |
-| [<img src=e.png height=16>][As3] [`SetDefaultAggregator`][A3]`(default)` | Sets the chain's default aggregator                     | chain owner or the current    |
-| [<img src=e.png height=16>][As4] [`GetFeeCollector`][A4]`(aggregator)` | Gets an aggregator's fee collector                      |                               |
+| Methods                                                                                  |                                                         | Caller must be                |
+|:-----------------------------------------------------------------------------------------|:--------------------------------------------------------|:------------------------------|
+| [<img src=e.png height=16>][As0] [`GetPreferredAggregator`][A0]`(account)`               | Gets an account's preferred aggregator                  |                               |
+| [<img src=e.png height=16>][As1] [`SetPreferredAggregator`][A1]`(aggregator)`            | Sets the caller's preferred aggregator to that provided |                               |
+| [<img src=e.png height=16>][As2] [`GetDefaultAggregator`][A2]`()`                        | Gets the chain's default aggregator                     |                               |
+| [<img src=e.png height=16>][As3] [`SetDefaultAggregator`][A3]`(default)`                 | Sets the chain's default aggregator                     | chain owner or the current    |
+| [<img src=e.png height=16>][As4] [`GetFeeCollector`][A4]`(aggregator)`                   | Gets an aggregator's fee collector                      |                               |
 | [<img src=e.png height=16>][As5] [`SetFeeCollector`][A5]`(aggregator, collector)` &nbsp; | Sets an aggregator's fee collector                      | the aggregator                |
-| [<img src=e.png height=16>][As6] [`GetTxBaseFee`][A6]`(aggregator)` | Gets an aggregator's current fixed fee to submit a tx   |                               |
-| [<img src=e.png height=16>][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)` | Sets an aggregator's fixed fee                          | chain owner or the aggergator |
+| [<img src=e.png height=16>][As6] [`GetTxBaseFee`][A6]`(aggregator)`                      | Gets an aggregator's current fixed fee to submit a tx   |                               |
+| [<img src=e.png height=16>][As7] [`SetTxBaseFee`][A7]`(aggregator, fee)`                 | Sets an aggregator's fixed fee                          | chain owner or the aggergator |
 
 [A0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L19
 [A1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbAggregator.go#L24
@@ -99,16 +99,33 @@ Provides aggregators and their users methods for configuring how they participat
 # [ArbBLS][ArbBLS_link]<a name=ArbBLS></a>
 Provides a registry of BLS public keys for accounts.
 
-| Methods                                                                    |                                                       |
-|:---------------------------------------------------------------------------|:------------------------------------------------------|
-| [<img src=e.png height=16>][Bs0] [`GetPublicKey`][B0]`(account)`           | Retrieves the BLS public key for the account provided |
-| [<img src=e.png height=16>][Bs1] [`Register`][B1]`(x0, x1, y0, y1)` &nbsp; | Sets the caller's BLS public key                      |
+| Methods                                                                            |                                                             |
+|:-----------------------------------------------------------------------------------|:------------------------------------------------------------|
+| [<img src=e.png height=16>][Bs0] [`RegisterAltBN128`][B0]`(x0, x1, y0, y1)` &nbsp; | Associate an AltBN128 public key with the caller's address  |
+| [<img src=e.png height=16>][Bs1] [`GetAltBN128`][B1]`(account)`                    | Gets the AltBN128 public key associated with an address     |
+| [<img src=e.png height=16>][Bs2] [`RegisterBLS12381`][B2]`(key)`                   | Associate a BLS 12-381 public key with the caller's address |
+| [<img src=e.png height=16>][Bs3] [`GetBLS12381`][B3]`(account)`                    | Gets the BLS 12-381 public key associated with an address   |
 
-[B0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L13
-[B1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbBLS.go#L18
+[B0]: todo
+[B1]: todo
+[B2]: todo
+[B3]: todo
 
-[Bs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbBLS.sol#L5
-[Bs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbBLS.sol#L8
+[Bs0]: todo
+[Bs1]: todo
+[Bs2]: todo
+[Bs3]: todo
+
+| Deprecated Methods                                                           |                                |
+|:-----------------------------------------------------------------------------|:-------------------------------|
+| [<img src=e.png height=16>][Bds0] [`GetPublicKey`][Bd0]`(account)`           | equivalent to getAltBN128      |
+| [<img src=e.png height=16>][Bds1] [`Register`][Bd1]`(x0, x1, y0, y1)` &nbsp; | equivalent to registerAltBN128 |
+
+[Bd0]: todo
+[Bd1]: todo
+
+[Bds0]: todo
+[Bds1]: todo
 
 
 # [ArbDebug][ArbDebug_link]<a name=ArbDebug></a>
@@ -162,15 +179,19 @@ Provided aggregator's the ability to manage function tables, to enable one form 
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
 Provides insight into the cost of using the chain. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
 
-| Methods                                                      |                                                              |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| [<img src=e.png height=16>][GIs0] [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)` | Gets prices in wei when using the provided aggregator        |
-| [<img src=e.png height=16>][GIs1] [`GetPricesInWei`][GI1]`()` | Gets prices in wei when using the caller's preferred aggregator |
-| [<img src=e.png height=16>][GIs2] [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator     |
-| [<img src=e.png height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()` | Gets prices in ArbGas when using the caller's preferred aggregator |
-| [<img src=e.png height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()` | Gets the chain speed limit, pool size, and tx gas limit      |
-| [<img src=e.png height=16>][GIs5] [`GetL1GasPriceEstimate`][GI5]`()` | Gets ArbOS's current estimate of the L1 gas price            |
-| [<img src=e.png height=16>][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()` | Gets the fee paid to the aggregator for posting this tx      |
+| Methods                                                                                         |                                                                                |
+|:------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------------|
+| [<img src=e.png height=16>][GIs0] [`GetPricesInWeiWithAggregator`][GI0]`(aggregator)`           | Gets prices in wei when using the provided aggregator                          |
+| [<img src=e.png height=16>][GIs1] [`GetPricesInWei`][GI1]`()`                                   | Gets prices in wei when using the caller's preferred aggregator                |
+| [<img src=e.png height=16>][GIs2] [`GetPricesInArbGasWithAggregator`][GI2]`(aggregator)` &nbsp; | Gets prices in ArbGas when using the provided aggregator                       |
+| [<img src=e.png height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`                                | Gets prices in ArbGas when using the caller's preferred aggregator             |
+| [<img src=e.png height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()`                           | Gets the chain speed limit, pool size, and tx gas limit                        |
+| [<img src=e.png height=16>][GIs4] [`GetMinimumGasPrice`][GI4]`()`                               | Get the minimum gas price needed for a transaction to succeed                  |
+| [<img src=e.png height=16>][GIs4] [`GetGasPoolSeconds`][GI4]`()`                                | Get the number of seconds worth of the speed limit the large gas pool contains |
+| [<img src=e.png height=16>][GIs4] [`GetSmallGasPoolSeconds`][GI4]`()`                           | Get the number of seconds worth of the speed limit the small gas pool contains |
+| [<img src=e.png height=16>][GIs5] [`GetL1GasPriceEstimate`][GI5]`()`                            | Gets ArbOS's current estimate of the L1 gas price                              |
+| [<img src=e.png height=16>][GIs6] [`GetCurrentTxL1GasFees`][GI6]`()`                            | Gets the fee paid to the aggregator for posting this tx                        |
+
 
 [GI0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L26
 [GI1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbGasInfo.go#L62
@@ -192,10 +213,10 @@ Provides insight into the cost of using the chain. These methods have been adjus
 # [ArbInfo][ArbInfo_link]<a name=ArbInfo></a>
 Provides the ability to lookup basic info about accounts and contracts.
 
-| Methods                                                      |                                      |
-| :----------------------------------------------------------- | :----------------------------------- |
+| Methods                                                               |                                      |
+|:----------------------------------------------------------------------|:-------------------------------------|
 | [<img src=e.png height=16>][Is0] [`GetBalance`][I0]`(account)` &nbsp; | Retrieves an account's balance       |
-| [<img src=e.png height=16>][Is1] [`GetCode`][I1]`(account)`  | Retrieves a contract's deployed code |
+| [<img src=e.png height=16>][Is1] [`GetCode`][I1]`(account)`           | Retrieves a contract's deployed code |
 
 [I0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L18
 [I1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbInfo.go#L26
@@ -225,14 +246,21 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 - ArbOS upgrades happen with the rest of the system rather than being independent
 - Exemptions to address aliasing are no longer offered. Exemptions were intended to support backward compatibility for contracts deployed before aliasing was introduced, but no exemptions were ever requested.
 
-| Methods                                                      |                                                              |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| [<img src=e.png height=16>][Os0] [`AddChainOwner`][O0]`(account)` | Add account as a chain owner                                 |
-| [<img src=e.png height=16>][Os1] [`RemoveChainOwner`][O1]`(account)` | Remove account from the list of chain owners                 |
-| [<img src=e.png height=16>][Os2] [`IsChainOwner`][O2]`(account)` | See if account is a chain owner                              |
-| [<img src=e.png height=16>][Os3] [`GetAllChainOwners`][O3]`()` | Retrieves the list of chain owners                           |
-| [<img src=e.png height=16>][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression |
-| [<img src=e.png height=16>][Os5] [`SetL2GasPrice`][O5]`(price)` | Sets the L2 gas price directly, bypassing the pool calculus  |
+| Methods                                                                        |                                                                                 |
+|:-------------------------------------------------------------------------------|:--------------------------------------------------------------------------------|
+| [<img src=e.png height=16>][Os0] [`AddChainOwner`][O0]`(account)`              | Add account as a chain owner                                                    |
+| [<img src=e.png height=16>][Os1] [`RemoveChainOwner`][O1]`(account)`           | Remove account from the list of chain owners                                    |
+| [<img src=e.png height=16>][Os2] [`IsChainOwner`][O2]`(account)`               | See if account is a chain owner                                                 |
+| [<img src=e.png height=16>][Os3] [`GetAllChainOwners`][O3]`()`                 | Retrieves the list of chain owners                                              |
+| [<img src=e.png height=16>][Os4] [`SetL1GasPriceEstimate`][O4]`(price)` &nbsp; | Sets the L1 gas price estimate directly, bypassing the autoregression           |
+| [<img src=e.png height=16>][Os5] [`SetL2GasPrice`][O5]`(price)`                | Sets the L2 gas price directly, bypassing the pool calculus                     |
+| [<img src=e.png height=16>][Os6] [`SetMinimumGasPrice`][O6]`(price)`           | Sets the minimum gas price needed for a transaction to succeed                  |
+| [<img src=e.png height=16>][Os7] [`SetSpeedLimit`][O7]`(price)`                | Sets the computational speed limit for the chain                                |
+| [<img src=e.png height=16>][Os8] [`SetGasPoolSeconds`][O8]`(price)`            | Sets the number of seconds worth of the speed limit the large gas pool contains |
+| [<img src=e.png height=16>][Os9] [`SetSmallGasPoolSeconds`][O9]`(price)`       | Sets the number of seconds worth of the speed limit the small gas pool contains |
+| [<img src=e.png height=16>][Os10] [`SetMaxTxGasLimit`][O10]`(price)`           | Sets the maximum size a tx (and block) can be                                   |
+| [<img src=e.png height=16>][Os12] [`GetNetworkFeeAccount`][O12]`(price)`       | Gets the network fee collector                                                  |
+| [<img src=e.png height=16>][Os12] [`SetNetworkFeeAccount`][O12]`(price)`       | Sets the network fee collector                                                  |
 
 [O0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L22
 [O1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L27
@@ -240,6 +268,13 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 [O3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L41
 [O4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L46
 [O5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwner.go#L51
+[O6]: todo
+[O7]: todo
+[O8]: todo
+[O9]: todo
+[O10]: todo
+[O11]: todo
+[O12]: todo
 
 [Os0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L8
 [Os1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L11
@@ -247,32 +282,45 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 [Os3]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L17
 [Os4]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L20
 [Os5]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwner.sol#L23
+[Os6]: todo
+[Os7]: todo
+[Os8]: todo
+[Os9]: todo
+[Os10]: todo
+[Os11]: todo
+[Os12]: todo
 
 
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
 Provides non-owners with info about the current chain owners.
 
-| Methods                                                      |                                    |
-| :----------------------------------------------------------- | :--------------------------------- |
-| [<img src=e.png height=16>][OPs0] [`GetAllChainOwners`][OP0]`()` | Retrieves the list of chain owners |
-| [<img src=e.png height=16>][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if account is a chain owner    |
+| Methods                                                                   |                                 |
+|:--------------------------------------------------------------------------|:--------------------------------|
+| [<img src=e.png height=16>][OPs0] [`GetAllChainOwners`][OP0]`()`          | Gets the list of chain owners   |
+| [<img src=e.png height=16>][OPs1] [`IsChainOwner`][OP1]`(account)` &nbsp; | See if account is a chain owner |
+| [<img src=e.png height=16>][OPs2] [`GetNetworkFeeAccount`][OP2]`()`       | Gets the network fee collector  |
 
 [OP0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L19
 [OP1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbOwnerPublic.go#L24
+[OP2]: todo
 
 [OPs0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwnerPublic.sol#L10
 [OPs1]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/solgen/src/precompiles/ArbOwnerPublic.sol#L7
+[OPs2]: todo
 
 
 # [ArbRetryableTx][ArbRetryableTx_link]<a name=ArbRetryableTx></a>
-| Methods                                                                    |                                |
-|:---------------------------------------------------------------------------|:-------------------------------|
-| [<img src=e.png height=16>][RTs0] [`Cancel`][RT0]`(ticket)`                | TODO: document when stabilized |
-| [<img src=e.png height=16>][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | TODO: document when stabilized |
-| [<img src=e.png height=16>][RTs2] [`GetLifetime`][RT2]`()`                 | TODO: document when stabilized |
-| [<img src=e.png height=16>][RTs3] [`GetTimeout`][RT3]`(ticket)`            | TODO: document when stabilized |
-| [<img src=e.png height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | TODO: document when stabilized |
-| [<img src=e.png height=16>][RTs5] [`Redeem`][RT5]`(ticket)`                | TODO: document when stabilized |
+Provides 
+
+
+| Methods                                                                    |                                                                                                   |
+|:---------------------------------------------------------------------------|:--------------------------------------------------------------------------------------------------|
+| [<img src=e.png height=16>][RTs0] [`Cancel`][RT0]`(ticket)`                | Cancel the ticket and refund its callvalue to its beneficiary                                     |
+| [<img src=e.png height=16>][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | Gets the beneficiary of the ticket                                                                |
+| [<img src=e.png height=16>][RTs2] [`GetLifetime`][RT2]`()`                 | Gets the default lifetime period a retryable has at creation                                      |
+| [<img src=e.png height=16>][RTs3] [`GetTimeout`][RT3]`(ticket)`            | Gets the timestamp for when ticket will expire                                                    |
+| [<img src=e.png height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                                                   |
+| [<img src=e.png height=16>][RTs5] [`Redeem`][RT5]`(ticket)`                | Schedule an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt |
 
 [RT0]: todo
 [RT1]: todo
@@ -289,8 +337,8 @@ Provides non-owners with info about the current chain owners.
 [RTs5]: todo
 
 
-| Events                                                           |
-|:-----------------------------------------------------------------|
+| Events                                                               |
+|:---------------------------------------------------------------------|
 | [<img src=e.png height=16>][RTes0] [`TicketCreated`][RTe0]           |
 | [<img src=e.png height=16>][RTes1] [`LifetimeExtended`][RTe1] &nbsp; |
 | [<img src=e.png height=16>][RTes2] [`RedeemScheduled`][RTe2]         |
@@ -313,8 +361,8 @@ Provides non-owners with info about the current chain owners.
 # [ArbStatistics][ArbStatistics_link]<a name=ArbStatistics></a>
 Provides statistics about the chain as of just before the Nitro upgrade. In Arbitrum Classic, this was how a user would get info such as the total number of accounts, but there are better ways to get that info in Nitro.
 
-| Methods                                                    |                                                                                         |
-|:-----------------------------------------------------------|:----------------------------------------------------------------------------------------|
+| Methods                                                        |                                                                                         |
+|:---------------------------------------------------------------|:----------------------------------------------------------------------------------------|
 | [<img src=e.png height=16>][STs0] [`GetStats`][ST0]`()` &nbsp; | Returns the current block number and some statistics about the rollup's pre-Nitro state |
 
 [ST0]: https://github.com/OffchainLabs/nitro/blob/7e4c1a5119d83e144f5398597d046074c1741717/precompiles/ArbStatistics.go#L19

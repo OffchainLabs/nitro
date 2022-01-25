@@ -21,11 +21,25 @@ interface ArbOwner {
 
     // Sets the L2 gas price directly, bypassing the pool calculus
     function setL2GasPrice(uint256 priceInWei) external;
+
+    // Sets the minimum gas price needed for a transaction to succeed
     function setMinimumGasPrice(uint256 priceInWei) external view;
+
+    // Sets the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external view;
+
+    // Sets the number of seconds worth of the speed limit the large gas pool contains
     function setGasPoolSeconds(uint64 factor) external view;
+
+    // Sets the number of seconds worth of the speed limit the small gas pool contains
     function setSmallGasPoolSeconds(uint64 factor) external view;
-    function setMaxTxGasLimit(uint64 factor) external view;
+
+    // Sets the maximum size a tx (and block) can be
+    function setMaxTxGasLimit(uint64 limit) external view;
+
+    // Gets the network fee collector
     function getNetworkFeeAccount() external view returns(address);
+
+    // Sets the network fee collector
     function setNetworkFeeAccount(address newNetworkFeeAccount) external view;
 }

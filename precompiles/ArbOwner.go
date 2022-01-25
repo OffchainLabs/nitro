@@ -18,12 +18,12 @@ type ArbOwner struct {
 	Address addr // 0x70
 }
 
-// Promotes the user to chain owner
+// Add account as a chain owner
 func (con ArbOwner) AddChainOwner(c ctx, evm mech, newOwner addr) error {
 	return c.state.ChainOwners().Add(newOwner)
 }
 
-// Demotes the user from chain owner
+// Remove account from the list of chain owners
 func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	member, _ := con.IsChainOwner(c, evm, addr)
 	if !member {
@@ -32,7 +32,7 @@ func (con ArbOwner) RemoveChainOwner(c ctx, evm mech, addr addr) error {
 	return c.state.ChainOwners().Remove(addr)
 }
 
-// See if the user is a chain owner
+// See if the account is a chain owner
 func (con ArbOwner) IsChainOwner(c ctx, evm mech, addr addr) (bool, error) {
 	return c.state.ChainOwners().IsMember(addr)
 }
@@ -52,30 +52,37 @@ func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
 }
 
+// Sets the minimum gas price needed for a transaction to succeed
 func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
 }
 
+// Sets the computational speed limit for the chain
 func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.state.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
+// Sets the number of seconds worth of the speed limit the large gas pool contains
 func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
 }
 
+// Sets the number of seconds worth of the speed limit the small gas pool contains
 func (con ArbOwner) SetSmallGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetSmallGasPoolSeconds(seconds)
 }
 
+// Sets the maximum size a tx (and block) can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.state.L2PricingState().SetMaxPerBlockGasLimit(limit)
 }
 
+// Gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.state.NetworkFeeAccount()
 }
 
+// Sets the network fee collector
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.state.SetNetworkFeeAccount(newNetworkFeeAccount)
 }

@@ -21,7 +21,7 @@ interface ArbRetryableTx {
     function getLifetime() external view returns(uint);
 
     /**
-    * @notice Return the timestamp when ticketId will age out, or zero if ticketId does not exist.
+    * @notice Return the timestamp when ticketId will age out, reverting if it does not exist
     * @param ticketId unique ticket identifier
     * @return timestamp for ticket's deadline
     */

@@ -27,12 +27,6 @@ interface ArbGasInfo {
     // return gas accounting parameters (speedLimitPerSecond, gasPoolMax, maxTxGasLimit)
     function getGasAccountingParams() external view returns (uint, uint, uint);
 
-    // get ArbOS's estimate of the L1 gas price in wei
-    function getL1GasPriceEstimate() external view returns(uint);
-
-    // get L1 gas fees paid by the current transaction
-    function getCurrentTxL1GasFees() external view returns(uint);
-
     // get the minimum gas price needed for a transaction to succeed
     function getMinimumGasPrice() external view returns(uint);
 
@@ -41,4 +35,10 @@ interface ArbGasInfo {
 
     // get the number of seconds worth of the speed limit the small gas pool contains
     function getSmallGasPoolSeconds() external view returns(uint);
+
+    // get ArbOS's estimate of the L1 gas price in wei
+    function getL1GasPriceEstimate() external view returns(uint);
+
+    // get L1 gas fees paid by the current transaction
+    function getCurrentTxL1GasFees() external view returns(uint);
 }

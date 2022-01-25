@@ -8,5 +8,7 @@ interface ArbOwnerPublic {
 
     // Retrieves the list of chain owners
     function getAllChainOwners() external view returns(address[] memory);
+
+    // Gets the network fee collector
     function getNetworkFeeAccount() external view returns(address);
 }

@@ -108,15 +108,18 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
 }
 
+// Get the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
 	return c.state.L2PricingState().MinGasPriceWei()
 }
 
+// Get the number of seconds worth of the speed limit the large gas pool contains
 func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (huge, error) {
 	seconds, err := c.state.L2PricingState().GasPoolSeconds()
 	return util.UintToBig(seconds), err
 }
 
+// Get the number of seconds worth of the speed limit the small gas pool contains
 func (con ArbGasInfo) GetSmallGasPoolSeconds(c ctx, evm mech) (huge, error) {
 	seconds, err := c.state.L2PricingState().SmallGasPoolSeconds()
 	return util.UintToBig(seconds), err
