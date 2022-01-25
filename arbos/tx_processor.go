@@ -325,14 +325,21 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
 
-		if gasUsed.Uint64() < p.posterGas && transitionSuccess {
-			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+		// If !transitionSuccess, only subtract the base TxGas from the gas pool,
+		// which approximately represents the costs to a node of the core message transition.
+		computeGas := params.TxGas
+		if transitionSuccess {
+			if gasUsed.Uint64() > p.posterGas {
+				// Don't include posterGas in computeGas as it doesn't represent processing time.
+				computeGas = gasUsed.Uint64() - p.posterGas
+			} else {
+				// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
+				// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
+				log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+				computeGas = gasUsed.Uint64()
+			}
 		}
-		computeGas := gasUsed.Uint64() - p.posterGas
-		if computeGas > math.MaxInt64 {
-			computeGas = math.MaxInt64
-		}
-		p.state.L2PricingState().AddToGasPools(-int64(computeGas))
+		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
 }
 
