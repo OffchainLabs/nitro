@@ -21,7 +21,7 @@ interface ArbRetryableTx {
     function getLifetime() external view returns(uint);
 
     /**
-    * @notice Return the timestamp when ticketId will age out, or zero if ticketId does not exist.
+    * @notice Return the timestamp when ticketId will age out, reverting if it does not exist
     * @param ticketId unique ticket identifier
     * @return timestamp for ticket's deadline
     */
@@ -55,6 +55,5 @@ interface ArbRetryableTx {
     event TicketCreated(bytes32 indexed ticketId);
     event LifetimeExtended(bytes32 indexed ticketId, uint newTimeout);
     event RedeemScheduled(bytes32 indexed ticketId, bytes32 indexed retryTxHash, uint64 indexed sequenceNum, uint64 donatedGas, address gasDonor);
-    event Redeemed(bytes32 indexed ticketId);
     event Canceled(bytes32 indexed ticketId);
 }

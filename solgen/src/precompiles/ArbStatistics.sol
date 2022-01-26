@@ -2,8 +2,7 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 interface ArbStatistics {
-    // Get the following statistics for this chain:
-    //      Number of Arbitrum blocks
+    // Get Arbitrum block number as well as the following statistics about the rollup right before the Nitro upgrade.
     //      Number of accounts
     //      Total storage allocated (includes storage that was later deallocated)
     //      Total ArbGas used
