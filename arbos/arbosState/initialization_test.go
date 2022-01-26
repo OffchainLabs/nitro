@@ -23,7 +23,6 @@ func TestJsonMarshalUnmarshal(t *testing.T) {
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
 			AddressTableContents: []common.Address{prand.GetAddress()},
-			DefaultAggregator:    prand.GetAddress(),
 			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(prand)},
 			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(prand)},
 		},
@@ -67,7 +66,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
-	checkDefaultAgg(arbState, input.DefaultAggregator, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
 }
@@ -130,14 +128,6 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 	}
 }
 
-func checkDefaultAgg(arbState *ArbosState, expected common.Address, t *testing.T) {
-	da, err := arbState.L1PricingState().DefaultAggregator()
-	Require(t, err)
-	if da != expected {
-		Fail(t)
-	}
-}
-
 func checkRetryables(arbState *ArbosState, expected []statetransfer.InitializationDataForRetryable, t *testing.T) {
 	ret := arbState.RetryableState()
 	for _, exp := range expected {
@@ -187,13 +177,6 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			charge, err := l1p.FixedChargeForAggregatorL1Gas(addr)
 			Require(t, err)
 			if charge.Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
-				Fail(t)
-			}
-		}
-		if acct.AggregatorToPay != nil {
-			prefAgg, _, err := l1p.PreferredAggregator(addr)
-			Require(t, err)
-			if prefAgg != *acct.AggregatorToPay {
 				Fail(t)
 			}
 		}

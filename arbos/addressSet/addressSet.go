@@ -13,14 +13,12 @@ import (
 // Represents a set of addresses
 //   size is stored at position 0
 //   members of the set are stored sequentially from 1 onward
+// An uninitialized AddressSet must be valid and represent the empty set.
+//   (Clients of this (e.g. the preferred aggregator set) assume they don't need to initialize it.)
 type AddressSet struct {
 	backingStorage *storage.Storage
 	size           storage.StorageBackedUint64
 	byAddress      *storage.Storage
-}
-
-func Initialize(sto *storage.Storage) error {
-	return sto.SetUint64ByUint64(0, 0)
 }
 
 func OpenAddressSet(sto *storage.Storage) *AddressSet {
@@ -29,6 +27,11 @@ func OpenAddressSet(sto *storage.Storage) *AddressSet {
 		sto.OpenStorageBackedUint64(0),
 		sto.OpenSubStorage([]byte{0}),
 	}
+}
+
+func (aset *AddressSet) IsEmpty() (bool, error) {
+	size, err := aset.size.Get()
+	return (size == 0), err
 }
 
 func (aset *AddressSet) Size() (uint64, error) {
@@ -54,6 +57,22 @@ func (aset *AddressSet) AllMembers() ([]common.Address, error) {
 		ret[i] = common.BytesToAddress(bytes.Bytes())
 	}
 	return ret, nil
+}
+
+func (aset *AddressSet) GetAnyMember() (*common.Address, error) {
+	empty, err := aset.IsEmpty()
+	if err != nil {
+		return nil, err
+	}
+	if empty {
+		return nil, nil
+	}
+	buf, err := aset.backingStorage.GetByUint64(1)
+	if err != nil {
+		return nil, err
+	}
+	addr := common.BytesToAddress(buf.Bytes())
+	return &addr, nil
 }
 
 func (aset *AddressSet) Add(addr common.Address) error {
@@ -109,4 +128,18 @@ func (aset *AddressSet) Remove(addr common.Address) error {
 	}
 	_, err = aset.size.Decrement()
 	return err
+}
+
+func (aset *AddressSet) Clear() error {
+	size, err := aset.Size()
+	if err != nil {
+		return err
+	}
+	for i := uint64(0); i < size+1; i++ {
+		err = aset.backingStorage.SetByUint64(i, common.Hash{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

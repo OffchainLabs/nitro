@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -56,9 +57,20 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 }
 
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
+	l1p := c.state.L1PricingState()
+	maybeAggregator, err := l1p.GetAnyPreferredAggregator(c.caller)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
+	}
+	if maybeAggregator == nil {
+		maybeAggregator, err = l1p.GetAnyDefaultAggregator()
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, err
+		}
+	}
+	var aggregator common.Address
+	if maybeAggregator != nil {
+		aggregator = *maybeAggregator
 	}
 	return con.GetPricesInWeiWithAggregator(c, evm, aggregator)
 }
@@ -87,9 +99,20 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 }
 
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
-	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
+	l1p := c.state.L1PricingState()
+	maybeAggregator, err := l1p.GetAnyPreferredAggregator(c.caller)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if maybeAggregator == nil {
+		maybeAggregator, err = l1p.GetAnyDefaultAggregator()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	var aggregator common.Address
+	if maybeAggregator != nil {
+		aggregator = *maybeAggregator
 	}
 	return con.GetPricesInArbGasWithAggregator(c, evm, aggregator)
 }

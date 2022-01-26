@@ -16,7 +16,6 @@ import (
 
 func TestEmptyAddressSet(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
-	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
 	if size(t, aset) != 0 {
@@ -37,7 +36,6 @@ func TestEmptyAddressSet(t *testing.T) {
 
 func TestAddressSet(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
-	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])

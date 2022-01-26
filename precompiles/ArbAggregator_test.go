@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 )
 
 func TestDefaultAggregator(t *testing.T) {
@@ -18,13 +17,6 @@ func TestDefaultAggregator(t *testing.T) {
 	context := testContext(common.Address{}, evm)
 
 	addr := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-
-	// initial default aggregator should be zero address
-	def, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
-	Require(t, err)
-	if def != (l1pricing.SequencerAddress) {
-		Fail(t)
-	}
 
 	// set default aggregator to addr
 	Require(t, ArbDebug{}.BecomeChainOwner(context, evm))
@@ -49,13 +41,13 @@ func TestPreferredAggregator(t *testing.T) {
 	callerCtx := testContext(common.Address{}, evm)
 	userCtx := testContext(userAddr, evm)
 
-	// initial preferred aggregator should be the default of zero address
-	res, isNonDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
+	// initial preferred aggregator and default aggregator sets should be empty
+	res, isDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
-	if res != (l1pricing.SequencerAddress) {
+	if res != (common.Address{}) {
 		Fail(t)
 	}
 
@@ -64,9 +56,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr))
 
 	// preferred aggregator should be the new default address
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
 	if res != defaultAggAddr {
@@ -77,9 +69,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetPreferredAggregator(userCtx, evm, prefAggAddr))
 
 	// preferred aggregator should now be prefAggAddr
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if !isNonDefault {
+	if isDefault {
 		Fail(t)
 	}
 	if res != prefAggAddr {

@@ -5,6 +5,7 @@
 package l1pricing
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -15,7 +16,7 @@ import (
 
 type L1PricingState struct {
 	storage                     *storage.Storage
-	defaultAggregator           storage.StorageBackedAddress
+	defaultAggregators          *addressSet.AddressSet
 	l1GasPriceEstimate          storage.StorageBackedBigInt
 	preferredAggregators        *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -26,29 +27,25 @@ type L1PricingState struct {
 var (
 	SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
 
-	preferredAggregatorKey        = []byte{0}
-	aggregatorFixedChargeKey      = []byte{1}
-	aggregatorFeeCollectorKey     = []byte{2}
-	aggregatorCompressionRatioKey = []byte{3}
+	defaultAggregatorsKey         = []byte{0}
+	preferredAggregatorKey        = []byte{1}
+	aggregatorFixedChargeKey      = []byte{2}
+	aggregatorFeeCollectorKey     = []byte{3}
+	aggregatorCompressionRatioKey = []byte{4}
 )
 
 const (
-	defaultAggregatorAddressOffset uint64 = 0
-	l1GasPriceEstimateOffset       uint64 = 1
+	l1GasPriceEstimateOffset uint64 = 0
 )
 
 func InitializeL1PricingState(sto *storage.Storage) error {
-	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
-	if err != nil {
-		return err
-	}
 	return sto.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
+		addressSet.OpenAddressSet(sto.OpenSubStorage(defaultAggregatorsKey)),
 		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
 		sto.OpenSubStorage(preferredAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
@@ -57,12 +54,28 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	}
 }
 
-func (ps *L1PricingState) DefaultAggregator() (common.Address, error) {
-	return ps.defaultAggregator.Get()
+func (ps *L1PricingState) IsDefaultAggregator(addr common.Address) (bool, error) {
+	return ps.defaultAggregators.IsMember(addr)
 }
 
-func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
-	return ps.defaultAggregator.Set(val)
+func (ps *L1PricingState) AddDefaultAggregator(addr common.Address) error {
+	return ps.defaultAggregators.Add(addr)
+}
+
+func (ps *L1PricingState) RemoveDefaultAggregator(addr common.Address) error {
+	return ps.defaultAggregators.Remove(addr)
+}
+
+func (ps *L1PricingState) RemoveAllDefaultAggregators() error {
+	return ps.defaultAggregators.Clear()
+}
+
+func (ps *L1PricingState) GetAnyDefaultAggregator() (*common.Address, error) {
+	return ps.defaultAggregators.GetAnyMember()
+}
+
+func (ps *L1PricingState) GetDefaultAggregators() ([]common.Address, error) {
+	return ps.defaultAggregators.AllMembers()
 }
 
 func (ps *L1PricingState) L1GasPriceEstimateWei() (*big.Int, error) {
@@ -89,20 +102,53 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 	return ps.SetL1GasPriceEstimateWei(update)
 }
 
-func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) error {
-	return ps.preferredAggregators.Set(common.BytesToHash(sender.Bytes()), common.BytesToHash(aggregator.Bytes()))
+func (ps *L1PricingState) preferredAggregatorSet(sender common.Address) *addressSet.AddressSet {
+	return addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
 }
 
-func (ps *L1PricingState) PreferredAggregator(sender common.Address) (common.Address, bool, error) {
-	fromTable, err := ps.preferredAggregators.Get(common.BytesToHash(sender.Bytes()))
+func (ps *L1PricingState) AddPreferredAggregator(sender, aggregator common.Address) error {
+	return ps.preferredAggregatorSet(sender).Add(aggregator)
+}
+
+func (ps *L1PricingState) RemovePreferredAggregator(sender, aggregator common.Address) error {
+	return ps.preferredAggregatorSet(sender).Remove(aggregator)
+}
+
+func (ps *L1PricingState) RemoveAllPreferredAggregators(sender common.Address) error {
+	return ps.preferredAggregatorSet(sender).Clear()
+}
+
+func (ps *L1PricingState) GetAnyPreferredAggregator(sender common.Address) (*common.Address, error) {
+	return ps.preferredAggregatorSet(sender).GetAnyMember()
+}
+
+func (ps *L1PricingState) GetPreferredAggregators(sender common.Address, useDefault bool) ([]common.Address, error) {
+	pref := ps.preferredAggregatorSet(sender)
+	empty, err := pref.IsEmpty()
 	if err != nil {
-		return common.Address{}, false, err
+		return nil, err
 	}
-	if fromTable == (common.Hash{}) {
-		aggregator, err := ps.DefaultAggregator()
-		return aggregator, false, err
+	if !empty {
+		return pref.AllMembers()
+	} else if useDefault {
+		return ps.GetDefaultAggregators()
 	} else {
-		return common.BytesToAddress(fromTable.Bytes()), true, nil
+		return []common.Address{}, nil
+	}
+}
+
+func (ps *L1PricingState) IsPreferredAggregator(sender, aggregator common.Address, useDefault bool) (bool, error) {
+	preferredAggregatorSet := ps.preferredAggregatorSet(sender)
+	havePreferred, err := preferredAggregatorSet.IsEmpty()
+	if err != nil {
+		return false, err
+	}
+	if havePreferred {
+		return preferredAggregatorSet.IsMember(aggregator)
+	} else if useDefault {
+		return ps.IsDefaultAggregator(aggregator)
+	} else {
+		return false, nil
 	}
 }
 
@@ -172,17 +218,17 @@ func (ps *L1PricingState) PosterDataCost(
 	if aggregator == nil {
 		return big.NewInt(0), nil
 	}
-	preferredAggregator, _, err := ps.PreferredAggregator(sender)
+	isPreferredAggregator, err := ps.IsPreferredAggregator(sender, *aggregator, true)
 	if err != nil {
 		return nil, err
 	}
-	if preferredAggregator != *aggregator {
+	if !isPreferredAggregator {
 		return big.NewInt(0), nil
 	}
 
 	bytesToCharge := uint64(len(data) + TxFixedCost)
 
-	ratio, err := ps.AggregatorCompressionRatio(preferredAggregator)
+	ratio, err := ps.AggregatorCompressionRatio(*aggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +243,7 @@ func (ps *L1PricingState) PosterDataCost(
 		return nil, err
 	}
 
-	preferred, err := ps.FixedChargeForAggregatorWei(preferredAggregator)
+	preferred, err := ps.FixedChargeForAggregatorWei(*aggregator)
 	if err != nil {
 		return nil, err
 	}

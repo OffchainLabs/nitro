@@ -12,7 +12,6 @@ import (
 
 type ArbosInitializationInfo struct {
 	AddressTableContents []common.Address
-	DefaultAggregator    common.Address
 	RetryableData        []InitializationDataForRetryable
 	Accounts             []AccountInitializationInfo
 }

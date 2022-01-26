@@ -158,7 +158,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, 
 	// the zero address is the initial chain owner
 	ZeroAddressL2 := util.RemapL1Address(common.Address{})
 	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
-	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)

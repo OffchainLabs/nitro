@@ -46,10 +46,6 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 		}
 	}
 
-	err = arbosState.L1PricingState().SetDefaultAggregator(initData.DefaultAggregator)
-	if err != nil {
-		return nil, err
-	}
 	err = initializeRetryables(arbosState.RetryableState(), initData.RetryableData, 0)
 	if err != nil {
 		return nil, err
@@ -118,7 +114,7 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 		}
 	}
 	if account.AggregatorToPay != nil {
-		err := l1pState.SetPreferredAggregator(account.Addr, *account.AggregatorToPay)
+		err := l1pState.AddPreferredAggregator(account.Addr, *account.AggregatorToPay)
 		if err != nil {
 			return err
 		}

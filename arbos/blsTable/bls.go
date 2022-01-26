@@ -32,11 +32,7 @@ var (
 )
 
 func InitializeBLSTable(sto *storage.Storage) error {
-	err := addressSet.Initialize(sto.OpenSubStorage(legacyAddressSetKey))
-	if err != nil {
-		return err
-	}
-	return addressSet.Initialize(sto.OpenSubStorage(bls12381AddressSetKey))
+	return nil
 }
 
 func Open(sto *storage.Storage) *BLSTable {

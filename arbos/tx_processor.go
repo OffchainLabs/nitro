@@ -67,8 +67,8 @@ func (p *TxProcessor) PopCaller() {
 
 func (p *TxProcessor) getAggregator() *common.Address {
 	coinbase := p.evm.Context.Coinbase
-	preferredAggregator, found, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
-	if err != nil && found && preferredAggregator == coinbase {
+	isPreferred, err := p.state.L1PricingState().IsPreferredAggregator(p.msg.From(), coinbase, true)
+	if err != nil && isPreferred {
 		return &coinbase
 	}
 	return nil

@@ -1,20 +1,42 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 interface ArbAggregator {
-    // Get the preferred aggregator for an address.
-    // Returns (preferredAggregatorAddress, isDefault)
-    //     isDefault is true if addr is set to prefer the default aggregator
+
+    // DEPRECATED -- use getPreferredAggregators or isDefaultAggregator instead
+    // If address has at least one preferred aggregator, this returns one of them chosen arbitrarily (and false)
+    // If address has no preferred aggregators, this returns a default aggregator chosen arbitrarily (and true)
+    // If address has no preferred aggregator and there is no default aggregator, this returns (address(0), true).
     function getPreferredAggregator(address addr) external view returns (address, bool);
 
-    // Set the caller's preferred aggregator.
-    // If prefAgg is zero, this sets the caller to prefer the default aggregator
+    // DEPRECATED -- use addPreferredAggregator and/or removePreferredAggregator instead
+    // If prefAgg is zero, this removes all of the caller's preferred aggregators.
+    // Otherwise, this sets caller's preferred aggregator set to a singleton set containing prefAgg.
     function setPreferredAggregator(address prefAgg) external;
 
-    // Get default aggregator.
+    // Add a preferred aggregator for an address
+    // This reverts unless called by the address or a chain owner
+    function addPreferredAggregator(address newAgg) external;
+
+    // Remove a preferred aggregator for an address, or do nothing if the aggregator was not preferred.
+    // This reverts unless called by the address or a chain owner
+    function removePreferredAggregator(address aggToRemove) external;
+
+    // Returns true iff if addr's preferred aggregator set contains aggregator.
+    function isPreferredAggregator(address addr, address aggregator) external view returns(bool);
+
+    // Get an address's list of preferred aggregators.
+    // If there are more than 256 on the list, this will return an arbitrary subset of size 256.
+    function getPreferredAggregators(address addr) external view returns (address[] memory);
+
+    // DEPRECATED -- use getDefaultAggregators or isDefaultAggregator instead
+    // Return a default aggregator, or zero if there are none.
+    // If there are more than one default aggregator, this chooses one to return, arbitrarily.
     function getDefaultAggregator() external view returns (address);
 
-    // Set the preferred aggregator.
-    // This reverts unless called by the aggregator, its fee collector, or a chain owner
+    // DEPRECATED -- use addDefaultAggregator and/or removeDefaultAggregator instead
+    // If newDefault is zero, this removes all of the default aggregators.
+    // Otherwise, this sets the default aggregator set to a singleton set containing newDefault.
+    // This reverts unless called by the default aggregator, its fee collector, or a chain owner
     function setDefaultAggregator(address newDefault) external;
 
     // Get the aggregator's compression ratio, as measured in ppm (100% = 1,000,000)
