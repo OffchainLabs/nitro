@@ -54,7 +54,7 @@ func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
 
 // Sets the minimum gas price needed for a transaction to succeed
 func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
-	return c.state.L2PricingState().SetGasPriceWei(priceInWei)
+	return c.state.L2PricingState().SetMinGasPriceWei(priceInWei)
 }
 
 // Sets the computational speed limit for the chain

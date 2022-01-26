@@ -31,27 +31,31 @@ type BlockchainTestInfo struct {
 	Accounts    map[string]*AccountInfo
 	ArbInitData statetransfer.ArbosInitializationInfo
 	GasPrice    *big.Int
+	// The amount of gas needed for a simple transfer tx.
+	TransferGas uint64
 }
 
-func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int) *BlockchainTestInfo {
+func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int, transferGas uint64) *BlockchainTestInfo {
 	return &BlockchainTestInfo{
-		T:        t,
-		Signer:   signer,
-		Accounts: make(map[string]*AccountInfo),
-		GasPrice: new(big.Int).Set(gasPrice),
+		T:           t,
+		Signer:      signer,
+		Accounts:    make(map[string]*AccountInfo),
+		GasPrice:    new(big.Int).Set(gasPrice),
+		TransferGas: transferGas,
 	}
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
 	chainConfig := params.ArbitrumOneChainConfig()
-	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2))
+	var transferGas uint64 = 300_000 // include room for aggregator L1 costs
+	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2), transferGas)
 	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	arbinfo.GenerateGenesysAccount("Faucet", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
 	return arbinfo
 }
 
 func NewL1TestInfo(t *testing.T) *BlockchainTestInfo {
-	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), big.NewInt(params.GWei*100))
+	return NewBlockChainTestInfo(t, types.NewLondonSigner(simulatedChainID), big.NewInt(params.GWei*100), params.TxGas)
 }
 
 func (b *BlockchainTestInfo) GenerateAccount(name string) {
