@@ -94,7 +94,23 @@ func (ps *L2PricingState) MinGasPriceWei() (*big.Int, error) {
 }
 
 func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) error {
-	return ps.minGasPriceWei.Set(val)
+	err := ps.minGasPriceWei.Set(val)
+	if err != nil {
+		return err
+	}
+
+	// Check if the current gas price is below the new minimum.
+	curGasPrice, err := ps.gasPriceWei.Get()
+	if err != nil {
+		return err
+	}
+	if util.BigLessThan(curGasPrice, val) {
+		// The current gas price is less than the new minimum. Override it.
+		return ps.gasPriceWei.Set(val)
+	} else {
+		// The current gas price is greater than the new minimum. Ignore it.
+		return nil
+	}
 }
 
 func (ps *L2PricingState) MaxGasPriceWei() (*big.Int, error) { // the max gas price ArbOS can set without breaking geth
