@@ -1,16 +1,16 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 interface ArbFunctionTable {
-    // Upload a serialized function table and associate it with the caller's address
-    // If caller already had a function table, this will overwrite the old one
-    // Revert if buf is mal-formatted
-    // (Caller will typically be an aggregator)
+    // This precompile provided aggregator's the ability to manage function tables.
+    // Aggregation works differently in Nitro, so these methods have been stubbed and their effects disabled.
+    // They are kept for backwards compatibility.
+
+    // Reverts since the table is empty
     function upload(bytes calldata buf) external;
 
-    // Get the size of addr's function table; revert if addr doesn't have a function table
+    // Returns the empty table's size, which is 0
     function size(address addr) external view returns(uint);
 
-    // Get the entry from addr's function table, at index; revert if addr has no table or index out of bounds
-    // Returns (functionCode, isPayable, gasLimit)
+    // Does nothing
     function get(address addr, uint index) external view returns(uint, bool, uint);
 }
