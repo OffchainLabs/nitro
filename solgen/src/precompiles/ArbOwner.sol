@@ -23,7 +23,7 @@ interface ArbOwner {
     function setL2GasPrice(uint256 priceInWei) external;
 
     // Sets the minimum gas price needed for a transaction to succeed
-    function setMinimumGasPrice(uint256 priceInWei) external view;
+    function setMinimumGasPrice(uint256 priceInWei) external;
 
     // Sets the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external view;
