@@ -45,7 +45,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 }
 
 func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info, client client, ctx context.Context) {
-	tx := l2info.PrepareTx(from, to, 100000, amount, nil)
+	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)

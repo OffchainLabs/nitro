@@ -23,7 +23,6 @@ func TestJsonMarshalUnmarshal(t *testing.T) {
 	tryMarshalUnmarshal(
 		&statetransfer.ArbosInitializationInfo{
 			AddressTableContents: []common.Address{prand.GetAddress()},
-			DefaultAggregator:    prand.GetAddress(),
 			RetryableData:        []statetransfer.InitializationDataForRetryable{pseudorandomRetryableInitForTesting(prand)},
 			Accounts:             []statetransfer.AccountInitializationInfo{pseudorandomAccountInitInfoForTesting(prand)},
 		},
@@ -67,7 +66,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
 	Require(t, err)
 	checkAddressTable(arbState, input.AddressTableContents, t)
-	checkDefaultAgg(arbState, input.DefaultAggregator, t)
 	checkRetryables(arbState, input.RetryableData, t)
 	checkAccounts(stateDb, arbState, input.Accounts, t)
 }
@@ -127,14 +125,6 @@ func checkAddressTable(arbState *ArbosState, addrTable []common.Address, t *test
 		if res != addr {
 			Fail(t)
 		}
-	}
-}
-
-func checkDefaultAgg(arbState *ArbosState, expected common.Address, t *testing.T) {
-	da, err := arbState.L1PricingState().DefaultAggregator()
-	Require(t, err)
-	if da != expected {
-		Fail(t)
 	}
 }
 

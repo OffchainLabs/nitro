@@ -53,7 +53,7 @@ func TestSequencerFeed(t *testing.T) {
 
 	l2info1.GenerateAccount("User2")
 
-	tx := l2info1.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
+	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
 
 	err := client1.SendTransaction(ctx, tx)
 	Require(t, err)
@@ -101,9 +101,9 @@ func TestLyingSequencer(t *testing.T) {
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
 
-	fraudTx := l2infoA.PrepareTx("Owner", "FraudUser", 30000, big.NewInt(1e12), nil)
+	fraudTx := l2infoA.PrepareTx("Owner", "FraudUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
-	realTx := l2infoA.PrepareTx("Owner", "RealUser", 30000, big.NewInt(1e12), nil)
+	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
 	err := l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
