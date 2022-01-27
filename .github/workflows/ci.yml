@@ -127,6 +127,7 @@ jobs:
             ~/.cargo/git/db/
             arbitrator/target/
             arbitrator/wasm-libraries/target/
+            target/etc/initial-machine-cache/
           key: ${{ runner.os }}-cargo-min-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 

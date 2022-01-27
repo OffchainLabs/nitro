@@ -8,6 +8,8 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/util"
@@ -15,63 +17,96 @@ import (
 
 type ArbRetryableTx struct {
 	Address                 addr
-	TicketCreated           func(ctx, mech, [32]byte) error
-	LifetimeExtended        func(ctx, mech, [32]byte, huge) error
-	RedeemScheduled         func(ctx, mech, [32]byte, [32]byte, uint64, uint64, addr) error
-	Redeemed                func(ctx, mech, [32]byte) error
-	Canceled                func(ctx, mech, [32]byte) error
-	TicketCreatedGasCost    func([32]byte) (uint64, error)
-	LifetimeExtendedGasCost func([32]byte, huge) (uint64, error)
-	RedeemScheduledGasCost  func([32]byte, [32]byte, uint64, uint64, addr) (uint64, error)
-	RedeemedGasCost         func([32]byte) (uint64, error)
-	CanceledGasCost         func([32]byte) (uint64, error)
+	TicketCreated           func(ctx, mech, bytes32) error
+	LifetimeExtended        func(ctx, mech, bytes32, huge) error
+	RedeemScheduled         func(ctx, mech, bytes32, bytes32, uint64, uint64, addr) error
+	Canceled                func(ctx, mech, bytes32) error
+	TicketCreatedGasCost    func(bytes32) (uint64, error)
+	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
+	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
+	CanceledGasCost         func(bytes32) (uint64, error)
 }
 
 var NotFoundError = errors.New("ticketId not found")
 
-func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId [32]byte) error {
+// Schedule an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
+func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
 	retryableState := c.state.RetryableState()
+	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
+	if err != nil {
+		return hash{}, err
+	}
+	writeBytes := util.WordsForBytes(byteCount)
+	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
+		return hash{}, err
+	}
+
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
-		return err
+		return hash{}, err
 	}
 	if retryable == nil {
-		return NotFoundError
+		return hash{}, NotFoundError
 	}
-	beneficiary, err := retryable.Beneficiary()
+	nonce, err := retryable.IncrementNumTries()
 	if err != nil {
-		return err
-	}
-	if c.caller != beneficiary {
-		return errors.New("only the beneficiary may cancel a retryable")
+		return hash{}, err
 	}
 
-	// no refunds are given for deleting retryables because they use rented space
-	_, err = retryableState.DeleteRetryable(ticketId)
+	retryTxInner, err := retryable.MakeTx(
+		evm.ChainConfig().ChainID,
+		nonce,
+		evm.GasPrice,
+		0, // will fill this in below
+		ticketId,
+		c.caller,
+	)
 	if err != nil {
-		return err
+		return hash{}, err
 	}
-	return con.Canceled(c, evm, ticketId)
+
+	// figure out how much gas the event issuance will cost, and reduce the donated gas amount in the event
+	//     by that much, so that we'll donate the correct amount of gas
+	eventCost, err := con.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{})
+	if err != nil {
+		return hash{}, err
+	}
+	gasCostToReturnResult := 32 * params.CopyGas
+	if c.gasLeft < eventCost+gasCostToReturnResult {
+		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
+	}
+	gasToDonate := c.gasLeft - (eventCost + gasCostToReturnResult)
+	if gasToDonate < params.TxGas {
+		return hash{}, errors.New("Not enough gas to redeem retryable")
+	}
+
+	// fix up the gas in the retry
+	retryTxInner.Gas = gasToDonate
+
+	retryTx := types.NewTx(retryTxInner)
+	retryTxHash := retryTx.Hash()
+
+	err = con.RedeemScheduled(c, evm, ticketId, retryTxHash, nonce, gasToDonate, c.caller)
+	if err != nil {
+		return hash{}, err
+	}
+
+	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
+	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
+	// We burn as much gas as we can, leaving only enough to pay for copying out the return data.
+	if err := c.Burn(gasToDonate); err != nil {
+		return hash{}, err
+	}
+	return retryTxHash, nil
 }
 
-func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId [32]byte) (addr, error) {
-	retryableState := c.state.RetryableState()
-	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
-	if err != nil {
-		return addr{}, err
-	}
-	if retryable == nil {
-		return addr{}, NotFoundError
-	}
-	return retryable.Beneficiary()
-}
-
+// Gets the default lifetime period a retryable has at creation
 func (con ArbRetryableTx) GetLifetime(c ctx, evm mech) (huge, error) {
-	// there's no need to burn gas for something this cheap
 	return big.NewInt(retryables.RetryableLifetimeSeconds), nil
 }
 
-func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, error) {
+// Gets the timestamp for when ticket will expire
+func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, error) {
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -87,7 +122,8 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId [32]byte) (huge, 
 	return big.NewInt(int64(timeout)), nil
 }
 
-func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, error) {
+// Adds one lifetime period to the ticket's expiry
+func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, error) {
 
 	// charge for the expiry update
 	retryableState := c.state.RetryableState()
@@ -125,50 +161,41 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId [32]byte) (huge, e
 	return big.NewInt(int64(newTimeout)), nil
 }
 
-func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId [32]byte) ([32]byte, error) {
-
+// Gets the beneficiary of the ticket
+func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (addr, error) {
 	retryableState := c.state.RetryableState()
-	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
-	if err != nil {
-		return hash{}, err
-	}
-	writeBytes := util.WordsForBytes(byteCount)
-	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
-		return hash{}, err
-	}
-
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
-		return hash{}, err
+		return addr{}, err
 	}
 	if retryable == nil {
-		return hash{}, NotFoundError
+		return addr{}, NotFoundError
 	}
-	sequenceNum, err := retryable.IncrementNumTries()
+	return retryable.Beneficiary()
+}
+
+// Cancel the ticket and refund its callvalue to its beneficiary
+func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
+	retryableState := c.state.RetryableState()
+	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
-		return hash{}, err
+		return err
 	}
-	redeemTxId := retryables.TxIdForRedeemAttempt(ticketId, sequenceNum)
-	err = con.RedeemScheduled(c, evm, ticketId, redeemTxId, sequenceNum, c.gasLeft, c.caller)
+	if retryable == nil {
+		return NotFoundError
+	}
+	beneficiary, err := retryable.Beneficiary()
 	if err != nil {
-		return hash{}, err
+		return err
+	}
+	if c.caller != beneficiary {
+		return errors.New("only the beneficiary may cancel a retryable")
 	}
 
-	// To prepare for the enqueued retry event, we burn gas here, adding it back to the pool right before retrying.
-	// The gas payer for this tx will get a credit for the wei they paid for this gas when retrying.
-
-	// We want to donate as much gas as we can to the retry, but to do this safely the user must not run out
-	// of gas later. Since the only charge that happens after this method returns is for encoding the return
-	// result, we'll donate all but that known cost to the retry.
-
-	// ensure the user will be able to pay for the return result
-	gasCostToReturnResult := 32 * params.CopyGas
-	if c.gasLeft < gasCostToReturnResult {
-		return hash{}, c.Burn(gasCostToReturnResult)
+	// no refunds are given for deleting retryables because they use rented space
+	_, err = retryableState.DeleteRetryable(ticketId)
+	if err != nil {
+		return err
 	}
-
-	if err := c.Burn(c.gasLeft - gasCostToReturnResult); err != nil {
-		return hash{}, err
-	}
-	return redeemTxId, nil
+	return con.Canceled(c, evm, ticketId)
 }
