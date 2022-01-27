@@ -74,6 +74,12 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 }
 
+type SequencingHooks struct {
+	TxErrors     []error
+	PreTxFilter  func(*arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
+}
+
 func ProduceBlock(
 	message *L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -81,6 +87,26 @@ func ProduceBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
+) (*types.Block, types.Receipts) {
+	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
+	if err != nil {
+		log.Warn("error parsing incoming message", "err", err)
+		txes = types.Transactions{}
+	}
+
+	return ProduceBlockAdvanced(message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, nil)
+}
+
+// A bit more flexible than ProduceBlock for use in the sequencer.
+func ProduceBlockAdvanced(
+	messageHeader *L1IncomingMessageHeader,
+	txes types.Transactions,
+	delayedMessagesRead uint64,
+	lastBlockHeader *types.Header,
+	statedb *state.StateDB,
+	chainContext core.ChainContext,
+	chainConfig *params.ChainConfig,
+	sequencingHooks *SequencingHooks,
 ) (*types.Block, types.Receipts) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, true)
@@ -92,18 +118,12 @@ func ProduceBlock(
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
 	}
 
-	txes, err := message.ParseL2Transactions(chainConfig.ChainID)
-	if err != nil {
-		log.Warn("error parsing incoming message", "err", err)
-		txes = types.Transactions{}
-	}
-
-	poster := message.Header.Poster
+	poster := messageHeader.Poster
 
 	l1Info := &L1Info{
 		poster:        poster,
-		l1BlockNumber: message.Header.BlockNumber.Big(),
-		l1Timestamp:   message.Header.Timestamp.Big(),
+		l1BlockNumber: messageHeader.BlockNumber.Big(),
+		l1Timestamp:   messageHeader.Timestamp.Big(),
 	}
 
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
@@ -122,7 +142,6 @@ func ProduceBlock(
 	gasPrice := header.BaseFee
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
-
 	redeems := types.Transactions{}
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
@@ -132,9 +151,11 @@ func ProduceBlock(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
+		var isInternal bool
 		if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
+			isInternal = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
@@ -148,11 +169,23 @@ func ProduceBlock(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
+			isInternal = tx.Type() == types.ArbitrumInternalTxType
 		}
 
 		sender, err := signer.Sender(tx)
 		if err != nil {
+			if sequencingHooks != nil && !isInternal {
+				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
+			}
 			continue
+		}
+
+		if sequencingHooks != nil && !isInternal {
+			err := sequencingHooks.PreTxFilter(state, tx, sender)
+			if err != nil {
+				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
+				continue
+			}
 		}
 
 		aggregator := &poster
@@ -180,6 +213,9 @@ func ProduceBlock(
 		computeGas := tx.Gas() - dataGas
 
 		if computeGas > gasLeft {
+			if sequencingHooks != nil && !isInternal {
+				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, core.ErrGasLimitReached)
+			}
 			continue
 		}
 
@@ -200,6 +236,10 @@ func ProduceBlock(
 			&header.GasUsed,
 			vm.Config{},
 		)
+		if sequencingHooks != nil && !isInternal {
+			err = sequencingHooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
+		}
 		if err != nil {
 			// Ignore this transaction if it's invalid under our more lenient state transaction function
 			statedb.RevertToSnapshot(snap)

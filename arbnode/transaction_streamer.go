@@ -267,11 +267,57 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 	return s.writeMessages(pos, messages, batch)
 }
 
-func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
+func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
+	if len(txErrors) != len(txes) {
+		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(txErrors), len(txes))
+	}
+	var l2Message []byte
+	if len(txes) == 1 && txErrors[0] == nil {
+		txBytes, err := txes[0].MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	} else {
+		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+		sizeBuf := make([]byte, 8)
+		for _, tx := range txes {
+			txBytes, err := tx.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+			l2Message = append(l2Message, sizeBuf...)
+			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+			l2Message = append(l2Message, txBytes...)
+		}
+	}
+	return &arbos.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
+}
+
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
 
 	pos, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
+	lastBlockHeader := s.bc.CurrentHeader()
+	if lastBlockHeader == nil {
+		return errors.New("current block header not found")
+	}
+	if lastBlockHeader.Number.Uint64() != pos {
+		return errors.New("block production not caught up")
+	}
+	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
 	}
@@ -285,23 +331,53 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
-	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
-	for _, message := range messages {
-		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
-			Message:             message,
-			DelayedMessagesRead: delayedMessagesRead,
-		})
+	block, receipts := arbos.ProduceBlockAdvanced(
+		header,
+		txes,
+		delayedMessagesRead,
+		lastBlockHeader,
+		statedb,
+		s.bc,
+		s.bc.Config(),
+		hooks,
+	)
+
+	if len(receipts) == 0 {
+		return nil
 	}
 
-	if err := s.writeMessages(pos, messagesWithMeta, nil); err != nil {
+	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
+	if err != nil {
+		return err
+	}
+
+	var logs []*types.Log
+	for _, receipt := range receipts {
+		logs = append(logs, receipt.Logs...)
+	}
+	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	if err != nil {
+		return err
+	}
+	if status == core.SideStatTy {
+		return errors.New("geth rejected block as non-canonical")
+	}
+
+	msgWithMeta := arbstate.MessageWithMetadata{
+		Message:             msg,
+		DelayedMessagesRead: delayedMessagesRead,
+	}
+
+	if s.validator != nil {
+		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
+	}
+
+	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
 
 	if s.broadcastServer != nil {
-		for i, message := range messagesWithMeta {
-			// TODO method for broadcasting more than one?
-			s.broadcastServer.BroadcastSingle(message, pos+uint64(i))
-		}
+		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
 	}
 
 	return nil
