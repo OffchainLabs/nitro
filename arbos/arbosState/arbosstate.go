@@ -89,31 +89,8 @@ func OpenSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error
 	return state, err
 }
 
-func OpenOrInitializeSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error) {
-	burner := burn.NewSystemBurner(readOnly)
-	state, err := OpenArbosState(stateDB, burner)
-	if errors.Is(err, ErrUninitializedArbOS) {
-		state, err = InitializeArbosState(stateDB, burner)
-	}
-	burner.Restrict(err)
-	return state, err
-}
-
-func OpenOrGetMemoryBackedArbOSState(statedb *state.StateDB) (*ArbosState, bool) {
-	burner := burn.NewSystemBurner(true)
-	state, err := OpenArbosState(statedb, burner)
-	if errors.Is(err, ErrUninitializedArbOS) {
-		state, _ := NewArbosMemoryBackedArbOSState()
-		return state, true
-	}
-	if err != nil {
-		panic(err)
-	}
-	return state, false
-}
-
 // Create and initialize a memory-backed ArbOS state
-func NewArbosMemoryBackedArbOSState() (*ArbosState, vm.StateDB) {
+func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)

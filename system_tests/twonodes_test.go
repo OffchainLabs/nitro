@@ -17,19 +17,19 @@ import (
 func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, false)
+	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
 
 	l2info.GenerateAccount("User2")
 
-	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2info.Client.SendTransaction(ctx, tx)
+	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -37,7 +37,7 @@ func TestTwoNodesSimple(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}

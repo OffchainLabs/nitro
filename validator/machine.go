@@ -5,7 +5,7 @@
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
+#cgo CFLAGS: -g -Wall -I../target/include/
 #include "arbitrator.h"
 */
 import "C"

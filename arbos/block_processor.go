@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
@@ -63,7 +64,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    1 << 63,
+		GasLimit:    l2pricing.L2GasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -82,9 +83,10 @@ func ProduceBlock(
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
 
-	// ArbOS may be uninitialized for the first tx. If so, we use a memory-backed, temporary version
-	// until an initialization occurs during StartTxHook in the first tx.
-	state, arbOSIsUninitialized := arbosState.OpenOrGetMemoryBackedArbOSState(statedb)
+	state, err := arbosState.OpenSystemArbosState(statedb, true)
+	if err != nil {
+		panic(err)
+	}
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
@@ -110,7 +112,8 @@ func ProduceBlock(
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
+		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
+		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
@@ -153,6 +156,9 @@ func ProduceBlock(
 		}
 
 		aggregator := &poster
+		if util.DoesTxTypeAlias(tx.Type()) {
+			aggregator = nil
+		}
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
@@ -200,15 +206,6 @@ func ProduceBlock(
 			continue
 		}
 
-		if arbOSIsUninitialized {
-			// ArbOS will now have been initialized, so switch to using the real, initialized version
-			state, err = arbosState.OpenSystemArbosState(statedb, true)
-			if err != nil {
-				panic(err)
-			}
-			arbOSIsUninitialized = false
-		}
-
 		// Update expectedTotalBalanceDelta (also done in logs loop)
 		switch txInner := tx.GetInner().(type) {
 		case *types.ArbitrumDepositTx:
@@ -227,8 +224,13 @@ func ProduceBlock(
 		gasUsed := gethGas.Gas() - gasPool.Gas()
 		gethGas = gasPool
 
-		if gasUsed > computeGas {
-			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+		if gasUsed < dataGas {
+			delta := strconv.FormatUint(dataGas-gasUsed, 10)
+			panic("ApplyTransaction() used " + delta + " less gas than it should have")
+		}
+
+		if gasUsed > tx.Gas() {
+			delta := strconv.FormatUint(gasUsed-tx.Gas(), 10)
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
 		}
 
@@ -264,7 +266,7 @@ func ProduceBlock(
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
-		gasLeft -= gasUsed
+		gasLeft -= gasUsed - dataGas
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)

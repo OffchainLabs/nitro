@@ -13,6 +13,8 @@ solgen/go
 **/node_modules
 /reproducible-wasm
 
+target/**/*
+
 # Arbitrator ignores
 
 # Rust outputs

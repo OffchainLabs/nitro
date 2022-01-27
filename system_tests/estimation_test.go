@@ -56,10 +56,13 @@ func TestEstimate(t *testing.T) {
 	// set the gas price
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err := arbOwner.SetL2GasPrice(&auth, gasPrice)
+	tx, err := arbOwner.SetMinimumGasPrice(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
 	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+
+	// make an empty block to let the gas price update
+	TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
 
 	// get the gas price
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)

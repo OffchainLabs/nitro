@@ -17,4 +17,6 @@ solgen/node_modules/
 solgen/deployments/
 solgen/test/proofs/*.json
 .make/
+/cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
+target/
