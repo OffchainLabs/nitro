@@ -450,7 +450,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	tx := &types.ArbitrumSubmitRetryableTx{
 		ChainId:           chainId,
 		RequestId:         header.RequestId,
-		From:              header.Poster,
+		From:              util.RemapL1Address(header.Poster),
 		DepositValue:      depositValue.Big(),
 		GasPrice:          gasPriceBid.Big(),
 		Gas:               maxGasBig.Uint64(),
