@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 
@@ -63,7 +64,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    1 << 63,
+		GasLimit:    l2pricing.L2GasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -81,6 +82,11 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 ) (*types.Block, types.Receipts) {
+
+	state, err := arbosState.OpenSystemArbosState(statedb, true)
+	if err != nil {
+		panic(err)
+	}
 
 	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
 		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
@@ -100,19 +106,14 @@ func ProduceBlock(
 		l1Timestamp:   message.Header.Timestamp.Big(),
 	}
 
-	state := arbosState.OpenSystemArbosState(statedb)
-	gasLeft, _ := state.L2PricingState().CurrentPerBlockGasLimit()
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		tx := &types.ArbitrumInternalTx{
-			ChainId:     chainConfig.ChainID,
-			Data:        InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber.Uint64()),
-			BlockNumber: header.Number.Uint64(),
-			TxIndex:     0,
-		}
+		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
+		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
@@ -129,7 +130,6 @@ func ProduceBlock(
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
-		retryableState := state.RetryableState()
 
 		var tx *types.Transaction
 		if len(redeems) > 0 {
@@ -140,7 +140,7 @@ func ProduceBlock(
 			if !ok {
 				panic("retryable tx is somehow not a retryable")
 			}
-			retryable, _ := retryableState.OpenRetryable(retry.TicketId, time)
+			retryable, _ := state.RetryableState().OpenRetryable(retry.TicketId, time)
 			if retryable == nil {
 				// retryable was already deleted
 				continue
@@ -156,11 +156,9 @@ func ProduceBlock(
 		}
 
 		aggregator := &poster
-
-		if !isAggregated(*aggregator, sender) {
+		if util.DoesTxTypeAlias(tx.Type()) {
 			aggregator = nil
 		}
-
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
@@ -226,8 +224,13 @@ func ProduceBlock(
 		gasUsed := gethGas.Gas() - gasPool.Gas()
 		gethGas = gasPool
 
-		if gasUsed > computeGas {
-			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+		if gasUsed < dataGas {
+			delta := strconv.FormatUint(dataGas-gasUsed, 10)
+			panic("ApplyTransaction() used " + delta + " less gas than it should have")
+		}
+
+		if gasUsed > tx.Gas() {
+			delta := strconv.FormatUint(gasUsed-tx.Gas(), 10)
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
 		}
 
@@ -263,7 +266,7 @@ func ProduceBlock(
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
-		gasLeft -= gasUsed
+		gasLeft -= gasUsed - dataGas
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)
@@ -334,7 +337,10 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
 	if header != nil {
-		state := arbosState.OpenSystemArbosState(statedb)
+		state, err := arbosState.OpenSystemArbosState(statedb, false)
+		if err != nil {
+			panic(err)
+		}
 		state.SetLastTimestampSeen(header.Time)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 

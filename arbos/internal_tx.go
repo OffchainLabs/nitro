@@ -5,10 +5,11 @@
 package arbos
 
 import (
-	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
@@ -20,21 +21,21 @@ const (
 	arbInternalTxUpdateL1BlockNumber uint8 = 0
 )
 
-func InternalTxUpdateL1BlockNumber(l1BlockNumber uint64) []byte {
-	data := []byte{arbInternalTxUpdateL1BlockNumber}
-	data = rlp.AppendUint64(data, l1BlockNumber)
-	return data
+func InternalTxUpdateL1BlockNumber(chainId, l1BlockNumber, l2BlockNumber *big.Int, txIndex uint64) *types.ArbitrumInternalTx {
+	return &types.ArbitrumInternalTx{
+		ChainId:     chainId,
+		Type:        arbInternalTxUpdateL1BlockNumber,
+		Data:        rlp.AppendUint64([]byte{}, l1BlockNumber.Uint64()),
+		BlockNumber: l2BlockNumber.Uint64(),
+		TxIndex:     txIndex,
+	}
 }
 
-func ApplyInternalTxUpdate(data []byte, state *arbosState.ArbosState, blockContext vm.BlockContext) error {
-	if len(data) == 0 {
-		return errors.New("no internal tx data")
-	}
-	tipe := data[0]
-	data = data[1:]
-	if tipe == arbInternalTxUpdateL1BlockNumber {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) error {
+	switch tx.Type {
+	case arbInternalTxUpdateL1BlockNumber:
 		var l1BlockNumber uint64
-		err := rlp.DecodeBytes(data, &l1BlockNumber)
+		err := rlp.DecodeBytes(tx.Data, &l1BlockNumber)
 		if err != nil {
 			return err
 		}
@@ -43,7 +44,7 @@ func ApplyInternalTxUpdate(data []byte, state *arbosState.ArbosState, blockConte
 			prevHash = blockContext.GetHash(blockContext.BlockNumber.Uint64() - 1)
 		}
 		return state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash)
-	} else {
-		return fmt.Errorf("unknown ArbitrumInternalTx type %v", tipe)
+	default:
+		return fmt.Errorf("unknown ArbitrumInternalTx type %v", tx.Type)
 	}
 }

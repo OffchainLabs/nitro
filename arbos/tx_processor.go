@@ -41,7 +41,10 @@ type TxProcessor struct {
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
-	arbosState := arbosState.OpenSystemArbosState(evm.StateDB)
+	arbosState, err := arbosState.OpenSystemArbosState(evm.StateDB, false)
+	if err != nil {
+		panic(err)
+	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:       msg,
@@ -62,16 +65,20 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func isAggregated(l1Address, l2Address common.Address) bool {
-	return true // TODO
-}
-
 func (p *TxProcessor) getAggregator() *common.Address {
-	coinbase := p.evm.Context.Coinbase
-	if isAggregated(coinbase, p.msg.From()) {
-		return &coinbase
+	if p.msg.UnderlyingTransaction() == nil {
+		// This is an eth_call/eth_estimateGas.
+		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
+		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+		p.state.Burner.Restrict(err)
+		return &agg
+	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
+		// This is a non-aggregated message.
+		return nil
+	} else {
+		// This is an aggregated message. The poster is in the block's coinbase.
+		return &p.evm.Context.Coinbase
 	}
-	return nil
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
@@ -97,7 +104,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		err := ApplyInternalTxUpdate(tx.Data, p.state, p.evm.Context)
+		err := ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
 		if err != nil {
 			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
 		}
@@ -210,17 +217,21 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	var gasNeededToStartEVM uint64
 
 	gasPrice := p.evm.Context.BaseFee
-	pricing := p.state.L1PricingState()
-	posterCost, err := pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	l1Pricing := p.state.L1PricingState()
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.GasPrice().Sign() == 0 {
-		// TODO: Review when doing eth_call's
-
+	if p.msg.UnderlyingTransaction() == nil {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
 		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
-		adjustedPrice := util.BigMulByFrac(gasPrice, 15, 16)
+
+		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+
+		adjustedPrice := util.BigMulByFrac(gasPrice, 7, 8) // assume congestion
+		if util.BigLessThan(adjustedPrice, minGasPrice) {
+			adjustedPrice = minGasPrice
+		}
 		gasPrice = adjustedPrice
 	}
 	if gasPrice.Sign() > 0 {
@@ -235,7 +246,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return vm.ErrOutOfGas
+		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 	return nil
@@ -270,7 +281,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			}
 		}
 		if evmSuccess {
-			state := arbosState.OpenSystemArbosState(p.evm.StateDB) // we don't want to charge for this
+			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false) // we don't want to charge for this
+			if err != nil {
+				panic(err)
+			}
 			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
 		} else {
 			// return the Callvalue to escrow
@@ -290,14 +304,20 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
+	if !transitionSuccess && p.msg.Gas()-gasLeft < p.posterGas+params.TxGas {
+		gasLeft = 0
+	}
 	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 
 	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
 	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
-		// Uh oh, there's a bug in our charging code.
+		// The transaction doesn't have a high enough gas limit to pay for the poster fee.
 		// Give all funds to the network account and continue.
-		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		if transitionSuccess {
+			// Uh oh, there's a bug in our charging code.
+			log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+		}
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
 	}
@@ -310,23 +330,36 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
 
-		if gasUsed.Uint64() < p.posterGas {
-			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+		// If !transitionSuccess, only subtract the base TxGas from the gas pool,
+		// which approximately represents the costs to a node of the core message transition.
+		computeGas := params.TxGas
+		if transitionSuccess {
+			if gasUsed.Uint64() > p.posterGas {
+				// Don't include posterGas in computeGas as it doesn't represent processing time.
+				computeGas = gasUsed.Uint64() - p.posterGas
+			} else {
+				// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
+				// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
+				log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+				computeGas = gasUsed.Uint64()
+			}
 		}
-		computeGas := gasUsed.Uint64() - p.posterGas
-		if computeGas > math.MaxInt64 {
-			computeGas = math.MaxInt64
-		}
-		p.state.L2PricingState().AddToGasPools(-int64(computeGas))
+		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+	if err != nil {
+		return 0, err
+	}
 	return state.Blockhashes().NextBlockNumber()
 }
 
 func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
-	state := arbosState.OpenSystemArbosState(p.evm.StateDB)
+	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
+	if err != nil {
+		return common.Hash{}, err
+	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }

@@ -21,22 +21,22 @@ import (
 func TestValidatorSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l1info, _, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, node1, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, true)
+	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, true)
 
 	l2info.GenerateAccount("User2")
 
-	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2info.Client.SendTransaction(ctx, tx)
+	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2info.Client, tx)
+	_, err = arbnode.EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
 	})
 
@@ -45,7 +45,7 @@ func TestValidatorSimple(t *testing.T) {
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}

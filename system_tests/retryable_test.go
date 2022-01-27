@@ -33,11 +33,10 @@ func retryableSetup(t *testing.T) (
 	func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	l2info, _, l1info, _, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	l2info.GenerateAccount("User2")
 	l2info.GenerateAccount("Beneficiary")
 	l2info.GenerateAccount("Burn")
-	l1client := l1info.Client
 
 	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
@@ -46,13 +45,13 @@ func retryableSetup(t *testing.T) (
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-	TransferBalance(t, "Faucet", "Burn", discard, l2info, ctx)
+	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx)
 
 	teardown := func() {
 		cancel()
 		stack.Close()
 	}
-	return l2info, l1info, l2info.Client, l1client, delayedInbox, inboxFilterer, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
