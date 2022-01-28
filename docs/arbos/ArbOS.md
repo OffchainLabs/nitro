@@ -59,6 +59,8 @@ If a redeem is not done at submission or the submission's initial redeem fails, 
 
 On success, the `To` address keeps the escrowed callvalue, and any unused gas is returned to the pools. On failure, the callvalue is returned to the escrow for the next redeemer. In either case, the network fee was paid during the scheduling tx, so no fees are charged and no refunds are made. 
 
+During redemption of a retryable, attempts to cancel the same retryable, or to schedule another redeem of the same retryable, will revert.
+
 [enqueue_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L245
 [exhaust_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L135
 
