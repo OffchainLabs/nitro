@@ -99,6 +99,10 @@ func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregat
 	if err := paSet.Clear(); err != nil {
 		return err
 	}
+	if aggregator == (common.Address{}) {
+		// API interprets address zero as null, so leave the set empty
+		return nil
+	}
 	return paSet.Add(aggregator)
 }
 
