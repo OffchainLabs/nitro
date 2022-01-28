@@ -5,6 +5,7 @@
 package l1pricing
 
 import (
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -89,20 +90,28 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 	return ps.SetL1GasPriceEstimateWei(update)
 }
 
+func (ps *L1PricingState) preferredAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
+	return addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
+}
+
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) error {
-	return ps.preferredAggregators.Set(common.BytesToHash(sender.Bytes()), common.BytesToHash(aggregator.Bytes()))
+	paSet := ps.preferredAggregatorsForAddress(sender)
+	if err := paSet.Clear(); err != nil {
+		return err
+	}
+	return paSet.Add(aggregator)
 }
 
 func (ps *L1PricingState) PreferredAggregator(sender common.Address) (common.Address, bool, error) {
-	fromTable, err := ps.preferredAggregators.Get(common.BytesToHash(sender.Bytes()))
+	fromTable, err := ps.preferredAggregatorsForAddress(sender).GetAnyMember()
 	if err != nil {
 		return common.Address{}, false, err
 	}
-	if fromTable == (common.Hash{}) {
+	if fromTable == nil {
 		aggregator, err := ps.DefaultAggregator()
 		return aggregator, false, err
 	} else {
-		return common.BytesToAddress(fromTable.Bytes()), true, nil
+		return *fromTable, true, nil
 	}
 }
 
