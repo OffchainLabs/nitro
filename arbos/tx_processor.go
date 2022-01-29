@@ -92,8 +92,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return false, 0, nil, nil
 	}
 
-	p.CurrentRetryable = nil
-
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 

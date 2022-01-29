@@ -49,7 +49,7 @@ In many use cases, the submitter will provide gas and will intend for the immedi
 
 When a Retryable is redeemed, it will execute with the sender, destination, callvalue, and calldata of the original submission. The callvalue will have been escrowed during the initial submission of the Retryable, for this purpose.  If a Retryable with callvalue is eventually discarded, having never successfully run, the escrowed callvalue will be paid out to a "beneficiary" account that is specified in the initial submission.
 
-A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbRetryableTx) the Retryable. This has the same effect as the Retryable timing out, except when done during a [`redeem`](Precompiles.md#ArbRetryableTx) in which case the escrowed funds [will have already been moved][moved_link] to the Retryable's `From` address (which Geth then moves to the `To` address or the deployed contract if `To` is not specified). This ensures no additional funds are minted when a retry transaction cancels its own Retryable.
+A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbRetryableTx) the Retryable. This has the same effect as the Retryable timing out.
 
 [moved_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L191
 
