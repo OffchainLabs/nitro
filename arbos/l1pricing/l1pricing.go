@@ -94,28 +94,40 @@ func (ps *L1PricingState) preferredAggregatorsForAddress(sender common.Address) 
 	return addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
 }
 
-func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) error {
+// Get sender's preferred aggregator, or nil if there is none. This does NOT fall back to the default aggregator
+//     if there is no preferred aggregator. If that is what you want, call ReimbursableAggregatorForSender instead.
+func (ps *L1PricingState) PreferredAggregator(sender common.Address) (*common.Address, error) {
+	return ps.preferredAggregatorsForAddress(sender).GetAnyMember()
+}
+
+func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, maybeAggregator *common.Address) error {
 	paSet := ps.preferredAggregatorsForAddress(sender)
 	if err := paSet.Clear(); err != nil {
 		return err
 	}
-	if aggregator == (common.Address{}) {
-		// API interprets address zero as null, so leave the set empty
+	if maybeAggregator == nil {
 		return nil
 	}
-	return paSet.Add(aggregator)
+	return paSet.Add(*maybeAggregator)
 }
 
-func (ps *L1PricingState) PreferredAggregator(sender common.Address) (common.Address, bool, error) {
-	fromTable, err := ps.preferredAggregatorsForAddress(sender).GetAnyMember()
+// Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
+func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address) (*common.Address, error) {
+	fromTable, err := ps.PreferredAggregator(sender)
 	if err != nil {
-		return common.Address{}, false, err
+		return nil, err
 	}
 	if fromTable == nil {
 		aggregator, err := ps.DefaultAggregator()
-		return aggregator, false, err
+		if err != nil {
+			return nil, err
+		}
+		if aggregator == (common.Address{}) {
+			return nil, nil
+		}
+		return &aggregator, nil
 	} else {
-		return *fromTable, true, nil
+		return fromTable, nil
 	}
 }
 
@@ -185,17 +197,20 @@ func (ps *L1PricingState) PosterDataCost(
 	if aggregator == nil {
 		return big.NewInt(0), nil
 	}
-	preferredAggregator, _, err := ps.PreferredAggregator(sender)
+	reimbursableAggregator, err := ps.ReimbursableAggregatorForSender(sender)
 	if err != nil {
 		return nil, err
 	}
-	if preferredAggregator != *aggregator {
+	if reimbursableAggregator == nil {
+		return big.NewInt(0), nil
+	}
+	if *reimbursableAggregator != *aggregator {
 		return big.NewInt(0), nil
 	}
 
 	bytesToCharge := uint64(len(data) + TxFixedCost)
 
-	ratio, err := ps.AggregatorCompressionRatio(preferredAggregator)
+	ratio, err := ps.AggregatorCompressionRatio(*reimbursableAggregator)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +225,7 @@ func (ps *L1PricingState) PosterDataCost(
 		return nil, err
 	}
 
-	preferred, err := ps.FixedChargeForAggregatorWei(preferredAggregator)
+	preferred, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
 	if err != nil {
 		return nil, err
 	}

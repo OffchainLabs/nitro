@@ -181,9 +181,9 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			}
 		}
 		if acct.AggregatorToPay != nil {
-			prefAgg, _, err := l1p.PreferredAggregator(addr)
+			prefAgg, err := l1p.ReimbursableAggregatorForSender(addr)
 			Require(t, err)
-			if prefAgg != *acct.AggregatorToPay {
+			if prefAgg == nil || *prefAgg != *acct.AggregatorToPay {
 				Fail(t)
 			}
 		}
