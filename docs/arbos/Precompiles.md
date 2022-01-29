@@ -336,19 +336,19 @@ Provides methods for managing retryables. The model has been adjusted for Nitro,
 | [<img src=e.png height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                             | Doesn't add callvalue  |
 | [<img src=e.png height=16>][RTs5] [`Redeem`][RT5]`(ticket)`                | Schedule an attempt to redeem the retryable, donating all of the call's gas &nbsp; | Happens next tx        |
 
-[RT0]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L178
-[RT1]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L165
-[RT2]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L104
-[RT3]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L109
-[RT4]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L126
-[RT5]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L33
+[RT0]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L184
+[RT1]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L171
+[RT2]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L110
+[RT3]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L115
+[RT4]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L132
+[RT5]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L36
 
-[RTs0]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L53
-[RTs1]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L46
-[RTs2]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L21
-[RTs3]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L28
-[RTs4]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L38
-[RTs5]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L15
+[RTs0]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L53
+[RTs1]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L46
+[RTs2]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L21
+[RTs3]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L28
+[RTs4]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L38
+[RTs5]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L15
 
 | Events                                                               |                                                    | Nitro Changes                       |
 |:---------------------------------------------------------------------|:---------------------------------------------------|:------------------------------------|
@@ -357,15 +357,15 @@ Provides methods for managing retryables. The model has been adjusted for Nitro,
 | [<img src=e.png height=16>][RTes2] [`RedeemScheduled`][RTe2]         | Emitted when scheduling a retryable                | Replaces [Redeemed][old_event_link] |
 | [<img src=e.png height=16>][RTes3] [`Canceled`][RTe3]                | Emitted when cancelling a retryable                |                                     |
 
-[RTe0]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/arbos/tx_processor.go#L133
-[RTe1]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L157
-[RTe2]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/arbos/tx_processor.go#L176
-[RTe3]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/ArbRetryableTx.go#L200
+[RTe0]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/arbos/tx_processor.go#L142
+[RTe1]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L163
+[RTe2]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/arbos/tx_processor.go#L185
+[RTe3]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L209
 
-[RTes0]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L55
-[RTes1]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L56
-[RTes2]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L57
-[RTes3]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbRetryableTx.sol#L58
+[RTes0]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L55
+[RTes1]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L56
+[RTes2]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L57
+[RTes3]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/solgen/src/precompiles/ArbRetryableTx.sol#L58
 
 [old_event_link]: https://github.com/OffchainLabs/arb-os/blob/89e36db597c4857a4dac3efd7cc01b13c7845cc0/arb_os/arbretryable.mini#L90
 
