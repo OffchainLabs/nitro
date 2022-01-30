@@ -23,12 +23,12 @@ import (
 
 const (
 	L1MessageType_L2Message             = 3
-	L1MessageType_SetChainParams        = 4
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
-	L1MessageType_EthDeposit            = 11
+	L1MessageType_SetChainParams        = 11
+	L1MessageType_EthDeposit            = 12
 	L1MessageType_Invalid               = 0xFF
 )
 
@@ -215,7 +215,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		return nil, errors.New("invalid message")
 	default:
 		// invalid message, just ignore it
-		return nil, errors.New("invalid message types")
+		return nil, fmt.Errorf("invalid message type %v", msg.Header.Kind)
 	}
 }
 
