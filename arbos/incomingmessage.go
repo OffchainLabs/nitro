@@ -385,7 +385,7 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: header.RequestId,
-		To:          header.Poster,
+		To:          util.RemapL1Address(header.Poster),
 		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil
