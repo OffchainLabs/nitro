@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
+	glog "github.com/ethereum/go-ethereum/log"
 )
 
 var arbAddress = common.HexToAddress("0xa4b05")
@@ -39,6 +40,7 @@ type TxProcessor struct {
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
+	startingLogCount int
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -56,6 +58,7 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		TopTxType:        nil,
 		evm:              evm,
 		CurrentRetryable: nil,
+		startingLogCount: len(evm.StateDB.Logs()),
 	}
 }
 
@@ -141,7 +144,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
 		if err != nil {
-			log.Error("failed to emit TicketCreated event", "err", err)
+			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
@@ -191,7 +194,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.FeeRefundAddr,
 		)
 		if err != nil {
-			log.Error("failed to emit RedeemScheduled event", "err", err)
+			glog.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
@@ -281,7 +284,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 				// Normally the network fee address should be holding the gas funds.
 				// However, in theory, they could've been transfered out during the redeem attempt.
 				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
+				glog.Error("network fee address doesn't have enough funds to give user refund", "err", err)
 			}
 		}
 		if evmSuccess {
@@ -320,7 +323,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		// Give all funds to the network account and continue.
 		if transitionSuccess {
 			// Uh oh, there's a bug in our charging code.
-			log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
+			glog.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
 		}
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
@@ -344,12 +347,43 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 			} else {
 				// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
 				// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
-				log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+				glog.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 				computeGas = gasUsed.Uint64()
 			}
 		}
 		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
+}
+
+func (p *TxProcessor) ScheduledTxes() types.Transactions {
+	scheduled := types.Transactions{}
+	time := p.evm.Context.Time.Uint64()
+	basefee := p.evm.Context.BaseFee
+	chainID := p.evm.ChainConfig().ChainID
+
+	logs := p.evm.StateDB.Logs()[p.startingLogCount:]
+	for _, log := range logs {
+		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
+			continue
+		}
+		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+		err := arbos_util.ParseRedeemScheduledLog(event, log)
+		if err != nil {
+			glog.Error("Failed to parse RedeemScheduled log", "err", err)
+			continue
+		}
+		retryable, _ := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+		redeem, _ := retryable.MakeTx(
+			chainID,
+			event.SequenceNum,
+			basefee,
+			event.DonatedGas,
+			event.TicketId,
+			event.GasDonor,
+		)
+		scheduled = append(scheduled, types.NewTx(redeem))
+	}
+	return scheduled
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {

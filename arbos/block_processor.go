@@ -189,7 +189,7 @@ func ProduceBlock(
 		gasLeft -= computeGas
 		gasPool := gethGas
 
-		receipt, err := core.ApplyTransaction(
+		receipt, scheduled, err := core.ApplyTransaction(
 			chainConfig,
 			chainContext,
 			&header.Coinbase,
@@ -234,25 +234,11 @@ func ProduceBlock(
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
 		}
 
+		// append any scheduled redeems
+		redeems = append(redeems, scheduled...)
+
 		for _, txLog := range receipt.Logs {
-			if txLog.Address == ArbRetryableTxAddress && txLog.Topics[0] == RedeemScheduledEventID {
-				event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
-				err := util.ParseRedeemScheduledLog(event, txLog)
-				if err != nil {
-					log.Error("Failed to parse RedeemScheduled log", "err", err)
-				} else {
-					retryable, _ := state.RetryableState().OpenRetryable(event.TicketId, time)
-					redeem, _ := retryable.MakeTx(
-						chainConfig.ChainID,
-						event.SequenceNum,
-						gasPrice,
-						event.DonatedGas,
-						event.TicketId,
-						event.GasDonor,
-					)
-					redeems = append(redeems, types.NewTx(redeem))
-				}
-			} else if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
+			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
 				event := &precompilesgen.ArbSysL2ToL1Transaction{}
 				err := util.ParseL2ToL1TransactionLog(event, txLog)
