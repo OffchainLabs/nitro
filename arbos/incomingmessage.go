@@ -106,12 +106,13 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 }
 
 func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
-	return (header.Kind == other.Kind) &&
-		(header.Poster.Hash().Big().Cmp(other.Poster.Hash().Big()) == 0) &&
-		(header.BlockNumber.Big().Cmp(other.BlockNumber.Big()) == 0) &&
-		(header.Timestamp.Big().Cmp(other.Timestamp.Big()) == 0) &&
-		(header.RequestId.Big().Cmp(other.RequestId.Big()) == 0) &&
-		(header.GasPriceL1.Big().Cmp(other.GasPriceL1.Big()) == 0)
+	// These are all non-pointer types so it's safe to use the == operator
+	return header.Kind == other.Kind &&
+		header.Poster == other.Poster &&
+		header.BlockNumber == other.BlockNumber &&
+		header.Timestamp == other.Timestamp &&
+		header.RequestId == other.RequestId &&
+		header.GasPriceL1 == other.GasPriceL1
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
