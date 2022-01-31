@@ -423,7 +423,11 @@ impl Module {
                 )
                 .unwrap();
                 let t = usize::try_from(t).unwrap();
-                let expected_ty = tables[t].ty.ty;
+                let table = match tables.get_mut(t) {
+                    Some(t) => t,
+                    None => bail!("Element segment for non-exsistent table {}", t),
+                };
+                let expected_ty = table.ty.ty;
                 ensure!(
                     expected_ty == elem.ty,
                     "Element type expected to be of table type {:?} but of type {:?}",
@@ -443,7 +447,12 @@ impl Module {
                     })
                     .collect::<eyre::Result<Vec<_>>>()?;
                 let len = contents.len();
-                tables[t].elems[offset..][..len].clone_from_slice(&contents);
+                ensure!(
+                    offset.saturating_add(len) <= table.elems.len(),
+                    "Out of bounds element segment at offset {} and length {} for table of length {}",
+                    offset, len, table.elems.len(),
+                );
+                table.elems[offset..][..len].clone_from_slice(&contents);
             }
         }
         ensure!(
