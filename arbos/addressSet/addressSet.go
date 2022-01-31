@@ -55,13 +55,13 @@ func (aset *AddressSet) Clear() error {
 	if err != nil || size == 0 {
 		return err
 	}
-	for i := uint64(0); i <= size; i++ { // i=0 clears the size slot
+	for i := uint64(1); i <= size; i++ {
 		err := aset.backingStorage.SetByUint64(i, common.Hash{})
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+	return aset.size.Set(0)
 }
 
 func (aset *AddressSet) AllMembers() ([]common.Address, error) {
