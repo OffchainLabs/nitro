@@ -1620,7 +1620,7 @@ impl Machine {
             Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.bytes32_vals.len() {
+                if idx >= self.global_state.bytes32_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else if !module
                     .memory
@@ -1632,7 +1632,7 @@ impl Machine {
             Opcode::SetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.bytes32_vals.len() {
+                if idx >= self.global_state.bytes32_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                     self.global_state.bytes32_vals[idx] = hash;
@@ -1642,7 +1642,7 @@ impl Machine {
             }
             Opcode::GetGlobalStateU64 => {
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.u64_vals.len() {
+                if idx >= self.global_state.u64_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else {
                     self.value_stack
@@ -1652,7 +1652,7 @@ impl Machine {
             Opcode::SetGlobalStateU64 => {
                 let val = self.value_stack.pop().unwrap().assume_u64();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.u64_vals.len() {
+                if idx >= self.global_state.u64_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else {
                     self.global_state.u64_vals[idx] = val
