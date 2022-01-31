@@ -40,6 +40,30 @@ func (aset *AddressSet) IsMember(addr common.Address) (bool, error) {
 	return value != (common.Hash{}), err
 }
 
+func (aset *AddressSet) GetAnyMember() (*common.Address, error) {
+	size, err := aset.size.Get()
+	if err != nil || size == 0 {
+		return nil, err
+	}
+	addrAsHash, err := aset.backingStorage.GetByUint64(1)
+	addr := common.BytesToAddress(addrAsHash.Bytes())
+	return &addr, err
+}
+
+func (aset *AddressSet) Clear() error {
+	size, err := aset.size.Get()
+	if err != nil || size == 0 {
+		return err
+	}
+	for i := uint64(0); i <= size; i++ {
+		err := aset.backingStorage.SetByUint64(i, common.Hash{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (aset *AddressSet) AllMembers() ([]common.Address, error) {
 	size, err := aset.size.Get()
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
@@ -90,15 +91,22 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 }
 
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) error {
-	return ps.preferredAggregators.Set(common.BytesToHash(sender.Bytes()), common.BytesToHash(aggregator.Bytes()))
+	// note: we back preferred aggregators by a singleton set for future proofing
+	aggSet := addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
+	_ = aggSet.Clear()
+	return aggSet.Add(aggregator)
 }
 
 func (ps *L1PricingState) PreferredAggregator(sender common.Address) (common.Address, bool, error) {
-	fromTable, err := ps.preferredAggregators.Get(common.BytesToHash(sender.Bytes()))
+	aggSet := addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
+
+	fromTable, err := aggSet.GetAnyMember()
 	if err != nil {
 		return common.Address{}, false, err
 	}
-	if fromTable == (common.Hash{}) {
+	if fromTable == nil || *fromTable == (common.Address{}) {
+		// The 0 address represents the current default aggregator,
+		// which we also use when the user has never specified a preferred aggregator
 		aggregator, err := ps.DefaultAggregator()
 		return aggregator, false, err
 	} else {
