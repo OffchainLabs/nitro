@@ -93,7 +93,10 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, aggregator common.Address) error {
 	// note: we back preferred aggregators by a singleton set for future proofing
 	aggSet := addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
-	_ = aggSet.Clear()
+	err := aggSet.Clear()
+	if err != nil {
+		return err
+	}
 	return aggSet.Add(aggregator)
 }
 

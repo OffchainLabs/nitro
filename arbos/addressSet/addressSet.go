@@ -55,7 +55,7 @@ func (aset *AddressSet) Clear() error {
 	if err != nil || size == 0 {
 		return err
 	}
-	for i := uint64(0); i <= size; i++ {
+	for i := uint64(0); i <= size; i++ { // i=0 clears the size slot
 		err := aset.backingStorage.SetByUint64(i, common.Hash{})
 		if err != nil {
 			return err
