@@ -1680,11 +1680,8 @@ impl Machine {
                 let offset = self.value_stack.pop().unwrap().assume_u32();
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let msg_num = self.value_stack.pop().unwrap().assume_u64();
-                assert!(
-                    inst.argument_data <= (InboxIdentifier::Delayed as u64),
-                    "Bad inbox identifier"
-                );
-                let inbox_identifier = argument_data_to_inbox(inst.argument_data).unwrap();
+                let inbox_identifier =
+                    argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                 if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
                     if ptr as u64 + 32 > module.memory.size() {
                         self.status = MachineStatus::Errored;
