@@ -195,7 +195,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbnode.L1Interface) {
 	for i := 0; i < 12; i++ {
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
-			l1Info.PrepareTx("faucet", "faucet", 30000, big.NewInt(1e12), nil),
+			l1Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
 }
@@ -340,7 +340,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		// Invoke a new L1 block, with a new timestamp, before estimating.
 		time.Sleep(time.Second)
 		SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
-			l1Info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 
 		if i%2 == 0 {

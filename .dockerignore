@@ -11,6 +11,9 @@ solgen/artifacts
 solgen/cache/
 solgen/go
 **/node_modules
+/reproducible-wasm
+
+target/**/*
 
 # Arbitrator ignores
 

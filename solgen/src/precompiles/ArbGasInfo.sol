@@ -4,7 +4,7 @@ interface ArbGasInfo {
     // return gas prices in wei, assuming the specified aggregator is used
     //        (
     //            per L2 tx,
-    //            per L1 calldata unit, (zero byte = 4 units, nonzero byte = 16 units)
+    //            per L1 calldata unit, (a byte, non-zero or otherwise, is 16 units)
     //            per storage allocation,
     //            per ArbGas base,
     //            per ArbGas congestion,
@@ -26,6 +26,15 @@ interface ArbGasInfo {
 
     // return gas accounting parameters (speedLimitPerSecond, gasPoolMax, maxTxGasLimit)
     function getGasAccountingParams() external view returns (uint, uint, uint);
+
+    // get the minimum gas price needed for a transaction to succeed
+    function getMinimumGasPrice() external view returns(uint);
+
+    // get the number of seconds worth of the speed limit the large gas pool contains
+    function getGasPoolSeconds() external view returns(uint);
+
+    // get the number of seconds worth of the speed limit the small gas pool contains
+    function getSmallGasPoolSeconds() external view returns(uint);
 
     // get ArbOS's estimate of the L1 gas price in wei
     function getL1GasPriceEstimate() external view returns(uint);
