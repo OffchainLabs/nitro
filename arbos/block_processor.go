@@ -189,7 +189,7 @@ func ProduceBlock(
 		gasLeft -= computeGas
 		gasPool := gethGas
 
-		receipt, scheduled, err := core.ApplyTransaction(
+		receipt, err := core.ApplyTransaction(
 			chainConfig,
 			chainContext,
 			&header.Coinbase,
@@ -235,7 +235,7 @@ func ProduceBlock(
 		}
 
 		// append any scheduled redeems
-		redeems = append(redeems, scheduled...)
+		redeems = append(redeems, receipt.ScheduledTxes...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
