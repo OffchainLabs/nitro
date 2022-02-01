@@ -151,11 +151,10 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		var isInternal bool
+		var isInputTx bool
 		if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
-			isInternal = true
 
 			retry, ok := (tx.GetInner()).(*types.ArbitrumRetryTx)
 			if !ok {
@@ -169,80 +168,89 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			isInternal = tx.Type() == types.ArbitrumInternalTxType
+			isInputTx = tx.Type() != types.ArbitrumInternalTxType
 		}
 
-		sender, err := signer.Sender(tx)
-		if err != nil {
-			if sequencingHooks != nil && !isInternal {
-				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
-			}
-			continue
-		}
-
-		if sequencingHooks != nil && !isInternal {
-			err := sequencingHooks.PreTxFilter(state, tx, sender)
-			if err != nil {
-				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
-				continue
-			}
-		}
-
-		aggregator := &poster
-		if util.DoesTxTypeAlias(tx.Type()) {
-			aggregator = nil
-		}
+		var sender common.Address
 		var dataGas uint64 = 0
-		if gasPrice.Sign() > 0 {
-			dataGas = math.MaxUint64
-			pricing := state.L1PricingState()
-			posterCost, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
-			posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
-			if posterCostInL2Gas.IsUint64() {
-				dataGas = posterCostInL2Gas.Uint64()
-			} else {
-				log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
-			}
-		}
-
-		if dataGas > tx.Gas() {
-			// this txn is going to be rejected later
-			dataGas = 0
-		}
-
-		computeGas := tx.Gas() - dataGas
-
-		if computeGas > gasLeft {
-			if sequencingHooks != nil && !isInternal {
-				sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, core.ErrGasLimitReached)
-			}
-			continue
-		}
-
-		snap := statedb.Snapshot()
-		statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
-
-		gasLeft -= computeGas
 		gasPool := gethGas
+		receipt, err := (func() (*types.Receipt, error) {
+			sender, err = signer.Sender(tx)
+			if err != nil {
+				return nil, err
+			}
 
-		receipt, err := core.ApplyTransaction(
-			chainConfig,
-			chainContext,
-			&header.Coinbase,
-			&gasPool,
-			statedb,
-			header,
-			tx,
-			&header.GasUsed,
-			vm.Config{},
-		)
-		if sequencingHooks != nil && !isInternal {
-			err = sequencingHooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			if sequencingHooks != nil && isInputTx {
+				err = sequencingHooks.PreTxFilter(state, tx, sender)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			aggregator := &poster
+			if util.DoesTxTypeAlias(tx.Type()) {
+				aggregator = nil
+			}
+			if gasPrice.Sign() > 0 {
+				dataGas = math.MaxUint64
+				pricing := state.L1PricingState()
+				posterCost, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
+				posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+				if posterCostInL2Gas.IsUint64() {
+					dataGas = posterCostInL2Gas.Uint64()
+				} else {
+					log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+				}
+			}
+
+			if dataGas > tx.Gas() {
+				// this txn is going to be rejected later
+				dataGas = 0
+			}
+
+			computeGas := tx.Gas() - dataGas
+
+			if computeGas > gasLeft {
+				return nil, core.ErrGasLimitReached
+			}
+
+			snap := statedb.Snapshot()
+			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
+
+			gasLeft -= computeGas
+
+			receipt, err := core.ApplyTransaction(
+				chainConfig,
+				chainContext,
+				&header.Coinbase,
+				&gasPool,
+				statedb,
+				header,
+				tx,
+				&header.GasUsed,
+				vm.Config{},
+			)
+			if err != nil {
+				// Ignore this transaction if it's invalid under the state transition function
+				statedb.RevertToSnapshot(snap)
+				return nil, err
+			}
+
+			if sequencingHooks != nil && isInputTx {
+				err = sequencingHooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			return receipt, nil
+		})()
+
+		if sequencingHooks != nil && isInputTx {
 			sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
 		}
 		if err != nil {
-			// Ignore this transaction if it's invalid under our more lenient state transaction function
-			statedb.RevertToSnapshot(snap)
+			log.Debug("error applying transaction", "tx", tx, "err", err)
 			continue
 		}
 
