@@ -14,16 +14,17 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
 )
 
 type Sequencer struct {
 	txStreamer    *TransactionStreamer
-	l1Client      L1Interface
+	l1Client      arbutil.L1Interface
 	l1BlockNumber uint64
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		l1Client:      l1Client,

@@ -15,11 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
 type BatchPoster struct {
-	client          L1Interface
+	client          arbutil.L1Interface
 	inbox           *InboxTracker
 	streamer        *TransactionStreamer
 	config          *BatchPosterConfig
@@ -50,7 +51,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:    2,
 }
 
-func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 func TestValidatorSimple(t *testing.T) {
@@ -33,7 +33,7 @@ func TestValidatorSimple(t *testing.T) {
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
@@ -53,7 +53,7 @@ func TestValidatorSimple(t *testing.T) {
 	// this is needed to stop the 1000000 balance error in CI (BUG)
 	time.Sleep(time.Millisecond * 500)
 
-	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)

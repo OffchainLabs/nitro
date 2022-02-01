@@ -1,0 +1,475 @@
+//
+// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+//
+
+package validator
+
+import (
+	"context"
+	"math/big"
+	"time"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/validator"
+	"github.com/pkg/errors"
+)
+
+type Strategy uint8
+
+const (
+	WatchtowerStrategy Strategy = iota
+	DefensiveStrategy
+	StakeLatestStrategy
+	MakeNodesStrategy
+)
+
+type nodeAndHash struct {
+	id   *big.Int
+	hash common.Hash
+}
+
+type StakerInfo struct {
+	Index            *big.Int
+	LatestStakedNode *big.Int
+	AmountStaked     *big.Int
+	CurrentChallenge *common.Address
+}
+
+type Staker struct {
+	*Validator
+	activeChallenge         *validator.ChallengeManager
+	strategy                Strategy
+	fromBlock               int64
+	baseCallOpts            bind.CallOpts
+	auth                    *bind.TransactOpts
+	config                  ValidatorConfig
+	highGasBlocksBuffer     *big.Int
+	lastActCalledBlock      *big.Int
+	inactiveLastCheckedNode *nodeAndHash
+	bringActiveUntilNode    *big.Int
+	withdrawDestination     common.Address
+}
+
+func NewStaker(
+	ctx context.Context,
+	client *ethclient.Client,
+	wallet *ethbridge.ValidatorWallet,
+	fromBlock int64,
+	validatorUtilsAddress common.Address,
+	strategy Strategy,
+	callOpts bind.CallOpts,
+	auth *bind.TransactOpts,
+	config ValidatorConfig,
+) (*Staker, error) {
+	val, err := NewValidator(ctx, client, wallet, fromBlock, validatorUtilsAddress, callOpts)
+	if err != nil {
+		return nil, err
+	}
+	withdrawDestination := wallet.From()
+	if common.IsHexAddress(config.WithdrawDestination) {
+		withdrawDestination = common.HexToAddress(config.WithdrawDestination)
+	}
+	return &Staker{
+		Validator:           val,
+		strategy:            strategy,
+		fromBlock:           fromBlock,
+		baseCallOpts:        callOpts,
+		auth:                auth,
+		config:              config,
+		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
+		lastActCalledBlock:  nil,
+		withdrawDestination: withdrawDestination,
+	}, nil
+}
+
+func (s *Staker) RunInBackground(ctx context.Context, stakerDelay time.Duration) chan bool {
+	done := make(chan bool)
+	go func() {
+		defer func() {
+			done <- true
+		}()
+		backoff := time.Second
+		for {
+			arbTx, err := s.Act(ctx)
+			if err == nil && arbTx != nil {
+				// Note: methodName isn't accurate, it's just used for logging
+				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, 5*time.Minute)
+				err = errors.Wrap(err, "error waiting for tx receipt")
+				if err == nil {
+					log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
+				}
+			}
+			if err != nil {
+				log.Warn("error acting as staker", "err", err)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+				if backoff < 60*time.Second {
+					backoff *= 2
+				}
+				continue
+			} else {
+				backoff = time.Second
+			}
+			time.Sleep(stakerDelay)
+		}
+	}()
+	return done
+}
+
+func (s *Staker) shouldAct(ctx context.Context) bool {
+	var gasPriceHigh = false
+	var gasPriceFloat float64
+	gasPrice, err := s.client.SuggestGasPrice(ctx)
+	if err != nil {
+		log.Warn("error getting gas price", "err", err)
+	} else {
+		gasPriceFloat = float64(gasPrice.Int64()) / 1e9
+		if gasPriceFloat >= s.config.L1PostingStrategy.HighGasThreshold {
+			gasPriceHigh = true
+		}
+	}
+	latestBlockInfo, err := s.client.BlockInfoByNumber(ctx, nil)
+	if err != nil {
+		log.Warn("error getting latest block", "err", err)
+		return true
+	}
+	latestBlockNum := latestBlockInfo.Number.ToInt()
+	if s.lastActCalledBlock == nil {
+		s.lastActCalledBlock = latestBlockNum
+	}
+	blocksSinceActCalled := new(big.Int).Sub(latestBlockNum, s.lastActCalledBlock)
+	s.lastActCalledBlock = latestBlockNum
+	if gasPriceHigh {
+		// We're eating into the high gas buffer to delay our tx
+		s.highGasBlocksBuffer.Sub(s.highGasBlocksBuffer, blocksSinceActCalled)
+	} else {
+		// We'll make a tx if necessary, so we can add to the buffer for future high gas
+		s.highGasBlocksBuffer.Add(s.highGasBlocksBuffer, blocksSinceActCalled)
+	}
+	// Clamp `s.highGasBlocksBuffer` to between 0 and HighGasDelayBlocks
+	if s.highGasBlocksBuffer.Sign() < 0 {
+		s.highGasBlocksBuffer.SetInt64(0)
+	} else if s.highGasBlocksBuffer.Cmp(big.NewInt(s.config.L1PostingStrategy.HighGasDelayBlocks)) > 0 {
+		s.highGasBlocksBuffer.SetInt64(s.config.L1PostingStrategy.HighGasDelayBlocks)
+	}
+	if gasPriceHigh && s.highGasBlocksBuffer.Sign() > 0 {
+		log.Warn(
+			"not acting yet as gas price is high",
+			"gasPrice", gasPriceFloat,
+			"highGasPriceConfig", s.config.L1PostingStrategy.HighGasThreshold,
+			"highGasBuffer", s.highGasBlocksBuffer,
+		)
+		return false
+	} else {
+		return true
+	}
+}
+
+func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
+	if !s.shouldAct(ctx) {
+		// The fact that we're delaying acting is alreay logged in `shouldAct`
+		return nil, nil
+	}
+	s.builder.ClearTransactions()
+	var rawInfo *StakerInfo
+	walletAddress := s.wallet.Address()
+	var walletAddressOrZero common.Address
+	if walletAddress != nil {
+		walletAddressOrZero = *walletAddress
+	}
+	if walletAddress != nil {
+		var err error
+		rawInfo, err = s.rollup.StakerInfo(ctx, walletAddressOrZero)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// If the wallet address is zero, or the wallet address isn't staked,
+	// this will return the latest node and its hash (atomically).
+	latestStakedNode, latestStakedNodeHash, err := s.validatorUtils.LatestStaked(ctx, walletAddressOrZero)
+	if err != nil {
+		return nil, err
+	}
+	if rawInfo != nil {
+		rawInfo.LatestStakedNode = latestStakedNode
+	}
+	info := OurStakerInfo{
+		CanProgress:          true,
+		LatestStakedNode:     latestStakedNode,
+		LatestStakedNodeHash: latestStakedNodeHash,
+		StakerInfo:           rawInfo,
+	}
+
+	effectiveStrategy := s.strategy
+	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !nodesLinear {
+		log.Warn("fork detected")
+		if effectiveStrategy == DefensiveStrategy {
+			effectiveStrategy = StakeLatestStrategy
+		}
+		s.inactiveLastCheckedNode = nil
+	}
+	if s.bringActiveUntilNode != nil {
+		if info.LatestStakedNode.Cmp(s.bringActiveUntilNode) < 0 {
+			if effectiveStrategy == DefensiveStrategy {
+				effectiveStrategy = StakeLatestStrategy
+			}
+		} else {
+			log.Info("defensive validator staked past incorrect node; waiting here")
+			s.bringActiveUntilNode = nil
+		}
+		s.inactiveLastCheckedNode = nil
+	}
+	if effectiveStrategy <= DefensiveStrategy && s.inactiveLastCheckedNode != nil {
+		info.LatestStakedNode = s.inactiveLastCheckedNode.id
+		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
+	}
+
+	// Resolve nodes if either we're on the make nodes strategy,
+	// or we're on the stake latest strategy but don't have a stake
+	// (attempt to reduce the current required stake).
+	shouldResolveNodes := effectiveStrategy >= MakeNodesStrategy
+	if !shouldResolveNodes && effectiveStrategy >= StakeLatestStrategy && rawInfo == nil {
+		shouldResolveNodes, err = s.isRequiredStakeElevated(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if shouldResolveNodes {
+		// Keep the stake of this validator placed if we plan on staking further
+		arbTx, err := s.removeOldStakers(ctx, effectiveStrategy >= StakeLatestStrategy)
+		if err != nil || arbTx != nil {
+			return arbTx, err
+		}
+		arbTx, err = s.resolveTimedOutChallenges(ctx)
+		if err != nil || arbTx != nil {
+			return arbTx, err
+		}
+		if err := s.resolveNextNode(ctx, rawInfo, s.fromBlock); err != nil {
+			return nil, err
+		}
+	}
+
+	addr := s.wallet.Address()
+	if addr != nil {
+		withdrawable, err := s.rollup.WithdrawableFunds(ctx, *addr)
+		if err != nil {
+			return nil, err
+		}
+		if withdrawable.Sign() > 0 && s.withdrawDestination != (common.Address{}) {
+			err = s.rollup.WithdrawFunds(ctx, s.withdrawDestination)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Don't attempt to create a new stake if we're resolving a node,
+	// as that might affect the current required stake.
+	creatingNewStake := rawInfo == nil && s.builder.TransactionCount() == 0
+	if creatingNewStake {
+		if err := s.newStake(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	if rawInfo != nil {
+		if err = s.handleConflict(ctx, rawInfo); err != nil {
+			return nil, err
+		}
+	}
+	if rawInfo != nil || creatingNewStake {
+		// Advance stake up to 20 times in one transaction
+		for i := 0; info.CanProgress && i < 20; i++ {
+			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if rawInfo != nil && s.builder.TransactionCount() == 0 {
+		if err := s.createConflict(ctx, rawInfo); err != nil {
+			return nil, err
+		}
+	}
+
+	txCount := s.builder.TransactionCount()
+	if creatingNewStake {
+		// Ignore our stake creation, as it's useless by itself
+		txCount--
+	}
+	if txCount == 0 {
+		return nil, nil
+	}
+	if creatingNewStake {
+		log.Info("staking to execute transactions")
+	}
+	return s.wallet.ExecuteTransactions(ctx, s.builder)
+}
+
+func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
+	if info.CurrentChallenge == nil {
+		s.activeChallenge = nil
+		return nil
+	}
+
+	if s.activeChallenge == nil || s.activeChallenge.ChallengeAddress() != *info.CurrentChallenge {
+		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
+
+		newChallengeManager, err := validator.NewChallengeManager(ctx, s.client, s.auth, *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, s.fromBlock, s.config.TargetNumMachines)
+		if err != nil {
+			return err
+		}
+
+		s.activeChallenge = newChallengeManager
+	}
+
+	_, err := s.activeChallenge.Act(ctx)
+	return err
+}
+
+func (s *Staker) newStake(ctx context.Context) error {
+	var addr = s.wallet.Address()
+	if addr != nil {
+		info, err := s.rollup.StakerInfo(ctx, *addr)
+		if err != nil {
+			return err
+		}
+		if info != nil {
+			return nil
+		}
+	}
+	stakeAmount, err := s.rollup.CurrentRequiredStake(ctx)
+	if err != nil {
+		return err
+	}
+	return s.rollup.NewStake(ctx, stakeAmount)
+}
+
+func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy Strategy) error {
+	active := effectiveStrategy >= StakeLatestStrategy
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.fromBlock)
+	if err != nil {
+		return err
+	}
+	if wrongNodesExist && effectiveStrategy == WatchtowerStrategy {
+		log.Error("found incorrect assertion in watchtower mode")
+	}
+	if action == nil {
+		info.CanProgress = false
+		return nil
+	}
+
+	switch action := action.(type) {
+	case createNodeAction:
+		if wrongNodesExist && s.config.DontChallenge {
+			log.Error("refusing to challenge assertion as config disables challenges")
+			return nil
+		}
+		if !active {
+			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
+				log.Warn("bringing defensive validator online because of incorrect assertion")
+				s.bringActiveUntilNode = new(big.Int).Add(info.LatestStakedNode, big.NewInt(1))
+			}
+			info.CanProgress = false
+			return nil
+		}
+		// Details are already logged with more details in generateNodeAction
+		info.CanProgress = false
+		info.LatestStakedNode = nil
+		info.LatestStakedNodeHash = action.hash
+		return s.rollup.StakeOnNewNode(ctx, action.hash, action.assertion, action.prevProposedBlock, action.prevInboxMaxCount, action.sequencerBatchProof)
+	case existingNodeAction:
+		info.LatestStakedNode = action.number
+		info.LatestStakedNodeHash = action.hash
+		if !active {
+			if wrongNodesExist && effectiveStrategy >= DefensiveStrategy {
+				log.Warn("bringing defensive validator online because of incorrect assertion")
+				s.bringActiveUntilNode = action.number
+				info.CanProgress = false
+			} else {
+				s.inactiveLastCheckedNode = &nodeAndHash{
+					id:   action.number,
+					hash: action.hash,
+				}
+			}
+			return nil
+		}
+		log.Info("staking on existing node", "node", action.number)
+		return s.rollup.StakeOnExistingNode(ctx, action.number, action.hash)
+	default:
+		panic("invalid action type")
+	}
+}
+
+func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
+	if info.CurrentChallenge != nil {
+		return nil
+	}
+
+	stakers, err := s.validatorUtils.GetStakers(ctx)
+	if err != nil {
+		return err
+	}
+	latestNode, err := s.rollup.LatestConfirmedNode(ctx)
+	if err != nil {
+		return err
+	}
+	// Safe to dereference as createConflict is only called when we have a wallet address
+	walletAddr := *s.wallet.Address()
+	for _, staker := range stakers {
+		stakerInfo, err := s.rollup.StakerInfo(ctx, staker)
+		if err != nil {
+			return err
+		}
+		if stakerInfo.CurrentChallenge != nil {
+			continue
+		}
+		conflictType, node1, node2, err := s.validatorUtils.FindStakerConflict(ctx, walletAddr, staker)
+		if err != nil {
+			return err
+		}
+		if conflictType != CONFLICT_TYPE_FOUND {
+			continue
+		}
+		staker1 := walletAddr
+		staker2 := staker
+		if node2.Cmp(node1) < 0 {
+			staker1, staker2 = staker2, staker1
+			node1, node2 = node2, node1
+		}
+		if node1.Cmp(latestNode) <= 0 {
+			// removeOldStakers will take care of them
+			continue
+		}
+
+		node1Info, err := s.rollup.RollupWatcher.LookupNode(ctx, node1)
+		if err != nil {
+			return err
+		}
+		node2Info, err := s.rollup.RollupWatcher.LookupNode(ctx, node2)
+		if err != nil {
+			return err
+		}
+		log.Warn("creating challenge", "ourNode", node1, "otherNode", node2, "otherStaker", staker2)
+		return s.rollup.CreateChallenge(
+			ctx,
+			staker1,
+			node1Info,
+			staker2,
+			node2Info,
+		)
+	}
+	// No conflicts exist
+	return nil
+}

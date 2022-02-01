@@ -13,8 +13,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -55,7 +55,7 @@ func TestDelayInboxSimple(t *testing.T) {
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
 	Require(t, err)
-	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -64,7 +64,7 @@ func TestDelayInboxSimple(t *testing.T) {
 			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	_, err = arbnode.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)

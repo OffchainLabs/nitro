@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
@@ -43,18 +44,18 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func andTxSucceeded(ctx context.Context, l1client L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
@@ -100,7 +101,7 @@ func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployChallengeFactory(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
@@ -134,7 +135,7 @@ func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.
 	return ospEntryAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, error) {
+func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -178,7 +179,7 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return rollupCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -206,7 +207,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	receipt, err := arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -268,7 +269,7 @@ type Node struct {
 	BroadcastClient  *broadcastclient.BroadcastClient
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)

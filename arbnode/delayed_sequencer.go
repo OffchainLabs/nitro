@@ -10,10 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 type DelayedSequencer struct {
-	client          L1Interface
+	client          arbutil.L1Interface
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
@@ -39,7 +40,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(client L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		client:     client,
 		bridge:     reader.DelayedBridge(),

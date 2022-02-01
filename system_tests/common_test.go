@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -31,7 +32,7 @@ import (
 )
 
 type info = *BlockchainTestInfo
-type client = arbnode.L1Interface
+type client = arbutil.L1Interface
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
@@ -39,7 +40,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
@@ -48,7 +49,7 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 }
 
@@ -203,7 +204,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 
