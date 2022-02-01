@@ -423,7 +423,11 @@ impl Module {
                 )
                 .unwrap();
                 let t = usize::try_from(t).unwrap();
-                let expected_ty = tables[t].ty.ty;
+                let table = match tables.get_mut(t) {
+                    Some(t) => t,
+                    None => bail!("Element segment for non-exsistent table {}", t),
+                };
+                let expected_ty = table.ty.ty;
                 ensure!(
                     expected_ty == elem.ty,
                     "Element type expected to be of table type {:?} but of type {:?}",
@@ -431,28 +435,24 @@ impl Module {
                     elem.ty
                 );
                 let contents: Vec<_> = elem
-                    .init
+                    .values
                     .into_iter()
-                    .map(|i| {
-                        let insn = match i.as_slice() {
-                            [x] => x,
-                            _ => bail!("Element initializer isn't one instruction: {:?}", o),
+                    .map(|val| {
+                        let func_ty = match val {
+                            Value::RefNull => FunctionType::default(),
+                            Value::FuncRef(x) => func_types[usize::try_from(x).unwrap()].clone(),
+                            _ => bail!("Invalid element value {:?}", val),
                         };
-                        match insn.get_const_output() {
-                            Some(v @ Value::RefNull) => Ok(TableElement {
-                                func_ty: FunctionType::default(),
-                                val: v,
-                            }),
-                            Some(Value::FuncRef(x)) => Ok(TableElement {
-                                func_ty: func_types[usize::try_from(x).unwrap()].clone(),
-                                val: Value::FuncRef(x),
-                            }),
-                            _ => Err(eyre!("Invalid element initializer {:?}", insn)),
-                        }
+                        Ok(TableElement { val, func_ty })
                     })
                     .collect::<eyre::Result<Vec<_>>>()?;
                 let len = contents.len();
-                tables[t].elems[offset..][..len].clone_from_slice(&contents);
+                ensure!(
+                    offset.saturating_add(len) <= table.elems.len(),
+                    "Out of bounds element segment at offset {} and length {} for table of length {}",
+                    offset, len, table.elems.len(),
+                );
+                table.elems[offset..][..len].clone_from_slice(&contents);
             }
         }
         ensure!(
@@ -1416,10 +1416,6 @@ impl Machine {
                 self.value_stack
                     .push(Value::F64(f64::from_bits(inst.argument_data)));
             }
-            Opcode::FuncRefConst => {
-                self.value_stack
-                    .push(Value::FuncRef(inst.argument_data as u32));
-            }
             Opcode::I32Eqz => {
                 let val = self.value_stack.pop().unwrap();
                 self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
@@ -1620,7 +1616,7 @@ impl Machine {
             Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.bytes32_vals.len() {
+                if idx >= self.global_state.bytes32_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else if !module
                     .memory
@@ -1632,7 +1628,7 @@ impl Machine {
             Opcode::SetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.bytes32_vals.len() {
+                if idx >= self.global_state.bytes32_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                     self.global_state.bytes32_vals[idx] = hash;
@@ -1642,7 +1638,7 @@ impl Machine {
             }
             Opcode::GetGlobalStateU64 => {
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.u64_vals.len() {
+                if idx >= self.global_state.u64_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else {
                     self.value_stack
@@ -1652,7 +1648,7 @@ impl Machine {
             Opcode::SetGlobalStateU64 => {
                 let val = self.value_stack.pop().unwrap().assume_u64();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx > self.global_state.u64_vals.len() {
+                if idx >= self.global_state.u64_vals.len() {
                     self.status = MachineStatus::Errored;
                 } else {
                     self.global_state.u64_vals[idx] = val

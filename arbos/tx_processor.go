@@ -31,13 +31,14 @@ var arbAddress = common.HexToAddress("0xa4b05")
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
 type TxProcessor struct {
-	msg       core.Message
-	state     *arbosState.ArbosState
-	PosterFee *big.Int // set once in GasChargingHook to track L1 calldata costs
-	posterGas uint64
-	Callers   []common.Address
-	TopTxType *byte // set once in StartTxHook
-	evm       *vm.EVM
+	msg              core.Message
+	state            *arbosState.ArbosState
+	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
+	posterGas        uint64
+	Callers          []common.Address
+	TopTxType        *byte // set once in StartTxHook
+	evm              *vm.EVM
+	CurrentRetryable *common.Hash
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -47,13 +48,14 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
-		msg:       msg,
-		state:     arbosState,
-		PosterFee: new(big.Int),
-		posterGas: 0,
-		Callers:   []common.Address{},
-		TopTxType: nil,
-		evm:       evm,
+		msg:              msg,
+		state:            arbosState,
+		PosterFee:        new(big.Int),
+		posterGas:        0,
+		Callers:          []common.Address{},
+		TopTxType:        nil,
+		evm:              evm,
+		CurrentRetryable: nil,
 	}
 }
 
@@ -205,6 +207,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// The redeemer has pre-paid for this tx's gas
 		basefee := p.evm.Context.BaseFee
 		p.evm.StateDB.AddBalance(tx.From, util.BigMulByUint(basefee, tx.Gas))
+		ticketId := tx.TicketId
+		p.CurrentRetryable = &ticketId
 	}
 	return false, 0, nil, nil
 }
