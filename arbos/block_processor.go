@@ -80,6 +80,18 @@ type SequencingHooks struct {
 	PostTxFilter func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
 }
 
+func noopSequencingHooks() *SequencingHooks {
+	return &SequencingHooks{
+		[]error{},
+		func(*arbosState.ArbosState, *types.Transaction, common.Address) error {
+			return nil
+		},
+		func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error {
+			return nil
+		},
+	}
+}
+
 func ProduceBlock(
 	message *L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -94,7 +106,10 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	return ProduceBlockAdvanced(message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, nil)
+	hooks := noopSequencingHooks()
+	return ProduceBlockAdvanced(
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+	)
 }
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
@@ -151,7 +166,7 @@ func ProduceBlockAdvanced(
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
 
 		var tx *types.Transaction
-		var isInputTx bool
+		hooks := noopSequencingHooks()
 		if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
@@ -168,7 +183,9 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			isInputTx = tx.Type() != types.ArbitrumInternalTxType
+			if tx.Type() != types.ArbitrumInternalTxType {
+				hooks = sequencingHooks
+			}
 		}
 
 		var sender common.Address
@@ -180,11 +197,8 @@ func ProduceBlockAdvanced(
 				return nil, err
 			}
 
-			if sequencingHooks != nil && isInputTx {
-				err = sequencingHooks.PreTxFilter(state, tx, sender)
-				if err != nil {
-					return nil, err
-				}
+			if err := hooks.PreTxFilter(state, tx, sender); err != nil {
+				return nil, err
 			}
 
 			aggregator := &poster
@@ -236,19 +250,12 @@ func ProduceBlockAdvanced(
 				return nil, err
 			}
 
-			if sequencingHooks != nil && isInputTx {
-				err = sequencingHooks.PostTxFilter(state, tx, sender, dataGas, receipt)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			return receipt, nil
+			return receipt, hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
 		})()
 
-		if sequencingHooks != nil && isInputTx {
-			sequencingHooks.TxErrors = append(sequencingHooks.TxErrors, err)
-		}
+		// append the err, even if it is nil
+		hooks.TxErrors = append(hooks.TxErrors, err)
+
 		if err != nil {
 			log.Debug("error applying transaction", "tx", tx, "err", err)
 			continue
