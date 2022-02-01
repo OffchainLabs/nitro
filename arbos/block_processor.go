@@ -184,6 +184,7 @@ func ProduceBlockAdvanced(
 			tx = txes[0]
 			txes = txes[1:]
 			if tx.Type() != types.ArbitrumInternalTxType {
+				// the sequencer has the ability to drop this tx
 				hooks = sequencingHooks
 			}
 		}
