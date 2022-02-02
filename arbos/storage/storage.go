@@ -316,6 +316,10 @@ func (sbu *StorageBackedUint64) Set(value uint64) error {
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
+func (sbu *StorageBackedUint64) Clear() error {
+	return sbu.Set(0)
+}
+
 func (sbu *StorageBackedUint64) Increment() (uint64, error) {
 	old, err := sbu.Get()
 	if err != nil {
