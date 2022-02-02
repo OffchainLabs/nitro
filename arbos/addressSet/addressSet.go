@@ -46,11 +46,8 @@ func (aset *AddressSet) GetAnyMember() (*common.Address, error) {
 		return nil, err
 	}
 	addrAsHash, err := aset.backingStorage.GetByUint64(1)
-	if err != nil {
-		return nil, err
-	}
 	addr := common.BytesToAddress(addrAsHash.Bytes())
-	return &addr, nil
+	return &addr, err
 }
 
 func (aset *AddressSet) Clear() error {
