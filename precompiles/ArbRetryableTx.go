@@ -27,10 +27,16 @@ type ArbRetryableTx struct {
 	CanceledGasCost         func(bytes32) (uint64, error)
 }
 
-var NotFoundError = errors.New("ticketId not found")
+var (
+	ErrNotFound               = errors.New("ticketId not found")
+	ErrSelfModifyingRetryable = errors.New("retryable cannot modify itself")
+)
 
 // Schedule an attempt to redeem the retryable, donating all of the call's gas to the redeem attempt
 func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, error) {
+	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
+		return bytes32{}, ErrSelfModifyingRetryable
+	}
 	retryableState := c.state.RetryableState()
 	byteCount, err := retryableState.RetryableSizeBytes(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
@@ -46,7 +52,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	if retryable == nil {
-		return hash{}, NotFoundError
+		return hash{}, ErrNotFound
 	}
 	nonce, err := retryable.IncrementNumTries()
 	if err != nil {
@@ -113,7 +119,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 		return nil, err
 	}
 	if retryable == nil {
-		return nil, NotFoundError
+		return nil, ErrNotFound
 	}
 	timeout, err := retryable.Timeout()
 	if err != nil {
@@ -132,7 +138,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 		return nil, err
 	}
 	if nbytes == 0 {
-		return nil, NotFoundError
+		return nil, ErrNotFound
 	}
 	updateCost := util.WordsForBytes(nbytes) * params.SstoreSetGas / 100
 	if err := c.Burn(updateCost); err != nil {
@@ -169,20 +175,23 @@ func (con ArbRetryableTx) GetBeneficiary(c ctx, evm mech, ticketId bytes32) (add
 		return addr{}, err
 	}
 	if retryable == nil {
-		return addr{}, NotFoundError
+		return addr{}, ErrNotFound
 	}
 	return retryable.Beneficiary()
 }
 
 // Cancel the ticket and refund its callvalue to its beneficiary
 func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
+	if c.txProcessor.CurrentRetryable != nil && ticketId == *c.txProcessor.CurrentRetryable {
+		return ErrSelfModifyingRetryable
+	}
 	retryableState := c.state.RetryableState()
 	retryable, err := retryableState.OpenRetryable(ticketId, evm.Context.Time.Uint64())
 	if err != nil {
 		return err
 	}
 	if retryable == nil {
-		return NotFoundError
+		return ErrNotFound
 	}
 	beneficiary, err := retryable.Beneficiary()
 	if err != nil {
