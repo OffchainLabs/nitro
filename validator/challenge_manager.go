@@ -58,12 +58,13 @@ type ChallengeBackend interface {
 
 type ChallengeManager struct {
 	// fields used in both block and execution challenge
-	con           *challengegen.ChallengeCore
-	challengeAddr common.Address
-	client        bind.ContractBackend
-	auth          *bind.TransactOpts
-	actingAs      common.Address
-	startL1Block  *big.Int
+	con               *challengegen.ChallengeCore
+	challengeAddr     common.Address
+	rootChallengeAddr common.Address
+	client            bind.ContractBackend
+	auth              *bind.TransactOpts
+	actingAs          common.Address
+	startL1Block      *big.Int
 
 	// fields below are used while working on block challenge
 	blockChallengeBackend *BlockChallengeBackend
@@ -94,6 +95,7 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 	return &ChallengeManager{
 		con:                   challengeCoreCon,
 		challengeAddr:         blockChallengeAddr,
+		rootChallengeAddr:     blockChallengeAddr,
 		client:                l1client,
 		auth:                  auth,
 		actingAs:              auth.From,
@@ -120,6 +122,7 @@ func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBac
 	return &ChallengeManager{
 		con:                       challengeCoreCon,
 		challengeAddr:             execChallengeAddr,
+		rootChallengeAddr:         execChallengeAddr,
 		client:                    l1client,
 		auth:                      auth,
 		actingAs:                  auth.From,
@@ -138,6 +141,10 @@ type ChallengeState struct {
 	End         *big.Int
 	Segments    []ChallengeSegment
 	RawSegments [][32]byte
+}
+
+func (m *ChallengeManager) RootChallengeAddress() common.Address {
+	return m.rootChallengeAddr
 }
 
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.

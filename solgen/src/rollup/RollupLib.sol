@@ -62,19 +62,17 @@ library RollupLib {
 
     function decodeExecutionState(
         bytes32[2] memory bytes32Fields,
-        uint64[2] memory intFields,
-        bool errored,
+        uint64[3] memory intFields,
         uint256 inboxMaxCount
     ) internal pure returns (ExecutionState memory) {
-        MachineStatus machineStatus;
-        if (errored) {
-            machineStatus = MachineStatus.ERRORED;
-        } else {
-            machineStatus = MachineStatus.FINISHED;
-        }
+        require(intFields[2] == uint64(MachineStatus.FINISHED) || intFields[2] == uint64(MachineStatus.ERRORED), "BAD_STATUS");
+        MachineStatus machineStatus = MachineStatus(intFields[2]);
+        uint64[2] memory gsIntFields;
+        gsIntFields[0] = intFields[0];
+        gsIntFields[1] = intFields[1];
         return
             ExecutionState(
-                GlobalState(bytes32Fields, intFields),
+                GlobalState(bytes32Fields, gsIntFields),
                 inboxMaxCount,
                 machineStatus
             );
@@ -82,24 +80,21 @@ library RollupLib {
 
     function decodeAssertion(
         bytes32[2][2] memory bytes32Fields,
-        uint64[2][2] memory intFields,
+        uint64[3][2] memory intFields,
         uint256 beforeInboxMaxCount,
         uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored
+        uint64 numBlocks
     ) internal pure returns (Assertion memory) {
         return
             Assertion(
                 decodeExecutionState(
                     bytes32Fields[0],
                     intFields[0],
-                    false,
                     beforeInboxMaxCount
                 ),
                 decodeExecutionState(
-                    bytes32Fields[0],
-                    intFields[0],
-                    errored,
+                    bytes32Fields[1],
+                    intFields[1],
                     inboxMaxCount
                 ),
                 numBlocks
@@ -148,7 +143,6 @@ library RollupLib {
             challengeRootHash(
                 assertionExecHash,
                 blockProposed,
-                GlobalStates.getInboxPosition(assertion.afterState.globalState),
                 wasmModuleRoot
             );
     }
@@ -156,7 +150,6 @@ library RollupLib {
     function challengeRootHash(
         bytes32 execution,
         uint256 proposedTime,
-        uint256 maxMessageCount,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
         return
@@ -164,7 +157,6 @@ library RollupLib {
                 abi.encodePacked(
                     execution,
                     proposedTime,
-                    maxMessageCount,
                     wasmModuleRoot
                 )
             );

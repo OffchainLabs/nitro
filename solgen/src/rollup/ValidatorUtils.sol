@@ -44,7 +44,7 @@ contract ValidatorUtils {
         view
         returns (
             bool isStaked,
-            uint256 latestStakedNode,
+            uint64 latestStakedNode,
             uint256 amountStaked,
             IChallenge currentChallenge
         )

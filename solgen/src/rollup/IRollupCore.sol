@@ -21,6 +21,7 @@ pragma solidity ^0.8.0;
 import "./Node.sol";
 
 import "../challenge/IChallenge.sol";
+import "../osp/IOneStepProofEntry.sol";
 
 interface IRollupCore {
     function _stakerMap(address stakerAddress)
@@ -37,14 +38,15 @@ interface IRollupCore {
     event RollupCreated(bytes32 machineHash);
 
     event NodeCreated(
-        uint256 indexed nodeNum,
+        uint64 indexed nodeNum,
         bytes32 indexed parentNodeHash,
         bytes32 nodeHash,
         bytes32 executionHash,
         uint256 inboxMaxCount,
         bytes32 afterInboxBatchAcc,
         bytes32[2][2] assertionBytes32Fields,
-        uint64[2][2] assertionIntFields,
+        uint64[3][2] assertionIntFields,
+        uint64 numBlocks,
         bytes32 wasmModuleRoot
     );
 

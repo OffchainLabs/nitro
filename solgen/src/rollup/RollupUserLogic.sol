@@ -5,7 +5,11 @@ pragma solidity ^0.8.0;
 import "./Rollup.sol";
 import "./IRollupLogic.sol";
 
-abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResultReceiver {
+abstract contract AbsRollupUserLogic is
+    RollupCore,
+    IRollupUser,
+    IChallengeResultReceiver
+{
     using NodeLib for Node;
 
     function initialize(address _stakeToken) public virtual override;
@@ -161,16 +165,13 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      * @param assertionIntFields Assertion data for creating
      * @param beforeInboxMaxCount Inbox count at previous assertion
      * @param numBlocks The number of blocks since the last node
-     * @param errored If the machine enters the errored state during this assertion
      */
     function stakeOnNewNode(
         bytes32 expectedNodeHash,
         bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
+        uint64[3][2] calldata assertionIntFields,
         uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored
+        uint64 numBlocks
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
@@ -180,9 +181,8 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
             assertionBytes32Fields,
             assertionIntFields,
             beforeInboxMaxCount,
-            inboxMaxCount,
-            numBlocks,
-            errored
+            sequencerBridge.batchCount(),
+            numBlocks
         );
 
         {
@@ -199,6 +199,16 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
                 ) >= assertion.beforeState.inboxMaxCount,
                 "TOO_SMALL"
             );
+            // Minimum size requirement: any assertion must advance the inbox at least one batch
+            require(
+                GlobalStates.getInboxPosition(
+                    assertion.afterState.globalState
+                ) >
+                    GlobalStates.getInboxPosition(
+                        assertion.beforeState.globalState
+                    ),
+                "SAME_BATCH"
+            );
 
             // The rollup cannot advance normally from an errored state
             require(
@@ -211,7 +221,8 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
             assertionBytes32Fields,
             assertionIntFields,
             prevNode,
-            expectedNodeHash
+            expectedNodeHash,
+            numBlocks
         );
 
         stakeOnNode(msg.sender, latestNodeCreated());
@@ -277,7 +288,6 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      * @param globalStates The before and after global state, per assertion
      * @param numBlocks The number of L2 blocks contained in each assertion
      * @param proposedTimes Times that the two nodes were proposed
-     * @param maxMessageCounts Total number of messages consumed by the two nodes
      */
     function createChallenge(
         address[2] calldata stakers,
@@ -286,7 +296,6 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
         GlobalState[2][2] calldata globalStates,
         uint64[2] calldata numBlocks,
         uint256[2] calldata proposedTimes,
-        uint256[2] calldata maxMessageCounts,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
         require(nodeNums[0] < nodeNums[1], "WRONG_ORDER");
@@ -316,7 +325,6 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
                         numBlocks[0]
                     ),
                     proposedTimes[0],
-                    maxMessageCounts[0],
                     wasmModuleRoots[0]
                 ),
             "CHAL_HASH1"
@@ -331,7 +339,6 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
                         numBlocks[1]
                     ),
                     proposedTimes[1],
-                    maxMessageCounts[1],
                     wasmModuleRoots[1]
                 ),
             "CHAL_HASH2"
@@ -377,17 +384,22 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
         uint256 asserterTimeLeft,
         uint256 challengerTimeLeft
     ) internal returns (IChallenge) {
-        return challengeFactory.createChallenge(
-            [address(this), address(sequencerBridge), address(delayedBridge)],
-            wasmModuleRoots[0],
-            machineStatuses[0],
-            globalStates[0],
-            numBlocks[0],
-            stakers[0],
-            stakers[1],
-            asserterTimeLeft,
-            challengerTimeLeft
-        );
+        return
+            challengeFactory.createChallenge(
+                [
+                    address(this),
+                    address(sequencerBridge),
+                    address(delayedBridge)
+                ],
+                wasmModuleRoots[0],
+                machineStatuses[0],
+                globalStates[0],
+                numBlocks[0],
+                stakers[0],
+                stakers[1],
+                asserterTimeLeft,
+                challengerTimeLeft
+            );
     }
 
     /**
@@ -628,7 +640,10 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      */
     function requireUnchallengedStaker(address stakerAddress) private view {
         require(isStaked(stakerAddress), "NOT_STAKED");
-        require(address(currentChallenge(stakerAddress)) == address(0), "IN_CHAL");
+        require(
+            address(currentChallenge(stakerAddress)) == address(0),
+            "IN_CHAL"
+        );
     }
 
     function withdrawStakerFunds(address payable destination)

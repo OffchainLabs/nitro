@@ -68,12 +68,14 @@ type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (uint64, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
 }
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
 	GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error)
+	GetGenesisBlockNumber() (uint64, error)
 }
 
 type InboxReaderInterface interface {

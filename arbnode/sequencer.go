@@ -83,7 +83,7 @@ func (s *Sequencer) Start(ctx context.Context) error {
 		return errors.New("ArbInterface: not initialized")
 	}
 
-	headerChan, cancel := HeaderSubscribeWithRetry(ctx, s.l1Client)
+	headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, s.l1Client)
 	defer cancel()
 
 	go (func() {

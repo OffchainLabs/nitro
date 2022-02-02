@@ -47,7 +47,7 @@ type ValidatorWallet struct {
 	rollupFromBlock   int64
 }
 
-func NewValidator(address *common.Address, walletFactoryAddr, rollupAddress common.Address, client arbutil.L1Interface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
+func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, client arbutil.L1Interface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
@@ -103,7 +103,7 @@ func (v *ValidatorWallet) createWalletIfNeeded(ctx context.Context) error {
 			v.onWalletCreated(addr)
 		}
 	}
-	con, err := rollupgen.NewValidator(*v.address, v.client)
+	con, err := rollupgen.NewValidatorWallet(*v.address, v.client)
 	if err != nil {
 		return err
 	}

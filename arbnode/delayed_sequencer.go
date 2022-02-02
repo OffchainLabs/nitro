@@ -137,7 +137,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) error {
-	headerChan, cancel := HeaderSubscribeWithRetry(ctx, d.client)
+	headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, d.client)
 	defer cancel()
 
 	for {

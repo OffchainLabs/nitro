@@ -6,89 +6,123 @@ package validator
 
 import (
 	"context"
-	"encoding/hex"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/arbtransaction"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/common"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/core"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/ethutils"
-	"github.com/offchainlabs/arbitrum/packages/arb-util/hashing"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
 
 type Validator struct {
-	rollup         *ethbridge.Rollup
-	sequencerInbox *ethbridge.SequencerInboxWatcher
-	validatorUtils *ethbridge.ValidatorUtils
-	client         ethutils.EthClient
-	builder        *ethbridge.BuilderBackend
-	wallet         *ethbridge.ValidatorWallet
-	GasThreshold   *big.Int
-	SendThreshold  *big.Int
-	BlockThreshold *big.Int
+	rollup             *RollupWatcher
+	rollupAddress      common.Address
+	sequencerInbox     *bridgegen.SequencerInbox
+	validatorUtils     *rollupgen.ValidatorUtils
+	client             arbutil.L1Interface
+	builder            *BuilderBackend
+	wallet             *ValidatorWallet
+	callOpts           bind.CallOpts
+	GasThreshold       *big.Int
+	SendThreshold      *big.Int
+	BlockThreshold     *big.Int
+	genesisBlockNumber uint64
+
+	l2Blockchain   *core.BlockChain
+	inboxReader    InboxReaderInterface
+	inboxTracker   InboxTrackerInterface
+	txStreamer     TransactionStreamerInterface
+	blockValidator *BlockValidator
 }
 
 func NewValidator(
 	ctx context.Context,
-	client ethutils.EthClient,
-	wallet *ethbridge.ValidatorWallet,
+	client arbutil.L1Interface,
+	wallet *ValidatorWallet,
 	fromBlock int64,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
+	l2Blockchain *core.BlockChain,
+	inboxReader InboxReaderInterface,
+	inboxTracker InboxTrackerInterface,
+	txStreamer TransactionStreamerInterface,
+	blockValidator *BlockValidator,
 ) (*Validator, error) {
-	builder, err := ethbridge.NewBuilderBackend(wallet)
+	builder, err := NewBuilderBackend(wallet)
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := ethbridge.NewRollup(wallet.RollupAddress().ToEthAddress(), fromBlock, client, builder, callOpts)
+	rollup, err := NewRollupWatcher(wallet.RollupAddress(), fromBlock, builder, callOpts)
 	_ = rollup
 	if err != nil {
 		return nil, err
 	}
-	sequencerBridgeAddress, err := rollup.SequencerBridge(ctx)
+	localCallOpts := callOpts
+	localCallOpts.Context = ctx
+	sequencerBridgeAddress, err := rollup.SequencerBridge(&localCallOpts)
 	if err != nil {
 		return nil, err
 	}
-	sequencerInbox, err := ethbridge.NewSequencerInboxWatcher(sequencerBridgeAddress.ToEthAddress(), client)
+	sequencerInbox, err := bridgegen.NewSequencerInbox(sequencerBridgeAddress, client)
 	if err != nil {
 		return nil, err
 	}
-	validatorUtils, err := ethbridge.NewValidatorUtils(
-		validatorUtilsAddress.ToEthAddress(),
-		wallet.RollupAddress().ToEthAddress(),
+	validatorUtils, err := rollupgen.NewValidatorUtils(
+		validatorUtilsAddress,
 		client,
-		callOpts,
 	)
 	if err != nil {
 		return nil, err
 	}
+	genesisBlockNumber, err := txStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
 	return &Validator{
-		rollup:         rollup,
-		sequencerInbox: sequencerInbox,
-		validatorUtils: validatorUtils,
-		client:         client,
-		builder:        builder,
-		wallet:         wallet,
-		GasThreshold:   big.NewInt(100_000_000_000),
-		SendThreshold:  big.NewInt(5),
-		BlockThreshold: big.NewInt(960),
+		rollup:             rollup,
+		rollupAddress:      wallet.RollupAddress(),
+		sequencerInbox:     sequencerInbox,
+		validatorUtils:     validatorUtils,
+		client:             client,
+		builder:            builder,
+		wallet:             wallet,
+		GasThreshold:       big.NewInt(100_000_000_000),
+		SendThreshold:      big.NewInt(5),
+		BlockThreshold:     big.NewInt(960),
+		callOpts:           callOpts,
+		genesisBlockNumber: genesisBlockNumber,
+		inboxReader:        inboxReader,
+		inboxTracker:       inboxTracker,
+		txStreamer:         txStreamer,
+		blockValidator:     blockValidator,
 	}, nil
+}
+
+func (v *Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
+	opts := v.callOpts
+	opts.Context = ctx
+	return &opts
 }
 
 // removeOldStakers removes the stakes of all currently staked validators except
 // its own if dontRemoveSelf is true
-func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*arbtransaction.ArbTransaction, error) {
-	stakersToEliminate, err := v.validatorUtils.RefundableStakers(ctx)
+func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
+	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
 	if err != nil {
 		return nil, err
 	}
 	walletAddr := v.wallet.Address()
 	if dontRemoveSelf && walletAddr != nil {
 		for i, staker := range stakersToEliminate {
-			if staker.ToEthAddress() == *walletAddr {
+			if staker == *walletAddr {
 				stakersToEliminate[i] = stakersToEliminate[len(stakersToEliminate)-1]
 				stakersToEliminate = stakersToEliminate[:len(stakersToEliminate)-1]
 				break
@@ -99,63 +133,62 @@ func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (
 	if len(stakersToEliminate) == 0 {
 		return nil, nil
 	}
-	logger.Info().Int("count", len(stakersToEliminate)).Msg("Removing old stakers")
+	log.Info("removing old stakers", "count", len(stakersToEliminate))
 	return v.wallet.ReturnOldDeposits(ctx, stakersToEliminate)
 }
 
-func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*arbtransaction.ArbTransaction, error) {
-	challengesToEliminate, err := v.validatorUtils.TimedOutChallenges(ctx, 10)
+func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
+	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, 0, 10)
 	if err != nil {
 		return nil, err
 	}
 	if len(challengesToEliminate) == 0 {
 		return nil, nil
 	}
-	logger.Info().Int("count", len(challengesToEliminate)).Msg("Timing out challenges")
+	log.Info("timing out challenges", "count", len(challengesToEliminate))
 	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
 }
 
-func (v *Validator) resolveNextNode(ctx context.Context, info *ethbridge.StakerInfo, fromBlock int64) error {
-	confirmType, err := v.validatorUtils.CheckDecidableNextNode(ctx)
+func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo, fromBlock int64) error {
+	callOpts := v.getCallOpts(ctx)
+	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
 		return err
 	}
-	unresolvedNodeIndex, err := v.rollup.FirstUnresolvedNode(ctx)
+	unresolvedNodeIndex, err := v.rollup.FirstUnresolvedNode(callOpts)
 	if err != nil {
 		return err
 	}
-	switch confirmType {
-	case ethbridge.CONFIRM_TYPE_INVALID:
+	switch ConfirmType(confirmType) {
+	case CONFIRM_TYPE_INVALID:
 		addr := v.wallet.Address()
-		if info == nil || addr == nil || info.LatestStakedNode.Cmp(unresolvedNodeIndex) <= 0 {
+		if info == nil || addr == nil || info.LatestStakedNode <= unresolvedNodeIndex {
 			// We aren't an example of someone staked on a competitor
 			return nil
 		}
-		logger.Info().Int("node", int(unresolvedNodeIndex.Int64())).Msg("Rejecting node")
-		return v.rollup.RejectNextNode(ctx, *addr)
-	case ethbridge.CONFIRM_TYPE_VALID:
-		nodeInfo, err := v.rollup.RollupWatcher.LookupNode(ctx, unresolvedNodeIndex)
+		log.Info("rejecing node", "node", unresolvedNodeIndex)
+		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
+		return err
+	case CONFIRM_TYPE_VALID:
+		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
 		if err != nil {
 			return err
 		}
-		sendCount := new(big.Int).Sub(nodeInfo.Assertion.After.TotalSendCount, nodeInfo.Assertion.Before.TotalSendCount)
-		sends, err := v.lookup.GetSends(nodeInfo.Assertion.Before.TotalSendCount, sendCount)
-		if err != nil {
-			return errors.Wrap(err, "catching up to chain")
-		}
-		logger.Info().Int("node", int(unresolvedNodeIndex.Int64())).Msg("Confirming node")
-		return v.rollup.ConfirmNextNode(ctx, nodeInfo.Assertion, sends)
+		afterGs := nodeInfo.AfterState().GlobalState
+		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
+		return err
 	default:
 		return nil
 	}
 }
 
 func (v *Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
-	requiredStake, err := v.rollup.CurrentRequiredStake(ctx)
+	callOpts := v.getCallOpts(ctx)
+	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
 		return false, err
 	}
-	baseStake, err := v.rollup.BaseStake(ctx)
+	baseStake, err := v.rollup.BaseStake(callOpts)
 	if err != nil {
 		return false, err
 	}
@@ -163,174 +196,138 @@ func (v *Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
 }
 
 type createNodeAction struct {
-	assertion           *core.Assertion
-	prevProposedBlock   *big.Int
-	prevInboxMaxCount   *big.Int
-	hash                [32]byte
-	sequencerBatchProof []byte
+	assertion         *Assertion
+	prevInboxMaxCount *big.Int
+	hash              [32]byte
 }
 
 type existingNodeAction struct {
-	number *big.Int
+	number uint64
 	hash   [32]byte
 }
 
 type nodeAction interface{}
 
 type OurStakerInfo struct {
-	LatestStakedNode      *big.Int
-	LatestStakedNodeHash  [32]byte
-	CanProgress           bool
-	latestExecutionCursor core.ExecutionCursor
-	*ethbridge.StakerInfo
+	LatestStakedNode     uint64
+	LatestStakedNodeHash [32]byte
+	CanProgress          bool
+	*StakerInfo
+}
+
+func (v *Validator) blockNumberFromBatchCount(batch uint64) (uint64, error) {
+	var height uint64
+	if batch > 0 {
+		var err error
+		height, err = v.inboxTracker.GetBatchMessageCount(batch - 1)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return height + v.genesisBlockNumber, nil
 }
 
 func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, fromBlock int64) (nodeAction, bool, error) {
-	startState, err := lookupNodeStartState(ctx, v.rollup.RollupWatcher, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+	startState, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
 	}
 
-	coreMessageCount := v.lookup.MachineMessagesRead()
-	if coreMessageCount.Cmp(startState.TotalMessagesRead) < 0 {
-		logger.Info().
-			Str("localcount", coreMessageCount.String()).
-			Str("target", startState.TotalMessagesRead.String()).
-			Msg("catching up to chain")
+	localBatchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return nil, false, err
+	}
+	if localBatchCount < startState.GlobalState.Batch {
+		log.Info("catching up to chain batches", "localBatches", localBatchCount, "target", startState.GlobalState.Batch)
 		return nil, false, nil
 	}
 
-	currentBlock, err := getBlockID(ctx, v.client, nil)
+	startBlock := v.l2Blockchain.GetBlockByHash(startState.GlobalState.BlockHash)
+	if startBlock == nil {
+		expectedBlockHeight, err := v.blockNumberFromBatchCount(startState.GlobalState.Batch)
+		if err != nil {
+			return nil, false, err
+		}
+		latestHeader := v.l2Blockchain.CurrentHeader()
+		if latestHeader.Number.Uint64() < expectedBlockHeight {
+			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
+			return nil, false, errors.New("unknown start block hash")
+		} else {
+			log.Info("unknown start block hash", "hash", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch)
+			return nil, false, errors.New("unknown start block hash")
+		}
+	}
+
+	blocksValidated := v.blockValidator.BlocksValidated()
+
+	currentL1Block, err := v.client.BlockByNumber(ctx, nil)
 	if err != nil {
 		return nil, false, err
 	}
 
-	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(ctx)
+	minAssertionPeriod, err := v.rollup.MinimumAssertionPeriod(v.getCallOpts(ctx))
 	if err != nil {
 		return nil, false, err
 	}
 
-	timeSinceProposed := new(big.Int).Sub(currentBlock.Height.AsInt(), startState.ProposedBlock)
+	timeSinceProposed := new(big.Int).Sub(currentL1Block.Number(), new(big.Int).SetUint64(startStateProposed))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
 	}
 
-	cursor := stakerInfo.latestExecutionCursor
-	if cursor == nil || startState.TotalGasConsumed.Cmp(cursor.TotalGasConsumed()) < 0 {
-		cursor, err = v.lookup.GetExecutionCursor(startState.TotalGasConsumed, true)
-		if err != nil {
-			return nil, false, err
-		}
-	} else {
-		err = v.lookup.AdvanceExecutionCursor(cursor, new(big.Int).Sub(startState.TotalGasConsumed, cursor.TotalGasConsumed()), false, true)
-		if err != nil {
-			return nil, false, err
-		}
-	}
-	cursorHash := cursor.MachineHash()
-	if err != nil {
-		return nil, false, err
-	}
-	if cursorHash != startState.MachineHash {
-		return nil, false, errors.Errorf("local machine doesn't match chain %v %v", cursor.TotalGasConsumed(), startState.TotalGasConsumed)
-	}
-
 	// Not necessarily successors
-	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNodeHash, startState.ProposedBlock)
+	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNodeHash, startStateProposed)
 	if err != nil {
 		return nil, false, err
 	}
-
-	// If there are no successor nodes, and there isn't much activity to process, don't do anything yet
-	if len(successorNodes) == 0 {
-		coreGasExecuted, err := v.lookup.GetLastMachineTotalGas()
-		if err != nil {
-			return nil, false, err
-		}
-		coreSendCount, err := v.lookup.GetSendCount()
-		if err != nil {
-			return nil, false, err
-		}
-		gasExecuted := new(big.Int).Sub(coreGasExecuted, startState.TotalGasConsumed)
-		sendCount := new(big.Int).Sub(coreSendCount, startState.TotalSendCount)
-		if sendCount.Cmp(v.SendThreshold) < 0 &&
-			gasExecuted.Cmp(v.GasThreshold) < 0 &&
-			timeSinceProposed.Cmp(v.BlockThreshold) < 0 {
-			return nil, false, nil
-		}
-	}
-
-	gasesUsed := make([]*big.Int, 0, len(successorNodes)+1)
-	for _, nd := range successorNodes {
-		gasesUsed = append(gasesUsed, nd.Assertion.After.TotalGasConsumed)
-	}
-
-	arbGasSpeedLimitPerBlock, err := v.rollup.ArbGasSpeedLimitPerBlock(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-
-	minimumGasToConsume := new(big.Int).Mul(timeSinceProposed, arbGasSpeedLimitPerBlock)
-	maximumGasTarget := new(big.Int).Mul(minimumGasToConsume, big.NewInt(4))
-	maximumGasTarget = maximumGasTarget.Add(maximumGasTarget, startState.TotalGasConsumed)
-
-	if strategy > WatchtowerStrategy {
-		gasesUsed = append(gasesUsed, maximumGasTarget)
-	}
-
-	execTracker := core.NewExecutionTrackerWithInitialCursor(v.lookup, false, gasesUsed, cursor, false)
 
 	var correctNode nodeAction
 	wrongNodesExist := false
 	if len(successorNodes) > 0 {
-		logger.Info().Int("count", len(successorNodes)).Msg("examining existing potential successors")
+		log.Info("examining existing potential successors", "count", len(successorNodes))
 	}
-	for nodeI, nd := range successorNodes {
+	for _, nd := range successorNodes {
 		if correctNode != nil && wrongNodesExist {
 			// We've found everything we could hope to find
 			break
 		}
 		if correctNode == nil {
-			var batchItemEndAcc common.Hash
-			if nd.Assertion.After.TotalMessagesRead.Cmp(nd.AfterInboxBatchEndCount) == 0 {
-				batchItemEndAcc = nd.AfterInboxBatchAcc
-			} else if nd.Assertion.After.TotalMessagesRead.Cmp(big.NewInt(0)) > 0 {
-				var haveBatchEndAcc common.Hash
-				index1 := new(big.Int).Sub(nd.Assertion.After.TotalMessagesRead, big.NewInt(1))
-				index2 := new(big.Int).Sub(nd.AfterInboxBatchEndCount, big.NewInt(1))
-				batchItemEndAcc, haveBatchEndAcc, err = v.lookup.GetInboxAccPair(index1, index2)
-				if err != nil {
-					return nil, false, err
-				}
-				if haveBatchEndAcc != nd.AfterInboxBatchAcc {
-					return nil, false, errors.New("inbox reorg detected by batch end acc mismatch")
-				}
+			afterGs := nd.Assertion.AfterState.GlobalState
+			if afterGs.PosInBatch != 0 {
+				return nil, false, fmt.Errorf("non-zero position in batch in assertion: batch %v pos %v", afterGs.Batch, afterGs.PosInBatch)
 			}
-			valid, err := core.IsAssertionValid(nd.Assertion, execTracker, batchItemEndAcc)
+			lastBlockNum, err := v.blockNumberFromBatchCount(afterGs.Batch)
 			if err != nil {
 				return nil, false, err
 			}
+			if blocksValidated < lastBlockNum {
+				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion: %v/%v", blocksValidated, lastBlockNum)
+			}
+			lastBlock := v.l2Blockchain.GetBlockByNumber(lastBlockNum)
+			if lastBlock == nil {
+				return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
+			}
+			lastBlockExtra, err := arbos.DeserializeHeaderExtraInformation(lastBlock.Header())
+			if err != nil {
+				return nil, false, err
+			}
+
+			valid := nd.Assertion.NumBlocks == lastBlockNum-startBlock.NumberU64() &&
+				afterGs.BlockHash == lastBlock.Hash() &&
+				afterGs.SendRoot == lastBlockExtra.SendRoot
 			if valid {
-				logger.Info().Int("node", int((*big.Int)(nd.NodeNum).Int64())).Msg("found correct node")
+				log.Info("found correct node", "node", nd.NodeNum)
 				correctNode = existingNodeAction{
 					number: nd.NodeNum,
 					hash:   nd.NodeHash,
 				}
-				stakerInfo.latestExecutionCursor, err = execTracker.GetExecutionCursor(nd.AfterState().TotalGasConsumed, true)
-				if err != nil {
-					return nil, false, err
-				}
-				if nodeI != len(successorNodes)-1 && stakerInfo.latestExecutionCursor != nil {
-					// We will need to use this execution tracker more, so we need to clone this cursor
-					stakerInfo.latestExecutionCursor = stakerInfo.latestExecutionCursor.Clone()
-				}
 				continue
 			} else {
-				logger.Warn().Int("node", int((*big.Int)(nd.NodeNum).Int64())).Msg("found node with incorrect assertion")
+				log.Warn("found node with incorrect assertion", "node", nd.NodeNum)
 			}
 		} else {
-			logger.Warn().Int("node", int((*big.Int)(nd.NodeNum).Int64())).Msg("found younger sibling to correct node")
+			log.Warn("found younger sibling to correct node", "node", nd.NodeNum)
 		}
 		// If we've hit this point, the node is "wrong"
 		wrongNodesExist = true
@@ -340,21 +337,47 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		return correctNode, wrongNodesExist, nil
 	}
 
-	execState, _, err := execTracker.GetExecutionState(maximumGasTarget)
-	if err != nil {
-		return nil, false, err
-	}
-	stakerInfo.latestExecutionCursor, err = execTracker.GetExecutionCursor(maximumGasTarget, true)
-	if err != nil {
-		return nil, false, err
-	}
-
-	if new(big.Int).Sub(execState.TotalGasConsumed, startState.TotalGasConsumed).Cmp(minimumGasToConsume) < 0 && execState.TotalMessagesRead.Cmp(startState.InboxMaxCount) < 0 {
-		// Couldn't execute far enough
+	if new(big.Int).SetUint64(localBatchCount).Cmp(startState.InboxMaxCount) < 0 {
+		// not enough batches in database
 		return nil, wrongNodesExist, nil
 	}
 
-	inboxAcc := execState.InboxAcc
+	var validatedBatchCount uint64
+	var validatedBatchBlockNum uint64
+	for i := localBatchCount; i > startState.GlobalState.Batch; i-- {
+		if i == 0 {
+			break
+		}
+		blockNum, err := v.inboxTracker.GetBatchMessageCount(i - 1)
+		if err != nil {
+			return nil, false, err
+		}
+		blockNum += v.genesisBlockNumber
+		if blockNum > blocksValidated {
+			continue
+		}
+		validatedBatchCount = i
+		validatedBatchBlockNum = blockNum
+		break
+	}
+	if validatedBatchCount == 0 {
+		// we haven't validated any new batches
+		return nil, wrongNodesExist, nil
+	}
+	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(validatedBatchCount - 1)
+	if err != nil {
+		return nil, false, err
+	}
+
+	assertingBlock := v.l2Blockchain.GetBlockByNumber(validatedBatchBlockNum)
+	if assertingBlock == nil {
+		return nil, false, fmt.Errorf("missing validated block %v", validatedBatchBlockNum)
+	}
+	assertingBlockExtra, err := arbos.DeserializeHeaderExtraInformation(assertingBlock.Header())
+	if err != nil {
+		return nil, false, err
+	}
+
 	hasSiblingByte := [1]byte{0}
 	lastNum := stakerInfo.LatestStakedNode
 	lastHash := stakerInfo.LatestStakedNodeHash
@@ -364,112 +387,52 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		lastHash = lastSuccessor.NodeHash
 		hasSiblingByte[0] = 1
 	}
-	assertion := &core.Assertion{
-		Before: startState.ExecutionState,
-		After:  execState,
+	assertion := &Assertion{
+		BeforeState: startState.ExecutionState,
+		AfterState: &ExecutionState{
+			GlobalState: GoGlobalState{
+				BlockHash:  assertingBlock.Hash(),
+				SendRoot:   assertingBlockExtra.SendRoot,
+				Batch:      localBatchCount,
+				PosInBatch: 0,
+			},
+			MachineStatus: MachineStatusFinished,
+		},
+		NumBlocks: assertingBlock.NumberU64() - startBlock.NumberU64(),
 	}
 
 	executionHash := assertion.ExecutionHash()
-	newNodeHash := hashing.SoliditySHA3(hasSiblingByte[:], lastHash[:], executionHash[:], inboxAcc[:])
-
-	var seqBatchProof []byte
-	if execState.TotalMessagesRead.Cmp(big.NewInt(0)) > 0 {
-		batch, err := v.sequencerInbox.LookupBatchContaining(ctx, v.lookup, new(big.Int).Sub(execState.TotalMessagesRead, big.NewInt(1)))
-		if err != nil {
-			return nil, false, err
-		}
-		if batch == nil {
-			return nil, false, errors.New("Failed to lookup batch containing message")
-		}
-		seqBatchProof = append(seqBatchProof, math.U256Bytes(batch.GetBatchIndex())...)
-		proofPart, err := v.generateBatchEndProof(batch.GetBeforeCount())
-		if err != nil {
-			return nil, false, err
-		}
-		seqBatchProof = append(seqBatchProof, proofPart...)
-		proofPart, err = v.generateBatchEndProof(batch.GetAfterCount())
-		if err != nil {
-			return nil, false, err
-		}
-		seqBatchProof = append(seqBatchProof, proofPart...)
-	}
+	newNodeHash := crypto.Keccak256Hash(hasSiblingByte[:], lastHash[:], executionHash[:], validatedBatchAcc[:])
 
 	action := createNodeAction{
-		assertion:           assertion,
-		hash:                newNodeHash,
-		prevProposedBlock:   startState.ProposedBlock,
-		prevInboxMaxCount:   startState.InboxMaxCount,
-		sequencerBatchProof: seqBatchProof,
+		assertion:         assertion,
+		hash:              newNodeHash,
+		prevInboxMaxCount: startState.InboxMaxCount,
 	}
-	logger.Info().Str("hash", hex.EncodeToString(newNodeHash[:])).Int("lastNode", int(lastNum.Int64())).Int("parentNode", int(stakerInfo.LatestStakedNode.Int64())).Msg("Creating node")
+	log.Info("creating node", "hash", newNodeHash, "lastNode", lastNum, "parentNode", stakerInfo.LatestStakedNode)
 	return action, wrongNodesExist, nil
 }
 
-func (v *Validator) generateBatchEndProof(count *big.Int) ([]byte, error) {
-	if count.Cmp(big.NewInt(0)) == 0 {
-		return []byte{}, nil
-	}
-	var beforeAcc common.Hash
-	var err error
-	if count.Cmp(big.NewInt(2)) >= 0 {
-		beforeAcc, err = v.lookup.GetInboxAcc(new(big.Int).Sub(count, big.NewInt(2)))
-		if err != nil {
-			return nil, err
-		}
-	}
-	seqNum := new(big.Int).Sub(count, big.NewInt(1))
-	message, err := core.GetSingleMessage(v.lookup, seqNum)
-	if err != nil {
-		return nil, err
-	}
-	var proof []byte
-	proof = append(proof, beforeAcc.Bytes()...)
-	proof = append(proof, math.U256Bytes(seqNum)...)
-	prefixHash := hashing.SoliditySHA3(
-		hashing.Address(message.Sender),
-		hashing.Uint256(message.ChainTime.BlockNum.AsInt()),
-		hashing.Uint256(message.ChainTime.Timestamp),
-	)
-	proof = append(proof, prefixHash.Bytes()...)
-	proof = append(proof, hashing.SoliditySHA3(message.Data).Bytes()...)
-	return proof, nil
-}
-
-func getBlockID(ctx context.Context, client ethutils.EthClient, number *big.Int) (*common.BlockId, error) {
-	blockInfo, err := client.BlockInfoByNumber(ctx, number)
-	if err != nil {
-		return nil, err
-	}
-	return &common.BlockId{
-		Height:     common.NewTimeBlocks((*big.Int)(blockInfo.Number)),
-		HeaderHash: common.NewHashFromEth(blockInfo.Hash),
-	}, nil
-}
-
-func lookupNodeStartState(ctx context.Context, rollup *ethbridge.RollupWatcher, nodeNum *big.Int, nodeHash [32]byte) (*core.NodeState, error) {
-	if nodeNum.Cmp(big.NewInt(0)) == 0 {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*NodeState, uint64, error) {
+	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		return &core.NodeState{
-			ProposedBlock: new(big.Int).SetUint64(creationEvent.Raw.BlockNumber),
+		return &NodeState{
 			InboxMaxCount: big.NewInt(1),
-			ExecutionState: &core.ExecutionState{
-				TotalGasConsumed:  big.NewInt(0),
-				MachineHash:       creationEvent.MachineHash,
-				TotalMessagesRead: big.NewInt(0),
-				TotalSendCount:    big.NewInt(0),
-				TotalLogCount:     big.NewInt(0),
+			ExecutionState: &ExecutionState{
+				GlobalState:   GoGlobalState{},
+				MachineStatus: MachineStatusFinished,
 			},
-		}, nil
+		}, creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if node.NodeHash != nodeHash {
-		return nil, errors.New("looked up starting node but found wrong hash")
+		return nil, 0, errors.New("looked up starting node but found wrong hash")
 	}
-	return node.AfterState(), nil
+	return node.AfterState(), node.BlockProposed, nil
 }

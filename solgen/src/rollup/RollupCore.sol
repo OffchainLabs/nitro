@@ -591,9 +591,10 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     function createNewNode(
         RollupLib.Assertion memory assertion,
         bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
+        uint64[3][2] calldata assertionIntFields,
         uint64 prevNodeNum,
-        bytes32 expectedNodeHash
+        bytes32 expectedNodeHash,
+        uint64 numBlocks
     ) internal returns (bytes32 newNodeHash) {
         StakeOnNewNodeFrame memory memoryFrame;
         {
@@ -688,6 +689,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             memoryFrame.sequencerBatchAcc,
             assertionBytes32Fields,
             assertionIntFields,
+            numBlocks,
             wasmModuleRoot
         );
 

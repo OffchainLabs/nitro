@@ -166,11 +166,10 @@ interface IRollupAdmin {
     function forceCreateNode(
         bytes32 expectedNodeHash,
         bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
+        uint64[3][2] calldata assertionIntFields,
         uint256 beforeInboxMaxCount,
         uint256 inboxMaxCount,
         uint64 numBlocks,
-        bool errored,
         uint64 prevNode
     ) external;
 

@@ -340,6 +340,11 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 	return s.writeMessages(pos, messagesWithMeta, nil)
 }
 
+func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
+	// TODO: when block 0 is no longer necessarily the genesis, track this
+	return 0, nil
+}
+
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
