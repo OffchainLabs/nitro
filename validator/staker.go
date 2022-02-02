@@ -15,14 +15,15 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
 
-type Strategy uint8
+const txTimeout time.Duration = 5 * time.Minute
+
+type StakerStrategy uint8
 
 const (
-	WatchtowerStrategy Strategy = iota
+	WatchtowerStrategy StakerStrategy = iota
 	DefensiveStrategy
 	StakeLatestStrategy
 	MakeNodesStrategy
@@ -43,7 +44,7 @@ type StakerInfo struct {
 type Staker struct {
 	*Validator
 	activeChallenge         *validator.ChallengeManager
-	strategy                Strategy
+	strategy                StakerStrategy
 	fromBlock               int64
 	baseCallOpts            bind.CallOpts
 	auth                    *bind.TransactOpts
@@ -61,7 +62,7 @@ func NewStaker(
 	wallet *ethbridge.ValidatorWallet,
 	fromBlock int64,
 	validatorUtilsAddress common.Address,
-	strategy Strategy,
+	strategy StakerStrategy,
 	callOpts bind.CallOpts,
 	auth *bind.TransactOpts,
 	config ValidatorConfig,
@@ -98,7 +99,7 @@ func (s *Staker) RunInBackground(ctx context.Context, stakerDelay time.Duration)
 			arbTx, err := s.Act(ctx)
 			if err == nil && arbTx != nil {
 				// Note: methodName isn't accurate, it's just used for logging
-				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, 5*time.Minute)
+				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
 				err = errors.Wrap(err, "error waiting for tx receipt")
 				if err == nil {
 					log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
@@ -356,7 +357,7 @@ func (s *Staker) newStake(ctx context.Context) error {
 	return s.rollup.NewStake(ctx, stakeAmount)
 }
 
-func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy Strategy) error {
+func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
 	active := effectiveStrategy >= StakeLatestStrategy
 	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.fromBlock)
 	if err != nil {

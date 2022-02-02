@@ -185,7 +185,7 @@ type OurStakerInfo struct {
 	*ethbridge.StakerInfo
 }
 
-func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy Strategy, fromBlock int64) (nodeAction, bool, error) {
+func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, fromBlock int64) (nodeAction, bool, error) {
 	startState, err := lookupNodeStartState(ctx, v.rollup.RollupWatcher, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err

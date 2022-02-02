@@ -10,7 +10,7 @@ import "./IChallenge.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ExecutionChallenge is ChallengeCore, IChallenge {
+contract ExecutionChallenge is ChallengeCore {
     event OneStepProofCompleted();
 
     IOneStepProofEntry public osp;

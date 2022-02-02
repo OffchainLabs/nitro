@@ -10,7 +10,7 @@ import "./ChallengeCore.sol";
 import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
+contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
     event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
 
     IExecutionChallengeFactory public executionChallengeFactory;

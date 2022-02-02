@@ -4,8 +4,9 @@ pragma solidity ^0.8.0;
 import "../libraries/Cloneable.sol";
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
+import "./IChallenge.sol";
 
-abstract contract ChallengeCore is Cloneable {
+abstract contract ChallengeCore is Cloneable, IChallenge {
     event InitiatedChallenge();
 
     enum Turn {
@@ -23,12 +24,12 @@ abstract contract ChallengeCore is Cloneable {
     event AsserterTimedOut();
     event ChallengerTimedOut();
 
-    address public asserter;
-    address public challenger;
+    address public override asserter;
+    address public override challenger;
 
     uint256 public asserterTimeLeft;
     uint256 public challengerTimeLeft;
-    uint256 public lastMoveTimestamp;
+    uint256 public override lastMoveTimestamp;
 
     Turn public turn;
     bytes32 public challengeStateHash;
@@ -67,7 +68,7 @@ abstract contract ChallengeCore is Cloneable {
         }
     }
 
-    function currentResponderTimeLeft() public view returns (uint256) {
+    function currentResponderTimeLeft() public override view returns (uint256) {
         if (turn == Turn.ASSERTER) {
             return asserterTimeLeft;
         } else if (turn == Turn.CHALLENGER) {
@@ -158,7 +159,7 @@ abstract contract ChallengeCore is Cloneable {
         );
     }
 
-    function timeout() external {
+    function timeout() external override {
         uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
         require(
             timeSinceLastMove > currentResponderTimeLeft(),
