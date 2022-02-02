@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/arbstate/arbos/burn"
@@ -51,16 +50,16 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 		t.Fatal(output)
 	}
 
-	genesisAlloc, err := GetGenesisAllocFromJSON(marshaled)
+	var initData statetransfer.ArbosInitializationInfo
+	err = json.Unmarshal(marshaled, &initData)
 	Require(t, err)
-	genesis := core.Genesis{Alloc: genesisAlloc}
 
 	raw := rawdb.NewMemoryDatabase()
+
+	stateroot, err := InitializeArbosInDatabase(raw, &initData)
 	Require(t, err)
 
-	block, err := genesis.Commit(raw)
-	Require(t, err)
-	stateDb, err := state.New(block.Header().Root, state.NewDatabase(raw), nil)
+	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)
 	Require(t, err)
 
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
