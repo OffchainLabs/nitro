@@ -19,6 +19,7 @@ type L1PricingState struct {
 	defaultAggregator           storage.StorageBackedAddress
 	l1GasPriceEstimate          storage.StorageBackedBigInt
 	userSpecifiedAggregators    *storage.Storage
+	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
 	aggregatorFeeCollectors     *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
@@ -28,6 +29,7 @@ var (
 	SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
 
 	userSpecifiedAggregatorKey    = []byte{0}
+	refuseDefaultAggregatorKey    = []byte{1}
 	aggregatorFixedChargeKey      = []byte{1}
 	aggregatorFeeCollectorKey     = []byte{2}
 	aggregatorCompressionRatioKey = []byte{3}
@@ -52,6 +54,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
 		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
+		sto.OpenSubStorage(refuseDefaultAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),
 		sto.OpenSubStorage(aggregatorCompressionRatioKey),
@@ -111,6 +114,22 @@ func (ps *L1PricingState) SetUserSpecifiedAggregator(sender common.Address, mayb
 	return paSet.Add(*maybeAggregator)
 }
 
+func (ps *L1PricingState) RefusesDefaultAggregator(addr common.Address) (bool, error) {
+	val, err := ps.refuseDefaultAggregator.Get(common.BytesToHash(addr.Bytes()))
+	if err != nil {
+		return false, err
+	}
+	return val != (common.Hash{}), nil
+}
+
+func (ps *L1PricingState) SetRefusesDefaultAggregator(addr common.Address, refuses bool) error {
+	val := uint64(0)
+	if refuses {
+		val = 1
+	}
+	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(new(big.Int).SetUint64(val)))
+}
+
 // Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
 func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address) (*common.Address, error) {
 	fromTable, err := ps.UserSpecifiedAggregator(sender)
@@ -118,6 +137,10 @@ func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address)
 		return nil, err
 	}
 	if fromTable == nil {
+		refuses, err := ps.RefusesDefaultAggregator(sender)
+		if err != nil || refuses {
+			return nil, err
+		}
 		aggregator, err := ps.DefaultAggregator()
 		if err != nil {
 			return nil, err
