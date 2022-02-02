@@ -30,9 +30,9 @@ var (
 
 	userSpecifiedAggregatorKey    = []byte{0}
 	refuseDefaultAggregatorKey    = []byte{1}
-	aggregatorFixedChargeKey      = []byte{1}
-	aggregatorFeeCollectorKey     = []byte{2}
-	aggregatorCompressionRatioKey = []byte{3}
+	aggregatorFixedChargeKey      = []byte{2}
+	aggregatorFeeCollectorKey     = []byte{3}
+	aggregatorCompressionRatioKey = []byte{4}
 )
 
 const (
@@ -136,22 +136,23 @@ func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address)
 	if err != nil {
 		return nil, err
 	}
-	if fromTable == nil {
-		refuses, err := ps.RefusesDefaultAggregator(sender)
-		if err != nil || refuses {
-			return nil, err
-		}
-		aggregator, err := ps.DefaultAggregator()
-		if err != nil {
-			return nil, err
-		}
-		if aggregator == (common.Address{}) {
-			return nil, nil
-		}
-		return &aggregator, nil
-	} else {
+	if fromTable != nil {
 		return fromTable, nil
 	}
+
+	refuses, err := ps.RefusesDefaultAggregator(sender)
+	if err != nil || refuses {
+		return nil, err
+	}
+	aggregator, err := ps.DefaultAggregator()
+	if err != nil {
+		return nil, err
+	}
+	if aggregator == (common.Address{}) {
+		return nil, nil
+	}
+	return &aggregator, nil
+
 }
 
 func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Address, chargeL1Gas *big.Int) error {
