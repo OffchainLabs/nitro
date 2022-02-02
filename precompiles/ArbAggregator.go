@@ -21,7 +21,7 @@ type ArbAggregator struct {
 // Gets an account's preferred aggregator
 func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
 	l1p := c.state.L1PricingState()
-	maybePrefAgg, err := l1p.PreferredAggregator(address)
+	maybePrefAgg, err := l1p.UserSpecifiedAggregator(address)
 	if err != nil {
 		return common.Address{}, false, err
 	}
@@ -41,7 +41,7 @@ func (con ArbAggregator) SetPreferredAggregator(c ctx, evm mech, prefAgg addr) e
 	if prefAgg != (common.Address{}) {
 		maybePrefAgg = &prefAgg
 	}
-	return c.state.L1PricingState().SetPreferredAggregator(c.caller, maybePrefAgg)
+	return c.state.L1PricingState().SetUserSpecifiedAggregator(c.caller, maybePrefAgg)
 }
 
 // Gets the chain's default aggregator

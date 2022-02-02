@@ -18,7 +18,7 @@ type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
 	l1GasPriceEstimate          storage.StorageBackedBigInt
-	preferredAggregators        *storage.Storage
+	userSpecifiedAggregators    *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
 	aggregatorFeeCollectors     *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
@@ -27,7 +27,7 @@ type L1PricingState struct {
 var (
 	SequencerAddress = common.HexToAddress("0xA4B000000000000000000073657175656e636572")
 
-	preferredAggregatorKey        = []byte{0}
+	userSpecifiedAggregatorKey    = []byte{0}
 	aggregatorFixedChargeKey      = []byte{1}
 	aggregatorFeeCollectorKey     = []byte{2}
 	aggregatorCompressionRatioKey = []byte{3}
@@ -51,7 +51,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto,
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
 		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
-		sto.OpenSubStorage(preferredAggregatorKey),
+		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),
 		sto.OpenSubStorage(aggregatorCompressionRatioKey),
@@ -90,18 +90,18 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 	return ps.SetL1GasPriceEstimateWei(update)
 }
 
-func (ps *L1PricingState) preferredAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
-	return addressSet.OpenAddressSet(ps.preferredAggregators.OpenSubStorage(sender.Bytes()))
+func (ps *L1PricingState) userSpecifiedAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
+	return addressSet.OpenAddressSet(ps.userSpecifiedAggregators.OpenSubStorage(sender.Bytes()))
 }
 
-// Get sender's preferred aggregator, or nil if there is none. This does NOT fall back to the default aggregator
-//     if there is no preferred aggregator. If that is what you want, call ReimbursableAggregatorForSender instead.
-func (ps *L1PricingState) PreferredAggregator(sender common.Address) (*common.Address, error) {
-	return ps.preferredAggregatorsForAddress(sender).GetAnyMember()
+// Get sender's user-specified aggregator, or nil if there is none. This does NOT fall back to the default aggregator
+//     if there is no user-specified aggregator. If that is what you want, call ReimbursableAggregatorForSender instead.
+func (ps *L1PricingState) UserSpecifiedAggregator(sender common.Address) (*common.Address, error) {
+	return ps.userSpecifiedAggregatorsForAddress(sender).GetAnyMember()
 }
 
-func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, maybeAggregator *common.Address) error {
-	paSet := ps.preferredAggregatorsForAddress(sender)
+func (ps *L1PricingState) SetUserSpecifiedAggregator(sender common.Address, maybeAggregator *common.Address) error {
+	paSet := ps.userSpecifiedAggregatorsForAddress(sender)
 	if err := paSet.Clear(); err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (ps *L1PricingState) SetPreferredAggregator(sender common.Address, maybeAgg
 
 // Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
 func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address) (*common.Address, error) {
-	fromTable, err := ps.PreferredAggregator(sender)
+	fromTable, err := ps.UserSpecifiedAggregator(sender)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +225,11 @@ func (ps *L1PricingState) PosterDataCost(
 		return nil, err
 	}
 
-	preferred, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
+	baseCharge, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
 	if err != nil {
 		return nil, err
 	}
 
 	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), price)
-	return new(big.Int).Add(preferred, chargeForBytes), nil
+	return new(big.Int).Add(baseCharge, chargeForBytes), nil
 }

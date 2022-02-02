@@ -114,7 +114,7 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 		}
 	}
 	if account.AggregatorToPay != nil {
-		err := l1pState.SetPreferredAggregator(account.Addr, account.AggregatorToPay)
+		err := l1pState.SetUserSpecifiedAggregator(account.Addr, account.AggregatorToPay)
 		if err != nil {
 			return err
 		}
