@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
@@ -237,7 +238,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Recieve")
-	faucetAddress := l2info.GetAddress("Faucet")
+	faucetAddress := arbos_util.RemapL1Address(l1info.GetAddress("Faucet"))
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	receiveAddress := l2info.GetAddress("Recieve")
 
