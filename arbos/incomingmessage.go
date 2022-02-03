@@ -442,6 +442,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		return nil, errors.New("data length field too large")
 	}
 	dataLength := dataLengthBig.Uint64()
+	if dataLength > MaxL2MessageSize {
+		return nil, errors.New("retryable data too large")
+	}
 	data := make([]byte, dataLength)
 	if dataLength > 0 {
 		if _, err := rd.Read(data); err != nil {
