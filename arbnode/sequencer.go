@@ -95,6 +95,7 @@ func (s *Sequencer) sequenceTransactions() {
 	for s.l1Client != nil && l1Block == 0 {
 		log.Error("cannot sequence: unknown L1 block")
 		time.Sleep(time.Second)
+		l1Block = atomic.LoadUint64(&s.l1BlockNumber)
 	}
 
 	var txes types.Transactions

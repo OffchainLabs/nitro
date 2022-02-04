@@ -282,7 +282,10 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 	} else {
 		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
 		sizeBuf := make([]byte, 8)
-		for _, tx := range txes {
+		for i, tx := range txes {
+			if txErrors[i] != nil {
+				continue
+			}
 			txBytes, err := tx.MarshalBinary()
 			if err != nil {
 				return nil, err
