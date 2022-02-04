@@ -34,6 +34,7 @@ func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*Inbo
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
+		das:        das.GetSingletonTestingDAS(),
 	}
 	return db, nil
 }

@@ -66,6 +66,7 @@ func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *Transacti
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
+		das:             das.GetSingletonTestingDAS(),
 	}, nil
 }
 

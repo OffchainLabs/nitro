@@ -6,7 +6,9 @@ package das
 
 import (
 	"encoding/base32"
+	"io/ioutil"
 	"os"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/blsSignatures"
@@ -21,6 +23,23 @@ type LocalDiskDataAvailabilityService struct {
 	dbPath  string
 	pubKey  *blsSignatures.PublicKey
 	privKey blsSignatures.PrivateKey
+}
+
+var singletonDAS DataAvailabilityService
+var singletonDASMutex sync.Mutex
+
+func GetSingletonTestingDAS() DataAvailabilityService {
+	singletonDASMutex.Lock()
+	defer singletonDASMutex.Unlock()
+	if singletonDAS == nil {
+		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+
+		singletonDAS, err = NewLocalDiskDataAvailabilityService(dbPath)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return singletonDAS
 }
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
