@@ -134,9 +134,10 @@ func (s *Sequencer) sequenceTransactions() {
 	}
 
 	hooks := &arbos.SequencingHooks{
-		PreTxFilter:  preTxFilter,
-		PostTxFilter: postTxFilter,
-		TxErrors:     []error{},
+		PreTxFilter:    preTxFilter,
+		PostTxFilter:   postTxFilter,
+		RequireDataGas: true,
+		TxErrors:       []error{},
 	}
 	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {

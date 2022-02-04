@@ -75,14 +75,16 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 }
 
 type SequencingHooks struct {
-	TxErrors     []error
-	PreTxFilter  func(*arbosState.ArbosState, *types.Transaction, common.Address) error
-	PostTxFilter func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
+	TxErrors       []error
+	RequireDataGas bool
+	PreTxFilter    func(*arbosState.ArbosState, *types.Transaction, common.Address) error
+	PostTxFilter   func(*arbosState.ArbosState, *types.Transaction, common.Address, uint64, *types.Receipt) error
 }
 
 func noopSequencingHooks() *SequencingHooks {
 	return &SequencingHooks{
 		[]error{},
+		false,
 		func(*arbosState.ArbosState, *types.Transaction, common.Address) error {
 			return nil
 		},
@@ -220,6 +222,9 @@ func ProduceBlockAdvanced(
 
 			if dataGas > tx.Gas() {
 				// this txn is going to be rejected later
+				if hooks.RequireDataGas {
+					return nil, core.ErrIntrinsicGas
+				}
 				dataGas = 0
 			}
 
