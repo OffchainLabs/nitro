@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,6 +26,9 @@ import (
 // TODO: make these configurable
 const minBlockInterval time.Duration = time.Millisecond * 100
 const maxRevertGasReject uint64 = params.TxGas + 10000
+
+// 95% of the SequencerInbox limit, leaving ~5KB for headers and such
+const maxTxDataSize uint64 = 112065
 
 type txQueueItem struct {
 	tx         *types.Transaction
@@ -100,6 +104,7 @@ func (s *Sequencer) sequenceTransactions() {
 
 	var txes types.Transactions
 	var resultChans []chan<- error
+	var totalBatchSize int
 	for {
 		var queueItem txQueueItem
 		if len(txes) == 0 {
@@ -120,6 +125,28 @@ func (s *Sequencer) sequenceTransactions() {
 			queueItem.resultChan <- err
 			continue
 		}
+		txBytes, err := queueItem.tx.MarshalBinary()
+		if err != nil {
+			queueItem.resultChan <- err
+			continue
+		}
+		if len(txBytes) > int(maxTxDataSize) {
+			// This tx is too large
+			queueItem.resultChan <- core.ErrOversizedData
+			continue
+		}
+		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
+			// This tx would be too large to add to this batch.
+			// Attempt to put it back in the queue, but error if the queue is full.
+			// Then, end the batch here.
+			select {
+			case s.txQueue <- queueItem:
+			default:
+				queueItem.resultChan <- core.ErrOversizedData
+			}
+			break
+		}
+		totalBatchSize += len(txBytes)
 		txes = append(txes, queueItem.tx)
 		resultChans = append(resultChans, queueItem.resultChan)
 	}
