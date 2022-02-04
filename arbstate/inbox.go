@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/das"
 )
 
 type InboxBackend interface {
@@ -53,7 +54,7 @@ type sequencerMessage struct {
 
 const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
 
-func parseSequencerMessage(data []byte) *sequencerMessage {
+func parseSequencerMessage(data []byte, das das.DataAvailabilityService) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -63,8 +64,18 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
-	if len(data) >= 41 && data[40] == 0 {
-		reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
+
+	var payload []byte
+	if len(data) >= 41 {
+		if data[40] == 'd' {
+			payload, _ = das.Retrieve(data[41:]) // TODO handle error
+		} else {
+			payload = data[40:]
+		}
+	}
+
+	if len(data) >= 41 && payload[0] == 0 { // TODO this is where the top level type is read off
+		reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
 		stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
 		for {
 			var segment []byte
@@ -116,6 +127,7 @@ func (m sequencerMessage) Encode() []byte {
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	das                       das.DataAvailabilityService
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -151,7 +163,7 @@ func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		r.cachedSequencerMessage = parseSequencerMessage(bytes)
+		r.cachedSequencerMessage = parseSequencerMessage(bytes, r.das)
 	}
 	msg, err := r.getNextMsg()
 	// advance even if there was an error

@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/das"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -27,6 +28,7 @@ type BatchPoster struct {
 	sequencesPosted uint64
 	gasRefunder     common.Address
 	transactOpts    *bind.TransactOpts
+	das             das.DataAvailabilityService
 }
 
 type BatchPosterConfig struct {
@@ -329,7 +331,21 @@ func (b *BatchPoster) postSequencerBatch() error {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
 		return nil
 	}
+
+	// Careful, this is an interface.
+	if b.das != nil {
+		fullMsg := make([]byte, 1) // TODO capacity
+		fullMsg[0] = 'd'           // Header
+		cert, _, _ := b.das.Store(sequencerMsg)
+		// TODO fallback on error
+		sequencerMsg = append(fullMsg, cert...)
+	}
+
+	// TODO send this batch to DAS instead
+	// If the certificate comes back, write it to the contract instead, otherwise write the inbox as-is
+	// Give the certificate a different type?
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+
 	if err == nil {
 		b.sequencesPosted++
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))

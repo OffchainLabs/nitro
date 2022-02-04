@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/das"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
@@ -26,6 +27,7 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *validator.BlockValidator
+	das        das.DataAvailabilityService
 }
 
 func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*InboxTracker, error) {
@@ -288,7 +290,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		err = batch.Delete(seqBatchIter.Key())
+		err = batch.Delete(seqBatchIter.Key()) // TODO what happens here if there's nothing to delete??
 		if err != nil {
 			return err
 		}
@@ -435,7 +437,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das)
 	batchMessageCounts := make(map[uint64]uint64)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

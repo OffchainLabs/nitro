@@ -185,7 +185,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer)
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer) // TODO add DAS here
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt) // TODO add the DAS here
 	if err != nil {
 		return nil, err
 	}
