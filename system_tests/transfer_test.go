@@ -20,7 +20,7 @@ func TestTransfer(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 
-	tx := l2info.PrepareTx("Owner", "User2", 30000, big.NewInt(1e12), nil)
+	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)

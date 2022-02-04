@@ -301,6 +301,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 			// meaning that the last and only batch is at sequence number 0.
 			reorgSeqBatchesToCount = &batchSeqNum
 		}
+		seqBatchIter.Next()
 	}
 	// Release the iterator early.
 	// It's fine to call Release multiple times,

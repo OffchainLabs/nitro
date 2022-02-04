@@ -112,7 +112,8 @@ func ProduceBlock(
 	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
 	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
 		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		tx := InternalTxUpdateL1BlockNumber(l1Info.l1BlockNumber, header.Number, chainConfig.ChainID)
+		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
+		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
 		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
 	}
 
@@ -155,6 +156,9 @@ func ProduceBlock(
 		}
 
 		aggregator := &poster
+		if util.DoesTxTypeAlias(tx.Type()) {
+			aggregator = nil
+		}
 		var dataGas uint64 = 0
 		if gasPrice.Sign() > 0 {
 			dataGas = math.MaxUint64
@@ -220,8 +224,13 @@ func ProduceBlock(
 		gasUsed := gethGas.Gas() - gasPool.Gas()
 		gethGas = gasPool
 
-		if gasUsed > computeGas {
-			delta := strconv.FormatUint(gasUsed-computeGas, 10)
+		if gasUsed < dataGas {
+			delta := strconv.FormatUint(dataGas-gasUsed, 10)
+			panic("ApplyTransaction() used " + delta + " less gas than it should have")
+		}
+
+		if gasUsed > tx.Gas() {
+			delta := strconv.FormatUint(gasUsed-tx.Gas(), 10)
 			panic("ApplyTransaction() used " + delta + " more gas than it should have")
 		}
 
@@ -257,7 +266,7 @@ func ProduceBlock(
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
-		gasLeft -= gasUsed
+		gasLeft -= gasUsed - dataGas
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)

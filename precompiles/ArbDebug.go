@@ -7,7 +7,7 @@ package precompiles
 // All calls to this precompile are authorized by the DebugPrecompile wrapper,
 // which ensures these methods are not accessible in production.
 type ArbDebug struct {
-	Address      addr
+	Address      addr                                                     // 0xff
 	Basic        func(ctx, mech, bool, bytes32) error                     // index'd: 2nd
 	Mixed        func(ctx, mech, bool, bool, bytes32, addr, addr) error   // index'd: 1st 3rd 5th
 	Store        func(ctx, mech, bool, addr, huge, bytes32, []byte) error // index'd: 1st 2nd
@@ -34,6 +34,7 @@ func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32)
 	return c.caller, paid, nil
 }
 
+// Caller becomes a chain owner
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 	return c.state.ChainOwners().Add(c.caller)
 }
