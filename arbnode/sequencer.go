@@ -76,11 +76,11 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 }
 
 func preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
-	agg, _, err := state.L1PricingState().PreferredAggregator(sender)
+	agg, err := state.L1PricingState().ReimbursableAggregatorForSender(sender)
 	if err != nil {
 		return err
 	}
-	if agg != l1pricing.SequencerAddress {
+	if agg == nil || *agg != l1pricing.SequencerAddress {
 		return errors.New("transaction sender's preferred aggregator is not the sequencer")
 	}
 	return nil
