@@ -160,6 +160,7 @@ func ProduceBlockAdvanced(
 	time := header.Time
 	expectedBalanceDelta := new(big.Int)
 	redeems := types.Transactions{}
+	userTxsCompleted := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
 	gethGas := core.GasPool(1 << 63)
@@ -169,6 +170,7 @@ func ProduceBlockAdvanced(
 
 		var tx *types.Transaction
 		hooks := noopSequencingHooks()
+		isUserTx := false
 		if len(redeems) > 0 {
 			tx = redeems[0]
 			redeems = redeems[1:]
@@ -188,6 +190,7 @@ func ProduceBlockAdvanced(
 			if tx.Type() != types.ArbitrumInternalTxType {
 				// the sequencer has the ability to drop this tx
 				hooks = sequencingHooks
+				isUserTx = true
 			}
 		}
 
@@ -230,7 +233,7 @@ func ProduceBlockAdvanced(
 
 			computeGas := tx.Gas() - dataGas
 
-			if computeGas > gasLeft {
+			if computeGas > gasLeft && isUserTx && userTxsCompleted > 0 {
 				return nil, core.ErrGasLimitReached
 			}
 
@@ -328,6 +331,9 @@ func ProduceBlockAdvanced(
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
 		gasLeft -= gasUsed - dataGas
+		if isUserTx {
+			userTxsCompleted++
+		}
 	}
 
 	binary.BigEndian.PutUint64(header.Nonce[:], delayedMessagesRead)

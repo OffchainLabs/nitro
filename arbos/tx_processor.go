@@ -35,6 +35,7 @@ type TxProcessor struct {
 	state            *arbosState.ArbosState
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
+	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	Callers          []common.Address
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
@@ -253,6 +254,17 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
+
+	if p.msg.UnderlyingTransaction() != nil {
+		// If this is a real tx, limit the amount of computed based on the gas pool.
+		// We do this by charging extra gas, and then refunding it later.
+		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
+		if *gasRemaining > gasAvailable {
+			p.computeHoldGas = *gasRemaining - gasAvailable
+			*gasRemaining = gasAvailable
+		}
+	}
+
 	return nil
 }
 
@@ -261,6 +273,10 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	// which represents the overall burden to node operators. A poster's costs, then, should not be eligible
 	// for this refund.
 	return p.posterGas
+}
+
+func (p *TxProcessor) ForceRefundGas() uint64 {
+	return p.computeHoldGas
 }
 
 func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {

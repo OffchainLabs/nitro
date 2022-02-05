@@ -103,7 +103,7 @@ func (s *Sequencer) sequenceTransactions() {
 	}
 
 	var txes types.Transactions
-	var resultChans []chan<- error
+	var queueItems []txQueueItem
 	var totalBatchSize int
 	for {
 		var queueItem txQueueItem
@@ -148,7 +148,7 @@ func (s *Sequencer) sequenceTransactions() {
 		}
 		totalBatchSize += len(txBytes)
 		txes = append(txes, queueItem.tx)
-		resultChans = append(resultChans, queueItem.resultChan)
+		queueItems = append(queueItems, queueItem)
 	}
 
 	header := &arbos.L1IncomingMessageHeader{
@@ -172,14 +172,25 @@ func (s *Sequencer) sequenceTransactions() {
 	}
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)
-		for _, resultChan := range resultChans {
-			resultChan <- err
+		for _, queueItem := range queueItems {
+			queueItem.resultChan <- err
 		}
 		return
 	}
 
 	for i, err := range hooks.TxErrors {
-		resultChans[i] <- err
+		queueItem := queueItems[i]
+		if errors.Is(err, core.ErrGasLimit) {
+			// There's not enough gas left in the block for this tx.
+			// Attempt to re-queue the transaction.
+			// If the queue is full, fall through to returning an error.
+			select {
+			case s.txQueue <- queueItem:
+				continue
+			default:
+			}
+		}
+		queueItem.resultChan <- err
 	}
 }
 
