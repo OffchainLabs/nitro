@@ -303,12 +303,15 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosIn
 	genDifficulty := big.NewInt(1)
 	totalDifficulty := new(big.Int).Set(genDifficulty)
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
+	timestamp := uint64(0)
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
 			return fmt.Errorf("block number %d not found in database", chainDb)
 		}
 		prevDifficulty := rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
+		prevBlock := rawdb.ReadBlock(chainDb, prevHash, blockNumber-1)
+		timestamp = prevBlock.Header().Time
 		totalDifficulty.Add(prevDifficulty, genDifficulty)
 	}
 	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData)
@@ -318,7 +321,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosIn
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
 		Nonce:      types.EncodeNonce(0),
-		Time:       uint64(time.Now().Unix()),
+		Time:       timestamp,
 		ParentHash: prevHash,
 		Extra:      []byte("ArbitrumMainnet"),
 		GasLimit:   l2pricing.L2GasLimit,
