@@ -19,6 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -66,6 +68,8 @@ func main() {
 
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
 	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
+
+	importFile := flag.String("importfile", "", "path for json data to import")
 
 	flag.Parse()
 
@@ -213,22 +217,91 @@ func main() {
 		Timeout: *feedInputTimeout,
 		URL:     *feedInputUrl,
 	}
+
+	initData := statetransfer.ArbosInitializationInfo{}
+
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	initData := statetransfer.ArbosInitializationInfo{
-		Accounts: []statetransfer.AccountInitializationInfo{
-			{
-				Addr:       devAddr,
-				EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-				Nonce:      0,
-			},
-		},
+	genesisBlockNumber := uint64(0)
+	if *importFile != "" {
+		inboundFile, err := os.OpenFile(*importFile, os.O_RDONLY, 0664)
+		if err != nil {
+			panic(err)
+		}
+		decoder := json.NewDecoder(inboundFile)
+		err = decoder.Decode(&initData)
+		if err != nil {
+			panic(err)
+		}
+		inboundFile.Close()
+		td := big.NewInt(0)
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		blocksInImport := uint64(len(initData.Blocks))
+		genesisBlockNumber = blocksInImport
+
+		var prevHash common.Hash
+		if blocksInDb > 0 && blocksInImport > 0 {
+			// both DB and initData have blocks. Verify the last one is agreed
+			blockToValidate := blocksInImport - 1
+			if blocksInDb < blocksInImport {
+				blockToValidate = blocksInDb - 1
+			}
+			hashInImport := initData.Blocks[int(blockToValidate)].Header.Hash()
+			hashInDb := rawdb.ReadCanonicalHash(chainDb, blockToValidate)
+			if hashInImport != hashInDb {
+				utils.Fatalf("Import and Database disagree on hashes import: %v, Db: %v", hashInImport, hashInDb)
+			}
+			if blocksInDb < blocksInImport {
+				// continue db where we left
+				prevHash = hashInDb
+				td = rawdb.ReadTd(chainDb, prevHash, blockToValidate)
+			}
+		}
+		for blockNum := blocksInDb; blockNum < blocksInImport; blockNum++ {
+			log.Info("importing", "blockNum", blockNum)
+			storedBlock := initData.Blocks[int(blockNum)]
+			txs := types.Transactions{}
+			if storedBlock.Header.Number.Cmp(new(big.Int).SetUint64(blockNum)) != 0 {
+				panic("unexpected block number in import")
+			}
+			if storedBlock.Header.ParentHash != prevHash {
+				panic("unexpected parent block hash in import")
+			}
+			for _, txData := range storedBlock.Transactions {
+				tx := types.ArbitrumLegacyFromTransactionResult(txData)
+				if tx.Hash() != txData.Hash {
+					panic("bad txHash")
+				}
+				txs = append(txs, tx)
+			}
+			receipts := storedBlock.Reciepts
+			block := types.NewBlockWithHeader(&storedBlock.Header).WithBody(txs, nil) // don't recalculate hashes
+			blockHash := block.Hash()
+			if blockHash != storedBlock.Header.Hash() {
+				panic("bad blockHash")
+			}
+			_, err = rawdb.WriteAncientBlocks(chainDb, []*types.Block{block}, []types.Receipts{receipts}, td)
+			if err != nil {
+				panic(err)
+			}
+			prevHash = blockHash
+			td.Add(td, storedBlock.Header.Difficulty)
+		}
 	}
 
-	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, 0, params.ArbitrumOneChainConfig())
+	initData.Accounts = append(initData.Accounts, statetransfer.AccountInitializationInfo{
+		Addr:       devAddr,
+		EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+		Nonce:      0,
+	})
+
+	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, genesisBlockNumber, params.ArbitrumOneChainConfig())
 	if err != nil {
 		panic(err)
 	}
