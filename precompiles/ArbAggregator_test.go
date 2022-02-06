@@ -50,9 +50,9 @@ func TestPreferredAggregator(t *testing.T) {
 	userCtx := testContext(userAddr, evm)
 
 	// initial preferred aggregator should be the default of zero address
-	res, isNonDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
 	if res != (l1pricing.SequencerAddress) {
@@ -64,9 +64,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr))
 
 	// preferred aggregator should be the new default address
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
 	if res != defaultAggAddr {
@@ -77,9 +77,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetPreferredAggregator(userCtx, evm, prefAggAddr))
 
 	// preferred aggregator should now be prefAggAddr
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if !isNonDefault {
+	if isDefault {
 		Fail(t)
 	}
 	if res != prefAggAddr {

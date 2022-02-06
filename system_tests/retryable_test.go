@@ -10,13 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/util/colors"
@@ -118,19 +121,24 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	user2Address := l2info.GetAddress("User2")
-	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	l2txopts := l2info.GetDefaultTransactOpts("Owner")
+	simpleAddr, _, simple, err := mocksgen.DeploySimple(&l2txopts, l2client)
+	Require(t, err)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
 
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
-		user2Address,
-		big.NewInt(1e6),
+		simpleAddr,
+		common.Big0,
 		big.NewInt(1e6),
 		beneficiaryAddress,
 		beneficiaryAddress,
-		big.NewInt(int64(params.TxGas)+1), // send inadequate L2 gas
+		// send enough L2 gas for intrinsic but not compute
+		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
 		big.NewInt(params.InitialBaseFee*2),
-		[]byte{0x00},
+		simpleABI.Methods["increment"].ID,
 	)
 	Require(t, err)
 
@@ -182,7 +190,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Gas:       10000001,
 		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 		Value:     big.NewInt(0),
-		Nonce:     0,
+		Nonce:     1,
 		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, ticketId.Bytes()...),
 	}
 	tx := l2info.SignTxAs("Owner", txData)
@@ -206,19 +214,19 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	}
 	retryTxId := receipt.Logs[0].Topics[2]
 
-	// verify that balance transfer happened, so we know the retry succeeded
-	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
-	Require(t, err)
-
-	if !util.BigEquals(l2balance, big.NewInt(1e6)) {
-		Fail(t, "Unexpected balance:", l2balance)
-	}
-
 	// check the receipt for the retry
 	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
 		Fail(t)
+	}
+
+	// verify that the increment happened, so we know the retry succeeded
+	counter, err := simple.Counter(&bind.CallOpts{})
+	Require(t, err)
+
+	if counter != 1 {
+		Fail(t, "Unexpected counter:", counter)
 	}
 }
 
@@ -230,7 +238,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Recieve")
-	faucetAddress := l2info.GetAddress("Faucet")
+	faucetAddress := arbos_util.RemapL1Address(l1info.GetAddress("Faucet"))
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 	receiveAddress := l2info.GetAddress("Recieve")
 
