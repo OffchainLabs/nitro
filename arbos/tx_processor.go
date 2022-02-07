@@ -379,7 +379,10 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 			glog.Error("Failed to parse RedeemScheduled log", "err", err)
 			continue
 		}
-		retryable, _ := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+		retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+		if err != nil || retryable == nil {
+			continue
+		}
 		redeem, _ := retryable.MakeTx(
 			chainID,
 			event.SequenceNum,
