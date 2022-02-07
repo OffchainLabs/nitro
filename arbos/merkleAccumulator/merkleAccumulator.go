@@ -6,7 +6,6 @@ package merkleAccumulator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	util_math "github.com/offchainlabs/arbstate/util"
 )
@@ -132,7 +131,10 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 			err := acc.setPartial(level, &h)
 			return events, err
 		}
-		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
+		soFar, err = acc.backingStorage.Keccak(thisLevel.Bytes(), soFar)
+		if err != nil {
+			return nil, err
+		}
 		h := common.Hash{}
 		err = acc.setPartial(level, &h)
 		if err != nil {
@@ -167,11 +169,17 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 				capacityInHash = capacity
 			} else {
 				for capacityInHash < capacity {
-					h := crypto.Keccak256Hash(hashSoFar.Bytes(), make([]byte, 32))
+					h, err := acc.backingStorage.KeccakHash(hashSoFar.Bytes(), make([]byte, 32))
+					if err != nil {
+						return common.Hash{}, err
+					}
 					hashSoFar = &h
 					capacityInHash *= 2
 				}
-				h := crypto.Keccak256Hash(partial.Bytes(), hashSoFar.Bytes())
+				h, err := acc.backingStorage.KeccakHash(partial.Bytes(), hashSoFar.Bytes())
+				if err != nil {
+					return common.Hash{}, err
+				}
 				hashSoFar = &h
 				capacityInHash = 2 * capacity
 			}

@@ -247,6 +247,20 @@ func (sto *Storage) Burner() burn.Burner {
 	return sto.burner // not public because these should never be changed once set
 }
 
+func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
+	if err := sto.burner.Burn(uint64(1 * len(data))); err != nil {
+		return nil, err
+	}
+	return crypto.Keccak256(data...), nil
+}
+
+func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
+	if err := sto.burner.Burn(uint64(1 * len(data))); err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(data...), nil
+}
+
 type StorageSlot struct {
 	account common.Address
 	db      vm.StateDB
