@@ -249,7 +249,11 @@ func (sto *Storage) Burner() burn.Burner {
 }
 
 func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
-	cost := 30 + 6*nitro_util.WordsForBytes(uint64(len(data)))
+	byteCount := 0
+	for _, part := range data {
+		byteCount += len(part)
+	}
+	cost := 30 + 6*nitro_util.WordsForBytes(uint64(byteCount))
 	if err := sto.burner.Burn(cost); err != nil {
 		return nil, err
 	}
@@ -257,11 +261,8 @@ func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
 }
 
 func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
-	cost := 30 + 6*nitro_util.WordsForBytes(uint64(len(data)))
-	if err := sto.burner.Burn(cost); err != nil {
-		return common.Hash{}, err
-	}
-	return crypto.Keccak256Hash(data...), nil
+	bytes, err := sto.Keccak(data...)
+	return common.BytesToHash(bytes), err
 }
 
 type StorageSlot struct {
