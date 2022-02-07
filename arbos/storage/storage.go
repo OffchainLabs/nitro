@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	nitro_util "github.com/offchainlabs/arbstate/util"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -248,14 +249,16 @@ func (sto *Storage) Burner() burn.Burner {
 }
 
 func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
-	if err := sto.burner.Burn(uint64(1 * len(data))); err != nil {
+	cost := 30 + 6*nitro_util.WordsForBytes(uint64(len(data)))
+	if err := sto.burner.Burn(cost); err != nil {
 		return nil, err
 	}
 	return crypto.Keccak256(data...), nil
 }
 
 func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
-	if err := sto.burner.Burn(uint64(1 * len(data))); err != nil {
+	cost := 30 + 6*nitro_util.WordsForBytes(uint64(len(data)))
+	if err := sto.burner.Burn(cost); err != nil {
 		return common.Hash{}, err
 	}
 	return crypto.Keccak256Hash(data...), nil
