@@ -22,7 +22,9 @@ import (
 
 const fuzzGas uint64 = 1200000
 
-func Fuzz(input []byte) int {
+var evm *vm.EVM
+
+func init() {
 	arbstate.RequireHookedGeth()
 
 	// Create a StateDB
@@ -36,7 +38,6 @@ func Fuzz(input []byte) int {
 	}
 
 	// Create an EVM
-	gp := core.GasPool(fuzzGas)
 	txContext := vm.TxContext{
 		GasPrice: new(big.Int),
 	}
@@ -51,8 +52,10 @@ func Fuzz(input []byte) int {
 		GasLimit:    fuzzGas,
 		BaseFee:     new(big.Int),
 	}
-	evm := vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumTestChainConfig(), vm.Config{})
+	evm = vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumTestChainConfig(), vm.Config{})
+}
 
+func Fuzz(input []byte) int {
 	// We require at least two bytes: one for the address selection and the next for the method selection
 	if len(input) < 2 {
 		return 0
@@ -85,6 +88,7 @@ func Fuzz(input []byte) int {
 		nil,
 		true,
 	)
+	gp := core.GasPool(fuzzGas)
 	_, _ = core.ApplyMessage(evm, msg, &gp)
 
 	return 0
