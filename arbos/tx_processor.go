@@ -72,13 +72,13 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) getAggregator() *common.Address {
+func (p *TxProcessor) getReimbursableAggregator() *common.Address {
 	if p.msg.UnderlyingTransaction() == nil {
 		// This is an eth_call/eth_estimateGas.
 		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
-		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
 		p.state.Burner.Restrict(err)
-		return &agg
+		return agg
 	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
 		// This is a non-aggregated message.
 		return nil
@@ -227,7 +227,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.UnderlyingTransaction() == nil {
