@@ -7,8 +7,8 @@ package blockhash
 import (
 	"encoding/binary"
 	"errors"
+
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 )
 
@@ -57,9 +57,14 @@ func (bh *Blockhashes) RecordNewL1Block(number uint64, blockHash common.Hash) er
 		nextNumber++
 		var nextNumBuf [8]byte
 		binary.LittleEndian.Uint64(nextNumBuf[:])
+
+		fill, err := bh.backingStorage.Keccak(blockHash.Bytes(), nextNumBuf[:])
+		if err != nil {
+			return err
+		}
 		err = bh.backingStorage.SetByUint64(
 			1+(nextNumber%256),
-			common.BytesToHash(crypto.Keccak256(blockHash.Bytes(), nextNumBuf[:])),
+			common.BytesToHash(fill),
 		)
 		if err != nil {
 			return err
