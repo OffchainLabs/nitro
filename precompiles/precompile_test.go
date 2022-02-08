@@ -6,15 +6,17 @@ package precompiles
 
 import (
 	"bytes"
-	"github.com/ethereum/go-ethereum/core/state"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 func TestEvents(t *testing.T) {
@@ -64,9 +66,9 @@ func TestEvents(t *testing.T) {
 	)
 	Require(t, err, "call failed")
 
-	burnedToStorage := storage.StorageReadCost   // the ArbOS version check costs a read
-	burnedToArgs := (32 + 32) * params.CopyGas   // bool and a bytes32
-	burnedToResult := (32 + 32) * params.CopyGas // addr and a huge
+	burnedToStorage := storage.StorageReadCost                   // the ArbOS version check costs a read
+	burnedToArgs := util.WordsForBytes(32+32) * params.CopyGas   // bool and a bytes32
+	burnedToResult := util.WordsForBytes(32+32) * params.CopyGas // addr and a huge
 	burnedToEvents := ^uint64(0) - gasLeft - (burnedToStorage + burnedToArgs + burnedToResult)
 
 	if burnedToEvents != 3768 {
