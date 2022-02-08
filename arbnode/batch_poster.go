@@ -339,7 +339,8 @@ func (b *BatchPoster) postSequencerBatch() error {
 		fullMsg[0] = 'd'           // Header
 		cert, _, _ := b.das.Store(sequencerMsg)
 		// TODO fallback on error
-		sequencerMsg = append(fullMsg, cert...)
+		fullMsg = append(fullMsg, cert...)
+		sequencerMsg = fullMsg
 	}
 
 	// TODO send this batch to DAS instead

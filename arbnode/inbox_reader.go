@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/das"
 )
 
 type InboxReaderConfig struct {
@@ -44,7 +43,6 @@ type InboxReader struct {
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
 	client         L1Interface
-	das            das.DataAvailabilityService
 }
 
 func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {

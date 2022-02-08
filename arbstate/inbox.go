@@ -136,10 +136,11 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das das.DataAvailabilityService) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
+		das:                 das,
 	}
 }
 

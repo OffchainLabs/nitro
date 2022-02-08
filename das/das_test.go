@@ -26,6 +26,7 @@ func TestConstruction(t *testing.T) {
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := das.Retrieve(h)
+	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
@@ -35,6 +36,7 @@ func TestConstruction(t *testing.T) {
 	Require(t, err, "no das")
 
 	messageRetrieved2, err := das2.Retrieve(h)
+	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}

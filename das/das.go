@@ -11,7 +11,8 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/blsSignatures"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/blsSignatures"
 )
 
 type DataAvailabilityService interface {
@@ -33,11 +34,17 @@ func GetSingletonTestingDAS() DataAvailabilityService {
 	defer singletonDASMutex.Unlock()
 	if singletonDAS == nil {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		if err != nil {
+			panic(err)
+		}
 
 		singletonDAS, err = NewLocalDiskDataAvailabilityService(dbPath)
 		if err != nil {
 			panic(err)
 		}
+		log.Error("Created the singleton das using", "dbPath", dbPath)
+	} else {
+		log.Error("Getting the singleton das")
 	}
 	return singletonDAS
 }
@@ -61,7 +68,7 @@ func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.Pr
 	if err != nil {
 		return nil, nil, err
 	}
-	return pubKey, privKey, nil
+	return &pubKey, privKey, nil
 }
 
 func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -71,7 +78,7 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	}
 	pubKeyPath := dbPath + "/pubkey"
 	privKeyPath := dbPath + "/privkey"
-	err = os.WriteFile(pubKeyPath, blsSignatures.PublicKeyToBytes(*pubKey), 0644)
+	err = os.WriteFile(pubKeyPath, blsSignatures.PublicKeyToBytes(pubKey), 0600)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,7 +86,7 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	if err != nil {
 		return nil, nil, err
 	}
-	return pubKey, privKey, nil
+	return &pubKey, privKey, nil
 }
 
 func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabilityService, error) {
@@ -112,7 +119,9 @@ func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsS
 
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(h)
 
-	err = os.WriteFile(path, message, 0644)
+	log.Error("Storing message at", "path", path)
+
+	err = os.WriteFile(path, message, 0600)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -122,5 +131,6 @@ func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsS
 
 func (das *LocalDiskDataAvailabilityService) Retrieve(hash []byte) ([]byte, error) {
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(hash)
+	log.Error("Retrieving message from", "path", path)
 	return os.ReadFile(path)
 }
