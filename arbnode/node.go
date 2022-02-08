@@ -301,15 +301,14 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosIn
 
 	prevHash := EmptyHash
 	genDifficulty := big.NewInt(1)
-	totalDifficulty := new(big.Int).Set(genDifficulty)
+	prevDifficulty := big.NewInt(0)
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
 	if blockNumber > 0 {
 		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
 		if prevHash == EmptyHash {
 			return fmt.Errorf("block number %d not found in database", chainDb)
 		}
-		prevDifficulty := rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
-		totalDifficulty.Add(prevDifficulty, genDifficulty)
+		prevDifficulty = rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
 	}
 	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData)
 	if err != nil {
@@ -335,13 +334,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosIn
 
 	if storedGenHash == EmptyHash {
 		// chainDb did not have genesis block. Initialize it.
-		rawdb.WriteTd(chainDb, blockHash, blockNumber, totalDifficulty)
-		rawdb.WriteBlock(chainDb, genBlock)
-		rawdb.WriteReceipts(chainDb, blockHash, blockNumber, nil)
-		rawdb.WriteCanonicalHash(chainDb, blockHash, blockNumber)
-		rawdb.WriteHeadBlockHash(chainDb, blockHash)
-		rawdb.WriteHeadFastBlockHash(chainDb, blockHash)
-		rawdb.WriteHeadHeaderHash(chainDb, blockHash)
+		core.WriteHeadBlock(chainDb, genBlock, prevDifficulty)
 	} else if storedGenHash != blockHash {
 		return errors.New("database contains data inconsistent with initialization")
 	}
