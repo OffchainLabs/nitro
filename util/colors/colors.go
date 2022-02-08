@@ -26,6 +26,12 @@ func PrintBlue(args ...interface{}) {
 	println(Clear)
 }
 
+func PrintGrey(args ...interface{}) {
+	print(Grey)
+	fmt.Print(args...)
+	println(Clear)
+}
+
 func PrintMint(args ...interface{}) {
 	print(Mint)
 	fmt.Print(args...)
