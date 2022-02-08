@@ -42,7 +42,6 @@ type TxProcessor struct {
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
-	startingLogCount int
 }
 
 func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
@@ -60,7 +59,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		TopTxType:        nil,
 		evm:              evm,
 		CurrentRetryable: nil,
-		startingLogCount: len(evm.StateDB.Logs()),
 	}
 }
 
@@ -368,7 +366,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	basefee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
 
-	logs := p.evm.StateDB.Logs()[p.startingLogCount:]
+	logs := p.evm.StateDB.GetCurrentTxLogs()
 	for _, log := range logs {
 		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
 			continue

@@ -197,14 +197,14 @@ func ProduceBlockAdvanced(
 		var sender common.Address
 		var dataGas uint64 = 0
 		gasPool := gethGas
-		receipt, err := (func() (*types.Receipt, error) {
+		receipt, scheduled, err := (func() (*types.Receipt, types.Transactions, error) {
 			sender, err = signer.Sender(tx)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			if err := hooks.PreTxFilter(state, tx, sender); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 
 			aggregator := &poster
@@ -226,7 +226,7 @@ func ProduceBlockAdvanced(
 			if dataGas > tx.Gas() {
 				// this txn is going to be rejected later
 				if hooks.RequireDataGas {
-					return nil, core.ErrIntrinsicGas
+					return nil, nil, core.ErrIntrinsicGas
 				}
 				dataGas = 0
 			}
@@ -234,7 +234,7 @@ func ProduceBlockAdvanced(
 			computeGas := tx.Gas() - dataGas
 
 			if computeGas > gasLeft && isUserTx && userTxsCompleted > 0 {
-				return nil, core.ErrGasLimitReached
+				return nil, nil, core.ErrGasLimitReached
 			}
 
 			snap := statedb.Snapshot()
@@ -242,7 +242,7 @@ func ProduceBlockAdvanced(
 
 			gasLeft -= computeGas
 
-			receipt, err := core.ApplyTransaction(
+			receipt, result, err := core.ApplyTransaction(
 				chainConfig,
 				chainContext,
 				&header.Coinbase,
@@ -256,10 +256,10 @@ func ProduceBlockAdvanced(
 			if err != nil {
 				// Ignore this transaction if it's invalid under the state transition function
 				statedb.RevertToSnapshot(snap)
-				return nil, err
+				return nil, nil, err
 			}
 
-			return receipt, hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
+			return receipt, result.ScheduledTxes, hooks.PostTxFilter(state, tx, sender, dataGas, receipt)
 		})()
 
 		// append the err, even if it is nil
@@ -299,7 +299,7 @@ func ProduceBlockAdvanced(
 		}
 
 		// append any scheduled redeems
-		redeems = append(redeems, receipt.ScheduledTxes...)
+		redeems = append(redeems, scheduled...)
 
 		for _, txLog := range receipt.Logs {
 			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
