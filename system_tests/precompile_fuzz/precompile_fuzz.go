@@ -67,7 +67,7 @@ func Fuzz(input []byte) int {
 	if precompile := precompiles.Precompiles()[addr]; precompile != nil {
 		sigs := precompile.Precompile().Get4ByteMethodSignatures()
 		if int(input[0]) < len(sigs) {
-			input = append(sigs[input[0]][:], input[0:]...)
+			input = append(sigs[input[0]][:], input[1:]...)
 		}
 	}
 
