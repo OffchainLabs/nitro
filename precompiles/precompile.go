@@ -563,3 +563,12 @@ func (p Precompile) Call(
 func (p Precompile) Precompile() Precompile {
 	return p
 }
+
+// Needed for the fuzzing harness
+func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
+	ret := make([][4]byte, 0, len(p.methods))
+	for sig := range p.methods {
+		ret = append(ret, sig)
+	}
+	return ret
+}
