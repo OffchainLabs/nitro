@@ -27,18 +27,18 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 func main() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
-	log.Info("running node")
+
+	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
 	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
 	l1conn := flag.String("l1conn", "", "l1 connection (required if l1role != none)")
-	l1keyfile := flag.String("l1keyfile", "", "l1 private key file (required if l1role == sequencer)")
+	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
+	seqAccount := flag.String("l1SeqAccount", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
@@ -69,11 +69,15 @@ func main() {
 
 	flag.Parse()
 
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(*loglevel))
+	log.Root().SetHandler(glogger)
+
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
-	log.Info("Running with", "role", *l1role)
+	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *l1role == "none" {
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
@@ -103,16 +107,7 @@ func main() {
 			panic(err)
 		}
 		if nodeConf.BatchPoster {
-			if *l1keyfile == "" {
-				flag.Usage()
-				panic("sequencer requires l1 keyfile")
-			}
-			fileReader, err := os.Open(*l1keyfile)
-			if err != nil {
-				flag.Usage()
-				panic("sequencer without valid l1priv key")
-			}
-			l1TransactionOpts, err = bind.NewTransactorWithChainID(fileReader, *l1passphrase, l1ChainId)
+			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *seqAccount, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
 			}
