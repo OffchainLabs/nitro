@@ -72,11 +72,6 @@ func (con ArbOwner) SetSmallGasPoolSeconds(c ctx, evm mech, seconds uint64) erro
 	return c.state.L2PricingState().SetSmallGasPoolSeconds(seconds)
 }
 
-// Sets the maximum size a tx (and block) can be
-func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
-	return c.state.L2PricingState().SetMaxPerBlockGasLimit(limit)
-}
-
 // Gets the network fee collector
 func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 	return c.state.NetworkFeeAccount()

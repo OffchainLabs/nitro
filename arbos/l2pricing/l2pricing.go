@@ -21,7 +21,6 @@ type L2PricingState struct {
 	minGasPriceWei      storage.StorageBackedBigInt
 	maxGasPriceWei      storage.StorageBackedBigInt // the maximum price ArbOS can set without breaking geth
 	speedLimitPerSecond storage.StorageBackedUint64
-	maxPerBlockGasLimit storage.StorageBackedUint64
 }
 
 const (
@@ -33,7 +32,6 @@ const (
 	minGasPriceWeiOffset
 	maxGasPriceWeiOffset
 	speedLimitPerSecondOffset
-	maxPerBlockGasLimitOffset
 )
 
 const L2GasLimit = 1 << 63
@@ -46,8 +44,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialGasPriceWei)
 	_ = sto.SetUint64ByUint64(minGasPriceWeiOffset, InitialMinimumGasPriceWei)
 	_ = sto.SetUint64ByUint64(maxGasPriceWeiOffset, 2*InitialGasPriceWei)
-	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
-	return sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
+	return sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 }
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
@@ -61,7 +58,6 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedBigInt(minGasPriceWeiOffset),
 		sto.OpenStorageBackedBigInt(maxGasPriceWeiOffset),
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
-		sto.OpenStorageBackedUint64(maxPerBlockGasLimitOffset),
 	}
 }
 
@@ -161,14 +157,6 @@ func (ps *L2PricingState) SmallGasPoolMax() (int64, error) {
 		return 0, err
 	}
 	return util.SaturatingCast(seconds * speedLimit), nil
-}
-
-func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
-	return ps.maxPerBlockGasLimit.Get()
-}
-
-func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
-	return ps.maxPerBlockGasLimit.Set(limit)
 }
 
 func (ps *L2PricingState) Restrict(err error) {

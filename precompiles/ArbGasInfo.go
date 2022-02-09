@@ -5,11 +5,13 @@
 package precompiles
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -108,11 +110,10 @@ func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, erro
 
 // Gets the rollup's speed limit, pool size, and tx gas limit
 func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge, error) {
-	l2pricing := c.state.L2PricingState()
-	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
-	gasPoolMax, _ := l2pricing.GasPoolMax()
-	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
-	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
+	l2pricingstate := c.state.L2PricingState()
+	speedLimit, _ := l2pricingstate.SpeedLimitPerSecond()
+	gasPoolMax, err := l2pricingstate.GasPoolMax()
+	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(l2pricing.L2GasLimit), err
 }
 
 // Get the minimum gas price needed for a transaction to succeed

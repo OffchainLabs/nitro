@@ -34,9 +34,6 @@ interface ArbOwner {
     // Sets the number of seconds worth of the speed limit the small gas pool contains
     function setSmallGasPoolSeconds(uint64 factor) external view;
 
-    // Sets the maximum size a tx (and block) can be
-    function setMaxTxGasLimit(uint64 limit) external view;
-
     // Gets the network fee collector
     function getNetworkFeeAccount() external view returns(address);
 

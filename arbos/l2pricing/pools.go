@@ -13,7 +13,6 @@ import (
 )
 
 const InitialSpeedLimitPerSecond = 1000000
-const InitialPerBlockGasLimit uint64 = 20 * 1000000
 const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialGasPriceWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
@@ -96,12 +95,11 @@ func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) 
 }
 
 func (ps *L2PricingState) PerBlockGasLimit() (uint64, error) {
-	pool, _ := ps.GasPool()
-	maxLimit, err := ps.MaxPerBlockGasLimit()
+	pool, err := ps.GasPool()
 	if pool < 0 || err != nil {
 		return 0, err
-	} else if uint64(pool) > maxLimit {
-		return maxLimit, nil
+	} else if uint64(pool) > L2GasLimit {
+		return L2GasLimit, nil
 	} else {
 		return uint64(pool), nil
 	}
