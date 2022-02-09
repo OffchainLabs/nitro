@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -97,8 +96,13 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 // Sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 
-	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := c.state
+	sendHash, err := arbosState.KeccakHash(
+		c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1,
+	)
+	if err != nil {
+		return nil, err
+	}
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
 	if err != nil {
