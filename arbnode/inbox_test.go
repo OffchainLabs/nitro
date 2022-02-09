@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
@@ -23,8 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
@@ -43,27 +40,10 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 			},
 		},
 	}
-	genesisAlloc, err := arbosState.GetGenesisAllocFromArbos(&initData)
-	Require(t, err)
-	genesis := &core.Genesis{
-		Config:     chainConfig,
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumTest"),
-		GasLimit:   l2pricing.L2GasLimit,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
-	}
+
 	db := rawdb.NewMemoryDatabase()
-	genesis.MustCommit(db)
-	shouldPreserve := func(_ *types.Block) bool { return false }
-	bc, err := core.NewBlockChain(db, nil, chainConfig, arbos.Engine{}, vm.Config{}, shouldPreserve, nil)
+	bc, err := CreateDefaultBlockChain(db, nil, &initData, 0, chainConfig)
+
 	if err != nil {
 		Fail(t, err)
 	}
