@@ -16,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
@@ -118,11 +118,11 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner")
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
 	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
-	l2txopts := l2info.GetDefaultTransactOpts("Owner")
-	simpleAddr, _, simple, err := mocksgen.DeploySimple(&l2txopts, l2client)
+	simpleAddr, _, simple, err := mocksgen.DeploySimple(&ownerTxOpts, l2client)
 	Require(t, err)
 	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
 	Require(t, err)
@@ -180,38 +180,13 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fail(t, receipt.GasUsed)
 	}
 
-	// send tx to redeem the retryable
-	arbRetryableTxAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
+	Require(t, err)
+	receipt, err = arbnode.EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
-	arbRetryableAddress := common.BigToAddress(big.NewInt(0x6e))
-	txData := &types.DynamicFeeTx{
-		To:        &arbRetryableAddress,
-		Gas:       10000001,
-		GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
-		Value:     big.NewInt(0),
-		Nonce:     1,
-		Data:      append(arbRetryableTxAbi.Methods["redeem"].ID, ticketId.Bytes()...),
-	}
-	tx := l2info.SignTxAs("Owner", txData)
-	txbytes, err := tx.MarshalBinary()
-	Require(t, err)
-
-	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
-	usertxopts = l1info.GetDefaultTransactOpts("Faucet")
-	l1tx, err = delayedInbox.SendL2Message(&usertxopts, txwrapped)
-	Require(t, err)
-
-	_, err = arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
-	Require(t, err)
-
-	// wait for redeem transaction to complete successfully
-	waitForL1DelayBlocks(t, ctx, l1client, l1info)
-	receipt, err = arbnode.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
-	Require(t, err)
-	if receipt.Status != types.ReceiptStatusSuccessful {
-		Fail(t, *receipt)
-	}
 	retryTxId := receipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry

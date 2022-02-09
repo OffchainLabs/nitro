@@ -11,9 +11,11 @@ import (
 	"math/big"
 
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 
@@ -22,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
+	glog "github.com/ethereum/go-ethereum/log"
 )
 
 var arbAddress = common.HexToAddress("0xa4b05")
@@ -68,13 +70,13 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) getAggregator() *common.Address {
+func (p *TxProcessor) getReimbursableAggregator() *common.Address {
 	if p.msg.UnderlyingTransaction() == nil {
 		// This is an eth_call/eth_estimateGas.
 		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
-		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
 		p.state.Burner.Restrict(err)
-		return &agg
+		return agg
 	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
 		// This is a non-aggregated message.
 		return nil
@@ -142,7 +144,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
 		if err != nil {
-			log.Error("failed to emit TicketCreated event", "err", err)
+			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
@@ -192,7 +194,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.FeeRefundAddr,
 		)
 		if err != nil {
-			log.Error("failed to emit RedeemScheduled event", "err", err)
+			glog.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
@@ -223,7 +225,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.UnderlyingTransaction() == nil {
@@ -288,6 +290,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
+
 		// undo Geth's refund to the From address
 		p.evm.StateDB.SubBalance(inner.From, refund)
 		// refund the RefundTo by taking fees back from the network address
@@ -329,6 +332,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
+
 		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
@@ -354,6 +358,40 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		}
 		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
+}
+
+func (p *TxProcessor) ScheduledTxes() types.Transactions {
+	scheduled := types.Transactions{}
+	time := p.evm.Context.Time.Uint64()
+	basefee := p.evm.Context.BaseFee
+	chainID := p.evm.ChainConfig().ChainID
+
+	logs := p.evm.StateDB.GetCurrentTxLogs()
+	for _, log := range logs {
+		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
+			continue
+		}
+		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+		err := arbos_util.ParseRedeemScheduledLog(event, log)
+		if err != nil {
+			glog.Error("Failed to parse RedeemScheduled log", "err", err)
+			continue
+		}
+		retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+		if err != nil || retryable == nil {
+			continue
+		}
+		redeem, _ := retryable.MakeTx(
+			chainID,
+			event.SequenceNum,
+			basefee,
+			event.DonatedGas,
+			event.TicketId,
+			event.GasDonor,
+		)
+		scheduled = append(scheduled, types.NewTx(redeem))
+	}
+	return scheduled
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
