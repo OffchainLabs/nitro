@@ -54,7 +54,7 @@ func getAccountMap(arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpt
 	return result, nil
 }
 
-func fillAccounts(writer *IterativeJsonWriter, arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpts, addressList, excludeAddresse map[common.Address]struct{}) error {
+func fillAccounts(writer *JsonMultiListWriter, arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpts, addressList, excludeAddresse map[common.Address]struct{}) error {
 	for address := range addressList {
 		_, exclude := excludeAddresse[address]
 		if exclude {
@@ -73,7 +73,7 @@ func fillAccounts(writer *IterativeJsonWriter, arbosTest *classicgen.ArbosTestCa
 	return nil
 }
 
-func fillAccountsOld(writer *IterativeJsonWriter, client ethclient.Client, callopts *bind.CallOpts, addressList map[common.Address]struct{}) error {
+func fillAccountsOld(writer *JsonMultiListWriter, client ethclient.Client, callopts *bind.CallOpts, addressList map[common.Address]struct{}) error {
 	for address := range addressList {
 		acctInfo, err := getAccountInfoOld(client, callopts, address)
 		if err != nil {
@@ -87,7 +87,7 @@ func fillAccountsOld(writer *IterativeJsonWriter, client ethclient.Client, callo
 	return nil
 }
 
-func skipAccounts(reader *IterativeJsonReader) error {
+func skipAccounts(reader *JsonMultiListReader) error {
 	for reader.More() {
 		var acctInfo AccountInitializationInfo
 		err := reader.GetNextElement(&acctInfo)
@@ -321,7 +321,7 @@ func getAccountAggregatorInfo(rd io.Reader) (*AccountInitAggregatorInfo, error) 
 	}, nil
 }
 
-func copyStillValidAccounts(reader *IterativeJsonReader, writer *IterativeJsonWriter, currentHashes map[common.Hash]struct{}) (map[common.Address]struct{}, error) {
+func copyStillValidAccounts(reader *JsonMultiListReader, writer *JsonMultiListWriter, currentHashes map[common.Hash]struct{}) (map[common.Address]struct{}, error) {
 	foundAddresses := make(map[common.Address]struct{})
 	for reader.More() {
 		var accountInfo AccountInitializationInfo

@@ -88,7 +88,7 @@ func getRetryable(rd io.Reader) (InitializationDataForRetryable, error) {
 	}, nil
 }
 
-func skipRetriables(reader *IterativeJsonReader) error {
+func skipRetriables(reader *JsonMultiListReader) error {
 	for reader.More() {
 		var retriableData InitializationDataForRetryable
 		err := reader.GetNextElement(&retriableData)

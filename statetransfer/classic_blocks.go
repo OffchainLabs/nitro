@@ -47,9 +47,12 @@ func ReadBlockFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 	}, nil
 }
 
-func scanAndCopyBlocks(reader *IterativeJsonReader, writer *IterativeJsonWriter) (int64, common.Hash, error) {
+func scanAndCopyBlocks(reader *JsonMultiListReader, writer *JsonMultiListWriter) (int64, common.Hash, error) {
 	blockNum := int64(0)
 	lastHash := common.Hash{}
+	if listName, err := writer.CurListName(); err != nil || listName != "Blocks" {
+		return blockNum, lastHash, fmt.Errorf("unexpected listname: %v, %w", listName, err)
+	}
 	for reader.More() {
 		var block StoredBlock
 		err := reader.GetNextElement(&block)
@@ -72,7 +75,10 @@ func scanAndCopyBlocks(reader *IterativeJsonReader, writer *IterativeJsonWriter)
 	return blockNum, lastHash, nil
 }
 
-func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock uint64, prevHash common.Hash, writer *IterativeJsonWriter) error {
+func fillBlocks(ctx context.Context, rpcClient *rpc.Client, fromBlock, toBlock uint64, prevHash common.Hash, writer *JsonMultiListWriter) error {
+	if listName, err := writer.CurListName(); err != nil || listName != "Blocks" {
+		return fmt.Errorf("unexpected listname: %v, %w", listName, err)
+	}
 	for blockNum := fromBlock; blockNum <= toBlock; blockNum++ {
 		storedBlock, err := ReadBlockFromClassic(ctx, rpcClient, new(big.Int).SetUint64(blockNum))
 		if err != nil {

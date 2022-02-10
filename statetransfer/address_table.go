@@ -16,10 +16,12 @@ func openClassicArbAddressTable(client *ethclient.Client) (*classicgen.ArbAddres
 	return classicgen.NewArbAddressTableCaller(ArbosAddressTable, client)
 }
 
-func scanAndCopyAddressTable(reader *IterativeJsonReader, writer *IterativeJsonWriter) (uint64, common.Address, error) {
+func scanAndCopyAddressTable(reader *JsonMultiListReader, writer *JsonMultiListWriter) (uint64, common.Address, error) {
 	length := uint64(0)
 	var address common.Address
-
+	if listName, err := writer.CurListName(); err != nil || listName != "AddressTableContents" {
+		return length, common.Address{}, fmt.Errorf("unexpected listname: %v, %w", listName, err)
+	}
 	for reader.More() {
 		err := reader.GetNextElement(&address)
 		if err != nil {
@@ -35,12 +37,14 @@ func scanAndCopyAddressTable(reader *IterativeJsonReader, writer *IterativeJsonW
 	return length, address, nil
 }
 
-func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallOpts, prevLength uint64, lastAddress common.Address, writer *IterativeJsonWriter) error {
+func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallOpts, prevLength uint64, lastAddress common.Address, writer *JsonMultiListWriter) error {
 	classicArbAddressTable, err := openClassicArbAddressTable(ethClient)
 	if err != nil {
 		return err
 	}
-
+	if listName, err := writer.CurListName(); err != nil || listName != "AddressTableContents" {
+		return fmt.Errorf("unexpected listname: %v, %w", listName, err)
+	}
 	if prevLength > 0 {
 		// sanity test for reorgs, etc.. assume all is o.k. if last is o.k.
 		lastIndex := big.NewInt(int64(prevLength) - 1)

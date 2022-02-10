@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+var ArbTransferListNames = []string{"Blocks", "AddressTableContents", "RetryableData", "Accounts"}
+
 func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumber uint64, prevData io.Reader, curData io.Writer, oldAPIs bool) error {
 
 	fmt.Println("Initializing")
@@ -29,76 +31,57 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 
 	ethClient := ethclient.NewClient(rpcClient)
 
-	var reader *IterativeJsonReader
+	var reader *JsonMultiListReader
 	if prevData != nil {
-		reader = NewIterativeJsonReader(prevData)
+		reader = NewJsonMultiListReader(prevData, ArbTransferListNames)
 	}
-	writer := NewIterativeJsonWriter(curData)
-	updater := &IterativeJsonUpdater{reader, writer}
+	writer := NewJsonMultiListWriter(curData, ArbTransferListNames)
+	updater := &JsonMultiListUpdater{reader, writer}
 
-	err := updater.OpenTopLevel()
-	if err != nil {
-		return err
-	}
-
-	err = updater.StartSubList("Blocks")
-	if err != nil {
+	if err := updater.OpenTopLevel(); err != nil {
 		return err
 	}
 
 	fmt.Println("Copying Blocks")
-
+	if listname, err := updater.NextList(); err != nil || listname != "Blocks" {
+		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
+	}
 	blocksCopied, blockHash, err := scanAndCopyBlocks(reader, writer)
 	if err != nil {
 		return err
 	}
-
 	fmt.Println("Reading Blocks")
-
-	err = fillBlocks(ctx, rpcClient, uint64(blocksCopied), blockNumber, blockHash, writer)
-	if err != nil {
+	if err := fillBlocks(ctx, rpcClient, uint64(blocksCopied), blockNumber, blockHash, writer); err != nil {
+		return err
+	}
+	if err := updater.CloseList(); err != nil {
 		return err
 	}
 
-	err = updater.CloseList()
-	if err != nil {
-		return err
+	fmt.Println("Copying Address Table")
+	if listname, err := updater.NextList(); err != nil || listname != "AddressTableContents" {
+		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
 	}
-
-	fmt.Println("Address Table")
-
-	err = updater.StartSubList("AddressTableContents")
-	if err != nil {
-		return err
-	}
-
 	prevLength, lastAddress, err := scanAndCopyAddressTable(reader, writer)
 	if err != nil {
 		return err
 	}
-
-	err = verifyAndFillAddressTable(ethClient, callopts, prevLength, lastAddress, writer)
-	if err != nil {
+	fmt.Println("Reading Address Table")
+	if err := verifyAndFillAddressTable(ethClient, callopts, prevLength, lastAddress, writer); err != nil {
 		return err
 	}
-
-	err = updater.CloseList()
-	if err != nil {
+	if err := updater.CloseList(); err != nil {
 		return err
 	}
 
 	fmt.Println("Retriables")
-
-	err = updater.StartSubList("RetryableData")
-	if err != nil {
-		return err
+	if listname, err := updater.NextList(); err != nil || listname != "RetryableData" {
+		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
 	}
-
 	err = skipRetriables(reader)
 	if err != nil {
 		return err
 	}
-
 	classicArbRetryableTx, err := openClassicArbRetryableTx(ethClient)
 	if err != nil {
 		return err
@@ -115,23 +98,18 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 			}
 		}
 	}
-	err = updater.CloseList()
-	if err != nil {
+	if err := updater.CloseList(); err != nil {
 		return err
 	}
 
 	fmt.Println("Accounts")
-
-	err = updater.StartSubList("Accounts")
-	if err != nil {
-		return err
+	if listname, err := updater.NextList(); err != nil || listname != "Accounts" {
+		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
 	}
-
 	classicArbosTest, err := openClassicArbosTest(ethClient)
 	if err != nil {
 		return err
 	}
-
 	if !oldAPIs {
 		accountHashes, err := getAccountHashesAsMap(classicArbosTest, callopts)
 		if err != nil {
@@ -145,23 +123,18 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 		if err != nil {
 			return err
 		}
-		err = fillAccounts(writer, classicArbosTest, callopts, accounts, foundAddresses)
-		if err != nil {
+		if err := fillAccounts(writer, classicArbosTest, callopts, accounts, foundAddresses); err != nil {
 			return err
 		}
 	} else {
-		err = skipAccounts(reader)
-		if err != nil {
+		if err := skipAccounts(reader); err != nil {
 			return err
 		}
-		err = fillAccountsOld(writer, *ethClient, callopts, tempAccountList)
-		if err != nil {
+		if err := fillAccountsOld(writer, *ethClient, callopts, tempAccountList); err != nil {
 			return err
 		}
 	}
-
-	err = updater.CloseList()
-	if err != nil {
+	if err := updater.CloseList(); err != nil {
 		return err
 	}
 

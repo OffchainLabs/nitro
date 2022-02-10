@@ -13,6 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -294,7 +296,71 @@ func DefaultCacheConfigFor(stack *node.Node) *core.CacheConfig {
 	}
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosInitializationInfo, blockNumber uint64) error {
+func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.InitDataReader) (uint64, error) {
+	var prevHash common.Hash
+	td := big.NewInt(0)
+	var blocksInDb uint64
+	if initDataReader.More() {
+		var err error
+		blocksInDb, err = chainDb.Ancients()
+		if err != nil {
+			return 0, err
+		}
+	}
+	blockNum := uint64(0)
+	for ; initDataReader.More(); blockNum++ {
+		log.Debug("importing", "blockNum", blockNum)
+		storedBlock, err := initDataReader.GetNextStoredBlock()
+		if err != nil {
+			return blockNum, err
+		}
+		if blockNum+1 < blocksInDb && initDataReader.More() {
+			continue // only need to validate the last
+		}
+		storedBlockHash := storedBlock.Header.Hash()
+		if blockNum < blocksInDb {
+			// validate db and import match
+			hashInDb := rawdb.ReadCanonicalHash(chainDb, blockNum)
+			if storedBlockHash != hashInDb {
+				utils.Fatalf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb)
+			}
+		}
+		if blockNum+1 == blocksInDb && blockNum > 0 {
+			// we skipped blocks common to DB an import
+			prevHash = rawdb.ReadCanonicalHash(chainDb, blockNum-1)
+			td = rawdb.ReadTd(chainDb, prevHash, blockNum-1)
+		}
+		if storedBlock.Header.ParentHash != prevHash {
+			utils.Fatalf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash)
+		}
+		if storedBlock.Header.Number.Cmp(new(big.Int).SetUint64(blockNum)) != 0 {
+			panic("unexpected block number in import")
+		}
+		txs := types.Transactions{}
+		for _, txData := range storedBlock.Transactions {
+			tx := types.ArbitrumLegacyFromTransactionResult(txData)
+			if tx.Hash() != txData.Hash {
+				return blockNum, errors.New("bad txHash")
+			}
+			txs = append(txs, tx)
+		}
+		receipts := storedBlock.Reciepts
+		block := types.NewBlockWithHeader(&storedBlock.Header).WithBody(txs, nil) // don't recalculate hashes
+		blockHash := block.Hash()
+		if blockHash != storedBlock.Header.Hash() {
+			return blockNum, errors.New("bad blockHash")
+		}
+		_, err = rawdb.WriteAncientBlocks(chainDb, []*types.Block{block}, []types.Receipts{receipts}, td)
+		if err != nil {
+			return blockNum, err
+		}
+		prevHash = blockHash
+		td.Add(td, storedBlock.Header.Difficulty)
+	}
+	return blockNum, nil
+}
+
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64) error {
 	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
@@ -367,7 +433,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func CreateBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config *params.ChainConfig) (*core.BlockChain, error) {
+func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config *params.ChainConfig) (*core.BlockChain, error) {
 	defaultConf := ethconfig.Defaults
 
 	engine := arbos.Engine{
@@ -381,7 +447,7 @@ func CreateBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, con
 	return core.NewBlockChain(chainDb, cacheConfig, config, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
 }
 
-func CreateDefaultBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData *statetransfer.ArbosInitializationInfo, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
 	err := WriteOrTestGenblock(chainDb, initData, blockNumber)
 	if err != nil {
 		return nil, err
@@ -390,7 +456,7 @@ func CreateDefaultBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConf
 	if err != nil {
 		return nil, err
 	}
-	return CreateBlockChain(chainDb, cacheConfig, config)
+	return GetBlockChain(chainDb, cacheConfig, config)
 }
 
 // TODO: is that right?
