@@ -2,7 +2,7 @@
 
 pragma solidity >=0.4.21 <0.9.0;
 
-/** @title Interface for providing Outbox proof data
+/** @title Interface for providing gas estimation for retryable auto-redeems
  *  @notice This contract doesn't exist on-chain. Instead it is a virtual interface accessible at 0x00000000000000000000000000000000000000C8
  *  This is a cute trick to allow an Arbitrum node to provide data without us having to implement an additional RPC
  */
