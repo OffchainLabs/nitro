@@ -7,6 +7,19 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// This is the external inteface to read ArbosInintData.
+// Implementations support in-memory data or potentially huge files read element by element.
+// Data is saved in lists, in order as seen in ArbTransferListNames.
+// When parsing a file all lists must be included (may be empty), in the right order.
+// To use:
+// r.OpenTopLevel()
+// r.NextList()
+// for r.More() {
+//  r.GetNext*
+// }
+// r.CloseList
+// repeat NextList..CloseList for each list
+// r.CloseTopLevel
 type InitDataReader interface {
 	NextList() (string, error)                                      // opens next list and returns it's name
 	GetNextStoredBlock() (*StoredBlock, error)                      // only in list "Blocks"
@@ -24,6 +37,7 @@ type MemoryInitDataReader struct {
 	data *ArbosInitializationInfo
 }
 
+// skipblocks is useful for tests that only initialize a blockchain
 func NewMemoryInitDataReader(data *ArbosInitializationInfo, skipBlocks bool) (InitDataReader, error) {
 	res := &MemoryInitDataReader{
 		multiListTracker: newMultiListTracker(ArbTransferListNames),

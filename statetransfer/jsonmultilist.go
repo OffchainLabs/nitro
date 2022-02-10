@@ -7,9 +7,9 @@ import (
 	"io"
 )
 
-// json contains a single dictionary
-// each field in the distionary is a list
-// list order is known to the user
+// Json contains a single top-level dictionary
+// Each field in the top-level dictionary is a list
+// Order and type of fields is predetermined (listNames)
 
 type multiListTracker struct {
 	listNames  []string
