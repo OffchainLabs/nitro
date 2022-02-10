@@ -155,7 +155,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         );
 
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: startAndEndGlobalStates[1].u64_vals[0] + 1,
+            maxInboxMessagesRead: GlobalStates.getInboxPosition(startAndEndGlobalStates[1]),
             sequencerInbox: sequencerInbox,
             delayedBridge: delayedBridge
         });

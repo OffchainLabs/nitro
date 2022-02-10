@@ -34,7 +34,7 @@ interface IRollupCore {
             bool
         );
 
-    event RollupCreated(bytes32 machineHash);
+    event RollupInitialized(bytes32 machineHash);
 
     event NodeCreated(
         uint256 indexed nodeNum,
@@ -159,7 +159,4 @@ interface IRollupCore {
 
     /// @return Number of active stakers currently staked
     function stakerCount() external view returns (uint64);
-
-    /// @return Node hash as of this node number
-    function getNodeHash(uint64 index) external view returns (bytes32);
 }

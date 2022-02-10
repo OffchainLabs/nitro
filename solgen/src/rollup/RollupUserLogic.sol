@@ -141,12 +141,12 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
     {
         require(isStaked(msg.sender), "NOT_STAKED");
 
-        require(getNodeHash(nodeNum) == nodeHash, "NODE_REORG");
         require(
             nodeNum >= firstUnresolvedNode() && nodeNum <= latestNodeCreated(),
             "NODE_NUM_OUT_OF_RANGE"
         );
         Node storage node = getNodeStorage(nodeNum);
+        require(node.nodeHash == nodeHash, "NODE_REORG");
         require(
             latestStakedNode(msg.sender) == node.prevNum,
             "NOT_STAKED_PREV"
