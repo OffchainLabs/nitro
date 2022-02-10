@@ -228,9 +228,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.UnderlyingTransaction() == nil {
+	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
+		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
 		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
@@ -240,6 +240,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			adjustedPrice = minGasPrice
 		}
 		gasPrice = adjustedPrice
+
+		// Pad the L1 cost by 10% in case the L1 gas price rises
+		posterCost = util.BigMulByFrac(posterCost, 110, 100)
 	}
 	if gasPrice.Sign() > 0 {
 		posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice) // the cost as if it were an amount of gas
