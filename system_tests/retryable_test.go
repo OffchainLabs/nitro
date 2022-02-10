@@ -65,7 +65,8 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	user2Address := l2info.GetAddress("User2")
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 
-	deposit := big.NewInt(1e6)
+	deposit := util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
 	Require(t, err, "failed to deploy NodeInterface")
@@ -74,12 +75,13 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	// estimate the gas needed to auto-redeem the retryable
 	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet")
 	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
 	tx, err := nodeInterface.EstimateRetryableTicket(
 		&usertxoptsL2,
 		usertxoptsL2.From,
-		big.NewInt(0),
-		user2Address,
 		deposit,
+		user2Address,
+		callValue,
 		beneficiaryAddress,
 		beneficiaryAddress,
 		[]byte{},
@@ -90,11 +92,11 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	// submit & auto-redeem the retryable using the gas estimate
 	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet")
-	usertxoptsL1.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	usertxoptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
 		user2Address,
-		deposit,
+		callValue,
 		big.NewInt(1e6),
 		beneficiaryAddress,
 		beneficiaryAddress,
