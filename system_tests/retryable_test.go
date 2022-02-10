@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
+	"github.com/offchainlabs/arbstate/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/util/colors"
@@ -61,20 +62,43 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
-	usertxopts.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
-
 	user2Address := l2info.GetAddress("User2")
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
 
-	l1tx, err := delayedInbox.CreateRetryableTicket(
-		&usertxopts,
+	deposit := big.NewInt(1e6)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
+	Require(t, err, "failed to deploy NodeInterface")
+	_ = nodeInterface
+
+	// estimate the gas needed to auto-redeem the retryable
+	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL2.NoSend = true
+	tx, err := nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		big.NewInt(0),
 		user2Address,
-		big.NewInt(1e6),
+		deposit,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		[]byte{},
+	)
+	Require(t, err, "failed to estimate retryable submission")
+	estimate := tx.Gas()
+	colors.PrintBlue("estimate: ", estimate)
+
+	// submit & auto-redeem the retryable using the gas estimate
+	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL1.Value = util.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		user2Address,
+		deposit,
 		big.NewInt(1e6),
 		beneficiaryAddress,
 		beneficiaryAddress,
-		big.NewInt(50001),
+		util.UintToBig(estimate),
 		big.NewInt(params.InitialBaseFee*2),
 		[]byte{},
 	)
