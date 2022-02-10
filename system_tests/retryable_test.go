@@ -84,7 +84,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		callValue,
 		beneficiaryAddress,
 		beneficiaryAddress,
-		[]byte{},
+		[]byte{0x32, 0x42, 0x32, 0x88}, // increase the cost to beyond that of params.TxGas
 	)
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
@@ -102,7 +102,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		beneficiaryAddress,
 		util.UintToBig(estimate),
 		big.NewInt(params.InitialBaseFee*2),
-		[]byte{},
+		[]byte{0x32, 0x42, 0x32, 0x88},
 	)
 	Require(t, err)
 

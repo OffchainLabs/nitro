@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -52,7 +53,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			RequestId:     common.Hash{},
 			From:          sender,
 			DepositValue:  deposit,
-			GasPrice:      msg.GasPrice(),
+			GasPrice:      math.MaxBig256,
 			Gas:           msg.Gas(),
 			To:            to,
 			Value:         l2CallValue,
@@ -62,7 +63,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 		})
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-		return tx.AsMessage(types.NewArbitrumSigner(nil), msg.GasPrice())
+		return tx.AsMessage(types.NewArbitrumSigner(nil), nil)
 	}
 
 	return msg, errors.New("method does not exist in NodeInterface.sol")
