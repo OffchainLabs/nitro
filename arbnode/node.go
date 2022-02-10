@@ -40,6 +40,7 @@ type RollupAddresses struct {
 	Bridge         common.Address
 	Inbox          common.Address
 	SequencerInbox common.Address
+	Rollup         common.Address
 	DeployedAt     uint64
 }
 
@@ -230,6 +231,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		Inbox:          info.InboxAddress,
 		SequencerInbox: info.SequencerInbox,
 		DeployedAt:     receipt.BlockNumber.Uint64(),
+		Rollup:         info.RollupAddress,
 	}, nil
 }
 

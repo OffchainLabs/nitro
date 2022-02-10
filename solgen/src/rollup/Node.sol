@@ -39,6 +39,8 @@ struct Node {
     uint64 latestChildNumber;
     // The block number when this node was created
     uint64 createdAtBlock;
+    // A hash of all the data needed to determine this node's validity, to protect against reorgs
+    bytes32 nodeHash;
 }
 
 /**
@@ -52,13 +54,15 @@ library NodeLib {
      * @param _confirmData Initial value of confirmData
      * @param _prevNum Initial value of prevNum
      * @param _deadlineBlock Initial value of deadlineBlock
+     * @param _nodeHash Initial value of nodeHash
      */
     function initialize(
         bytes32 _stateHash,
         bytes32 _challengeHash,
         bytes32 _confirmData,
         uint64 _prevNum,
-        uint64 _deadlineBlock
+        uint64 _deadlineBlock,
+        bytes32 _nodeHash
     ) internal view returns (Node memory) {
         Node memory node;
         node.stateHash = _stateHash;
@@ -68,6 +72,7 @@ library NodeLib {
         node.deadlineBlock = _deadlineBlock;
         node.noChildConfirmedBeforeBlock = _deadlineBlock;
         node.createdAtBlock = uint64(block.number);
+        node.nodeHash = _nodeHash;
         return node;
     }
 

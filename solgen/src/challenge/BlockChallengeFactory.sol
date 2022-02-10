@@ -7,11 +7,11 @@ import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract BlockChallengeFactory is IBlockChallengeFactory {
-	IExecutionChallengeFactory public executionChallengeFactory;
+    IExecutionChallengeFactory public executionChallengeFactory;
     UpgradeableBeacon public beacon;
 
     constructor(IExecutionChallengeFactory executionChallengeFactory_) {
-		executionChallengeFactory = executionChallengeFactory_;
+        executionChallengeFactory = executionChallengeFactory_;
         address challengeTemplate = address(new BlockChallenge());
         beacon = new UpgradeableBeacon(challengeTemplate);
         beacon.transferOwnership(msg.sender);
@@ -36,7 +36,7 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
             startAndEndGlobalStates_,
-			numBlocks,
+            numBlocks,
             asserter_,
             challenger_,
             asserterTimeLeft_,

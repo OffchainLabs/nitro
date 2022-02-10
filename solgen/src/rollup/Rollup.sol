@@ -31,14 +31,8 @@ import "../libraries/ProxyUtil.sol";
 contract Rollup is Proxy, RollupCore {
     using Address for address;
 
-    constructor() Cloneable() Pausable() {
-        // constructor is used so logic contract can't be init'ed
-        confirmPeriodBlocks = 1;
-        require(isInit(), "CONSTRUCTOR_NOT_INIT");
-    }
-
     function isInit() internal view returns (bool) {
-        return confirmPeriodBlocks != 0;
+        return confirmPeriodBlocks != 0 || isMasterCopy;
     }
 
     // _rollupParams = [ confirmPeriodBlocks, extraChallengeTimeBlocks, chainId, baseStake ]
@@ -97,7 +91,7 @@ contract Rollup is Proxy, RollupCore {
             sequencerInboxParams[3]
         );
 
-        emit RollupCreated(_wasmModuleRoot);
+        emit RollupInitialized(_wasmModuleRoot);
         require(isInit(), "INITIALIZE_NOT_INIT");
     }
 
@@ -127,7 +121,8 @@ contract Rollup is Proxy, RollupCore {
                 0, // challenge hash (not challengeable)
                 0, // confirm data
                 0, // prev node
-                uint64(block.number) // deadline block (not challengeable)
+                uint64(block.number), // deadline block (not challengeable)
+                0 // initial node has a node hash of 0
             );
     }
 
