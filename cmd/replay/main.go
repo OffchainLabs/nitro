@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/blsSignatures"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
 
@@ -94,7 +95,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, &PreimageDAS{})
 
 	message, err := inboxMultiplexer.Pop()
 	if err != nil {
@@ -108,6 +109,17 @@ func BuildBlock(
 		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
 	)
 	return block, nil
+}
+
+type PreimageDAS struct {
+}
+
+func (das *PreimageDAS) Store(message []byte) ([]byte, blsSignatures.Signature, error) {
+	panic("erorr")
+}
+
+func (das *PreimageDAS) Retrieve(hash []byte) ([]byte, error) {
+	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
 func main() {

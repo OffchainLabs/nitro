@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/das"
 	"github.com/pkg/errors"
 )
 
@@ -355,6 +356,16 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
+	}
+	if seqMsg[40] == 'd' {
+		log.Error("GET PREIMAGE HERE")
+		hash := seqMsg[41:]
+		preimages[common.BytesToHash(hash)], err = das.GetSingletonTestingDAS().Retrieve(hash)
+		if err != nil {
+			panic(err)
+		}
+	} else if seqMsg[40] == 0 {
+		log.Error("UNPACKED ALREADY")
 	}
 
 	basemachine, err := GetHostIoMachine(ctx)

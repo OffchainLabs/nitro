@@ -68,7 +68,11 @@ func parseSequencerMessage(data []byte, das das.DataAvailabilityService) *sequen
 	var payload []byte
 	if len(data) >= 41 {
 		if data[40] == 'd' {
-			payload, _ = das.Retrieve(data[41:]) // TODO handle error
+			var err error
+			payload, err = das.Retrieve(data[41:]) // TODO handle error
+			if err != nil {
+				panic(err)
+			}
 		} else {
 			payload = data[40:]
 		}
