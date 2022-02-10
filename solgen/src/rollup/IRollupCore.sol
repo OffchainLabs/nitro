@@ -19,6 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "./Node.sol";
+import "./RollupLib.sol";
 
 import "../challenge/IChallenge.sol";
 
@@ -34,17 +35,14 @@ interface IRollupCore {
             bool
         );
 
-    event RollupInitialized(bytes32 machineHash);
+    event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event NodeCreated(
         uint256 indexed nodeNum,
         bytes32 indexed parentNodeHash,
-        bytes32 nodeHash,
-        bytes32 executionHash,
-        uint256 inboxMaxCount,
+        bytes32 indexed nodeHash,
+        RollupLib.Assertion assertion,
         bytes32 afterInboxBatchAcc,
-        bytes32[2][2] assertionBytes32Fields,
-        uint64[2][2] assertionIntFields,
         bytes32 wasmModuleRoot
     );
 

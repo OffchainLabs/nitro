@@ -35,63 +35,64 @@ contract Rollup is Proxy, RollupCore {
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
 
+    struct ContractDependencies {
+        IBridge delayedBridge;
+        ISequencerInbox sequencerInbox;
+        IOutbox outbox;
+        RollupEventBridge rollupEventBridge;
+        IBlockChallengeFactory blockChallengeFactory;
+
+        IRollupAdmin rollupAdminLogic;
+        IRollupUser rollupUserLogic;
+    }
+
     // _rollupParams = [ confirmPeriodBlocks, extraChallengeTimeBlocks, chainId, baseStake ]
     // connectedContracts = [delayedBridge, sequencerInbox, outbox, rollupEventBridge, blockChallengeFactory]
     // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     function initialize(
-        bytes32 _wasmModuleRoot,
-        uint256[4] calldata _rollupParams,
-        address _stakeToken,
-        address _owner,
-        address[5] calldata connectedContracts,
-        address[2] calldata _logicContracts,
-        uint256[4] calldata sequencerInboxParams
-    ) public {
+        RollupLib.Config memory config,
+        ContractDependencies memory connectedContracts
+    ) external {
         require(!isInit(), "ALREADY_INIT");
 
         // calls initialize method in user logic
-        require(_logicContracts[0].isContract(), "LOGIC_0_NOT_CONTRACT");
-        require(_logicContracts[1].isContract(), "LOGIC_1_NOT_CONTRACT");
-        (bool success, ) = _logicContracts[1].delegatecall(
-            abi.encodeWithSelector(IRollupUser.initialize.selector, _stakeToken)
+        require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
+        require(address(connectedContracts.rollupUserLogic).isContract(), "USER_LOGIC_NOT_CONTRACT");
+        (bool success, ) = address(connectedContracts.rollupUserLogic).delegatecall(
+            abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken)
         );
-        adminLogic = IRollupAdmin(_logicContracts[0]);
-        userLogic = IRollupUser(_logicContracts[1]);
+        adminLogic = connectedContracts.rollupAdminLogic;
+        userLogic = connectedContracts.rollupUserLogic;
         require(success, "FAIL_INIT_LOGIC");
 
-        delayedBridge = IBridge(connectedContracts[0]);
-        sequencerBridge = ISequencerInbox(connectedContracts[1]);
-        outbox = IOutbox(connectedContracts[2]);
-        delayedBridge.setOutbox(connectedContracts[2], true);
-        rollupEventBridge = RollupEventBridge(connectedContracts[3]);
-        delayedBridge.setInbox(connectedContracts[3], true);
+        delayedBridge = connectedContracts.delayedBridge;
+        sequencerBridge = connectedContracts.sequencerInbox;
+        outbox = connectedContracts.outbox;
+        delayedBridge.setOutbox(address(connectedContracts.outbox), true);
+        rollupEventBridge = connectedContracts.rollupEventBridge;
+        delayedBridge.setInbox(address(connectedContracts.rollupEventBridge), true);
 
-        rollupEventBridge.rollupInitialized(_owner, _rollupParams[2]);
+        rollupEventBridge.rollupInitialized(config.owner, config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
-        challengeFactory = IBlockChallengeFactory(connectedContracts[4]);
+        challengeFactory = connectedContracts.blockChallengeFactory;
 
         Node memory node = createInitialNode();
         initializeCore(node);
 
-        confirmPeriodBlocks = uint64(_rollupParams[0]);
-        extraChallengeTimeBlocks = uint64(_rollupParams[1]);
-        chainId = _rollupParams[2];
-        baseStake = _rollupParams[3];
-        owner = _owner;
-        wasmModuleRoot = _wasmModuleRoot;
+        confirmPeriodBlocks = config.confirmPeriodBlocks;
+        extraChallengeTimeBlocks = config.extraChallengeTimeBlocks;
+        chainId = config.chainId;
+        baseStake = config.baseStake;
+        owner = config.owner;
+        wasmModuleRoot = config.wasmModuleRoot;
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
         challengeExecutionBisectionDegree = 400;
 
-        sequencerBridge.setMaxTimeVariation(
-            sequencerInboxParams[0],
-            sequencerInboxParams[1],
-            sequencerInboxParams[2],
-            sequencerInboxParams[3]
-        );
+        sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
 
-        emit RollupInitialized(_wasmModuleRoot);
+        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
         require(isInit(), "INITIALIZE_NOT_INIT");
     }
 

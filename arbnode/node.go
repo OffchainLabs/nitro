@@ -187,24 +187,26 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		return nil, err
 	}
 
-	confirmPeriodBlocks := big.NewInt(20)
-	extraChallengeTimeBlocks := big.NewInt(20)
-	seqInboxParams := [4]*big.Int{
-		big.NewInt(60 * 60 * 24 * 15), // maxDelayBlocks
-		big.NewInt(12),                // maxFutureBlocks
-		big.NewInt(60 * 60 * 24),      // maxDelaySeconds
-		big.NewInt(60 * 60),           // maxFutureSeconds
+	var confirmPeriodBlocks uint64 = 20
+	var extraChallengeTimeBlocks uint64 = 20
+	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   big.NewInt(60 * 60 * 24 * 15),
+		FutureBlocks:  big.NewInt(12),
+		DelaySeconds:  big.NewInt(60 * 60 * 24),
+		FutureSeconds: big.NewInt(60 * 60),
 	}
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		confirmPeriodBlocks,
-		extraChallengeTimeBlocks,
-		common.Address{},
-		big.NewInt(params.Ether),
-		wasmModuleRoot,
-		deployAuth.From,
-		big.NewInt(1338),
-		seqInboxParams,
+		rollupgen.RollupLibConfig{
+			ConfirmPeriodBlocks:            confirmPeriodBlocks,
+			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
+			StakeToken:                     common.Address{},
+			BaseStake:                      big.NewInt(params.Ether),
+			WasmModuleRoot:                 wasmModuleRoot,
+			Owner:                          deployAuth.From,
+			ChainId:                        big.NewInt(1338),
+			SequencerInboxMaxTimeVariation: seqInboxParams,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)

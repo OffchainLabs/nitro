@@ -8,16 +8,18 @@ pragma solidity ^0.8.0;
 import "../utils/IGasRefunder.sol";
 
 interface ISequencerInbox {
+    struct MaxTimeVariation {
+        uint256 delayBlocks;
+        uint256 futureBlocks;
+        uint256 delaySeconds;
+        uint256 futureSeconds;
+    }
+
     function inboxAccs(uint256 index) external view returns (bytes32);
 
     function batchCount() external view returns (uint256);
 
-    function setMaxTimeVariation(
-        uint256 maxDelayBlocks,
-        uint256 maxFutureBlocks,
-        uint256 maxDelaySeconds,
-        uint256 maxFutureSeconds
-    ) external;
+    function setMaxTimeVariation(MaxTimeVariation memory timeVariation) external;
 
     function setIsBatchPoster(address addr, bool isBatchPoster_) external;
 
