@@ -13,7 +13,6 @@ import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
     function isInit() internal view returns (bool) {
-        // TODO: double check this
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
 
