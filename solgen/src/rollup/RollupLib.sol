@@ -103,7 +103,6 @@ library RollupLib {
             challengeRootHash(
                 assertionExecHash,
                 blockProposed,
-                GlobalStates.getInboxPosition(assertion.afterState.globalState),
                 wasmModuleRoot
             );
     }
@@ -111,7 +110,6 @@ library RollupLib {
     function challengeRootHash(
         bytes32 execution,
         uint256 proposedTime,
-        uint256 maxMessageCount,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
         return
@@ -119,7 +117,6 @@ library RollupLib {
                 abi.encodePacked(
                     execution,
                     proposedTime,
-                    maxMessageCount,
                     wasmModuleRoot
                 )
             );

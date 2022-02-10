@@ -597,16 +597,25 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
                 assertion.afterState.globalState
             );
             require(
-                afterInboxCount <= memoryFrame.currentInboxSize,
-                "INBOX_PAST_END"
+                afterInboxCount >=
+                    GlobalStates.getInboxPosition(
+                        assertion.beforeState.globalState
+                    ),
+                "INBOX_BACKWARDS"
             );
-            // Ensure that the assertion ends at a batch boundary.
-            // This simplifies logic in the validator software correlating assertion boundaries and blocks.
-            require(
+            if (
+                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
                 GlobalStates.getPositionInMessage(
                     assertion.afterState.globalState
-                ) == 0,
-                "NOT_BATCH_BOUNDARY"
+                ) >
+                0
+            ) {
+                // The current inbox message was read
+                afterInboxCount++;
+            }
+            require(
+                afterInboxCount <= memoryFrame.currentInboxSize,
+                "INBOX_PAST_END"
             );
             // This gives replay protection against the state of the inbox
             if (afterInboxCount > 0) {
