@@ -38,6 +38,7 @@ import "../bridge/IOutbox.sol";
 
 abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     using NodeLib for Node;
+    using GlobalStateLib for GlobalState;
 
     // Rollup Config
     uint64 public confirmPeriodBlocks;
@@ -593,22 +594,14 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             );
 
             // Ensure that the assertion doesn't read past the end of the current inbox
-            uint256 afterInboxCount = GlobalStates.getInboxPosition(
-                assertion.afterState.globalState
-            );
+            uint256 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
             require(
-                afterInboxCount >=
-                    GlobalStates.getInboxPosition(
-                        assertion.beforeState.globalState
-                    ),
+                afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
                 "INBOX_BACKWARDS"
             );
             if (
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                GlobalStates.getPositionInMessage(
-                    assertion.afterState.globalState
-                ) >
-                0
+                    assertion.afterState.globalState.getPositionInMessage() > 0
             ) {
                 // The current inbox message was read
                 afterInboxCount++;

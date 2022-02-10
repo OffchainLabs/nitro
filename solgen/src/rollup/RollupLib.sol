@@ -19,10 +19,12 @@
 pragma solidity ^0.8.0;
 
 import "../challenge/ChallengeLib.sol";
-import "../state/GlobalStates.sol";
+import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
 
 library RollupLib {
+    using GlobalStateLib for GlobalState;
+
     struct Config {
         uint64 confirmPeriodBlocks;
         uint64 extraChallengeTimeBlocks;
@@ -48,7 +50,7 @@ library RollupLib {
         return
             keccak256(
                 abi.encodePacked(
-                    GlobalStates.hash(execState.globalState),
+                    execState.globalState.hash(),
                     execState.inboxMaxCount,
                     execState.machineStatus
                 )
@@ -83,11 +85,11 @@ library RollupLib {
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(
             statuses[0],
-            GlobalStates.hash(globalStates[0])
+            globalStates[0].hash()
         );
         segments[1] = ChallengeLib.blockStateHash(
             statuses[1],
-            GlobalStates.hash(globalStates[1])
+            globalStates[1].hash()
         );
         return
             ChallengeLib.hashChallengeState(0, numBlocks, segments);
@@ -129,8 +131,8 @@ library RollupLib {
     {
         return
             confirmHash(
-                GlobalStates.getBlockHash(assertion.afterState.globalState),
-                GlobalStates.getSendRoot(assertion.afterState.globalState)
+                assertion.afterState.globalState.getBlockHash(),
+                assertion.afterState.globalState.getSendRoot()
             );
     }
 

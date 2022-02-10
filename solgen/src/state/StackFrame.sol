@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./Values.sol";
+import "./Value.sol";
 
 struct StackFrame {
     Value returnPc;
@@ -15,13 +15,15 @@ struct StackFrameWindow {
     bytes32 remainingHash;
 }
 
-library StackFrames {
+library StackFrameLib {
+    using ValueLib for Value;
+
     function hash(StackFrame memory frame) internal pure returns (bytes32) {
         return
             keccak256(
                 abi.encodePacked(
                     "Stack frame:",
-                    Values.hash(frame.returnPc),
+                    frame.returnPc.hash(),
                     frame.localsMerkleRoot,
                     frame.callerModule,
                     frame.callerModuleInternals

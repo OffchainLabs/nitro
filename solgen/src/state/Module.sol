@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./ModuleMemories.sol";
+import "./ModuleMemory.sol";
 
 struct Module {
     bytes32 globalsMerkleRoot;
@@ -11,14 +11,16 @@ struct Module {
     uint32 internalsOffset;
 }
 
-library Modules {
+library ModuleLib {
+    using ModuleMemoryLib for ModuleMemory;
+
     function hash(Module memory mod) internal pure returns (bytes32) {
         return
             keccak256(
                 abi.encodePacked(
                     "Module:",
                     mod.globalsMerkleRoot,
-                    ModuleMemories.hash(mod.moduleMemory),
+                    mod.moduleMemory.hash(),
                     mod.tablesMerkleRoot,
                     mod.functionsMerkleRoot,
                     mod.internalsOffset

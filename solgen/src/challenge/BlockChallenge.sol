@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "../libraries/Cloneable.sol";
 import "../osp/IOneStepProofEntry.sol";
-import "../state/GlobalStates.sol";
+import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
@@ -11,6 +11,9 @@ import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 
 contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
+    using GlobalStateLib for GlobalState;
+    using MachineLib for Machine;
+
     event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
 
     IExecutionChallengeFactory public executionChallengeFactory;
@@ -52,8 +55,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         turn = Turn.CHALLENGER;
 
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], GlobalStates.hash(startAndEndGlobalStates_[0]));
-        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], GlobalStates.hash(startAndEndGlobalStates_[1]));
+        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
+        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
         challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         emit InitiatedChallenge();
@@ -155,7 +158,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         );
 
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: GlobalStates.getInboxPosition(startAndEndGlobalStates[1]),
+            maxInboxMessagesRead: startAndEndGlobalStates[1].getInboxPosition(),
             sequencerInbox: sequencerInbox,
             delayedBridge: delayedBridge
         });
@@ -184,9 +187,9 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         {
             // Start the value stack with the function call ABI for the entrypoint
             Value[] memory startingValues = new Value[](3);
-            startingValues[0] = Values.newRefNull();
-            startingValues[1] = Values.newI32(0);
-            startingValues[2] = Values.newI32(0);
+            startingValues[0] = ValueLib.newRefNull();
+            startingValues[1] = ValueLib.newI32(0);
+            startingValues[2] = ValueLib.newI32(0);
             ValueArray memory valuesArray = ValueArray({
                 inner: startingValues
             });
@@ -211,7 +214,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
 			functionPc: 0,
 			modulesRoot: wasmModuleRoot
 		});
-        return Machines.hash(mach);
+        return mach.hash();
     }
 
     function getEndMachineHash(MachineStatus status, bytes32 globalStateHash)
