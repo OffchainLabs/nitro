@@ -70,7 +70,6 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
 	Require(t, err, "failed to deploy NodeInterface")
-	_ = nodeInterface
 
 	// estimate the gas needed to auto-redeem the retryable
 	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet")
