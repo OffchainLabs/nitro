@@ -49,8 +49,8 @@ abstract contract AAPLogic {
     // connectedContracts = [delayedBridge, sequencerInbox, outbox, rollupEventBridge, blockChallengeFactory]
     // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     function initialize(
-        RollupLib.Config memory config,
-        ContractDependencies memory connectedContracts
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external virtual;
 }
 
@@ -60,8 +60,8 @@ contract AdminAwareProxy is Proxy, AAPLogic {
     using Address for address;
 
     function initialize(
-        RollupLib.Config memory config,
-        ContractDependencies memory connectedContracts
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external override {
         require(address(adminLogic) == address(0) && address(userLogic) == address(0), "ALREADY_INIT");
         // we don't check `owner == 0 && config.owner != 0` here since the rollup could have no owner

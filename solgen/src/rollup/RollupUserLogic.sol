@@ -165,14 +165,12 @@ abstract contract AbsRollupUserLogic is
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)
      */
     function stakeOnNewNode(
-        RollupLib.Assertion memory assertion,
+        RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
-        // Set the assertion's inboxMaxCount
-        assertion.afterState.inboxMaxCount = sequencerBridge.batchCount();
 
         {
             uint256 timeSinceLastNode = block.number -
@@ -624,8 +622,8 @@ abstract contract AbsRollupUserLogic is
 
 contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config memory config,
-        ContractDependencies memory connectedContracts
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external override {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         // stakeToken = _stakeToken;
@@ -673,8 +671,8 @@ contract RollupUserLogic is AbsRollupUserLogic {
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config memory config,
-        ContractDependencies memory connectedContracts
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external override {
         require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");

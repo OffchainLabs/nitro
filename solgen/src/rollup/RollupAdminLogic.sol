@@ -18,8 +18,8 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
     }
 
     function initialize(
-        RollupLib.Config memory config,
-        ContractDependencies memory connectedContracts
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external override {
         require(!isInit(), "NOT_INIT");
 
@@ -147,7 +147,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
      * @param _validator addresses to set in the whitelist
      * @param _val value to set in the whitelist for corresponding address
      */
-    function setValidator(address[] memory _validator, bool[] memory _val) external override {
+    function setValidator(address[] calldata _validator, bool[] calldata _val) external override {
         require(_validator.length == _val.length, "WRONG_LENGTH");
 
         for (uint256 i = 0; i < _validator.length; i++) {
@@ -225,7 +225,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
      * @notice Set max delay for sequencer inbox
      * @param maxTimeVariation the maximum time variation parameters
      */
-    function setSequencerInboxMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation) external override {
+    function setSequencerInboxMaxTimeVariation(ISequencerInbox.MaxTimeVariation calldata maxTimeVariation) external override {
         sequencerBridge.setMaxTimeVariation(maxTimeVariation);
         emit OwnerFunctionCalled(14);
     }
@@ -262,7 +262,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
         emit OwnerFunctionCalled(20);
     }
 
-    function forceResolveChallenge(address[] memory stakerA, address[] memory stakerB)
+    function forceResolveChallenge(address[] calldata stakerA, address[] calldata stakerB)
         external
         override
         whenPaused
@@ -280,7 +280,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
         emit OwnerFunctionCalled(21);
     }
 
-    function forceRefundStaker(address[] memory staker) external override whenPaused {
+    function forceRefundStaker(address[] calldata staker) external override whenPaused {
         for (uint256 i = 0; i < staker.length; i++) {
             reduceStakeTo(staker[i], 0);
             turnIntoZombie(staker[i]);
@@ -290,7 +290,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
 
     function forceCreateNode(
         uint64 prevNode,
-        RollupLib.Assertion memory assertion,
+        RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
     ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
