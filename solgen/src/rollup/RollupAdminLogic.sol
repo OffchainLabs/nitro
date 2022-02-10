@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPLogic } from  "./AdminAwareProxy.sol";
+import { AAPStorage } from  "./AdminAwareProxy.sol";
 import { IRollupAdmin } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
@@ -11,7 +11,7 @@ import "../challenge/IChallenge.sol";
 
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
+contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
     function isInit() internal view returns (bool) {
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
@@ -134,8 +134,8 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
      * @param newUserLogic address of logic that user of rollup calls
      */
     function setLogicContracts(address newAdminLogic, address newUserLogic) external override {
-        adminLogic = AAPLogic(newAdminLogic);
-        userLogic = AAPLogic(newUserLogic);
+        adminLogic = AAPStorage(newAdminLogic);
+        userLogic = AAPStorage(newUserLogic);
         emit OwnerFunctionCalled(5);
     }
 

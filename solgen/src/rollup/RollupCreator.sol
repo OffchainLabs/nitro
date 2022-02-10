@@ -44,8 +44,8 @@ contract RollupCreator is Ownable {
     BridgeCreator public bridgeCreator;
     ICloneable public rollupTemplate;
     IBlockChallengeFactory public challengeFactory;
-    AAPLogic public rollupAdminLogic;
-    AAPLogic public rollupUserLogic;
+    AAPStorage public rollupAdminLogic;
+    AAPStorage public rollupUserLogic;
 
     constructor() Ownable() {}
 
@@ -53,8 +53,8 @@ contract RollupCreator is Ownable {
         BridgeCreator _bridgeCreator,
         ICloneable _rollupTemplate,
         IBlockChallengeFactory  _challengeFactory,
-        AAPLogic _rollupAdminLogic,
-        AAPLogic _rollupUserLogic
+        AAPStorage _rollupAdminLogic,
+        AAPStorage _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         rollupTemplate = _rollupTemplate;
@@ -97,7 +97,7 @@ contract RollupCreator is Ownable {
         frame.admin.transferOwnership(config.owner);
         frame.rollup.initialize(
             config,
-            AAPLogic.ContractDependencies({
+            AAPStorage.ContractDependencies({
                 delayedBridge: frame.delayedBridge,
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,

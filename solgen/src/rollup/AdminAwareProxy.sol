@@ -30,10 +30,10 @@ import "../libraries/Cloneable.sol";
 import "../libraries/ProxyUtil.sol";
 
 /// @dev this is assumed to always be the first inherited contract. the initial storage slots are read by dispatch contract
-abstract contract AAPLogic is Cloneable {
+abstract contract AAPStorage is Cloneable {
     address public owner;
-    AAPLogic public adminLogic;
-    AAPLogic public userLogic;
+    AAPStorage public adminLogic;
+    AAPStorage public userLogic;
 
     struct ContractDependencies {
         IBridge delayedBridge;
@@ -42,8 +42,8 @@ abstract contract AAPLogic is Cloneable {
         RollupEventBridge rollupEventBridge;
         IBlockChallengeFactory blockChallengeFactory;
 
-        AAPLogic rollupAdminLogic;
-        AAPLogic rollupUserLogic;
+        AAPStorage rollupAdminLogic;
+        AAPStorage rollupUserLogic;
     }
 
     // _rollupParams = [ confirmPeriodBlocks, extraChallengeTimeBlocks, chainId, baseStake ]
@@ -57,7 +57,7 @@ abstract contract AAPLogic is Cloneable {
 
 
 /// @dev The Proxy dispatch also inherits from the Logic in order to keep the same storage layout
-contract AdminAwareProxy is Proxy, AAPLogic {
+contract AdminAwareProxy is Proxy, AAPStorage {
     using Address for address;
 
     function initialize(
@@ -75,12 +75,12 @@ contract AdminAwareProxy is Proxy, AAPLogic {
         owner = config.owner;
 
         (bool successAdmin, ) = address(connectedContracts.rollupUserLogic).delegatecall(
-            abi.encodeWithSelector(AAPLogic.initialize.selector, config, connectedContracts)
+            abi.encodeWithSelector(AAPStorage.initialize.selector, config, connectedContracts)
         );
         require(successAdmin, "FAIL_INIT_ADMIN_LOGIC");
         
         (bool successUser, ) = address(connectedContracts.rollupUserLogic).delegatecall(
-            abi.encodeWithSelector(AAPLogic.initialize.selector, config, connectedContracts)
+            abi.encodeWithSelector(AAPStorage.initialize.selector, config, connectedContracts)
         );
         require(successUser, "FAIL_INIT_USER_LOGIC");
     }

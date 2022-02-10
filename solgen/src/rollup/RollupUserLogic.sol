@@ -2,13 +2,13 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPLogic } from  "./AdminAwareProxy.sol";
+import { AAPStorage } from  "./AdminAwareProxy.sol";
 import { IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
+    AAPStorage,
     RollupCore,
-    AAPLogic,
     IRollupUser,
     IChallengeResultReceiver
 {
