@@ -5,7 +5,11 @@ pragma solidity ^0.8.0;
 import "./Rollup.sol";
 import "./IRollupLogic.sol";
 
-abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResultReceiver {
+abstract contract AbsRollupUserLogic is
+    RollupCore,
+    IRollupUser,
+    IChallengeResultReceiver
+{
     using NodeLib for Node;
 
     function initialize(address _stakeToken) public virtual override;
@@ -156,34 +160,18 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
 
     /**
      * @notice Create a new node and move stake onto it
+     * @param assertion The assertion data
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)
-     * @param assertionBytes32Fields Assertion data for creating
-     * @param assertionIntFields Assertion data for creating
-     * @param beforeInboxMaxCount Inbox count at previous assertion
-     * @param numBlocks The number of blocks since the last node
-     * @param errored If the machine enters the errored state during this assertion
      */
     function stakeOnNewNode(
-        bytes32 expectedNodeHash,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
-        uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored
+        RollupLib.Assertion memory assertion,
+        bytes32 expectedNodeHash
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
-
-        RollupLib.Assertion memory assertion = RollupLib.decodeAssertion(
-            assertionBytes32Fields,
-            assertionIntFields,
-            beforeInboxMaxCount,
-            inboxMaxCount,
-            numBlocks,
-            errored
-        );
+        // Set the assertion's inboxMaxCount
+        assertion.afterState.inboxMaxCount = sequencerBridge.batchCount();
 
         {
             uint256 timeSinceLastNode = block.number -
@@ -206,13 +194,7 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
                 "BAD_PREV_STATUS"
             );
         }
-        createNewNode(
-            assertion,
-            assertionBytes32Fields,
-            assertionIntFields,
-            prevNode,
-            expectedNodeHash
-        );
+        createNewNode(assertion, prevNode, expectedNodeHash);
 
         stakeOnNode(msg.sender, latestNodeCreated());
     }
@@ -377,17 +359,22 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
         uint256 asserterTimeLeft,
         uint256 challengerTimeLeft
     ) internal returns (IChallenge) {
-        return challengeFactory.createChallenge(
-            [address(this), address(sequencerBridge), address(delayedBridge)],
-            wasmModuleRoots[0],
-            machineStatuses[0],
-            globalStates[0],
-            numBlocks[0],
-            stakers[0],
-            stakers[1],
-            asserterTimeLeft,
-            challengerTimeLeft
-        );
+        return
+            challengeFactory.createChallenge(
+                [
+                    address(this),
+                    address(sequencerBridge),
+                    address(delayedBridge)
+                ],
+                wasmModuleRoots[0],
+                machineStatuses[0],
+                globalStates[0],
+                numBlocks[0],
+                stakers[0],
+                stakers[1],
+                asserterTimeLeft,
+                challengerTimeLeft
+            );
     }
 
     /**
@@ -628,7 +615,10 @@ abstract contract AbsRollupUserLogic is RollupCore, IRollupUser, IChallengeResul
      */
     function requireUnchallengedStaker(address stakerAddress) private view {
         require(isStaked(stakerAddress), "NOT_STAKED");
-        require(address(currentChallenge(stakerAddress)) == address(0), "IN_CHAL");
+        require(
+            address(currentChallenge(stakerAddress)) == address(0),
+            "IN_CHAL"
+        );
     }
 
     function withdrawStakerFunds(address payable destination)

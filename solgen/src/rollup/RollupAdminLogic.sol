@@ -157,23 +157,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
 
     /**
      * @notice Set max delay for sequencer inbox
-     * @param maxDelayBlocks max delay of blocks
-     * @param maxFutureBlocks max number of blocks in the future
-     * @param maxDelaySeconds max delay of seconds
-     * @param maxFutureSeconds max number of seconds in the future
+     * @param maxTimeVariation the maximum time variation parameters
      */
-    function setSequencerInboxMaxTimeVariation(
-        uint256 maxDelayBlocks,
-        uint256 maxFutureBlocks,
-        uint256 maxDelaySeconds,
-        uint256 maxFutureSeconds
-    ) external override {
-        ISequencerInbox(sequencerBridge).setMaxTimeVariation(
-            maxDelayBlocks,
-            maxFutureBlocks,
-            maxDelaySeconds,
-            maxFutureSeconds
-        );
+    function setSequencerInboxMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation) external override {
+        sequencerBridge.setMaxTimeVariation(maxTimeVariation);
         emit OwnerFunctionCalled(14);
     }
 
@@ -236,30 +223,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     function forceCreateNode(
-        bytes32 expectedNodeHash,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
-        uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored,
-        uint64 prevNode
+        uint64 prevNode,
+        RollupLib.Assertion memory assertion,
+        bytes32 expectedNodeHash
     ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        RollupLib.Assertion memory assertion = RollupLib.decodeAssertion(
-            assertionBytes32Fields,
-            assertionIntFields,
-            beforeInboxMaxCount,
-            inboxMaxCount,
-            numBlocks,
-            errored
-        );
-
         createNewNode(
             assertion,
-            assertionBytes32Fields,
-            assertionIntFields,
             prevNode,
             expectedNodeHash
         );

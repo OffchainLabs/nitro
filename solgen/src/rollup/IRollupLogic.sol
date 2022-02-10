@@ -18,6 +18,7 @@
 
 pragma solidity ^0.8.0;
 
+import "./RollupLib.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {
@@ -69,7 +70,8 @@ interface IRollupAdmin {
      * @param newAdminLogic address of logic that owner of rollup calls
      * @param newUserLogic ddress of logic that user of rollup calls
      */
-    function setLogicContracts(address newAdminLogic, address newUserLogic) external;
+    function setLogicContracts(address newAdminLogic, address newUserLogic)
+        external;
 
     /**
      * @notice Set the addresses of the validator whitelist
@@ -78,7 +80,8 @@ interface IRollupAdmin {
      * @param _validator addresses to set in the whitelist
      * @param _val value to set in the whitelist for corresponding address
      */
-    function setValidator(address[] memory _validator, bool[] memory _val) external;
+    function setValidator(address[] memory _validator, bool[] memory _val)
+        external;
 
     /**
      * @notice Set a new owner address for the rollup
@@ -126,24 +129,19 @@ interface IRollupAdmin {
 
     /**
      * @notice Set max time variation from actual time for sequencer inbox
-     * @param maxDelayBlocks max delay of blocks
-     * @param maxFutureBlocks max number of blocks in the future
-     * @param maxDelaySeconds max delay of seconds
-     * @param maxFutureSeconds max number of seconds in the future
+     * @param maxTimeVariation the maximum time variation parameters
      */
     function setSequencerInboxMaxTimeVariation(
-        uint256 maxDelayBlocks,
-        uint256 maxFutureBlocks,
-        uint256 maxDelaySeconds,
-        uint256 maxFutureSeconds
+        ISequencerInbox.MaxTimeVariation memory maxTimeVariation
     ) external;
 
     /**
      * @notice Set execution bisection degree
      * @param newChallengeExecutionBisectionDegree execution bisection degree
      */
-    function setChallengeExecutionBisectionDegree(uint256 newChallengeExecutionBisectionDegree)
-        external;
+    function setChallengeExecutionBisectionDegree(
+        uint256 newChallengeExecutionBisectionDegree
+    ) external;
 
     /**
      * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
@@ -159,19 +157,17 @@ interface IRollupAdmin {
      */
     function upgradeBeacon(address beacon, address newImplementation) external;
 
-    function forceResolveChallenge(address[] memory stackerA, address[] memory stackerB) external;
+    function forceResolveChallenge(
+        address[] memory stackerA,
+        address[] memory stackerB
+    ) external;
 
     function forceRefundStaker(address[] memory stacker) external;
 
     function forceCreateNode(
-        bytes32 expectedNodeHash,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
-        uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored,
-        uint64 prevNode
+        uint64 prevNode,
+        RollupLib.Assertion memory assertion,
+        bytes32 expectedNodeHash
     ) external;
 
     function forceConfirmNode(

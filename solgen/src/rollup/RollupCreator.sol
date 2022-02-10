@@ -43,18 +43,18 @@ contract RollupCreator is Ownable {
 
     BridgeCreator public bridgeCreator;
     ICloneable public rollupTemplate;
-    address public challengeFactory;
-    address public rollupAdminLogic;
-    address public rollupUserLogic;
+    IBlockChallengeFactory public challengeFactory;
+    IRollupAdmin public rollupAdminLogic;
+    IRollupUser public rollupUserLogic;
 
     constructor() Ownable() {}
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
         ICloneable _rollupTemplate,
-        address _challengeFactory,
-        address _rollupAdminLogic,
-        address _rollupUserLogic
+        IBlockChallengeFactory  _challengeFactory,
+        IRollupAdmin _rollupAdminLogic,
+        IRollupUser _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         rollupTemplate = _rollupTemplate;
@@ -62,32 +62,6 @@ contract RollupCreator is Ownable {
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
         emit TemplatesUpdated();
-    }
-
-    // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
-    function createRollup(
-        uint256 confirmPeriodBlocks,
-        uint256 extraChallengeTimeBlocks,
-        address stakeToken,
-        uint256 baseStake,
-        bytes32 wasmModuleRoot,
-        address owner,
-        uint256 chainId,
-        uint256[4] memory sequencerInboxParams
-    ) external returns (address) {
-        return
-            createRollup(
-                RollupLib.Config(
-                    confirmPeriodBlocks,
-                    extraChallengeTimeBlocks,
-                    stakeToken,
-                    baseStake,
-                    wasmModuleRoot,
-                    owner,
-                    chainId,
-                    sequencerInboxParams
-                )
-            );
     }
 
     struct CreateRollupFrame {
@@ -105,7 +79,7 @@ contract RollupCreator is Ownable {
     // RollupOwner should be the owner of Rollup's ProxyAdmin
     // RollupOwner should be the owner of Rollup
     // Bridge should have a single inbox and outbox
-    function createRollup(RollupLib.Config memory config) private returns (address) {
+    function createRollup(RollupLib.Config memory config) external returns (address) {
         CreateRollupFrame memory frame;
         frame.admin = new ProxyAdmin();
         frame.rollup = address(
@@ -122,24 +96,16 @@ contract RollupCreator is Ownable {
 
         frame.admin.transferOwnership(config.owner);
         Rollup(payable(frame.rollup)).initialize(
-            config.wasmModuleRoot,
-            [
-                config.confirmPeriodBlocks,
-                config.extraChallengeTimeBlocks,
-                config.chainId,
-                config.baseStake
-            ],
-            config.stakeToken,
-            config.owner,
-            [
-                address(frame.delayedBridge),
-                address(frame.sequencerInbox),
-                address(frame.outbox),
-                address(frame.rollupEventBridge),
-                challengeFactory
-            ],
-            [rollupAdminLogic, rollupUserLogic],
-            config.sequencerInboxParams
+            config,
+            Rollup.ContractDependencies({
+                delayedBridge: frame.delayedBridge,
+                sequencerInbox: frame.sequencerInbox,
+                outbox: frame.outbox,
+                rollupEventBridge: frame.rollupEventBridge,
+                blockChallengeFactory: challengeFactory,
+                rollupAdminLogic: rollupAdminLogic,
+                rollupUserLogic: rollupUserLogic
+            })
         );
 
         emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));

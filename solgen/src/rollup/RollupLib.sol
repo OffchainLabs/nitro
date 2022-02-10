@@ -20,18 +20,18 @@ pragma solidity ^0.8.0;
 
 import "../challenge/ChallengeLib.sol";
 import "../state/GlobalStates.sol";
+import "../bridge/ISequencerInbox.sol";
 
 library RollupLib {
     struct Config {
-        uint256 confirmPeriodBlocks;
-        uint256 extraChallengeTimeBlocks;
+        uint64 confirmPeriodBlocks;
+        uint64 extraChallengeTimeBlocks;
         address stakeToken;
         uint256 baseStake;
         bytes32 wasmModuleRoot;
         address owner;
         uint256 chainId;
-        // maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds
-        uint256[4] sequencerInboxParams;
+        ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
     }
 
     struct ExecutionState {
@@ -49,7 +49,8 @@ library RollupLib {
             keccak256(
                 abi.encodePacked(
                     GlobalStates.hash(execState.globalState),
-                    execState.inboxMaxCount
+                    execState.inboxMaxCount,
+                    execState.machineStatus
                 )
             );
     }
@@ -58,52 +59,6 @@ library RollupLib {
         ExecutionState beforeState;
         ExecutionState afterState;
         uint64 numBlocks;
-    }
-
-    function decodeExecutionState(
-        bytes32[2] memory bytes32Fields,
-        uint64[2] memory intFields,
-        bool errored,
-        uint256 inboxMaxCount
-    ) internal pure returns (ExecutionState memory) {
-        MachineStatus machineStatus;
-        if (errored) {
-            machineStatus = MachineStatus.ERRORED;
-        } else {
-            machineStatus = MachineStatus.FINISHED;
-        }
-        return
-            ExecutionState(
-                GlobalState(bytes32Fields, intFields),
-                inboxMaxCount,
-                machineStatus
-            );
-    }
-
-    function decodeAssertion(
-        bytes32[2][2] memory bytes32Fields,
-        uint64[2][2] memory intFields,
-        uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks,
-        bool errored
-    ) internal pure returns (Assertion memory) {
-        return
-            Assertion(
-                decodeExecutionState(
-                    bytes32Fields[0],
-                    intFields[0],
-                    false,
-                    beforeInboxMaxCount
-                ),
-                decodeExecutionState(
-                    bytes32Fields[0],
-                    intFields[0],
-                    errored,
-                    inboxMaxCount
-                ),
-                numBlocks
-            );
     }
 
     function executionHash(Assertion memory assertion)

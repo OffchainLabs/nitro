@@ -569,11 +569,15 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
 
     function createNewNode(
         RollupLib.Assertion memory assertion,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[2][2] calldata assertionIntFields,
         uint64 prevNodeNum,
         bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
+        require(
+            assertion.afterState.machineStatus == MachineStatus.FINISHED ||
+                assertion.afterState.machineStatus == MachineStatus.ERRORED,
+            "BAD_AFTER_STATUS"
+        );
+
         StakeOnNewNodeFrame memory memoryFrame;
         {
             // validate data
@@ -673,11 +677,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             latestNodeCreated(),
             memoryFrame.prevNode.nodeHash,
             newNodeHash,
-            memoryFrame.executionHash,
-            memoryFrame.currentInboxSize,
+            assertion,
             memoryFrame.sequencerBatchAcc,
-            assertionBytes32Fields,
-            assertionIntFields,
             wasmModuleRoot
         );
 
