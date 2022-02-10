@@ -255,20 +255,21 @@ abstract contract AbsRollupUserLogic is
      * @notice Start a challenge between the given stakers over the node created by the first staker assuming that the two are staked on conflicting nodes. N.B.: challenge creator does not necessarily need to be one of the two asserters.
      * @param stakers Stakers engaged in the challenge. The first staker should be staked on the first node
      * @param nodeNums Nodes of the stakers engaged in the challenge. The first node should be the earliest and is the one challenged
-     * @param machineStatuses The before and after machine status, per assertion
-     * @param globalStates The before and after global state, per assertion
-     * @param numBlocks The number of L2 blocks contained in each assertion
+     * @param machineStatuses The before and after machine status for the first assertion
+     * @param globalStates The before and after global state for the first assertion
+     * @param numBlocks The number of L2 blocks contained in the first assertion
+     * @param secondExecutionHash The execution hash of the second assertion
      * @param proposedTimes Times that the two nodes were proposed
-     * @param maxMessageCounts Total number of messages consumed by the two nodes
+     * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
      */
     function createChallenge(
         address[2] calldata stakers,
         uint64[2] calldata nodeNums,
-        MachineStatus[2][2] calldata machineStatuses,
-        GlobalState[2][2] calldata globalStates,
-        uint64[2] calldata numBlocks,
+        MachineStatus[2] calldata machineStatuses,
+        GlobalState[2] calldata globalStates,
+        uint64 numBlocks,
+        bytes32 secondExecutionHash,
         uint256[2] calldata proposedTimes,
-        uint256[2] calldata maxMessageCounts,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
         require(nodeNums[0] < nodeNums[1], "WRONG_ORDER");
@@ -293,12 +294,11 @@ abstract contract AbsRollupUserLogic is
             node1.challengeHash ==
                 RollupLib.challengeRootHash(
                     RollupLib.executionHash(
-                        machineStatuses[0],
-                        globalStates[0],
-                        numBlocks[0]
+                        machineStatuses,
+                        globalStates,
+                        numBlocks
                     ),
                     proposedTimes[0],
-                    maxMessageCounts[0],
                     wasmModuleRoots[0]
                 ),
             "CHAL_HASH1"
@@ -307,13 +307,8 @@ abstract contract AbsRollupUserLogic is
         require(
             node2.challengeHash ==
                 RollupLib.challengeRootHash(
-                    RollupLib.executionHash(
-                        machineStatuses[1],
-                        globalStates[1],
-                        numBlocks[1]
-                    ),
+                    secondExecutionHash,
                     proposedTimes[1],
-                    maxMessageCounts[1],
                     wasmModuleRoots[1]
                 ),
             "CHAL_HASH2"
@@ -352,9 +347,9 @@ abstract contract AbsRollupUserLogic is
 
     function createChallengeHelper(
         address[2] calldata stakers,
-        MachineStatus[2][2] calldata machineStatuses,
-        GlobalState[2][2] calldata globalStates,
-        uint64[2] calldata numBlocks,
+        MachineStatus[2] calldata machineStatuses,
+        GlobalState[2] calldata globalStates,
+        uint64 numBlocks,
         bytes32[2] calldata wasmModuleRoots,
         uint256 asserterTimeLeft,
         uint256 challengerTimeLeft
@@ -367,9 +362,9 @@ abstract contract AbsRollupUserLogic is
                     address(delayedBridge)
                 ],
                 wasmModuleRoots[0],
-                machineStatuses[0],
-                globalStates[0],
-                numBlocks[0],
+                machineStatuses,
+                globalStates,
+                numBlocks,
                 stakers[0],
                 stakers[1],
                 asserterTimeLeft,
