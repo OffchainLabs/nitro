@@ -5,7 +5,7 @@ struct PcArray {
 	uint32[] inner;
 }
 
-library PcArrays {
+library PcArrayLib {
 	function get(PcArray memory arr, uint256 index) internal pure returns (uint32) {
 		return arr.inner[index];
 	}

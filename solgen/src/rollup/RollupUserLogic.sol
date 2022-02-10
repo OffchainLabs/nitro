@@ -11,6 +11,7 @@ abstract contract AbsRollupUserLogic is
     IChallengeResultReceiver
 {
     using NodeLib for Node;
+    using GlobalStateLib for GlobalState;
 
     function initialize(address _stakeToken) public virtual override;
 
@@ -182,9 +183,8 @@ abstract contract AbsRollupUserLogic is
             // Minimum size requirement: any assertion must consume at least all inbox messages
             // put into L1 inbox before the prev node’s L1 blocknum
             require(
-                GlobalStates.getInboxPosition(
-                    assertion.afterState.globalState
-                ) >= assertion.beforeState.inboxMaxCount,
+                assertion.afterState.globalState.getInboxPosition() >=
+                    assertion.beforeState.inboxMaxCount,
                 "TOO_SMALL"
             );
 

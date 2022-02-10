@@ -7,7 +7,7 @@ struct GlobalState {
 }
 
 
-library GlobalStates {
+library GlobalStateLib {
 	uint16 constant BYTES32_VALS_NUM = 2;
 	uint16 constant U64_VALS_NUM = 2;
 	function hash(GlobalState memory state) internal pure returns (bytes32) {
