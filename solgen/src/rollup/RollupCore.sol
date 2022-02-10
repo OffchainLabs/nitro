@@ -25,7 +25,6 @@ import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
-import "./IRollupLogic.sol";
 import "./IRollupCore.sol";
 
 import "../libraries/Cloneable.sol";
@@ -52,13 +51,9 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
-    address public owner;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
-
-    IRollupAdmin public adminLogic;
-    IRollupUser public userLogic;
 
     mapping(address => bool) public isValidator;
 

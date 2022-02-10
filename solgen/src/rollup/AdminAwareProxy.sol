@@ -28,12 +28,11 @@ import "./Node.sol";
 
 import "../libraries/ProxyUtil.sol";
 
-contract Rollup is Proxy, RollupCore {
-    using Address for address;
-
-    function isInit() internal view returns (bool) {
-        return confirmPeriodBlocks != 0 || isMasterCopy;
-    }
+/// @dev this is assumed to always be the first inherited contract. the 3 first storage slots are read by dispatch contract
+abstract contract AAPLogic {
+    address public owner;
+    AAPLogic public adminLogic;
+    AAPLogic public userLogic;
 
     struct ContractDependencies {
         IBridge delayedBridge;
@@ -42,8 +41,8 @@ contract Rollup is Proxy, RollupCore {
         RollupEventBridge rollupEventBridge;
         IBlockChallengeFactory blockChallengeFactory;
 
-        IRollupAdmin rollupAdminLogic;
-        IRollupUser rollupUserLogic;
+        AAPLogic rollupAdminLogic;
+        AAPLogic rollupUserLogic;
     }
 
     // _rollupParams = [ confirmPeriodBlocks, extraChallengeTimeBlocks, chainId, baseStake ]
@@ -52,48 +51,34 @@ contract Rollup is Proxy, RollupCore {
     function initialize(
         RollupLib.Config memory config,
         ContractDependencies memory connectedContracts
-    ) external {
-        require(!isInit(), "ALREADY_INIT");
+    ) external virtual;
+}
 
-        // calls initialize method in user logic
+
+/// @dev The Proxy dispatch also inherits from the Logic in order to keep the same storage layout
+contract AdminAwareProxy is Proxy, AAPLogic {
+    using Address for address;
+
+    function initialize(
+        RollupLib.Config memory config,
+        ContractDependencies memory connectedContracts
+    ) external override {
+        require(address(adminLogic) == address(0) && address(userLogic) == address(0), "ALREADY_INIT");
+
         require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
         require(address(connectedContracts.rollupUserLogic).isContract(), "USER_LOGIC_NOT_CONTRACT");
-        (bool success, ) = address(connectedContracts.rollupUserLogic).delegatecall(
-            abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken)
-        );
         adminLogic = connectedContracts.rollupAdminLogic;
         userLogic = connectedContracts.rollupUserLogic;
-        require(success, "FAIL_INIT_LOGIC");
 
-        delayedBridge = connectedContracts.delayedBridge;
-        sequencerBridge = connectedContracts.sequencerInbox;
-        outbox = connectedContracts.outbox;
-        delayedBridge.setOutbox(address(connectedContracts.outbox), true);
-        rollupEventBridge = connectedContracts.rollupEventBridge;
-        delayedBridge.setInbox(address(connectedContracts.rollupEventBridge), true);
-
-        rollupEventBridge.rollupInitialized(config.owner, config.chainId);
-        sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
-
-        challengeFactory = connectedContracts.blockChallengeFactory;
-
-        Node memory node = createInitialNode();
-        initializeCore(node);
-
-        confirmPeriodBlocks = config.confirmPeriodBlocks;
-        extraChallengeTimeBlocks = config.extraChallengeTimeBlocks;
-        chainId = config.chainId;
-        baseStake = config.baseStake;
-        owner = config.owner;
-        wasmModuleRoot = config.wasmModuleRoot;
-        // A little over 15 minutes
-        minimumAssertionPeriod = 75;
-        challengeExecutionBisectionDegree = 400;
-
-        sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
-
-        emit RollupInitialized(config.wasmModuleRoot, config.chainId);
-        require(isInit(), "INITIALIZE_NOT_INIT");
+        (bool successAdmin, ) = address(connectedContracts.rollupUserLogic).delegatecall(
+            abi.encodeWithSelector(AAPLogic.initialize.selector, config, connectedContracts)
+        );
+        require(successAdmin, "FAIL_INIT_ADMIN_LOGIC");
+        
+        (bool successUser, ) = address(connectedContracts.rollupUserLogic).delegatecall(
+            abi.encodeWithSelector(AAPLogic.initialize.selector, config, connectedContracts)
+        );
+        require(successUser, "FAIL_INIT_USER_LOGIC");
     }
 
     function postUpgradeInit() external {
@@ -103,30 +88,6 @@ contract Rollup is Proxy, RollupCore {
         require(msg.sender == proxyAdmin, "NOT_FROM_ADMIN");
     }
 
-    function createInitialNode()
-        private
-        view
-        returns (Node memory)
-    {
-        GlobalState memory emptyGlobalState;
-        bytes32 state = RollupLib.stateHash(
-            RollupLib.ExecutionState(
-                emptyGlobalState,
-                1, // inboxMaxCount - force the first assertion to read a message
-                MachineStatus.FINISHED
-            )
-        );
-        return
-            NodeLib.initialize(
-                state,
-                0, // challenge hash (not challengeable)
-                0, // confirm data
-                0, // prev node
-                uint64(block.number), // deadline block (not challengeable)
-                0 // initial node has a node hash of 0
-            );
-    }
-
     /**
      * @dev This is a virtual function that should be overriden so it returns the address to which the fallback function
      * and {_fallback} should delegate.
@@ -134,7 +95,6 @@ contract Rollup is Proxy, RollupCore {
     function _implementation()
         internal
         view
-        virtual
         override
         returns (address)
     {

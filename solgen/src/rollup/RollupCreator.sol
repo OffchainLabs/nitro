@@ -29,13 +29,13 @@ import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "./Rollup.sol";
+import "./AdminAwareProxy.sol";
 import "./RollupUserLogic.sol";
 import "./RollupAdminLogic.sol";
 import "../bridge/IBridge.sol";
 
 import "./RollupLib.sol";
-import "../utils/ICloneable.sol";
+import "../libraries/ICloneable.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address delayedBridge);
@@ -44,8 +44,8 @@ contract RollupCreator is Ownable {
     BridgeCreator public bridgeCreator;
     ICloneable public rollupTemplate;
     IBlockChallengeFactory public challengeFactory;
-    IRollupAdmin public rollupAdminLogic;
-    IRollupUser public rollupUserLogic;
+    AAPLogic public rollupAdminLogic;
+    AAPLogic public rollupUserLogic;
 
     constructor() Ownable() {}
 
@@ -53,8 +53,8 @@ contract RollupCreator is Ownable {
         BridgeCreator _bridgeCreator,
         ICloneable _rollupTemplate,
         IBlockChallengeFactory  _challengeFactory,
-        IRollupAdmin _rollupAdminLogic,
-        IRollupUser _rollupUserLogic
+        AAPLogic _rollupAdminLogic,
+        AAPLogic _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         rollupTemplate = _rollupTemplate;
@@ -71,7 +71,7 @@ contract RollupCreator is Ownable {
         Inbox inbox;
         RollupEventBridge rollupEventBridge;
         Outbox outbox;
-        address rollup;
+        AdminAwareProxy rollup;
     }
 
     // After this setup:
@@ -82,9 +82,9 @@ contract RollupCreator is Ownable {
     function createRollup(RollupLib.Config memory config) external returns (address) {
         CreateRollupFrame memory frame;
         frame.admin = new ProxyAdmin();
-        frame.rollup = address(
+        frame.rollup = AdminAwareProxy(payable(address(
             new TransparentUpgradeableProxy(address(rollupTemplate), address(frame.admin), "")
-        );
+        )));
 
         (
             frame.delayedBridge,
@@ -92,12 +92,12 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), frame.rollup);
+        ) = bridgeCreator.createBridge(address(frame.admin), address(frame.rollup));
 
         frame.admin.transferOwnership(config.owner);
-        Rollup(payable(frame.rollup)).initialize(
+        frame.rollup.initialize(
             config,
-            Rollup.ContractDependencies({
+            AAPLogic.ContractDependencies({
                 delayedBridge: frame.delayedBridge,
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,
@@ -108,7 +108,7 @@ contract RollupCreator is Ownable {
             })
         );
 
-        emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
-        return frame.rollup;
+        emit RollupCreated(address(frame.rollup), address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
+        return address(frame.rollup);
     }
 }

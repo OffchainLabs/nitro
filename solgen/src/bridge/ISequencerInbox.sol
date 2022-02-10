@@ -5,7 +5,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../utils/IGasRefunder.sol";
+import "../libraries/IGasRefunder.sol";
 
 interface ISequencerInbox {
     struct MaxTimeVariation {

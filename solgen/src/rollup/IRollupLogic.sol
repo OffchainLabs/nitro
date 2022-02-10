@@ -22,8 +22,6 @@ import "./RollupLib.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {
-    function initialize(address _stakeToken) external;
-
     function returnOldDeposit(address stakerAddress) external;
 
     function requireUnresolved(uint256 nodeNum) external view;

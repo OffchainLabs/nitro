@@ -2,18 +2,18 @@
 
 pragma solidity ^0.8.0;
 
-import "./Rollup.sol";
-import "./IRollupLogic.sol";
+import { AAPLogic } from  "./AdminAwareProxy.sol";
+import { IRollupUser } from "./IRollupLogic.sol";
+import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
+    AAPLogic,
     IRollupUser,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
-
-    function initialize(address _stakeToken) public virtual override;
 
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
@@ -623,8 +623,11 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
+    function initialize(
+        RollupLib.Config memory config,
+        ContractDependencies memory connectedContracts
+    ) external override {
+        require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         // stakeToken = _stakeToken;
     }
 
@@ -669,10 +672,13 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
+    function initialize(
+        RollupLib.Config memory config,
+        ContractDependencies memory connectedContracts
+    ) external override {
+        require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");
-        stakeToken = _stakeToken;
+        stakeToken = config.stakeToken;
     }
 
     /**
