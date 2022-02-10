@@ -61,7 +61,7 @@ func main() {
 	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
 	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
 	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
 	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
@@ -218,6 +218,10 @@ func main() {
 		Timeout: *feedInputTimeout,
 		URL:     *feedInputUrl,
 	}
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	if err != nil {
+		utils.Fatalf("Failed to open database: %v", err)
+	}
 
 	initData := statetransfer.ArbosInitializationInfo{
 		Accounts: []statetransfer.AccountInitializationInfo{
@@ -229,7 +233,7 @@ func main() {
 		},
 	}
 
-	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, &initData, params.ArbitrumOneChainConfig())
+	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, 0, params.ArbitrumOneChainConfig())
 	if err != nil {
 		panic(err)
 	}
