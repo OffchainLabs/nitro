@@ -64,11 +64,13 @@ contract AdminAwareProxy is Proxy, AAPLogic {
         ContractDependencies memory connectedContracts
     ) external override {
         require(address(adminLogic) == address(0) && address(userLogic) == address(0), "ALREADY_INIT");
+        // we don't check `owner == 0 && config.owner != 0` here since the rollup could have no owner
 
         require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
         require(address(connectedContracts.rollupUserLogic).isContract(), "USER_LOGIC_NOT_CONTRACT");
         adminLogic = connectedContracts.rollupAdminLogic;
         userLogic = connectedContracts.rollupUserLogic;
+        owner = config.owner;
 
         (bool successAdmin, ) = address(connectedContracts.rollupUserLogic).delegatecall(
             abi.encodeWithSelector(AAPLogic.initialize.selector, config, connectedContracts)

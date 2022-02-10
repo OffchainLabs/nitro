@@ -42,7 +42,6 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
         extraChallengeTimeBlocks = config.extraChallengeTimeBlocks;
         chainId = config.chainId;
         baseStake = config.baseStake;
-        owner = config.owner;
         wasmModuleRoot = config.wasmModuleRoot;
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
