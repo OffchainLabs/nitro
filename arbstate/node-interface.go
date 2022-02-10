@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -53,7 +52,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			RequestId:     common.Hash{},
 			From:          sender,
 			DepositValue:  deposit,
-			GasPrice:      math.MaxBig256,
+			GasPrice:      msg.GasPrice(),
 			Gas:           msg.Gas(),
 			To:            to,
 			Value:         l2CallValue,
