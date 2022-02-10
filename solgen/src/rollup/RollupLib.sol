@@ -42,7 +42,23 @@ library RollupLib {
         MachineStatus machineStatus;
     }
 
-    function stateHash(ExecutionState memory execState)
+    function stateHash(ExecutionState calldata execState)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return
+            keccak256(
+                abi.encodePacked(
+                    execState.globalState.hash(),
+                    execState.inboxMaxCount,
+                    execState.machineStatus
+                )
+            );
+    }
+
+    /// @dev same as stateHash but expects execState in memory instead of calldata
+    function stateHashMem(ExecutionState memory execState)
         internal
         pure
         returns (bytes32)
@@ -63,7 +79,7 @@ library RollupLib {
         uint64 numBlocks;
     }
 
-    function executionHash(Assertion memory assertion)
+    function executionHash(Assertion calldata assertion)
         internal
         pure
         returns (bytes32)
@@ -74,6 +90,7 @@ library RollupLib {
         GlobalState[2] memory globalStates;
         globalStates[0] = assertion.beforeState.globalState;
         globalStates[1] = assertion.afterState.globalState;
+        // TODO: benchmark how much this abstraction adds of gas overhead
         return executionHash(statuses, globalStates, assertion.numBlocks);
     }
 
@@ -96,7 +113,7 @@ library RollupLib {
     }
 
     function challengeRoot(
-        Assertion memory assertion,
+        Assertion calldata /* assertion */,
         bytes32 assertionExecHash,
         uint256 blockProposed,
         bytes32 wasmModuleRoot
@@ -124,7 +141,7 @@ library RollupLib {
             );
     }
 
-    function confirmHash(Assertion memory assertion)
+    function confirmHash(Assertion calldata assertion)
         internal
         pure
         returns (bytes32)

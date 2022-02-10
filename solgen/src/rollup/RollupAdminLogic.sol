@@ -59,7 +59,7 @@ contract RollupAdminLogic is RollupCore, AAPLogic, IRollupAdmin {
         returns (Node memory)
     {
         GlobalState memory emptyGlobalState;
-        bytes32 state = RollupLib.stateHash(
+        bytes32 state = RollupLib.stateHashMem(
             RollupLib.ExecutionState(
                 emptyGlobalState,
                 1, // inboxMaxCount - force the first assertion to read a message
