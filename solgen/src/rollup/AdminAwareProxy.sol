@@ -26,10 +26,11 @@ import "./RollupEventBridge.sol";
 import "./RollupLib.sol";
 import "./Node.sol";
 
+import "../libraries/Cloneable.sol";
 import "../libraries/ProxyUtil.sol";
 
-/// @dev this is assumed to always be the first inherited contract. the 3 first storage slots are read by dispatch contract
-abstract contract AAPLogic {
+/// @dev this is assumed to always be the first inherited contract. the initial storage slots are read by dispatch contract
+abstract contract AAPLogic is Cloneable {
     address public owner;
     AAPLogic public adminLogic;
     AAPLogic public userLogic;
@@ -64,6 +65,7 @@ contract AdminAwareProxy is Proxy, AAPLogic {
         ContractDependencies calldata connectedContracts
     ) external override {
         require(address(adminLogic) == address(0) && address(userLogic) == address(0), "ALREADY_INIT");
+        require(!isMasterCopy, "NO_INIT_MASTER");
         // we don't check `owner == 0 && config.owner != 0` here since the rollup could have no owner
 
         require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
