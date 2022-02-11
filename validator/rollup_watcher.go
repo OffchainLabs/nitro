@@ -10,7 +10,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
@@ -69,7 +68,7 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
-func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupCreated, error) {
+func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
 	var query = ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: big.NewInt(r.fromBlock),
@@ -87,7 +86,7 @@ func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUs
 	if len(logs) > 1 {
 		return nil, errors.New("rollup created multiple times")
 	}
-	ev, err := r.ParseRollupCreated(logs[0])
+	ev, err := r.ParseRollupInitialized(logs[0])
 	return ev, errors.WithStack(err)
 }
 
@@ -119,8 +118,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	return &NodeInfo{
 		NodeNum:            parsedLog.NodeNum,
 		BlockProposed:      ethLog.BlockNumber,
-		Assertion:          NewAssertionFromFields(parsedLog.AssertionBytes32Fields, parsedLog.AssertionIntFields),
-		InboxMaxCount:      parsedLog.InboxMaxCount,
+		Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 		AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
 		NodeHash:           parsedLog.NodeHash,
 		WasmModuleRoot:     parsedLog.WasmModuleRoot,
@@ -140,7 +138,6 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, parentHash [32]b
 		return nil, errors.WithStack(err)
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
-	lastHash := parentHash
 	for i, ethLog := range logs {
 		parsedLog, err := r.ParseNodeCreated(ethLog)
 		if err != nil {
@@ -150,14 +147,12 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, parentHash [32]b
 		if i > 0 {
 			lastHashIsSibling[0] = 1
 		}
-		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:])
 		infos = append(infos, &NodeInfo{
 			NodeNum:            parsedLog.NodeNum,
 			BlockProposed:      ethLog.BlockNumber,
-			Assertion:          NewAssertionFromFields(parsedLog.AssertionBytes32Fields, parsedLog.AssertionIntFields),
-			InboxMaxCount:      parsedLog.InboxMaxCount,
+			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
-			NodeHash:           lastHash,
+			NodeHash:           parsedLog.NodeHash,
 		})
 	}
 	return infos, nil

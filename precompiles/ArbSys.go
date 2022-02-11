@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -104,7 +103,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	}
 	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
 
-	sendHash := crypto.Keccak256Hash(
+	arbosState := c.state
+	sendHash, err := arbosState.KeccakHash(
 		c.caller.Bytes(),
 		destination.Bytes(),
 		math.U256Bytes(evm.Context.BlockNumber),
@@ -113,8 +113,10 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		common.BigToHash(value).Bytes(),
 		calldataForL1,
 	)
-
-	merkleAcc := c.state.SendMerkleAccumulator()
+	if err != nil {
+		return nil, err
+	}
+	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
 	if err != nil {
 		return nil, err

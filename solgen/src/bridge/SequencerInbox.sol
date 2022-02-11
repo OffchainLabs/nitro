@@ -8,7 +8,7 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
-import "../utils/IGasRefunder.sol";
+import "../libraries/IGasRefunder.sol";
 
 contract SequencerInbox is ISequencerInbox {
     bytes32[] public override inboxAccs;
@@ -21,10 +21,7 @@ contract SequencerInbox is ISequencerInbox {
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
-    uint256 public maxDelayBlocks;
-    uint256 public maxFutureBlocks;
-    uint256 public maxDelaySeconds;
-    uint256 public maxFutureSeconds;
+    ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
@@ -45,36 +42,34 @@ contract SequencerInbox is ISequencerInbox {
         uint64[4] timeBounds
     );
 
-    function initialize(
-        IBridge _delayedBridge,
-        address rollup_
-    ) external {
+    function initialize(IBridge _delayedBridge, address rollup_) external {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
         rollup = rollup_;
 
-        maxDelaySeconds = 60 * 60 * 24;
-        maxFutureSeconds = 60 * 60;
-
-        maxDelayBlocks = maxDelaySeconds * 15;
-        maxFutureBlocks = 12;
+        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
+            delayBlocks: 60 * 60 * 24 * 15,
+            futureBlocks: 12,
+            delaySeconds: 60 * 60 * 24,
+            futureSeconds: 60 * 60
+        });
     }
 
     function getTimeBounds() internal view returns (uint64[4] memory) {
         uint64[4] memory bounds;
-        if (block.timestamp > maxDelaySeconds) {
-            bounds[0] = uint64(block.timestamp - maxDelaySeconds);
+        if (block.timestamp > maxTimeVariation.delaySeconds) {
+            bounds[0] = uint64(block.timestamp - maxTimeVariation.delaySeconds);
         } else {
             bounds[0] = 0;
         }
-        bounds[1] = uint64(block.timestamp + maxFutureSeconds);
-        if (block.number > maxDelayBlocks) {
-            bounds[2] = uint64(block.number - maxDelayBlocks);
+        bounds[1] = uint64(block.timestamp + maxTimeVariation.futureSeconds);
+        if (block.number > maxTimeVariation.delayBlocks) {
+            bounds[2] = uint64(block.number - maxTimeVariation.delayBlocks);
         } else {
             bounds[2] = 0;
         }
-        bounds[3] = uint64(block.number + maxFutureBlocks);
+        bounds[3] = uint64(block.number + maxTimeVariation.futureBlocks);
         return bounds;
     }
 
@@ -104,11 +99,13 @@ contract SequencerInbox is ISequencerInbox {
             );
             // Can only force-include after the Sequencer-only window has expired.
             require(
-                l1BlockAndTimestamp[0] + maxDelayBlocks < block.number,
+                l1BlockAndTimestamp[0] + maxTimeVariation.delayBlocks <
+                    block.number,
                 "MAX_DELAY_BLOCKS"
             );
             require(
-                l1BlockAndTimestamp[1] + maxDelaySeconds < block.timestamp,
+                l1BlockAndTimestamp[1] + maxTimeVariation.delaySeconds <
+                    block.timestamp,
                 "MAX_DELAY_TIME"
             );
 
@@ -191,7 +188,10 @@ contract SequencerInbox is ISequencerInbox {
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external override {
-        require(isBatchPoster[msg.sender] || msg.sender == rollup, "NOT_BATCH_POSTER");
+        require(
+            isBatchPoster[msg.sender] || msg.sender == rollup,
+            "NOT_BATCH_POSTER"
+        );
 
         uint256 startGasLeft = gasleft();
 
@@ -285,16 +285,10 @@ contract SequencerInbox is ISequencerInbox {
     }
 
     function setMaxTimeVariation(
-        uint256 maxDelayBlocks_,
-        uint256 maxFutureBlocks_,
-        uint256 maxDelaySeconds_,
-        uint256 maxFutureSeconds_
+        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
     ) external override {
         require(msg.sender == rollup, "ONLY_ROLLUP");
-        maxDelayBlocks = maxDelayBlocks_;
-        maxFutureBlocks = maxFutureBlocks_;
-        maxDelaySeconds = maxDelaySeconds_;
-        maxFutureSeconds = maxFutureSeconds_;
+        maxTimeVariation = maxTimeVariation_;
     }
 
     function setIsBatchPoster(address addr, bool isBatchPoster_)

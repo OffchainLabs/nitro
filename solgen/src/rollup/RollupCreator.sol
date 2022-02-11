@@ -29,13 +29,13 @@ import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "./Rollup.sol";
+import "./AdminAwareProxy.sol";
 import "./RollupUserLogic.sol";
 import "./RollupAdminLogic.sol";
 import "../bridge/IBridge.sol";
 
 import "./RollupLib.sol";
-import "../utils/ICloneable.sol";
+import "../libraries/ICloneable.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address delayedBridge);
@@ -43,18 +43,18 @@ contract RollupCreator is Ownable {
 
     BridgeCreator public bridgeCreator;
     ICloneable public rollupTemplate;
-    address public challengeFactory;
-    address public rollupAdminLogic;
-    address public rollupUserLogic;
+    IBlockChallengeFactory public challengeFactory;
+    AAPStorage public rollupAdminLogic;
+    AAPStorage public rollupUserLogic;
 
     constructor() Ownable() {}
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
         ICloneable _rollupTemplate,
-        address _challengeFactory,
-        address _rollupAdminLogic,
-        address _rollupUserLogic
+        IBlockChallengeFactory  _challengeFactory,
+        AAPStorage _rollupAdminLogic,
+        AAPStorage _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
         rollupTemplate = _rollupTemplate;
@@ -64,32 +64,6 @@ contract RollupCreator is Ownable {
         emit TemplatesUpdated();
     }
 
-    // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
-    function createRollup(
-        uint256 confirmPeriodBlocks,
-        uint256 extraChallengeTimeBlocks,
-        address stakeToken,
-        uint256 baseStake,
-        bytes32 wasmModuleRoot,
-        address owner,
-        uint256 chainId,
-        uint256[4] memory sequencerInboxParams
-    ) external returns (address) {
-        return
-            createRollup(
-                RollupLib.Config(
-                    confirmPeriodBlocks,
-                    extraChallengeTimeBlocks,
-                    stakeToken,
-                    baseStake,
-                    wasmModuleRoot,
-                    owner,
-                    chainId,
-                    sequencerInboxParams
-                )
-            );
-    }
-
     struct CreateRollupFrame {
         ProxyAdmin admin;
         Bridge delayedBridge;
@@ -97,7 +71,7 @@ contract RollupCreator is Ownable {
         Inbox inbox;
         RollupEventBridge rollupEventBridge;
         Outbox outbox;
-        address rollup;
+        AdminAwareProxy rollup;
     }
 
     // After this setup:
@@ -105,12 +79,12 @@ contract RollupCreator is Ownable {
     // RollupOwner should be the owner of Rollup's ProxyAdmin
     // RollupOwner should be the owner of Rollup
     // Bridge should have a single inbox and outbox
-    function createRollup(RollupLib.Config memory config) private returns (address) {
+    function createRollup(RollupLib.Config memory config) external returns (address) {
         CreateRollupFrame memory frame;
         frame.admin = new ProxyAdmin();
-        frame.rollup = address(
+        frame.rollup = AdminAwareProxy(payable(address(
             new TransparentUpgradeableProxy(address(rollupTemplate), address(frame.admin), "")
-        );
+        )));
 
         (
             frame.delayedBridge,
@@ -118,31 +92,23 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), frame.rollup);
+        ) = bridgeCreator.createBridge(address(frame.admin), address(frame.rollup));
 
         frame.admin.transferOwnership(config.owner);
-        Rollup(payable(frame.rollup)).initialize(
-            config.wasmModuleRoot,
-            [
-                config.confirmPeriodBlocks,
-                config.extraChallengeTimeBlocks,
-                config.chainId,
-                config.baseStake
-            ],
-            config.stakeToken,
-            config.owner,
-            [
-                address(frame.delayedBridge),
-                address(frame.sequencerInbox),
-                address(frame.outbox),
-                address(frame.rollupEventBridge),
-                challengeFactory
-            ],
-            [rollupAdminLogic, rollupUserLogic],
-            config.sequencerInboxParams
+        frame.rollup.initialize(
+            config,
+            AAPStorage.ContractDependencies({
+                delayedBridge: frame.delayedBridge,
+                sequencerInbox: frame.sequencerInbox,
+                outbox: frame.outbox,
+                rollupEventBridge: frame.rollupEventBridge,
+                blockChallengeFactory: challengeFactory,
+                rollupAdminLogic: rollupAdminLogic,
+                rollupUserLogic: rollupUserLogic
+            })
         );
 
-        emit RollupCreated(frame.rollup, address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
-        return frame.rollup;
+        emit RollupCreated(address(frame.rollup), address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
+        return address(frame.rollup);
     }
 }

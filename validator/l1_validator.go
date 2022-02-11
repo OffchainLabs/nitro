@@ -388,7 +388,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		hasSiblingByte[0] = 1
 	}
 	assertion := &Assertion{
-		BeforeState: startState.ExecutionState,
+		BeforeState: startState,
 		AfterState: &ExecutionState{
 			GlobalState: GoGlobalState{
 				BlockHash:  assertingBlock.Hash(),
@@ -397,6 +397,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				PosInBatch: 0,
 			},
 			MachineStatus: MachineStatusFinished,
+			InboxMaxCount: new(big.Int), // filled in by the contract
 		},
 		NumBlocks: assertingBlock.NumberU64() - startBlock.NumberU64(),
 	}
@@ -413,18 +414,16 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	return action, wrongNodesExist, nil
 }
 
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*NodeState, uint64, error) {
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*ExecutionState, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
 			return nil, 0, err
 		}
-		return &NodeState{
+		return &ExecutionState{
+			GlobalState:   GoGlobalState{},
+			MachineStatus: MachineStatusFinished,
 			InboxMaxCount: big.NewInt(1),
-			ExecutionState: &ExecutionState{
-				GlobalState:   GoGlobalState{},
-				MachineStatus: MachineStatusFinished,
-			},
 		}, creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)

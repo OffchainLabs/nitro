@@ -13,15 +13,16 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
@@ -41,6 +42,7 @@ type RollupAddresses struct {
 	Bridge         common.Address
 	Inbox          common.Address
 	SequencerInbox common.Address
+	Rollup         common.Address
 	DeployedAt     uint64
 }
 
@@ -141,7 +143,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 		return nil, err
 	}
 
-	rollupTemplate, tx, _, err := rollupgen.DeployRollup(auth, client)
+	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("rollup deploy error: %w", err)
@@ -185,24 +187,26 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, err
 	}
 
-	confirmPeriodBlocks := big.NewInt(20)
-	extraChallengeTimeBlocks := big.NewInt(20)
-	seqInboxParams := [4]*big.Int{
-		big.NewInt(60 * 60 * 24 * 15), // maxDelayBlocks
-		big.NewInt(12),                // maxFutureBlocks
-		big.NewInt(60 * 60 * 24),      // maxDelaySeconds
-		big.NewInt(60 * 60),           // maxFutureSeconds
+	var confirmPeriodBlocks uint64 = 20
+	var extraChallengeTimeBlocks uint64 = 20
+	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   big.NewInt(60 * 60 * 24 * 15),
+		FutureBlocks:  big.NewInt(12),
+		DelaySeconds:  big.NewInt(60 * 60 * 24),
+		FutureSeconds: big.NewInt(60 * 60),
 	}
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		confirmPeriodBlocks,
-		extraChallengeTimeBlocks,
-		common.Address{},
-		big.NewInt(params.Ether),
-		wasmModuleRoot,
-		deployAuth.From,
-		big.NewInt(1338),
-		seqInboxParams,
+		rollupgen.RollupLibConfig{
+			ConfirmPeriodBlocks:            confirmPeriodBlocks,
+			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
+			StakeToken:                     common.Address{},
+			BaseStake:                      big.NewInt(params.Ether),
+			WasmModuleRoot:                 wasmModuleRoot,
+			Owner:                          deployAuth.From,
+			ChainId:                        big.NewInt(1338),
+			SequencerInboxMaxTimeVariation: seqInboxParams,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
@@ -231,6 +235,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		Inbox:          info.InboxAddress,
 		SequencerInbox: info.SequencerInbox,
 		DeployedAt:     receipt.BlockNumber.Uint64(),
+		Rollup:         info.RollupAddress,
 	}, nil
 }
 
@@ -415,50 +420,10 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInitializationInfo, config *params.ChainConfig) (ethdb.Database, *core.BlockChain, error) {
-	arbstate.RequireHookedGeth()
-
+func DefaultCacheConfigFor(stack *node.Node) *core.CacheConfig {
 	defaultConf := ethconfig.Defaults
 
-	engine := arbos.Engine{
-		IsSequencer: true,
-	}
-	chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "", false)
-	if err != nil {
-		utils.Fatalf("Failed to open database: %v", err)
-	}
-
-	l2GenesysAlloc, err := arbosState.GetGenesisAllocFromArbos(initData)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	genesis := &core.Genesis{
-		Config:     config,
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   l2pricing.L2GasLimit,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      l2GenesysAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
-	}
-
-	chainConfig, _, genesisErr := core.SetupGenesisBlockWithOverride(chainDb, genesis, defaultConf.OverrideArrowGlacier)
-	var configCompatError *params.ConfigCompatError
-	if errors.As(genesisErr, &configCompatError) {
-		return nil, nil, genesisErr
-	}
-
-	vmConfig := vm.Config{
-		EnablePreimageRecording: defaultConf.EnablePreimageRecording,
-	}
-	cacheConfig := &core.CacheConfig{
+	return &core.CacheConfig{
 		TrieCleanLimit:      defaultConf.TrieCleanCache,
 		TrieCleanJournal:    stack.ResolvePath(defaultConf.TrieCleanCacheJournal),
 		TrieCleanRejournal:  defaultConf.TrieCleanCacheRejournal,
@@ -469,15 +434,104 @@ func CreateDefaultBlockChain(stack *node.Node, initData *statetransfer.ArbosInit
 		SnapshotLimit:       defaultConf.SnapshotCache,
 		Preimages:           defaultConf.Preimages,
 	}
+}
 
-	blockChain, err := core.NewBlockChain(chainDb, cacheConfig, chainConfig, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
+func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosInitializationInfo, blockNumber uint64) error {
+	arbstate.RequireHookedGeth()
+
+	EmptyHash := common.Hash{}
+
+	prevHash := EmptyHash
+	genDifficulty := big.NewInt(1)
+	prevDifficulty := big.NewInt(0)
+	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
+	if blockNumber > 0 {
+		prevHash = rawdb.ReadCanonicalHash(chainDb, blockNumber-1)
+		if prevHash == EmptyHash {
+			return fmt.Errorf("block number %d not found in database", chainDb)
+		}
+		prevDifficulty = rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
+	}
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData)
 	if err != nil {
-		return nil, nil, err
+		return err
+	}
+	head := &types.Header{
+		Number:     new(big.Int).SetUint64(blockNumber),
+		Nonce:      types.EncodeNonce(0),
+		Time:       uint64(time.Now().Unix()),
+		ParentHash: prevHash,
+		Extra:      []byte("ArbitrumMainnet"),
+		GasLimit:   l2pricing.L2GasLimit,
+		GasUsed:    0,
+		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
+		Difficulty: genDifficulty,
+		MixDigest:  EmptyHash,
+		Coinbase:   common.Address{},
+		Root:       stateRoot,
 	}
 
-	// stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
+	genBlock := types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+	blockHash := genBlock.Hash()
 
-	return chainDb, blockChain, nil
+	if storedGenHash == EmptyHash {
+		// chainDb did not have genesis block. Initialize it.
+		core.WriteHeadBlock(chainDb, genBlock, prevDifficulty)
+	} else if storedGenHash != blockHash {
+		return errors.New("database contains data inconsistent with initialization")
+	}
+
+	return nil
+}
+
+func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) error {
+	EmptyHash := common.Hash{}
+
+	block0Hash := rawdb.ReadCanonicalHash(chainDb, 0)
+	if block0Hash == EmptyHash {
+		return errors.New("block 0 not found")
+	}
+	storedConfig := rawdb.ReadChainConfig(chainDb, block0Hash)
+	if storedConfig == nil {
+		rawdb.WriteChainConfig(chainDb, block0Hash, config)
+		return nil
+	}
+	height := rawdb.ReadHeaderNumber(chainDb, rawdb.ReadHeadHeaderHash(chainDb))
+	if height == nil {
+		return errors.New("non empty chain config but empty chain")
+	}
+	err := storedConfig.CheckCompatible(config, *height)
+	if err != nil {
+		return err
+	}
+	rawdb.WriteChainConfig(chainDb, block0Hash, config)
+	return nil
+}
+
+func CreateBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config *params.ChainConfig) (*core.BlockChain, error) {
+	defaultConf := ethconfig.Defaults
+
+	engine := arbos.Engine{
+		IsSequencer: true,
+	}
+
+	vmConfig := vm.Config{
+		EnablePreimageRecording: defaultConf.EnablePreimageRecording,
+	}
+
+	return core.NewBlockChain(chainDb, cacheConfig, config, engine, vmConfig, shouldPreserveFalse, &defaultConf.TxLookupLimit)
+}
+
+func CreateDefaultBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData *statetransfer.ArbosInitializationInfo, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
+	err := WriteOrTestGenblock(chainDb, initData, blockNumber)
+	if err != nil {
+		return nil, err
+	}
+	err = WriteOrTestChainConfig(chainDb, config)
+	if err != nil {
+		return nil, err
+	}
+	return CreateBlockChain(chainDb, cacheConfig, config)
 }
 
 // TODO: is that right?

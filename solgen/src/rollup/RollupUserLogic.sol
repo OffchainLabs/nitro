@@ -2,17 +2,18 @@
 
 pragma solidity ^0.8.0;
 
-import "./Rollup.sol";
-import "./IRollupLogic.sol";
+import { AAPStorage } from  "./AdminAwareProxy.sol";
+import { IRollupUser } from "./IRollupLogic.sol";
+import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
+    AAPStorage,
     RollupCore,
     IRollupUser,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
-
-    function initialize(address _stakeToken) public virtual override;
+    using GlobalStateLib for GlobalState;
 
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
@@ -145,12 +146,12 @@ abstract contract AbsRollupUserLogic is
     {
         require(isStaked(msg.sender), "NOT_STAKED");
 
-        require(getNodeHash(nodeNum) == nodeHash, "NODE_REORG");
         require(
             nodeNum >= firstUnresolvedNode() && nodeNum <= latestNodeCreated(),
             "NODE_NUM_OUT_OF_RANGE"
         );
         Node storage node = getNodeStorage(nodeNum);
+        require(node.nodeHash == nodeHash, "NODE_REORG");
         require(
             latestStakedNode(msg.sender) == node.prevNum,
             "NOT_STAKED_PREV"
@@ -160,30 +161,16 @@ abstract contract AbsRollupUserLogic is
 
     /**
      * @notice Create a new node and move stake onto it
+     * @param assertion The assertion data
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)
-     * @param assertionBytes32Fields Assertion data for creating
-     * @param assertionIntFields Assertion data for creating
-     * @param beforeInboxMaxCount Inbox count at previous assertion
-     * @param numBlocks The number of blocks since the last node
      */
     function stakeOnNewNode(
-        bytes32 expectedNodeHash,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[3][2] calldata assertionIntFields,
-        uint256 beforeInboxMaxCount,
-        uint64 numBlocks
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
-
-        RollupLib.Assertion memory assertion = RollupLib.decodeAssertion(
-            assertionBytes32Fields,
-            assertionIntFields,
-            beforeInboxMaxCount,
-            sequencerBridge.batchCount(),
-            numBlocks
-        );
 
         {
             uint256 timeSinceLastNode = block.number -
@@ -194,20 +181,14 @@ abstract contract AbsRollupUserLogic is
             // Minimum size requirement: any assertion must consume at least all inbox messages
             // put into L1 inbox before the prev node’s L1 blocknum
             require(
-                GlobalStates.getInboxPosition(
-                    assertion.afterState.globalState
-                ) >= assertion.beforeState.inboxMaxCount,
+                assertion.afterState.globalState.getInboxPosition() >=
+                    assertion.beforeState.inboxMaxCount,
                 "TOO_SMALL"
             );
-            // Minimum size requirement: any assertion must advance the inbox at least one batch
+            // Minimum size requirement: any assertion must contain at least one block
             require(
-                GlobalStates.getInboxPosition(
-                    assertion.afterState.globalState
-                ) >
-                    GlobalStates.getInboxPosition(
-                        assertion.beforeState.globalState
-                    ),
-                "SAME_BATCH"
+                assertion.numBlocks > 0,
+                "EMPTY_ASSERTION"
             );
 
             // The rollup cannot advance normally from an errored state
@@ -216,14 +197,7 @@ abstract contract AbsRollupUserLogic is
                 "BAD_PREV_STATUS"
             );
         }
-        createNewNode(
-            assertion,
-            assertionBytes32Fields,
-            assertionIntFields,
-            prevNode,
-            expectedNodeHash,
-            numBlocks
-        );
+        createNewNode(assertion, prevNode, expectedNodeHash);
 
         stakeOnNode(msg.sender, latestNodeCreated());
     }
@@ -284,17 +258,20 @@ abstract contract AbsRollupUserLogic is
      * @notice Start a challenge between the given stakers over the node created by the first staker assuming that the two are staked on conflicting nodes. N.B.: challenge creator does not necessarily need to be one of the two asserters.
      * @param stakers Stakers engaged in the challenge. The first staker should be staked on the first node
      * @param nodeNums Nodes of the stakers engaged in the challenge. The first node should be the earliest and is the one challenged
-     * @param machineStatuses The before and after machine status, per assertion
-     * @param globalStates The before and after global state, per assertion
-     * @param numBlocks The number of L2 blocks contained in each assertion
+     * @param machineStatuses The before and after machine status for the first assertion
+     * @param globalStates The before and after global state for the first assertion
+     * @param numBlocks The number of L2 blocks contained in the first assertion
+     * @param secondExecutionHash The execution hash of the second assertion
      * @param proposedTimes Times that the two nodes were proposed
+     * @param wasmModuleRoots The wasm module roots at the time of the creation of each assertion
      */
     function createChallenge(
         address[2] calldata stakers,
         uint64[2] calldata nodeNums,
-        MachineStatus[2][2] calldata machineStatuses,
-        GlobalState[2][2] calldata globalStates,
-        uint64[2] calldata numBlocks,
+        MachineStatus[2] calldata machineStatuses,
+        GlobalState[2] calldata globalStates,
+        uint64 numBlocks,
+        bytes32 secondExecutionHash,
         uint256[2] calldata proposedTimes,
         bytes32[2] calldata wasmModuleRoots
     ) external onlyValidator whenNotPaused {
@@ -320,9 +297,9 @@ abstract contract AbsRollupUserLogic is
             node1.challengeHash ==
                 RollupLib.challengeRootHash(
                     RollupLib.executionHash(
-                        machineStatuses[0],
-                        globalStates[0],
-                        numBlocks[0]
+                        machineStatuses,
+                        globalStates,
+                        numBlocks
                     ),
                     proposedTimes[0],
                     wasmModuleRoots[0]
@@ -333,11 +310,7 @@ abstract contract AbsRollupUserLogic is
         require(
             node2.challengeHash ==
                 RollupLib.challengeRootHash(
-                    RollupLib.executionHash(
-                        machineStatuses[1],
-                        globalStates[1],
-                        numBlocks[1]
-                    ),
+                    secondExecutionHash,
                     proposedTimes[1],
                     wasmModuleRoots[1]
                 ),
@@ -377,9 +350,9 @@ abstract contract AbsRollupUserLogic is
 
     function createChallengeHelper(
         address[2] calldata stakers,
-        MachineStatus[2][2] calldata machineStatuses,
-        GlobalState[2][2] calldata globalStates,
-        uint64[2] calldata numBlocks,
+        MachineStatus[2] calldata machineStatuses,
+        GlobalState[2] calldata globalStates,
+        uint64 numBlocks,
         bytes32[2] calldata wasmModuleRoots,
         uint256 asserterTimeLeft,
         uint256 challengerTimeLeft
@@ -392,9 +365,9 @@ abstract contract AbsRollupUserLogic is
                     address(delayedBridge)
                 ],
                 wasmModuleRoots[0],
-                machineStatuses[0],
-                globalStates[0],
-                numBlocks[0],
+                machineStatuses,
+                globalStates,
+                numBlocks,
                 stakers[0],
                 stakers[1],
                 asserterTimeLeft,
@@ -653,8 +626,12 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
+    function initialize(
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
+    ) external override {
+        require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
+        require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;
     }
 
@@ -699,10 +676,14 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
+    function initialize(
+        RollupLib.Config calldata config,
+        ContractDependencies calldata /* connectedContracts */
+    ) external override {
+        require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");
-        stakeToken = _stakeToken;
+        require(!isMasterCopy, "NO_INIT_MASTER");
+        stakeToken = config.stakeToken;
     }
 
     /**

@@ -5,33 +5,33 @@
 package arbosState
 
 import (
-	"encoding/json"
-	"math/big"
+	"log"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-func GetGenesisAllocFromJSON(encoded []byte) (map[common.Address]core.GenesisAccount, error) {
-	initData := statetransfer.ArbosInitializationInfo{}
-	err := json.Unmarshal(encoded, &initData)
+func InitializeArbosInDatabase(db ethdb.Database, initData *statetransfer.ArbosInitializationInfo) (common.Hash, error) {
+	stateDatabase := state.NewDatabase(db)
+	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
-		return nil, err
+		log.Fatal("failed to init empty statedb", err)
 	}
-	return GetGenesisAllocFromArbos(&initData)
-}
 
-func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (map[common.Address]core.GenesisAccount, error) {
-
-	arbosState, stateDBForArbos := NewArbosMemoryBackedArbOSState()
+	burner := burn.NewSystemBurner(false)
+	arbosState, err := InitializeArbosState(statedb, burner)
+	if err != nil {
+		log.Fatal("failed to open the ArbOS state", err)
+	}
 
 	addrTable := arbosState.AddressTable()
 	addrTableSize, err := addrTable.Size()
 	if err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
 	if addrTableSize != 0 {
 		panic("address table must be empty")
@@ -39,7 +39,7 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 	for i, addr := range initData.AddressTableContents {
 		slot, err := addrTable.Register(addr)
 		if err != nil {
-			return nil, err
+			return common.Hash{}, err
 		}
 		if uint64(i) != slot {
 			panic("address table slot mismatch")
@@ -48,43 +48,32 @@ func GetGenesisAllocFromArbos(initData *statetransfer.ArbosInitializationInfo) (
 
 	err = initializeRetryables(arbosState.RetryableState(), initData.RetryableData, 0)
 	if err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
-
-	genesysAlloc := make(map[common.Address]core.GenesisAccount)
 
 	for _, account := range initData.Accounts {
-		err = initializeArbosAccount(stateDBForArbos, arbosState, account)
+		err = initializeArbosAccount(statedb, arbosState, account)
 		if err != nil {
-			return nil, err
+			return common.Hash{}, err
 		}
-		accountData := core.GenesisAccount{
-			Nonce:   account.Nonce,
-			Balance: account.EthBalance,
-		}
+		statedb.SetBalance(account.Addr, account.EthBalance)
+		statedb.SetNonce(account.Addr, account.Nonce)
 		if account.ContractInfo != nil {
-			accountData.Code = account.ContractInfo.Code
-			accountData.Storage = account.ContractInfo.ContractStorage
+			statedb.SetCode(account.Addr, account.ContractInfo.Code)
+			for k, v := range account.ContractInfo.ContractStorage {
+				statedb.SetState(account.Addr, k, v)
+			}
 		}
-		genesysAlloc[account.Addr] = accountData
 	}
-
-	arbosAccount := arbosState.backingStorage.Account()
-	arbosStorage := make(map[common.Hash]common.Hash)
-	_, err = stateDBForArbos.Commit(false)
+	root, err := statedb.Commit(true)
 	if err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
-	err = stateDBForArbos.ForEachStorage(arbosAccount, func(key common.Hash, value common.Hash) bool { arbosStorage[key] = value; return true })
+	err = stateDatabase.TrieDB().Commit(root, true, nil)
 	if err != nil {
-		return nil, err
+		return common.Hash{}, err
 	}
-	genesysAlloc[arbosAccount] = core.GenesisAccount{
-		Balance: big.NewInt(0),
-		Nonce:   1,
-		Storage: arbosStorage,
-	}
-	return genesysAlloc, nil
+	return root, nil
 }
 
 func initializeRetryables(rs *retryables.RetryableState, data []statetransfer.InitializationDataForRetryable, currentTimestampToUse uint64) error {

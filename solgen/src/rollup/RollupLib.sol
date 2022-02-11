@@ -19,19 +19,21 @@
 pragma solidity ^0.8.0;
 
 import "../challenge/ChallengeLib.sol";
-import "../state/GlobalStates.sol";
+import "../state/GlobalState.sol";
+import "../bridge/ISequencerInbox.sol";
 
 library RollupLib {
+    using GlobalStateLib for GlobalState;
+
     struct Config {
-        uint256 confirmPeriodBlocks;
-        uint256 extraChallengeTimeBlocks;
+        uint64 confirmPeriodBlocks;
+        uint64 extraChallengeTimeBlocks;
         address stakeToken;
         uint256 baseStake;
         bytes32 wasmModuleRoot;
         address owner;
         uint256 chainId;
-        // maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds
-        uint256[4] sequencerInboxParams;
+        ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
     }
 
     struct ExecutionState {
@@ -40,7 +42,7 @@ library RollupLib {
         MachineStatus machineStatus;
     }
 
-    function stateHash(ExecutionState memory execState)
+    function stateHash(ExecutionState calldata execState)
         internal
         pure
         returns (bytes32)
@@ -48,8 +50,25 @@ library RollupLib {
         return
             keccak256(
                 abi.encodePacked(
-                    GlobalStates.hash(execState.globalState),
-                    execState.inboxMaxCount
+                    execState.globalState.hash(),
+                    execState.inboxMaxCount,
+                    execState.machineStatus
+                )
+            );
+    }
+
+    /// @dev same as stateHash but expects execState in memory instead of calldata
+    function stateHashMem(ExecutionState memory execState)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return
+            keccak256(
+                abi.encodePacked(
+                    execState.globalState.hash(),
+                    execState.inboxMaxCount,
+                    execState.machineStatus
                 )
             );
     }
@@ -60,48 +79,7 @@ library RollupLib {
         uint64 numBlocks;
     }
 
-    function decodeExecutionState(
-        bytes32[2] memory bytes32Fields,
-        uint64[3] memory intFields,
-        uint256 inboxMaxCount
-    ) internal pure returns (ExecutionState memory) {
-        require(intFields[2] == uint64(MachineStatus.FINISHED) || intFields[2] == uint64(MachineStatus.ERRORED), "BAD_STATUS");
-        MachineStatus machineStatus = MachineStatus(intFields[2]);
-        uint64[2] memory gsIntFields;
-        gsIntFields[0] = intFields[0];
-        gsIntFields[1] = intFields[1];
-        return
-            ExecutionState(
-                GlobalState(bytes32Fields, gsIntFields),
-                inboxMaxCount,
-                machineStatus
-            );
-    }
-
-    function decodeAssertion(
-        bytes32[2][2] memory bytes32Fields,
-        uint64[3][2] memory intFields,
-        uint256 beforeInboxMaxCount,
-        uint256 inboxMaxCount,
-        uint64 numBlocks
-    ) internal pure returns (Assertion memory) {
-        return
-            Assertion(
-                decodeExecutionState(
-                    bytes32Fields[0],
-                    intFields[0],
-                    beforeInboxMaxCount
-                ),
-                decodeExecutionState(
-                    bytes32Fields[1],
-                    intFields[1],
-                    inboxMaxCount
-                ),
-                numBlocks
-            );
-    }
-
-    function executionHash(Assertion memory assertion)
+    function executionHash(Assertion calldata assertion)
         internal
         pure
         returns (bytes32)
@@ -112,6 +90,7 @@ library RollupLib {
         GlobalState[2] memory globalStates;
         globalStates[0] = assertion.beforeState.globalState;
         globalStates[1] = assertion.afterState.globalState;
+        // TODO: benchmark how much this abstraction adds of gas overhead
         return executionHash(statuses, globalStates, assertion.numBlocks);
     }
 
@@ -123,18 +102,18 @@ library RollupLib {
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(
             statuses[0],
-            GlobalStates.hash(globalStates[0])
+            globalStates[0].hash()
         );
         segments[1] = ChallengeLib.blockStateHash(
             statuses[1],
-            GlobalStates.hash(globalStates[1])
+            globalStates[1].hash()
         );
         return
             ChallengeLib.hashChallengeState(0, numBlocks, segments);
     }
 
     function challengeRoot(
-        Assertion memory assertion,
+        Assertion calldata /* assertion */,
         bytes32 assertionExecHash,
         uint256 blockProposed,
         bytes32 wasmModuleRoot
@@ -162,15 +141,15 @@ library RollupLib {
             );
     }
 
-    function confirmHash(Assertion memory assertion)
+    function confirmHash(Assertion calldata assertion)
         internal
         pure
         returns (bytes32)
     {
         return
             confirmHash(
-                GlobalStates.getBlockHash(assertion.afterState.globalState),
-                GlobalStates.getSendRoot(assertion.afterState.globalState)
+                assertion.afterState.globalState.getBlockHash(),
+                assertion.afterState.globalState.getSendRoot()
             );
     }
 

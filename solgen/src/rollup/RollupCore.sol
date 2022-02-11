@@ -25,7 +25,6 @@ import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
-import "./IRollupLogic.sol";
 import "./IRollupCore.sol";
 
 import "../libraries/Cloneable.sol";
@@ -38,6 +37,7 @@ import "../bridge/IOutbox.sol";
 
 abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     using NodeLib for Node;
+    using GlobalStateLib for GlobalState;
 
     // Rollup Config
     uint64 public confirmPeriodBlocks;
@@ -46,19 +46,14 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     uint256 public baseStake;
     bytes32 public wasmModuleRoot;
 
-    // Bridge is an IInbox and IOutbox
     IBridge public delayedBridge;
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
-    address public owner;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
-
-    IRollupAdmin public adminLogic;
-    IRollupUser public userLogic;
 
     mapping(address => bool) public isValidator;
 
@@ -82,7 +77,6 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     uint64 private _latestNodeCreated;
     uint64 private _lastStakeBlock;
     mapping(uint64 => Node) private _nodes;
-    mapping(uint64 => bytes32) private _nodeHashes;
     mapping(uint64 => mapping(address => bool)) private _nodeStakers;
 
     address[] private _stakerList;
@@ -290,22 +284,14 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     /**
      * @notice React to a new node being created by storing it an incrementing the latest node counter
      * @param node Node that was newly created
-     * @param nodeHash The hash of said node
      */
-    function nodeCreated(Node memory node, bytes32 nodeHash) internal {
+    function nodeCreated(Node memory node) internal {
         _latestNodeCreated++;
         _nodes[_latestNodeCreated] = node;
-        _nodeHashes[_latestNodeCreated] = nodeHash;
-    }
-
-    /// @return Node hash as of this node number
-    function getNodeHash(uint64 index) public view override returns (bytes32) {
-        return _nodeHashes[index];
     }
 
     /// @notice Reject the next unresolved node
     function _rejectNextNode() internal {
-        destroyNode(_firstUnresolvedNode);
         _firstUnresolvedNode++;
     }
 
@@ -324,7 +310,6 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         // trusted external call to outbox
         outbox.updateSendRoot(sendRoot, blockHash);
 
-        destroyNode(_latestConfirmed);
         _latestConfirmed = nodeNum;
         _firstUnresolvedNode = nodeNum + 1;
 
@@ -337,10 +322,9 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
      * @param stakerAddress Address of the new staker
      * @param depositAmount Stake amount of the new staker
      */
-    function createNewStake(
-        address stakerAddress,
-        uint256 depositAmount
-    ) internal {
+    function createNewStake(address stakerAddress, uint256 depositAmount)
+        internal
+    {
         uint64 stakerIndex = uint64(_stakerList.length);
         _stakerList.push(stakerAddress);
         _stakerMap[stakerAddress] = Staker(
@@ -516,7 +500,9 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         staker.latestStakedNode = nodeNum;
         if (newStakerCount == 1) {
             Node storage parent = getNodeStorage(nodeNum);
-            parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
+            parent.newChildConfirmDeadline(
+                uint64(block.number) + confirmPeriodBlocks
+            );
         }
     }
 
@@ -562,15 +548,6 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         delete _stakerMap[stakerAddress];
     }
 
-    /**
-     * @notice Destroy the given node and clear out the data
-     * @param nodeNum Index of the node to remove
-     */
-    function destroyNode(uint64 nodeNum) internal {
-        delete _nodes[nodeNum];
-        delete _nodeHashes[nodeNum];
-    }
-
     function max(uint256 a, uint256 b) internal pure returns (uint256) {
         return a > b ? a : b;
     }
@@ -586,22 +563,24 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         bytes32 sequencerBatchAcc;
     }
 
-    uint8 internal constant MAX_SEND_COUNT = 100;
-
     function createNewNode(
-        RollupLib.Assertion memory assertion,
-        bytes32[2][2] calldata assertionBytes32Fields,
-        uint64[3][2] calldata assertionIntFields,
+        RollupLib.Assertion calldata assertion,
         uint64 prevNodeNum,
-        bytes32 expectedNodeHash,
-        uint64 numBlocks
+        bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
+        require(
+            assertion.afterState.machineStatus == MachineStatus.FINISHED ||
+                assertion.afterState.machineStatus == MachineStatus.ERRORED,
+            "BAD_AFTER_STATUS"
+        );
+
         StakeOnNewNodeFrame memory memoryFrame;
         {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
-            // TODO: don't query twice
             memoryFrame.currentInboxSize = sequencerBridge.batchCount();
+            // ensure that the assertion specified the correct inbox size
+            require(assertion.afterState.inboxMaxCount == memoryFrame.currentInboxSize, "WRONG_INBOX_COUNT");
 
             // Make sure the previous state is correct against the node being built on
             require(
@@ -611,47 +590,67 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             );
 
             // Ensure that the assertion doesn't read past the end of the current inbox
-            uint256 afterInboxCount = GlobalStates.getInboxPosition(
-                assertion.afterState.globalState
+            uint256 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
+            require(
+                afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
+                "INBOX_BACKWARDS"
             );
+            if (
+                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
+                    assertion.afterState.globalState.getPositionInMessage() > 0
+            ) {
+                // The current inbox message was read
+                afterInboxCount++;
+            }
             require(
                 afterInboxCount <= memoryFrame.currentInboxSize,
                 "INBOX_PAST_END"
             );
-            // Ensure that the assertion ends at a batch boundary
-            require(
-                GlobalStates.getPositionInMessage(
-                    assertion.afterState.globalState
-                ) == 0,
-                "NOT_BATCH_BOUNDARY"
-            );
             // This gives replay protection against the state of the inbox
-            memoryFrame.sequencerBatchAcc = sequencerBridge.inboxAccs(
-                afterInboxCount - 1
-            );
+            if (afterInboxCount > 0) {
+                memoryFrame.sequencerBatchAcc = sequencerBridge.inboxAccs(
+                    afterInboxCount - 1
+                );
+            }
         }
 
         {
             memoryFrame.executionHash = RollupLib.executionHash(assertion);
 
-            memoryFrame.deadlineBlock = uint64(block.number) + confirmPeriodBlocks;
+            memoryFrame.deadlineBlock =
+                uint64(block.number) +
+                confirmPeriodBlocks;
 
             memoryFrame.hasSibling = memoryFrame.prevNode.latestChildNumber > 0;
             // here we don't use ternacy operator to remain compatible with slither
             if (memoryFrame.hasSibling) {
-                memoryFrame.lastHash = getNodeHash(
+                memoryFrame.lastHash = getNodeStorage(
                     memoryFrame.prevNode.latestChildNumber
-                );
+                ).nodeHash;
             } else {
-                memoryFrame.lastHash = getNodeHash(prevNodeNum);
+                memoryFrame.lastHash = memoryFrame.prevNode.nodeHash;
             }
+
+            newNodeHash = RollupLib.nodeHash(
+                memoryFrame.hasSibling,
+                memoryFrame.lastHash,
+                memoryFrame.executionHash,
+                memoryFrame.sequencerBatchAcc
+            );
+            require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
             memoryFrame.node = NodeLib.initialize(
                 RollupLib.stateHash(assertion.afterState),
-                RollupLib.challengeRoot(assertion, memoryFrame.executionHash, block.number, wasmModuleRoot),
+                RollupLib.challengeRoot(
+                    assertion,
+                    memoryFrame.executionHash,
+                    block.number,
+                    wasmModuleRoot
+                ),
                 RollupLib.confirmHash(assertion),
                 prevNodeNum,
-                memoryFrame.deadlineBlock
+                memoryFrame.deadlineBlock,
+                newNodeHash
             );
         }
 
@@ -663,15 +662,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             Node storage prevNode = getNodeStorage(prevNodeNum);
             prevNode.childCreated(nodeNum);
 
-            newNodeHash = RollupLib.nodeHash(
-                memoryFrame.hasSibling,
-                memoryFrame.lastHash,
-                memoryFrame.executionHash,
-                memoryFrame.sequencerBatchAcc
-            );
-            require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
-
-            nodeCreated(memoryFrame.node, newNodeHash);
+            nodeCreated(memoryFrame.node);
             rollupEventBridge.nodeCreated(
                 nodeNum,
                 prevNodeNum,
@@ -682,14 +673,10 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
 
         emit NodeCreated(
             latestNodeCreated(),
-            getNodeHash(prevNodeNum),
+            memoryFrame.prevNode.nodeHash,
             newNodeHash,
-            memoryFrame.executionHash,
-            memoryFrame.currentInboxSize,
+            assertion,
             memoryFrame.sequencerBatchAcc,
-            assertionBytes32Fields,
-            assertionIntFields,
-            numBlocks,
             wasmModuleRoot
         );
 

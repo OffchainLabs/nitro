@@ -16,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
 
@@ -420,7 +419,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		info.CanProgress = false
 		info.LatestStakedNode = 0
 		info.LatestStakedNodeHash = action.hash
-		_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.hash, action.assertion.BytesFields(), action.assertion.IntFields(), action.prevInboxMaxCount, action.assertion.NumBlocks)
+		_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash)
 		return err
 	case existingNodeAction:
 		info.LatestStakedNode = action.number
@@ -509,9 +508,10 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 			s.builder.Auth(ctx),
 			[2]common.Address{staker1, staker2},
 			[2]uint64{node1, node2},
-			[2][2]uint8{node1Info.MachineStatuses(), node2Info.MachineStatuses()},
-			[2][2]rollupgen.GlobalState{node1Info.GlobalStates(), node2Info.GlobalStates()},
-			[2]uint64{node1Info.Assertion.NumBlocks, node2Info.Assertion.NumBlocks},
+			node1Info.MachineStatuses(),
+			node1Info.GlobalStates(),
+			node1Info.Assertion.NumBlocks,
+			node2Info.Assertion.ExecutionHash(),
 			[2]*big.Int{new(big.Int).SetUint64(node1Info.BlockProposed), new(big.Int).SetUint64(node2Info.BlockProposed)},
 			[2][32]byte{node1Info.WasmModuleRoot, node2Info.WasmModuleRoot},
 		)

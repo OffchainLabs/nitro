@@ -19,6 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "./Node.sol";
+import "./RollupLib.sol";
 
 import "../challenge/IChallenge.sol";
 import "../osp/IOneStepProofEntry.sol";
@@ -35,18 +36,14 @@ interface IRollupCore {
             bool
         );
 
-    event RollupCreated(bytes32 machineHash);
+    event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event NodeCreated(
         uint64 indexed nodeNum,
         bytes32 indexed parentNodeHash,
-        bytes32 nodeHash,
-        bytes32 executionHash,
-        uint256 inboxMaxCount,
+        bytes32 indexed nodeHash,
+        RollupLib.Assertion assertion,
         bytes32 afterInboxBatchAcc,
-        bytes32[2][2] assertionBytes32Fields,
-        uint64[3][2] assertionIntFields,
-        uint64 numBlocks,
         bytes32 wasmModuleRoot
     );
 
@@ -161,7 +158,4 @@ interface IRollupCore {
 
     /// @return Number of active stakers currently staked
     function stakerCount() external view returns (uint64);
-
-    /// @return Node hash as of this node number
-    function getNodeHash(uint64 index) external view returns (bytes32);
 }

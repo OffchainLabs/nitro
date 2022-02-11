@@ -20,7 +20,8 @@ pragma solidity ^0.8.0;
 
 pragma experimental ABIEncoderV2;
 
-import "../rollup/Rollup.sol";
+import "../rollup/IRollupCore.sol";
+import "../rollup/IRollupLogic.sol";
 import "../challenge/IChallenge.sol";
 
 contract ValidatorUtils {
@@ -39,7 +40,7 @@ contract ValidatorUtils {
         INCOMPLETE
     }
 
-    function stakerInfo(Rollup rollup, address stakerAddress)
+    function stakerInfo(IRollupCore rollup, address stakerAddress)
         external
         view
         returns (
@@ -58,7 +59,7 @@ contract ValidatorUtils {
     }
 
     function findStakerConflict(
-        Rollup rollup,
+        IRollupCore rollup,
         address staker1,
         address staker2,
         uint256 maxDepth
@@ -76,7 +77,7 @@ contract ValidatorUtils {
         return findNodeConflict(rollup, staker1NodeNum, staker2NodeNum, maxDepth);
     }
 
-    function checkDecidableNextNode(Rollup rollup) external view returns (ConfirmType) {
+    function checkDecidableNextNode(IRollupCore rollup) external view returns (ConfirmType) {
         try ValidatorUtils(address(this)).requireConfirmable(rollup) {
             return ConfirmType.VALID;
         } catch {}
@@ -88,7 +89,7 @@ contract ValidatorUtils {
         }
     }
 
-    function requireRejectable(Rollup rollup) external view returns (bool) {
+    function requireRejectable(IRollupCore rollup) external view returns (bool) {
         IRollupUser(address(rollup)).requireUnresolvedExists();
         uint64 firstUnresolvedNode = rollup.firstUnresolvedNode();
         Node memory node = rollup.getNode(firstUnresolvedNode);
@@ -107,7 +108,7 @@ contract ValidatorUtils {
         return inOrder;
     }
 
-    function requireConfirmable(Rollup rollup) external view {
+    function requireConfirmable(IRollupCore rollup) external view {
         IRollupUser(address(rollup)).requireUnresolvedExists();
 
         uint256 stakerCount = rollup.stakerCount();
@@ -130,7 +131,7 @@ contract ValidatorUtils {
         );
     }
 
-    function refundableStakers(Rollup rollup) external view returns (address[] memory) {
+    function refundableStakers(IRollupCore rollup) external view returns (address[] memory) {
         uint256 stakerCount = rollup.stakerCount();
         address[] memory stakers = new address[](stakerCount);
         uint256 latestConfirmed = rollup.latestConfirmed();
@@ -151,16 +152,16 @@ contract ValidatorUtils {
         return stakers;
     }
 
-    function latestStaked(Rollup rollup, address staker) external view returns (uint64, bytes32) {
+    function latestStaked(IRollupCore rollup, address staker) external view returns (uint64, bytes32) {
         uint64 node = rollup.latestStakedNode(staker);
         if (node == 0) {
             node = rollup.latestConfirmed();
         }
-        bytes32 acc = rollup.getNodeHash(node);
+        bytes32 acc = rollup.getNode(node).nodeHash;
         return (node, acc);
     }
 
-    function stakedNodes(Rollup rollup, address staker) external view returns (uint64[] memory) {
+    function stakedNodes(IRollupCore rollup, address staker) external view returns (uint64[] memory) {
         uint64[] memory nodes = new uint64[](100000);
         uint256 index = 0;
         for (uint64 i = rollup.latestConfirmed(); i <= rollup.latestNodeCreated(); i++) {
@@ -177,7 +178,7 @@ contract ValidatorUtils {
     }
 
     function findNodeConflict(
-        Rollup rollup,
+        IRollupCore rollup,
         uint64 node1,
         uint64 node2,
         uint256 maxDepth
@@ -216,7 +217,7 @@ contract ValidatorUtils {
     }
 
     function getStakers(
-        Rollup rollup,
+        IRollupCore rollup,
         uint64 startIndex,
         uint64 max
     ) public view returns (address[] memory, bool hasMore) {
@@ -234,7 +235,7 @@ contract ValidatorUtils {
     }
 
     function timedOutChallenges(
-        Rollup rollup,
+        IRollupCore rollup,
         uint64 startIndex,
         uint64 max
     ) external view returns (IChallenge[] memory, bool hasMore) {
@@ -264,7 +265,7 @@ contract ValidatorUtils {
     }
 
     // Worst case runtime of O(depth), as it terminates if it switches paths.
-    function areUnresolvedNodesLinear(Rollup rollup) external view returns (bool) {
+    function areUnresolvedNodesLinear(IRollupCore rollup) external view returns (bool) {
         uint256 end = rollup.latestNodeCreated();
         for (uint64 i = rollup.firstUnresolvedNode(); i <= end; i++) {
             if (i > 0 && rollup.getNode(i).prevNum != i - 1) {

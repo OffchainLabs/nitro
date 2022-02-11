@@ -253,3 +253,11 @@ func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
 func (state *ArbosState) SetNetworkFeeAccount(account common.Address) error {
 	return state.networkFeeAccount.Set(account)
 }
+
+func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
+	return state.backingStorage.Keccak(data...)
+}
+
+func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
+	return state.backingStorage.KeccakHash(data...)
+}

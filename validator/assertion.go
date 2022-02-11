@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 )
 
@@ -26,42 +27,30 @@ const (
 type ExecutionState struct {
 	GlobalState   GoGlobalState
 	MachineStatus MachineStatus
+	InboxMaxCount *big.Int
 }
 
-func newExecutionStateFromFields(a [2][32]byte, b [3]uint64) *ExecutionState {
-	if b[2] >= (1 << 8) {
-		panic(fmt.Sprintf("invalid machine status %v", b[2]))
-	}
+func newExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
 	return &ExecutionState{
-		GlobalState: GoGlobalState{
-			BlockHash:  a[0],
-			SendRoot:   a[1],
-			Batch:      b[0],
-			PosInBatch: b[1],
-		},
-		MachineStatus: MachineStatus(uint8(b[2])),
+		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
+		MachineStatus: MachineStatus(eth.MachineStatus),
+		InboxMaxCount: eth.InboxMaxCount,
 	}
 }
 
-func NewAssertionFromFields(a [2][2][32]byte, b [2][3]uint64) *Assertion {
+func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion {
 	return &Assertion{
-		BeforeState: newExecutionStateFromFields(a[0], b[0]),
-		AfterState:  newExecutionStateFromFields(a[1], b[1]),
+		BeforeState: newExecutionStateFromSolidity(assertion.BeforeState),
+		AfterState:  newExecutionStateFromSolidity(assertion.AfterState),
+		NumBlocks:   assertion.NumBlocks,
 	}
 }
 
-func (s *ExecutionState) ByteFields() [2][32]byte {
-	return [2][32]byte{
-		s.GlobalState.BlockHash,
-		s.GlobalState.SendRoot,
-	}
-}
-
-func (s *ExecutionState) IntFields() [3]uint64 {
-	return [3]uint64{
-		s.GlobalState.Batch,
-		s.GlobalState.PosInBatch,
-		uint64(s.MachineStatus),
+func (s *ExecutionState) AsSolidityStruct() rollupgen.RollupLibExecutionState {
+	return rollupgen.RollupLibExecutionState{
+		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
+		InboxMaxCount: s.InboxMaxCount,
+		MachineStatus: uint8(s.MachineStatus),
 	}
 }
 
@@ -77,17 +66,11 @@ func (a *ExecutionState) BlockStateHash() common.Hash {
 	}
 }
 
-func (a *Assertion) BytesFields() [2][2][32]byte {
-	return [2][2][32]byte{
-		a.BeforeState.ByteFields(),
-		a.AfterState.ByteFields(),
-	}
-}
-
-func (a *Assertion) IntFields() [2][3]uint64 {
-	return [2][3]uint64{
-		a.BeforeState.IntFields(),
-		a.AfterState.IntFields(),
+func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
+	return rollupgen.RollupLibAssertion{
+		BeforeState: a.BeforeState.AsSolidityStruct(),
+		AfterState:  a.AfterState.AsSolidityStruct(),
+		NumBlocks:   a.NumBlocks,
 	}
 }
 
@@ -122,11 +105,6 @@ func (a *Assertion) ExecutionHash() common.Hash {
 	)
 }
 
-type NodeState struct {
-	InboxMaxCount *big.Int
-	*ExecutionState
-}
-
 type Assertion struct {
 	BeforeState *ExecutionState
 	AfterState  *ExecutionState
@@ -137,17 +115,13 @@ type NodeInfo struct {
 	NodeNum            uint64
 	BlockProposed      uint64
 	Assertion          *Assertion
-	InboxMaxCount      *big.Int
 	AfterInboxBatchAcc common.Hash
 	NodeHash           common.Hash
 	WasmModuleRoot     common.Hash
 }
 
-func (n *NodeInfo) AfterState() *NodeState {
-	return &NodeState{
-		InboxMaxCount:  n.InboxMaxCount,
-		ExecutionState: n.Assertion.AfterState,
-	}
+func (n *NodeInfo) AfterState() *ExecutionState {
+	return n.Assertion.AfterState
 }
 
 func (n *NodeInfo) MachineStatuses() [2]uint8 {

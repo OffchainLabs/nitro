@@ -7,9 +7,10 @@ package blsSignatures
 import (
 	cryptorand "crypto/rand"
 	"errors"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
-	"math/big"
 )
 
 type blsStateType struct {
@@ -199,6 +200,9 @@ func PublicKeyToBytes(pub PublicKey) []byte {
 }
 
 func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
+	if len(in) == 0 {
+		return PublicKey{}, errors.New("tried to deserialize empty public key")
+	}
 	proofLen := int(in[0])
 	if proofLen == 0 {
 		if !trustedSource {
