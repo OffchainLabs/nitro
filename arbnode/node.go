@@ -197,7 +197,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	}
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		rollupgen.RollupLibConfig{
+		rollupgen.Config{
 			ConfirmPeriodBlocks:            confirmPeriodBlocks,
 			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
 			StakeToken:                     common.Address{},
