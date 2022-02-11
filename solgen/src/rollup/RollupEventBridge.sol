@@ -18,7 +18,6 @@
 
 pragma solidity ^0.8.0;
 
-import "./Rollup.sol";
 import "./IRollupLogic.sol";
 
 import "../bridge/IBridge.sol";

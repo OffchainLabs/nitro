@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*
- * Copyright 2019-2020, Offchain Labs, Inc.
+ * Copyright 2021, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,22 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.6.11;
+pragma solidity ^0.8.0;
 
-import "./ICloneable.sol";
+import "@openzeppelin/contracts/proxy/Proxy.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "../rollup/AdminAwareProxy.sol";
+import "../rollup/RollupCore.sol";
 
-contract Cloneable is ICloneable {
-    string private constant NOT_CLONE = "NOT_CLONE";
-
-    bool private isMasterCopy;
-
-    constructor() public {
-        isMasterCopy = true;
+contract ProxyTesterLogic is AAPStorage, RollupCore {
+    function initialize(
+        RollupLib.Config calldata config,
+        ContractDependencies calldata /* connectedContracts */
+    ) external pure override {
+        require(config.owner != address(0), "OWNER_IS_ZERO");
     }
 
-    function isMaster() external view override returns (bool) {
-        return isMasterCopy;
-    }
-
-    function safeSelfDestruct(address payable dest) internal {
-        require(!isMasterCopy, NOT_CLONE);
-        selfdestruct(dest);
+    function setOwner(address newOwner) external {
+        owner = newOwner;
     }
 }

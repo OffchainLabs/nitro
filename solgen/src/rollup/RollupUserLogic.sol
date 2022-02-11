@@ -2,18 +2,18 @@
 
 pragma solidity ^0.8.0;
 
-import "./Rollup.sol";
-import "./IRollupLogic.sol";
+import { AAPStorage } from  "./AdminAwareProxy.sol";
+import { IRollupUser } from "./IRollupLogic.sol";
+import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
+    AAPStorage,
     RollupCore,
     IRollupUser,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
-
-    function initialize(address _stakeToken) public virtual override;
 
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
@@ -165,14 +165,12 @@ abstract contract AbsRollupUserLogic is
      * @param expectedNodeHash The hash of the node being created (protects against reorgs)
      */
     function stakeOnNewNode(
-        RollupLib.Assertion memory assertion,
+        RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
-        // Set the assertion's inboxMaxCount
-        assertion.afterState.inboxMaxCount = sequencerBridge.batchCount();
 
         {
             uint256 timeSinceLastNode = block.number -
@@ -623,8 +621,12 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
+    function initialize(
+        RollupLib.Config calldata config,
+        ContractDependencies calldata connectedContracts
+    ) external override {
+        require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
+        require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;
     }
 
@@ -669,10 +671,14 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) public override {
-        require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
+    function initialize(
+        RollupLib.Config calldata config,
+        ContractDependencies calldata /* connectedContracts */
+    ) external override {
+        require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");
-        stakeToken = _stakeToken;
+        require(!isMasterCopy, "NO_INIT_MASTER");
+        stakeToken = config.stakeToken;
     }
 
     /**

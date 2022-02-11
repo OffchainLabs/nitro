@@ -8,7 +8,7 @@ pragma solidity ^0.8.0;
 import "../bridge/IBridge.sol";
 import "../bridge/Messages.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../utils/IGasRefunder.sol";
+import "../libraries/IGasRefunder.sol";
 
 contract SequencerInboxStub is ISequencerInbox {
     bytes32[] public override inboxAccs;
