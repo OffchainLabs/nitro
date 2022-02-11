@@ -175,12 +175,14 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	supportedIndices := map[string]struct{}{
 		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
 		"address": {},
-		"bytes32": {},
 		"bool":    {},
 	}
 	for i := 8; i <= 256; i += 8 {
 		supportedIndices["int"+strconv.Itoa(i)] = struct{}{}
 		supportedIndices["uint"+strconv.Itoa(i)] = struct{}{}
+	}
+	for i := 1; i <= 32; i += 1 {
+		supportedIndices["bytes"+strconv.Itoa(i)] = struct{}{}
 	}
 
 	for _, event := range source.Events {
@@ -401,9 +403,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
-	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
-	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
-
 	eventCtx := func(gasLimit uint64, err error) *context {
 		if err != nil {
 			glog.Error("call to event's GasCost field failed", "err", err)
@@ -431,6 +430,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
+
+	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
+	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
+		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
+		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
+	}
+	_, ArbOwner := makePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+
+	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
+	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
 }
