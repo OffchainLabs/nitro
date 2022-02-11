@@ -25,7 +25,6 @@ import "./Node.sol";
 import "./IRollupCore.sol";
 import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
-import "./IRollupLogic.sol";
 import "./IRollupCore.sol";
 
 import "../libraries/Cloneable.sol";
@@ -52,13 +51,9 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
-    address public owner;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
-
-    IRollupAdmin public adminLogic;
-    IRollupUser public userLogic;
 
     mapping(address => bool) public isValidator;
 
@@ -569,7 +564,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     }
 
     function createNewNode(
-        RollupLib.Assertion memory assertion,
+        RollupLib.Assertion calldata assertion,
         uint64 prevNodeNum,
         bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
@@ -583,8 +578,9 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
-            // TODO: don't query twice
             memoryFrame.currentInboxSize = sequencerBridge.batchCount();
+            // ensure that the assertion specified the correct inbox size
+            require(assertion.afterState.inboxMaxCount == memoryFrame.currentInboxSize, "WRONG_INBOX_COUNT");
 
             // Make sure the previous state is correct against the node being built on
             require(
