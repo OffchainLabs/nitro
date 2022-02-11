@@ -19,14 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "./AdminFallbackProxy.sol";
-import { Config, ContractDependencies } from "../rollup/RollupLib.sol";
-
-interface IArbitrumInit {
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external;
-}
+import "../rollup/IRollupLogic.sol";
 
 contract ArbitrumProxy is AdminFallbackProxy {
     using Address for address;
@@ -39,20 +32,12 @@ contract ArbitrumProxy is AdminFallbackProxy {
         ContractDependencies memory connectedContracts
     ) AdminFallbackProxy(
         address(connectedContracts.rollupUserLogic),
+        abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
         address(connectedContracts.rollupAdminLogic),
+        abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
         config.owner
     ) {
         require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
         require(address(connectedContracts.rollupUserLogic).isContract(), "USER_LOGIC_NOT_CONTRACT");
-
-        (bool successAdmin, ) = address(connectedContracts.rollupAdminLogic).delegatecall(
-            abi.encodeWithSelector(IArbitrumInit.initialize.selector, config, connectedContracts)
-        );
-        require(successAdmin, "FAIL_INIT_ADMIN_LOGIC");
-
-        (bool successUser, ) = address(connectedContracts.rollupUserLogic).delegatecall(
-            abi.encodeWithSelector(IArbitrumInit.initialize.selector, config, connectedContracts)
-        );
-        require(successUser, "FAIL_INIT_USER_LOGIC");
     }
 }

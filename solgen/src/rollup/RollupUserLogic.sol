@@ -2,14 +2,12 @@
 
 pragma solidity ^0.8.0;
 
-import { IArbitrumInit } from  "../libraries/ArbitrumProxy.sol";
 import { IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
     IRollupUser,
-    IArbitrumInit,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
@@ -621,11 +619,8 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external override {
-        require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
+    function initialize(address _stakeToken) external override {
+        require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;
     }
@@ -671,14 +666,11 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata /* connectedContracts */
-    ) external override {
-        require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
+    function initialize(address _stakeToken) external override {
+        require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");
         require(!isMasterCopy, "NO_INIT_MASTER");
-        stakeToken = config.stakeToken;
+        stakeToken = _stakeToken;
     }
 
     /**

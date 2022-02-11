@@ -24,6 +24,7 @@ import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 
 library AFPHelpers {
+    // TODO: hardcode result since hashes don't get precomputed during compile time
     bytes32 internal constant _ADMIN_LOGIC_SLOT = bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1);
     bytes32 internal constant _USER_LOGIC_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
     bytes32 internal constant _ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
@@ -49,17 +50,15 @@ contract AdminFallbackProxy is TransparentUpgradeableProxy {
     // TODO: will etherscan detect this as a proxy?
     bytes32 internal constant _ADMIN_LOGIC_SLOT = bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1);
 
-    function _setAdminFallbackLogic(address newAdminFallbackLogic) internal {
-        StorageSlot.getAddressSlot(_ADMIN_LOGIC_SLOT).value = newAdminFallbackLogic;
-    }
-
     constructor(
         address userLogic,
+        bytes memory userData,
         address adminLogic,
+        bytes memory adminData,
         address adminAddr
-    ) payable TransparentUpgradeableProxy(userLogic, adminAddr, "0x") {
+    ) payable TransparentUpgradeableProxy(userLogic, adminAddr, userData) {
         assert(_ADMIN_LOGIC_SLOT == bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1));
-        _setAdminFallbackLogic(adminLogic);
+        _upgradeAdminFallbackToAndCall(adminLogic, adminData, false);
     }
 
     /**
@@ -93,7 +92,7 @@ contract AdminFallbackProxy is TransparentUpgradeableProxy {
     event AdminFallbackUpgraded(address indexed implementation);
 
     function _upgradeAdminFallbackTo(address newImplementation) internal {
-        _setAdminFallbackLogic(newImplementation);
+        StorageSlot.getAddressSlot(_ADMIN_LOGIC_SLOT).value = newImplementation;
         emit AdminFallbackUpgraded(newImplementation);
     }
 

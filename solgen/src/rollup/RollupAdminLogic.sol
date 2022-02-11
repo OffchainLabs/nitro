@@ -7,10 +7,9 @@ import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallenge.sol";
-import { IArbitrumInit } from  "../libraries/ArbitrumProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract RollupAdminLogic is RollupCore, IRollupAdmin, IArbitrumInit {
+contract RollupAdminLogic is RollupCore, IRollupAdmin {
     function isInit() internal view returns (bool) {
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
