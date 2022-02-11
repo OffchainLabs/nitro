@@ -23,15 +23,15 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "../rollup/AdminAwareProxy.sol";
 import "../rollup/RollupCore.sol";
 
-contract ProxyTesterLogic is AAPStorage, RollupCore {
+contract ProxyTesterLogic is RollupCore {
     function initialize(
         RollupLib.Config calldata config,
         ContractDependencies calldata /* connectedContracts */
-    ) external pure override {
+    ) external pure {
         require(config.owner != address(0), "OWNER_IS_ZERO");
     }
 
     function setOwner(address newOwner) external {
-        owner = newOwner;
+        AAPLib.setAAPOwner(newOwner);
     }
 }

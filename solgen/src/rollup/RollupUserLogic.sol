@@ -2,12 +2,11 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPStorage } from  "./AdminAwareProxy.sol";
+import { AAPLib, ContractDependencies } from  "./AdminAwareProxy.sol";
 import { IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
-    AAPStorage,
     RollupCore,
     IRollupUser,
     IChallengeResultReceiver
@@ -404,8 +403,9 @@ abstract contract AbsRollupUserLogic is
         increaseStakeBy(winningStaker, amountWon);
         remainingLoserStake -= amountWon;
         clearChallenge(winningStaker);
+        // TODO: can we credit this half to someone other than the owner so the user logic doesn't need to touch the AAP?
         // Credit the other half to the owner address
-        increaseWithdrawableFunds(owner, remainingLoserStake);
+        increaseWithdrawableFunds(AAPLib.getAAPOwner(), remainingLoserStake);
         // Turning loser into zombie renders the loser's remaining stake inaccessible
         turnIntoZombie(losingStaker);
     }
@@ -624,7 +624,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
         RollupLib.Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external override {
+    ) external {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;
@@ -674,7 +674,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     function initialize(
         RollupLib.Config calldata config,
         ContractDependencies calldata /* connectedContracts */
-    ) external override {
+    ) external {
         require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");
         require(!isMasterCopy, "NO_INIT_MASTER");
