@@ -25,7 +25,7 @@ import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import "../libraries/Cloneable.sol";
 import "../libraries/ProxyUtil.sol";
-import { Config, ContractDependencies } from "./RollupLib.sol";
+import "./RollupLib.sol";
 
 
 library AAPLib {
@@ -88,8 +88,8 @@ contract AdminAwareProxy is Cloneable, Proxy {
     // connectedContracts = [delayedBridge, sequencerInbox, outbox, rollupEventBridge, blockChallengeFactory]
     // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
+        RollupLib.Config calldata config,
+        RollupLib.ContractDependencies calldata connectedContracts
     ) external {
         // AAP expects to be deployed behind a TransparentUpgradeableProxy
         require(!isMasterCopy, "NO_INIT_MASTER");

@@ -28,30 +28,30 @@ import "../bridge/IOutbox.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupLogic.sol";
 
-struct Config {
-    uint64 confirmPeriodBlocks;
-    uint64 extraChallengeTimeBlocks;
-    address stakeToken;
-    uint256 baseStake;
-    bytes32 wasmModuleRoot;
-    address owner;
-    uint256 chainId;
-    ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
-}
-
-struct ContractDependencies {
-    IBridge delayedBridge;
-    ISequencerInbox sequencerInbox;
-    IOutbox outbox;
-    RollupEventBridge rollupEventBridge;
-    IBlockChallengeFactory blockChallengeFactory;
-
-    IRollupAdmin rollupAdminLogic;
-    IRollupUser rollupUserLogic;
-}
-
 library RollupLib {
     using GlobalStateLib for GlobalState;
+
+    struct Config {
+        uint64 confirmPeriodBlocks;
+        uint64 extraChallengeTimeBlocks;
+        address stakeToken;
+        uint256 baseStake;
+        bytes32 wasmModuleRoot;
+        address owner;
+        uint256 chainId;
+        ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
+    }
+
+    struct ContractDependencies {
+        IBridge delayedBridge;
+        ISequencerInbox sequencerInbox;
+        IOutbox outbox;
+        RollupEventBridge rollupEventBridge;
+        IBlockChallengeFactory blockChallengeFactory;
+
+        IRollupAdmin rollupAdminLogic;
+        IRollupUser rollupUserLogic;
+    }
 
     struct ExecutionState {
         GlobalState globalState;
