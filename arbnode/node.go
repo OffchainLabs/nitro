@@ -142,7 +142,7 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, err
 	}
 
-	rollupTemplate, tx, _, err := rollupgen.DeployRollup(auth, client)
+	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("rollup deploy error: %w", err)
