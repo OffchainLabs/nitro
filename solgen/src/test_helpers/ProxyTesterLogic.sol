@@ -25,7 +25,7 @@ import "../rollup/RollupCore.sol";
 
 contract ProxyTesterLogic is RollupCore {
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata /* connectedContracts */
     ) external pure {
         require(config.owner != address(0), "OWNER_IS_ZERO");

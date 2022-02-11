@@ -22,25 +22,11 @@ import "@openzeppelin/contracts/proxy/Proxy.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-import "./RollupCore.sol";
-import "./RollupEventBridge.sol";
-import "./RollupLib.sol";
-import "./Node.sol";
-import "./IRollupLogic.sol";
 
 import "../libraries/Cloneable.sol";
 import "../libraries/ProxyUtil.sol";
+import { Config, ContractDependencies } from "./RollupLib.sol";
 
-struct ContractDependencies {
-    IBridge delayedBridge;
-    ISequencerInbox sequencerInbox;
-    IOutbox outbox;
-    RollupEventBridge rollupEventBridge;
-    IBlockChallengeFactory blockChallengeFactory;
-
-    IRollupAdmin rollupAdminLogic;
-    IRollupUser rollupUserLogic;
-}
 
 library AAPLib {
     using Address for address;
@@ -102,7 +88,7 @@ contract AdminAwareProxy is Cloneable, Proxy {
     // connectedContracts = [delayedBridge, sequencerInbox, outbox, rollupEventBridge, blockChallengeFactory]
     // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata connectedContracts
     ) external {
         // AAP expects to be deployed behind a TransparentUpgradeableProxy

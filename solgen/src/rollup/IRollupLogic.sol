@@ -19,6 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "./RollupLib.sol";
+import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {

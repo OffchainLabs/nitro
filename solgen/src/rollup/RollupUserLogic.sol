@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPLib, ContractDependencies } from  "./AdminAwareProxy.sol";
+import { AAPLib } from  "./AdminAwareProxy.sol";
 import { IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 
@@ -622,7 +622,7 @@ abstract contract AbsRollupUserLogic is
 
 contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata connectedContracts
     ) external {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
@@ -672,7 +672,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata /* connectedContracts */
     ) external {
         require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");

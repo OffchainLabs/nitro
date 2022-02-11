@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPLib, ContractDependencies } from  "./AdminAwareProxy.sol";
+import { AAPLib } from  "./AdminAwareProxy.sol";
 import { IRollupAdmin } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
@@ -17,7 +17,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata connectedContracts
     ) external {
         require(!isInit(), "NOT_INIT");
