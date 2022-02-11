@@ -21,6 +21,7 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
         ContractDependencies calldata connectedContracts
     ) external override {
         require(!isInit(), "NOT_INIT");
+        require(!isMasterCopy, "NO_INIT_MASTER");
 
         delayedBridge = connectedContracts.delayedBridge;
         sequencerBridge = connectedContracts.sequencerInbox;

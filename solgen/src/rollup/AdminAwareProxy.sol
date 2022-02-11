@@ -74,11 +74,11 @@ contract AdminAwareProxy is Proxy, AAPStorage {
         userLogic = connectedContracts.rollupUserLogic;
         owner = config.owner;
 
-        (bool successAdmin, ) = address(connectedContracts.rollupUserLogic).delegatecall(
+        (bool successAdmin, ) = address(connectedContracts.rollupAdminLogic).delegatecall(
             abi.encodeWithSelector(AAPStorage.initialize.selector, config, connectedContracts)
         );
         require(successAdmin, "FAIL_INIT_ADMIN_LOGIC");
-        
+
         (bool successUser, ) = address(connectedContracts.rollupUserLogic).delegatecall(
             abi.encodeWithSelector(AAPStorage.initialize.selector, config, connectedContracts)
         );
