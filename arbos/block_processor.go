@@ -208,7 +208,8 @@ func ProduceBlockAdvanced(
 			}
 
 			aggregator := &poster
-			if util.DoesTxTypeAlias(tx.Type()) {
+			txType := tx.Type()
+			if util.DoesTxTypeAlias(&txType) {
 				aggregator = nil
 			}
 			if gasPrice.Sign() > 0 {
