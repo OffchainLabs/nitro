@@ -49,7 +49,7 @@ contract SequencerInbox is ISequencerInbox {
         rollup = rollup_;
 
         maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 * 15,
+            delayBlocks: 60 * 60 * 24 / 15,
             futureBlocks: 12,
             delaySeconds: 60 * 60 * 24,
             futureSeconds: 60 * 60
