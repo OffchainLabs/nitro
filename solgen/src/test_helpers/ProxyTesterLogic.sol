@@ -20,7 +20,8 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/proxy/Proxy.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
-import "../rollup/AdminAwareProxy.sol";
+
+import "../libraries/AdminFallbackProxy.sol";
 import "../rollup/RollupCore.sol";
 
 contract ProxyTesterLogic is RollupCore {
@@ -31,7 +32,4 @@ contract ProxyTesterLogic is RollupCore {
         require(config.owner != address(0), "OWNER_IS_ZERO");
     }
 
-    function setOwner(address newOwner) external {
-        AAPLib.setAAPOwner(newOwner);
-    }
 }

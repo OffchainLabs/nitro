@@ -138,12 +138,6 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, err
 	}
 
-	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("rollup deploy error: %w", err)
-	}
-
 	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -167,7 +161,7 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, rollupTemplate, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, challengeFactory, rollupAdminLogic, rollupUserLogic)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
@@ -195,6 +189,9 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		DelaySeconds:  big.NewInt(60 * 60 * 24),
 		FutureSeconds: big.NewInt(60 * 60),
 	}
+	// TODO: need to add in the expected Rollup Address, instead we can just pass in
+	// the nonce and calculate this there
+	var expectedRollupAddr common.Address = deployAuth.From
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		rollupgen.Config{
@@ -207,6 +204,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 			ChainId:                        big.NewInt(1338),
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},
+		expectedRollupAddr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)

@@ -2,16 +2,15 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPLib } from  "./AdminAwareProxy.sol";
 import { IRollupAdmin } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallenge.sol";
-
+import { IArbitrumInit } from  "../libraries/ArbitrumProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract RollupAdminLogic is RollupCore, IRollupAdmin {
+contract RollupAdminLogic is RollupCore, IRollupAdmin, IArbitrumInit {
     function isInit() internal view returns (bool) {
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
@@ -19,7 +18,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     function initialize(
         Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external {
+    ) external override {
         require(!isInit(), "NOT_INIT");
         require(!isMasterCopy, "NO_INIT_MASTER");
 
@@ -130,17 +129,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     /**
-     * @notice Set the addresses of rollup logic contracts called
-     * @param newAdminLogic address of logic that owner of rollup calls
-     * @param newUserLogic address of logic that user of rollup calls
-     */
-    function setLogicContracts(address newAdminLogic, address newUserLogic) external override {
-        AAPLib.setAAPAdminLogic(newAdminLogic);
-        AAPLib.setAAPUserLogic(newUserLogic);
-        emit OwnerFunctionCalled(5);
-    }
-
-    /**
      * @notice Set the addresses of the validator whitelist
      * @dev It is expected that both arrays are same length, and validator at
      * position i corresponds to the value at position i
@@ -154,15 +142,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
             isValidator[_validator[i]] = _val[i];
         }
         emit OwnerFunctionCalled(6);
-    }
-
-    /**
-     * @notice Set a new owner address for the rollup
-     * @param newOwner address of new rollup owner
-     */
-    function setOwner(address newOwner) external override {
-        AAPLib.setAAPOwner(newOwner);
-        emit OwnerFunctionCalled(7);
     }
 
     /**

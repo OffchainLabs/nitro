@@ -34,6 +34,7 @@ import "../challenge/IBlockChallengeFactory.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
+import { AFPHelpers } from "../libraries/AdminFallbackProxy.sol";
 
 abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     using NodeLib for Node;
@@ -85,6 +86,14 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
+
+    /// @dev the rollup owner is whoever controls the AdminFallbackProxy
+    function owner() internal view returns (address) {
+        // TODO: this is only used in RollupUser completeChallengeImpl
+        // we can prob design a diff escrow address for this
+        // then RollupCore doesn't need to be aware of AFP
+        return AFPHelpers._getAdmin();
+    }
 
     /**
      * @notice Get a storage reference to the Node for the given node index
