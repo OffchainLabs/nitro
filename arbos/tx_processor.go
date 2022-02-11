@@ -71,8 +71,7 @@ func (p *TxProcessor) PopCaller() {
 }
 
 func (p *TxProcessor) getReimbursableAggregator() *common.Address {
-	if p.msg.UnderlyingTransaction() == nil {
-		// This is an eth_call/eth_estimateGas.
+	if p.msg.RunMode() != types.MessageCommitMode {
 		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
 		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
 		p.state.Burner.Restrict(err)
