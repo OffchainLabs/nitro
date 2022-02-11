@@ -23,32 +23,17 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 
-library AFPHelpers {
-    // TODO: hardcode result since hashes don't get precomputed during compile time
-    bytes32 internal constant _ADMIN_LOGIC_SLOT = bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1);
-    bytes32 internal constant _USER_LOGIC_SLOT = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
-    bytes32 internal constant _ADMIN_SLOT = bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1);
-
-    function _getAdminFallbackLogic() internal view returns (address) {
-        return StorageSlot.getAddressSlot(_ADMIN_LOGIC_SLOT).value;
-    }
-
-    function _getUserFallbackLogic() internal view returns (address) {
-        return StorageSlot.getAddressSlot(_USER_LOGIC_SLOT).value;
-    }
-
-    function _getAdmin() internal view returns (address) {
-        return StorageSlot.getAddressSlot(_ADMIN_SLOT).value;
-    }
-}
-
 /// @dev similar to TransparentUpgradeableProxy but allows the admin to fallback to
 /// a separate logic contract
 contract AdminFallbackProxy is TransparentUpgradeableProxy {
     using Address for address;
 
-    // TODO: will etherscan detect this as a proxy?
+    // TODO: hardcode result since hashes don't get precomputed during compile time
     bytes32 internal constant _ADMIN_LOGIC_SLOT = bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1);
+
+    function _getAdminFallbackLogic() internal view returns (address) {
+        return StorageSlot.getAddressSlot(_ADMIN_LOGIC_SLOT).value;
+    }
 
     constructor(
         address userLogic,
@@ -72,11 +57,11 @@ contract AdminFallbackProxy is TransparentUpgradeableProxy {
         returns (address)
     {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
-        address rollupOwner = AFPHelpers._getAdmin();
+        address rollupOwner = _getAdmin();
         // if there is an owner and it is the sender, delegate to admin logic
         address target = rollupOwner != address(0) && rollupOwner == msg.sender
-            ? AFPHelpers._getAdminFallbackLogic()
-            : AFPHelpers._getUserFallbackLogic();
+            ? _getAdminFallbackLogic()
+            : _implementation();
         require(target.isContract(), "TARGET_NOT_CONTRACT");
         return target;
     }

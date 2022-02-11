@@ -20,6 +20,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
 import "./Node.sol";
 import "./IRollupCore.sol";
@@ -30,11 +31,11 @@ import "./IRollupCore.sol";
 import "../libraries/Cloneable.sol";
 
 import "../challenge/IBlockChallengeFactory.sol";
+import "../libraries/ProxyUtil.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
-import { AFPHelpers } from "../libraries/AdminFallbackProxy.sol";
 
 abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     using NodeLib for Node;
@@ -89,10 +90,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
 
     /// @dev the rollup owner is whoever controls the AdminFallbackProxy
     function owner() internal view returns (address) {
-        // TODO: this is only used in RollupUser completeChallengeImpl
-        // we can prob design a diff escrow address for this
-        // then RollupCore doesn't need to be aware of AFP
-        return AFPHelpers._getAdmin();
+        // this follow EIP1967 
+        return ProxyUtil.getProxyAdmin();
     }
 
     /**
