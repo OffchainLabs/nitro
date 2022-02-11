@@ -17,8 +17,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     function initialize(
-        RollupLib.Config calldata config,
-        RollupLib.ContractDependencies calldata connectedContracts
+        Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external {
         require(!isInit(), "NOT_INIT");
         require(!isMasterCopy, "NO_INIT_MASTER");

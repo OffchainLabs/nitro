@@ -622,8 +622,8 @@ abstract contract AbsRollupUserLogic is
 
 contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config calldata config,
-        RollupLib.ContractDependencies calldata connectedContracts
+        Config calldata config,
+        ContractDependencies calldata connectedContracts
     ) external {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
@@ -672,8 +672,8 @@ contract RollupUserLogic is AbsRollupUserLogic {
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
     function initialize(
-        RollupLib.Config calldata config,
-        RollupLib.ContractDependencies calldata /* connectedContracts */
+        Config calldata config,
+        ContractDependencies calldata /* connectedContracts */
     ) external {
         require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
         require(stakeToken == address(0), "ALREADY_INIT");

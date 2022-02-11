@@ -79,7 +79,7 @@ contract RollupCreator is Ownable {
     // RollupOwner should be the owner of Rollup's ProxyAdmin
     // RollupOwner should be the owner of Rollup
     // Bridge should have a single inbox and outbox
-    function createRollup(RollupLib.Config memory config) external returns (address) {
+    function createRollup(Config memory config) external returns (address) {
         CreateRollupFrame memory frame;
         frame.admin = new ProxyAdmin();
         frame.rollup = AdminAwareProxy(payable(address(
@@ -97,7 +97,7 @@ contract RollupCreator is Ownable {
         frame.admin.transferOwnership(config.owner);
         frame.rollup.initialize(
             config,
-            RollupLib.ContractDependencies({
+            ContractDependencies({
                 delayedBridge: frame.delayedBridge,
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,
