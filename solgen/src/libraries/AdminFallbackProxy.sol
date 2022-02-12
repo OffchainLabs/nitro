@@ -28,8 +28,9 @@ import "@openzeppelin/contracts/utils/StorageSlot.sol";
 contract AdminFallbackProxy is TransparentUpgradeableProxy {
     using Address for address;
 
-    // TODO: hardcode result since hashes don't get precomputed during compile time
-    bytes32 internal constant _ADMIN_LOGIC_SLOT = bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1);
+    // we hardcode the result of bytes32(uint256(keccak256("proxy.admin.fallback.logic")) - 1)
+    // since hashes aren't evaluated during compile time
+    bytes32 internal constant _ADMIN_LOGIC_SLOT = 0x0ec14cccd309f3d73c97ec9ccd142d751d5c2a665ea2437991839ee618e56b45;
 
     function _getAdminFallbackLogic() internal view returns (address) {
         return StorageSlot.getAddressSlot(_ADMIN_LOGIC_SLOT).value;
@@ -57,9 +58,9 @@ contract AdminFallbackProxy is TransparentUpgradeableProxy {
         returns (address)
     {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
-        address rollupOwner = _getAdmin();
+        address _admin = _getAdmin();
         // if there is an owner and it is the sender, delegate to admin logic
-        address target = rollupOwner != address(0) && rollupOwner == msg.sender
+        address target = _admin != address(0) && _admin == msg.sender
             ? _getAdminFallbackLogic()
             : _implementation();
         require(target.isContract(), "TARGET_NOT_CONTRACT");
