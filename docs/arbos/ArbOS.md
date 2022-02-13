@@ -2,6 +2,15 @@
 
 ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment of L2 Arbitrum. ArbOS accounts for and manages network resources, produces blocks from incoming messages, and operates its instrumented instance of geth for smart contract execution.
 
+## Messages
+
+The sequencer encodes incoming messages as [L1IncomingMessage][L1IncomingMessage_link]. Other nodes in the system could either read them from the inboxes in the underlying L1, or from the transaction stream. These could potentially include multiple transactions, but will usually not.
+The ArbOS function [ProduceBlockAdvanced][ProduceBlockAdvanced_link] creates one block from one L1IncomingMessage. Thus number of L1IncomingMessage is linearly 1:1 mapped to L2 block number.
+ProduceBlockAdvanced adds system transactions if these are needed, and executes each transaction using geth's ApplyTransaction function. See ['Geth hooks'](Geth.md#hooksa-namehooksa)
+
+[L1IncomingMessage_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/incomingmessage.go#L54
+[ProduceBlockAdvanced_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/block_processor.go#L118
+
 ## Precompiles
 
 ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](Precompiles.md).
