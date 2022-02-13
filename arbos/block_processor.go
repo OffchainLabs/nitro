@@ -337,7 +337,7 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, receipts, statedb)
+	FinalizeBlock(header, complete, statedb)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -389,7 +389,7 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 	return extra, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
 		state, err := arbosState.OpenSystemArbosState(statedb, false)
 		if err != nil {
