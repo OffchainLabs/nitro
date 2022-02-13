@@ -7,10 +7,31 @@ We store ArbOS's state at an address inside a geth `statedb`. In doing so, ArbOS
 <p align=center>0xA4B05FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF<br>
 <span style="font-size:smaller;">The fictional account representing ArbOS</span></p>
 
-
 ## Hooks<a name=Hooks></a>
 
-A call to [`ReadyEVMForL2`][ReadyEVMForL2_link] installs the following transaction-specific hooks into each geth [`EVM`][EVM_link] right before it performs a state transition. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Without this call, the state transition will instead use the default [`DefaultTxProcessor`][DefaultTxProcessor_link] and get exactly the same results as vanilla geth. A [`TxProcessor`][TxProcessor_link] object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime. What follows is an overview of each hook, in chronological order.
+Arbitrum uses various hooks to modify Geth behaviour when processing transactions. Each provides an opportunity for ArbOS to update its state and make decisions about the tx during its lifetime. Transactions are applied using geth's ApplyTransaction function. The below list details part of this function's callgraph, along with the Arbitrum-specific Hooks. All hooks have a default mode that leaves normal-geth operation unmodified.
+
+* core.ApplyTransaction -> core.applyTransaction -> core.ApplyMessage
+    * core.NewStateTransition
+        * ReadyEVMForL2
+    * core.TransitionDb
+        * StartTxHook
+        * core.transitionDbImpl
+            * if IsArbitrum() remove tip
+            * GasChargingHook
+            * evm.Call
+                * core.vm.EVMInterpreter.Run
+                    * PushCaller
+                    * PopCaller
+            * core.StateTransition.refundGas()
+                * NonrefundableGas
+        * EndTxHook
+    * added return parameter: transactionResult
+
+What follows is an overview of each hook, in chronological order.
+
+### [`ReadyEVMForL2`][ReadyEVMForL2_link]
+A call to [`ReadyEVMForL2`][ReadyEVMForL2_link] installs the following transaction-specific hooks into each geth [`EVM`][EVM_link] right before it performs a state transition. Without this call, the state transition will instead use the default [`DefaultTxProcessor`][DefaultTxProcessor_link] and get exactly the same results as vanilla geth. A [`TxProcessor`][TxProcessor_link] object is what carries these hooks and the associated arbitrum-specific state during the transaction's lifetime.
 
 ### [`StartTxHook`][StartTxHook_link]
 The [`StartTxHook`][StartTxHook_link] is called by geth before a transaction starts executing. This allows ArbOS to handle two arbitrum-specific transaction types. 
@@ -27,6 +48,9 @@ This fallible hook ensures the user has enough funds to pay their poster's L1 ca
 
 ### [`PushCaller`][PushCaller_link] and [`PopCaller`][PopCaller_link]
 These hooks track the callers within the EVM callstack, pushing and popping as calls are made and complete. This provides [`ArbSys`](Precompiles.md#ArbSys) with info about the callstack, which it uses to implement the methods [`WasMyCallersAddressAliased`](Precompiles.md#ArbSys) and [`MyCallersAddressWithoutAliasing`](Precompiles.md#ArbSys).
+
+### [`L1BlockHash`][L1BlockHash_link] and [`L1BlockNumber`][L1BlockNumber_link]
+In arbitrum, the BlockHash and Number operations return data that relies on underline L1 blocks intead of L2 blocks, to accomendate the normal use-case of these opcodes, which often assume ethereum-like time passes between different blocks. The L1BlockHash and L1BlockNumber hooks have the required data for these operations.
 
 ### [`NonrefundableGas`][NonrefundableGas_link]
 
@@ -45,7 +69,6 @@ The [`EndTxHook`][EndTxHook_link] is called after the [`EVM`][EVM_link] has retu
 [PopCaller_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L64
 [NonrefundableGas_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L248
 [EndTxHook_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L255
-
 
 ## Interfaces and components
 
@@ -105,8 +128,32 @@ The total amount of L2 ether in the system should not change except in controlle
 ### MixDigest and ExtraData
 To aid with [outbox proof construction][proof_link], the root hash and leaf count of ArbOS's [send merkle accumulator][merkle_link] are stored in the `MixDigest` and `ExtraData` fields of each L2 block. The yellow paper specifies that the `ExtraData` field may be no larger than 32 bytes, so we use the first 8 bytes of the `MixDigest`, which has no meaning in a system without miners, to store the send count.
 
+## Retriable Support
+Retriables are mostly implemente in [ArbOS](ArbOS.md#retryablesa-nameretryablesa). Some modifications were required in geth to support them.
+* Added ScheduledTxes field to ExecutionResult. This lists transactions scheduled during the execution. To enable using this field, we also pass the ExecutionResult to callers of ApplyTransaction.
+* Added gasEstimation param to DoCall. When enabled, DoCall will also also executing any retriable activated by the original call. This allows estimating gas to enable retriables.
+
+## Added accessors
+Added ['UnderlyingTransaction'][UnderlyingTransaction_link] to Message interface
+Added ['GetCurrentTxLogs'](../../go-ethereum/core/state/statedb_arbitrum.go) to StateDB
+We created the AdvancedPrecompile interface, which executes and charges gas with the same function call. This is used by Arbitrum's precompiles, and also wraps geth's standard precompiles. For more information on Arbitrum precompiles, see [ArbOS doc](ArbOS.md#precompiles).
+
+### WASM build support
+The WASM arbitrum executable does not support file oprations. We created [fileutil.go](../../go-ethereum/core/rawdb/fileutil.go) to wrap fileutil calls, stubbing them out when building WASM. ['fake_leveldb.go'](../../go-ethereum/ethdb/leveldb/fake_leveldb.go) is a similar WASM-mock for leveldb. These are not required for the WASM block-replayer.
+
+## Types
+Arbitrum introduces a new ['signer'](../../go-ethereum/core/types/arbitrum_signer.go), and multiple new [`transaction types`](../../go-ethereum/core/types/transaction.go).
+
+## ReorgToOldBlock
+Geth natively only allows reorgs to a fork of the currently-known network. In nitro, reorgs can sometimes be detected before computing the forked block. We added the ['ReorgToOldBlock'](../../go-ethereum/core/blockchain_arbitrum.go) function to support reorging to a block that's an ancestor of current head.
+
+## Genesis block creation
+Genesis block in nitro is not necessarily block #0. Nitro supports importing blocks that take place before genesis. We split out ['WriteHeadBlock'][WriteHeadBlock_link] from gensis.Commit and use it to commit non-zero genesis blocks.
+
 [pad_estimates_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/accounts/abi/bind/base.go#L352
 [conservation_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/core/state/statedb.go#L42
 [alert_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L290
 [proof_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/system_tests/outbox_test.go#L26
 [merkle_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/merkleAccumulator/merkleAccumulator.go#L14
+[UnderlyingTransaction_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/core/state_transition.go#L68
+[WriteHeadBlock_link]: https://github.com/OffchainLabs/go-ethereum/blob/bf2301d747acb2071fdb64dc82fe7fc122581f0c/core/genesis.go#L332
