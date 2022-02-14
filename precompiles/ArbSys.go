@@ -10,7 +10,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -74,7 +73,7 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 
 // Checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType)
+	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
 	return aliased, nil
 }
 
@@ -87,7 +86,7 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 		address = c.txProcessor.Callers[evm.Depth()-2]
 	}
 
-	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType) {
 		address = util.InverseRemapL1Address(address)
 	}
 
@@ -97,8 +96,13 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 // Sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
 
-	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := c.state
+	sendHash, err := arbosState.KeccakHash(
+		c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1,
+	)
+	if err != nil {
+		return nil, err
+	}
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
 	if err != nil {

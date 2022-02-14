@@ -7,27 +7,28 @@ package arbos
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 
 	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
-
-	solsha3 "github.com/miguelmota/go-solidity-sha3"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
 )
 
 const (
 	L1MessageType_L2Message             = 3
-	L1MessageType_SetChainParams        = 4
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
-	L1MessageType_EthDeposit            = 11
+	L1MessageType_SetChainParams        = 11
+	L1MessageType_EthDeposit            = 12
 	L1MessageType_Invalid               = 0xFF
 )
 
@@ -105,12 +106,13 @@ func (msg *L1IncomingMessage) Equals(other *L1IncomingMessage) bool {
 }
 
 func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bool {
-	return (header.Kind == other.Kind) &&
-		(header.Poster.Hash().Big().Cmp(other.Poster.Hash().Big()) == 0) &&
-		(header.BlockNumber.Big().Cmp(other.BlockNumber.Big()) == 0) &&
-		(header.Timestamp.Big().Cmp(other.Timestamp.Big()) == 0) &&
-		(header.RequestId.Big().Cmp(other.RequestId.Big()) == 0) &&
-		(header.GasPriceL1.Big().Cmp(other.GasPriceL1.Big()) == 0)
+	// These are all non-pointer types so it's safe to use the == operator
+	return header.Kind == other.Kind &&
+		header.Poster == other.Poster &&
+		header.BlockNumber == other.BlockNumber &&
+		header.Timestamp == other.Timestamp &&
+		header.RequestId == other.RequestId &&
+		header.GasPriceL1 == other.GasPriceL1
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -172,11 +174,28 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
 	case L1MessageType_SetChainParams:
-		panic("unimplemented")
+		return nil, errors.New("L1 message type SetChainParams is unimplemented")
 	case L1MessageType_EndOfBlock:
 		return nil, nil
 	case L1MessageType_L2FundedByL1:
-		panic("unimplemented")
+		if len(msg.L2msg) < 1 {
+			return nil, errors.New("L2FundedByL1 message has no data")
+		}
+		kind := msg.L2msg[0]
+		depositRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big0))
+		unsignedRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big1))
+		tx, err := parseUnsignedTx(bytes.NewReader(msg.L2msg[1:]), msg.Header.Poster, unsignedRequestId, kind)
+		if err != nil {
+			return nil, err
+		}
+		deposit := types.NewTx(&types.ArbitrumDepositTx{
+			ChainId:     chainId,
+			L1RequestId: depositRequestId,
+			// Matches the From of parseUnsignedTx
+			To:    util.RemapL1Address(msg.Header.Poster),
+			Value: tx.Value(),
+		})
+		return types.Transactions{deposit, tx}, nil
 	case L1MessageType_SubmitRetryable:
 		tx, err := parseSubmitRetryableMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
 		if err != nil {
@@ -184,7 +203,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		}
 		return types.Transactions{tx}, nil
 	case L1MessageType_BatchForGasEstimation:
-		panic("unimplemented")
+		return nil, errors.New("L1 message type BatchForGasEstimation is unimplemented")
 	case L1MessageType_EthDeposit:
 		tx, err := parseEthDepositMessage(bytes.NewReader(msg.L2msg), msg.Header, chainId)
 		if err != nil {
@@ -196,7 +215,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		return nil, errors.New("invalid message")
 	default:
 		// invalid message, just ignore it
-		return nil, errors.New("invalid message types")
+		return nil, fmt.Errorf("invalid message type %v", msg.Header.Kind)
 	}
 }
 
@@ -233,7 +252,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_NonmutatingCall:
-		panic("unimplemented")
+		return nil, errors.New("L2 message kind NonmutatingCall is unimplemented")
 	case L2MessageKind_Batch:
 		if depth >= 16 {
 			return nil, errors.New("L2 message batches have a max depth of 16")
@@ -248,9 +267,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 				return segments, nil
 			}
 
-			nestedRequestIdSlice := solsha3.SoliditySHA3(solsha3.Bytes32(requestId), solsha3.Uint256(index))
-			var nextRequestId common.Hash
-			copy(nextRequestId[:], nestedRequestIdSlice)
+			nextRequestId := crypto.Keccak256Hash(requestId[:], math.U256Bytes(index))
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, nextRequestId, depth+1)
 			if err != nil {
 				return nil, err
@@ -273,7 +290,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		// do nothing
 		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
-		panic("unimplemented")
+		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
 	case L2MessageKind_BrotliCompressed:
 		if depth > 0 { // ignore compressed messages if not top level
 			return nil, errors.New("can only compress top level batch")
@@ -282,7 +299,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		return parseL2Message(reader, poster, requestId, depth+1)
 	default:
 		// ignore invalid message kind
-		return nil, nil
+		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
 	}
 }
 
@@ -303,7 +320,11 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		if err != nil {
 			return nil, err
 		}
-		nonce = nonceAsHash.Big().Uint64()
+		nonceAsBig := nonceAsHash.Big()
+		if !nonceAsBig.IsUint64() {
+			return nil, errors.New("unsigned user tx nonce >= 2^64")
+		}
+		nonce = nonceAsBig.Uint64()
 	}
 
 	destAddr, err := util.AddressFrom256FromReader(rd)
@@ -311,7 +332,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		return nil, err
 	}
 	var destination *common.Address
-	if destAddr.Hash().Big().Cmp(big.NewInt(0)) != 0 {
+	if destAddr != (common.Address{}) {
 		destination = &destAddr
 	}
 
@@ -351,7 +372,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			Data:      calldata,
 		}
 	default:
-		panic("Invalid L2 tx type in parseUnsignedTx")
+		return nil, errors.New("invalid L2 tx type in parseUnsignedTx")
 	}
 
 	return types.NewTx(inner), nil
@@ -365,7 +386,7 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 	tx := &types.ArbitrumDepositTx{
 		ChainId:     chainId,
 		L1RequestId: header.RequestId,
-		To:          header.Poster,
+		To:          util.RemapL1Address(header.Poster),
 		Value:       balance.Big(),
 	}
 	return types.NewTx(tx), nil
@@ -421,6 +442,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		return nil, errors.New("data length field too large")
 	}
 	dataLength := dataLengthBig.Uint64()
+	if dataLength > MaxL2MessageSize {
+		return nil, errors.New("retryable data too large")
+	}
 	data := make([]byte, dataLength)
 	if dataLength > 0 {
 		if _, err := rd.Read(data); err != nil {
@@ -430,7 +454,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	tx := &types.ArbitrumSubmitRetryableTx{
 		ChainId:           chainId,
 		RequestId:         header.RequestId,
-		From:              header.Poster,
+		From:              util.RemapL1Address(header.Poster),
 		DepositValue:      depositValue.Big(),
 		GasPrice:          gasPriceBid.Big(),
 		Gas:               maxGasBig.Uint64(),
