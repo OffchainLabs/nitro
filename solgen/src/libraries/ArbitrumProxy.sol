@@ -24,9 +24,6 @@ import "../rollup/IRollupLogic.sol";
 contract ArbitrumProxy is AdminFallbackProxy {
     using Address for address;
 
-    // _rollupParams = [ confirmPeriodBlocks, extraChallengeTimeBlocks, chainId, baseStake ]
-    // connectedContracts = [delayedBridge, sequencerInbox, outbox, rollupEventBridge, blockChallengeFactory]
-    // sequencerInboxParams = [ maxDelayBlocks, maxFutureBlocks, maxDelaySeconds, maxFutureSeconds ]
     constructor(
         Config memory config,
         ContractDependencies memory connectedContracts

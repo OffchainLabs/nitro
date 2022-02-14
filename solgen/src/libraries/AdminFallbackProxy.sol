@@ -69,7 +69,7 @@ contract AdminFallbackProxy is TransparentUpgradeableProxy {
 
     /// @dev this allows the admin to access the fallback function, but we direct them
     /// to a different logic contract implementation. If the same function signature
-    /// is available in both the proxy and logic, the proxy will logic will execute.
+    /// is available in both the proxy and logic, the proxy code will execute - not the logic.
     function _beforeFallback() internal override {
         // we override the superclass _beforeFallback to remove 
         // the `require(msg.sender != _getAdmin())` check
