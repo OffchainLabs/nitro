@@ -11,9 +11,11 @@ import (
 	"math/big"
 
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 
@@ -22,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
+	glog "github.com/ethereum/go-ethereum/log"
 )
 
 var arbAddress = common.HexToAddress("0xa4b05")
@@ -35,6 +37,7 @@ type TxProcessor struct {
 	state            *arbosState.ArbosState
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
+	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	Callers          []common.Address
 	TopTxType        *byte // set once in StartTxHook
 	evm              *vm.EVM
@@ -67,14 +70,13 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) getAggregator() *common.Address {
+func (p *TxProcessor) getReimbursableAggregator() *common.Address {
 	if p.msg.UnderlyingTransaction() == nil {
-		// This is an eth_call/eth_estimateGas.
 		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
-		agg, _, err := p.state.L1PricingState().PreferredAggregator(p.msg.From())
+		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
 		p.state.Burner.Restrict(err)
-		return &agg
-	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
+		return agg
+	} else if arbos_util.DoesTxTypeAlias(p.TopTxType) {
 		// This is a non-aggregated message.
 		return nil
 	} else {
@@ -141,7 +143,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
 		if err != nil {
-			log.Error("failed to emit TicketCreated event", "err", err)
+			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
@@ -154,7 +156,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		if util.BigLessThan(tx.GasPrice, basefee) {
+		if util.BigLessThan(tx.GasPrice, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
 			// user's bid was too low
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
@@ -191,7 +193,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.FeeRefundAddr,
 		)
 		if err != nil {
-			log.Error("failed to emit RedeemScheduled event", "err", err)
+			glog.Error("failed to emit RedeemScheduled event", "err", err)
 		}
 
 		return true, usergas, nil, underlyingTx.Hash().Bytes()
@@ -222,12 +224,12 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getAggregator(), p.msg.Data())
+	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.UnderlyingTransaction() == nil {
+	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
+		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
 		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
@@ -237,6 +239,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			adjustedPrice = minGasPrice
 		}
 		gasPrice = adjustedPrice
+
+		// Pad the L1 cost by 10% in case the L1 gas price rises
+		posterCost = util.BigMulByFrac(posterCost, 110, 100)
 	}
 	if gasPrice.Sign() > 0 {
 		posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice) // the cost as if it were an amount of gas
@@ -253,6 +258,17 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		return core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
+
+	if p.msg.RunMode() != types.MessageEthcallMode {
+		// If this is a real tx, limit the amount of computed based on the gas pool.
+		// We do this by charging extra gas, and then refunding it later.
+		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()
+		if *gasRemaining > gasAvailable {
+			p.computeHoldGas = *gasRemaining - gasAvailable
+			*gasRemaining = gasAvailable
+		}
+	}
+
 	return nil
 }
 
@@ -263,7 +279,11 @@ func (p *TxProcessor) NonrefundableGas() uint64 {
 	return p.posterGas
 }
 
-func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSuccess bool) {
+func (p *TxProcessor) ForceRefundGas() uint64 {
+	return p.computeHoldGas
+}
+
+func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	underlyingTx := p.msg.UnderlyingTransaction()
 	gasPrice := p.evm.Context.BaseFee
@@ -272,19 +292,18 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
-		if transitionSuccess {
-			// undo Geth's refund to the From address
-			p.evm.StateDB.SubBalance(inner.From, refund)
-			// refund the RefundTo by taking fees back from the network address
-			err := arbos_util.TransferBalance(networkFeeAccount, inner.RefundTo, refund, p.evm.StateDB)
-			if err != nil {
-				// Normally the network fee address should be holding the gas funds.
-				// However, in theory, they could've been transfered out during the redeem attempt.
-				// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
-				log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
-			}
+
+		// undo Geth's refund to the From address
+		p.evm.StateDB.SubBalance(inner.From, refund)
+		// refund the RefundTo by taking fees back from the network address
+		err := arbos_util.TransferBalance(networkFeeAccount, inner.RefundTo, refund, p.evm.StateDB)
+		if err != nil {
+			// Normally the network fee address should be holding the gas funds.
+			// However, in theory, they could've been transfered out during the redeem attempt.
+			// If the network fee address doesn't have the necessary balance, log an error and don't give a refund.
+			log.Error("network fee address doesn't have enough funds to give user refund", "err", err)
 		}
-		if evmSuccess {
+		if success {
 			state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false) // we don't want to charge for this
 			if err != nil {
 				panic(err)
@@ -308,20 +327,15 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
-	if !transitionSuccess && p.msg.Gas()-gasLeft < p.posterGas+params.TxGas {
-		gasLeft = 0
-	}
 	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
 
 	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
 	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
-		// The transaction doesn't have a high enough gas limit to pay for the poster fee.
+		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
-		if transitionSuccess {
-			// Uh oh, there's a bug in our charging code.
-			log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
-		}
+
+		log.Error("total cost < poster cost", "gasUsed", gasUsed, "gasPrice", gasPrice, "posterFee", p.PosterFee)
 		p.PosterFee = big.NewInt(0)
 		computeCost = totalCost
 	}
@@ -334,22 +348,52 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, transitionSuccess bool, evmSucce
 		// We don't want to remove from the pool the poster's L1 costs (as expressed in L2 gas in this func)
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
 
-		// If !transitionSuccess, only subtract the base TxGas from the gas pool,
-		// which approximately represents the costs to a node of the core message transition.
-		computeGas := params.TxGas
-		if transitionSuccess {
-			if gasUsed.Uint64() > p.posterGas {
-				// Don't include posterGas in computeGas as it doesn't represent processing time.
-				computeGas = gasUsed.Uint64() - p.posterGas
-			} else {
-				// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
-				// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
-				log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
-				computeGas = gasUsed.Uint64()
-			}
+		var computeGas uint64
+		if gasUsed.Uint64() > p.posterGas {
+			// Don't include posterGas in computeGas as it doesn't represent processing time.
+			computeGas = gasUsed.Uint64() - p.posterGas
+		} else {
+			// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
+			// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
+			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
+			computeGas = gasUsed.Uint64()
 		}
 		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
+}
+
+func (p *TxProcessor) ScheduledTxes() types.Transactions {
+	scheduled := types.Transactions{}
+	time := p.evm.Context.Time.Uint64()
+	basefee := p.evm.Context.BaseFee
+	chainID := p.evm.ChainConfig().ChainID
+
+	logs := p.evm.StateDB.GetCurrentTxLogs()
+	for _, log := range logs {
+		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
+			continue
+		}
+		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
+		err := arbos_util.ParseRedeemScheduledLog(event, log)
+		if err != nil {
+			glog.Error("Failed to parse RedeemScheduled log", "err", err)
+			continue
+		}
+		retryable, err := p.state.RetryableState().OpenRetryable(event.TicketId, time)
+		if err != nil || retryable == nil {
+			continue
+		}
+		redeem, _ := retryable.MakeTx(
+			chainID,
+			event.SequenceNum,
+			basefee,
+			event.DonatedGas,
+			event.TicketId,
+			event.GasDonor,
+		)
+		scheduled = append(scheduled, types.NewTx(redeem))
+	}
+	return scheduled
 }
 
 func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {

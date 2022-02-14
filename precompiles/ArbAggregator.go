@@ -6,6 +6,7 @@ package precompiles
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 )
@@ -18,13 +19,29 @@ type ArbAggregator struct {
 }
 
 // Gets an account's preferred aggregator
-func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (addr, bool, error) {
-	return c.state.L1PricingState().PreferredAggregator(address)
+func (con ArbAggregator) GetPreferredAggregator(c ctx, evm mech, address addr) (prefAgg addr, isDefault bool, err error) {
+	l1p := c.state.L1PricingState()
+	maybePrefAgg, err := l1p.UserSpecifiedAggregator(address)
+	if err != nil {
+		return common.Address{}, false, err
+	}
+	if maybePrefAgg != nil {
+		return *maybePrefAgg, false, nil
+	}
+	maybeReimbursableAgg, err := l1p.ReimbursableAggregatorForSender(address)
+	if err != nil || maybeReimbursableAgg == nil {
+		return common.Address{}, false, err
+	}
+	return *maybeReimbursableAgg, true, nil
 }
 
 // Sets the caller's preferred aggregator to that provided
 func (con ArbAggregator) SetPreferredAggregator(c ctx, evm mech, prefAgg addr) error {
-	return c.state.L1PricingState().SetPreferredAggregator(c.caller, prefAgg)
+	var maybePrefAgg *common.Address
+	if prefAgg != (common.Address{}) {
+		maybePrefAgg = &prefAgg
+	}
+	return c.state.L1PricingState().SetUserSpecifiedAggregator(c.caller, maybePrefAgg)
 }
 
 // Gets the chain's default aggregator

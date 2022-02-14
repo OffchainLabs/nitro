@@ -5,10 +5,16 @@
 package arbstate
 
 import (
+	"strings"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/precompiles"
+	"github.com/offchainlabs/arbstate/solgen/go/node_interfacegen"
 )
 
 type ArbosPrecompileWrapper struct {
@@ -50,6 +56,18 @@ func init() {
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.PrecompiledContractsArbitrum[addr] = wrapped
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+	}
+
+	nodeInterface, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceABI))
+	if err != nil {
+		panic(err)
+	}
+	core.InterceptRPCMessage = func(msg types.Message) (types.Message, error) {
+		to := msg.To()
+		if to == nil || *to != common.HexToAddress("0xc8") {
+			return msg, nil
+		}
+		return ApplyNodeInterface(msg, nodeInterface)
 	}
 }
 

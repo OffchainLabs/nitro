@@ -102,7 +102,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
-	balanceAfter := statedb.GetBalance(addr)
+	balanceAfter := statedb.GetBalance(util.RemapL1Address(addr))
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		Fail(t)
 	}
@@ -126,13 +126,13 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		}
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 			if err != nil {
 				Fail(t, err)
 			}
 		}
 
-		arbos.FinalizeBlock(nil, nil, nil, statedb)
+		arbos.FinalizeBlock(nil, nil, statedb)
 	}
 }
 

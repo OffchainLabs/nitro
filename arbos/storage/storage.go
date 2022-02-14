@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/util"
+	nitro_util "github.com/offchainlabs/arbstate/util"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -46,6 +47,7 @@ type Storage struct {
 
 var StorageReadCost = params.SloadGasEIP2200
 var StorageWriteCost = params.SstoreSetGasEIP2200
+var StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
 // Use a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -90,6 +92,13 @@ func mapAddress(storageKey []byte, key common.Hash) common.Hash {
 	)
 }
 
+func writeCost(value common.Hash) uint64 {
+	if value == (common.Hash{}) {
+		return StorageWriteZeroCost
+	}
+	return StorageWriteCost
+}
+
 func (store *Storage) Account() common.Address {
 	return store.account
 }
@@ -124,7 +133,7 @@ func (store *Storage) Set(key common.Hash, value common.Hash) error {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := store.burner.Burn(StorageWriteCost)
+	err := store.burner.Burn(writeCost(value))
 	if err != nil {
 		return err
 	}
@@ -239,6 +248,23 @@ func (sto *Storage) Burner() burn.Burner {
 	return sto.burner // not public because these should never be changed once set
 }
 
+func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
+	byteCount := 0
+	for _, part := range data {
+		byteCount += len(part)
+	}
+	cost := 30 + 6*nitro_util.WordsForBytes(uint64(byteCount))
+	if err := sto.burner.Burn(cost); err != nil {
+		return nil, err
+	}
+	return crypto.Keccak256(data...), nil
+}
+
+func (sto *Storage) KeccakHash(data ...[]byte) (common.Hash, error) {
+	bytes, err := sto.Keccak(data...)
+	return common.BytesToHash(bytes), err
+}
+
 type StorageSlot struct {
 	account common.Address
 	db      vm.StateDB
@@ -258,16 +284,16 @@ func (ss *StorageSlot) Get() (common.Hash, error) {
 	return ss.db.GetState(ss.account, ss.slot), nil
 }
 
-func (ss *StorageSlot) Set(val common.Hash) error {
+func (ss *StorageSlot) Set(value common.Hash) error {
 	if ss.burner.ReadOnly() {
-		log.Error("Read-only burner attempted to mutate state", "value", val)
+		log.Error("Read-only burner attempted to mutate state", "value", value)
 		return vm.ErrWriteProtection
 	}
-	err := ss.burner.Burn(StorageWriteCost)
+	err := ss.burner.Burn(writeCost(value))
 	if err != nil {
 		return err
 	}
-	ss.db.SetState(ss.account, ss.slot, val)
+	ss.db.SetState(ss.account, ss.slot, value)
 	return nil
 }
 
@@ -314,6 +340,10 @@ func (sbu *StorageBackedUint64) Get() (uint64, error) {
 func (sbu *StorageBackedUint64) Set(value uint64) error {
 	bigValue := new(big.Int).SetUint64(value)
 	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
+}
+
+func (sbu *StorageBackedUint64) Clear() error {
+	return sbu.Set(0)
 }
 
 func (sbu *StorageBackedUint64) Increment() (uint64, error) {
