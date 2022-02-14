@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/Precompiles.sol";
+import "../libraries/CryptographyPrimitives.sol";
 
 contract HashProofHelper {
 	struct PreimagePart {
@@ -138,7 +138,7 @@ contract HashProofHelper {
 			for (uint256 i = 0; i < 25; i++) {
 				state256[i] = state.state[i];
 			}
-			state256 = Precompiles.keccakF(state256);
+			state256 = CryptographyPrimitives.keccakF(state256);
 			for (uint256 i = 0; i < 25; i++) {
 				state.state[i] = uint64(state256[i]);
 			}

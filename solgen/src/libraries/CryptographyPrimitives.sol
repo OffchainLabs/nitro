@@ -19,7 +19,7 @@
 pragma solidity ^0.8.0;
 
 ///      This algorithm has been extracted from the implementation of smart pool (https://github.com/smartpool)
-library Precompiles {
+library CryptographyPrimitives {
     // WARNING: This function has the keccak state in a weird order.
     // If the normal Keccak state is [0, 1, 2, 3, 4, 5, 6, ..., 24]
     // this function has its state as [0, 5, 10, 15, 20, 1, 6, 11, ..., 24]
