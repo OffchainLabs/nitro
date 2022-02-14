@@ -2,15 +2,6 @@
 
 ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment of L2 Arbitrum. ArbOS accounts for and manages network resources, produces blocks from incoming messages, and operates its instrumented instance of geth for smart contract execution.
 
-## Messages
-
-The sequencer encodes incoming messages as [L1IncomingMessage][L1IncomingMessage_link]. Other nodes in the system could either read them from the inboxes in the underlying L1, or from the transaction stream. These could potentially include multiple transactions, but will usually not.
-The ArbOS function [ProduceBlockAdvanced][ProduceBlockAdvanced_link] creates one block from one L1IncomingMessage. Thus number of L1IncomingMessage is linearly 1:1 mapped to L2 block number.
-ProduceBlockAdvanced adds system transactions if these are needed, and executes each transaction using geth's ApplyTransaction function. See ['Geth hooks'](Geth.md#hooksa-namehooksa)
-
-[L1IncomingMessage_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/incomingmessage.go#L54
-[ProduceBlockAdvanced_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/block_processor.go#L118
-
 ## Precompiles
 
 ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](Precompiles.md).
@@ -33,6 +24,13 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`][c
 [precompilesgen_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/gen.go#L55
 [packing_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L438
 [call_context_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/context.go#L26
+
+## Messages
+
+An [`L1IncomingMessage`][L1IncomingMessage_link] represents an incoming sequencer message. A message includes one or more user transactions depending on load, and is made into a [unique L2 block][ProduceBlockAdvanced_link]. The L2 block may include additional system transactions added in while processing the message's user txes, but ultimately the relationship is still bijective: for every [`L1IncomingMessage`][L1IncomingMessage_link] there is an L2 block with a unique L2 block hash, and for every L2 block after chain initialization there was an [`L1IncomingMessage`][L1IncomingMessage_link] that made it. A sequencer batch may contain more than one [`L1IncomingMessage`][L1IncomingMessage_link].
+
+[L1IncomingMessage_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/incomingmessage.go#L54
+[ProduceBlockAdvanced_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/block_processor.go#L118
 
 ## Retryables<a name=Retryables></a>
 
