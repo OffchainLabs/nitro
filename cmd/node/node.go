@@ -118,7 +118,12 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, time.Minute*5)
+			var wasmModuleRoot common.Hash
+			if nodeConf.BlockValidator {
+				// TODO actually figure out the wasmModuleRoot
+				panic("deploy as validator not yet supported")
+			}
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, wasmModuleRoot, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)

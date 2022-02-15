@@ -1,13 +1,13 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./Values.sol";
+import "./Value.sol";
 
 struct ValueArray {
 	Value[] inner;
 }
 
-library ValueArrays {
+library ValueArrayLib {
 	function get(ValueArray memory arr, uint256 index) internal pure returns (Value memory) {
 		return arr.inner[index];
 	}

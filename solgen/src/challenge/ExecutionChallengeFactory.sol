@@ -26,7 +26,7 @@ contract ExecutionChallengeFactory is IExecutionChallengeFactory {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external override returns (IExecutionChallenge) {
+    ) external override returns (IChallenge) {
         address clone = address(new BeaconProxy(address(beacon), ""));
         ExecutionChallenge(clone).initialize(
             osp,
@@ -39,6 +39,6 @@ contract ExecutionChallengeFactory is IExecutionChallengeFactory {
             asserterTimeLeft_,
             challengerTimeLeft_
         );
-        return IExecutionChallenge(clone);
+        return IChallenge(clone);
     }
 }

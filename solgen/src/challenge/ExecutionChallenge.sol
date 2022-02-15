@@ -1,16 +1,16 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+import "../libraries/Cloneable.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
-import "./IExecutionChallenge.sol";
-import "./Cloneable.sol";
+import "./IChallenge.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ExecutionChallenge is ChallengeCore, IExecutionChallenge {
+contract ExecutionChallenge is ChallengeCore, IChallenge {
     event OneStepProofCompleted();
 
     IOneStepProofEntry public osp;
