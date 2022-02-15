@@ -74,7 +74,7 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 
 // Checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType)
+	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
 	return aliased, nil
 }
 
@@ -87,7 +87,7 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 		address = c.txProcessor.Callers[evm.Depth()-2]
 	}
 
-	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType) {
 		address = util.InverseRemapL1Address(address)
 	}
 
