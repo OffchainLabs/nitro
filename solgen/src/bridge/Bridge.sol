@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./Inbox.sol";
 import "./Outbox.sol";
@@ -47,7 +47,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
-        require(allowedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
+        if(!allowedInboxesMap[msg.sender].allowed) revert NotInbox(msg.sender);
         return
             addMessageToInbox(
                 kind,
@@ -91,8 +91,8 @@ contract Bridge is OwnableUpgradeable, IBridge {
         uint256 amount,
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
-        require(allowedOutboxesMap[msg.sender].allowed, "NOT_FROM_OUTBOX");
-        if (data.length > 0) require(destAddr.isContract(), "NO_CODE_AT_DEST");
+        if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
+        if (data.length > 0 && !destAddr.isContract()) revert NotContract(destAddr);
         address currentOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
