@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/arbstate/arbnode"
 )
@@ -20,6 +21,7 @@ func main() {
 
 	l1conn := flag.String("l1conn", "", "l1 connection")
 	l1keyfile := flag.String("l1keyfile", "", "l1 private key file")
+	wasmmoduleroot := flag.String("wasmmoduleroot", "", "WASM module root hash")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	flag.Parse()
@@ -40,7 +42,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, time.Minute*5)
+	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, common.HexToHash(*wasmmoduleroot), time.Minute*5)
 	if err != nil {
 		flag.Usage()
 		panic(err)

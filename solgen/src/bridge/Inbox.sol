@@ -30,8 +30,32 @@ contract Inbox is IInbox {
 
     IBridge public override bridge;
 
-    bool public isCreateRetryablePaused;
-    bool public shouldRewriteSender;
+    bool public paused;
+    bool private _deprecated; // shouldRewriteSender was here, current value is 'true'
+
+    event PauseToggled(bool enabled);
+
+    /// @notice pauses all inbox functionality
+    function pause() external onlyOwner {
+        require(!paused, "ALREADY_PAUSED");
+        paused = true;
+        emit PauseToggled(true);
+    }
+
+    /// @notice unpauses all inbox functionality
+    function unpause() external onlyOwner {
+        require(paused, "NOT_PAUSED");
+        paused = false;
+        emit PauseToggled(false);
+    }
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused.
+     */
+    modifier whenNotPaused() {
+        require(!paused, "CONTRACT PAUSED");
+        _;
+    }
 
     function initialize(IBridge _bridge) external {
         require(address(bridge) == address(0), "ALREADY_INIT");
@@ -45,6 +69,7 @@ contract Inbox is IInbox {
      */
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
+        whenNotPaused
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
@@ -63,6 +88,7 @@ contract Inbox is IInbox {
     function sendL2Message(bytes calldata messageData)
         external
         override
+        whenNotPaused
         returns (uint256)
     {
         require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
@@ -77,7 +103,7 @@ contract Inbox is IInbox {
         uint256 nonce,
         address destAddr,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -99,7 +125,7 @@ contract Inbox is IInbox {
         uint256 gasPriceBid,
         address destAddr,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -122,7 +148,7 @@ contract Inbox is IInbox {
         address destAddr,
         uint256 amount,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -145,7 +171,7 @@ contract Inbox is IInbox {
         address destAddr,
         uint256 amount,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -170,38 +196,6 @@ contract Inbox is IInbox {
         _;
     }
 
-    event PauseToggled(bool enabled);
-
-    /// @notice pauses creating retryables
-    function pauseCreateRetryables() external onlyOwner {
-        require(!isCreateRetryablePaused, "ALREADY_PAUSED");
-        isCreateRetryablePaused = true;
-        emit PauseToggled(true);
-    }
-
-    /// @notice unpauses creating retryables
-    function unpauseCreateRetryables() external onlyOwner {
-        require(isCreateRetryablePaused, "NOT_PAUSED");
-        isCreateRetryablePaused = false;
-        emit PauseToggled(false);
-    }
-
-    event RewriteToggled(bool enabled);
-
-    /// @notice start rewriting addresses in eth deposits
-    function startRewriteAddress() external onlyOwner {
-        require(!shouldRewriteSender, "ALREADY_REWRITING");
-        shouldRewriteSender = true;
-        emit RewriteToggled(true);
-    }
-
-    /// @notice stop rewriting addresses in eth deposits
-    function stopRewriteAddress() external onlyOwner {
-        require(shouldRewriteSender, "NOT_REWRITING");
-        shouldRewriteSender = false;
-        emit RewriteToggled(false);
-    }
-
     /// @notice deposit eth from L1 to L2
     /// @dev this function should not be called inside contract constructors
     function depositEth(uint256 maxSubmissionCost)
@@ -209,24 +203,22 @@ contract Inbox is IInbox {
         payable
         virtual
         override
+        whenNotPaused
         returns (uint256)
     {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        if (shouldRewriteSender) {
-            if (!Address.isContract(sender) && tx.origin == msg.sender) {
-                // isContract check fails if this function is called during a contract's constructor.
-                // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
-                // If the caller is an EOA, we adjust the address.
-                // This is needed because unsigned messages to the L2 (such as retryables)
-                // have the L1 sender address mapped.
-                // Here we preemptively reverse the mapping for EOAs so deposits work as expected
-                sender = AddressAliasHelper.undoL1ToL2Alias(sender);
-            } else {
-                destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
-            }
+        if (!Address.isContract(sender) && tx.origin == msg.sender) {
+            // isContract check fails if this function is called during a contract's constructor.
+            // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
+            // If the caller is an EOA, we adjust the address.
+            // This is needed because unsigned messages to the L2 (such as retryables)
+            // have the L1 sender address mapped.
+            // Here we preemptively reverse the mapping for EOAs so deposits work as expected
+            sender = AddressAliasHelper.undoL1ToL2Alias(sender);
+        } else {
+            destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
         }
 
         return
@@ -272,8 +264,7 @@ contract Inbox is IInbox {
         uint256 maxGas,
         uint256 gasPriceBid,
         bytes calldata data
-    ) public payable virtual returns (uint256) {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
+    ) public payable virtual whenNotPaused returns (uint256) {
 
         return
             _deliverMessage(
@@ -316,14 +307,14 @@ contract Inbox is IInbox {
         uint256 maxGas,
         uint256 gasPriceBid,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (shouldRewriteSender && Address.isContract(excessFeeRefundAddress)) {
+        if (Address.isContract(excessFeeRefundAddress)) {
             excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
         }
-        if (shouldRewriteSender && Address.isContract(callValueRefundAddress)) {
+        if (Address.isContract(callValueRefundAddress)) {
             // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
