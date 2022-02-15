@@ -175,8 +175,11 @@ func InverseRemapL1Address(l1Addr common.Address) common.Address {
 	return common.BytesToAddress(sumBytes)
 }
 
-func DoesTxTypeAlias(txType byte) bool {
-	switch txType {
+func DoesTxTypeAlias(txType *byte) bool {
+	if txType == nil {
+		return false
+	}
+	switch *txType {
 	case types.ArbitrumUnsignedTxType:
 	case types.ArbitrumContractTxType:
 	case types.ArbitrumRetryTxType:
