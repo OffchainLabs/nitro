@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IInbox.sol";
 import "./IBridge.sol";
@@ -31,8 +31,6 @@ contract Inbox is IInbox {
     // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
     uint256 public constant MAX_DATA_SIZE = 117964;
 
-    string internal constant TOO_LARGE = "TOO_LARGE";
-
     IBridge public override bridge;
 
     bool public paused;
@@ -42,14 +40,14 @@ contract Inbox is IInbox {
 
     /// @notice pauses all inbox functionality
     function pause() external onlyOwner {
-        require(!paused, "ALREADY_PAUSED");
+        if(paused) revert AlreadyPaused();
         paused = true;
         emit PauseToggled(true);
     }
 
     /// @notice unpauses all inbox functionality
     function unpause() external onlyOwner {
-        require(paused, "NOT_PAUSED");
+        if(!paused) revert AlreadyUnpaused();
         paused = false;
         emit PauseToggled(false);
     }
@@ -58,12 +56,12 @@ contract Inbox is IInbox {
      * @dev Modifier to make a function callable only when the contract is not paused.
      */
     modifier whenNotPaused() {
-        require(!paused, "CONTRACT PAUSED");
+        if(paused) revert Paused();
         _;
     }
 
     function initialize(IBridge _bridge) external {
-        require(address(bridge) == address(0), "ALREADY_INIT");
+        if(address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
     }
 
@@ -78,8 +76,8 @@ contract Inbox is IInbox {
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
-        require(msg.sender == tx.origin, "origin only");
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(msg.sender != tx.origin) revert NotOrigin();
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -96,7 +94,7 @@ contract Inbox is IInbox {
         whenNotPaused
         returns (uint256)
     {
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -197,7 +195,7 @@ contract Inbox is IInbox {
         address bridgeowner = Bridge(address(bridge)).owner();
         // we want to validate the owner of the rollup
         //address owner = RollupBase(rollup).owner();
-        require(msg.sender == bridgeowner, "NOT_OWNER");
+        if(msg.sender != bridgeowner) revert NotOwner(msg.sender, bridgeowner);
         _;
     }
 
@@ -342,7 +340,7 @@ contract Inbox is IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        require(_messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(_messageData.length > MAX_DATA_SIZE) revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
