@@ -30,7 +30,7 @@ contract BridgeStub is IBridge {
         return allowedInboxesMap[inbox].allowed;
     }
 
-    function allowedOutboxes(address) external view override returns (bool) {
+    function allowedOutboxes(address) external pure override returns (bool) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -81,7 +81,7 @@ contract BridgeStub is IBridge {
         address,
         uint256,
         bytes calldata
-    ) external override returns (bool, bytes memory) {
+    ) external pure override returns (bool, bytes memory) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -103,7 +103,7 @@ contract BridgeStub is IBridge {
         }
     }
 
-    function setOutbox(address outbox, bool enabled) external override {
+    function setOutbox(address /* outbox */, bool /* enabled*/) external pure override {
         revert("NOT_IMPLEMENTED");
     }
 
