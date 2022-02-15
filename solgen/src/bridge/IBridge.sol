@@ -38,7 +38,7 @@ interface IBridge {
 
     event OutboxToggle(address indexed outbox, bool enabled);
 
-    function deliverMessageToInbox(
+    function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash

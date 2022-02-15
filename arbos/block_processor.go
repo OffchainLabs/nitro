@@ -131,8 +131,8 @@ func ProduceBlockAdvanced(
 		panic(err)
 	}
 
-	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
-		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
+	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
+		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
 	poster := messageHeader.Poster
@@ -208,7 +208,8 @@ func ProduceBlockAdvanced(
 			}
 
 			aggregator := &poster
-			if util.DoesTxTypeAlias(tx.Type()) {
+			txType := tx.Type()
+			if util.DoesTxTypeAlias(&txType) {
 				aggregator = nil
 			}
 			if gasPrice.Sign() > 0 {
@@ -336,7 +337,7 @@ func ProduceBlockAdvanced(
 		}
 	}
 
-	FinalizeBlock(header, complete, receipts, statedb)
+	FinalizeBlock(header, complete, statedb)
 	header.Root = statedb.IntermediateRoot(true)
 
 	block := types.NewBlock(header, complete, nil, receipts, trie.NewStackTrie(nil))
@@ -345,7 +346,7 @@ func ProduceBlockAdvanced(
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
-	balanceDelta := statedb.GetTotalBalanceDelta()
+	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
 		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
@@ -388,7 +389,7 @@ func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo
 	return extra, nil
 }
 
-func FinalizeBlock(header *types.Header, txs types.Transactions, receipts types.Receipts, statedb *state.StateDB) {
+func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
 		state, err := arbosState.OpenSystemArbosState(statedb, false)
 		if err != nil {
