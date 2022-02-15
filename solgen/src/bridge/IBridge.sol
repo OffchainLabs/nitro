@@ -3,7 +3,17 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
+
+import "../libraries/Error.sol";
+
+/// @dev Thrown when an un-authorized address tries to access an only-inbox function
+/// @param sender The un-authorized sender
+error NotInbox(address sender);
+
+/// @dev Thrown when an un-authorized address tries to access an only-outbox function
+/// @param sender The un-authorized sender
+error NotOutbox(address sender);
 
 interface IBridge {
     event MessageDelivered(
