@@ -10,6 +10,13 @@ import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
 
+/**
+ * @title Accepts batches from the sequencer and adds them to the rollup inbox.
+ * @notice Contains the inbox accumulator which is the ordering of all data and transactions to be processed by the rollup.
+ * As part of submitting a batch the sequencer is also expected to include items enqueued
+ * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
+ * sequencer within a time limit they can be force included into the rollup inbox by anyone.
+ */
 contract SequencerInbox is ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
@@ -118,7 +125,7 @@ contract SequencerInbox is ISequencerInbox {
             }
             require(
                 delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) ==
-                    Messages.addMessageToInbox(prevDelayedAcc, messageHash),
+                    Messages.accumulateInboxMessage(prevDelayedAcc, messageHash),
                 "DELAYED_ACCUMULATOR"
             );
         }

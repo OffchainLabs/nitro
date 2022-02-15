@@ -34,14 +34,14 @@ contract BridgeStub is IBridge {
         revert("NOT_IMPLEMENTED");
     }
 
-    function deliverMessageToInbox(
+    function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
         require(allowedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
         return
-            addMessageToInbox(
+            addMessageToAccumulator(
                 kind,
                 sender,
                 block.number,
@@ -51,7 +51,7 @@ contract BridgeStub is IBridge {
             );
     }
 
-    function addMessageToInbox(
+    function addMessageToAccumulator(
         uint8,
         address,
         uint256,
@@ -73,7 +73,7 @@ contract BridgeStub is IBridge {
         if (count > 0) {
             prevAcc = inboxAccs[count - 1];
         }
-        inboxAccs.push(Messages.addMessageToInbox(prevAcc, messageHash));
+        inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
         return count;
     }
 

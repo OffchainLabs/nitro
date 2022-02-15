@@ -1,8 +1,8 @@
 FROM node:17-bullseye-slim as contracts-builder
 RUN apt-get update && \
-    apt-get install -y git
+    apt-get install -y git python3 make g++
 WORKDIR /app
-COPY solgen/package.json solgen/
+COPY solgen/package.json solgen/yarn.lock solgen/
 RUN cd solgen && yarn
 COPY solgen solgen/
 RUN cd solgen && yarn build
