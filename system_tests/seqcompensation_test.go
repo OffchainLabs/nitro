@@ -16,7 +16,7 @@ import (
 )
 
 // Sequencer address gets something for posting batches
-func TestSequecerCompensation(t *testing.T) {
+func TestSequencerCompensation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
