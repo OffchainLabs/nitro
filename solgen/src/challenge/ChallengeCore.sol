@@ -5,6 +5,9 @@ import "../libraries/Cloneable.sol";
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 
+/// @dev The contract has been locked and mutating function cannot be called
+error Locked();
+
 abstract contract ChallengeCore is Cloneable {
     event InitiatedChallenge();
 
@@ -37,6 +40,13 @@ abstract contract ChallengeCore is Cloneable {
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
     IChallengeResultReceiver public resultReceiver;
+
+    bool public locked;
+
+    modifier whenNotLocked() {
+        if(locked) revert Locked();
+        _;
+    }
 
     modifier takeTurn() {
         require(msg.sender == currentResponder(), "BIS_SENDER");
@@ -118,7 +128,7 @@ abstract contract ChallengeCore is Cloneable {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes32[] calldata newSegments
-    ) external takeTurn {
+    ) external takeTurn whenNotLocked {
         (
             uint256 challengeStart,
             uint256 challengeLength
@@ -158,7 +168,7 @@ abstract contract ChallengeCore is Cloneable {
         );
     }
 
-    function timeout() external {
+    function timeout() external whenNotLocked {
         uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
         require(
             timeSinceLastMove > currentResponderTimeLeft(),
@@ -178,11 +188,11 @@ abstract contract ChallengeCore is Cloneable {
 
     function _asserterWin() private {
         resultReceiver.completeChallenge(asserter, challenger);
-        safeSelfDestruct(payable(0));
+        locked = true;
     }
 
     function _challengerWin() private {
         resultReceiver.completeChallenge(challenger, asserter);
-        safeSelfDestruct(payable(0));
+        locked = true;
     }
 }

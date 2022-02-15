@@ -60,7 +60,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes calldata proof
-    ) external takeTurn {
+    ) external takeTurn whenNotLocked {
         (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
@@ -84,9 +84,9 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         _currentWin();
     }
 
-    function clearChallenge() external override {
+    function clearChallenge() external override whenNotLocked {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        safeSelfDestruct(payable(0));
+        locked = true;
     }
 
     function _currentWin() private {

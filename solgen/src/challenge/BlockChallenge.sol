@@ -84,7 +84,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
-    ) external {
+    ) external whenNotLocked {
         require(msg.sender == currentResponder(), "EXEC_SENDER");
         require(
             block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
@@ -236,21 +236,22 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         }
     }
 
-    function clearChallenge() external override {
+    function clearChallenge() external override whenNotLocked {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         if (address(executionChallenge) != address(0)) {
             executionChallenge.clearChallenge();
         }
-        safeSelfDestruct(payable(0));
+        locked = true;
     }
 
     function completeChallenge(address winner, address loser)
         external
         override
+        whenNotLocked
     {
         require(msg.sender == address(executionChallenge), "NOT_EXEC_CHAL");
         resultReceiver.completeChallenge(winner, loser);
-        safeSelfDestruct(payable(0));
+        locked = true;
     }
 
     function _currentWin() private {
