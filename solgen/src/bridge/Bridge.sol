@@ -12,6 +12,13 @@ import "@openzeppelin/contracts/utils/Address.sol";
 
 import "./IBridge.sol";
 
+/**
+ * @title Staging ground for incoming and outgoing messages
+ * @notice Holds the inbox accumulator for delayed messages, and is the ETH escrow
+ * for value sent with these messages.
+ * Since the escrow is held here, this contract also contains a list of allowed
+ * outboxes that can make calls from here and withdraw this escrow.
+ */
 contract Bridge is OwnableUpgradeable, IBridge {
     using Address for address;
     struct InOutInfo {
@@ -27,7 +34,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
 
     address public override activeOutbox;
 
-    // Accumulator for delayed inbox; tail represents hash of the current state; each element represents the inclusion of a new message.
+    /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override inboxAccs;
 
     function initialize() external initializer {
@@ -42,14 +49,19 @@ contract Bridge is OwnableUpgradeable, IBridge {
         return allowedOutboxesMap[outbox].allowed;
     }
 
-    function deliverMessageToInbox(
+    /**
+     * @dev Enqueue a message in the delayed inbox accumulator.
+     * These messages are later sequenced in the SequencerInbox, either by the sequencer as
+     * part of a normal batch, or by force inclusion.
+     */
+    function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
         require(allowedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
         return
-            addMessageToInbox(
+            addMessageToAccumulator(
                 kind,
                 sender,
                 block.number,
@@ -59,7 +71,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
             );
     }
 
-    function addMessageToInbox(
+    function addMessageToAccumulator(
         uint8 kind,
         address sender,
         uint256 blockNumber,
@@ -81,7 +93,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
         if (count > 0) {
             prevAcc = inboxAccs[count - 1];
         }
-        inboxAccs.push(Messages.addMessageToInbox(prevAcc, messageHash));
+        inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
         emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, gasPrice, blockTimestamp);
         return count;
     }
