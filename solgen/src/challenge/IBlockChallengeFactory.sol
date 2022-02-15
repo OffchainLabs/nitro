@@ -5,12 +5,14 @@ import "../osp/IOneStepProofEntry.sol";
 import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
-interface IExecutionChallengeFactory {
+interface IBlockChallengeFactory {
+    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function createChallenge(
-        IChallengeResultReceiver resultReceiver_,
-        ExecutionContext memory execCtx_,
-        bytes32[2] memory startAndEndHashes,
-        uint256 challenge_length_,
+        address[3] calldata contractAddresses,
+        bytes32 wasmModuleRoot_,
+        MachineStatus[2] memory startAndEndMachineStatuses_,
+        GlobalState[2] memory startAndEndGlobalStates_,
+        uint64 numBlocks,
         address asserter_,
         address challenger_,
         uint256 asserterTimeLeft_,

@@ -20,7 +20,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
     }
 
     mapping(address => InOutInfo) private allowedInboxesMap;
-    //mapping(address => InOutInfo) private allowedOutboxesMap;
+    mapping(address => InOutInfo) private allowedOutboxesMap;
 
     address[] public allowedInboxList;
     address[] public allowedOutboxList;
@@ -39,7 +39,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
     }
 
     function allowedOutboxes(address outbox) external view override returns (bool) {
-        revert("NOT_IMPLEMENTED");
+        return allowedOutboxesMap[outbox].allowed;
     }
 
     function deliverMessageToInbox(
@@ -91,7 +91,14 @@ contract Bridge is OwnableUpgradeable, IBridge {
         uint256 amount,
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
-        revert("NOT_IMPLEMENTED");
+        require(allowedOutboxesMap[msg.sender].allowed, "NOT_FROM_OUTBOX");
+        if (data.length > 0) require(destAddr.isContract(), "NO_CODE_AT_DEST");
+        address currentOutbox = activeOutbox;
+        activeOutbox = msg.sender;
+        // We set and reset active outbox around external call so activeOutbox remains valid during call
+        (success, returnData) = destAddr.call{ value: amount }(data);
+        activeOutbox = currentOutbox;
+        emit BridgeCallTriggered(msg.sender, destAddr, amount, data);
     }
 
     function setInbox(address inbox, bool enabled) external override onlyOwner {
@@ -113,7 +120,21 @@ contract Bridge is OwnableUpgradeable, IBridge {
     }
 
     function setOutbox(address outbox, bool enabled) external override onlyOwner {
-        revert("NOT_IMPLEMENTED");
+        InOutInfo storage info = allowedOutboxesMap[outbox];
+        bool alreadyEnabled = info.allowed;
+        emit OutboxToggle(outbox, enabled);
+        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
+            return;
+        }
+        if (enabled) {
+            allowedOutboxesMap[outbox] = InOutInfo(allowedOutboxList.length, true);
+            allowedOutboxList.push(outbox);
+        } else {
+            allowedOutboxList[info.index] = allowedOutboxList[allowedOutboxList.length - 1];
+            allowedOutboxesMap[allowedOutboxList[info.index]].index = info.index;
+            allowedOutboxList.pop();
+            delete allowedOutboxesMap[outbox];
+        }
     }
 
     function messageCount() external view override returns (uint256) {

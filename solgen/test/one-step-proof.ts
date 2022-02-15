@@ -22,9 +22,11 @@ async function sendTestMessages() {
 describe("OneStepProof", function () {
   const root = "./test/proofs/";
   const dir = fs.readdirSync(root);
-  
+
   before(async function () {
-    await run("deploy", { "tags": "OneStepProofEntryStubbedInbox" });
+    await run("deploy", { "tags": "OneStepProofEntry" });
+    await run("deploy", { "tags": "SequencerInboxStub" });
+    await run("deploy", { "tags": "InboxStub" });
     await sendTestMessages();
   })
 
@@ -34,6 +36,8 @@ describe("OneStepProof", function () {
       let path = root + file;
       let proofs = JSON.parse(fs.readFileSync(path).toString('utf8'));
       const osp = await ethers.getContract("OneStepProofEntry");
+      const seqInbox = await ethers.getContract("SequencerInboxStub");
+      const bridge = await ethers.getContract("BridgeStub");
 
       const promises = [];
       const isdone = [];
@@ -42,7 +46,7 @@ describe("OneStepProof", function () {
         const proof = proofs[i];
         isdone.push(false);
         const inboxLimit = 1000000;
-        const promise = osp.proveOneStep([inboxLimit], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
+        const promise = osp.proveOneStep([inboxLimit, seqInbox.address, bridge.address], i, [...Buffer.from(proof.before, "hex")], [...Buffer.from(proof.proof, "hex")])
           .catch((err: any) => {
             console.error("Error executing proof " + i);
             throw err;

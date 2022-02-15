@@ -22,8 +22,7 @@ contract InboxStub is IInbox {
 
     IBridge public override bridge;
 
-    bool public isCreateRetryablePaused;
-    bool public shouldRewriteSender;
+    bool public paused;
 
     function initialize(IBridge _bridge) external {
         require(address(bridge) == address(0), "ALREADY_INIT");
