@@ -23,12 +23,15 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
+	util.StopWaiter
+
 	db ethdb.Database
 	bc *core.BlockChain
 
@@ -531,8 +534,9 @@ func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
 
-func (s *TransactionStreamer) Start(ctx context.Context) {
-	go (func() {
+func (s *TransactionStreamer) Start(ctxIn context.Context) {
+	ctx := s.StopWaiter.Start(ctxIn)
+	s.ThreadTracker.LaunchThread(func() {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -545,5 +549,5 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			case <-time.After(10 * time.Second):
 			}
 		}
-	})()
+	})
 }

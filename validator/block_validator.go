@@ -22,10 +22,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
+	util.StopWaiter
 	inboxTracker InboxTrackerInterface
 	blockchain   *core.BlockChain
 
@@ -228,7 +230,7 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
-	go v.prepareBlock(block.Header(), prevHeader, msg)
+	v.ThreadTracker.LaunchThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -499,6 +501,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationEntry.SeqMsgNr = startPos.BatchNumber
+		// validation can take long time. Don't wait for it when shutting down
 		go v.validate(ctx, validationEntry, startPos, endPos)
 		v.posNextSend += 1
 		v.globalPosNextSend = endPos
@@ -506,7 +509,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 }
 
 func (v *BlockValidator) startValidationLoop(ctx context.Context) {
-	go (func() {
+	v.ThreadTracker.LaunchThread(func() {
 		for {
 			select {
 			case _, ok := <-v.sendValidationsChan:
@@ -518,7 +521,7 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 			}
 			v.sendValidations(ctx)
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) progressValidated() {
@@ -556,7 +559,7 @@ func (v *BlockValidator) progressValidated() {
 }
 
 func (v *BlockValidator) startProgressLoop(ctx context.Context) {
-	go (func() {
+	v.ThreadTracker.LaunchThread(func() {
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -568,7 +571,7 @@ func (v *BlockValidator) startProgressLoop(ctx context.Context) {
 			}
 			v.progressValidated()
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) BlocksValidated() uint64 {
@@ -585,7 +588,8 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 	}
 }
 
-func (v *BlockValidator) Start(ctx context.Context) error {
+func (v *BlockValidator) Start(ctxIn context.Context) error {
+	ctx := v.StopWaiter.Start(ctxIn)
 	v.startProgressLoop(ctx)
 	v.startValidationLoop(ctx)
 	return nil

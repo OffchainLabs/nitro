@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/pkg/errors"
 )
 
@@ -37,6 +38,8 @@ type txQueueItem struct {
 }
 
 type Sequencer struct {
+	util.StopWaiter
+
 	txStreamer    *TransactionStreamer
 	txQueue       chan txQueueItem
 	l1Client      L1Interface
@@ -194,7 +197,8 @@ func (s *Sequencer) sequenceTransactions() {
 	}
 }
 
-func (s *Sequencer) Start(ctx context.Context) error {
+func (s *Sequencer) Start(ctxIn context.Context) error {
+	ctx := s.StopWaiter.Start(ctxIn)
 	if s.l1Client != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 		if initialBlockNr == 0 {
@@ -204,7 +208,7 @@ func (s *Sequencer) Start(ctx context.Context) error {
 		headerChan, cancel := HeaderSubscribeWithRetry(ctx, s.l1Client)
 		defer cancel()
 
-		go (func() {
+		s.ThreadTracker.LaunchThread(func() {
 			for {
 				select {
 				case header, ok := <-headerChan:
@@ -216,15 +220,20 @@ func (s *Sequencer) Start(ctx context.Context) error {
 					return
 				}
 			}
-		})()
+		})
 	}
 
-	go (func() {
+	s.ThreadTracker.LaunchThread(func() {
 		for {
 			s.sequenceTransactions()
-			time.Sleep(minBlockInterval)
+			select {
+			// TODO: don't use time.After
+			case <-time.After(minBlockInterval):
+			case <-ctx.Done():
+				return
+			}
 		}
-	})()
+	})
 
 	return nil
 }

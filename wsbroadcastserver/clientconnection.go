@@ -18,6 +18,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 // MaxSendQueue is the maximum number of items in a clients out channel before client gets disconnected.
@@ -26,6 +27,8 @@ const MaxSendQueue = 1000
 
 // ClientConnection represents client connection.
 type ClientConnection struct {
+	util.StopWaiter
+
 	ioMutex sync.Mutex
 	conn    net.Conn
 
@@ -34,7 +37,6 @@ type ClientConnection struct {
 	clientManager *ClientManager
 
 	lastHeardUnix int64
-	cancelFunc    context.CancelFunc
 	out           chan []byte
 }
 
@@ -50,11 +52,9 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
-	ctx, cancelFunc := context.WithCancel(parentCtx)
-	cc.cancelFunc = cancelFunc
+	ctx := cc.StopWaiter.Start(parentCtx)
 
 	go func() {
-		defer cc.cancelFunc()
 		defer close(cc.out)
 		for {
 			select {
@@ -79,13 +79,12 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 	}()
 }
 
-func (cc *ClientConnection) Stop() {
-	if cc.cancelFunc != nil {
-		cc.cancelFunc()
-	} else {
+func (cc *ClientConnection) StopAndWait() {
+	if cc.ThreadTracker == nil {
 		// If client connection never started, need to close channel
 		close(cc.out)
 	}
+	cc.StopWaiter.StopAndWait()
 }
 
 func (cc *ClientConnection) GetLastHeard() time.Time {

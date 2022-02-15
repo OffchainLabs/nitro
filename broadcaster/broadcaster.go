@@ -190,6 +190,6 @@ func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
 
-func (b *Broadcaster) Stop() {
-	b.server.Stop()
+func (b *Broadcaster) StopAndWait() {
+	b.server.StopAndWait()
 }

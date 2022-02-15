@@ -37,7 +37,7 @@ func TestReceiveMessages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
@@ -120,7 +120,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
 	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 20*time.Second, ts)
@@ -171,7 +171,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b1.Stop()
+	defer b1.StopAndWait()
 
 	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second, nil)
 
@@ -205,7 +205,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 1)

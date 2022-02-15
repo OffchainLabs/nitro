@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type InboxReaderConfig struct {
@@ -32,6 +33,8 @@ var TestInboxReaderConfig = InboxReaderConfig{
 }
 
 type InboxReader struct {
+	util.StopWaiter
+
 	// Only in run thread
 	caughtUp          bool
 	firstMessageBlock *big.Int
@@ -57,8 +60,9 @@ func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock
 	}, nil
 }
 
-func (r *InboxReader) Start(ctx context.Context) {
-	go (func() {
+func (r *InboxReader) Start(ctxIn context.Context) {
+	ctx := r.StopWaiter.Start(ctxIn)
+	r.ThreadTracker.LaunchThread(func() {
 		for {
 			err := r.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -67,10 +71,11 @@ func (r *InboxReader) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
+			// TODO: don't use time.After
 			case <-time.After(time.Second):
 			}
 		}
-	})()
+	})
 }
 
 func (r *InboxReader) Tracker() *InboxTracker {

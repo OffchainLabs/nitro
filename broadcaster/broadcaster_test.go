@@ -66,7 +66,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	b := NewBroadcaster(broadcasterSettings)
 	Require(t, b.Start(ctx))
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	dummyMessage := arbstate.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {

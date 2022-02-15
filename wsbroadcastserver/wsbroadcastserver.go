@@ -221,7 +221,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *WSBroadcastServer) Stop() {
+func (s *WSBroadcastServer) StopAndWait() {
 	err := s.listener.Close()
 	if err != nil {
 		log.Warn("error in listener.Close", "err", err)
@@ -237,7 +237,7 @@ func (s *WSBroadcastServer) Stop() {
 		log.Warn("error in acceptDesc.Close", "err", err)
 	}
 
-	s.clientManager.Stop()
+	s.clientManager.StopAndWait()
 	s.started = false
 }
 

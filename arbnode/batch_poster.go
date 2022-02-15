@@ -16,9 +16,12 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type BatchPoster struct {
+	util.StopWaiter
+
 	client          L1Interface
 	inbox           *InboxTracker
 	streamer        *TransactionStreamer
@@ -337,8 +340,9 @@ func (b *BatchPoster) postSequencerBatch() error {
 	return err
 }
 
-func (b *BatchPoster) Start(ctx context.Context) {
-	go (func() {
+func (b *BatchPoster) Start(ctxIn context.Context) {
+	ctx := b.StopWaiter.Start(ctxIn)
+	b.ThreadTracker.LaunchThread(func() {
 		for {
 			err := b.postSequencerBatch()
 			if err != nil {
@@ -347,8 +351,9 @@ func (b *BatchPoster) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
+			// TODO: dont use time.After
 			case <-time.After(b.config.BatchPollDelay):
 			}
 		}
-	})()
+	})
 }

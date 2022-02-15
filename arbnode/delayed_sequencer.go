@@ -10,9 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type DelayedSequencer struct {
+	util.StopWaiter
+
 	client          L1Interface
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
@@ -167,8 +170,9 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctx context.Context) {
-	go (func() {
+func (d *DelayedSequencer) Start(ctxIn context.Context) {
+	ctx := d.StopWaiter.Start(ctxIn)
+	d.ThreadTracker.LaunchThread(func() {
 		for {
 			err := d.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -180,5 +184,5 @@ func (d *DelayedSequencer) Start(ctx context.Context) {
 			case <-time.After(time.Second):
 			}
 		}
-	})()
+	})
 }
