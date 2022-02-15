@@ -1,7 +1,7 @@
 #!/bin/bash
 
 mydir=`dirname $0`
-cd $mydir
+cd "$mydir"
 
 if ! which docker-compose > /dev/null; then
     echo == Error! docker-compose not installed
@@ -15,7 +15,7 @@ if [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-num_volumes=`docker volume ls --filter label=com.docker.compose.project=nitro | tail +2 | wc -l`
+num_volumes=`docker volume ls --filter label=com.docker.compose.project=nitro -q | wc -l`
 
 if [[ $num_volumes -eq 0 ]]; then
     force_init=true

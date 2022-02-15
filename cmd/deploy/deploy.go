@@ -19,7 +19,7 @@ func main() {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlDebug)
 	log.Root().SetHandler(glogger)
-	log.Info("running node")
+	log.Info("deploying rollup")
 
 	ctx := context.Background()
 
