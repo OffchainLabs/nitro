@@ -2,10 +2,10 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 /**
-* @title precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006E
+* @title Methods for managing retryables.
+* @notice Precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006e
 */
 interface ArbRetryableTx {
-
     /**
     * @notice Schedule an attempt to redeem a redeemable tx, donating all of the call's gas to the redeem.
     * Revert if ticketId does not exist.
