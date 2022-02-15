@@ -14,6 +14,11 @@ import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./Bridge.sol";
 
+/**
+* @title Inbox for user and contract originated messages
+* @notice Messages created via this inbox are enqueued in the delayed accumulator
+* to await inclusion in the SequencerInbox
+*/
 contract Inbox is IInbox {
     uint8 internal constant ETH_TRANSFER = 0;
     uint8 internal constant L2_MSG = 3;
@@ -348,6 +353,6 @@ contract Inbox is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
     }
 }
