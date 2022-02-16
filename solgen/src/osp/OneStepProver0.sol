@@ -329,14 +329,11 @@ contract OneStepProver0 is IOneStepProver {
 
 	function executeIsStackBoundary(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
 		Value memory val = mach.valueStack.pop();
-		uint256 newContents = 0;
+		uint32 newContents = 0;
 		if (val.valueType == ValueType.STACK_BOUNDARY) {
 			newContents = 1;
 		}
-		mach.valueStack.push(Value({
-			valueType: ValueType.I32,
-			contents: newContents
-		}));
+		mach.valueStack.push(ValueLib.newI32(newContents));
 	}
 
 	function executeDup(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
