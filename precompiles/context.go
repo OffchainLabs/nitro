@@ -20,6 +20,7 @@ type addr = common.Address
 type mech = *vm.EVM
 type huge = *big.Int
 type hash = common.Hash
+type bytes4 = [4]byte
 type bytes32 = [32]byte
 type ctx = *context
 
