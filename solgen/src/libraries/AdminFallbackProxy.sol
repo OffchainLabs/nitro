@@ -140,9 +140,9 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         returns (address)
     {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
-        address _admin = _getAdmin();
-        // if there is an owner and it is the sender, delegate to admin logic
-        address target = _admin != address(0) && _admin == msg.sender
+        // if the sender is the proxy's admin, delegate to admin logic
+        // if the admin is disabled (set to addr zero), all calls will be forwarded to user logic
+        address target = _getAdmin() == msg.sender
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();
         // implementation setters already do an existence check

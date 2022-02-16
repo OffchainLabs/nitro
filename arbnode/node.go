@@ -143,10 +143,6 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, common.Address{}, err
 	}
 
-	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup deploy error: %w", err)
-	}
-
 	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
