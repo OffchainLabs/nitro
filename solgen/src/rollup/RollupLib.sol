@@ -112,20 +112,6 @@ library RollupLib {
             ChallengeLib.hashChallengeState(0, numBlocks, segments);
     }
 
-    function challengeRoot(
-        Assertion calldata /* assertion */,
-        bytes32 assertionExecHash,
-        uint256 blockProposed,
-        bytes32 wasmModuleRoot
-    ) internal pure returns (bytes32) {
-        return
-            challengeRootHash(
-                assertionExecHash,
-                blockProposed,
-                wasmModuleRoot
-            );
-    }
-
     function challengeRootHash(
         bytes32 execution,
         uint256 proposedTime,

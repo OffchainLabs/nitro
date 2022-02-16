@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IInbox.sol";
 import "./IBridge.sol";
@@ -14,6 +14,11 @@ import "../libraries/AddressAliasHelper.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./Bridge.sol";
 
+/**
+* @title Inbox for user and contract originated messages
+* @notice Messages created via this inbox are enqueued in the delayed accumulator
+* to await inclusion in the SequencerInbox
+*/
 contract Inbox is IInbox {
     uint8 internal constant ETH_TRANSFER = 0;
     uint8 internal constant L2_MSG = 3;
@@ -26,15 +31,37 @@ contract Inbox is IInbox {
     // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
     uint256 public constant MAX_DATA_SIZE = 117964;
 
-    string internal constant TOO_LARGE = "TOO_LARGE";
-
     IBridge public override bridge;
 
-    bool public isCreateRetryablePaused;
-    bool public shouldRewriteSender;
+    bool public paused;
+    bool private _deprecated; // shouldRewriteSender was here, current value is 'true'
+
+    event PauseToggled(bool enabled);
+
+    /// @notice pauses all inbox functionality
+    function pause() external onlyOwner {
+        if(paused) revert AlreadyPaused();
+        paused = true;
+        emit PauseToggled(true);
+    }
+
+    /// @notice unpauses all inbox functionality
+    function unpause() external onlyOwner {
+        if(!paused) revert AlreadyUnpaused();
+        paused = false;
+        emit PauseToggled(false);
+    }
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused.
+     */
+    modifier whenNotPaused() {
+        if(paused) revert Paused();
+        _;
+    }
 
     function initialize(IBridge _bridge) external {
-        require(address(bridge) == address(0), "ALREADY_INIT");
+        if(address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
     }
 
@@ -45,11 +72,12 @@ contract Inbox is IInbox {
      */
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
+        whenNotPaused
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
-        require(msg.sender == tx.origin, "origin only");
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(msg.sender != tx.origin) revert NotOrigin();
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -63,9 +91,10 @@ contract Inbox is IInbox {
     function sendL2Message(bytes calldata messageData)
         external
         override
+        whenNotPaused
         returns (uint256)
     {
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -77,7 +106,7 @@ contract Inbox is IInbox {
         uint256 nonce,
         address destAddr,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -99,7 +128,7 @@ contract Inbox is IInbox {
         uint256 gasPriceBid,
         address destAddr,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -122,7 +151,7 @@ contract Inbox is IInbox {
         address destAddr,
         uint256 amount,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -145,7 +174,7 @@ contract Inbox is IInbox {
         address destAddr,
         uint256 amount,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -166,40 +195,8 @@ contract Inbox is IInbox {
         address bridgeowner = Bridge(address(bridge)).owner();
         // we want to validate the owner of the rollup
         //address owner = RollupBase(rollup).owner();
-        require(msg.sender == bridgeowner, "NOT_OWNER");
+        if(msg.sender != bridgeowner) revert NotOwner(msg.sender, bridgeowner);
         _;
-    }
-
-    event PauseToggled(bool enabled);
-
-    /// @notice pauses creating retryables
-    function pauseCreateRetryables() external onlyOwner {
-        require(!isCreateRetryablePaused, "ALREADY_PAUSED");
-        isCreateRetryablePaused = true;
-        emit PauseToggled(true);
-    }
-
-    /// @notice unpauses creating retryables
-    function unpauseCreateRetryables() external onlyOwner {
-        require(isCreateRetryablePaused, "NOT_PAUSED");
-        isCreateRetryablePaused = false;
-        emit PauseToggled(false);
-    }
-
-    event RewriteToggled(bool enabled);
-
-    /// @notice start rewriting addresses in eth deposits
-    function startRewriteAddress() external onlyOwner {
-        require(!shouldRewriteSender, "ALREADY_REWRITING");
-        shouldRewriteSender = true;
-        emit RewriteToggled(true);
-    }
-
-    /// @notice stop rewriting addresses in eth deposits
-    function stopRewriteAddress() external onlyOwner {
-        require(shouldRewriteSender, "NOT_REWRITING");
-        shouldRewriteSender = false;
-        emit RewriteToggled(false);
     }
 
     /// @notice deposit eth from L1 to L2
@@ -209,24 +206,22 @@ contract Inbox is IInbox {
         payable
         virtual
         override
+        whenNotPaused
         returns (uint256)
     {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        if (shouldRewriteSender) {
-            if (!Address.isContract(sender) && tx.origin == msg.sender) {
-                // isContract check fails if this function is called during a contract's constructor.
-                // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
-                // If the caller is an EOA, we adjust the address.
-                // This is needed because unsigned messages to the L2 (such as retryables)
-                // have the L1 sender address mapped.
-                // Here we preemptively reverse the mapping for EOAs so deposits work as expected
-                sender = AddressAliasHelper.undoL1ToL2Alias(sender);
-            } else {
-                destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
-            }
+        if (!Address.isContract(sender) && tx.origin == msg.sender) {
+            // isContract check fails if this function is called during a contract's constructor.
+            // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
+            // If the caller is an EOA, we adjust the address.
+            // This is needed because unsigned messages to the L2 (such as retryables)
+            // have the L1 sender address mapped.
+            // Here we preemptively reverse the mapping for EOAs so deposits work as expected
+            sender = AddressAliasHelper.undoL1ToL2Alias(sender);
+        } else {
+            destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
         }
 
         return
@@ -272,8 +267,7 @@ contract Inbox is IInbox {
         uint256 maxGas,
         uint256 gasPriceBid,
         bytes calldata data
-    ) public payable virtual returns (uint256) {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
+    ) public payable virtual whenNotPaused returns (uint256) {
 
         return
             _deliverMessage(
@@ -316,14 +310,14 @@ contract Inbox is IInbox {
         uint256 maxGas,
         uint256 gasPriceBid,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (shouldRewriteSender && Address.isContract(excessFeeRefundAddress)) {
+        if (Address.isContract(excessFeeRefundAddress)) {
             excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
         }
-        if (shouldRewriteSender && Address.isContract(callValueRefundAddress)) {
+        if (Address.isContract(callValueRefundAddress)) {
             // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
@@ -346,7 +340,7 @@ contract Inbox is IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        require(_messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(_messageData.length > MAX_DATA_SIZE) revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
@@ -357,6 +351,6 @@ contract Inbox is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
     }
 }
