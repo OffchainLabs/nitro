@@ -9,8 +9,8 @@
     "build": "hardhat compile"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.4.0",
-    "@openzeppelin/contracts-upgradeable": "^4.4.0",
+    "@openzeppelin/contracts": "4.5.0",
+    "@openzeppelin/contracts-upgradeable": "4.5.0",
     "hardhat": "^2.6.6",
     "hardhat-deploy": "^0.9.14"
   },
