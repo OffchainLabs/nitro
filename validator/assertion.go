@@ -54,16 +54,25 @@ func (s *ExecutionState) AsSolidityStruct() rollupgen.RollupLibExecutionState {
 	}
 }
 
-func (a *ExecutionState) BlockStateHash() common.Hash {
-	if a.MachineStatus == MachineStatusFinished {
-		return crypto.Keccak256Hash([]byte("Block state:"), a.GlobalState.Hash().Bytes())
-	} else if a.MachineStatus == MachineStatusErrored {
-		return crypto.Keccak256Hash([]byte("Block state, errored:"), a.GlobalState.Hash().Bytes())
-	} else if a.MachineStatus == MachineStatusTooFar {
+func (s *ExecutionState) BlockStateHash() common.Hash {
+	if s.MachineStatus == MachineStatusFinished {
+		return crypto.Keccak256Hash([]byte("Block state:"), s.GlobalState.Hash().Bytes())
+	} else if s.MachineStatus == MachineStatusErrored {
+		return crypto.Keccak256Hash([]byte("Block state, errored:"), s.GlobalState.Hash().Bytes())
+	} else if s.MachineStatus == MachineStatusTooFar {
 		return crypto.Keccak256Hash([]byte("Block state, too far:"))
 	} else {
-		panic(fmt.Sprintf("invalid machine status %v", a.MachineStatus))
+		panic(fmt.Sprintf("invalid machine status %v", s.MachineStatus))
 	}
+}
+
+func (s *ExecutionState) RequiredBatches() uint64 {
+	count := s.GlobalState.Batch
+	if (s.MachineStatus == MachineStatusErrored || s.GlobalState.PosInBatch > 0) && count < math.MaxUint64 {
+		// The current batch was read
+		count++
+	}
+	return count
 }
 
 func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
