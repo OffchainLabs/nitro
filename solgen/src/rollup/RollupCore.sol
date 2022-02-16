@@ -564,7 +564,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     }
 
     function createNewNode(
-        RollupLib.Assertion calldata assertion,
+        RollupLib.Assertion memory assertion,
         uint64 prevNodeNum,
         bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
@@ -579,12 +579,12 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
             memoryFrame.currentInboxSize = sequencerBridge.batchCount();
-            // ensure that the assertion specified the correct inbox size
-            require(assertion.afterState.inboxMaxCount == memoryFrame.currentInboxSize, "WRONG_INBOX_COUNT");
+            // set the inbox max count according to the current inbox size
+            assertion.afterState.inboxMaxCount = memoryFrame.currentInboxSize;
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState) ==
+                RollupLib.stateHashMem(assertion.beforeState) ==
                     memoryFrame.prevNode.stateHash,
                 "PREV_STATE_HASH"
             );
@@ -640,7 +640,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
             memoryFrame.node = NodeLib.initialize(
-                RollupLib.stateHash(assertion.afterState),
+                RollupLib.stateHashMem(assertion.afterState),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
                     block.number,

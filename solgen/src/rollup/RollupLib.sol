@@ -79,7 +79,7 @@ library RollupLib {
         uint64 numBlocks;
     }
 
-    function executionHash(Assertion calldata assertion)
+    function executionHash(Assertion memory assertion)
         internal
         pure
         returns (bytes32)
@@ -127,7 +127,7 @@ library RollupLib {
             );
     }
 
-    function confirmHash(Assertion calldata assertion)
+    function confirmHash(Assertion memory assertion)
         internal
         pure
         returns (bytes32)
