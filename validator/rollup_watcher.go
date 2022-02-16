@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 )
 
-var rollupCreatedID common.Hash
+var rollupInitializedID common.Hash
 var nodeCreatedID common.Hash
 var challengeCreatedID common.Hash
 
@@ -27,7 +27,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	rollupCreatedID = parsedRollup.Events["RollupCreated"].ID
+	rollupInitializedID = parsedRollup.Events["RollupInitialized"].ID
 	nodeCreatedID = parsedRollup.Events["NodeCreated"].ID
 	challengeCreatedID = parsedRollup.Events["RollupChallengeStarted"].ID
 }
@@ -69,12 +69,16 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 }
 
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
+	var toBlock *big.Int
+	if r.fromBlock > 0 {
+		toBlock = big.NewInt(r.fromBlock)
+	}
 	var query = ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: big.NewInt(r.fromBlock),
-		ToBlock:   big.NewInt(r.fromBlock),
+		ToBlock:   toBlock,
 		Addresses: []common.Address{r.address},
-		Topics:    [][]common.Hash{{rollupCreatedID}},
+		Topics:    [][]common.Hash{{rollupInitializedID}},
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {

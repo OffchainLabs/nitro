@@ -21,7 +21,7 @@ type BuilderBackend struct {
 	transactions []*types.Transaction
 	builderAuth  *bind.TransactOpts
 	realSender   common.Address
-	wallet       *common.Address
+	wallet       *ValidatorWallet
 
 	arbutil.L1Interface
 }
@@ -38,7 +38,7 @@ func NewBuilderBackend(wallet *ValidatorWallet) (*BuilderBackend, error) {
 	return &BuilderBackend{
 		builderAuth: fakeAuth,
 		realSender:  wallet.From(),
-		wallet:      wallet.Address(),
+		wallet:      wallet,
 		L1Interface: wallet.client,
 	}, nil
 }
@@ -51,10 +51,20 @@ func (b *BuilderBackend) ClearTransactions() {
 	b.transactions = nil
 }
 
+func (b *BuilderBackend) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
+	if call.From == b.builderAuth.From {
+		if b.wallet.Address() == nil {
+			return 0, nil
+		}
+		call.From = *b.wallet.Address()
+	}
+	return b.EstimateGas(ctx, call)
+}
+
 func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	b.transactions = append(b.transactions, tx)
 	data, dest, amount, totalAmount := combineTxes(b.transactions)
-	if b.wallet == nil {
+	if b.wallet.Address() == nil {
 		return nil
 	}
 	realData, err := validatorABI.Pack("executeTransactions", data, dest, amount)
@@ -63,7 +73,7 @@ func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transact
 	}
 	msg := ethereum.CallMsg{
 		From:  b.realSender,
-		To:    b.wallet,
+		To:    b.wallet.Address(),
 		Value: totalAmount,
 		Data:  realData,
 	}

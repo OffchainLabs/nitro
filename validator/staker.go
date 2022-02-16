@@ -6,6 +6,7 @@ package validator
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -76,7 +77,6 @@ func NewStaker(
 	client *ethclient.Client,
 	wallet *ValidatorWallet,
 	fromBlock int64,
-	validatorUtilsAddress common.Address,
 	strategy StakerStrategy,
 	callOpts bind.CallOpts,
 	auth *bind.TransactOpts,
@@ -87,6 +87,10 @@ func NewStaker(
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
 ) (*Staker, error) {
+	if !common.IsHexAddress(config.UtilsAddress) {
+		return nil, fmt.Errorf("invalid validator utils address \"%v\"", config.UtilsAddress)
+	}
+	validatorUtilsAddress := common.HexToAddress(config.UtilsAddress)
 	val, err := NewValidator(ctx, client, wallet, fromBlock, validatorUtilsAddress, callOpts, l2Blockchain, inboxReader, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err

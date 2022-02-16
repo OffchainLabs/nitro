@@ -99,6 +99,7 @@ func NewValidator(
 		BlockThreshold:     big.NewInt(960),
 		callOpts:           callOpts,
 		genesisBlockNumber: genesisBlockNumber,
+		l2Blockchain:       l2Blockchain,
 		inboxReader:        inboxReader,
 		inboxTracker:       inboxTracker,
 		txStreamer:         txStreamer,
@@ -256,7 +257,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	}
 
 	startBlock := v.l2Blockchain.GetBlockByHash(startState.GlobalState.BlockHash)
-	if startBlock == nil {
+	if startBlock == nil && (startState.GlobalState != GoGlobalState{}) {
 		expectedBlockHeight, inboxPositionInvalid, err := v.blockNumberFromGlobalState(startState.GlobalState)
 		if err != nil {
 			return nil, false, err
@@ -332,8 +333,14 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				return nil, false, err
 			}
 
+			var expectedNumBlocks uint64
+			if startBlock == nil {
+				expectedNumBlocks = lastBlockNum + 1
+			} else {
+				expectedNumBlocks = lastBlockNum - startBlock.NumberU64()
+			}
 			valid := !inboxPositionInvalid &&
-				nd.Assertion.NumBlocks == lastBlockNum-startBlock.NumberU64() &&
+				nd.Assertion.NumBlocks == expectedNumBlocks &&
 				afterGs.BlockHash == lastBlock.Hash() &&
 				afterGs.SendRoot == lastBlockExtra.SendRoot
 			if valid {
@@ -371,7 +378,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		return nil, wrongNodesExist, nil
 	}
 	lastBlockValidated := blocksValidated - 1
-	if lastBlockValidated <= startBlock.NumberU64() {
+	if startBlock != nil && lastBlockValidated <= startBlock.NumberU64() {
 		// we haven't validated any new blocks
 		return nil, wrongNodesExist, nil
 	}
@@ -422,6 +429,12 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		lastHash = lastSuccessor.NodeHash
 		hasSiblingByte[0] = 1
 	}
+	var assertionNumBlocks uint64
+	if startBlock == nil {
+		assertionNumBlocks = assertingBlock.NumberU64() + 1
+	} else {
+		assertionNumBlocks = assertingBlock.NumberU64() - startBlock.NumberU64()
+	}
 	assertion := &Assertion{
 		BeforeState: startState,
 		AfterState: &ExecutionState{
@@ -433,7 +446,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			},
 			MachineStatus: MachineStatusFinished,
 		},
-		NumBlocks: assertingBlock.NumberU64() - startBlock.NumberU64(),
+		NumBlocks: assertionNumBlocks,
 	}
 
 	executionHash := assertion.ExecutionHash()

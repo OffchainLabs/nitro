@@ -133,6 +133,11 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Buil
 		return nil, nil
 	}
 
+	err := v.createWalletIfNeeded(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(txes) == 1 {
 		arbTx, err := v.executeTransaction(ctx, txes[0])
 		if err != nil {
@@ -152,11 +157,6 @@ func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *Buil
 		dest = append(dest, *tx.To())
 		amount = append(amount, tx.Value())
 		totalAmount = totalAmount.Add(totalAmount, tx.Value())
-	}
-
-	err := v.createWalletIfNeeded(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	oldAuthValue := v.auth.Value

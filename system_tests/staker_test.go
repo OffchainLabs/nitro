@@ -23,7 +23,8 @@ import (
 )
 
 func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) {
-	ctx := context.Background()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
@@ -51,6 +52,29 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB")
 
+	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authA, l1client)
+	Require(t, err)
+	valWalletAddrCheck, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authA, l1client)
+	Require(t, err)
+	if valWalletAddrA == valWalletAddrCheck {
+		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
+	}
+
+	valWalletAddrB, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authB, l1client)
+	Require(t, err)
+
+	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
+	Require(t, err)
+	tx, err = rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+
+	valConfig := validator.ValidatorConfig{
+		UtilsAddress:      valUtils.Hex(),
+		TargetNumMachines: 4,
+	}
+
 	valWalletA, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
 	stakerA, err := validator.NewStaker(
@@ -58,11 +82,10 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 		l1client,
 		valWalletA,
 		0,
-		valUtils,
 		validator.MakeNodesStrategy,
 		bind.CallOpts{},
 		&l1authA,
-		validator.ValidatorConfig{},
+		valConfig,
 		l2nodeA.ArbInterface.BlockChain(),
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
@@ -78,11 +101,10 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 		l1client,
 		valWalletB,
 		0,
-		valUtils,
 		validator.MakeNodesStrategy,
 		bind.CallOpts{},
 		&l1authB,
-		validator.ValidatorConfig{},
+		valConfig,
 		l2nodeB.ArbInterface.BlockChain(),
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -91,7 +113,54 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	)
 	Require(t, err)
 
-	_, _, _, _ = l2clientA, l2clientB, stakerA, stakerB
+	// Continually make L2 transactions in a background thread
+	l2info.GenerateAccount("BackgroundUser")
+	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
+	err = l2clientA.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+	Require(t, err)
+	err = l2clientB.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+	Require(t, err)
+	go (func() {
+		for i := uint64(0); ctx.Err() == nil; i++ {
+			l2info.Accounts["BackgroundUser"].Nonce = i
+			tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
+			err := l2clientA.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+			Require(t, err)
+			if createNodesFlaky || stakeLatestFlaky {
+				l2info.Accounts["BackgroundUser"].Nonce = i
+				tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
+			}
+			err = l2clientB.SendTransaction(ctx, tx)
+			Require(t, err)
+			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+			Require(t, err)
+		}
+	})()
+
+	for i := 0; i < 100; i++ {
+		var stakerName string
+		if i%2 == 0 {
+			stakerName = "A"
+			tx, err = stakerA.Act(ctx)
+		} else {
+			stakerName = "B"
+			tx, err = stakerB.Act(ctx)
+		}
+		Require(t, err, "Staker", stakerName, "failed to act")
+		if tx != nil {
+			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
+		}
+		for j := 0; j < 20; j++ {
+			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+		}
+	}
 }
 
 func TestStakersCooperative(t *testing.T) {
