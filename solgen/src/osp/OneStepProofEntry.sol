@@ -2,12 +2,15 @@
 pragma solidity ^0.8.0;
 
 import "../state/Deserialize.sol";
-import "../state/Machines.sol";
-import "../state/MerkleProofs.sol";
+import "../state/Machine.sol";
+import "../state/MerkleProof.sol";
 import "./IOneStepProver.sol";
 import "./IOneStepProofEntry.sol";
 
 contract OneStepProofEntry is IOneStepProofEntry {
+    using MerkleProofLib for MerkleProof;
+    using MachineLib for Machine;
+
     IOneStepProver prover0;
     IOneStepProver proverMem;
     IOneStepProver proverMath;
@@ -39,22 +42,22 @@ contract OneStepProofEntry is IOneStepProofEntry {
         {
             uint256 offset = 0;
             (mach, offset) = Deserialize.machine(proof, offset);
-            require(Machines.hash(mach) == beforeHash, "MACHINE_BEFORE_HASH");
+            require(mach.hash() == beforeHash, "MACHINE_BEFORE_HASH");
             if (mach.status != MachineStatus.RUNNING) {
                 // Machine is halted.
                 // WARNING: at this point, most machine fields are unconstrained.
-                return Machines.hash(mach);
+                return mach.hash();
             }
 
             if (machineStep + 1 == OneStepProofEntryLib.MAX_STEPS) {
                 mach.status = MachineStatus.ERRORED;
-                return Machines.hash(mach);
+                return mach.hash();
             }
 
             (mod, offset) = Deserialize.module(proof, offset);
             (modProof, offset) = Deserialize.merkleProof(proof, offset);
             require(
-                MerkleProofs.computeRootFromModule(modProof, mach.moduleIdx, mod) ==
+                modProof.computeRootFromModule(mach.moduleIdx, mod) ==
                     mach.modulesRoot,
                 "MODULES_ROOT"
             );
@@ -65,13 +68,11 @@ contract OneStepProofEntry is IOneStepProofEntry {
                 (inst, offset) = Deserialize.instruction(proof, offset);
                 (instProof, offset) = Deserialize.merkleProof(proof, offset);
                 (funcProof, offset) = Deserialize.merkleProof(proof, offset);
-                bytes32 codeHash = MerkleProofs.computeRootFromInstruction(
-                    instProof,
+                bytes32 codeHash = instProof.computeRootFromInstruction(
                     mach.functionPc,
                     inst
                 );
-                bytes32 recomputedRoot = MerkleProofs.computeRootFromFunction(
-                    funcProof,
+                bytes32 recomputedRoot = funcProof.computeRootFromFunction(
                     mach.functionIdx,
                     codeHash
                 );
@@ -143,12 +144,11 @@ contract OneStepProofEntry is IOneStepProofEntry {
             proof
         );
 
-        mach.modulesRoot = MerkleProofs.computeRootFromModule(
-            modProof,
+        mach.modulesRoot = modProof.computeRootFromModule(
             oldModIdx,
             mod
         );
 
-        return Machines.hash(mach);
+        return mach.hash();
     }
 }

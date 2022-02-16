@@ -1,16 +1,16 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./Values.sol";
-import "./ValueStacks.sol";
-import "./PcStacks.sol";
-import "./Machines.sol";
+import "./Value.sol";
+import "./ValueStack.sol";
+import "./PcStack.sol";
+import "./Machine.sol";
 import "./Instructions.sol";
-import "./StackFrames.sol";
-import "./MerkleProofs.sol";
-import "./ModuleMemories.sol";
-import "./Modules.sol";
-import "./GlobalStates.sol";
+import "./StackFrame.sol";
+import "./MerkleProof.sol";
+import "./ModuleMemory.sol";
+import "./Module.sol";
+import "./GlobalState.sol";
 
 library Deserialize {
 	function u8(bytes calldata proof, uint256 startOffset) internal pure returns (uint8 ret, uint256 offset) {
@@ -66,7 +66,7 @@ library Deserialize {
 		offset = startOffset;
 		uint8 typeInt = uint8(proof[offset]);
 		offset++;
-		require(typeInt <= uint8(Values.maxValueType()), "BAD_VALUE_TYPE");
+		require(typeInt <= uint8(ValueLib.maxValueType()), "BAD_VALUE_TYPE");
 		uint256 contents;
 		(contents, offset) = u256(proof, offset);
 		val = Value({
@@ -196,10 +196,10 @@ library Deserialize {
 		bytes32[2] memory bytes32_vals;
 		uint64[2] memory u64_vals;
 
-		for (uint8 i = 0; i< GlobalStates.BYTES32_VALS_NUM; i++) {
+		for (uint8 i = 0; i< GlobalStateLib.BYTES32_VALS_NUM; i++) {
 			(bytes32_vals[i], offset) = b32(proof, offset);
 		}
-		for (uint8 i = 0; i< GlobalStates.U64_VALS_NUM; i++) {
+		for (uint8 i = 0; i< GlobalStateLib.U64_VALS_NUM; i++) {
 			(u64_vals[i], offset) = u64(proof, offset);
 		}
 		state = GlobalState({

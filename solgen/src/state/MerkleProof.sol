@@ -1,17 +1,20 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./Values.sol";
+import "./Value.sol";
 import "./Instructions.sol";
-import "./Modules.sol";
+import "./Module.sol";
 
 struct MerkleProof {
 	bytes32[] counterparts;
 }
 
-library MerkleProofs {
+library MerkleProofLib {
+	using ModuleLib for Module;
+	using ValueLib for Value;
+
 	function computeRootFromValue(MerkleProof memory proof, uint256 index, Value memory leaf) internal pure returns (bytes32) {
-		return computeRootUnsafe(proof, index, Values.hash(leaf), "Value merkle tree:");
+		return computeRootUnsafe(proof, index, leaf.hash(), "Value merkle tree:");
 	}
 
 	function computeRootFromInstruction(MerkleProof memory proof, uint256 index, Instruction memory inst) internal pure returns (bytes32) {
@@ -29,7 +32,7 @@ library MerkleProofs {
 	}
 
 	function computeRootFromElement(MerkleProof memory proof, uint256 index, bytes32 funcTypeHash, Value memory val) internal pure returns (bytes32) {
-		bytes32 h = keccak256(abi.encodePacked("Table element:", funcTypeHash, Values.hash(val)));
+		bytes32 h = keccak256(abi.encodePacked("Table element:", funcTypeHash, val.hash()));
 		return computeRootUnsafe(proof, index, h, "Table element merkle tree:");
 	}
 
@@ -39,7 +42,7 @@ library MerkleProofs {
 	}
 
 	function computeRootFromModule(MerkleProof memory proof, uint256 index, Module memory mod) internal pure returns (bytes32) {
-		return computeRootUnsafe(proof, index, Modules.hash(mod), "Module merkle tree:");
+		return computeRootUnsafe(proof, index, mod.hash(), "Module merkle tree:");
 	}
 
 	// WARNING: leafHash must be computed in such a way that it cannot be a non-leaf hash.

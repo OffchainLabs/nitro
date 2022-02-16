@@ -131,8 +131,8 @@ func ProduceBlockAdvanced(
 		panic(err)
 	}
 
-	if statedb.GetTotalBalanceDelta().BitLen() != 0 {
-		panic("ProduceBlock called with dirty StateDB (non-zero total balance delta)")
+	if statedb.GetUnexpectedBalanceDelta().BitLen() != 0 {
+		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
 	poster := messageHeader.Poster
@@ -346,7 +346,7 @@ func ProduceBlockAdvanced(
 		panic(fmt.Sprintf("Block has %d txes but %d receipts", len(block.Transactions()), len(receipts)))
 	}
 
-	balanceDelta := statedb.GetTotalBalanceDelta()
+	balanceDelta := statedb.GetUnexpectedBalanceDelta()
 	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
 		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
