@@ -157,8 +157,12 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
             globalStateHashes[1]
         );
 
+        uint256 maxInboxMessagesRead = startAndEndGlobalStates[1].getInboxPosition();
+        if (machineStatuses[1] == MachineStatus.ERRORED || startAndEndGlobalStates[1].getPositionInMessage() > 0) {
+            maxInboxMessagesRead++;
+        }
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: startAndEndGlobalStates[1].getInboxPosition(),
+            maxInboxMessagesRead: maxInboxMessagesRead,
             sequencerInbox: sequencerInbox,
             delayedBridge: delayedBridge
         });
