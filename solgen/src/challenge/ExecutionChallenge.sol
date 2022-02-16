@@ -86,7 +86,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        turn = Turn.TERMINATED;
+        turn = Turn.NO_CHALLENGE;
     }
 
     function _currentWin() private {
@@ -98,8 +98,6 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         //     _asserterWin();
         // } else if (turn == Turn.CHALLENGER) {
         //     _challengerWin();
-        // } else if(turn == Turn.TERMINATED) {
-        //     revert(TERMINATED);
         // } else {
         // 	   revert(NO_TURN);
         // }

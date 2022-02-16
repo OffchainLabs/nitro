@@ -11,8 +11,7 @@ abstract contract ChallengeCore is Cloneable {
     enum Turn {
         NO_CHALLENGE,
         ASSERTER,
-        CHALLENGER,
-        TERMINATED
+        CHALLENGER
     }
 
     event Bisected(
@@ -35,7 +34,6 @@ abstract contract ChallengeCore is Cloneable {
     bytes32 public challengeStateHash;
 
     string constant NO_TURN = "NO_TURN";
-    string constant TERMINATED = "TERMINATED";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
     IChallengeResultReceiver public resultReceiver;
@@ -64,8 +62,6 @@ abstract contract ChallengeCore is Cloneable {
             return asserter;
         } else if (turn == Turn.CHALLENGER) {
             return challenger;
-        } else if (turn == Turn.TERMINATED) {
-            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
@@ -76,8 +72,6 @@ abstract contract ChallengeCore is Cloneable {
             return asserterTimeLeft;
         } else if (turn == Turn.CHALLENGER) {
             return challengerTimeLeft;
-        } else if (turn == Turn.TERMINATED) {
-            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
@@ -177,20 +171,18 @@ abstract contract ChallengeCore is Cloneable {
         } else if (turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
             _asserterWin();
-        } else if(turn == Turn.TERMINATED) {
-            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
     }
 
     function _asserterWin() private {
-        turn = Turn.TERMINATED;
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(asserter, challenger);
     }
 
     function _challengerWin() private {
-        turn = Turn.TERMINATED;
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(challenger, asserter);
     }
 }
