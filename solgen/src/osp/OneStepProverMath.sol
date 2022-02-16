@@ -11,8 +11,15 @@ contract OneStepProverMath is IOneStepProver {
 	using ValueLib for Value;
     using ValueStackLib for ValueStack;
 
-	function executeEqz(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
+	function executeEqz(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
 		Value memory v = mach.valueStack.pop();
+		if (inst.opcode == Instructions.I32_EQZ) {
+			require(v.valueType == ValueType.I32, "NOT_I32");
+		} else if (inst.opcode == Instructions.I64_EQZ) {
+			require(v.valueType == ValueType.I64, "NOT_I64");
+		} else {
+			revert("BAD_EQZ");
+		}
 
 		uint32 output;
 		if (v.contents == 0) {

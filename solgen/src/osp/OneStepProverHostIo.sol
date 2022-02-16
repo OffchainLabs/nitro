@@ -40,7 +40,7 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata inst,
         bytes calldata proof
     ) internal pure {
-        uint256 ptr = mach.valueStack.pop().contents;
+        uint256 ptr = mach.valueStack.pop().assumeI32();
         uint32 idx = mach.valueStack.pop().assumeI32();
 
         if (idx >= GlobalStateLib.BYTES32_VALS_NUM) {
@@ -105,8 +105,8 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata,
         bytes calldata proof
     ) internal pure {
-        uint256 preimageOffset = mach.valueStack.pop().contents;
-        uint256 ptr = mach.valueStack.pop().contents;
+        uint256 preimageOffset = mach.valueStack.pop().assumeI32();
+        uint256 ptr = mach.valueStack.pop().assumeI32();
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.status = MachineStatus.ERRORED;
             return;
@@ -220,9 +220,9 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata inst,
         bytes calldata proof
     ) internal view {
-        uint256 messageOffset = mach.valueStack.pop().contents;
-        uint256 ptr = mach.valueStack.pop().contents;
-        uint256 msgIndex = mach.valueStack.pop().contents;
+        uint256 messageOffset = mach.valueStack.pop().assumeI32();
+        uint256 ptr = mach.valueStack.pop().assumeI32();
+        uint256 msgIndex = mach.valueStack.pop().assumeI64();
         if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER && msgIndex >= execCtx.maxInboxMessagesRead) {
             mach.status = MachineStatus.TOO_FAR;
             return;
