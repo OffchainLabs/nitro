@@ -140,14 +140,26 @@ abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicE
     }
 
     /**
+     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the secondary contract. Called by
+     * {upgradeSecondaryTo} and {upgradeSecondaryToAndCall}.
+     *
+     * Normally, this function will use an xref:access.adoc[access control] modifier such as {Ownable-onlyOwner}.
+     *
+     * ```solidity
+     * function _authorizeSecondaryUpgrade(address) internal override onlyOwner {}
+     * ```
+     */
+    function _authorizeSecondaryUpgrade(address newImplementation) internal virtual;
+
+    /**
      * @dev Upgrade the secondary implementation of the proxy to `newImplementation`.
      *
-     * Calls {_authorizeUpgrade}.
+     * Calls {_authorizeSecondaryUpgrade}.
      *
      * Emits an {UpgradedSecondary} event.
      */
     function upgradeSecondaryTo(address newImplementation) external onlyProxy {
-        _authorizeUpgrade(newImplementation);
+        _authorizeSecondaryUpgrade(newImplementation);
         _upgradeSecondaryToAndCallUUPS(newImplementation, new bytes(0), false);
     }
 
@@ -155,21 +167,13 @@ abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicE
      * @dev Upgrade the secondary implementation of the proxy to `newImplementation`, and subsequently execute the function call
      * encoded in `data`.
      *
-     * Calls {_authorizeUpgrade}.
+     * Calls {_authorizeSecondaryUpgrade}.
      *
      * Emits an {UpgradedSecondary} event.
      */
     function upgradeSecondaryToAndCall(address newImplementation, bytes memory data) external payable onlyProxy {
-        _authorizeUpgrade(newImplementation);
+        _authorizeSecondaryUpgrade(newImplementation);
         _upgradeSecondaryToAndCallUUPS(newImplementation, data, true);
-    }
-
-    function upgradeTo(address newImplementation) external override {
-        revert("NOT_PRIMARY_LOGIC");
-    }
-
-    function upgradeToAndCall(address newImplementation, bytes memory data) external payable override {
-        revert("NOT_PRIMARY_LOGIC_AND_CALL");
     }
 }
 

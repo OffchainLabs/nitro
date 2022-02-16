@@ -138,11 +138,15 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         emit OwnerFunctionCalled(4);
     }
 
+    /// @notice allows the admin to upgrade the primary logic contract (ie rollup user logic)
     /// @dev this function doens't revert as this secondary logic contract is only
-    /// reachable by the proxy admin 
-    function _authorizeUpgrade(address newImplementation) internal override {
-        // TODO: should we distinguish primary and secondary logic upgrades? (ie user vs admin)
-    }
+    /// reachable by the proxy's admin 
+    function _authorizeUpgrade(address newImplementation) internal override {}
+
+    /// @notice allows the admin to upgrade the secondary logic contract (ie rollup admin logic, aka this)
+    /// @dev this function doens't revert as this secondary logic contract is only
+    /// reachable by the proxy's admin 
+    function _authorizeSecondaryUpgrade(address newImplementation) internal override {}
 
     /**
      * @notice Set the addresses of the validator whitelist

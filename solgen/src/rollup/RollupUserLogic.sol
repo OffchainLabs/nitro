@@ -21,6 +21,7 @@ abstract contract AbsRollupUserLogic is
     }
 
     /// @inheritdoc UUPSUpgradeable
+    /// @dev this always reverts as upgrades are expected to be handled by the secondary logic contract
     function _authorizeUpgrade(address newImplementation) internal override {
         revert("NO_USER_INITIATED_UPGRADES");
     }
