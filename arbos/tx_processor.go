@@ -72,12 +72,11 @@ func (p *TxProcessor) PopCaller() {
 
 func (p *TxProcessor) getReimbursableAggregator() *common.Address {
 	if p.msg.UnderlyingTransaction() == nil {
-		// This is an eth_call/eth_estimateGas.
 		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
 		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
 		p.state.Burner.Restrict(err)
 		return agg
-	} else if arbos_util.DoesTxTypeAlias(*p.TopTxType) {
+	} else if arbos_util.DoesTxTypeAlias(p.TopTxType) {
 		// This is a non-aggregated message.
 		return nil
 	} else {
@@ -157,7 +156,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		if util.BigLessThan(tx.GasPrice, basefee) {
+		if util.BigLessThan(tx.GasPrice, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
 			// user's bid was too low
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
@@ -228,9 +227,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
 	p.state.Restrict(err)
 
-	if p.msg.UnderlyingTransaction() == nil {
+	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
-		// This will help an eth_call user pad the total they'll pay in case the price rises a bit.
+		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
 		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
@@ -240,6 +239,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 			adjustedPrice = minGasPrice
 		}
 		gasPrice = adjustedPrice
+
+		// Pad the L1 cost by 10% in case the L1 gas price rises
+		posterCost = util.BigMulByFrac(posterCost, 110, 100)
 	}
 	if gasPrice.Sign() > 0 {
 		posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice) // the cost as if it were an amount of gas
@@ -257,7 +259,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
-	if p.msg.UnderlyingTransaction() != nil {
+	if p.msg.RunMode() != types.MessageEthcallMode {
 		// If this is a real tx, limit the amount of computed based on the gas pool.
 		// We do this by charging extra gas, and then refunding it later.
 		gasAvailable, _ := p.state.L2PricingState().PerBlockGasLimit()

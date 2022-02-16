@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
 import "./IOutbox.sol";
@@ -31,13 +31,13 @@ contract Outbox is IOutbox {
     uint128 public constant OUTBOX_VERSION = 2;
 
     function initialize(address _rollup, IBridge _bridge) external {
-        require(rollup == address(0), "ALREADY_INIT");
+        if(rollup != address(0)) revert AlreadyInit();
         rollup = _rollup;
         bridge = _bridge;
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
-        require(msg.sender == rollup, "ONLY_ROLLUP");
+        if(msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
@@ -135,14 +135,14 @@ contract Outbox is IOutbox {
         uint256 index,
         bytes32 item
     ) internal returns (bytes32) {
-        require(proof.length < 256, "PROOF_TOO_LONG");
-        require(index < 2**proof.length, "PATH_NOT_MINIMAL");
+        if(proof.length >= 256) revert ProofTooLong(proof.length);
+        if(index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
 
         // Hash the leaf an extra time to prove it's a leaf
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
-        require(roots[calcRoot] != bytes32(0), "UNKNOWN_ROOT");
+        if(roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        require(!spent[index], "ALREADY_SPENT");
+        if(spent[index]) revert AlreadySpent(index);
         spent[index] = true;
 
         return bytes32(index);
@@ -162,7 +162,7 @@ contract Outbox is IOutbox {
                     revert(add(32, returndata), returndata_size)
                 }
             } else {
-                revert("BRIDGE_CALL_FAILED");
+                revert BridgeCallFailed();
             }
         }
     }
