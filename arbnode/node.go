@@ -143,8 +143,6 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, common.Address{}, err
 	}
 
-	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup deploy error: %w", err)
 	}
@@ -214,6 +212,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 			BaseStake:                      big.NewInt(params.Ether),
 			WasmModuleRoot:                 wasmModuleRoot,
 			Owner:                          deployAuth.From,
+			LoserStakeEscrow:               common.Address{},
 			ChainId:                        big.NewInt(1338),
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},

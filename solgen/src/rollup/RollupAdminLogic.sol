@@ -8,8 +8,9 @@ import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallenge.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
+import { SecondaryLogicUUPSUpgradeable } from "../libraries/AdminFallbackProxy.sol";
 
-contract RollupAdminLogic is RollupCore, IRollupAdmin {
+contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
     function isInit() internal view returns (bool) {
         return confirmPeriodBlocks != 0 || isMasterCopy;
     }
@@ -44,6 +45,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
         challengeExecutionBisectionDegree = 400;
+        loserStakeEscrow = config.loserStakeEscrow;
+        // stake token is expected to be set in the user logic contract
+        // stakeToken = config.stakeToken;
 
         sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
 
@@ -127,15 +131,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
         emit OwnerFunctionCalled(4);
     }
 
-    /**
-     * @notice Set the addresses of rollup logic contracts called
-     * @param newAdminLogic address of logic that owner of rollup calls
-     * @param newUserLogic address of logic that user of rollup calls
-     */
-    function setLogicContracts(address newAdminLogic, address newUserLogic) external override {
-        // adminLogic = AAPStorage(newAdminLogic);
-        // userLogic = AAPStorage(newUserLogic);
-        emit OwnerFunctionCalled(5);
+    /// @dev this function doens't revert as this secondary logic contract is only
+    /// reachable by the proxy admin 
+    function _authorizeUpgrade(address newImplementation) internal override {
+        // TODO: should we distinguish primary and secondary logic upgrades? (ie user vs admin)
     }
 
     /**
@@ -152,6 +151,16 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
             isValidator[_validator[i]] = _val[i];
         }
         emit OwnerFunctionCalled(6);
+    }
+
+    /**
+     * @notice Set a new owner address for the rollup
+     * @dev it is expected that only the rollup admin can use this facet to set a new owner
+     * @param newOwner address of new rollup owner
+     */
+    function setOwner(address newOwner) external override {
+        _changeAdmin(newOwner);
+        emit OwnerFunctionCalled(7);
     }
 
     /**
@@ -305,5 +314,13 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
             sendRoot
         );
         emit OwnerFunctionCalled(24);
+    }
+
+    function setLoserStakeEscrow(address newLoserStakerEscrow) external override {
+        // escrow holder can't be proxy admin, since escrow is only redeemable through
+        // the primary user logic contract
+        require(newLoserStakerEscrow != _getAdmin(), "INVALID_ESCROW");
+        loserStakeEscrow = newLoserStakerEscrow;
+        emit OwnerFunctionCalled(25);
     }
 }

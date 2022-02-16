@@ -3,10 +3,12 @@
 pragma solidity ^0.8.0;
 
 import { IRollupUser } from "./IRollupLogic.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
+    UUPSUpgradeable,
     IRollupUser,
     IChallengeResultReceiver
 {
@@ -16,6 +18,11 @@ abstract contract AbsRollupUserLogic is
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
         _;
+    }
+
+    /// @inheritdoc UUPSUpgradeable
+    function _authorizeUpgrade(address newImplementation) internal override {
+        revert("NO_USER_INITIATED_UPGRADES");
     }
 
     /**
@@ -402,8 +409,8 @@ abstract contract AbsRollupUserLogic is
         increaseStakeBy(winningStaker, amountWon);
         remainingLoserStake -= amountWon;
         clearChallenge(winningStaker);
-        // Credit the other half to the owner address
-        increaseWithdrawableFunds(owner(), remainingLoserStake);
+        // Credit the other half to the loserStakeEscrow address
+        increaseWithdrawableFunds(loserStakeEscrow, remainingLoserStake);
         // Turning loser into zombie renders the loser's remaining stake inaccessible
         turnIntoZombie(losingStaker);
     }

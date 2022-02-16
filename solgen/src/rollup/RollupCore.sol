@@ -31,7 +31,6 @@ import "./IRollupCore.sol";
 import "../libraries/Cloneable.sol";
 
 import "../challenge/IBlockChallengeFactory.sol";
-import "../libraries/ProxyUtil.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
@@ -53,6 +52,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
+    // when a staker loses a challenge, half of their funds get escrowed in this address
+    address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
@@ -87,12 +88,6 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
-
-    /// @dev the rollup owner is whoever controls the AdminFallbackProxy
-    function owner() internal view returns (address) {
-        // this follow EIP1967 
-        return ProxyUtil.getProxyAdmin();
-    }
 
     /**
      * @notice Get a storage reference to the Node for the given node index

@@ -35,6 +35,7 @@ struct Config {
     uint256 baseStake;
     bytes32 wasmModuleRoot;
     address owner;
+    address loserStakeEscrow;
     uint256 chainId;
     ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
 }

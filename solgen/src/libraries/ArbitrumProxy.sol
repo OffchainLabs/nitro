@@ -22,8 +22,6 @@ import "./AdminFallbackProxy.sol";
 import "../rollup/IRollupLogic.sol";
 
 contract ArbitrumProxy is AdminFallbackProxy {
-    using Address for address;
-
     constructor(
         Config memory config,
         ContractDependencies memory connectedContracts
@@ -33,8 +31,5 @@ contract ArbitrumProxy is AdminFallbackProxy {
         address(connectedContracts.rollupAdminLogic),
         abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
         config.owner
-    ) {
-        require(address(connectedContracts.rollupAdminLogic).isContract(), "ADMIN_LOGIC_NOT_CONTRACT");
-        require(address(connectedContracts.rollupUserLogic).isContract(), "USER_LOGIC_NOT_CONTRACT");
-    }
+    ) {}
 }
