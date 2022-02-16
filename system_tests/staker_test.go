@@ -52,6 +52,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB")
 
 	valWalletA, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
+	Require(t, err)
 	stakerA, err := validator.NewStaker(
 		ctx,
 		l1client,
@@ -71,6 +72,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	Require(t, err)
 
 	valWalletB, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeB.DeployInfo.Rollup, l1client, &l1authB, 0, func(common.Address) {})
+	Require(t, err)
 	stakerB, err := validator.NewStaker(
 		ctx,
 		l1client,
