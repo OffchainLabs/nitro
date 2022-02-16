@@ -11,24 +11,38 @@ package arbtest
 import (
 	"context"
 	"math/big"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
 func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) {
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	ctx := context.Background()
+	broadcasterPort := 9644
+	nodeAConf := arbnode.NodeConfigL1Test
+	if !createNodesFlaky && !stakeLatestFlaky {
+		nodeAConf.Broadcaster = true
+		nodeAConf.BroadcasterConfig = *newBroadcasterConfigTest(broadcasterPort)
+	}
+	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeAConf)
 	defer l1stack.Close()
 
-	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, false)
+	nodeBConf := arbnode.NodeConfigL1Test
+	nodeBConf.BatchPoster = false
+	nodeBConf.DelayedSequencerConfig.FinalizeDistance = big.NewInt(1000000)
+	if !createNodesFlaky && !stakeLatestFlaky {
+		nodeBConf.BroadcastClient = true
+		nodeBConf.BroadcastClientConfig = *newBroadcastClientConfigTest(broadcasterPort)
+	}
+	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, &nodeBConf)
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
 
@@ -113,19 +127,24 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	)
 	Require(t, err)
 
-	// Continually make L2 transactions in a background thread
 	l2info.GenerateAccount("BackgroundUser")
 	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-	err = l2clientB.SendTransaction(ctx, tx)
-	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
-	Require(t, err)
+	if createNodesFlaky || stakeLatestFlaky {
+		err = l2clientB.SendTransaction(ctx, tx)
+		Require(t, err)
+		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+		Require(t, err)
+	}
+
+	// Continually make L2 transactions in a background thread
+	var testEnded int32
+	defer (func() { atomic.StoreInt32(&testEnded, 1) })()
 	go (func() {
-		for i := uint64(0); ctx.Err() == nil; i++ {
+		for i := uint64(0); atomic.LoadInt32(&testEnded) == 0; i++ {
 			l2info.Accounts["BackgroundUser"].Nonce = i
 			tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
 			err := l2clientA.SendTransaction(ctx, tx)
@@ -133,13 +152,14 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 			Require(t, err)
 			if createNodesFlaky || stakeLatestFlaky {
+				// Create a different transaction for the second node
 				l2info.Accounts["BackgroundUser"].Nonce = i
 				tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
+				err = l2clientB.SendTransaction(ctx, tx)
+				Require(t, err)
+				_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+				Require(t, err)
 			}
-			err = l2clientB.SendTransaction(ctx, tx)
-			Require(t, err)
-			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
-			Require(t, err)
 		}
 	})()
 

@@ -52,13 +52,7 @@ func (b *BuilderBackend) ClearTransactions() {
 }
 
 func (b *BuilderBackend) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
-	if call.From == b.builderAuth.From {
-		if b.wallet.Address() == nil {
-			return 0, nil
-		}
-		call.From = *b.wallet.Address()
-	}
-	return b.EstimateGas(ctx, call)
+	return 0, nil
 }
 
 func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transaction) error {

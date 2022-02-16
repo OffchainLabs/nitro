@@ -382,8 +382,9 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		// we haven't validated any new blocks
 		return nil, wrongNodesExist, nil
 	}
-	var assertingBatchNumber uint64
-	var assertingPosInBatch uint64
+	var assertionCoversBatch uint64
+	var afterGsBatch uint64
+	var afterGsPosInBatch uint64
 	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
 		lastBlockNum, err := v.inboxTracker.GetBatchMessageCount(i)
 		if err != nil {
@@ -401,12 +402,22 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				// We haven't reached the minimum assertion size yet
 				break
 			}
-			assertingBatchNumber = i
-			assertingPosInBatch = lastBlockValidated - prevBlockNum - 1
+			assertionCoversBatch = i
+			if lastBlockValidated < lastBlockNum {
+				afterGsBatch = i
+				afterGsPosInBatch = lastBlockValidated - prevBlockNum
+			} else {
+				afterGsBatch = i + 1
+				afterGsPosInBatch = 0
+			}
 			break
 		}
 	}
-	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertingBatchNumber)
+	if assertionCoversBatch == 0 {
+		// we haven't validated the next batch completely
+		return nil, wrongNodesExist, nil
+	}
+	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertionCoversBatch)
 	if err != nil {
 		return nil, false, err
 	}
@@ -441,8 +452,8 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			GlobalState: GoGlobalState{
 				BlockHash:  assertingBlock.Hash(),
 				SendRoot:   assertingBlockExtra.SendRoot,
-				Batch:      assertingBatchNumber,
-				PosInBatch: assertingPosInBatch,
+				Batch:      afterGsBatch,
+				PosInBatch: afterGsPosInBatch,
 			},
 			MachineStatus: MachineStatusFinished,
 		},

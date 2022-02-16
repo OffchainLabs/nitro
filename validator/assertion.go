@@ -80,34 +80,30 @@ func (a *Assertion) AsSolidityStruct() rollupgen.RollupLibAssertion {
 	}
 }
 
-func (a *Assertion) BeforeExecutionHash() common.Hash {
-	return a.BeforeState.BlockStateHash()
-}
-
-func (a *Assertion) AfterExecutionHash() common.Hash {
-	return a.AfterState.BlockStateHash()
-}
-
-func BisectionChunkHash(
+func HashChallengeState(
 	segmentStart uint64,
 	segmentLength uint64,
-	startHash common.Hash,
-	endHash common.Hash,
+	hashes []common.Hash,
 ) common.Hash {
+	var hashesBytes []byte
+	for _, h := range hashes {
+		hashesBytes = append(hashesBytes, h[:]...)
+	}
 	return crypto.Keccak256Hash(
 		math.U256Bytes(new(big.Int).SetUint64(segmentStart)),
 		math.U256Bytes(new(big.Int).SetUint64(segmentLength)),
-		startHash[:],
-		endHash[:],
+		hashesBytes,
 	)
 }
 
 func (a *Assertion) ExecutionHash() common.Hash {
-	return BisectionChunkHash(
+	return HashChallengeState(
 		0,
 		a.NumBlocks,
-		a.BeforeExecutionHash(),
-		a.AfterExecutionHash(),
+		[]common.Hash{
+			a.BeforeState.BlockStateHash(),
+			a.AfterState.BlockStateHash(),
+		},
 	)
 }
 
