@@ -85,7 +85,7 @@ contract AdminAwareProxy is Proxy, AAPStorage {
         require(successUser, "FAIL_INIT_USER_LOGIC");
     }
 
-    function postUpgradeInit() external {
+    function postUpgradeInit() external view {
         // it is assumed the rollup contract is behind a Proxy controlled by a proxy admin
         // this function can only be called by the proxy admin contract
         address proxyAdmin = ProxyUtil.getProxyAdmin();
