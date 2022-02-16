@@ -26,10 +26,10 @@ contract ArbitrumProxy is AdminFallbackProxy {
         Config memory config,
         ContractDependencies memory connectedContracts
     ) AdminFallbackProxy(
-        address(connectedContracts.rollupUserLogic),
-        abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
         address(connectedContracts.rollupAdminLogic),
         abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
+        address(connectedContracts.rollupUserLogic),
+        abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
         config.owner
     ) {}
 }

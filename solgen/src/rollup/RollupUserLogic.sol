@@ -3,12 +3,12 @@
 pragma solidity ^0.8.0;
 
 import { IRollupUser } from "./IRollupLogic.sol";
-import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
     RollupCore,
-    UUPSUpgradeable,
+    UUPSNotUpgradeable,
     IRollupUser,
     IChallengeResultReceiver
 {
@@ -18,12 +18,6 @@ abstract contract AbsRollupUserLogic is
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
         _;
-    }
-
-    /// @inheritdoc UUPSUpgradeable
-    /// @dev this always reverts as upgrades are expected to be handled by the secondary logic contract
-    function _authorizeUpgrade(address newImplementation) internal override {
-        revert("NO_USER_INITIATED_UPGRADES");
     }
 
     /**
@@ -627,7 +621,7 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) external override {
+    function initialize(address _stakeToken) external view override {
         require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;

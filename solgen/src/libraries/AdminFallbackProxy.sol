@@ -125,11 +125,11 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         address adminAddr
     ) payable {
         assert(_ADMIN_SLOT == bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1));
-        assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
         assert(_IMPLEMENTATION_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1));
+        assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
         _changeAdmin(adminAddr);
-        _upgradeSecondaryToAndCall(adminLogic, adminData, false);
-        _upgradeToAndCall(userLogic, userData, false);
+        _upgradeToAndCall(adminLogic, adminData, false);
+        _upgradeSecondaryToAndCall(userLogic, userData, false);
     }
 
     /// @inheritdoc Proxy
@@ -142,7 +142,7 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
         // if the sender is the proxy's admin, delegate to admin logic
         // if the admin is disabled (set to addr zero), all calls will be forwarded to user logic
-        address target = _getAdmin() == msg.sender
+        address target = _getAdmin() != msg.sender
             ? DoubleLogicERC1967Upgrade._getSecondaryImplementation()
             : ERC1967Upgrade._getImplementation();
         // implementation setters already do an existence check
