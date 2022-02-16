@@ -60,7 +60,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes calldata proof
-    ) external takeTurn whenNotLocked {
+    ) external takeTurn {
         (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
@@ -84,9 +84,9 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         _currentWin();
     }
 
-    function clearChallenge() external override whenNotLocked {
+    function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        locked = true;
+        turn = Turn.TERMINATED;
     }
 
     function _currentWin() private {
@@ -98,6 +98,8 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         //     _asserterWin();
         // } else if (turn == Turn.CHALLENGER) {
         //     _challengerWin();
+        // } else if(turn == Turn.TERMINATED) {
+        //     revert(TERMINATED);
         // } else {
         // 	   revert(NO_TURN);
         // }

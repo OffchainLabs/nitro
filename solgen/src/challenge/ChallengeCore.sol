@@ -5,16 +5,14 @@ import "../libraries/Cloneable.sol";
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 
-/// @dev The contract has been locked and mutating function cannot be called
-error Locked();
-
 abstract contract ChallengeCore is Cloneable {
     event InitiatedChallenge();
 
     enum Turn {
         NO_CHALLENGE,
         ASSERTER,
-        CHALLENGER
+        CHALLENGER,
+        TERMINATED
     }
 
     event Bisected(
@@ -37,16 +35,10 @@ abstract contract ChallengeCore is Cloneable {
     bytes32 public challengeStateHash;
 
     string constant NO_TURN = "NO_TURN";
+    string constant TERMINATED = "TERMINATED";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
     IChallengeResultReceiver public resultReceiver;
-
-    bool public locked;
-
-    modifier whenNotLocked() {
-        if(locked) revert Locked();
-        _;
-    }
 
     modifier takeTurn() {
         require(msg.sender == currentResponder(), "BIS_SENDER");
@@ -72,6 +64,8 @@ abstract contract ChallengeCore is Cloneable {
             return asserter;
         } else if (turn == Turn.CHALLENGER) {
             return challenger;
+        } else if (turn == Turn.TERMINATED) {
+            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
@@ -82,6 +76,8 @@ abstract contract ChallengeCore is Cloneable {
             return asserterTimeLeft;
         } else if (turn == Turn.CHALLENGER) {
             return challengerTimeLeft;
+        } else if (turn == Turn.TERMINATED) {
+            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
@@ -128,7 +124,7 @@ abstract contract ChallengeCore is Cloneable {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes32[] calldata newSegments
-    ) external takeTurn whenNotLocked {
+    ) external takeTurn {
         (
             uint256 challengeStart,
             uint256 challengeLength
@@ -168,7 +164,7 @@ abstract contract ChallengeCore is Cloneable {
         );
     }
 
-    function timeout() external whenNotLocked {
+    function timeout() external {
         uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
         require(
             timeSinceLastMove > currentResponderTimeLeft(),
@@ -181,18 +177,20 @@ abstract contract ChallengeCore is Cloneable {
         } else if (turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
             _asserterWin();
+        } else if(turn == Turn.TERMINATED) {
+            revert(TERMINATED);
         } else {
             revert(NO_TURN);
         }
     }
 
     function _asserterWin() private {
+        turn = Turn.TERMINATED;
         resultReceiver.completeChallenge(asserter, challenger);
-        locked = true;
     }
 
     function _challengerWin() private {
+        turn = Turn.TERMINATED;
         resultReceiver.completeChallenge(challenger, asserter);
-        locked = true;
     }
 }
