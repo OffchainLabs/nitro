@@ -19,9 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/proxy/Proxy.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Upgrade.sol";
-import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
@@ -109,56 +107,9 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
 }
 
 
-/// @notice An extension to OZ's UUPSUpgradeable contract to be used in secondary logic contracts from DoubleLogicERC1967Upgrade
-abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicERC1967Upgrade {
-    /// @inheritdoc UUPSUpgradeable
-    function proxiableUUID() external view override notDelegated returns (bytes32) {
-        return _IMPLEMENTATION_SECONDARY_SLOT;
-    }
-
-    /**
-     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the secondary contract. Called by
-     * {upgradeSecondaryTo} and {upgradeSecondaryToAndCall}.
-     *
-     * Normally, this function will use an xref:access.adoc[access control] modifier such as {Ownable-onlyOwner}.
-     *
-     * ```solidity
-     * function _authorizeSecondaryUpgrade(address) internal override onlyOwner {}
-     * ```
-     */
-    function _authorizeSecondaryUpgrade(address newImplementation) internal virtual;
-
-    /**
-     * @dev Upgrade the secondary implementation of the proxy to `newImplementation`.
-     *
-     * Calls {_authorizeSecondaryUpgrade}.
-     *
-     * Emits an {UpgradedSecondary} event.
-     */
-    function upgradeSecondaryTo(address newImplementation) external onlyProxy {
-        _authorizeSecondaryUpgrade(newImplementation);
-        _upgradeSecondaryToAndCallUUPS(newImplementation, new bytes(0), false);
-    }
-
-    /**
-     * @dev Upgrade the secondary implementation of the proxy to `newImplementation`, and subsequently execute the function call
-     * encoded in `data`.
-     *
-     * Calls {_authorizeSecondaryUpgrade}.
-     *
-     * Emits an {UpgradedSecondary} event.
-     */
-    function upgradeSecondaryToAndCall(address newImplementation, bytes memory data) external payable onlyProxy {
-        _authorizeSecondaryUpgrade(newImplementation);
-        _upgradeSecondaryToAndCallUUPS(newImplementation, data, true);
-    }
-}
-
-
-/// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Proxy
+/// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Upgrade
 /// @dev this follows the UUPS pattern for upgradeability - read more at https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.5.0/contracts/proxy#transparent-vs-uups-proxies
 contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
-
     /**
      * @dev Initializes the upgradeable proxy with an initial implementation specified by `userLogic` and a secondary
      * logic implementation specified by `adminLogic`

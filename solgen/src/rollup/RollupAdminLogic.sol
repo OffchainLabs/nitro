@@ -7,8 +7,8 @@ import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallenge.sol";
+import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import { SecondaryLogicUUPSUpgradeable } from "../libraries/AdminFallbackProxy.sol";
 
 contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
     function isInit() internal view returns (bool) {
