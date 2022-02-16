@@ -624,8 +624,8 @@ abstract contract AbsRollupUserLogic is
 contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
         RollupLib.Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external override {
+        ContractDependencies calldata /* connectedContracts */
+    ) external view override {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;
