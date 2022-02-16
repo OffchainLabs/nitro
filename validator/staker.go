@@ -419,7 +419,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		info.CanProgress = false
 		info.LatestStakedNode = 0
 		info.LatestStakedNodeHash = action.hash
-		_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash)
+		_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
 		return err
 	case existingNodeAction:
 		info.LatestStakedNode = action.number

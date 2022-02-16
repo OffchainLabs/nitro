@@ -119,6 +119,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 		NodeNum:            parsedLog.NodeNum,
 		BlockProposed:      ethLog.BlockNumber,
 		Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
+		InboxMaxCount:      parsedLog.InboxMaxCount,
 		AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
 		NodeHash:           parsedLog.NodeHash,
 		WasmModuleRoot:     parsedLog.WasmModuleRoot,
@@ -151,8 +152,10 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, parentHash [32]b
 			NodeNum:            parsedLog.NodeNum,
 			BlockProposed:      ethLog.BlockNumber,
 			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
+			InboxMaxCount:      parsedLog.InboxMaxCount,
 			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
 			NodeHash:           parsedLog.NodeHash,
+			WasmModuleRoot:     parsedLog.WasmModuleRoot,
 		})
 	}
 	return infos, nil

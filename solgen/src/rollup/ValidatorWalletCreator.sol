@@ -34,7 +34,7 @@ contract ValidatorWalletCreator is Ownable {
 
     address public template;
 
-    constructor() public Ownable() {
+    constructor() Ownable() {
         template = address(new ValidatorWallet());
     }
 

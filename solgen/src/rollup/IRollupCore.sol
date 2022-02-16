@@ -44,7 +44,8 @@ interface IRollupCore {
         bytes32 indexed nodeHash,
         RollupLib.Assertion assertion,
         bytes32 afterInboxBatchAcc,
-        bytes32 wasmModuleRoot
+        bytes32 wasmModuleRoot,
+        uint256 inboxMaxCount
     );
 
     event NodeConfirmed(

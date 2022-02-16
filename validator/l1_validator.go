@@ -241,7 +241,7 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (uint64, bool, 
 }
 
 func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, fromBlock int64) (nodeAction, bool, error) {
-	startState, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
 	}
@@ -357,10 +357,10 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		return correctNode, wrongNodesExist, nil
 	}
 
-	if !startState.InboxMaxCount.IsUint64() {
-		return nil, false, fmt.Errorf("inbox max count %v isn't a uint64", startState.InboxMaxCount)
+	if !prevInboxMaxCount.IsUint64() {
+		return nil, false, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
 	}
-	minBatchCount := startState.InboxMaxCount.Uint64()
+	minBatchCount := prevInboxMaxCount.Uint64()
 	if localBatchCount < minBatchCount {
 		// not enough batches in database
 		return nil, wrongNodesExist, nil
@@ -432,7 +432,6 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				PosInBatch: assertingPosInBatch,
 			},
 			MachineStatus: MachineStatusFinished,
-			InboxMaxCount: new(big.Int), // filled in by the contract
 		},
 		NumBlocks: assertingBlock.NumberU64() - startBlock.NumberU64(),
 	}
@@ -443,30 +442,30 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	action := createNodeAction{
 		assertion:         assertion,
 		hash:              newNodeHash,
-		prevInboxMaxCount: startState.InboxMaxCount,
+		prevInboxMaxCount: prevInboxMaxCount,
 	}
 	log.Info("creating node", "hash", newNodeHash, "lastNode", lastNum, "parentNode", stakerInfo.LatestStakedNode)
 	return action, wrongNodesExist, nil
 }
 
-func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*ExecutionState, uint64, error) {
+// Returns (execution state, inbox max count, block proposed, error)
+func lookupNodeStartState(ctx context.Context, rollup *RollupWatcher, nodeNum uint64, nodeHash [32]byte) (*ExecutionState, *big.Int, uint64, error) {
 	if nodeNum == 0 {
 		creationEvent, err := rollup.LookupCreation(ctx)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		return &ExecutionState{
 			GlobalState:   GoGlobalState{},
 			MachineStatus: MachineStatusFinished,
-			InboxMaxCount: big.NewInt(1),
-		}, creationEvent.Raw.BlockNumber, nil
+		}, big.NewInt(1), creationEvent.Raw.BlockNumber, nil
 	}
 	node, err := rollup.LookupNode(ctx, nodeNum)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	if node.NodeHash != nodeHash {
-		return nil, 0, errors.New("looked up starting node but found wrong hash")
+		return nil, nil, 0, errors.New("looked up starting node but found wrong hash")
 	}
-	return node.AfterState(), node.BlockProposed, nil
+	return node.AfterState(), node.InboxMaxCount, node.BlockProposed, nil
 }

@@ -166,7 +166,8 @@ abstract contract AbsRollupUserLogic is
      */
     function stakeOnNewNode(
         RollupLib.Assertion calldata assertion,
-        bytes32 expectedNodeHash
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
@@ -182,7 +183,7 @@ abstract contract AbsRollupUserLogic is
             // put into L1 inbox before the prev node’s L1 blocknum
             require(
                 assertion.afterState.globalState.getInboxPosition() >=
-                    assertion.beforeState.inboxMaxCount,
+                    prevNodeInboxMaxCount,
                 "TOO_SMALL"
             );
             // Minimum size requirement: any assertion must contain at least one block
@@ -197,7 +198,7 @@ abstract contract AbsRollupUserLogic is
                 "BAD_PREV_STATUS"
             );
         }
-        createNewNode(assertion, prevNode, expectedNodeHash);
+        createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
 
         stakeOnNode(msg.sender, latestNodeCreated());
     }
@@ -628,8 +629,8 @@ abstract contract AbsRollupUserLogic is
 contract RollupUserLogic is AbsRollupUserLogic {
     function initialize(
         RollupLib.Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external override {
+        ContractDependencies calldata /* connectedContracts */
+    ) external view override {
         require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
         require(!isMasterCopy, "NO_INIT_MASTER");
         // stakeToken = _stakeToken;

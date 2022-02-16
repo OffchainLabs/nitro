@@ -27,14 +27,12 @@ const (
 type ExecutionState struct {
 	GlobalState   GoGlobalState
 	MachineStatus MachineStatus
-	InboxMaxCount *big.Int
 }
 
 func newExecutionStateFromSolidity(eth rollupgen.RollupLibExecutionState) *ExecutionState {
 	return &ExecutionState{
 		GlobalState:   GoGlobalStateFromSolidity(challengegen.GlobalState(eth.GlobalState)),
 		MachineStatus: MachineStatus(eth.MachineStatus),
-		InboxMaxCount: eth.InboxMaxCount,
 	}
 }
 
@@ -49,7 +47,6 @@ func NewAssertionFromSolidity(assertion rollupgen.RollupLibAssertion) *Assertion
 func (s *ExecutionState) AsSolidityStruct() rollupgen.RollupLibExecutionState {
 	return rollupgen.RollupLibExecutionState{
 		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
-		InboxMaxCount: s.InboxMaxCount,
 		MachineStatus: uint8(s.MachineStatus),
 	}
 }
@@ -124,6 +121,7 @@ type NodeInfo struct {
 	NodeNum            uint64
 	BlockProposed      uint64
 	Assertion          *Assertion
+	InboxMaxCount      *big.Int
 	AfterInboxBatchAcc common.Hash
 	NodeHash           common.Hash
 	WasmModuleRoot     common.Hash
