@@ -158,6 +158,7 @@ interface IRollupAdmin {
 
     function forceCreateNode(
         uint64 prevNode,
+        uint256 prevNodeInboxMaxCount,
         RollupLib.Assertion memory assertion,
         bytes32 expectedNodeHash
     ) external;
