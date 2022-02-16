@@ -45,7 +45,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
         challengeExecutionBisectionDegree = 400;
+        
+        // the owner can't access the rollup user facet where escrow is redeemable
+        require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
+        // this next check shouldn't be an issue if the owner controls an AdminProxy
+        // that accesses the admin facet, but still seems like a good extra precaution
+        require(config.loserStakeEscrow != config.owner, "INVALID_ESCROW_OWNER");
         loserStakeEscrow = config.loserStakeEscrow;
+
         // stake token is expected to be set in the user logic contract
         // stakeToken = config.stakeToken;
 
