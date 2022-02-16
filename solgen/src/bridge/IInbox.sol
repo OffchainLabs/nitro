@@ -3,10 +3,20 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
 import "./IMessageProvider.sol";
+import "../libraries/Error.sol";
+
+/// @dev The contract is paused, so cannot be paused
+error AlreadyPaused();
+
+/// @dev The contract is unpaused, so cannot be unpaused
+error AlreadyUnpaused();
+
+/// @dev The contract is paused
+error Paused();
 
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
