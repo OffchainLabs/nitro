@@ -104,6 +104,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
         if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
+        if (data.length > 0 && !destAddr.isContract()) revert NotContract(destAddr);
         address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
