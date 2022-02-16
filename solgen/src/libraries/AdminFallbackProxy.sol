@@ -157,14 +157,13 @@ abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicE
 /// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Proxy
 /// @dev this follows the UUPS pattern for upgradeability - read more at https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.5.0/contracts/proxy#transparent-vs-uups-proxies
 contract AdminFallbackProxy is ERC1967Proxy, DoubleLogicERC1967Upgrade {
+
     /**
-     * @dev Returns the current secondary implementation address.
+     * @dev Initializes the upgradeable proxy with an initial implementation specified by `userLogic` and a secondary
+     * logic implementation specified by `adminLogic`
+     *
+     * Only the `adminAddr` is able to use the `adminLogic` functions
      */
-    function _secondaryImplementation() internal view returns (address impl) {
-        return DoubleLogicERC1967Upgrade._getSecondaryImplementation();
-    }
-
-
     constructor(
         address userLogic,
         bytes memory userData,
@@ -176,6 +175,13 @@ contract AdminFallbackProxy is ERC1967Proxy, DoubleLogicERC1967Upgrade {
          assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
         _changeAdmin(adminAddr);
         _upgradeSecondaryToAndCall(adminLogic, adminData, false);
+    }
+
+    /**
+     * @dev Returns the current secondary implementation address.
+     */
+    function _secondaryImplementation() internal view returns (address impl) {
+        return DoubleLogicERC1967Upgrade._getSecondaryImplementation();
     }
 
     /// @inheritdoc Proxy
