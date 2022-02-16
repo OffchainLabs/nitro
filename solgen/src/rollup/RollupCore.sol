@@ -675,7 +675,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             newNodeHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
-            wasmModuleRoot
+            wasmModuleRoot,
+            memoryFrame.currentInboxSize
         );
 
         return newNodeHash;
