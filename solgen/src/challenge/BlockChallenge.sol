@@ -42,7 +42,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     ) external {
         require(!isMasterCopy, "MASTER_INIT");
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
-        require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
+        require(address(contractAddresses[0]) != address(0), "NO_RESULT_RECEIVER");
         executionChallengeFactory = executionChallengeFactory_;
         resultReceiver = IChallengeResultReceiver(contractAddresses[0]);
         sequencerInbox = ISequencerInbox(contractAddresses[1]);
