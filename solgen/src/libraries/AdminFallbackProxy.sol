@@ -107,30 +107,6 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
     }
 }
 
-/// @notice An extension to OZ's ERC1967Proxy implementation to support two logic contracts
-contract DoubleLogicERC1967Proxy is ERC1967Proxy, DoubleLogicERC1967Upgrade {
-    /**
-     * @dev Initializes the upgradeable proxy with an initial implementation specified by `_logic` and a secondary
-     * logic implementation specified by `_secondaryLogic`
-     *
-     * If `_data` is nonempty, it's used as data in a delegate call to `_logic` - the same with secondary. 
-     * This will typically be an encoded function call, and allows initializating the storage of the proxy like
-     * a Solidity constructor.
-     */
-    constructor(
-        address _logic, bytes memory _data, address _secondaryLogic, bytes memory _secondaryData
-    ) payable ERC1967Proxy(_logic, _data) {
-        assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
-        _upgradeSecondaryToAndCall(_secondaryLogic, _secondaryData, false);
-    }
-
-    /**
-     * @dev Returns the current secondary implementation address.
-     */
-    function _secondaryImplementation() internal view returns (address impl) {
-        return DoubleLogicERC1967Upgrade._getSecondaryImplementation();
-    }
-}
 
 /// @notice An extension to OZ's UUPSUpgradeable contract to be used in secondary logic contracts from DoubleLogicERC1967Upgrade
 abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicERC1967Upgrade {
@@ -180,16 +156,26 @@ abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicE
 
 /// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Proxy
 /// @dev this follows the UUPS pattern for upgradeability - read more at https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.5.0/contracts/proxy#transparent-vs-uups-proxies
-contract AdminFallbackProxy is DoubleLogicERC1967Proxy {
+contract AdminFallbackProxy is ERC1967Proxy, DoubleLogicERC1967Upgrade {
+    /**
+     * @dev Returns the current secondary implementation address.
+     */
+    function _secondaryImplementation() internal view returns (address impl) {
+        return DoubleLogicERC1967Upgrade._getSecondaryImplementation();
+    }
+
+
     constructor(
         address userLogic,
         bytes memory userData,
         address adminLogic,
         bytes memory adminData,
         address adminAddr
-    ) payable DoubleLogicERC1967Proxy(userLogic, userData, adminLogic, adminData) {
+    ) payable ERC1967Proxy(userLogic, userData) {
          assert(_ADMIN_SLOT == bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1));
+         assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
         _changeAdmin(adminAddr);
+        _upgradeSecondaryToAndCall(adminLogic, adminData, false);
     }
 
     /// @inheritdoc Proxy
