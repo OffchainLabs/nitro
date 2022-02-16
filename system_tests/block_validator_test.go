@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbutil"
 )
 
-func TestValidatorSimple(t *testing.T) {
+func TestBlockValidatorSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, node1, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)

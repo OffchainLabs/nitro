@@ -275,7 +275,12 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		}
 	}
 
-	blocksValidated := v.blockValidator.BlocksValidated()
+	var blocksValidated uint64
+	if v.blockValidator != nil {
+		blocksValidated = v.blockValidator.BlocksValidated()
+	} else {
+		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+	}
 
 	currentL1Block, err := v.client.BlockByNumber(ctx, nil)
 	if err != nil {
