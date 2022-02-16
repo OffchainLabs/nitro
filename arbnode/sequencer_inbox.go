@@ -89,7 +89,7 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc     common.Hash
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
-	TimeBounds        [4]uint64
+	TimeBounds        bridgegen.SequencerInboxTimeBounds
 	dataIfAvailable   *[]byte
 	txIndexInBlock    uint
 }
@@ -114,14 +114,18 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client ethereum.Cha
 	var fullData []byte
 
 	// Serialize the header
-	for _, bound := range m.TimeBounds {
+	headerVals := []uint64{
+		m.TimeBounds.MinTimestamp,
+		m.TimeBounds.MaxTimestamp,
+		m.TimeBounds.MinBlockNumber,
+		m.TimeBounds.MinBlockNumber,
+		m.AfterDelayedCount,
+	}
+	for _, bound := range headerVals {
 		var intData [8]byte
 		binary.BigEndian.PutUint64(intData[:], bound)
 		fullData = append(fullData, intData[:]...)
 	}
-	var intData [8]byte
-	binary.BigEndian.PutUint64(intData[:], m.AfterDelayedCount)
-	fullData = append(fullData, intData[:]...)
 
 	// Append the batch data
 	data, err := m.GetData(ctx, client)

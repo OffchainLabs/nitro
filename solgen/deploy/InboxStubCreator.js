@@ -8,10 +8,8 @@ module.exports = async (hre) => {
   const bridge = await ethers.getContract("BridgeStub");
   const inbox = await ethers.getContract("InboxStub");
 
-  const gasOpts = { gasLimit: ethers.utils.hexlify(250000), gasPrice: ethers.utils.parseUnits('5', "gwei") };
-
-  await bridge.setInbox(inbox.address, true, gasOpts);
-  await inbox.initialize(bridge.address, gasOpts);
+  await bridge.setInbox(inbox.address, true);
+  await inbox.initialize(bridge.address);
 };
 
 module.exports.tags = ["InboxStub", "test"];

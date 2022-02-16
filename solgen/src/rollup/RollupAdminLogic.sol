@@ -193,15 +193,6 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
     }
 
     /**
-     * @notice Set the proving WASM module root
-     * @param newWasmModuleRoot new module root
-     */
-    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
-        wasmModuleRoot = newWasmModuleRoot;
-        emit OwnerFunctionCalled(11);
-    }
-
-    /**
      * @notice Set base stake required for an assertion
      * @param newBaseStake minimum amount of stake required
      */
@@ -316,5 +307,14 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
             sendRoot
         );
         emit OwnerFunctionCalled(24);
+    }
+
+    /**
+     * @notice Set the proving WASM module root
+     * @param newWasmModuleRoot new module root
+     */
+    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
+        wasmModuleRoot = newWasmModuleRoot;
+        emit OwnerFunctionCalled(25);
     }
 }
