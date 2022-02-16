@@ -1,14 +1,14 @@
 pragma solidity >=0.4.21 <0.9.0;
 
+/// @title Provides non-owners with info about the current chain owners.
+/// @notice Precompiled contract that exists in every Arbitrum chain at 0x000000000000000000000000000000000000006b.
 interface ArbOwnerPublic {
-    // Inquire about ownership without being an owner
-
-    // See if the user is a chain owner
+    /// @notice See if the user is a chain owner
     function isChainOwner(address addr) external view returns(bool);
 
-    // Retrieves the list of chain owners
+    /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns(address[] memory);
 
-    // Gets the network fee collector
+    /// @notice Gets the network fee collector
     function getNetworkFeeAccount() external view returns(address);
 }

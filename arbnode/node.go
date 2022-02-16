@@ -32,6 +32,8 @@ import (
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
+	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
@@ -41,64 +43,200 @@ type RollupAddresses struct {
 	Bridge         common.Address
 	Inbox          common.Address
 	SequencerInbox common.Address
+	Rollup         common.Address
 	DeployedAt     uint64
 }
 
-func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, txTimeout time.Duration) (*RollupAddresses, error) {
-	bridgeAddr, tx, bridgeContract, err := bridgegen.DeployBridge(deployAuth, l1client)
+func andTxSucceeded(ctx context.Context, l1client L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
 	if err != nil {
-		return nil, fmt.Errorf("error submitting bridge deploy tx: %w", err)
+		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing bridge deploy tx: %w", err)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	if err != nil {
+		return fmt.Errorf("error executing tx: %w", err)
+	}
+	return nil
+}
+
+func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
-	inboxAddr, tx, inboxContract, err := bridgegen.DeployInbox(deployAuth, l1client)
+	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing inbox deploy tx: %w", err)
+		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
 	}
 
-	tx, err = bridgeContract.Initialize(deployAuth)
+	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error submitting bridge initialize tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing bridge initialize tx: %w", err)
+		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
 	}
 
-	tx, err = inboxContract.Initialize(deployAuth, bridgeAddr)
+	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventBridge(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error submitting inbox initialize tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing inbox initialize tx: %w", err)
+		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
 	}
 
-	tx, err = bridgeContract.SetInbox(deployAuth, inboxAddr, true)
+	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error submitting set inbox tx: %w", err)
-	}
-	if _, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout); err != nil {
-		return nil, fmt.Errorf("error executing set inbox tx: %w", err)
+		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
-	sequencerInboxAddr, tx, _, err := bridgegen.DeploySequencerInbox(deployAuth, l1client, bridgeAddr, sequencer)
+	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error submitting sequencer inbox deploy tx: %w", err)
+		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
-	txRes, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+
+	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("error executing sequencer inbox deploy tx: %w", err)
+		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)
+	}
+
+	return bridgeCreatorAddr, nil
+}
+
+func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
+	}
+
+	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
+	}
+
+	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
+	}
+
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
+	}
+
+	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+	}
+
+	return ospEntryAddr, nil
+}
+
+func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, error) {
+	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("rollup deploy error: %w", err)
+	}
+
+	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("rollup admin logic deploy error: %w", err)
+	}
+
+	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+	}
+
+	_, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+	}
+
+	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, rollupTemplate, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+	}
+
+	return rollupCreator, nil
+}
+
+func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+	rollupCreator, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var confirmPeriodBlocks uint64 = 20
+	var extraChallengeTimeBlocks uint64 = 20
+	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   big.NewInt(60 * 60 * 24 * 15),
+		FutureBlocks:  big.NewInt(12),
+		DelaySeconds:  big.NewInt(60 * 60 * 24),
+		FutureSeconds: big.NewInt(60 * 60),
+	}
+	tx, err := rollupCreator.CreateRollup(
+		deployAuth,
+		rollupgen.RollupLibConfig{
+			ConfirmPeriodBlocks:            confirmPeriodBlocks,
+			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
+			StakeToken:                     common.Address{},
+			BaseStake:                      big.NewInt(params.Ether),
+			WasmModuleRoot:                 wasmModuleRoot,
+			Owner:                          deployAuth.From,
+			ChainId:                        big.NewInt(1338),
+			SequencerInboxMaxTimeVariation: seqInboxParams,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
+	}
+	receipt, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
+	}
+	info, err := rollupCreator.ParseRollupCreated(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		return nil, fmt.Errorf("error parsing rollup created log: %w", err)
+	}
+
+	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
+	if err != nil {
+		return nil, err
+	}
+	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
+	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("error setting is batch poster: %w", err)
 	}
 
 	return &RollupAddresses{
-		Bridge:         bridgeAddr,
-		Inbox:          inboxAddr,
-		SequencerInbox: sequencerInboxAddr,
-		DeployedAt:     txRes.BlockNumber.Uint64(),
+		Bridge:         info.DelayedBridge,
+		Inbox:          info.InboxAddress,
+		SequencerInbox: info.SequencerInbox,
+		DeployedAt:     receipt.BlockNumber.Uint64(),
+		Rollup:         info.RollupAddress,
 	}, nil
 }
 
@@ -235,13 +373,16 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	n.TxStreamer.Start(ctx)
+	if n.InboxReader != nil {
+		err = n.InboxReader.Start(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	err = n.TxPublisher.Start(ctx)
 	if err != nil {
 		return err
-	}
-	n.TxStreamer.Start(ctx)
-	if n.InboxReader != nil {
-		n.InboxReader.Start(ctx)
 	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)

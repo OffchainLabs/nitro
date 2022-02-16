@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "../osp/IOneStepProofEntry.sol";
-import "./IExecutionChallenge.sol";
+import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
 interface IExecutionChallengeFactory {
@@ -15,5 +15,5 @@ interface IExecutionChallengeFactory {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external returns (IExecutionChallenge);
+    ) external returns (IChallenge);
 }

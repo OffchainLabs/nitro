@@ -1,29 +1,36 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+import "../libraries/Cloneable.sol";
 import "../osp/IOneStepProofEntry.sol";
-import "../state/GlobalStates.sol";
+import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
-import "./IExecutionChallenge.sol";
+import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
-import "./Cloneable.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
-    event ExecutionChallengeBegun(IExecutionChallenge indexed challenge, uint256 blockSteps);
+contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
+    using GlobalStateLib for GlobalState;
+    using MachineLib for Machine;
+
+    event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
 
     IExecutionChallengeFactory public executionChallengeFactory;
 
     bytes32 public wasmModuleRoot;
     GlobalState[2] internal startAndEndGlobalStates;
 
-    IExecutionChallenge public executionChallenge;
+    IChallenge public executionChallenge;
     uint256 public executionChallengeAtSteps;
 
-    constructor(
+    ISequencerInbox public sequencerInbox;
+    IBridge public delayedBridge;
+
+    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
+    function initialize(
         IExecutionChallengeFactory executionChallengeFactory_,
-        IChallengeResultReceiver resultReceiver_,
+        address[3] memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
@@ -32,9 +39,14 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) {
+    ) external {
+        require(!isMasterCopy, "MASTER_INIT");
+        require(address(resultReceiver) == address(0), "ALREADY_INIT");
+        require(address(contractAddresses[0]) != address(0), "NO_RESULT_RECEIVER");
         executionChallengeFactory = executionChallengeFactory_;
-        resultReceiver = resultReceiver_;
+        resultReceiver = IChallengeResultReceiver(contractAddresses[0]);
+        sequencerInbox = ISequencerInbox(contractAddresses[1]);
+        delayedBridge = IBridge(contractAddresses[2]);
         wasmModuleRoot = wasmModuleRoot_;
         startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
@@ -46,8 +58,8 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         turn = Turn.CHALLENGER;
 
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], GlobalStates.hash(startAndEndGlobalStates_[0]));
-        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], GlobalStates.hash(startAndEndGlobalStates_[1]));
+        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
+        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
         challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         emit InitiatedChallenge();
@@ -149,7 +161,9 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         );
 
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: startAndEndGlobalStates[1].u64_vals[0] + 1
+            maxInboxMessagesRead: startAndEndGlobalStates[1].getInboxPosition(),
+            sequencerInbox: sequencerInbox,
+            delayedBridge: delayedBridge
         });
 
         executionChallenge = executionChallengeFactory.createChallenge(
@@ -176,9 +190,9 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         {
             // Start the value stack with the function call ABI for the entrypoint
             Value[] memory startingValues = new Value[](3);
-            startingValues[0] = Values.newRefNull();
-            startingValues[1] = Values.newI32(0);
-            startingValues[2] = Values.newI32(0);
+            startingValues[0] = ValueLib.newRefNull();
+            startingValues[1] = ValueLib.newI32(0);
+            startingValues[2] = ValueLib.newI32(0);
             ValueArray memory valuesArray = ValueArray({
                 inner: startingValues
             });
@@ -203,7 +217,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
 			functionPc: 0,
 			modulesRoot: wasmModuleRoot
 		});
-        return Machines.hash(mach);
+        return mach.hash();
     }
 
     function getEndMachineHash(MachineStatus status, bytes32 globalStateHash)
@@ -225,7 +239,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         }
     }
 
-    function clearChallenge() external {
+    function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         if (address(executionChallenge) != address(0)) {
             executionChallenge.clearChallenge();

@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./MerkleProofs.sol";
+import "./MerkleProof.sol";
 import "./Deserialize.sol";
 
 struct ModuleMemory {
@@ -9,7 +9,9 @@ struct ModuleMemory {
 	bytes32 merkleRoot;
 }
 
-library ModuleMemories {
+library ModuleMemoryLib {
+	using MerkleProofLib for MerkleProof;
+
 	function hash(ModuleMemory memory mem) internal pure returns (bytes32) {
 		return keccak256(abi.encodePacked("Memory:", mem.size, mem.merkleRoot));
 	}
@@ -18,7 +20,7 @@ library ModuleMemories {
 		offset = startOffset;
 		(contents, offset) = Deserialize.b32(proof, offset);
 		(merkle, offset) = Deserialize.merkleProof(proof, offset);
-		bytes32 recomputedRoot = MerkleProofs.computeRootFromMemory(merkle, leafIdx, contents);
+		bytes32 recomputedRoot = merkle.computeRootFromMemory(leafIdx, contents);
 		require(recomputedRoot == mem.merkleRoot, "WRONG_MEM_ROOT");
 	}
 }
