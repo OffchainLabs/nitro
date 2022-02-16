@@ -24,6 +24,9 @@ import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
 import "../libraries/Cloneable.sol";
 
+/**
+ * @title The inbox for rollup protocol events
+ */
 contract RollupEventBridge is IMessageProvider, Cloneable {
     uint8 internal constant INITIALIZATION_MSG_TYPE = 11;
     uint8 internal constant ROLLUP_PROTOCOL_EVENT_TYPE = 8;
@@ -55,7 +58,7 @@ contract RollupEventBridge is IMessageProvider, Cloneable {
             owner,
             chainId
         );
-        uint256 num = bridge.deliverMessageToInbox(
+        uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),
             keccak256(initMsg)
@@ -102,7 +105,7 @@ contract RollupEventBridge is IMessageProvider, Cloneable {
 
     function deliverToBridge(bytes memory message) private {
         emit InboxMessageDelivered(
-            bridge.deliverMessageToInbox(
+            bridge.enqueueDelayedMessage(
                 ROLLUP_PROTOCOL_EVENT_TYPE,
                 msg.sender,
                 keccak256(message)

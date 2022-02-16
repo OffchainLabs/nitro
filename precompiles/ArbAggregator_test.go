@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 )
 
 func TestDefaultAggregator(t *testing.T) {
@@ -21,7 +22,7 @@ func TestDefaultAggregator(t *testing.T) {
 	// initial default aggregator should be zero address
 	def, err := ArbAggregator{}.GetDefaultAggregator(context, evm)
 	Require(t, err)
-	if def != (common.Address{}) {
+	if def != (l1pricing.SequencerAddress) {
 		Fail(t)
 	}
 
@@ -49,12 +50,12 @@ func TestPreferredAggregator(t *testing.T) {
 	userCtx := testContext(userAddr, evm)
 
 	// initial preferred aggregator should be the default of zero address
-	res, isNonDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err := ArbAggregator{}.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
-	if res != (common.Address{}) {
+	if res != (l1pricing.SequencerAddress) {
 		Fail(t)
 	}
 
@@ -63,9 +64,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetDefaultAggregator(callerCtx, evm, defaultAggAddr))
 
 	// preferred aggregator should be the new default address
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if isNonDefault {
+	if !isDefault {
 		Fail(t)
 	}
 	if res != defaultAggAddr {
@@ -76,9 +77,9 @@ func TestPreferredAggregator(t *testing.T) {
 	Require(t, agg.SetPreferredAggregator(userCtx, evm, prefAggAddr))
 
 	// preferred aggregator should now be prefAggAddr
-	res, isNonDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
+	res, isDefault, err = agg.GetPreferredAggregator(callerCtx, evm, userAddr)
 	Require(t, err)
-	if !isNonDefault {
+	if isDefault {
 		Fail(t)
 	}
 	if res != prefAggAddr {

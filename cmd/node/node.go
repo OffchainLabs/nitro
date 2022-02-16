@@ -19,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,18 +26,19 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 func main() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
-	log.Info("running node")
+
+	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
 	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
 	l1conn := flag.String("l1conn", "", "l1 connection (required if l1role != none)")
-	l1keyfile := flag.String("l1keyfile", "", "l1 private key file (required if l1role == sequencer)")
+	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
+	seqAccount := flag.String("l1SeqAccount", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
@@ -61,7 +61,7 @@ func main() {
 	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
 	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
 	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
 	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
@@ -69,11 +69,15 @@ func main() {
 
 	flag.Parse()
 
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(*loglevel))
+	log.Root().SetHandler(glogger)
+
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
-	log.Info("Running with", "role", *l1role)
+	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *l1role == "none" {
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
@@ -103,16 +107,7 @@ func main() {
 			panic(err)
 		}
 		if nodeConf.BatchPoster {
-			if *l1keyfile == "" {
-				flag.Usage()
-				panic("sequencer requires l1 keyfile")
-			}
-			fileReader, err := os.Open(*l1keyfile)
-			if err != nil {
-				flag.Usage()
-				panic("sequencer without valid l1priv key")
-			}
-			l1TransactionOpts, err = bind.NewTransactorWithChainID(fileReader, *l1passphrase, l1ChainId)
+			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *seqAccount, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
 			}
@@ -218,30 +213,22 @@ func main() {
 		Timeout: *feedInputTimeout,
 		URL:     *feedInputUrl,
 	}
-
-	genesisAlloc := make(core.GenesisAlloc)
-	genesisAlloc[devAddr] = core.GenesisAccount{
-		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-		Nonce:      0,
-		PrivateKey: nil,
-	}
-	l2Genesys := &core.Genesis{
-		Config:     params.ArbitrumOneChainConfig(),
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	if err != nil {
+		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
+	initData := statetransfer.ArbosInitializationInfo{
+		Accounts: []statetransfer.AccountInitializationInfo{
+			{
+				Addr:       devAddr,
+				EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+				Nonce:      0,
+			},
+		},
+	}
+
+	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, 0, params.ArbitrumOneChainConfig())
 	if err != nil {
 		panic(err)
 	}

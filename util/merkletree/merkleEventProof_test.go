@@ -14,7 +14,7 @@ import (
 )
 
 func initializedMerkleAccumulatorForTesting() *merkleAccumulator.MerkleAccumulator {
-	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	merkleAccumulator.InitializeMerkleAccumulator(sto)
 	return merkleAccumulator.OpenMerkleAccumulator(sto)
 }
@@ -46,4 +46,35 @@ func TestProofForNext(t *testing.T) {
 			Fail(t, i)
 		}
 	}
+}
+
+func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) (*MerkleProof, error) {
+	origPartials, err := acc.GetPartials()
+	if err != nil {
+		return nil, err
+	}
+	partials := make([]common.Hash, len(origPartials))
+	for i, orig := range origPartials {
+		partials[i] = *orig
+	}
+	clone, err := acc.NonPersistentClone()
+	if err != nil {
+		return nil, err
+	}
+	_, err = clone.Append(nextHash)
+	if err != nil {
+		return nil, err
+	}
+	root, _ := clone.Root()
+	size, err := acc.Size()
+	if err != nil {
+		return nil, err
+	}
+
+	return &MerkleProof{
+		RootHash:  root,
+		LeafHash:  nextHash,
+		LeafIndex: size,
+		Proof:     partials,
+	}, nil
 }

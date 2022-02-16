@@ -8,14 +8,16 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/arbstate/util/colors"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 func TestEmptyAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
 
@@ -36,9 +38,13 @@ func TestEmptyAddressSet(t *testing.T) {
 }
 
 func TestAddressSet(t *testing.T) {
-	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	db := storage.NewMemoryBackedStateDB()
+	sto := storage.NewGeth(db, burn.NewSystemBurner(false))
 	Require(t, Initialize(sto))
 	aset := OpenAddressSet(sto)
+
+	statedb, _ := (db).(*state.StateDB)
+	stateHashBeforeChanges := statedb.IntermediateRoot(false)
 
 	addr1 := common.BytesToAddress(crypto.Keccak256([]byte{1})[:20])
 	addr2 := common.BytesToAddress(crypto.Keccak256([]byte{2})[:20])
@@ -100,6 +106,21 @@ func TestAddressSet(t *testing.T) {
 		if (all[0] != addr2) || (all[1] != addr1) {
 			Fail(t)
 		}
+	}
+
+	stateHashAfterChanges := statedb.IntermediateRoot(false)
+	Require(t, aset.Clear())
+	stateHashAfterClear := statedb.IntermediateRoot(false)
+
+	colors.PrintBlue("prior ", stateHashBeforeChanges)
+	colors.PrintGrey("after ", stateHashAfterChanges)
+	colors.PrintBlue("clear ", stateHashAfterClear)
+
+	if stateHashAfterClear != stateHashBeforeChanges {
+		Fail(t, "Clear() left data in the statedb")
+	}
+	if stateHashAfterChanges == stateHashBeforeChanges {
+		Fail(t, "set-operations didn't change the underlying statedb")
 	}
 }
 

@@ -207,7 +207,7 @@ contract OneStepProverHostIo is IOneStepProver {
                 messageDataHash
             )
         );
-        bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
+        bytes32 acc = Messages.accumulateInboxMessage(beforeAcc, messageHash);
 
         require(acc == execCtx.delayedBridge.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
         return true;

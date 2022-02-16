@@ -23,7 +23,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {
-    function initialize(address _stakeToken) external;
+    function initialize(address stakeToken) external;
 
     function returnOldDeposit(address stakerAddress) external;
 
@@ -72,6 +72,14 @@ interface IRollupAdmin {
     function resume() external;
 
     /**
+     * @notice Set the addresses of rollup logic contracts called
+     * @param newAdminLogic address of logic that owner of rollup calls
+     * @param newUserLogic ddress of logic that user of rollup calls
+     */
+    function setLogicContracts(address newAdminLogic, address newUserLogic)
+        external;
+
+    /**
      * @notice Set the addresses of the validator whitelist
      * @dev It is expected that both arrays are same length, and validator at
      * position i corresponds to the value at position i
@@ -80,6 +88,12 @@ interface IRollupAdmin {
      */
     function setValidator(address[] memory _validator, bool[] memory _val)
         external;
+
+    /**
+     * @notice Set a new owner address for the rollup
+     * @param newOwner address of new rollup owner
+     */
+    function setOwner(address newOwner) external;
 
     /**
      * @notice Set minimum assertion period for the rollup

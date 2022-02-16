@@ -128,6 +128,17 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin {
     }
 
     /**
+     * @notice Set the addresses of rollup logic contracts called
+     * @param newAdminLogic address of logic that owner of rollup calls
+     * @param newUserLogic address of logic that user of rollup calls
+     */
+    function setLogicContracts(address newAdminLogic, address newUserLogic) external override {
+        // adminLogic = AAPStorage(newAdminLogic);
+        // userLogic = AAPStorage(newUserLogic);
+        emit OwnerFunctionCalled(5);
+    }
+
+    /**
      * @notice Set the addresses of the validator whitelist
      * @dev It is expected that both arrays are same length, and validator at
      * position i corresponds to the value at position i

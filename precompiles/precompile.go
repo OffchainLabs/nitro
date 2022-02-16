@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -174,12 +175,14 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	supportedIndices := map[string]struct{}{
 		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
 		"address": {},
-		"bytes32": {},
 		"bool":    {},
 	}
 	for i := 8; i <= 256; i += 8 {
 		supportedIndices["int"+strconv.Itoa(i)] = struct{}{}
 		supportedIndices["uint"+strconv.Itoa(i)] = struct{}{}
+	}
+	for i := 1; i <= 32; i += 1 {
+		supportedIndices["bytes"+strconv.Itoa(i)] = struct{}{}
 	}
 
 	for _, event := range source.Events {
@@ -390,7 +393,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
 	insert(makePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
 	insert(makePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
 	insert(makePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
@@ -401,12 +403,43 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
-	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
-	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	eventCtx := func(gasLimit uint64, err error) *context {
+		if err != nil {
+			glog.Error("call to event's GasCost field failed", "err", err)
+		}
+		return &context{
+			gasSupplied: gasLimit,
+			gasLeft:     gasLimit,
+		}
+	}
 
-	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, &ArbRetryableTx{Address: hex("6e")}))
+	ArbRetryableImpl := &ArbRetryableTx{Address: hex("6e")}
+	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
+	emitReedeemScheduled := func(evm mech, gas, nonce uint64, ticketId, retryTxHash bytes32, donor addr) error {
+		context := eventCtx(ArbRetryableImpl.RedeemScheduledGasCost(hash{}, hash{}, 0, 0, addr{}))
+		return ArbRetryableImpl.RedeemScheduled(context, evm, ticketId, retryTxHash, nonce, gas, donor)
+	}
+	arbos.EmitReedeemScheduledEvent = emitReedeemScheduled
+	arbos.EmitTicketCreatedEvent = func(evm mech, ticketId bytes32) error {
+		context := eventCtx(ArbRetryableImpl.TicketCreatedGasCost(hash{}))
+		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
+	}
+
+	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	arbos.ArbSysAddress = ArbSys.address
+	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
+
+	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
+	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
+		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
+		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
+	}
+	_, ArbOwner := makePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+
+	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
+	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	return contracts
 }
@@ -453,9 +486,10 @@ func (p Precompile) Call(
 		caller:      caller,
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
+		readOnly:    method.purity <= view,
 	}
 
-	argsCost := params.CopyGas * uint64(len(input)-4)
+	argsCost := params.CopyGas * util.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied
 		return nil, 0, vm.ErrExecutionReverted
@@ -526,7 +560,7 @@ func (p Precompile) Call(
 		log.Fatal("Could not encode precompile result ", err)
 	}
 
-	resultCost := params.CopyGas * uint64(len(encoded))
+	resultCost := params.CopyGas * util.WordsForBytes(uint64(len(encoded)))
 	if err := callerCtx.Burn(resultCost); err != nil {
 		// user cannot afford the result data returned
 		return nil, 0, vm.ErrExecutionReverted
@@ -537,4 +571,13 @@ func (p Precompile) Call(
 
 func (p Precompile) Precompile() Precompile {
 	return p
+}
+
+// Needed for the fuzzing harness
+func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
+	ret := make([][4]byte, 0, len(p.methods))
+	for sig := range p.methods {
+		ret = append(ret, sig)
+	}
+	return ret
 }

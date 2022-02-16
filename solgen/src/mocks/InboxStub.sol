@@ -22,8 +22,7 @@ contract InboxStub is IInbox {
 
     IBridge public override bridge;
 
-    bool public isCreateRetryablePaused;
-    bool public shouldRewriteSender;
+    bool public paused;
 
     function initialize(IBridge _bridge) external {
         require(address(bridge) == address(0), "ALREADY_INIT");
@@ -66,7 +65,7 @@ contract InboxStub is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
     }
 
     function sendUnsignedTransaction(

@@ -1,8 +1,8 @@
 FROM node:17-bullseye-slim as contracts-builder
 RUN apt-get update && \
-    apt-get install -y git
+    apt-get install -y git python3 make g++
 WORKDIR /app
-COPY solgen/package.json solgen/
+COPY solgen/package.json solgen/yarn.lock solgen/
 RUN cd solgen && yarn
 COPY solgen solgen/
 RUN cd solgen && yarn build
@@ -57,13 +57,13 @@ COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \
 	go run -v solgen/gen.go
 COPY . ./
-COPY --from=prover-header-builder /workspace/arbitrator/target/env arbitrator/target/env/
-COPY --from=prover-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
-RUN mkdir res && \
-    go build -v -o res ./cmd/node ./cmd/deploy && \
-    GOOS=js GOARCH=wasm go build -o res/arbitrator/target/env/lib/replay.wasm ./cmd/replay/...
+COPY --from=prover-header-builder /workspace/target/ target/
+COPY --from=prover-lib-builder /workspace/target/ target/
+RUN mkdir -p target/bin && \
+    go build -v -o target/bin ./cmd/node ./cmd/deploy && \
+    GOOS=js GOARCH=wasm go build -o res/target/lib/replay.wasm ./cmd/replay/...
 
-FROM debian:bullseye-slim
-COPY --from=node-builder /workspace/res .
-COPY --from=wasm-lib-builder /workspace/arbitrator/target/env arbitrator/target/env/
-ENTRYPOINT [ "./node" ]
+FROM debian:bullseye-slim as nitro-node
+COPY --from=node-builder /workspace/target/ target/
+COPY --from=wasm-lib-builder /workspace/target/ target/
+ENTRYPOINT [ "./target/bin/node" ]
