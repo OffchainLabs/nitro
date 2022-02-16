@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -41,6 +42,9 @@ type Sequencer struct {
 	txQueue       chan txQueueItem
 	l1Client      L1Interface
 	l1BlockNumber uint64
+
+	forwarderMutex sync.Mutex
+	forwarder      *TxForwarder
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Client L1Interface) (*Sequencer, error) {
@@ -91,6 +95,30 @@ func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender co
 		return vm.ErrExecutionReverted
 	}
 	return nil
+}
+
+func (s *Sequencer) ForwardTo(url string) {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	s.forwarder, _ = NewForwarder(url)
+}
+
+func (s *Sequencer) DontForward() {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	s.forwarder = nil
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	if s.forwarder == nil {
+		return false
+	}
+	for _, item := range queueItems {
+		item.resultChan <- s.forwarder.PublishTransaction(item.ctx, item.tx)
+	}
+	return true
 }
 
 func (s *Sequencer) sequenceTransactions() {
@@ -151,6 +179,10 @@ func (s *Sequencer) sequenceTransactions() {
 		queueItems = append(queueItems, queueItem)
 	}
 
+	if s.forwardIfSet(queueItems) {
+		return
+	}
+
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
 		Poster:      l1pricing.SequencerAddress,
@@ -169,6 +201,21 @@ func (s *Sequencer) sequenceTransactions() {
 	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
+	}
+	if errors.Is(err, errNotMainSequencer) {
+		// we changed roles
+		// forward if we have where to
+		if s.forwardIfSet(queueItems) {
+			return
+		}
+		// try to add back to queue otherwise
+		for _, item := range queueItems {
+			select {
+			case s.txQueue <- item:
+			default:
+				item.resultChan <- errors.New("queue full")
+			}
+		}
 	}
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)

@@ -37,6 +37,7 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
+	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 }
@@ -369,6 +370,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	msgWithMeta := arbstate.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
+	}
+
+	if s.coordinator != nil {
+		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
+			return err
+		}
 	}
 
 	if s.validator != nil {
