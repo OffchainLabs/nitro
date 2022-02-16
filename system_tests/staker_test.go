@@ -177,8 +177,33 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
-		for j := 0; j < 20; j++ {
+		for j := 0; j < 10; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+		}
+	}
+
+	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
+	Require(t, err)
+
+	if latestConfirmedNode <= 1 {
+		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
+		Require(t, err)
+		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
+	}
+
+	if !createNodesFlaky {
+		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
+		Require(t, err)
+		if !isStaked {
+			t.Fatal("staker A isn't staked")
+		}
+	}
+
+	if !stakeLatestFlaky {
+		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrB)
+		Require(t, err)
+		if !isStaked {
+			t.Fatal("staker B isn't staked")
 		}
 	}
 }
