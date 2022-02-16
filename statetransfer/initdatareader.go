@@ -7,6 +7,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var ArbTransferListNames = []string{"Blocks", "AddressTableContents", "RetryableData", "Accounts"}
+
 // This is the external inteface to read ArbosInintData.
 // Implementations support in-memory data or potentially huge files read element by element.
 // Data is saved in lists, in order as seen in ArbTransferListNames.
