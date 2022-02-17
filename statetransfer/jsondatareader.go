@@ -68,12 +68,12 @@ func (l *JsonListReader) Close() error {
 	return nil
 }
 
-func (m *JsonInitDataReader) getListReader(filePath string) (JsonListReader, error) {
-	if m.data.BlocksPath == "" {
+func (m *JsonInitDataReader) getListReader(fileName string) (JsonListReader, error) {
+	if fileName == "" {
 		return JsonListReader{}, nil
 	}
-	filename := path.Join(filePath, m.data.BlocksPath)
-	inboundFile, err := os.OpenFile(filename, os.O_RDONLY, 0664)
+	filePath := path.Join(m.basePath, fileName)
+	inboundFile, err := os.OpenFile(filePath, os.O_RDONLY, 0664)
 	if err != nil {
 		return JsonListReader{}, err
 	}
@@ -93,7 +93,7 @@ func NewJsonInitDataReader(filepath string) (InitDataReader, error) {
 		return nil, err
 	}
 	reader := JsonInitDataReader{
-		basePath: path.Base(filepath),
+		basePath: path.Dir(filepath),
 	}
 	if err := json.Unmarshal(data, &reader.data); err != nil {
 		return nil, err
