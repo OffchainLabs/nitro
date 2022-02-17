@@ -118,10 +118,10 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
      * All other addresses can interact with the `userLogic` functions
      */
     constructor(
-        address userLogic,
-        bytes memory userData,
         address adminLogic,
         bytes memory adminData,
+        address userLogic,
+        bytes memory userData,
         address adminAddr
     ) payable {
         assert(_ADMIN_SLOT == bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1));
