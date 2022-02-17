@@ -18,9 +18,14 @@ error NotOrigin();
 
 /// @dev Provided data was too large
 /// @param dataLength The length of the data that is too large
-/// @param dataLength The max length the data can be
+/// @param maxDataLength The max length the data can be
 error DataTooLarge(uint256 dataLength, uint256 maxDataLength);
 
 /// @dev The provided is not a contract and was expected to be
 /// @param addr The adddress in question
 error NotContract(address addr);
+
+/// @dev The merkle proof provided was too long
+/// @param actualLength The length of the merkle proof provided
+/// @param maxProofLength The max length a merkle proof can have
+error MerkleProofTooLong(uint256 actualLength, uint256 maxProofLength);
