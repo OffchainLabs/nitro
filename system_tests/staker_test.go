@@ -10,6 +10,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync/atomic"
 	"testing"
@@ -23,17 +24,26 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
-func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) {
+func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
 	ctx := context.Background()
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
+	if faultyStaker {
+		l2info.GenerateGenesysAccount("FaultyAddr", common.Big1)
+	}
 	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, false)
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
 	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
-	if nodeAGenesis != nodeBGenesis {
-		t.Fatal("node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+	if faultyStaker {
+		if nodeAGenesis == nodeBGenesis {
+			t.Fatal("node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
+		}
+	} else {
+		if nodeAGenesis != nodeBGenesis {
+			t.Fatal("node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+		}
 	}
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
@@ -125,7 +135,7 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-	if makeNodesFaulty || stakeLatestFaulty {
+	if faultyStaker {
 		err = l2clientB.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
@@ -143,7 +153,7 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 			Require(t, err)
 			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 			Require(t, err)
-			if makeNodesFaulty || stakeLatestFaulty {
+			if faultyStaker {
 				// Create a different transaction for the second node
 				l2info.Accounts["BackgroundUser"].Nonce = i
 				tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
@@ -157,16 +167,19 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 
 	stakerATxs := 0
 	stakerBTxs := 0
+	sawStakerZombie := false
 	for i := 0; i < 100; i++ {
 		var stakerName string
 		if i%2 == 0 {
 			stakerName = "A"
+			fmt.Printf("staker A acting:\n")
 			tx, err = stakerA.Act(ctx)
 			if tx != nil {
 				stakerATxs++
 			}
 		} else {
 			stakerName = "B"
+			fmt.Printf("staker B acting:\n")
 			tx, err = stakerB.Act(ctx)
 			if tx != nil {
 				stakerBTxs++
@@ -176,6 +189,15 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 		if tx != nil {
 			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
+		}
+		if faultyStaker && !sawStakerZombie {
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, valWalletAddrB)
+			Require(t, err)
+		}
+		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
+		Require(t, err)
+		if isHonestZombie {
+			t.Fatal("staker A became a zombie")
 		}
 		for j := 0; j < 10; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
@@ -195,15 +217,17 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
 	}
 
-	if !makeNodesFaulty {
-		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
-		Require(t, err)
-		if !isStaked {
-			t.Fatal("staker A isn't staked")
-		}
+	if faultyStaker && !sawStakerZombie {
+		t.Fatal("staker B didn't become a zombie despite being faulty")
 	}
 
-	if !stakeLatestFaulty {
+	isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
+	Require(t, err)
+	if !isStaked {
+		t.Fatal("staker A isn't staked")
+	}
+
+	if !faultyStaker {
 		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrB)
 		Require(t, err)
 		if !isStaked {

@@ -10,10 +10,10 @@ package arbtest
 
 import "testing"
 
-func TestStakersMakeNodesFaulty(t *testing.T) {
+func TestStakersFaultyHonestActive(t *testing.T) {
 	stakerTestImpl(t, true, false)
 }
 
-func TestStakersStakeLatestFaulty(t *testing.T) {
-	stakerTestImpl(t, false, true)
+func TestStakersFaultyHonestInactive(t *testing.T) {
+	stakerTestImpl(t, true, true)
 }

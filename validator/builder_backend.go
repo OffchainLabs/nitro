@@ -71,7 +71,7 @@ func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transact
 		Value: totalAmount,
 		Data:  realData,
 	}
-	_, err = b.EstimateGas(ctx, msg)
+	_, err = b.L1Interface.PendingCallContract(ctx, msg)
 	return errors.WithStack(err)
 }
 
