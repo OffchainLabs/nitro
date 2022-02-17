@@ -111,7 +111,7 @@ contract OneStepProverMemory is IOneStepProver {
 
         // Neither of these can overflow as they're computed with much less than 256 bit integers.
         uint256 startIdx = inst.argumentData +
-            mach.valueStack.pop().contents;
+            mach.valueStack.pop().assumeI32();
         if (startIdx + readBytes > mod.moduleMemory.size) {
             mach.status = MachineStatus.ERRORED;
             return;
@@ -209,7 +209,7 @@ contract OneStepProverMemory is IOneStepProver {
 
         // Neither of these can overflow as they're computed with much less than 256 bit integers.
         uint256 startIdx = inst.argumentData +
-            mach.valueStack.pop().contents;
+            mach.valueStack.pop().assumeI32();
         if (startIdx + writeBytes > mod.moduleMemory.size) {
             mach.status = MachineStatus.ERRORED;
             return;

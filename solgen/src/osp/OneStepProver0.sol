@@ -72,8 +72,8 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeBranchIf(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
-		Value memory cond = mach.valueStack.pop();
-		if (cond.contents != 0) {
+		uint32 cond = mach.valueStack.pop().assumeI32();
+		if (cond != 0) {
 			// Jump to target
 			mach.functionPc = mach.blockStack.pop();
 		}
@@ -237,8 +237,8 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeArbitraryJumpIf(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		Value memory cond = mach.valueStack.pop();
-		if (cond.contents != 0) {
+		uint32 cond = mach.valueStack.pop().assumeI32();
+		if (cond != 0) {
 			// Jump to target
 			uint32 pc = uint32(inst.argumentData);
 			require(pc == inst.argumentData, "BAD_CALL_DATA");
@@ -295,8 +295,8 @@ contract OneStepProver0 is IOneStepProver {
 	}
 
 	function executeEndBlockIf(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
-		Value memory cond = mach.valueStack.peek();
-		if (cond.contents != 0) {
+		uint32 cond = mach.valueStack.peek().assumeI32();
+		if (cond != 0) {
 			mach.blockStack.pop();
 		}
 	}
