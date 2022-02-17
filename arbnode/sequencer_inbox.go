@@ -118,7 +118,7 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client ethereum.Cha
 		m.TimeBounds.MinTimestamp,
 		m.TimeBounds.MaxTimestamp,
 		m.TimeBounds.MinBlockNumber,
-		m.TimeBounds.MinBlockNumber,
+		m.TimeBounds.MaxBlockNumber,
 		m.AfterDelayedCount,
 	}
 	for _, bound := range headerVals {
