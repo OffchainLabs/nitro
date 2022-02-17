@@ -351,7 +351,17 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				}
 				continue
 			} else {
-				log.Warn("found node with incorrect assertion", "node", nd.NodeNum)
+				log.Warn(
+					"found node with incorrect assertion",
+					"node", nd.NodeNum,
+					"inboxPositionInvalid", inboxPositionInvalid,
+					"numBlocks", nd.Assertion.NumBlocks,
+					"expectedNumBlocks", expectedNumBlocks,
+					"blockHash", afterGs.BlockHash,
+					"expectedBlockHash", lastBlock.Hash(),
+					"sendRoot", afterGs.SendRoot,
+					"expectedSendRoot", lastBlockExtra.SendRoot,
+				)
 			}
 		} else {
 			log.Warn("found younger sibling to correct node", "node", nd.NodeNum)

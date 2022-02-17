@@ -130,11 +130,11 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			b.messages = append(b.messages, newMsg)
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
-			log.Warn("Message with sequence number ",
-				newMsg.SequenceNumber, " requested to be broadcast, ",
-				"expected ", expectedSequenceNumber,
-				", discarding up to ", newMsg.SequenceNumber,
-				" from catchup buffer")
+			log.Warn(
+				"Message requested to be broadcast has unexpected sequence number; discarding to seqNum from catchup buffer",
+				"seqNum", newMsg.SequenceNumber,
+				"expectedSeqNum", expectedSequenceNumber,
+			)
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
 		} else {
