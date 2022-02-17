@@ -282,12 +282,8 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	} else {
 		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
 
-		batchCount, err := v.inboxTracker.GetBatchCount()
-		if err != nil {
-			return nil, false, err
-		}
-		if batchCount > 0 {
-			messageCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
+		if localBatchCount > 0 {
+			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
 			if err != nil {
 				return nil, false, err
 			}
@@ -334,12 +330,25 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		}
 		if correctNode == nil {
 			afterGs := nd.AfterState().GlobalState
+			requiredBatches := nd.AfterState().RequiredBatches()
+			if localBatchCount < requiredBatches {
+				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion batches: %v/%v", localBatchCount, requiredBatches)
+			}
+			if requiredBatches > 0 {
+				haveAcc, err := v.inboxTracker.GetBatchAcc(requiredBatches - 1)
+				if err != nil {
+					return nil, false, err
+				}
+				if haveAcc != nd.AfterInboxBatchAcc {
+					return nil, false, fmt.Errorf("missed sequencer batches reorg: at seq num %v have acc %v but assertion has acc %v", requiredBatches-1, haveAcc, nd.AfterInboxBatchAcc)
+				}
+			}
 			lastBlockNum, inboxPositionInvalid, err := v.blockNumberFromGlobalState(afterGs)
 			if err != nil {
 				return nil, false, err
 			}
 			if blocksValidated < lastBlockNum {
-				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion: %v/%v", blocksValidated, lastBlockNum)
+				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", blocksValidated, lastBlockNum)
 			}
 			lastBlock := v.l2Blockchain.GetBlockByNumber(lastBlockNum)
 			if lastBlock == nil {
@@ -361,7 +370,12 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				afterGs.BlockHash == lastBlock.Hash() &&
 				afterGs.SendRoot == lastBlockExtra.SendRoot
 			if valid {
-				log.Info("found correct node", "node", nd.NodeNum)
+				log.Info(
+					"found correct node",
+					"node", nd.NodeNum,
+					"blockNum", lastBlockNum,
+					"blockHash", afterGs.BlockHash,
+				)
 				correctNode = existingNodeAction{
 					number: nd.NodeNum,
 					hash:   nd.NodeHash,
