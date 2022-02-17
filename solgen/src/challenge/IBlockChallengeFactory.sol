@@ -8,9 +8,14 @@ import "./IChallengeResultReceiver.sol";
 interface IBlockChallengeFactory {
     event ChallengeCreated(IChallenge challenge);
 
-    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
+    struct ChallengeContracts {
+        IChallengeResultReceiver resultReceiver;
+        ISequencerInbox sequencerInbox;
+        IBridge delayedBridge;
+    }
+
     function createChallenge(
-        address[3] calldata contractAddresses,
+        ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,

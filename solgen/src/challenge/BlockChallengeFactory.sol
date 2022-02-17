@@ -17,9 +17,8 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
         beacon.transferOwnership(msg.sender);
     }
 
-    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function createChallenge(
-        address[3] calldata contractAddresses,
+        ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] calldata startAndEndMachineStatuses_,
         GlobalState[2] calldata startAndEndGlobalStates_,
