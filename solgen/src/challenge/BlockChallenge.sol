@@ -9,6 +9,7 @@ import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
+import "./IBlockChallengeFactory.sol";
 
 contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     using GlobalStateLib for GlobalState;
@@ -30,7 +31,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
         IExecutionChallengeFactory executionChallengeFactory_,
-        address[3] memory contractAddresses,
+        IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
@@ -42,11 +43,11 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     ) external {
         require(!isMasterCopy, "MASTER_INIT");
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
-        require(address(contractAddresses[0]) != address(0), "NO_RESULT_RECEIVER");
+        require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
         executionChallengeFactory = executionChallengeFactory_;
-        resultReceiver = IChallengeResultReceiver(contractAddresses[0]);
-        sequencerInbox = ISequencerInbox(contractAddresses[1]);
-        delayedBridge = IBridge(contractAddresses[2]);
+        resultReceiver = IChallengeResultReceiver(contractAddresses.resultReceiver);
+        sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
+        delayedBridge = IBridge(contractAddresses.delayedBridge);
         wasmModuleRoot = wasmModuleRoot_;
         startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];

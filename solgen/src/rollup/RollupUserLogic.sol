@@ -355,11 +355,11 @@ abstract contract AbsRollupUserLogic is
     ) internal returns (IChallenge) {
         return
             challengeFactory.createChallenge(
-                [
-                    address(this),
-                    address(sequencerBridge),
-                    address(delayedBridge)
-                ],
+                IBlockChallengeFactory.ChallengeContracts({
+                    resultReceiver: this,
+                    sequencerInbox: sequencerBridge,
+                    delayedBridge: delayedBridge
+                }),
                 wasmModuleRoots[0],
                 machineStatuses,
                 globalStates,

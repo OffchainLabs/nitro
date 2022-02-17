@@ -100,12 +100,6 @@ interface IRollupAdmin {
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
 
     /**
-     * @notice Set the proving WASM module root
-     * @param newWasmModuleRoot new module root
-     */
-    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
-
-    /**
      * @notice Set number of extra blocks after a challenge
      * @param newExtraTimeBlocks new number of blocks
      */
@@ -176,4 +170,10 @@ interface IRollupAdmin {
     ) external;
 
     function setLoserStakeEscrow(address newLoserStakerEscrow) external;
+
+    /**
+     * @notice Set the proving WASM module root
+     * @param newWasmModuleRoot new module root
+     */
+    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
 }

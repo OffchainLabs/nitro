@@ -44,7 +44,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
         challengeExecutionBisectionDegree = 400;
-        
+
         // the owner can't access the rollup user facet where escrow is redeemable
         require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
         // this next check shouldn't be an issue if the owner controls an AdminProxy
@@ -139,12 +139,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
     /// @notice allows the admin to upgrade the primary logic contract (ie rollup admin logic, aka this)
     /// @dev this function doesn't revert as this primary logic contract is only
-    /// reachable by the proxy's admin 
+    /// reachable by the proxy's admin
     function _authorizeUpgrade(address newImplementation) internal override {}
 
     /// @notice allows the admin to upgrade the secondary logic contract (ie rollup user logic)
     /// @dev this function doesn't revert as this primary logic contract is only
-    /// reachable by the proxy's admin 
+    /// reachable by the proxy's admin
     function _authorizeSecondaryUpgrade(address newImplementation) internal override {}
 
     /**
@@ -198,15 +198,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     function setExtraChallengeTimeBlocks(uint64 newExtraTimeBlocks) external override {
         extraChallengeTimeBlocks = newExtraTimeBlocks;
         emit OwnerFunctionCalled(10);
-    }
-
-    /**
-     * @notice Set the proving WASM module root
-     * @param newWasmModuleRoot new module root
-     */
-    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
-        wasmModuleRoot = newWasmModuleRoot;
-        emit OwnerFunctionCalled(11);
     }
 
     /**
@@ -334,5 +325,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         require(newLoserStakerEscrow != _getAdmin(), "INVALID_ESCROW");
         loserStakeEscrow = newLoserStakerEscrow;
         emit OwnerFunctionCalled(25);
+    }
+
+    /**
+     * @notice Set the proving WASM module root
+     * @param newWasmModuleRoot new module root
+     */
+    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
+        wasmModuleRoot = newWasmModuleRoot;
+        emit OwnerFunctionCalled(26);
     }
 }
