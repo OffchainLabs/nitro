@@ -111,8 +111,8 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
 /// @dev this follows the UUPS pattern for upgradeability - read more at https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.5.0/contracts/proxy#transparent-vs-uups-proxies
 contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
     /**
-     * @dev Initializes the upgradeable proxy with an initial implementation specified by `userLogic` and a secondary
-     * logic implementation specified by `adminLogic`
+     * @dev Initializes the upgradeable proxy with an initial implementation specified by `adminLogic` and a secondary
+     * logic implementation specified by `userLogic`
      *
      * Only the `adminAddr` is able to use the `adminLogic` functions
      * All other addresses can interact with the `userLogic` functions
