@@ -48,7 +48,7 @@ func main() {
 	}
 
 	outDir := DirNameFor(*dataPath, blockNumUint64)
-	if err := os.MkdirAll(outDir, 0664); err != nil {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		panic(err)
 	}
 	entries, err := os.ReadDir(outDir)

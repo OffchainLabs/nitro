@@ -18,7 +18,7 @@ func openClassicArbAddressTable(client *ethclient.Client) (*classicgen.ArbAddres
 
 func scanAndCopyAddressTable(reader AddressReader, writer *JsonListWriter) (uint64, common.Address, error) {
 	length := uint64(0)
-	var address *common.Address
+	address := &common.Address{}
 	for reader.More() {
 		var err error
 		address, err = reader.GetNext()
