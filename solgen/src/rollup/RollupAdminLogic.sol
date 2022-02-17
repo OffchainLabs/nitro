@@ -12,15 +12,14 @@ import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
     function isInit() internal view returns (bool) {
-        return confirmPeriodBlocks != 0 || isMasterCopy;
+        return confirmPeriodBlocks != 0;
     }
 
     function initialize(
         Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external override {
+    ) external override onlyProxy {
         require(!isInit(), "NOT_INIT");
-        require(!isMasterCopy, "NO_INIT_MASTER");
 
         delayedBridge = connectedContracts.delayedBridge;
         sequencerBridge = connectedContracts.sequencerInbox;

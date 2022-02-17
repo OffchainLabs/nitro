@@ -27,15 +27,13 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../libraries/Cloneable.sol";
-
 import "../challenge/IBlockChallengeFactory.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
+abstract contract RollupCore is IRollupCore, Pausable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 

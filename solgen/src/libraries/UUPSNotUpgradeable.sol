@@ -23,7 +23,7 @@ abstract contract UUPSNotUpgradeable is IERC1822Proxiable, DoubleLogicERC1967Upg
      */
     modifier onlyProxy() {
         require(address(this) != __self, "Function must be called through delegatecall");
-        require(_getImplementation() == __self, "Function must be called through active proxy");
+        require(_getSecondaryImplementation() == __self, "Function must be called through active proxy");
         _;
     }
 
