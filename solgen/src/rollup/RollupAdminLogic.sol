@@ -70,9 +70,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         bytes32 state = RollupLib.stateHashMem(
             RollupLib.ExecutionState(
                 emptyGlobalState,
-                1, // inboxMaxCount - force the first assertion to read a message
                 MachineStatus.FINISHED
-            )
+            ),
+            1 // inboxMaxCount - force the first assertion to read a message
         );
         return
             NodeLib.initialize(
@@ -298,6 +298,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
 
     function forceCreateNode(
         uint64 prevNode,
+        uint256 prevNodeInboxMaxCount,
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash
     ) external override whenPaused {
@@ -306,6 +307,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         createNewNode(
             assertion,
             prevNode,
+            prevNodeInboxMaxCount,
             expectedNodeHash
         );
 

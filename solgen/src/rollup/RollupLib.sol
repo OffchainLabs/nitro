@@ -56,11 +56,10 @@ library RollupLib {
 
     struct ExecutionState {
         GlobalState globalState;
-        uint256 inboxMaxCount;
         MachineStatus machineStatus;
     }
 
-    function stateHash(ExecutionState calldata execState)
+    function stateHash(ExecutionState calldata execState, uint256 inboxMaxCount)
         internal
         pure
         returns (bytes32)
@@ -69,14 +68,14 @@ library RollupLib {
             keccak256(
                 abi.encodePacked(
                     execState.globalState.hash(),
-                    execState.inboxMaxCount,
+                    inboxMaxCount,
                     execState.machineStatus
                 )
             );
     }
 
     /// @dev same as stateHash but expects execState in memory instead of calldata
-    function stateHashMem(ExecutionState memory execState)
+    function stateHashMem(ExecutionState memory execState, uint256 inboxMaxCount)
         internal
         pure
         returns (bytes32)
@@ -85,7 +84,7 @@ library RollupLib {
             keccak256(
                 abi.encodePacked(
                     execState.globalState.hash(),
-                    execState.inboxMaxCount,
+                    inboxMaxCount,
                     execState.machineStatus
                 )
             );
