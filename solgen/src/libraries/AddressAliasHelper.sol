@@ -13,7 +13,9 @@ library AddressAliasHelper {
     /// @param l1Address the address in the L1 that triggered the tx to L2
     /// @return l2Address L2 address as viewed in msg.sender
     function applyL1ToL2Alias(address l1Address) internal pure returns (address l2Address) {
-        l2Address = address(uint160(l1Address) + offset);
+        unchecked {
+            l2Address = address(uint160(l1Address) + offset);
+        }
     }
 
     /// @notice Utility function that converts the msg.sender viewed in the L2 to the
@@ -21,6 +23,8 @@ library AddressAliasHelper {
     /// @param l2Address L2 address as viewed in msg.sender
     /// @return l1Address the address in the L1 that triggered the tx to L2
     function undoL1ToL2Alias(address l2Address) internal pure returns (address l1Address) {
-        l1Address = address(uint160(l2Address) - offset);
+        unchecked {
+            l1Address = address(uint160(l2Address) - offset);
+        }
     }
 }
