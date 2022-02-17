@@ -281,6 +281,23 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		blocksValidated = v.blockValidator.BlocksValidated()
 	} else {
 		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+
+		batchCount, err := v.inboxTracker.GetBatchCount()
+		if err != nil {
+			return nil, false, err
+		}
+		if batchCount > 0 {
+			messageCount, err := v.inboxTracker.GetBatchMessageCount(batchCount - 1)
+			if err != nil {
+				return nil, false, err
+			}
+			lastBatchBlock := v.genesisBlockNumber + messageCount
+			if blocksValidated > lastBatchBlock {
+				blocksValidated = lastBatchBlock
+			}
+		} else {
+			blocksValidated = 0
+		}
 	}
 
 	currentL1Block, err := v.client.BlockByNumber(ctx, nil)

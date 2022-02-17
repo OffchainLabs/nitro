@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/offchainlabs/arbstate/validator"
@@ -26,23 +25,10 @@ import (
 
 func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) {
 	ctx := context.Background()
-	broadcasterPort := 9644
-	nodeAConf := arbnode.NodeConfigL1Test
-	if !makeNodesFaulty && !stakeLatestFaulty {
-		nodeAConf.Broadcaster = true
-		nodeAConf.BroadcasterConfig = *newBroadcasterConfigTest(broadcasterPort)
-	}
-	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeAConf)
+	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	nodeBConf := arbnode.NodeConfigL1Test
-	nodeBConf.BatchPoster = false
-	nodeBConf.DelayedSequencerConfig.FinalizeDistance = big.NewInt(1000000)
-	if !makeNodesFaulty && !stakeLatestFaulty {
-		nodeBConf.BroadcastClient = true
-		nodeBConf.BroadcastClientConfig = *newBroadcastClientConfigTest(broadcasterPort)
-	}
-	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, &nodeBConf)
+	l2clientB, l2nodeB := Create2ndNode(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, false)
 
 	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
 	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
@@ -169,14 +155,22 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 		}
 	})()
 
+	stakerATxs := 0
+	stakerBTxs := 0
 	for i := 0; i < 100; i++ {
 		var stakerName string
 		if i%2 == 0 {
 			stakerName = "A"
 			tx, err = stakerA.Act(ctx)
+			if tx != nil {
+				stakerATxs++
+			}
 		} else {
 			stakerName = "B"
 			tx, err = stakerB.Act(ctx)
+			if tx != nil {
+				stakerBTxs++
+			}
 		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
@@ -186,6 +180,10 @@ func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) 
 		for j := 0; j < 10; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
 		}
+	}
+
+	if stakerATxs == 0 || stakerBTxs == 0 {
+		t.Fatal("staker didn't make txs: staker A made", stakerATxs, "staker B made", stakerBTxs)
 	}
 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
