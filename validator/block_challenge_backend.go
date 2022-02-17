@@ -107,10 +107,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
-	var expectedMsgCount uint64
-	if startBlockNum > 0 {
-		expectedMsgCount = uint64(startBlockNum) - genesisBlockNum
-	}
+	expectedMsgCount := uint64(startBlockNum+1) - genesisBlockNum
 	if startMsgCount != expectedMsgCount {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
@@ -179,6 +176,9 @@ func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, m
 }
 
 func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, header *types.Header) (GoGlobalState, error) {
+	if header == nil {
+		return GoGlobalState{}, nil
+	}
 	msgCount := header.Number.Uint64()
 	batch, err := b.findBatchFromMessageCount(ctx, msgCount)
 	if err != nil {
@@ -213,13 +213,12 @@ func (b *BlockChallengeBackend) GetInfoAtStep(ctx context.Context, step uint64) 
 		return GoGlobalState{}, STATUS_TOO_FAR, nil
 	}
 	blockNum := b.GetBlockNrAtStep(step)
-	if blockNum == -1 {
-		// Pre-genesis state
-		return GoGlobalState{}, STATUS_FINISHED, nil
-	}
-	header := b.bc.GetHeaderByNumber(uint64(blockNum))
-	if header == nil {
-		return GoGlobalState{}, 0, errors.New("failed to get block in block challenge")
+	var header *types.Header
+	if blockNum != -1 {
+		header = b.bc.GetHeaderByNumber(uint64(blockNum))
+		if header == nil {
+			return GoGlobalState{}, 0, fmt.Errorf("failed to get block %v in block challenge", blockNum)
+		}
 	}
 	globalState, err := b.FindGlobalStateFromHeader(ctx, header)
 	if err != nil {

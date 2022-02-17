@@ -317,7 +317,11 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
-	if lastBlockHeader.Number.Uint64() != pos {
+	genesisBlock, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return err
+	}
+	if lastBlockHeader.Number.Uint64()+1-genesisBlock != pos {
 		return errors.New("block production not caught up")
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
@@ -475,7 +479,11 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
-	pos := lastBlockHeader.Number.Uint64()
+	genesisBlock, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return err
+	}
+	pos := lastBlockHeader.Number.Uint64() + 1 - genesisBlock
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err

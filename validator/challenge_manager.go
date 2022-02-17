@@ -333,7 +333,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
-	message, err := m.txStreamer.GetMessage(uint64(blockNum) - genesisBlockNum)
+	message, err := m.txStreamer.GetMessage(uint64(blockNum+1) - genesisBlockNum)
 	if err != nil {
 		return err
 	}
