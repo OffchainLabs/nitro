@@ -121,16 +121,23 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 }
 
 func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) error {
+	if count == 0 {
+		return errors.New("cannot reorg out init message")
+	}
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
-	targetBlock := s.bc.GetBlockByNumber(count)
+	genesisBlock, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return err
+	}
+	targetBlock := s.bc.GetBlockByNumber(count + genesisBlock - 1)
 	if targetBlock == nil {
 		return errors.New("reorg target block not found")
 	}
 
-	err := s.bc.ReorgToOldBlock(targetBlock)
+	err = s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}

@@ -53,6 +53,20 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
+	// Add the init message
+	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: []byte{},
+		},
+		DelayedMessagesRead: 0,
+	}})
+	if err != nil {
+		Fail(t, err)
+	}
+
 	return inbox, bc
 }
 
@@ -84,7 +98,7 @@ func TestTransactionStreamer(t *testing.T) {
 			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000)),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
-		numMessages: 0,
+		numMessages: 1,
 		blockNumber: 0,
 	})
 	for i := 1; i < 100; i++ {
