@@ -42,6 +42,7 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
             asserterTimeLeft_,
             challengerTimeLeft_
         );
+        emit ChallengeCreated(IChallenge(clone));
         return IChallenge(clone);
     }
 }

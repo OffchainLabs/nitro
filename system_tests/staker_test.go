@@ -24,11 +24,11 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
-func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) {
+func stakerTestImpl(t *testing.T, makeNodesFaulty bool, stakeLatestFaulty bool) {
 	ctx := context.Background()
 	broadcasterPort := 9644
 	nodeAConf := arbnode.NodeConfigL1Test
-	if !createNodesFlaky && !stakeLatestFlaky {
+	if !makeNodesFaulty && !stakeLatestFaulty {
 		nodeAConf.Broadcaster = true
 		nodeAConf.BroadcasterConfig = *newBroadcasterConfigTest(broadcasterPort)
 	}
@@ -38,7 +38,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	nodeBConf := arbnode.NodeConfigL1Test
 	nodeBConf.BatchPoster = false
 	nodeBConf.DelayedSequencerConfig.FinalizeDistance = big.NewInt(1000000)
-	if !createNodesFlaky && !stakeLatestFlaky {
+	if !makeNodesFaulty && !stakeLatestFaulty {
 		nodeBConf.BroadcastClient = true
 		nodeBConf.BroadcastClientConfig = *newBroadcastClientConfigTest(broadcasterPort)
 	}
@@ -121,7 +121,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 		l1client,
 		valWalletB,
 		0,
-		validator.MakeNodesStrategy,
+		validator.StakeLatestStrategy,
 		bind.CallOpts{},
 		&l1authB,
 		valConfig,
@@ -139,7 +139,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
-	if createNodesFlaky || stakeLatestFlaky {
+	if makeNodesFaulty || stakeLatestFaulty {
 		err = l2clientB.SendTransaction(ctx, tx)
 		Require(t, err)
 		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
@@ -157,7 +157,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 			Require(t, err)
 			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 			Require(t, err)
-			if createNodesFlaky || stakeLatestFlaky {
+			if makeNodesFaulty || stakeLatestFaulty {
 				// Create a different transaction for the second node
 				l2info.Accounts["BackgroundUser"].Nonce = i
 				tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
@@ -197,7 +197,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)
 	}
 
-	if !createNodesFlaky {
+	if !makeNodesFaulty {
 		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrA)
 		Require(t, err)
 		if !isStaked {
@@ -205,7 +205,7 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 		}
 	}
 
-	if !stakeLatestFlaky {
+	if !stakeLatestFaulty {
 		isStaked, err := rollup.IsStaked(&bind.CallOpts{}, valWalletAddrB)
 		Require(t, err)
 		if !isStaked {

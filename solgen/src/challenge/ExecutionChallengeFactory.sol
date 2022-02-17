@@ -39,6 +39,7 @@ contract ExecutionChallengeFactory is IExecutionChallengeFactory {
             asserterTimeLeft_,
             challengerTimeLeft_
         );
+        emit ChallengeCreated(IChallenge(clone));
         return IChallenge(clone);
     }
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
@@ -89,15 +90,17 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	challengeAddr, tx, challenge, err := challengegen.DeployBlockChallenge(auth, client)
+	_, tx, blockChallengeFactory, err := challengegen.DeployBlockChallengeFactory(auth, client, executionChallengeFactoryAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tx, err = challenge.Initialize(
+	tx, err = blockChallengeFactory.CreateChallenge(
 		auth,
-		executionChallengeFactoryAddr,
 		[3]common.Address{
 			resultReceiverAddr,
 			sequencerInbox,
@@ -118,15 +121,17 @@ func CreateChallenge(
 		big.NewInt(100000),
 		big.NewInt(100000),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
+	receipt, err := arbutil.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return resultReceiver, challengeAddr
+	challengeCreatedEvent, err := blockChallengeFactory.ParseChallengeCreated(*receipt.Logs[len(receipt.Logs)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return resultReceiver, challengeCreatedEvent.Challenge
 }
 
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
@@ -162,7 +167,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 		t.Fatal(err)
 	}
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +278,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		trueSeqInboxAddr = asserterSeqInboxAddr
 		expectedWinner = l1Info.GetAddress("asserter")
 	}
-	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1Backend, delayedBridge, trueSeqInboxAddr)
+	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1Backend)
 
 	wasmModuleRoot, err := validator.GetInitialModuleRoot(ctx)
 	if err != nil {
@@ -298,7 +303,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	asserterEndGlobalState := validator.GoGlobalState{
 		BlockHash:  asserterLatestBlock.Hash(),
-		Batch:      1,
+		Batch:      2,
 		PosInBatch: 0,
 	}
 	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
@@ -354,7 +359,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 				t.Log("challenge completed! asserter hit expected error:", err)
 				return
 			}
-			t.Fatal(err)
+			t.Fatal("challenge step", i, "hit error:", err)
 		}
 		if tx == nil {
 			t.Fatal("no move")

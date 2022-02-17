@@ -6,6 +6,8 @@ import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
 interface IBlockChallengeFactory {
+    event ChallengeCreated(IChallenge challenge);
+
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function createChallenge(
         address[3] calldata contractAddresses,

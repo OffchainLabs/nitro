@@ -40,6 +40,20 @@ contract SequencerInboxStub is ISequencerInbox {
     constructor(IBridge _delayedBridge, address _sequencer) {
         delayedBridge = _delayedBridge;
         isBatchPoster[_sequencer] = true;
+
+        bytes memory header = abi.encodePacked(
+            uint64(0),
+            uint64(0),
+            uint64(0),
+            uint64(0),
+            uint64(0)
+        );
+        bytes32 headerHash = keccak256(header);
+        bytes32 acc = keccak256(abi.encodePacked(bytes32(0), headerHash, bytes32(0)));
+        inboxAccs.push(acc);
+        bytes memory data;
+        uint64[4] memory timeBounds;
+        emit SequencerBatchDelivered(0, bytes32(0), acc, bytes32(0), 0, timeBounds, data);
     }
 
     function addSequencerL2BatchFromOrigin(

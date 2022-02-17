@@ -6,6 +6,8 @@ import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
 interface IExecutionChallengeFactory {
+    event ChallengeCreated(IChallenge challenge);
+
     function createChallenge(
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
