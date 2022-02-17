@@ -6,9 +6,11 @@ package statetransfer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"math/big"
+	"path"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,9 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-var ArbTransferListNames = []string{"Blocks", "AddressTableContents", "RetryableData", "Accounts"}
-
-func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumber uint64, prevData io.Reader, curData io.Writer, oldAPIs bool) error {
+func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumber uint64, prevFile, nextBase string, oldAPIs bool) error {
 
 	fmt.Println("Initializing")
 
@@ -29,93 +29,122 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 		Context:     ctx,
 	}
 
+	DataHeader := ArbosInitFileContents{
+		BlocksPath:               "blocks.json",
+		AddressTableContentsPath: "addresstable.json",
+		RetryableDataPath:        "retriables.json",
+		AccountsPath:             "accounts.json",
+	}
+
 	ethClient := ethclient.NewClient(rpcClient)
 
-	var reader *JsonMultiListReader
-	if prevData != nil {
-		reader = NewJsonMultiListReader(prevData, ArbTransferListNames)
-	}
-	writer := NewJsonMultiListWriter(curData, ArbTransferListNames)
-	updater := &JsonMultiListUpdater{reader, writer}
-
-	if err := updater.OpenTopLevel(); err != nil {
-		return err
+	var reader InitDataReader
+	if prevFile == "" {
+		reader = NewMemoryInitDataReader(&ArbosInitializationInfo{})
+	} else {
+		var err error
+		reader, err = NewJsonInitDataReader(prevFile)
+		if err != nil {
+			return err
+		}
 	}
 
 	fmt.Println("Copying Blocks")
-	if listname, err := updater.NextList(); err != nil || listname != "Blocks" {
-		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
+	blockReader, err := reader.GetStoredBlockReader()
+	if err != nil {
+		return err
 	}
-	blocksCopied, blockHash, err := scanAndCopyBlocks(reader, writer)
+	blockWriter, err := NewJsonListWriter(path.Join(nextBase, DataHeader.BlocksPath))
+	if err != nil {
+		return err
+	}
+	blocksCopied, blockHash, err := scanAndCopyBlocks(blockReader, blockWriter)
 	if err != nil {
 		return err
 	}
 	fmt.Println("Reading Blocks")
-	if err := fillBlocks(ctx, rpcClient, uint64(blocksCopied), blockNumber, blockHash, writer); err != nil {
+	if err := fillBlocks(ctx, rpcClient, uint64(blocksCopied), blockNumber, blockHash, blockWriter); err != nil {
 		return err
 	}
-	if err := updater.CloseList(); err != nil {
+	if err := blockWriter.Close(); err != nil {
+		return err
+	}
+	if err := blockReader.Close(); err != nil {
 		return err
 	}
 
 	fmt.Println("Copying Address Table")
-	if listname, err := updater.NextList(); err != nil || listname != "AddressTableContents" {
-		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
+	addressTableReader, err := reader.GetAddressTableReader()
+	if err != nil {
+		return err
 	}
-	prevLength, lastAddress, err := scanAndCopyAddressTable(reader, writer)
+	addressTableWriter, err := NewJsonListWriter(path.Join(nextBase, DataHeader.AddressTableContentsPath))
+	if err != nil {
+		return err
+	}
+
+	prevLength, lastAddress, err := scanAndCopyAddressTable(addressTableReader, addressTableWriter)
 	if err != nil {
 		return err
 	}
 	fmt.Println("Reading Address Table")
-	if err := verifyAndFillAddressTable(ethClient, callopts, prevLength, lastAddress, writer); err != nil {
+	if err := verifyAndFillAddressTable(ethClient, callopts, prevLength, lastAddress, addressTableWriter); err != nil {
 		return err
 	}
-	if err := updater.CloseList(); err != nil {
+	if err := addressTableWriter.Close(); err != nil {
+		return err
+	}
+	if err := addressTableReader.Close(); err != nil {
 		return err
 	}
 
 	fmt.Println("Retriables")
-	if listname, err := updater.NextList(); err != nil || listname != "RetryableData" {
-		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
-	}
-	err = skipRetriables(reader)
-	if err != nil {
-		return err
-	}
-	classicArbRetryableTx, err := openClassicArbRetryableTx(ethClient)
-	if err != nil {
-		return err
-	}
 	if !oldAPIs {
+		retriableWriter, err := NewJsonListWriter(path.Join(nextBase, DataHeader.RetryableDataPath))
+		if err != nil {
+			return err
+		}
+		classicArbRetryableTx, err := openClassicArbRetryableTx(ethClient)
+		if err != nil {
+			return err
+		}
+
 		retryables, err := getRetryables(classicArbRetryableTx, callopts)
 		if err != nil {
 			return err
 		}
 		for _, retriable := range retryables {
-			err := writer.AddElement(retriable)
+			err := retriableWriter.Write(retriable)
 			if err != nil {
 				return err
 			}
 		}
-	}
-	if err := updater.CloseList(); err != nil {
-		return err
+		if err := retriableWriter.Close(); err != nil {
+			return err
+		}
+	} else {
+		DataHeader.RetryableDataPath = ""
 	}
 
 	fmt.Println("Accounts")
-	if listname, err := updater.NextList(); err != nil || listname != "Accounts" {
-		return fmt.Errorf("expected Blocks, found: %v, err: %w", listname, err)
-	}
-	classicArbosTest, err := openClassicArbosTest(ethClient)
+	accountWriter, err := NewJsonListWriter(path.Join(nextBase, DataHeader.AccountsPath))
 	if err != nil {
 		return err
 	}
 	if !oldAPIs {
+		classicArbosTest, err := openClassicArbosTest(ethClient)
+		if err != nil {
+			return err
+		}
+		accountReader, err := reader.GetAccountDataReader()
+		if err != nil {
+			return err
+		}
 		accountHashes, err := getAccountHashesAsMap(classicArbosTest, callopts)
 		if err != nil {
 			return err
 		}
-		foundAddresses, err := copyStillValidAccounts(reader, writer, accountHashes)
+		foundAddresses, err := copyStillValidAccounts(accountReader, accountWriter, accountHashes)
 		if err != nil {
 			return err
 		}
@@ -123,20 +152,25 @@ func ReadStateFromClassic(ctx context.Context, rpcClient *rpc.Client, blockNumbe
 		if err != nil {
 			return err
 		}
-		if err := fillAccounts(writer, classicArbosTest, callopts, accounts, foundAddresses); err != nil {
+		if err := fillAccounts(accountWriter, classicArbosTest, callopts, accounts, foundAddresses); err != nil {
+			return err
+		}
+		if err := accountReader.Close(); err != nil {
 			return err
 		}
 	} else {
-		if err := skipAccounts(reader); err != nil {
-			return err
-		}
-		if err := fillAccountsOld(writer, *ethClient, callopts, tempAccountList); err != nil {
+		err := fillAccountsOld(accountWriter, *ethClient, callopts, tempAccountList)
+		if err != nil {
 			return err
 		}
 	}
-	if err := updater.CloseList(); err != nil {
+	if err := accountWriter.Close(); err != nil {
 		return err
 	}
 
-	return updater.CloseTopLevel()
+	headerJson, err := json.Marshal(DataHeader)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(path.Join(nextBase, "header.json"), headerJson, 0600)
 }

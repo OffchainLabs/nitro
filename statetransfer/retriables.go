@@ -87,14 +87,3 @@ func getRetryable(rd io.Reader) (InitializationDataForRetryable, error) {
 		Calldata:    calldata,
 	}, nil
 }
-
-func skipRetriables(reader *JsonMultiListReader) error {
-	for reader.More() {
-		var retriableData InitializationDataForRetryable
-		err := reader.GetNextElement(&retriableData)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}

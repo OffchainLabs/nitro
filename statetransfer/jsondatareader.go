@@ -11,10 +11,10 @@ import (
 )
 
 type ArbosInitFileContents struct {
-	BlocksPath               string
-	AddressTableContentsPath string
-	RetryableDataPath        string
-	AccountsPath             string
+	BlocksPath               string `json:"blocksPath,omitempty"`
+	AddressTableContentsPath string `json:"addressTableContentsPath,omitempty"`
+	RetryableDataPath        string `json:"retryableDataPath,omitempty"`
+	AccountsPath             string `json:"accountsPath,omitempty"`
 }
 
 type JsonInitDataReader struct {

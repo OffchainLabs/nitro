@@ -8,7 +8,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path"
 
@@ -17,8 +16,8 @@ import (
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-func JsonFileNameFor(dirPath string, blockNum uint64) string {
-	return path.Join(dirPath, fmt.Sprintf("state.%09d.json", blockNum))
+func DirNameFor(dirPath string, blockNum uint64) string {
+	return path.Join(dirPath, fmt.Sprintf("state.%09d", blockNum))
 }
 
 func main() {
@@ -26,6 +25,7 @@ func main() {
 	dataPath := flag.String("dir", "target/data", "path to data directory")
 	blockNumParam := flag.Int64("blocknum", -1, "negative for current")
 	prevBlockNumInt := flag.Int64("prevblock", -1, "-1 for no previous data")
+	newAPI := flag.Bool("newapi", false, "use new api")
 
 	flag.Parse()
 	ctx := context.Background()
@@ -47,20 +47,23 @@ func main() {
 		blockNumUint64 = curHeader.Number.Uint64()
 	}
 
-	outFile, err := os.OpenFile(JsonFileNameFor(*dataPath, blockNumUint64), os.O_WRONLY|os.O_CREATE, 0664)
+	outDir := DirNameFor(*dataPath, blockNumUint64)
+	if err := os.MkdirAll(outDir, 0664); err != nil {
+		panic(err)
+	}
+	entries, err := os.ReadDir(outDir)
 	if err != nil {
 		panic(err)
 	}
-
-	var inFile io.Reader = nil
+	if len(entries) > 0 {
+		panic("out dir not empty")
+	}
+	var inFileName string = ""
 	if *prevBlockNumInt >= 0 {
-		inFile, err = os.OpenFile(JsonFileNameFor(*dataPath, uint64(*prevBlockNumInt)), os.O_RDONLY, 0664)
-		if err != nil {
-			panic(err)
-		}
+		inFileName = path.Join(DirNameFor(*dataPath, uint64(*prevBlockNumInt)), "header.json")
 	}
 
-	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFile, outFile, true)
+	err = statetransfer.ReadStateFromClassic(ctx, rpcClient, blockNumUint64, inFileName, outDir, !*newAPI)
 	if err != nil {
 		panic(err)
 	}

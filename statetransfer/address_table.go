@@ -16,34 +16,29 @@ func openClassicArbAddressTable(client *ethclient.Client) (*classicgen.ArbAddres
 	return classicgen.NewArbAddressTableCaller(ArbosAddressTable, client)
 }
 
-func scanAndCopyAddressTable(reader *JsonMultiListReader, writer *JsonMultiListWriter) (uint64, common.Address, error) {
+func scanAndCopyAddressTable(reader AddressReader, writer *JsonListWriter) (uint64, common.Address, error) {
 	length := uint64(0)
-	var address common.Address
-	if listName, err := writer.CurListName(); err != nil || listName != "AddressTableContents" {
-		return length, common.Address{}, fmt.Errorf("unexpected listname: %v, %w", listName, err)
-	}
+	var address *common.Address
 	for reader.More() {
-		err := reader.GetNextElement(&address)
+		var err error
+		address, err = reader.GetNext()
 		if err != nil {
 			return length, common.Address{}, err
 		}
-		err = writer.AddElement(address)
+		err = writer.Write(address)
 		if err != nil {
 			return length, common.Address{}, err
 		}
-		AddressSeen(address)
+		AddressSeen(*address)
 		length += 1
 	}
-	return length, address, nil
+	return length, *address, nil
 }
 
-func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallOpts, prevLength uint64, lastAddress common.Address, writer *JsonMultiListWriter) error {
+func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallOpts, prevLength uint64, lastAddress common.Address, writer *JsonListWriter) error {
 	classicArbAddressTable, err := openClassicArbAddressTable(ethClient)
 	if err != nil {
 		return err
-	}
-	if listName, err := writer.CurListName(); err != nil || listName != "AddressTableContents" {
-		return fmt.Errorf("unexpected listname: %v, %w", listName, err)
 	}
 	if prevLength > 0 {
 		// sanity test for reorgs, etc.. assume all is o.k. if last is o.k.
@@ -72,7 +67,7 @@ func verifyAndFillAddressTable(ethClient *ethclient.Client, callopts *bind.CallO
 		if err != nil {
 			return err
 		}
-		err = writer.AddElement(cAddress)
+		err = writer.Write(cAddress)
 		if err != nil {
 			return err
 		}

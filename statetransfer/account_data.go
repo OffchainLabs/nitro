@@ -54,7 +54,7 @@ func getAccountMap(arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpt
 	return result, nil
 }
 
-func fillAccounts(writer *JsonMultiListWriter, arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpts, addressList, excludeAddresse map[common.Address]struct{}) error {
+func fillAccounts(writer *JsonListWriter, arbosTest *classicgen.ArbosTestCaller, callopts *bind.CallOpts, addressList, excludeAddresse map[common.Address]struct{}) error {
 	for address := range addressList {
 		_, exclude := excludeAddresse[address]
 		if exclude {
@@ -65,7 +65,7 @@ func fillAccounts(writer *JsonMultiListWriter, arbosTest *classicgen.ArbosTestCa
 		if err != nil {
 			return err
 		}
-		err = writer.AddElement(acctInfo)
+		err = writer.Write(acctInfo)
 		if err != nil {
 			return err
 		}
@@ -73,28 +73,16 @@ func fillAccounts(writer *JsonMultiListWriter, arbosTest *classicgen.ArbosTestCa
 	return nil
 }
 
-func fillAccountsOld(writer *JsonMultiListWriter, client ethclient.Client, callopts *bind.CallOpts, addressList map[common.Address]struct{}) error {
+func fillAccountsOld(writer *JsonListWriter, client ethclient.Client, callopts *bind.CallOpts, addressList map[common.Address]struct{}) error {
 	for address := range addressList {
 		acctInfo, err := getAccountInfoOld(client, callopts, address)
 		if err != nil {
 			return err
 		}
-		err = writer.AddElement(acctInfo)
+		err = writer.Write(acctInfo)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func skipAccounts(reader *JsonMultiListReader) error {
-	for reader.More() {
-		var acctInfo AccountInitializationInfo
-		err := reader.GetNextElement(&acctInfo)
-		if err != nil {
-			return err
-		}
-		AddressSeen(acctInfo.Addr)
 	}
 	return nil
 }
@@ -321,17 +309,16 @@ func getAccountAggregatorInfo(rd io.Reader) (*AccountInitAggregatorInfo, error) 
 	}, nil
 }
 
-func copyStillValidAccounts(reader *JsonMultiListReader, writer *JsonMultiListWriter, currentHashes map[common.Hash]struct{}) (map[common.Address]struct{}, error) {
+func copyStillValidAccounts(reader AccountDataReader, writer *JsonListWriter, currentHashes map[common.Hash]struct{}) (map[common.Address]struct{}, error) {
 	foundAddresses := make(map[common.Address]struct{})
 	for reader.More() {
-		var accountInfo AccountInitializationInfo
-		err := reader.GetNextElement(&accountInfo)
+		accountInfo, err := reader.GetNext()
 		if err != nil {
 			return nil, err
 		}
 		_, exists := currentHashes[accountInfo.ClassicHash]
 		if exists {
-			err := writer.AddElement(accountInfo)
+			err := writer.Write(accountInfo)
 			if err != nil {
 				return nil, err
 			}
