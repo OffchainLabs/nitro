@@ -6,7 +6,6 @@ package arbosState
 
 import (
 	"errors"
-	"fmt"
 	"log"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -38,11 +37,12 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	if addrTableSize != 0 {
 		return common.Hash{}, errors.New("address table must be empty")
 	}
-	if listname, err := initData.NextList(); err != nil || listname != "AddressTableContents" {
-		return common.Hash{}, fmt.Errorf("expected: AddressTableContents, found: %v err: %w", listname, err)
+	addressReader, err := initData.GetAddressTableReader()
+	if err != nil {
+		return common.Hash{}, err
 	}
-	for i := 0; initData.More(); i++ {
-		addr, err := initData.GetNextAddress()
+	for i := 0; addressReader.More(); i++ {
+		addr, err := addressReader.GetNext()
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -54,26 +54,25 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 			return common.Hash{}, errors.New("address table slot mismatch")
 		}
 	}
-	if err := initData.CloseList(); err != nil {
-		return common.Hash{}, errors.New("close AddressTableContents failed")
+	if err := addressReader.Close(); err != nil {
+		return common.Hash{}, err
 	}
 
-	if listname, err := initData.NextList(); err != nil || listname != "RetryableData" {
-		return common.Hash{}, fmt.Errorf("expected: RetryableData, found: %v err: %w", listname, err)
-	}
-	err = initializeRetryables(arbosState.RetryableState(), initData, 0)
+	retriableReader, err := initData.GetRetriableDataReader()
 	if err != nil {
 		return common.Hash{}, err
 	}
-	if err := initData.CloseList(); err != nil {
-		return common.Hash{}, errors.New("close RetryableData failed")
+	err = initializeRetryables(arbosState.RetryableState(), retriableReader, 0)
+	if err != nil {
+		return common.Hash{}, err
 	}
 
-	if listname, err := initData.NextList(); err != nil || listname != "Accounts" {
-		return common.Hash{}, fmt.Errorf("expected: Accounts, found: %v err: %w", listname, err)
+	accountDataReader, err := initData.GetAccountDataReader()
+	if err != nil {
+		return common.Hash{}, err
 	}
-	for initData.More() {
-		account, err := initData.GetNextAccountInit()
+	for accountDataReader.More() {
+		account, err := accountDataReader.GetNext()
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -90,8 +89,8 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 			}
 		}
 	}
-	if err := initData.CloseList(); err != nil {
-		return common.Hash{}, errors.New("close Accounts failed")
+	if err := accountDataReader.Close(); err != nil {
+		return common.Hash{}, err
 	}
 	root, err := statedb.Commit(true)
 	if err != nil {
@@ -104,9 +103,9 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	return root, nil
 }
 
-func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.InitDataReader, currentTimestampToUse uint64) error {
+func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
 	for initData.More() {
-		r, err := initData.GetNextRetryableData()
+		r, err := initData.GetNext()
 		if err != nil {
 			return err
 		}
@@ -119,7 +118,7 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 			return err
 		}
 	}
-	return nil
+	return initData.Close()
 }
 
 func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {

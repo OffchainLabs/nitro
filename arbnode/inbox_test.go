@@ -42,10 +42,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	db := rawdb.NewMemoryDatabase()
-	initReader, err := statetransfer.NewMemoryInitDataReader(&initData, true)
-	if err != nil {
-		Fail(t, err)
-	}
+	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
 	bc, err := WriteOrTestBlockChain(db, nil, initReader, 0, chainConfig)
 

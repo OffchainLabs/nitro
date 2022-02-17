@@ -437,7 +437,7 @@ func DefaultCacheConfigFor(stack *node.Node) *core.CacheConfig {
 	}
 }
 
-func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.InitDataReader) (uint64, error) {
+func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.StoredBlockReader) (uint64, error) {
 	var prevHash common.Hash
 	td := big.NewInt(0)
 	var blocksInDb uint64
@@ -451,12 +451,12 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 	blockNum := uint64(0)
 	for ; initDataReader.More(); blockNum++ {
 		log.Debug("importing", "blockNum", blockNum)
-		storedBlock, err := initDataReader.GetNextStoredBlock()
+		storedBlock, err := initDataReader.GetNext()
 		if err != nil {
 			return blockNum, err
 		}
 		if blockNum+1 < blocksInDb && initDataReader.More() {
-			continue // only need to validate the last
+			continue // skip already-imported blocks. Only validate the last.
 		}
 		storedBlockHash := storedBlock.Header.Hash()
 		if blockNum < blocksInDb {
@@ -498,7 +498,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 		prevHash = blockHash
 		td.Add(td, storedBlock.Header.Difficulty)
 	}
-	return blockNum, nil
+	return blockNum, initDataReader.Close()
 }
 
 func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64) error {

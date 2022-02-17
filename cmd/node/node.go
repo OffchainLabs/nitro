@@ -226,11 +226,10 @@ func main() {
 	}
 
 	if *importFile != "" {
-		inboundFile, err := os.OpenFile(*importFile, os.O_RDONLY, 0664)
+		initDataReader, err = statetransfer.NewJsonInitDataReader(*importFile)
 		if err != nil {
 			panic(err)
 		}
-		initDataReader = statetransfer.NewIterativeInitDataReader(inboundFile)
 	} else if *devInit {
 		initData := statetransfer.ArbosInitializationInfo{
 			Accounts: []statetransfer.AccountInitializationInfo{
@@ -241,7 +240,7 @@ func main() {
 				},
 			},
 		}
-		initDataReader, err = statetransfer.NewMemoryInitDataReader(&initData, false)
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 		if err != nil {
 			panic(err)
 		}
@@ -249,17 +248,12 @@ func main() {
 
 	var l2BlockChain *core.BlockChain
 	if initDataReader != nil {
-		if err := initDataReader.OpenTopLevel(); err != nil {
-			panic(err)
-		}
-		if listname, err := initDataReader.NextList(); err != nil || listname != "Blocks" {
-			utils.Fatalf("expected: Blocks, found: %v err: %w", listname, err)
-		}
-		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, initDataReader)
+		blockReader, err := initDataReader.GetStoredBlockReader()
 		if err != nil {
 			panic(err)
 		}
-		if err := initDataReader.CloseList(); err != nil {
+		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
 			panic(err)
 		}
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, params.ArbitrumOneChainConfig())
