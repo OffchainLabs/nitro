@@ -355,6 +355,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 					"found node with incorrect assertion",
 					"node", nd.NodeNum,
 					"inboxPositionInvalid", inboxPositionInvalid,
+					"computedBlockNum", lastBlockNum,
 					"numBlocks", nd.Assertion.NumBlocks,
 					"expectedNumBlocks", expectedNumBlocks,
 					"blockHash", afterGs.BlockHash,

@@ -44,6 +44,12 @@ func stakerTestImpl(t *testing.T, createNodesFlaky bool, stakeLatestFlaky bool) 
 	}
 	l2clientB, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, &l2info.ArbInitData, &nodeBConf)
 
+	nodeAGenesis := l2nodeA.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := l2nodeB.Backend.APIBackend().CurrentHeader().Hash()
+	if nodeAGenesis != nodeBGenesis {
+		t.Fatal("node A L2 genesis hash", nodeAGenesis, "!= node B L2 genesis hash", nodeBGenesis)
+	}
+
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
 
 	valWalletFactory, tx, _, err := rollupgen.DeployValidatorWalletCreator(&deployAuth, l1client)
