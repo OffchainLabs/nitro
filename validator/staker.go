@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -78,7 +79,6 @@ func NewStaker(
 	client *ethclient.Client,
 	wallet *ValidatorWallet,
 	fromBlock int64,
-	strategy StakerStrategy,
 	callOpts bind.CallOpts,
 	auth *bind.TransactOpts,
 	config ValidatorConfig,
@@ -92,6 +92,18 @@ func NewStaker(
 		return nil, fmt.Errorf("invalid validator utils address \"%v\"", config.UtilsAddress)
 	}
 	validatorUtilsAddress := common.HexToAddress(config.UtilsAddress)
+	var strategy StakerStrategy
+	if strings.ToLower(config.Strategy) == "watchtower" {
+		strategy = WatchtowerStrategy
+	} else if strings.ToLower(config.Strategy) == "defensive" {
+		strategy = DefensiveStrategy
+	} else if strings.ToLower(config.Strategy) == "stakelatest" {
+		strategy = StakeLatestStrategy
+	} else if strings.ToLower(config.Strategy) == "makenodes" {
+		strategy = MakeNodesStrategy
+	} else {
+		return nil, fmt.Errorf("unknown staker strategy \"%v\"", config.Strategy)
+	}
 	val, err := NewValidator(ctx, client, wallet, fromBlock, validatorUtilsAddress, callOpts, l2Blockchain, inboxReader, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err

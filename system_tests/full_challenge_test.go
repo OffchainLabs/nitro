@@ -101,10 +101,10 @@ func CreateChallenge(
 
 	tx, err = blockChallengeFactory.CreateChallenge(
 		auth,
-		[3]common.Address{
-			resultReceiverAddr,
-			sequencerInbox,
-			delayedBridge,
+		challengegen.IBlockChallengeFactoryChallengeContracts{
+			ResultReceiver: resultReceiverAddr,
+			SequencerInbox: sequencerInbox,
+			DelayedBridge:  delayedBridge,
 		},
 		wasmModuleRoot,
 		[2]uint8{

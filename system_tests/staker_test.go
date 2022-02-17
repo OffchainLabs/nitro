@@ -86,6 +86,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
+	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	Require(t, err)
+
 	valConfig := validator.ValidatorConfig{
 		UtilsAddress:      valUtils.Hex(),
 		TargetNumMachines: 4,
@@ -93,12 +98,16 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	valWalletA, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
+	if honestStakerInactive {
+		valConfig.Strategy = "Defensive"
+	} else {
+		valConfig.Strategy = "MakeNodes"
+	}
 	stakerA, err := validator.NewStaker(
 		ctx,
 		l1client,
 		valWalletA,
 		0,
-		validator.MakeNodesStrategy,
 		bind.CallOpts{},
 		&l1authA,
 		valConfig,
@@ -112,12 +121,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	valWalletB, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeB.DeployInfo.Rollup, l1client, &l1authB, 0, func(common.Address) {})
 	Require(t, err)
+	valConfig.Strategy = "MakeNodes"
 	stakerB, err := validator.NewStaker(
 		ctx,
 		l1client,
 		valWalletB,
 		0,
-		validator.StakeLatestStrategy,
 		bind.CallOpts{},
 		&l1authB,
 		valConfig,
@@ -206,7 +215,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if isHonestZombie {
 			t.Fatal("staker A became a zombie")
 		}
-		for j := 0; j < 10; j++ {
+		for j := 0; j < 5; j++ {
 			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
 		}
 	}
