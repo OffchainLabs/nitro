@@ -45,7 +45,7 @@ library MerkleLib {
         bytes32 item
     ) internal pure returns (bytes32) {
         uint256 proofItems = nodes.length;
-        if(!(proofItems <= 256)) revert MerkleProofTooLong(proofItems, 256);
+        if(proofItems > 256) revert MerkleProofTooLong(proofItems, 256);
         bytes32 h = item;
         for (uint256 i = 0; i < proofItems; i++) {
             if (route % 2 == 0) {
