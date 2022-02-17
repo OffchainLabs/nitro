@@ -45,6 +45,7 @@ type ValidatorConfig struct {
 	DontChallenge        bool
 	WithdrawDestination  string
 	TargetNumMachines    int
+	ConfirmationBlocks   int64
 }
 
 type nodeAndHash struct {
@@ -357,7 +358,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	if s.activeChallenge == nil || s.activeChallenge.RootChallengeAddress() != *info.CurrentChallenge {
 		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
 
-		newChallengeManager, err := NewChallengeManager(ctx, s.client, s.auth, *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, uint64(s.fromBlock), s.config.TargetNumMachines)
+		newChallengeManager, err := NewChallengeManager(ctx, s.builder, s.builder.builderAuth, *s.builder.wallet.Address(), *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, uint64(s.fromBlock), s.config.TargetNumMachines, s.config.ConfirmationBlocks)
 		if err != nil {
 			return err
 		}

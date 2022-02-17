@@ -6,6 +6,7 @@ package validator
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -21,8 +22,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const MAX_BISECTION_DEGREE uint64 = 40
-const CONFIRMATION_BLOCKS int64 = 12
+const maxBisectionDegree uint64 = 40
 
 var challengeBisectedID common.Hash
 
@@ -34,23 +34,6 @@ func init() {
 	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
 }
 
-// Returns nil if client is a SimulatedBackend
-func LatestConfirmedBlock(ctx context.Context, client bind.ContractBackend) (*big.Int, error) {
-	_, isSimulated := client.(*backends.SimulatedBackend)
-	if isSimulated {
-		return nil, nil
-	}
-	latestBlock, err := client.HeaderByNumber(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	block := new(big.Int).Sub(latestBlock.Number, big.NewInt(CONFIRMATION_BLOCKS))
-	if block.Sign() < 0 {
-		block.SetInt64(0)
-	}
-	return block, nil
-}
-
 type ChallengeBackend interface {
 	SetRange(ctx context.Context, start uint64, end uint64) error
 	GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error)
@@ -58,13 +41,14 @@ type ChallengeBackend interface {
 
 type ChallengeManager struct {
 	// fields used in both block and execution challenge
-	con               *challengegen.ChallengeCore
-	challengeAddr     common.Address
-	rootChallengeAddr common.Address
-	client            bind.ContractBackend
-	auth              *bind.TransactOpts
-	actingAs          common.Address
-	startL1Block      *big.Int
+	con                *challengegen.ChallengeCore
+	challengeAddr      common.Address
+	rootChallengeAddr  common.Address
+	client             bind.ContractBackend
+	auth               *bind.TransactOpts
+	actingAs           common.Address
+	startL1Block       *big.Int
+	confirmationBlocks int64
 
 	// fields below are used while working on block challenge
 	blockChallengeBackend *BlockChallengeBackend
@@ -77,18 +61,22 @@ type ChallengeManager struct {
 	targetNumMachines int
 
 	initialMachine        *ArbitratorMachine
-	initialMachineBlockNr uint64
+	initialMachineBlockNr int64
 
 	// nil untill working on execution challenge
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
-func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, blockChallengeAddr common.Address, l2blockChain *core.BlockChain, inboxReader InboxReaderInterface, inboxTracker InboxTrackerInterface, txStreamer TransactionStreamerInterface, startL1Block uint64, targetNumMachines int) (*ChallengeManager, error) {
+func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, fromAddr common.Address, blockChallengeAddr common.Address, l2blockChain *core.BlockChain, inboxReader InboxReaderInterface, inboxTracker InboxTrackerInterface, txStreamer TransactionStreamerInterface, startL1Block uint64, targetNumMachines int, confirmationBlocks int64) (*ChallengeManager, error) {
 	challengeCoreCon, err := challengegen.NewChallengeCore(blockChallengeAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
-	backend, err := NewBlockChallengeBackend(ctx, l2blockChain, inboxTracker, l1client, blockChallengeAddr)
+	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
+	backend, err := NewBlockChallengeBackend(ctx, l2blockChain, inboxTracker, l1client, blockChallengeAddr, genesisBlockNum)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +86,7 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 		rootChallengeAddr:     blockChallengeAddr,
 		client:                l1client,
 		auth:                  auth,
-		actingAs:              auth.From,
+		actingAs:              fromAddr,
 		startL1Block:          new(big.Int).SetUint64(startL1Block),
 		blockChallengeBackend: backend,
 		inboxReader:           inboxReader,
@@ -106,6 +94,7 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
 		targetNumMachines:     targetNumMachines,
+		confirmationBlocks:    confirmationBlocks,
 	}, nil
 }
 
@@ -141,6 +130,23 @@ type ChallengeState struct {
 	End         *big.Int
 	Segments    []ChallengeSegment
 	RawSegments [][32]byte
+}
+
+// Returns nil if client is a SimulatedBackend
+func (m *ChallengeManager) latestConfirmedBlock(ctx context.Context) (*big.Int, error) {
+	_, isSimulated := m.client.(*backends.SimulatedBackend)
+	if isSimulated {
+		return nil, nil
+	}
+	latestBlock, err := m.client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	block := new(big.Int).Sub(latestBlock.Number, big.NewInt(m.confirmationBlocks))
+	if block.Sign() < 0 {
+		block.SetInt64(0)
+	}
+	return block, nil
 }
 
 func (m *ChallengeManager) RootChallengeAddress() common.Address {
@@ -204,7 +210,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	if err != nil {
 		return nil, err
 	}
-	bisectionDegree := MAX_BISECTION_DEGREE
+	bisectionDegree := maxBisectionDegree
 	if newChallengeLength < bisectionDegree {
 		bisectionDegree = newChallengeLength
 	}
@@ -244,7 +250,7 @@ func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	// Perform future checks against the latest confirmed block
-	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, m.client)
+	callOpts.BlockNumber, err = m.latestConfirmedBlock(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -261,7 +267,7 @@ func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 func (m *ChallengeManager) GetChallengeState(ctx context.Context) (*ChallengeState, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	var err error
-	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, m.client)
+	callOpts.BlockNumber, err = m.latestConfirmedBlock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -299,16 +305,22 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	return 0, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
 }
 
-func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum uint64) error {
+func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum int64) error {
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	blockHeader := m.blockchain.GetHeaderByNumber(blockNum)
 	initialFrozenMachine, err := GetZeroStepMachine(ctx)
 	if err != nil {
 		return err
 	}
 	machine := initialFrozenMachine.Clone()
+	var blockHeader *types.Header
+	if blockNum != -1 {
+		blockHeader = m.blockchain.GetHeaderByNumber(uint64(blockNum))
+		if blockHeader == nil {
+			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
+		}
+	}
 	globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
 	if err != nil {
 		return err
@@ -317,11 +329,18 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum ui
 	if err != nil {
 		return err
 	}
-	message, err := m.txStreamer.GetMessage(blockNum)
+	genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
 	if err != nil {
 		return err
 	}
-	nextHeader := m.blockchain.GetHeaderByNumber(blockNum + 1)
+	message, err := m.txStreamer.GetMessage(uint64(blockNum) - genesisBlockNum)
+	if err != nil {
+		return err
+	}
+	nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+	if nextHeader == nil {
+		return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
+	}
 	preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
 	if err != nil {
 		return err
@@ -359,7 +378,11 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 		return nil
 	}
 
-	inExec, addr, blockNum, err := m.blockChallengeBackend.IsInExecutionChallenge(ctx)
+	latestConfirmedBlock, err := m.latestConfirmedBlock(ctx)
+	if err != nil {
+		return err
+	}
+	inExec, addr, blockNum, err := m.blockChallengeBackend.IsInExecutionChallenge(ctx, latestConfirmedBlock)
 	if err != nil || !inExec {
 		return err
 	}

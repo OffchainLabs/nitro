@@ -192,7 +192,11 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 }
 
 func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
-	if header.ParentHash != prevHeader.Hash() {
+	var prevHash common.Hash
+	if prevHeader != nil {
+		prevHash = prevHeader.Hash()
+	}
+	if header.ParentHash != prevHash {
 		err = fmt.Errorf("bad arguments: prev does not match")
 		return
 	}
@@ -206,9 +210,11 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 		err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
 		return
 	}
-	if header.Nonce != prevHeader.Nonce {
+	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
-		delayedMsgNr = prevHeader.Nonce.Uint64()
+		if prevHeader != nil {
+			delayedMsgNr = prevHeader.Nonce.Uint64()
+		}
 	}
 	return
 }

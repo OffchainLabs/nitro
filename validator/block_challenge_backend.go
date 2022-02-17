@@ -64,7 +64,7 @@ type BlockChallengeBackend struct {
 	blockChallengeCon      *challengegen.BlockChallenge
 	client                 bind.ContractBackend
 	bc                     *core.BlockChain
-	startBlock             uint64
+	startBlock             int64
 	startPosition          uint64
 	endPosition            uint64
 	startGs                GoGlobalState
@@ -76,7 +76,7 @@ type BlockChallengeBackend struct {
 // Assert that BlockChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
-func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address) (*BlockChallengeBackend, error) {
+func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address, genesisBlockNum uint64) (*BlockChallengeBackend, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
 	if err != nil {
@@ -91,11 +91,14 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if startGs.PosInBatch != 0 {
 		return nil, errors.New("challenge started misaligned with batch boundary")
 	}
-	startBlock := bc.GetBlockByHash(startGs.BlockHash)
-	if startBlock == nil {
-		return nil, errors.New("failed to find start block")
+	startBlockNum := int64(genesisBlockNum) - 1
+	if startGs.BlockHash != (common.Hash{}) {
+		startBlock := bc.GetBlockByHash(startGs.BlockHash)
+		if startBlock == nil {
+			return nil, errors.New("failed to find start block")
+		}
+		startBlockNum = int64(startBlock.NumberU64())
 	}
-	startBlockNum := startBlock.NumberU64()
 
 	var startMsgCount uint64
 	if startGs.Batch > 0 {
@@ -104,7 +107,11 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
-	if startMsgCount != startBlockNum {
+	var expectedMsgCount uint64
+	if startBlockNum > 0 {
+		expectedMsgCount = uint64(startBlockNum) - genesisBlockNum
+	}
+	if startMsgCount != expectedMsgCount {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
 
@@ -119,14 +126,9 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if endGs.Batch <= startGs.Batch {
 		return nil, errors.New("challenge didn't advance batch")
 	}
-	lastMsgCount, err := inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
+	endMsgCount, err := inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
-	}
-	endMsgCount := lastMsgCount
-	endBatchBlock := bc.GetBlockByNumber(endMsgCount)
-	if endBatchBlock == nil {
-		return nil, errors.New("missing block at end of last challenge batch")
 	}
 
 	return &BlockChallengeBackend{
@@ -139,7 +141,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		endPosition:            math.MaxUint64,
 		endGs:                  endGs,
 		inboxTracker:           inboxTracker,
-		tooFarStartsAtPosition: endMsgCount - startBlockNum + 1,
+		tooFarStartsAtPosition: endMsgCount - startMsgCount + 1,
 	}, nil
 }
 
@@ -202,15 +204,20 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 const STATUS_FINISHED uint8 = 1
 const STATUS_TOO_FAR uint8 = 3
 
-func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) uint64 {
-	return b.startBlock + step
+func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
+	return b.startBlock + int64(step)
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(ctx context.Context, step uint64) (GoGlobalState, uint8, error) {
 	if step >= b.tooFarStartsAtPosition {
 		return GoGlobalState{}, STATUS_TOO_FAR, nil
 	}
-	header := b.bc.GetHeaderByNumber(b.GetBlockNrAtStep(step))
+	blockNum := b.GetBlockNrAtStep(step)
+	if blockNum == -1 {
+		// Pre-genesis state
+		return GoGlobalState{}, STATUS_FINISHED, nil
+	}
+	header := b.bc.GetHeaderByNumber(uint64(blockNum))
 	if header == nil {
 		return GoGlobalState{}, 0, errors.New("failed to get block in block challenge")
 	}
@@ -288,16 +295,14 @@ func (b *BlockChallengeBackend) IssueExecChallenge(ctx context.Context, client b
 	)
 }
 
-func inExecChallengeError(err error) (bool, common.Address, uint64, error) {
+func inExecChallengeError(err error) (bool, common.Address, int64, error) {
 	return false, common.Address{}, 0, err
 }
 
-func (b *BlockChallengeBackend) IsInExecutionChallenge(ctx context.Context) (bool, common.Address, uint64, error) {
-	callOpts := &bind.CallOpts{Context: ctx}
-	var err error
-	callOpts.BlockNumber, err = LatestConfirmedBlock(ctx, b.client)
-	if err != nil {
-		return inExecChallengeError(err)
+func (b *BlockChallengeBackend) IsInExecutionChallenge(ctx context.Context, latestConfirmedBlock *big.Int) (bool, common.Address, int64, error) {
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: latestConfirmedBlock,
 	}
 	addr, err := b.blockChallengeCon.ExecutionChallenge(callOpts)
 	if err != nil {
@@ -307,21 +312,9 @@ func (b *BlockChallengeBackend) IsInExecutionChallenge(ctx context.Context) (boo
 		return inExecChallengeError(nil)
 	}
 
-	startGs, err := b.blockChallengeCon.GetStartGlobalState(callOpts)
-	if err != nil {
-		return inExecChallengeError(err)
-	}
-	startHeader := b.bc.GetHeaderByHash(GoGlobalStateFromSolidity(startGs).BlockHash)
-	if startHeader == nil {
-		return inExecChallengeError(errors.New("failed to find challenge start block"))
-	}
 	blockOffset, err := b.blockChallengeCon.ExecutionChallengeAtSteps(callOpts)
 	if err != nil {
 		return inExecChallengeError(err)
 	}
-	blockNumber := new(big.Int).Add(startHeader.Number, blockOffset)
-	if !blockNumber.IsUint64() {
-		return inExecChallengeError(errors.New("execution challenge occurred at non-uint64 block number"))
-	}
-	return true, addr, blockNumber.Uint64(), nil
+	return true, addr, b.startBlock + blockOffset.Int64(), nil
 }

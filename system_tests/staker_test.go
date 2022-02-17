@@ -143,10 +143,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	// Continually make L2 transactions in a background thread
-	var testEnded int32
-	defer (func() { atomic.StoreInt32(&testEnded, 1) })()
+	var stopBackgroundTxs int32
+	defer (func() { atomic.StoreInt32(&stopBackgroundTxs, 1) })()
 	go (func() {
-		for i := uint64(0); atomic.LoadInt32(&testEnded) == 0; i++ {
+		for i := uint64(0); atomic.LoadInt32(&stopBackgroundTxs) == 0; i++ {
 			l2info.Accounts["BackgroundUser"].Nonce = i
 			tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
 			err := l2clientA.SendTransaction(ctx, tx)
@@ -189,6 +189,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if tx != nil {
 			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
+		}
+		if faultyStaker {
+			challengeAddr, err := rollup.CurrentChallenge(&bind.CallOpts{}, valWalletAddrA)
+			Require(t, err)
+			if challengeAddr != (common.Address{}) {
+				atomic.StoreInt32(&stopBackgroundTxs, 1)
+			}
 		}
 		if faultyStaker && !sawStakerZombie {
 			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, valWalletAddrB)
