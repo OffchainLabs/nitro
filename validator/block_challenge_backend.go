@@ -90,9 +90,6 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		return nil, err
 	}
 	startGs := GoGlobalStateFromSolidity(solStartGs)
-	if startGs.PosInBatch != 0 {
-		return nil, errors.New("challenge started misaligned with batch boundary")
-	}
 	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
 	if startGs.BlockHash != (common.Hash{}) {
 		startBlock := bc.GetBlockByHash(startGs.BlockHash)
@@ -109,9 +106,10 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
+	startMsgCount += arbutil.MessageIndex(startGs.PosInBatch)
 	expectedMsgCount := arbutil.SignedBlockNumberToMessageCount(startBlockNum, genesisBlockNumber)
 	if startMsgCount != expectedMsgCount {
-		return nil, errors.New("start block and start message count are not 1:1")
+		return nil, fmt.Errorf("start block %v and start message count %v don't correspond", startBlockNum, startMsgCount)
 	}
 
 	solEndGs, err := challengeCon.GetEndGlobalState(callOpts)
@@ -119,16 +117,14 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		return nil, err
 	}
 	endGs := GoGlobalStateFromSolidity(solEndGs)
-	if endGs.PosInBatch != 0 {
-		return nil, errors.New("challenge ended misaligned with batch boundary")
+	var endMsgCount arbutil.MessageIndex
+	if endGs.Batch > 0 {
+		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
+		}
 	}
-	if endGs.Batch <= startGs.Batch {
-		return nil, errors.New("challenge didn't advance batch")
-	}
-	endMsgCount, err := inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
-	}
+	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
 
 	return &BlockChallengeBackend{
 		client:                 client,
@@ -193,7 +189,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 		if err != nil {
 			return GoGlobalState{}, err
 		}
-		if batchMsgCount >= msgCount {
+		if batchMsgCount > msgCount {
 			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}

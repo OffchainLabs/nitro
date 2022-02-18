@@ -18,25 +18,6 @@ contract SequencerInboxStub is ISequencerInbox {
 
     mapping(address => bool) public isBatchPoster;
 
-    event SequencerBatchDelivered(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds,
-        bytes data
-    );
-
-    event SequencerBatchDeliveredFromOrigin(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds
-    );
-
     constructor(IBridge _delayedBridge, address _sequencer) {
         delayedBridge = _delayedBridge;
         isBatchPoster[_sequencer] = true;
@@ -52,7 +33,7 @@ contract SequencerInboxStub is ISequencerInbox {
         bytes32 acc = keccak256(abi.encodePacked(bytes32(0), headerHash, bytes32(0)));
         inboxAccs.push(acc);
         bytes memory data;
-        uint64[4] memory timeBounds;
+        TimeBounds memory timeBounds;
         emit SequencerBatchDelivered(0, bytes32(0), acc, bytes32(0), 0, timeBounds, data);
     }
 
@@ -78,7 +59,9 @@ contract SequencerInboxStub is ISequencerInbox {
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
 
-        uint64[4] memory emptyTimeBounds;
+        TimeBounds memory emptyTimeBounds;
+        emptyTimeBounds.maxTimestamp = ~uint64(0);
+        emptyTimeBounds.maxBlockNumber = ~uint64(0);
         emit SequencerBatchDeliveredFromOrigin(
             inboxAccs.length - 1,
             beforeAcc,
@@ -103,7 +86,9 @@ contract SequencerInboxStub is ISequencerInbox {
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
-        uint64[4] memory emptyTimeBounds;
+        TimeBounds memory emptyTimeBounds;
+        emptyTimeBounds.maxTimestamp = ~uint64(0);
+        emptyTimeBounds.maxBlockNumber = ~uint64(0);
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -141,9 +126,9 @@ contract SequencerInboxStub is ISequencerInbox {
 
         bytes memory header = abi.encodePacked(
             uint64(0),
+            ~uint64(0),
             uint64(0),
-            uint64(0),
-            uint64(0),
+            ~uint64(0),
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");

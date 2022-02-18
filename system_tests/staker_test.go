@@ -151,8 +151,13 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	// Continually make L2 transactions in a background thread
 	var stopBackgroundTxs int32
-	defer (func() { atomic.StoreInt32(&stopBackgroundTxs, 1) })()
+	backgroundTxsShutdownChan := make(chan struct{})
+	defer (func() {
+		atomic.StoreInt32(&stopBackgroundTxs, 1)
+		<-backgroundTxsShutdownChan
+	})()
 	go (func() {
+		defer close(backgroundTxsShutdownChan)
 		for i := uint64(0); atomic.LoadInt32(&stopBackgroundTxs) == 0; i++ {
 			l2info.Accounts["BackgroundUser"].Nonce = i
 			tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
