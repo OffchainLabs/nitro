@@ -92,7 +92,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if startGs.PosInBatch != 0 {
 		return nil, errors.New("challenge started misaligned with batch boundary")
 	}
-	startBlockNum := int64(genesisBlockNum) - 1
+	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNum)
 	if startGs.BlockHash != (common.Hash{}) {
 		startBlock := bc.GetBlockByHash(startGs.BlockHash)
 		if startBlock == nil {
