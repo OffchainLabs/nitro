@@ -25,6 +25,8 @@ import "../bridge/IOutbox.sol";
 interface IRollupUser {
     function initialize(address stakeToken) external;
 
+    function isERC20Enabled() external view returns (bool);
+
     function returnOldDeposit(address stakerAddress) external;
 
     function requireUnresolved(uint256 nodeNum) external view;

@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import { IRollupAdmin } from "./IRollupLogic.sol";
+import { IRollupAdmin, IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -215,7 +215,21 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * implementation of the Rollup User facet!
      * @param newStakeToken address of token used for staking
      */
-    function setStakeToken(address newStakeToken) external override {
+    function setStakeToken(address newStakeToken) external override whenPaused {
+        /*
+         * To change the stake token without breaking consistency one would need to:
+         * Pause the system, have all stakers remove their funds,
+         * update the user logic to handle ERC20s, change the stake token, then resume.
+         * 
+         * Note: To avoid loss of funds stakers must remove their funds and claim all the
+         * available withdrawable funds before the system is paused.
+         */
+        bool expectERC20Support = newStakeToken == address(0);
+        // this assumes the rollup isn't its own admin. if needed, instead use a ProxyAdmin by OZ!
+        bool actualERC20Support = IRollupUser(address(this)).isERC20Enabled();
+        require(actualERC20Support == expectERC20Support, "NO_USER_LOGIC_SUPPORT");
+        require(stakerCount() == 0, "NO_ACTIVE_STAKERS");
+        require(totalWithdrawableFunds == 0, "NO_PENDING_WITHDRAW");
         stakeToken = newStakeToken;
         emit OwnerFunctionCalled(13);
     }
