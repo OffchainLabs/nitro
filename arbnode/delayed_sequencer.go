@@ -126,7 +126,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
 		}
 
-		err = d.txStreamer.SequenceDelayedMessages(messages, startPos)
+		err = d.txStreamer.SequenceDelayedMessages(ctx, messages, startPos)
 		if err != nil {
 			return err
 		}

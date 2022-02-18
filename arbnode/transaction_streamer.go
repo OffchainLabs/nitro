@@ -365,18 +365,6 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return err
 	}
 
-	var logs []*types.Log
-	for _, receipt := range receipts {
-		logs = append(logs, receipt.Logs...)
-	}
-	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
-	if err != nil {
-		return err
-	}
-	if status == core.SideStatTy {
-		return errors.New("geth rejected block as non-canonical")
-	}
-
 	msgWithMeta := arbstate.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
@@ -394,10 +382,22 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
 	}
 
+	var logs []*types.Log
+	for _, receipt := range receipts {
+		logs = append(logs, receipt.Logs...)
+	}
+	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	if err != nil {
+		return err
+	}
+	if status == core.SideStatTy {
+		return errors.New("geth rejected block as non-canonical")
+	}
+
 	return nil
 }
 
-func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
+func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -427,7 +427,25 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 		})
 	}
 	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
-	return s.writeMessages(pos, messagesWithMeta, nil)
+	err = s.writeMessages(pos, messagesWithMeta, nil)
+	if err != nil {
+		return err
+	}
+
+	genesisBlock, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return err
+	}
+
+	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
+	if s.bc.CurrentHeader().Number.Uint64()+1-genesisBlock >= pos {
+		err = s.createBlocks(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
