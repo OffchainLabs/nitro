@@ -2,26 +2,24 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPStorage } from  "./AdminAwareProxy.sol";
 import { IRollupAdmin } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../challenge/IChallenge.sol";
-
+import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
+contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
     function isInit() internal view returns (bool) {
-        return confirmPeriodBlocks != 0 || isMasterCopy;
+        return confirmPeriodBlocks != 0;
     }
 
     function initialize(
-        RollupLib.Config calldata config,
+        Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external override {
+    ) external override onlyProxy {
         require(!isInit(), "NOT_INIT");
-        require(!isMasterCopy, "NO_INIT_MASTER");
 
         delayedBridge = connectedContracts.delayedBridge;
         sequencerBridge = connectedContracts.sequencerInbox;
@@ -46,6 +44,16 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
         challengeExecutionBisectionDegree = 400;
+
+        // the owner can't access the rollup user facet where escrow is redeemable
+        require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
+        // this next check shouldn't be an issue if the owner controls an AdminProxy
+        // that accesses the admin facet, but still seems like a good extra precaution
+        require(config.loserStakeEscrow != config.owner, "INVALID_ESCROW_OWNER");
+        loserStakeEscrow = config.loserStakeEscrow;
+
+        // stake token is expected to be set in the user logic contract
+        // stakeToken = config.stakeToken;
 
         sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
 
@@ -129,16 +137,15 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
         emit OwnerFunctionCalled(4);
     }
 
-    /**
-     * @notice Set the addresses of rollup logic contracts called
-     * @param newAdminLogic address of logic that owner of rollup calls
-     * @param newUserLogic address of logic that user of rollup calls
-     */
-    function setLogicContracts(address newAdminLogic, address newUserLogic) external override {
-        adminLogic = AAPStorage(newAdminLogic);
-        userLogic = AAPStorage(newUserLogic);
-        emit OwnerFunctionCalled(5);
-    }
+    /// @notice allows the admin to upgrade the primary logic contract (ie rollup admin logic, aka this)
+    /// @dev this function doesn't revert as this primary logic contract is only
+    /// reachable by the proxy's admin
+    function _authorizeUpgrade(address newImplementation) internal override {}
+
+    /// @notice allows the admin to upgrade the secondary logic contract (ie rollup user logic)
+    /// @dev this function doesn't revert as this primary logic contract is only
+    /// reachable by the proxy's admin
+    function _authorizeSecondaryUpgrade(address newImplementation) internal override {}
 
     /**
      * @notice Set the addresses of the validator whitelist
@@ -158,10 +165,11 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
 
     /**
      * @notice Set a new owner address for the rollup
+     * @dev it is expected that only the rollup admin can use this facet to set a new owner
      * @param newOwner address of new rollup owner
      */
     function setOwner(address newOwner) external override {
-        owner = newOwner;
+        _changeAdmin(newOwner);
         emit OwnerFunctionCalled(7);
     }
 
@@ -311,12 +319,20 @@ contract RollupAdminLogic is AAPStorage, RollupCore, IRollupAdmin {
         emit OwnerFunctionCalled(24);
     }
 
+    function setLoserStakeEscrow(address newLoserStakerEscrow) external override {
+        // escrow holder can't be proxy admin, since escrow is only redeemable through
+        // the primary user logic contract
+        require(newLoserStakerEscrow != _getAdmin(), "INVALID_ESCROW");
+        loserStakeEscrow = newLoserStakerEscrow;
+        emit OwnerFunctionCalled(25);
+    }
+
     /**
      * @notice Set the proving WASM module root
      * @param newWasmModuleRoot new module root
      */
     function setWasmModuleRoot(bytes32 newWasmModuleRoot) external override {
         wasmModuleRoot = newWasmModuleRoot;
-        emit OwnerFunctionCalled(25);
+        emit OwnerFunctionCalled(26);
     }
 }

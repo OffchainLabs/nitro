@@ -5,6 +5,7 @@
 package arbosState
 
 import (
+	"errors"
 	"log"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -15,7 +16,7 @@ import (
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-func InitializeArbosInDatabase(db ethdb.Database, initData *statetransfer.ArbosInitializationInfo) (common.Hash, error) {
+func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
@@ -34,25 +35,48 @@ func InitializeArbosInDatabase(db ethdb.Database, initData *statetransfer.ArbosI
 		return common.Hash{}, err
 	}
 	if addrTableSize != 0 {
-		panic("address table must be empty")
+		return common.Hash{}, errors.New("address table must be empty")
 	}
-	for i, addr := range initData.AddressTableContents {
-		slot, err := addrTable.Register(addr)
+	addressReader, err := initData.GetAddressTableReader()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	for i := 0; addressReader.More(); i++ {
+		addr, err := addressReader.GetNext()
+		if err != nil {
+			return common.Hash{}, err
+		}
+		slot, err := addrTable.Register(*addr)
 		if err != nil {
 			return common.Hash{}, err
 		}
 		if uint64(i) != slot {
-			panic("address table slot mismatch")
+			return common.Hash{}, errors.New("address table slot mismatch")
 		}
 	}
+	if err := addressReader.Close(); err != nil {
+		return common.Hash{}, err
+	}
 
-	err = initializeRetryables(arbosState.RetryableState(), initData.RetryableData, 0)
+	retriableReader, err := initData.GetRetriableDataReader()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	err = initializeRetryables(arbosState.RetryableState(), retriableReader, 0)
 	if err != nil {
 		return common.Hash{}, err
 	}
 
-	for _, account := range initData.Accounts {
-		err = initializeArbosAccount(statedb, arbosState, account)
+	accountDataReader, err := initData.GetAccountDataReader()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	for accountDataReader.More() {
+		account, err := accountDataReader.GetNext()
+		if err != nil {
+			return common.Hash{}, err
+		}
+		err = initializeArbosAccount(statedb, arbosState, *account)
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -65,6 +89,9 @@ func InitializeArbosInDatabase(db ethdb.Database, initData *statetransfer.ArbosI
 			}
 		}
 	}
+	if err := accountDataReader.Close(); err != nil {
+		return common.Hash{}, err
+	}
 	root, err := statedb.Commit(true)
 	if err != nil {
 		return common.Hash{}, err
@@ -76,18 +103,22 @@ func InitializeArbosInDatabase(db ethdb.Database, initData *statetransfer.ArbosI
 	return root, nil
 }
 
-func initializeRetryables(rs *retryables.RetryableState, data []statetransfer.InitializationDataForRetryable, currentTimestampToUse uint64) error {
-	for _, r := range data {
+func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.RetriableDataReader, currentTimestampToUse uint64) error {
+	for initData.More() {
+		r, err := initData.GetNext()
+		if err != nil {
+			return err
+		}
 		var to *common.Address
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
-		_, err := rs.CreateRetryable(currentTimestampToUse, r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		_, err = rs.CreateRetryable(currentTimestampToUse, r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+	return initData.Close()
 }
 
 func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, account statetransfer.AccountInitializationInfo) error {

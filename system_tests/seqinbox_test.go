@@ -50,7 +50,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
-	var startL2BlockNumber uint64 = 1
+	var startL2BlockNumber uint64 = 0
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)

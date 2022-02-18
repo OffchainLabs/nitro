@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -139,7 +142,8 @@ func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo) (*BlockchainTe
 	Require(t, err)
 	chainDb := rawdb.NewMemoryDatabase()
 
-	blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, nil, &l2info.ArbInitData, 0, params.ArbitrumTestChainConfig())
+	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
+	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, 0, params.ArbitrumTestChainConfig())
 	Require(t, err)
 	return l2info, stack, chainDb, blockchain
 }
@@ -194,6 +198,19 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
+
+	// Give the node an init message
+	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
+		},
+		DelayedMessagesRead: 0,
+	}})
+	Require(t, err)
+
 	Require(t, node.Start(ctx))
 	client := ClientForArbBackend(t, node.Backend)
 
@@ -240,7 +257,9 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2stack, err := arbnode.CreateDefaultStack()
 	Require(t, err)
 	l2chainDb := rawdb.NewMemoryDatabase()
-	l2blockchain, err := arbnode.CreateDefaultBlockChain(l2chainDb, nil, l2InitData, 0, params.ArbitrumTestChainConfig())
+	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
+
+	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, params.ArbitrumTestChainConfig())
 	Require(t, err)
 
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)

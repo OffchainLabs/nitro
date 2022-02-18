@@ -26,8 +26,9 @@ import (
 )
 
 type BlockValidator struct {
-	inboxTracker InboxTrackerInterface
-	blockchain   *core.BlockChain
+	inboxTracker    InboxTrackerInterface
+	blockchain      *core.BlockChain
+	genesisBlockNum uint64
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
@@ -148,25 +149,34 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
+	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
 	validator := &BlockValidator{
 		inboxTracker:        inbox,
 		blockchain:          blockchain,
-		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		genesisBlockNum:     genesisBlockNum,
+		// TODO: this skips validating the genesis block
+		posNextSend: 1,
+		globalPosNextSend: GlobalStatePosition{
+			BatchNumber: 1,
+		},
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
-	return validator
+	return validator, nil
 }
 
 func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
@@ -487,8 +497,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if !haveBatch {
 			return
 		}
-		// valdationEntries is By blockNumber, which is one more than pos
-		entry, found := v.validationEntries.Load(v.posNextSend + 1)
+		// valdationEntries is By blockNumber
+		blockNum := v.posNextSend + v.genesisBlockNum
+		entry, found := v.validationEntries.Load(blockNum)
 		if !found {
 			return
 		}
@@ -500,6 +511,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
+			return
 		}
 		if startPos != v.globalPosNextSend {
 			log.Error("inconsistent pos mapping", "uint_pos", v.posNextSend, "expected", v.globalPosNextSend, "found", startPos)
