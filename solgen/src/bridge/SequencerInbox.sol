@@ -9,6 +9,7 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
+import { MAX_DATA_SIZE, BLOCK_TIME } from "../libraries/Constants.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -22,9 +23,6 @@ contract SequencerInbox is ISequencerInbox {
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
-
-    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
-    uint256 public constant MAX_DATA_SIZE = 117964;
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
@@ -63,7 +61,7 @@ contract SequencerInbox is ISequencerInbox {
         rollup = rollup_;
 
         maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 / 15,
+            delayBlocks: 60 * 60 * 24 / BLOCK_TIME,
             futureBlocks: 12,
             delaySeconds: 60 * 60 * 24,
             futureSeconds: 60 * 60

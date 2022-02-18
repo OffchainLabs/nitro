@@ -10,6 +10,14 @@ import "./IBridge.sol";
 
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
+import { 
+    L2_MSG, 
+    L1MessageType_L2FundedByL1, 
+    L1MessageType_submitRetryableTx, 
+    L2MessageType_unsignedEOATx, 
+    L2MessageType_unsignedContractTx 
+} from "../libraries/MessageTypes.sol";
+import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 import "@openzeppelin/contracts/utils/Address.sol";
 import "./Bridge.sol";
@@ -20,17 +28,6 @@ import "./Bridge.sol";
 * to await inclusion in the SequencerInbox
 */
 contract Inbox is IInbox {
-    uint8 internal constant ETH_TRANSFER = 0;
-    uint8 internal constant L2_MSG = 3;
-    uint8 internal constant L1MessageType_L2FundedByL1 = 7;
-    uint8 internal constant L1MessageType_submitRetryableTx = 9;
-
-    uint8 internal constant L2MessageType_unsignedEOATx = 0;
-    uint8 internal constant L2MessageType_unsignedContractTx = 1;
-
-    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
-    uint256 public constant MAX_DATA_SIZE = 117964;
-
     IBridge public override bridge;
 
     bool public paused;
