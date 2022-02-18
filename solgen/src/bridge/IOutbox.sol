@@ -65,6 +65,7 @@ interface IOutbox {
 
     function l2ToL1Timestamp() external view returns (uint256);
 
+    // @deprecated batch number is now always 0
     function l2ToL1BatchNum() external view returns (uint256);
 
     function l2ToL1OutputId() external view returns (bytes32);

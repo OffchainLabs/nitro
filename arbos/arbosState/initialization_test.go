@@ -57,8 +57,6 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	raw := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
-	Require(t, err)
-
 	stateroot, err := InitializeArbosInDatabase(raw, initReader)
 	Require(t, err)
 
