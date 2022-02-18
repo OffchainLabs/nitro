@@ -106,6 +106,77 @@ The process is simplified using two functions: [`PrepareRecording`][PrepareRecor
 [PrepareRecording_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/arbitrum/recordingdb.go#L133
 [PreimagesFromRecording_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/arbitrum/recordingdb.go#L148
 
+## Transaction Types
+
+Nitro geth includes a few L2-specific transaction types. Click on any to jump to their section.
+
+| Tx Type                                           | Represents                        | Final hook                 | Source |
+|:--------------------------------------------------|:----------------------------------|:---------------------------|--------|
+| [`ArbitrumUnsignedTx`][ArbTxUnsigned]             |                                   | [`EndTxHook`][HE]          | Bridge |
+| [`ArbitrumContractTx`][ArbTxContract]             |                                   | [`EndTxHook`][HE]          | Bridge |
+| [`ArbitrumSubmitRetryableTx`][ArbTxSubmit] &nbsp; | Creating a retryable              | [`StartTxHook`][HS] &nbsp; | Bridge |
+| [`ArbitrumRetryTx`][ArbTxRetry]                   | A retryable redeem attempt &nbsp; | [`EndTxHook`][HE]          | L2     |
+| [`ArbitrumDepositTx`][ArbTxDeposit]               | A user deposit                    | [`StartTxHook`][HS]        | Bridge |
+| [`ArbitrumInternalTx`][ArbTxInternal]             | ArbOS state update                | [`StartTxHook`][HS]        | ArbOS  |
+
+[ArbTxUnsigned]: #ArbitrumUnsignedTx
+[ArbTxContract]: #ArbitrumContractTx
+[ArbTxSubmit]: #ArbitrumSubmitRetryableTx
+[ArbTxRetry]: #ArbitrumRetryTx
+[ArbTxDeposit]: #ArbitrumDepositTx
+[ArbTxInternal]: #ArbitrumInternalTx
+[HS]: #StartTxHook
+[HE]: #EndTxHook
+
+The following reference documents each type.
+
+### [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link]<a name=ArbitrumUnsignedTx></a>
+TODO
+
+### [`ArbitrumContractTx`][ArbitrumContractTx_link]<a name=ArbitrumContractTx></a>
+TODO
+
+### [`ArbitrumSubmitRetryableTx`][ArbitrumSubmitRetryableTx_link]<a name=ArbitrumSubmitRetryableTx></a>
+TODO
+
+### [`ArbitrumRetryTx`][ArbitrumRetryTx_link]<a name=ArbitrumRetryTx></a>
+These are scheduled by calls to `redeem` and via retryable auto-redemption. The [retryables documentation] details ... TODO
+
+### [`ArbitrumDepositTx`][ArbitrumDepositTx_link]<a name=ArbitrumDepositTx></a>
+Represents a user deposit from L1 to L2. This increases the user's balance by the amount deposited on L1.
+
+### [`ArbitrumInternalTx`][ArbitrumInternalTx_link]<a name=ArbitrumInternalTx></a>
+Because tracing support requires ArbOS's state-changes happen inside a transaction, ArbOS may create a tx of this type to update its state in-between user-generated transactions. Such a tx has a [`Type`][InternalType_link] field signifying the state it will update, though currently this is just future-proofing as there's only one value it may have. Below are the internal tx types.
+
+#### [`ArbInternalTxUpdateL1BlockNumber`][ArbInternalTxUpdateL1BlockNumber_link]<a name=ArbInternalTxUpdateL1BlockNumber></a>
+Updates the L1 block number. This tx [is generated][block_generated_link] whenever a message originates from an L1 block newer than any ArbOS has seen thus far. They are [guaranteed to be the first][block_first_link] in their L2 block.
+
+[ArbitrumUnsignedTx_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L15
+[ArbitrumContractTx_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L76
+[ArbitrumSubmitRetryableTx_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L194
+[ArbitrumRetryTx_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L133
+[ArbitrumDepositTx_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L265
+[ArbitrumInternalTx_link]: https://github.com/OffchainLabs/nitro/blob/master/arbos/internal_tx.go
+
+[InternalType_link]: https://github.com/OffchainLabs/go-ethereum/blob/e7e8104942fd2ba676d4b8616c9fa83d88b61c9c/core/types/arb_types.go#L313
+[ArbInternalTxUpdateL1BlockNumber_link]: https://github.com/OffchainLabs/nitro/blob/aa55a504d32f71f4ce3a6552822c0791711f8299/arbos/internal_tx.go#L24
+[block_generated_link]: https://github.com/OffchainLabs/nitro/blob/aa55a504d32f71f4ce3a6552822c0791711f8299/arbos/block_processor.go#L150
+[block_first_link]: https://github.com/OffchainLabs/nitro/blob/aa55a504d32f71f4ce3a6552822c0791711f8299/arbos/block_processor.go#L154
+
+## Underlying Transactions and Transaction Run Modes
+Though not all geth messages are derived from a transaction, those that are carry their ... TODO
+
+| Run Mode                                 | Scope                   | Carries an Underlying Tx?                                                    |
+|:-----------------------------------------|:------------------------|:-----------------------------------------------------------------------------|
+| [`MessageCommitMode`][MC0]               | state transition &nbsp; | always                                                                       |
+| [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](#NodeInterface.sol) or when scheduled |
+| [`MessageEthcallMode`][MC2]              | eth_calls               | never                                                                        |
+
+[MC0]: todo
+[MC1]: todo
+[MC2]: todo
+
+TODO
 
 ## Arbitrum Chain Parameters
 Nitro's geth may be configured with the following [l2-specific chain parameters][chain_params_link]. These allow the rollup creator to customize their rollup at genesis.
@@ -133,12 +204,12 @@ The total amount of L2 ether in the system should not change except in controlle
 ### MixDigest and ExtraData
 To aid with [outbox proof construction][proof_link], the root hash and leaf count of ArbOS's [send merkle accumulator][merkle_link] are stored in the `MixDigest` and `ExtraData` fields of each L2 block. The yellow paper specifies that the `ExtraData` field may be no larger than 32 bytes, so we use the first 8 bytes of the `MixDigest`, which has no meaning in a system without miners, to store the send count.
 
-## Retryable Support
+### Retryable Support
 Retryables are mostly implemented in [ArbOS](ArbOS.md#retryables). Some modifications were required in geth to support them.
 * Added ScheduledTxes field to ExecutionResult. This lists transactions scheduled during the execution. To enable using this field, we also pass the ExecutionResult to callers of ApplyTransaction.
 * Added gasEstimation param to DoCall. When enabled, DoCall will also also executing any retriable activated by the original call. This allows estimating gas to enable retriables.
 
-## Added accessors
+### Added accessors
 Added ['UnderlyingTransaction'][UnderlyingTransaction_link] to Message interface
 Added ['GetCurrentTxLogs'](../../go-ethereum/core/state/statedb_arbitrum.go) to StateDB
 We created the AdvancedPrecompile interface, which executes and charges gas with the same function call. This is used by Arbitrum's precompiles, and also wraps geth's standard precompiles. For more information on Arbitrum precompiles, see [ArbOS doc](ArbOS.md#precompiles).
@@ -146,13 +217,13 @@ We created the AdvancedPrecompile interface, which executes and charges gas with
 ### WASM build support
 The WASM arbitrum executable does not support file oprations. We created [fileutil.go](../../go-ethereum/core/rawdb/fileutil.go) to wrap fileutil calls, stubbing them out when building WASM. ['fake_leveldb.go'](../../go-ethereum/ethdb/leveldb/fake_leveldb.go) is a similar WASM-mock for leveldb. These are not required for the WASM block-replayer.
 
-## Types
+### Types
 Arbitrum introduces a new ['signer'](../../go-ethereum/core/types/arbitrum_signer.go), and multiple new [`transaction types`](../../go-ethereum/core/types/transaction.go).
 
-## ReorgToOldBlock
+### ReorgToOldBlock
 Geth natively only allows reorgs to a fork of the currently-known network. In nitro, reorgs can sometimes be detected before computing the forked block. We added the ['ReorgToOldBlock'](../../go-ethereum/core/blockchain_arbitrum.go) function to support reorging to a block that's an ancestor of current head.
 
-## Genesis block creation
+### Genesis block creation
 Genesis block in nitro is not necessarily block #0. Nitro supports importing blocks that take place before genesis. We split out ['WriteHeadBlock'][WriteHeadBlock_link] from gensis.Commit and use it to commit non-zero genesis blocks.
 
 [pad_estimates_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/accounts/abi/bind/base.go#L352
