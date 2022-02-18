@@ -9,7 +9,7 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
-import { MAX_DATA_SIZE, BLOCK_TIME } from "../libraries/Constants.sol";
+import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -54,18 +54,16 @@ contract SequencerInbox is ISequencerInbox {
         TimeBounds timeBounds
     );
 
-    function initialize(IBridge _delayedBridge, address rollup_) external {
+    function initialize(
+        IBridge _delayedBridge, 
+        address rollup_, 
+        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
+    ) external {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
         rollup = rollup_;
-
-        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 / BLOCK_TIME,
-            futureBlocks: 12,
-            delaySeconds: 60 * 60 * 24,
-            futureSeconds: 60 * 60
-        });
+        maxTimeVariation = maxTimeVariation_;
     }
 
     function getTimeBounds() internal view returns (TimeBounds memory) {
