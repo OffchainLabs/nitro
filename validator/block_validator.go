@@ -499,9 +499,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		// valdationEntries is By blockNumber
-		// TODO: casting to a uint64 here assumes that we aren't validating the genesis block
-		blockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum))
-		entry, found := v.validationEntries.Load(blockNum)
+		nextBlockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum) + 1)
+		entry, found := v.validationEntries.Load(nextBlockNum)
 		if !found {
 			return
 		}
