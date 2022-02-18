@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -195,6 +198,19 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
+
+	// Give the node an init message
+	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
+		},
+		DelayedMessagesRead: 0,
+	}})
+	Require(t, err)
+
 	Require(t, node.Start(ctx))
 	client := ClientForArbBackend(t, node.Backend)
 
