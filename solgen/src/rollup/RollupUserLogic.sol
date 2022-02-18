@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+
 import { IRollupUser } from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
@@ -687,7 +689,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _newStake(tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -708,7 +710,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _addToDeposit(stakerAddress, tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -731,7 +733,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
         require(
-            IERC20(stakeToken).transfer(destination, amount),
+            IERC20Upgradeable(stakeToken).transfer(destination, amount),
             "TRANSFER_FAILED"
         );
         return amount;

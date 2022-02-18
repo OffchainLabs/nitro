@@ -7,8 +7,6 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract ExecutionChallenge is ChallengeCore, IChallenge {
     event OneStepProofCompleted();
