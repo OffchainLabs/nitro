@@ -15,7 +15,9 @@ import (
 // which ensures only a chain owner can access these methods. For methods that
 // are safe for non-owners to call, see ArbOwnerOld
 type ArbOwner struct {
-	Address addr // 0x70
+	Address          addr // 0x70
+	OwnerActs        func(ctx, mech, bytes4, addr, []byte) error
+	OwnerActsGasCost func(bytes4, addr, []byte) (uint64, error)
 }
 
 // Add account as a chain owner

@@ -19,9 +19,12 @@
 pragma solidity ^0.8.0;
 
 import "./RollupLib.sol";
+import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {
+    function initialize(address stakeToken) external;
+
     function returnOldDeposit(address stakerAddress) external;
 
     function requireUnresolved(uint256 nodeNum) external view;
@@ -33,6 +36,11 @@ interface IRollupUser {
 
 interface IRollupAdmin {
     event OwnerFunctionCalled(uint256 indexed id);
+
+    function initialize(
+        Config calldata config,
+        ContractDependencies calldata connectedContracts
+    ) external;
 
     /**
      * @notice Add a contract authorized to put messages into this rollup's inbox
@@ -64,14 +72,6 @@ interface IRollupAdmin {
     function resume() external;
 
     /**
-     * @notice Set the addresses of rollup logic contracts called
-     * @param newAdminLogic address of logic that owner of rollup calls
-     * @param newUserLogic ddress of logic that user of rollup calls
-     */
-    function setLogicContracts(address newAdminLogic, address newUserLogic)
-        external;
-
-    /**
      * @notice Set the addresses of the validator whitelist
      * @dev It is expected that both arrays are same length, and validator at
      * position i corresponds to the value at position i
@@ -82,7 +82,7 @@ interface IRollupAdmin {
         external;
 
     /**
-     * @notice Set a new owner address for the rollup
+     * @notice Set a new owner address for the rollup proxy
      * @param newOwner address of new rollup owner
      */
     function setOwner(address newOwner) external;
@@ -98,12 +98,6 @@ interface IRollupAdmin {
      * @param newConfirmPeriod new number of blocks until a node is confirmed
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
-
-    /**
-     * @notice Set the proving WASM module root
-     * @param newWasmModuleRoot new module root
-     */
-    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
 
     /**
      * @notice Set number of extra blocks after a challenge
@@ -164,6 +158,7 @@ interface IRollupAdmin {
 
     function forceCreateNode(
         uint64 prevNode,
+        uint256 prevNodeInboxMaxCount,
         RollupLib.Assertion memory assertion,
         bytes32 expectedNodeHash
     ) external;
@@ -173,4 +168,12 @@ interface IRollupAdmin {
         bytes32 blockHash,
         bytes32 sendRoot
     ) external;
+
+    function setLoserStakeEscrow(address newLoserStakerEscrow) external;
+
+    /**
+     * @notice Set the proving WASM module root
+     * @param newWasmModuleRoot new module root
+     */
+    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
 }

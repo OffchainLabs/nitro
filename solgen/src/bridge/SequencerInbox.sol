@@ -10,6 +10,13 @@ import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
 
+/**
+ * @title Accepts batches from the sequencer and adds them to the rollup inbox.
+ * @notice Contains the inbox accumulator which is the ordering of all data and transactions to be processed by the rollup.
+ * As part of submitting a batch the sequencer is also expected to include items enqueued
+ * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
+ * sequencer within a time limit they can be force included into the rollup inbox by anyone.
+ */
 contract SequencerInbox is ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
@@ -23,13 +30,20 @@ contract SequencerInbox is ISequencerInbox {
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
+    struct TimeBounds {
+        uint64 minTimestamp;
+        uint64 maxTimestamp;
+        uint64 minBlockNumber;
+        uint64 maxBlockNumber;
+    }
+
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
         bytes32 indexed beforeAcc,
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds,
+        TimeBounds timeBounds,
         bytes data
     );
 
@@ -39,7 +53,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds
+        TimeBounds timeBounds
     );
 
     function initialize(IBridge _delayedBridge, address rollup_) external {
@@ -49,27 +63,23 @@ contract SequencerInbox is ISequencerInbox {
         rollup = rollup_;
 
         maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 * 15,
+            delayBlocks: 60 * 60 * 24 / 15,
             futureBlocks: 12,
             delaySeconds: 60 * 60 * 24,
             futureSeconds: 60 * 60
         });
     }
 
-    function getTimeBounds() internal view returns (uint64[4] memory) {
-        uint64[4] memory bounds;
+    function getTimeBounds() internal view returns (TimeBounds memory) {
+        TimeBounds memory bounds;
         if (block.timestamp > maxTimeVariation.delaySeconds) {
-            bounds[0] = uint64(block.timestamp - maxTimeVariation.delaySeconds);
-        } else {
-            bounds[0] = 0;
+            bounds.minTimestamp = uint64(block.timestamp - maxTimeVariation.delaySeconds);
         }
-        bounds[1] = uint64(block.timestamp + maxTimeVariation.futureSeconds);
+        bounds.maxTimestamp = uint64(block.timestamp + maxTimeVariation.futureSeconds);
         if (block.number > maxTimeVariation.delayBlocks) {
-            bounds[2] = uint64(block.number - maxTimeVariation.delayBlocks);
-        } else {
-            bounds[2] = 0;
+            bounds.minBlockNumber = uint64(block.number - maxTimeVariation.delayBlocks);
         }
-        bounds[3] = uint64(block.number + maxTimeVariation.futureBlocks);
+        bounds.maxBlockNumber = uint64(block.number + maxTimeVariation.futureBlocks);
         return bounds;
     }
 
@@ -118,7 +128,7 @@ contract SequencerInbox is ISequencerInbox {
             }
             require(
                 delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) ==
-                    Messages.addMessageToInbox(prevDelayedAcc, messageHash),
+                    Messages.accumulateInboxMessage(prevDelayedAcc, messageHash),
                 "DELAYED_ACCUMULATOR"
             );
         }
@@ -128,7 +138,7 @@ contract SequencerInbox is ISequencerInbox {
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc,
-            uint64[4] memory timeBounds
+            TimeBounds memory timeBounds
         ) = addSequencerL2BatchImpl(emptyData, _totalDelayedMessagesRead);
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
@@ -147,22 +157,17 @@ contract SequencerInbox is ISequencerInbox {
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external {
+        uint256 startGasLeft = gasleft();
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
-
-        uint256 startGasLeft = gasleft();
-        uint256 calldataSize;
-        assembly {
-            calldataSize := calldatasize()
-        }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
         (
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 afterAcc,
-            uint64[4] memory timeBounds
+            TimeBounds memory timeBounds
         ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
         emit SequencerBatchDeliveredFromOrigin(
             inboxAccs.length - 1,
@@ -171,45 +176,6 @@ contract SequencerInbox is ISequencerInbox {
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds
-        );
-
-        if (address(gasRefunder) != address(0)) {
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                calldataSize
-            );
-        }
-    }
-
-    function addSequencerL2Batch(
-        uint256 sequenceNumber,
-        bytes calldata data,
-        uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
-    ) external override {
-        require(
-            isBatchPoster[msg.sender] || msg.sender == rollup,
-            "NOT_BATCH_POSTER"
-        );
-
-        uint256 startGasLeft = gasleft();
-
-        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc,
-            uint64[4] memory timeBounds
-        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
-        emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
-            beforeAcc,
-            afterAcc,
-            delayedAcc,
-            afterDelayedMessagesRead,
-            timeBounds,
-            data
         );
 
         if (address(gasRefunder) != address(0)) {
@@ -225,6 +191,44 @@ contract SequencerInbox is ISequencerInbox {
         }
     }
 
+    function addSequencerL2Batch(
+        uint256 sequenceNumber,
+        bytes calldata data,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder
+    ) external override {
+        uint256 startGasLeft = gasleft();
+        require(
+            isBatchPoster[msg.sender] || msg.sender == rollup,
+            "NOT_BATCH_POSTER"
+        );
+
+        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
+        (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc,
+            TimeBounds memory timeBounds
+        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
+        emit SequencerBatchDelivered(
+            inboxAccs.length - 1,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            afterDelayedMessagesRead,
+            timeBounds,
+            data
+        );
+
+        if (address(gasRefunder) != address(0)) {
+            gasRefunder.onGasSpent(
+                payable(msg.sender),
+                startGasLeft - gasleft(),
+                0
+            );
+        }
+    }
+
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
@@ -234,7 +238,7 @@ contract SequencerInbox is ISequencerInbox {
             bytes32 beforeAcc,
             bytes32 delayedAcc,
             bytes32 acc,
-            uint64[4] memory timeBounds
+            TimeBounds memory timeBounds
         )
     {
         require(
@@ -252,10 +256,10 @@ contract SequencerInbox is ISequencerInbox {
         bytes memory fullData = new bytes(fullDataLen);
         timeBounds = getTimeBounds();
         bytes memory header = abi.encodePacked(
-            timeBounds[0],
-            timeBounds[1],
-            timeBounds[2],
-            timeBounds[3],
+            timeBounds.minTimestamp,
+            timeBounds.maxTimestamp,
+            timeBounds.minBlockNumber,
+            timeBounds.maxBlockNumber,
             uint64(afterDelayedMessagesRead)
         );
         require(header.length == 40, "BAD_HEADER_LEN");

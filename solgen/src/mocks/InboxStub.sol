@@ -65,7 +65,7 @@ contract InboxStub is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
     }
 
     function sendUnsignedTransaction(
@@ -75,7 +75,7 @@ contract InboxStub is IInbox {
         address,
         uint256,
         bytes calldata
-    ) external override returns (uint256) {
+    ) external pure override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -85,7 +85,7 @@ contract InboxStub is IInbox {
         address,
         uint256,
         bytes calldata
-    ) external override returns (uint256) {
+    ) external pure override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }
 

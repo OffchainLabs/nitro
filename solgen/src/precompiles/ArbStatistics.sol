@@ -1,12 +1,16 @@
 
 pragma solidity >=0.4.21 <0.9.0;
 
+/// @title Deprecated - Info about the rollup just prior to the Nitro upgrade
+/// @notice Precompiled contract in every Arbitrum chain for retryable transaction related data retrieval and interactions. Exists at 0x000000000000000000000000000000000000006f
 interface ArbStatistics {
-    // Get Arbitrum block number as well as the following statistics about the rollup right before the Nitro upgrade.
-    //      Number of accounts
-    //      Total storage allocated (includes storage that was later deallocated)
-    //      Total ArbGas used
-    //      Number of transaction receipt issued
-    //      Number of contracts created
+    /// @notice Get Arbitrum block number and other statistics as they were right before the Nitro upgrade.
+    /// @return (
+    ///      Number of accounts,
+    ///      Total storage allocated (includes storage that was later deallocated),
+    ///      Total ArbGas used,
+    ///      Number of transaction receipt issued,
+    ///      Number of contracts created,
+    ///    )
     function getStats() external view returns(uint, uint, uint, uint, uint, uint);
 }
