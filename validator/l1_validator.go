@@ -217,7 +217,7 @@ type OurStakerInfo struct {
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
 func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
-	var batchHeight uint64
+	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
 		batchHeight, err = v.inboxTracker.GetBatchMessageCount(gs.Batch - 1)
@@ -231,13 +231,13 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, e
 		return 0, false, err
 	}
 
-	if gs.PosInBatch >= nextBatchHeight-batchHeight {
+	if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
 		// This PosInBatch would enter the next batch. Return the last block before the next batch.
 		// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
 		return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
 	}
 
-	return arbutil.MessageCountToBlockNumber(batchHeight+gs.PosInBatch, v.genesisBlockNumber), false, nil
+	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
 }
 
 func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {

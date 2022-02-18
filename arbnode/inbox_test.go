@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -75,7 +76,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 type blockTestState struct {
 	balances    map[common.Address]*big.Int
 	accounts    []common.Address
-	numMessages uint64
+	numMessages arbutil.MessageIndex
 	blockNumber uint64
 }
 
@@ -161,7 +162,7 @@ func TestTransactionStreamer(t *testing.T) {
 
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
-			state.numMessages += uint64(len(messages))
+			state.numMessages += arbutil.MessageIndex(len(messages))
 			state.blockNumber += uint64(len(messages))
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()

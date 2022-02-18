@@ -71,13 +71,14 @@ type BlockChallengeBackend struct {
 	startGs                GoGlobalState
 	endGs                  GoGlobalState
 	inboxTracker           InboxTrackerInterface
+	genesisBlockNumber     uint64
 	tooFarStartsAtPosition uint64
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
 var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
-func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address, genesisBlockNum uint64) (*BlockChallengeBackend, error) {
+func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address, genesisBlockNumber uint64) (*BlockChallengeBackend, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
 	if err != nil {
@@ -92,7 +93,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 	if startGs.PosInBatch != 0 {
 		return nil, errors.New("challenge started misaligned with batch boundary")
 	}
-	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNum)
+	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
 	if startGs.BlockHash != (common.Hash{}) {
 		startBlock := bc.GetBlockByHash(startGs.BlockHash)
 		if startBlock == nil {
@@ -101,14 +102,14 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		startBlockNum = int64(startBlock.NumberU64())
 	}
 
-	var startMsgCount uint64
+	var startMsgCount arbutil.MessageIndex
 	if startGs.Batch > 0 {
 		startMsgCount, err = inboxTracker.GetBatchMessageCount(startGs.Batch - 1)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
-	expectedMsgCount := arbutil.SignedBlockNumberToMessageCount(startBlockNum, genesisBlockNum)
+	expectedMsgCount := arbutil.SignedBlockNumberToMessageCount(startBlockNum, genesisBlockNumber)
 	if startMsgCount != expectedMsgCount {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}
@@ -139,11 +140,12 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 		endPosition:            math.MaxUint64,
 		endGs:                  endGs,
 		inboxTracker:           inboxTracker,
-		tooFarStartsAtPosition: endMsgCount - startMsgCount + 1,
+		genesisBlockNumber:     genesisBlockNumber,
+		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil
 }
 
-func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, msgCount uint64) (uint64, error) {
+func (b *BlockChallengeBackend) findBatchFromMessageCount(ctx context.Context, msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
 	}
@@ -180,12 +182,12 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 	if header == nil {
 		return GoGlobalState{}, nil
 	}
-	msgCount := header.Number.Uint64()
+	msgCount := arbutil.BlockNumberToMessageCount(header.Number.Uint64(), b.genesisBlockNumber)
 	batch, err := b.findBatchFromMessageCount(ctx, msgCount)
 	if err != nil {
 		return GoGlobalState{}, err
 	}
-	var batchMsgCount uint64
+	var batchMsgCount arbutil.MessageIndex
 	if batch > 0 {
 		batchMsgCount, err = b.inboxTracker.GetBatchMessageCount(batch - 1)
 		if err != nil {
@@ -199,7 +201,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(ctx context.Context, h
 	if err != nil {
 		return GoGlobalState{}, err
 	}
-	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, msgCount - batchMsgCount}, nil
+	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, uint64(msgCount - batchMsgCount)}, nil
 }
 
 const STATUS_FINISHED uint8 = 1

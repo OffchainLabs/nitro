@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -44,12 +45,12 @@ type BroadcastMessage struct {
 }
 
 type BroadcastFeedMessage struct {
-	SequenceNumber uint64                       `json:"sequenceNumber"`
+	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
 	Message        arbstate.MessageWithMetadata `json:"message"`
 }
 
 type ConfirmedSequenceNumberMessage struct {
-	SequenceNumber uint64 `json:"sequenceNumber"`
+	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
 type SequenceNumberCatchupBuffer struct {
@@ -104,7 +105,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber {
 			return nil
 		}
-		confirmedIndex := confirmMsg.SequenceNumber - b.messages[0].SequenceNumber
+		confirmedIndex := uint64(confirmMsg.SequenceNumber - b.messages[0].SequenceNumber)
 
 		if uint64(len(b.messages)) <= confirmedIndex {
 			log.Error("ConfirmedSequenceNumber message ", confirmMsg.SequenceNumber, " is past the end of stored messages. Clearing buffer. Final stored sequence number was ", b.messages[len(b.messages)-1])
@@ -158,7 +159,7 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 	}
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq uint64) {
+func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
 	var broadcastMessages []*BroadcastFeedMessage
 
 	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}
@@ -172,7 +173,7 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq uint
 	b.server.Broadcast(bm)
 }
 
-func (b *Broadcaster) Confirm(seq uint64) {
+func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,
 		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})

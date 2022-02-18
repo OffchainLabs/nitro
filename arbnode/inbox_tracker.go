@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
@@ -115,7 +116,7 @@ func (t *InboxTracker) GetDelayedCount() (uint64, error) {
 
 type BatchMetadata struct {
 	Accumulator         common.Hash
-	MessageCount        uint64
+	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
 	L1Block             uint64
 }
@@ -138,7 +139,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	return metadata, err
 }
 
-func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (uint64, error) {
+func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.MessageCount, err
 }
@@ -315,7 +316,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		var prevMesssageCount uint64
+		var prevMesssageCount arbutil.MessageIndex
 		if count > 0 {
 			prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
 			if err != nil {
@@ -437,7 +438,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		client: client,
 	}
 	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
-	batchMessageCounts := make(map[uint64]uint64)
+	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
