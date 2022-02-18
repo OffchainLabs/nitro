@@ -48,7 +48,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         wasmModuleRoot = config.wasmModuleRoot;
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
-        challengeExecutionBisectionDegree = 400;
 
         // the owner can't access the rollup user facet where escrow is redeemable
         require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
@@ -249,19 +248,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     {
         sequencerBridge.setMaxTimeVariation(maxTimeVariation);
         emit OwnerFunctionCalled(14);
-    }
-
-    /**
-     * @notice Set execution bisection degree
-     * @param newChallengeExecutionBisectionDegree execution bisection degree
-     */
-    function setChallengeExecutionBisectionDegree(uint256 newChallengeExecutionBisectionDegree)
-        external
-        override
-        isInitAfterExec
-    {
-        challengeExecutionBisectionDegree = newChallengeExecutionBisectionDegree;
-        emit OwnerFunctionCalled(16);
     }
 
     /**

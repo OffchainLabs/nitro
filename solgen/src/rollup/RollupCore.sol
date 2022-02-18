@@ -53,7 +53,6 @@ abstract contract RollupCore is IRollupCore, Pausable {
     address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
-    uint256 public challengeExecutionBisectionDegree;
 
     mapping(address => bool) public isValidator;
 

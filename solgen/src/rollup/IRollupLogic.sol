@@ -130,14 +130,6 @@ interface IRollupAdmin {
     ) external;
 
     /**
-     * @notice Set execution bisection degree
-     * @param newChallengeExecutionBisectionDegree execution bisection degree
-     */
-    function setChallengeExecutionBisectionDegree(
-        uint256 newChallengeExecutionBisectionDegree
-    ) external;
-
-    /**
      * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
      * @param addr the address
      * @param isBatchPoster if the specified address should be authorized as a batch poster
