@@ -329,7 +329,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return err
 	}
 	if lastBlockHeader.Number.Uint64()+1-genesisBlock != pos {
-		return errors.New("block production not caught up")
+		return fmt.Errorf("block production not caught up: last block number %v but expected %v", lastBlockHeader.Number, int64(pos)-1+int64(genesisBlock))
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
