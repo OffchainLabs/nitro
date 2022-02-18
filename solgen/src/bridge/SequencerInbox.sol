@@ -146,7 +146,7 @@ contract SequencerInbox is ISequencerInbox {
         }
 
         (
-            bytes32 dataHash, 
+            bytes32 dataHash,
             TimeBounds memory timeBounds
         ) = formEmptyDataHash(_totalDelayedMessagesRead);
         (
@@ -178,7 +178,7 @@ contract SequencerInbox is ISequencerInbox {
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
         (
-            bytes32 dataHash, 
+            bytes32 dataHash,
             TimeBounds memory timeBounds
         ) = formDataHash(data, afterDelayedMessagesRead);
         (
@@ -221,7 +221,7 @@ contract SequencerInbox is ISequencerInbox {
         );
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        
+
         TimeBounds memory timeBounds;
         bytes32 beforeAcc;
         bytes32 delayedAcc;
@@ -286,14 +286,8 @@ contract SequencerInbox is ISequencerInbox {
 
 
     function formEmptyDataHash(uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
-        uint256 fullDataLen = HEADER_LENGTH;
-        bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
-
-        for (uint256 i = 0; i < HEADER_LENGTH; i++) {
-            fullData[i] = header[i];
-        }
-        return (keccak256(fullData), timeBounds);
+        return (keccak256(header), timeBounds);
     }
 
     function addSequencerL2BatchImpl(
@@ -322,7 +316,7 @@ contract SequencerInbox is ISequencerInbox {
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
-        
+
         acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
