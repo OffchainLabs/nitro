@@ -27,15 +27,13 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../libraries/Cloneable.sol";
-
 import "../challenge/IBlockChallengeFactory.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
+abstract contract RollupCore is IRollupCore, Pausable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -51,6 +49,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
+    // when a staker loses a challenge, half of their funds get escrowed in this address
+    address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
