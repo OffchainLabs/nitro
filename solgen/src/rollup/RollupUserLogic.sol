@@ -22,6 +22,10 @@ abstract contract AbsRollupUserLogic is
         _;
     }
 
+    function isERC20Enabled() public view override returns (bool) {
+        return stakeToken != address(0);
+    }
+
     /**
      * @notice Reject the next unresolved node
      * @param stakerAddress Example staker staked on sibling, used to prove a node is on an unconfirmable branch and can be rejected
@@ -624,9 +628,11 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
         require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
-        // stakeToken = _stakeToken;
+        require(!isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
@@ -670,10 +676,11 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) external override onlyProxy {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address _stakeToken) external view override onlyProxy {
         require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
-        require(stakeToken == address(0), "ALREADY_INIT");
-        stakeToken = _stakeToken;
+        require(isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
