@@ -11,7 +11,6 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import "../libraries/ProxyUtil.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -63,12 +62,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// @dev function to be called one time during the inbox upgrade process
     /// this is used to fix the storage slots
-    function postUpgradeInit(IBridge _bridge) external initializer onlyDelegated {
-        // it is assumed the inbox contract is behind a Proxy controlled by a proxy admin
-        // this function can only be called by the proxy admin contract
-        address proxyAdmin = ProxyUtil.getProxyAdmin();
-        if(msg.sender != proxyAdmin) revert NotOwner(msg.sender, proxyAdmin);
-        
+    function postUpgradeInit(IBridge _bridge) external initializer onlyDelegated onlyProxyOwner {
         uint8 slotsToWipe = 3;
         for(uint8 i = 0; i<slotsToWipe; i++) {
             assembly {
