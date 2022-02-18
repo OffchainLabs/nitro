@@ -47,7 +47,6 @@ func NewValidator(
 	ctx context.Context,
 	client arbutil.L1Interface,
 	wallet *ValidatorWallet,
-	fromBlock int64,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
@@ -60,8 +59,7 @@ func NewValidator(
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := NewRollupWatcher(wallet.RollupAddress(), fromBlock, builder, callOpts)
-	_ = rollup
+	rollup, err := NewRollupWatcher(ctx, wallet.RollupAddress(), builder, callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +148,7 @@ func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Trans
 	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
 }
 
-func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo, fromBlock int64) error {
+func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) error {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
@@ -241,7 +239,7 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (uint64, bool, 
 	return v.genesisBlockNumber + batchHeight + gs.PosInBatch, false, nil
 }
 
-func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy, fromBlock int64) (nodeAction, bool, error) {
+func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
@@ -313,7 +311,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	}
 
 	// Not necessarily successors
-	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNodeHash, startStateProposed)
+	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode)
 	if err != nil {
 		return nil, false, err
 	}
