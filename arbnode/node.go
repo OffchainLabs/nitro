@@ -471,7 +471,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData *statetransfer.ArbosIn
 	}
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
-		Nonce:      types.EncodeNonce(0),
+		Nonce:      types.EncodeNonce(1),
 		Time:       0,
 		ParentHash: prevHash,
 		Extra:      []byte("ArbitrumMainnet"),

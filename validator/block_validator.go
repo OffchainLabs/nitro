@@ -87,7 +87,7 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
-func GlobalStatePoisionsFor(reader InboxTrackerInterface, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+func GlobalStatePositionsFor(reader InboxTrackerInterface, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
 	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
@@ -497,7 +497,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		startPos, endPos, err := GlobalStatePoisionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
+		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
 		}
