@@ -23,7 +23,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     function initialize(
         Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external override onlyProxy isInitAfterExec {
+    ) external override onlyProxy initializer {
         require(!isInit(), "NOT_INIT");
 
         delayedBridge = connectedContracts.delayedBridge;

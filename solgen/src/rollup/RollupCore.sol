@@ -18,8 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./Node.sol";
 import "./IRollupCore.sol";
@@ -33,7 +32,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Pausable {
+abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -277,6 +276,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
      * @param initialNode Initial node to start the chain with
      */
     function initializeCore(Node memory initialNode) internal {
+        __Pausable_init();
         _nodes[0] = initialNode;
         _firstUnresolvedNode = 1;
     }
