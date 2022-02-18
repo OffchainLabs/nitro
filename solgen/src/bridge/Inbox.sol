@@ -55,7 +55,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         _unpause();
     }
 
-    function initialize(IBridge _bridge) external onlyDelegated {
+    function initialize(IBridge _bridge) external initializer onlyDelegated {
         if(address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
         __Pausable_init();
@@ -63,7 +63,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// @dev function to be called one time during the inbox upgrade process
     /// this is used to fix the storage slots
-    function postUpgradeInit(IBridge _bridge) external onlyDelegated {
+    function postUpgradeInit(IBridge _bridge) external initializer onlyDelegated {
         // it is assumed the inbox contract is behind a Proxy controlled by a proxy admin
         // this function can only be called by the proxy admin contract
         address proxyAdmin = ProxyUtil.getProxyAdmin();
