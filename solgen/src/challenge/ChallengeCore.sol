@@ -177,12 +177,12 @@ abstract contract ChallengeCore is Cloneable {
     }
 
     function _asserterWin() private {
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(asserter, challenger);
-        safeSelfDestruct(payable(0));
     }
 
     function _challengerWin() private {
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(challenger, asserter);
-        safeSelfDestruct(payable(0));
     }
 }
