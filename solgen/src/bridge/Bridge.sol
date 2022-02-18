@@ -8,7 +8,7 @@ pragma solidity ^0.8.4;
 import "./Inbox.sol";
 import "./Outbox.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "./IBridge.sol";
 
@@ -20,7 +20,7 @@ import "./IBridge.sol";
  * outboxes that can make calls from here and withdraw this escrow.
  */
 contract Bridge is OwnableUpgradeable, IBridge {
-    using Address for address;
+    using AddressUpgradeable for address;
     struct InOutInfo {
         uint256 index;
         bool allowed;
