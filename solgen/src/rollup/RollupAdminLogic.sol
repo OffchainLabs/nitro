@@ -56,8 +56,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         require(config.loserStakeEscrow != config.owner, "INVALID_ESCROW_OWNER");
         loserStakeEscrow = config.loserStakeEscrow;
 
-        // stake token is expected to be set in the user logic contract
-        // stakeToken = config.stakeToken;
+        stakeToken = config.stakeToken;
 
         sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
 

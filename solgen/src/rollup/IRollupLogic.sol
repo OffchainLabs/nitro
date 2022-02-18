@@ -23,7 +23,9 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
 interface IRollupUser {
-    function initialize(address stakeToken) external;
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address stakeToken) external view;
 
     function isERC20Enabled() external view returns (bool);
 
