@@ -62,7 +62,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// @dev function to be called one time during the inbox upgrade process
     /// this is used to fix the storage slots
-    function postUpgradeInit(IBridge _bridge) external initializer onlyDelegated onlyProxyOwner {
+    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
         uint8 slotsToWipe = 3;
         for(uint8 i = 0; i<slotsToWipe; i++) {
             assembly {
@@ -70,7 +70,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             }
         }
         bridge = _bridge;
-        __Pausable_init();
     }
 
     /**
