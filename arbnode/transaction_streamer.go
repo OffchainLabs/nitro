@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/validator"
 )
@@ -128,11 +129,12 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) e
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
-	genesisBlock, err := s.GetGenesisBlockNumber()
+	blockNum, err := s.MessageCountToBlockNumber(count)
 	if err != nil {
 		return err
 	}
-	targetBlock := s.bc.GetBlockByNumber(count + genesisBlock - 1)
+	// We can safely cast blockNum to a uint64 as we checked count == 0 above
+	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		return errors.New("reorg target block not found")
 	}
@@ -324,12 +326,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
-	genesisBlock, err := s.GetGenesisBlockNumber()
+	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
 	if err != nil {
 		return err
 	}
-	if lastBlockHeader.Number.Uint64()+1-genesisBlock != pos {
-		return fmt.Errorf("block production not caught up: last block number %v but expected %v", lastBlockHeader.Number, int64(pos)-1+int64(genesisBlock))
+	if lastBlockHeader.Number.Int64() != expectedBlockNum {
+		return fmt.Errorf("block production not caught up: last block number %v but expected %v", lastBlockHeader.Number, expectedBlockNum)
 	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
@@ -432,13 +434,13 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 		return err
 	}
 
-	genesisBlock, err := s.GetGenesisBlockNumber()
+	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
 	if err != nil {
 		return err
 	}
 
 	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
-	if s.bc.CurrentHeader().Number.Uint64()+1-genesisBlock >= pos {
+	if s.bc.CurrentHeader().Number.Int64() >= expectedBlockNum {
 		err = s.createBlocks(ctx)
 		if err != nil {
 			return err
@@ -451,6 +453,22 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
 	// TODO: when block 0 is no longer necessarily the genesis, track this
 	return 0, nil
+}
+
+func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (uint64, error) {
+	genesis, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.BlockNumberToMessageCount(blockNum, genesis), nil
+}
+
+func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum uint64) (int64, error) {
+	genesis, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
 }
 
 // The mutex must be held, and pos must be the latest message count.
@@ -504,11 +522,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
-	genesisBlock, err := s.GetGenesisBlockNumber()
+	pos, err := s.BlockNumberToMessageCount(lastBlockHeader.Number.Uint64())
 	if err != nil {
 		return err
 	}
-	pos := lastBlockHeader.Number.Uint64() + 1 - genesisBlock
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err

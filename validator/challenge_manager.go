@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
@@ -333,7 +334,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
-	message, err := m.txStreamer.GetMessage(uint64(blockNum+1) - genesisBlockNum)
+	message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
 	if err != nil {
 		return err
 	}

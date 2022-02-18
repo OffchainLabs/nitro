@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 
 	"github.com/pkg/errors"
@@ -107,7 +108,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
 		}
 	}
-	expectedMsgCount := uint64(startBlockNum+1) - genesisBlockNum
+	expectedMsgCount := arbutil.SignedBlockNumberToMessageCount(startBlockNum, genesisBlockNum)
 	if startMsgCount != expectedMsgCount {
 		return nil, errors.New("start block and start message count are not 1:1")
 	}

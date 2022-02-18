@@ -216,7 +216,7 @@ type OurStakerInfo struct {
 
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
-func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (uint64, bool, error) {
+func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
 	var batchHeight uint64
 	if gs.Batch > 0 {
 		var err error
@@ -233,10 +233,11 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (uint64, bool, 
 
 	if gs.PosInBatch >= nextBatchHeight-batchHeight {
 		// This PosInBatch would enter the next batch. Return the last block before the next batch.
-		return v.genesisBlockNumber + nextBatchHeight - 1, true, nil
+		// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
+		return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
 	}
 
-	return v.genesisBlockNumber + batchHeight + gs.PosInBatch, false, nil
+	return arbutil.MessageCountToBlockNumber(batchHeight+gs.PosInBatch, v.genesisBlockNumber), false, nil
 }
 
 func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
@@ -265,7 +266,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			return nil, false, errors.New("invalid start global state inbox position")
 		}
 		latestHeader := v.l2Blockchain.CurrentHeader()
-		if latestHeader.Number.Uint64() < expectedBlockHeight {
+		if latestHeader.Number.Int64() < expectedBlockHeight {
 			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
 			return nil, false, nil
 		} else {
@@ -285,7 +286,8 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			if err != nil {
 				return nil, false, err
 			}
-			lastBatchBlock := v.genesisBlockNumber + messageCount
+			// Must be non-negative as a batch must contain at least one message
+			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
 			if blocksValidated > lastBatchBlock {
 				blocksValidated = lastBatchBlock
 			}
@@ -345,28 +347,34 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			if err != nil {
 				return nil, false, err
 			}
-			if blocksValidated < lastBlockNum {
+			if int64(blocksValidated) < lastBlockNum {
 				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", blocksValidated, lastBlockNum)
 			}
-			lastBlock := v.l2Blockchain.GetBlockByNumber(lastBlockNum)
-			if lastBlock == nil {
-				return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
-			}
-			lastBlockExtra, err := arbos.DeserializeHeaderExtraInformation(lastBlock.Header())
-			if err != nil {
-				return nil, false, err
+			var expectedBlockHash common.Hash
+			var expectedSendRoot common.Hash
+			if lastBlockNum >= 0 {
+				lastBlock := v.l2Blockchain.GetBlockByNumber(uint64(lastBlockNum))
+				if lastBlock == nil {
+					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
+				}
+				lastBlockExtra, err := arbos.DeserializeHeaderExtraInformation(lastBlock.Header())
+				if err != nil {
+					return nil, false, err
+				}
+				expectedBlockHash = lastBlock.Hash()
+				expectedSendRoot = lastBlockExtra.SendRoot
 			}
 
 			var expectedNumBlocks uint64
 			if startBlock == nil {
-				expectedNumBlocks = lastBlockNum + 1
+				expectedNumBlocks = uint64(lastBlockNum + 1)
 			} else {
-				expectedNumBlocks = lastBlockNum - startBlock.NumberU64()
+				expectedNumBlocks = uint64(lastBlockNum) - startBlock.NumberU64()
 			}
 			valid := !inboxPositionInvalid &&
 				nd.Assertion.NumBlocks == expectedNumBlocks &&
-				afterGs.BlockHash == lastBlock.Hash() &&
-				afterGs.SendRoot == lastBlockExtra.SendRoot
+				afterGs.BlockHash == expectedBlockHash &&
+				afterGs.SendRoot == expectedSendRoot
 			if valid {
 				log.Info(
 					"found correct node",
@@ -388,9 +396,9 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 					"numBlocks", nd.Assertion.NumBlocks,
 					"expectedNumBlocks", expectedNumBlocks,
 					"blockHash", afterGs.BlockHash,
-					"expectedBlockHash", lastBlock.Hash(),
+					"expectedBlockHash", expectedBlockHash,
 					"sendRoot", afterGs.SendRoot,
-					"expectedSendRoot", lastBlockExtra.SendRoot,
+					"expectedSendRoot", expectedSendRoot,
 				)
 			}
 		} else {
@@ -426,16 +434,17 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	var afterGsBatch uint64
 	var afterGsPosInBatch uint64
 	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
-		lastBlockNum, err := v.inboxTracker.GetBatchMessageCount(i)
+		batchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i)
 		if err != nil {
 			return nil, false, err
 		}
-		lastBlockNum += v.genesisBlockNumber
-		prevBlockNum, err := v.inboxTracker.GetBatchMessageCount(i - 1)
+		prevBatchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i - 1)
 		if err != nil {
 			return nil, false, err
 		}
-		prevBlockNum += v.genesisBlockNumber
+		// Must be non-negative as a batch must contain at least one message
+		lastBlockNum := uint64(arbutil.MessageCountToBlockNumber(batchMessageCount, v.genesisBlockNumber))
+		prevBlockNum := uint64(arbutil.MessageCountToBlockNumber(prevBatchMessageCount, v.genesisBlockNumber))
 		if lastBlockValidated > prevBlockNum && lastBlockValidated <= lastBlockNum {
 			// We found the batch containing the last validated block
 			if i+1 == minBatchCount && lastBlockValidated < lastBlockNum {

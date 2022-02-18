@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
 )
 
@@ -498,7 +499,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		// valdationEntries is By blockNumber
-		blockNum := v.posNextSend + v.genesisBlockNum
+		// TODO: casting to a uint64 here assumes that we aren't validating the genesis block
+		blockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum))
 		entry, found := v.validationEntries.Load(blockNum)
 		if !found {
 			return
