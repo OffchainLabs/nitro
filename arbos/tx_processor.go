@@ -37,6 +37,8 @@ type TxProcessor struct {
 	state            *arbosState.ArbosState
 	PosterFee        *big.Int // set once in GasChargingHook to track L1 calldata costs
 	posterGas        uint64
+	tipWeiPerGas     *big.Int
+	tipRecipient     common.Address
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	Callers          []common.Address
 	TopTxType        *byte // set once in StartTxHook
@@ -50,11 +52,17 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		panic(err)
 	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
+	networkFeeAccount, err := arbosState.NetworkFeeAccount()
+	if err != nil {
+		panic(err)
+	}
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
 		PosterFee:        new(big.Int),
 		posterGas:        0,
+		tipWeiPerGas:     new(big.Int),
+		tipRecipient:     networkFeeAccount,
 		Callers:          []common.Address{},
 		TopTxType:        nil,
 		evm:              evm,
@@ -215,16 +223,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64, txGasPrice *big.Int) error {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
+	from := p.msg.From()
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
+	aggregator := p.getReimbursableAggregator()
+	posterCost, reimbursable, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -251,6 +261,20 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		p.posterGas = posterCostInL2Gas.Uint64()
 		p.PosterFee = new(big.Int).Mul(posterCostInL2Gas, gasPrice) // round down
 		gasNeededToStartEVM = p.posterGas
+
+		// Most users shouldn't set a tip, but if one is specified ensure the user has enough funds to
+		// tip the appropriate party (the poster, if reimbursable, otherwise the network fee account)
+		if txGasPrice != nil && util.BigGreaterThan(txGasPrice, gasPrice) {
+			p.tipWeiPerGas = util.BigSub(txGasPrice, gasPrice)
+		}
+		if reimbursable && aggregator != nil {
+			p.tipRecipient = *aggregator
+		}
+		tip := util.BigMulByUint(p.tipWeiPerGas, p.msg.Gas())
+		if util.BigLessThan(p.evm.StateDB.GetBalance(from), tip) {
+			return core.ErrInsufficientFunds
+		}
+		p.evm.StateDB.SubBalance(from, tip)
 	}
 
 	if *gasRemaining < gasNeededToStartEVM {
@@ -327,10 +351,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
-	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
+	gasUsed := util.UintToBig(p.msg.Gas() - gasLeft)
 
-	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
-	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
+	totalCost := util.BigMul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
+	computeCost := util.BigSub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
@@ -342,6 +366,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
 	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
+	p.evm.StateDB.AddBalance(p.tipRecipient, util.BigMul(p.tipWeiPerGas, gasUsed))     // tip on gas used
+	p.evm.StateDB.AddBalance(p.msg.From(), util.BigMulByUint(p.tipWeiPerGas, gasLeft)) // refund unused tip
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
