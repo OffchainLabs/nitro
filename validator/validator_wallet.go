@@ -186,6 +186,7 @@ func CreateValidatorWallet(
 	transactAuth *bind.TransactOpts,
 	client arbutil.L1Interface,
 ) (common.Address, error) {
+	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
 	if err != nil {
 		return common.Address{}, errors.WithStack(err)

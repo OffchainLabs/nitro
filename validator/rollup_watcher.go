@@ -41,21 +41,28 @@ type StakerInfo struct {
 
 type RollupWatcher struct {
 	address      common.Address
-	fromBlock    int64
+	fromBlock    uint64
 	client       arbutil.L1Interface
 	baseCallOpts bind.CallOpts
 	*rollupgen.RollupUserLogic
 }
 
-func NewRollupWatcher(address common.Address, fromBlock int64, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
+func NewRollupWatcher(ctx context.Context, address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
+	opts := callOpts
+	opts.Context = ctx
+	firstNode, err := con.GetNode(&opts, 0)
+	if err != nil {
+		return nil, err
+	}
+
 	return &RollupWatcher{
 		address:         address,
-		fromBlock:       fromBlock,
+		fromBlock:       firstNode.CreatedAtBlock,
 		client:          client,
 		baseCallOpts:    callOpts,
 		RollupUserLogic: con,
@@ -71,11 +78,10 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
 	var toBlock *big.Int
 	if r.fromBlock > 0 {
-		toBlock = big.NewInt(r.fromBlock)
+		toBlock = new(big.Int).SetUint64(r.fromBlock)
 	}
 	var query = ethereum.FilterQuery{
-		BlockHash: nil,
-		FromBlock: big.NewInt(r.fromBlock),
+		FromBlock: new(big.Int).SetUint64(r.fromBlock),
 		ToBlock:   toBlock,
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{rollupInitializedID}},
@@ -95,12 +101,15 @@ func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUs
 }
 
 func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInfo, error) {
+	node, err := r.GetNode(r.getCallOpts(ctx), number)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 	var numberAsHash common.Hash
 	binary.BigEndian.PutUint64(numberAsHash[(32-8):], number)
 	var query = ethereum.FilterQuery{
-		BlockHash: nil,
-		FromBlock: big.NewInt(r.fromBlock),
-		ToBlock:   nil,
+		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
+		ToBlock:   new(big.Int).SetUint64(node.CreatedAtBlock),
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{nodeCreatedID}, {numberAsHash}},
 	}
@@ -130,13 +139,23 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}, nil
 }
 
-func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, parentHash [32]byte, fromBlock uint64) ([]*NodeInfo, error) {
+func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64) ([]*NodeInfo, error) {
+	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
+	if node.LatestChildNumber == 0 {
+		return nil, nil
+	}
+	latestChild, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), node.LatestChildNumber)
+	if err != nil {
+		return nil, errors.WithStack(err)
+	}
 	var query = ethereum.FilterQuery{
-		BlockHash: nil,
-		FromBlock: new(big.Int).SetUint64(fromBlock),
-		ToBlock:   nil,
+		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
+		ToBlock:   new(big.Int).SetUint64(latestChild.CreatedAtBlock),
 		Addresses: []common.Address{r.address},
-		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {parentHash}},
+		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {node.NodeHash}},
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
@@ -162,16 +181,39 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, parentHash [32]b
 			WasmModuleRoot:     parsedLog.WasmModuleRoot,
 		})
 	}
+	// TODO: If we want to verify consistency here, we can that that the node hash of the last node
+	// found matches latestChild since it encompasses all preceding nodes
 	return infos, nil
 }
 
+func (r *RollupWatcher) LatestConfirmedCreationBlock(ctx context.Context) (uint64, error) {
+	latestConfirmed, err := r.LatestConfirmed(r.getCallOpts(ctx))
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	latestConfirmedNode, err := r.GetNode(r.getCallOpts(ctx), latestConfirmed)
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return latestConfirmedNode.CreatedAtBlock, nil
+}
+
 func (r *RollupWatcher) LookupChallengedNode(ctx context.Context, address common.Address) (uint64, error) {
+	// TODO: This function is currently unused
+
+	// Assuming this function is only used to find information about an active challenge, it
+	// must be a challenge over an unconfirmed node and thus must have been created after the
+	// latest confirmed node was created
+	latestConfirmedCreated, err := r.LatestConfirmedCreationBlock(ctx)
+	if err != nil {
+		return 0, err
+	}
+
 	addressQuery := common.Hash{}
 	copy(addressQuery[12:], address.Bytes())
 
 	query := ethereum.FilterQuery{
-		BlockHash: nil,
-		FromBlock: big.NewInt(r.fromBlock),
+		FromBlock: new(big.Int).SetUint64(latestConfirmedCreated),
 		ToBlock:   nil,
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{challengeCreatedID}, {addressQuery}},

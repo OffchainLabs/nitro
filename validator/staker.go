@@ -58,7 +58,6 @@ type Staker struct {
 	*Validator
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
-	fromBlock               int64
 	baseCallOpts            bind.CallOpts
 	auth                    *bind.TransactOpts
 	config                  ValidatorConfig
@@ -78,7 +77,6 @@ func NewStaker(
 	ctx context.Context,
 	client *ethclient.Client,
 	wallet *ValidatorWallet,
-	fromBlock int64,
 	callOpts bind.CallOpts,
 	auth *bind.TransactOpts,
 	config ValidatorConfig,
@@ -104,7 +102,7 @@ func NewStaker(
 	} else {
 		return nil, fmt.Errorf("unknown staker strategy \"%v\"", config.Strategy)
 	}
-	val, err := NewValidator(ctx, client, wallet, fromBlock, validatorUtilsAddress, callOpts, l2Blockchain, inboxReader, inboxTracker, txStreamer, blockValidator)
+	val, err := NewValidator(ctx, client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxReader, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +113,6 @@ func NewStaker(
 	return &Staker{
 		Validator:           val,
 		strategy:            strategy,
-		fromBlock:           fromBlock,
 		baseCallOpts:        callOpts,
 		auth:                auth,
 		config:              config,
@@ -300,7 +297,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil || arbTx != nil {
 			return arbTx, err
 		}
-		if err := s.resolveNextNode(ctx, rawInfo, s.fromBlock); err != nil {
+		if err := s.resolveNextNode(ctx, rawInfo); err != nil {
 			return nil, err
 		}
 	}
@@ -370,7 +367,12 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 	if s.activeChallenge == nil || s.activeChallenge.RootChallengeAddress() != *info.CurrentChallenge {
 		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
 
-		newChallengeManager, err := NewChallengeManager(ctx, s.builder, s.builder.builderAuth, *s.builder.wallet.Address(), *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, uint64(s.fromBlock), s.config.TargetNumMachines, s.config.ConfirmationBlocks)
+		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
+		if err != nil {
+			return err
+		}
+
+		newChallengeManager, err := NewChallengeManager(ctx, s.builder, s.builder.builderAuth, *s.builder.wallet.Address(), *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, latestConfirmedCreated, s.config.TargetNumMachines, s.config.ConfirmationBlocks)
 		if err != nil {
 			return err
 		}
@@ -406,7 +408,7 @@ func (s *Staker) newStake(ctx context.Context) error {
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
 	active := effectiveStrategy >= StakeLatestStrategy
-	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, s.fromBlock)
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy)
 	if err != nil {
 		return err
 	}
