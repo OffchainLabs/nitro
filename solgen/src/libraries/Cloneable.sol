@@ -7,9 +7,4 @@ abstract contract Cloneable {
 	constructor() {
 		isMasterCopy = true;
 	}
-
-    function safeSelfDestruct(address payable dest) internal {
-        require(!isMasterCopy, "NOT_CLONE");
-        selfdestruct(dest);
-    }
 }
