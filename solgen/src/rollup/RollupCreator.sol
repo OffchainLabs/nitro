@@ -29,7 +29,7 @@ import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "./AdminAwareProxy.sol";
+import "../libraries/ArbitrumProxy.sol";
 import "./RollupUserLogic.sol";
 import "./RollupAdminLogic.sol";
 import "../bridge/IBridge.sol";
@@ -42,22 +42,19 @@ contract RollupCreator is Ownable {
     event TemplatesUpdated();
 
     BridgeCreator public bridgeCreator;
-    ICloneable public rollupTemplate;
     IBlockChallengeFactory public challengeFactory;
-    AAPStorage public rollupAdminLogic;
-    AAPStorage public rollupUserLogic;
+    IRollupAdmin public rollupAdminLogic;
+    IRollupUser public rollupUserLogic;
 
     constructor() Ownable() {}
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
-        ICloneable _rollupTemplate,
         IBlockChallengeFactory  _challengeFactory,
-        AAPStorage _rollupAdminLogic,
-        AAPStorage _rollupUserLogic
+        IRollupAdmin _rollupAdminLogic,
+        IRollupUser _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
-        rollupTemplate = _rollupTemplate;
         challengeFactory = _challengeFactory;
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
@@ -71,7 +68,7 @@ contract RollupCreator is Ownable {
         Inbox inbox;
         RollupEventBridge rollupEventBridge;
         Outbox outbox;
-        AdminAwareProxy rollup;
+        ArbitrumProxy rollup;
     }
 
     // After this setup:
@@ -79,12 +76,9 @@ contract RollupCreator is Ownable {
     // RollupOwner should be the owner of Rollup's ProxyAdmin
     // RollupOwner should be the owner of Rollup
     // Bridge should have a single inbox and outbox
-    function createRollup(RollupLib.Config memory config) external returns (address) {
+    function createRollup(Config memory config, address expectedRollupAddr) external returns (address) {
         CreateRollupFrame memory frame;
         frame.admin = new ProxyAdmin();
-        frame.rollup = AdminAwareProxy(payable(address(
-            new TransparentUpgradeableProxy(address(rollupTemplate), address(frame.admin), "")
-        )));
 
         (
             frame.delayedBridge,
@@ -92,12 +86,13 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), address(frame.rollup));
+        ) = bridgeCreator.createBridge(address(frame.admin), expectedRollupAddr);
 
         frame.admin.transferOwnership(config.owner);
-        frame.rollup.initialize(
+
+        frame.rollup = new ArbitrumProxy(
             config,
-            AAPStorage.ContractDependencies({
+            ContractDependencies({
                 delayedBridge: frame.delayedBridge,
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,
@@ -107,6 +102,7 @@ contract RollupCreator is Ownable {
                 rollupUserLogic: rollupUserLogic
             })
         );
+        require(address(frame.rollup) == expectedRollupAddr, "WRONG_ROLLUP_ADDR");
 
         emit RollupCreated(address(frame.rollup), address(frame.inbox), address(frame.admin), address(frame.sequencerInbox), address(frame.delayedBridge));
         return address(frame.rollup);

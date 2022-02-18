@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
@@ -136,52 +137,47 @@ func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.
 	return ospEntryAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, error) {
+func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
 	if err != nil {
-		return nil, err
-	}
-
-	rollupTemplate, tx, _, err := rollupgen.DeployAdminAwareProxy(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
-	if err != nil {
-		return nil, fmt.Errorf("rollup deploy error: %w", err)
+		return nil, common.Address{}, err
 	}
 
 	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
-		return nil, err
+		return nil, common.Address{}, err
 	}
 
 	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("rollup admin logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
 	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	_, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, client)
+	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, rollupTemplate, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, challengeFactory, rollupAdminLogic, rollupUserLogic)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return nil, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	return rollupCreator, nil
+	return rollupCreator, rollupCreatorAddress, nil
 }
 
 func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
-	rollupCreator, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
+	// Deployment sometimes fails without a manually set gas limit
+	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -194,18 +190,25 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		DelaySeconds:  big.NewInt(60 * 60 * 24),
 		FutureSeconds: big.NewInt(60 * 60),
 	}
+	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
+	if err != nil {
+		return nil, err
+	}
+	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+1)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
-		rollupgen.RollupLibConfig{
+		rollupgen.Config{
 			ConfirmPeriodBlocks:            confirmPeriodBlocks,
 			ExtraChallengeTimeBlocks:       extraChallengeTimeBlocks,
 			StakeToken:                     common.Address{},
 			BaseStake:                      big.NewInt(params.Ether),
 			WasmModuleRoot:                 wasmModuleRoot,
 			Owner:                          deployAuth.From,
+			LoserStakeEscrow:               common.Address{},
 			ChainId:                        big.NewInt(1338),
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},
+		expectedRollupAddr,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
