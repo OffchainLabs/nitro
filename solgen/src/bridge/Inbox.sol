@@ -19,7 +19,7 @@ import {
 } from "../libraries/MessageTypes.sol";
 import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
-import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "./Bridge.sol";
 
 /**
@@ -209,7 +209,7 @@ contract Inbox is IInbox {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        if (!Address.isContract(sender) && tx.origin == msg.sender) {
+        if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
             // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
             // If the caller is an EOA, we adjust the address.
@@ -311,10 +311,10 @@ contract Inbox is IInbox {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (Address.isContract(excessFeeRefundAddress)) {
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
             excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
         }
-        if (Address.isContract(callValueRefundAddress)) {
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
             // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }

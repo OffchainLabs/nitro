@@ -18,8 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./Node.sol";
 import "./IRollupCore.sol";
@@ -33,7 +32,7 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Pausable {
+abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -53,7 +52,6 @@ abstract contract RollupCore is IRollupCore, Pausable {
     address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
-    uint256 public challengeExecutionBisectionDegree;
 
     mapping(address => bool) public isValidator;
 
@@ -85,6 +83,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
+    uint256 totalWithdrawableFunds;
 
     /**
      * @notice Get a storage reference to the Node for the given node index
@@ -277,6 +276,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
      * @param initialNode Initial node to start the chain with
      */
     function initializeCore(Node memory initialNode) internal {
+        __Pausable_init();
         _nodes[0] = initialNode;
         _firstUnresolvedNode = 1;
     }
@@ -514,6 +514,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
     function withdrawFunds(address account) internal returns (uint256) {
         uint256 amount = _withdrawableFunds[account];
         _withdrawableFunds[account] = 0;
+        totalWithdrawableFunds -= amount;
         emit UserWithdrawableFundsUpdated(account, amount, 0);
         return amount;
     }
@@ -528,6 +529,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
         uint256 initialWithdrawable = _withdrawableFunds[account];
         uint256 finalWithdrawable = initialWithdrawable + amount;
         _withdrawableFunds[account] = finalWithdrawable;
+        totalWithdrawableFunds += amount;
         emit UserWithdrawableFundsUpdated(
             account,
             initialWithdrawable,

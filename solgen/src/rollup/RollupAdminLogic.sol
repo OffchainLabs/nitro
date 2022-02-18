@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.0;
 
-import { IRollupAdmin } from "./IRollupLogic.sol";
+import { IRollupAdmin, IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -11,16 +11,10 @@ import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
-    function isInit() internal view returns (bool) {
-        return confirmPeriodBlocks != 0;
-    }
-
     function initialize(
         Config calldata config,
         ContractDependencies calldata connectedContracts
-    ) external override onlyProxy {
-        require(!isInit(), "NOT_INIT");
-
+    ) external override onlyProxy initializer {
         delayedBridge = connectedContracts.delayedBridge;
         sequencerBridge = connectedContracts.sequencerInbox;
         outbox = connectedContracts.outbox;
@@ -43,7 +37,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         wasmModuleRoot = config.wasmModuleRoot;
         // A little over 15 minutes
         minimumAssertionPeriod = 75;
-        challengeExecutionBisectionDegree = 400;
 
         // the owner can't access the rollup user facet where escrow is redeemable
         require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
@@ -52,13 +45,11 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         require(config.loserStakeEscrow != config.owner, "INVALID_ESCROW_OWNER");
         loserStakeEscrow = config.loserStakeEscrow;
 
-        // stake token is expected to be set in the user logic contract
-        // stakeToken = config.stakeToken;
+        stakeToken = config.stakeToken;
 
         sequencerBridge.setMaxTimeVariation(config.sequencerInboxMaxTimeVariation);
 
         emit RollupInitialized(config.wasmModuleRoot, config.chainId);
-        require(isInit(), "INITIALIZE_NOT_INIT");
     }
 
     function createInitialNode()
@@ -215,7 +206,21 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * implementation of the Rollup User facet!
      * @param newStakeToken address of token used for staking
      */
-    function setStakeToken(address newStakeToken) external override {
+    function setStakeToken(address newStakeToken) external override whenPaused {
+        /*
+         * To change the stake token without breaking consistency one would need to:
+         * Pause the system, have all stakers remove their funds,
+         * update the user logic to handle ERC20s, change the stake token, then resume.
+         * 
+         * Note: To avoid loss of funds stakers must remove their funds and claim all the
+         * available withdrawable funds before the system is paused.
+         */
+        bool expectERC20Support = newStakeToken != address(0);
+        // this assumes the rollup isn't its own admin. if needed, instead use a ProxyAdmin by OZ!
+        bool actualERC20Support = IRollupUser(address(this)).isERC20Enabled();
+        require(actualERC20Support == expectERC20Support, "NO_USER_LOGIC_SUPPORT");
+        require(stakerCount() == 0, "NO_ACTIVE_STAKERS");
+        require(totalWithdrawableFunds == 0, "NO_PENDING_WITHDRAW");
         stakeToken = newStakeToken;
         emit OwnerFunctionCalled(13);
     }
@@ -227,18 +232,6 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     function setSequencerInboxMaxTimeVariation(ISequencerInbox.MaxTimeVariation calldata maxTimeVariation) external override {
         sequencerBridge.setMaxTimeVariation(maxTimeVariation);
         emit OwnerFunctionCalled(14);
-    }
-
-    /**
-     * @notice Set execution bisection degree
-     * @param newChallengeExecutionBisectionDegree execution bisection degree
-     */
-    function setChallengeExecutionBisectionDegree(uint256 newChallengeExecutionBisectionDegree)
-        external
-        override
-    {
-        challengeExecutionBisectionDegree = newChallengeExecutionBisectionDegree;
-        emit OwnerFunctionCalled(16);
     }
 
     /**
