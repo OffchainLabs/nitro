@@ -215,7 +215,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
          * Note: To avoid loss of funds stakers must remove their funds and claim all the
          * available withdrawable funds before the system is paused.
          */
-        bool expectERC20Support = newStakeToken == address(0);
+        bool expectERC20Support = newStakeToken != address(0);
         // this assumes the rollup isn't its own admin. if needed, instead use a ProxyAdmin by OZ!
         bool actualERC20Support = IRollupUser(address(this)).isERC20Enabled();
         require(actualERC20Support == expectERC20Support, "NO_USER_LOGIC_SUPPORT");
