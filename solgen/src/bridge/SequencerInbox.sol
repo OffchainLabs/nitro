@@ -57,7 +57,7 @@ contract SequencerInbox is ISequencerInbox {
     function initialize(
         IBridge _delayedBridge, 
         address rollup_, 
-        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
+        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
