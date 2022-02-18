@@ -3,18 +3,25 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IInbox.sol";
 import "./IBridge.sol";
 
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
+import "../libraries/ProxyUtil.sol";
 
-import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Bridge.sol";
 
-contract Inbox is IInbox {
+/**
+* @title Inbox for user and contract originated messages
+* @notice Messages created via this inbox are enqueued in the delayed accumulator
+* to await inclusion in the SequencerInbox
+*/
+contract Inbox is PausableUpgradeable, IInbox {
     uint8 internal constant ETH_TRANSFER = 0;
     uint8 internal constant L2_MSG = 3;
     uint8 internal constant L1MessageType_L2FundedByL1 = 7;
@@ -26,40 +33,49 @@ contract Inbox is IInbox {
     // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
     uint256 public constant MAX_DATA_SIZE = 117964;
 
-    string internal constant TOO_LARGE = "TOO_LARGE";
-
     IBridge public override bridge;
 
-    bool public paused;
-    bool private _deprecated; // shouldRewriteSender was here, current value is 'true'
-
-    event PauseToggled(bool enabled);
+    modifier onlyOwner() {
+        // the rollup contract owns the bridge
+        address bridgeowner = Bridge(address(bridge)).owner();
+        // we want to validate the owner of the rollup
+        //address owner = RollupBase(rollup).owner();
+        if(msg.sender != bridgeowner) revert NotOwner(msg.sender, bridgeowner);
+        _;
+    }
 
     /// @notice pauses all inbox functionality
     function pause() external onlyOwner {
-        require(!paused, "ALREADY_PAUSED");
-        paused = true;
-        emit PauseToggled(true);
+        _pause();
     }
 
     /// @notice unpauses all inbox functionality
     function unpause() external onlyOwner {
-        require(paused, "NOT_PAUSED");
-        paused = false;
-        emit PauseToggled(false);
-    }
-
-    /**
-     * @dev Modifier to make a function callable only when the contract is not paused.
-     */
-    modifier whenNotPaused() {
-        require(!paused, "CONTRACT PAUSED");
-        _;
+        _unpause();
     }
 
     function initialize(IBridge _bridge) external {
-        require(address(bridge) == address(0), "ALREADY_INIT");
+        if(address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
+        __Pausable_init();
+    }
+
+    /// @dev function to be called one time during the inbox upgrade process
+    /// this is used to fix the storage slots
+    function postUpgradeInit(IBridge _bridge) external {
+        // it is assumed the inbox contract is behind a Proxy controlled by a proxy admin
+        // this function can only be called by the proxy admin contract
+        address proxyAdmin = ProxyUtil.getProxyAdmin();
+        if(msg.sender != proxyAdmin) revert NotOwner(msg.sender, proxyAdmin);
+        
+        uint8 slotsToWipe = 3;
+        for(uint8 i = 0; i<slotsToWipe; i++) {
+            assembly {
+                sstore(i, 0)
+            }
+        }
+        bridge = _bridge;
+        __Pausable_init();
     }
 
     /**
@@ -73,8 +89,8 @@ contract Inbox is IInbox {
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
-        require(msg.sender == tx.origin, "origin only");
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(msg.sender != tx.origin) revert NotOrigin();
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -91,7 +107,7 @@ contract Inbox is IInbox {
         whenNotPaused
         returns (uint256)
     {
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -187,15 +203,6 @@ contract Inbox is IInbox {
             );
     }
 
-    modifier onlyOwner() {
-        // the rollup contract owns the bridge
-        address bridgeowner = Bridge(address(bridge)).owner();
-        // we want to validate the owner of the rollup
-        //address owner = RollupBase(rollup).owner();
-        require(msg.sender == bridgeowner, "NOT_OWNER");
-        _;
-    }
-
     /// @notice deposit eth from L1 to L2
     /// @dev this function should not be called inside contract constructors
     function depositEth(uint256 maxSubmissionCost)
@@ -209,7 +216,7 @@ contract Inbox is IInbox {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        if (!Address.isContract(sender) && tx.origin == msg.sender) {
+        if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
             // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
             // If the caller is an EOA, we adjust the address.
@@ -311,10 +318,10 @@ contract Inbox is IInbox {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (Address.isContract(excessFeeRefundAddress)) {
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
             excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
         }
-        if (Address.isContract(callValueRefundAddress)) {
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
             // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
@@ -337,7 +344,7 @@ contract Inbox is IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        require(_messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if(_messageData.length > MAX_DATA_SIZE) revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
@@ -348,6 +355,6 @@ contract Inbox is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
     }
 }

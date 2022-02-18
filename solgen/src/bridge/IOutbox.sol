@@ -16,7 +16,34 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
+
+import "../libraries/Error.sol";
+
+/// @dev Thrown when an address that is not the rollup tries to call an only-rollup function
+/// @param sender The sender who is not the rollup
+/// @param rollup The rollup address authorized to call this function
+error NotRollup(address sender, address rollup);
+
+/// @dev The provided proof was too long
+/// @param proofLength The length of the too-long proof
+error ProofTooLong(uint256 proofLength);
+
+/// @dev The output index was greater than the maximum
+/// @param index The output index
+/// @param maxIndex The max the index could be
+error PathNotMinimal(uint256 index, uint256 maxIndex);
+
+/// @dev The calculated root does not exist
+/// @param root The calculated root
+error UnknownRoot(bytes32 root);
+
+/// @dev The record has already been spent
+/// @param index The index of the spent record
+error AlreadySpent(uint256 index);
+
+/// @dev A call to the bridge failed with no return data
+error BridgeCallFailed();
 
 interface IOutbox {
     event SendRootUpdated(
@@ -38,6 +65,7 @@ interface IOutbox {
 
     function l2ToL1Timestamp() external view returns (uint256);
 
+    // @deprecated batch number is now always 0
     function l2ToL1BatchNum() external view returns (uint256);
 
     function l2ToL1OutputId() external view returns (bytes32);

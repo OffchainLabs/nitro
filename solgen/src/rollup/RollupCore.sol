@@ -27,15 +27,13 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../libraries/Cloneable.sol";
-
 import "../challenge/IBlockChallengeFactory.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
+abstract contract RollupCore is IRollupCore, Pausable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -51,6 +49,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
+    // when a staker loses a challenge, half of their funds get escrowed in this address
+    address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
     uint256 public challengeExecutionBisectionDegree;
@@ -566,6 +566,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     function createNewNode(
         RollupLib.Assertion calldata assertion,
         uint64 prevNodeNum,
+        uint256 prevNodeInboxMaxCount,
         bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
         require(
@@ -579,12 +580,10 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
             memoryFrame.currentInboxSize = sequencerBridge.batchCount();
-            // ensure that the assertion specified the correct inbox size
-            require(assertion.afterState.inboxMaxCount == memoryFrame.currentInboxSize, "WRONG_INBOX_COUNT");
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState) ==
+                RollupLib.stateHash(assertion.beforeState, prevNodeInboxMaxCount) ==
                     memoryFrame.prevNode.stateHash,
                 "PREV_STATE_HASH"
             );
@@ -640,7 +639,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
             memoryFrame.node = NodeLib.initialize(
-                RollupLib.stateHash(assertion.afterState),
+                RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
                     block.number,
@@ -676,7 +675,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             newNodeHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
-            wasmModuleRoot
+            wasmModuleRoot,
+            memoryFrame.currentInboxSize
         );
 
         return newNodeHash;

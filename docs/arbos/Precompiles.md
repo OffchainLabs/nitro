@@ -304,6 +304,14 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 [Os11]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbOwner.sol#L41
 [Os12]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbOwner.sol#L44
 
+| Events                                                      |                                                           |
+|:------------------------------------------------------------|:----------------------------------------------------------|
+| [<img src=e.png height=16>][Oes0] [`OwnerActs`][Oe0] &nbsp; | Emitted when a successful call is made to this precompile |
+
+[Oe0]: https://github.com/OffchainLabs/nitro/blob/e4d981d16a3938ce18d1e648cb1c58d69d23b85e/precompiles/wrapper.go#L105
+
+[Oes0]: https://github.com/OffchainLabs/nitro/blob/e4d981d16a3938ce18d1e648cb1c58d69d23b85e/solgen/src/precompiles/ArbOwner.sol#L47
+
 
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
 Provides non-owners with info about the current chain owners.
