@@ -66,7 +66,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
             1 // inboxMaxCount - force the first assertion to read a message
         );
         return
-            NodeLib.initialize(
+            NodeLib.createNode(
                 state,
                 0, // challenge hash (not challengeable)
                 0, // confirm data

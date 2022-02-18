@@ -9,6 +9,7 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
+import "../libraries/DelegateCallAware.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -17,7 +18,7 @@ import "../libraries/IGasRefunder.sol";
  * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
-contract SequencerInbox is ISequencerInbox {
+contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
@@ -56,7 +57,7 @@ contract SequencerInbox is ISequencerInbox {
         TimeBounds timeBounds
     );
 
-    function initialize(IBridge _delayedBridge, address rollup_) external {
+    function initialize(IBridge _delayedBridge, address rollup_) external onlyDelegated {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
