@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+
 import { IRollupUser } from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
@@ -18,6 +20,10 @@ abstract contract AbsRollupUserLogic is
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
         _;
+    }
+
+    function isERC20Enabled() public view override returns (bool) {
+        return stakeToken != address(0);
     }
 
     /**
@@ -627,9 +633,11 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
         require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
-        // stakeToken = _stakeToken;
+        require(!isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
@@ -673,10 +681,11 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(address _stakeToken) external override onlyProxy {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address _stakeToken) external view override onlyProxy {
         require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
-        require(stakeToken == address(0), "ALREADY_INIT");
-        stakeToken = _stakeToken;
+        require(isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
@@ -692,7 +701,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _newStake(tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -713,7 +722,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _addToDeposit(stakerAddress, tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -736,7 +745,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
         require(
-            IERC20(stakeToken).transfer(destination, amount),
+            IERC20Upgradeable(stakeToken).transfer(destination, amount),
             "TRANSFER_FAILED"
         );
         return amount;

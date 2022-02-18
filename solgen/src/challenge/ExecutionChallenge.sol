@@ -7,8 +7,6 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract ExecutionChallenge is ChallengeCore {
     event OneStepProofCompleted();
@@ -86,7 +84,7 @@ contract ExecutionChallenge is ChallengeCore {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        safeSelfDestruct(payable(0));
+        turn = Turn.NO_CHALLENGE;
     }
 
     function _currentWin() private {

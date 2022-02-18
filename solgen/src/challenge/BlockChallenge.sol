@@ -246,19 +246,25 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+        turn = Turn.NO_CHALLENGE;
         if (address(executionChallenge) != address(0)) {
             executionChallenge.clearChallenge();
         }
-        safeSelfDestruct(payable(0));
     }
 
     function completeChallenge(address winner, address loser)
         external
-        override
+        override 
     {
         require(msg.sender == address(executionChallenge), "NOT_EXEC_CHAL");
+        // since this is being called by the execution challenge, 
+        // and since we transition to NO_CHALLENGE when we create 
+        // an execution challenge, that must mean the state is 
+        // already NO_CHALLENGE. So we dont technically need to set that here.
+        // However to guard against a possible future missed refactoring
+        // it's probably safest to set it here anyway
+        if(turn != Turn.NO_CHALLENGE) turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(winner, loser);
-        safeSelfDestruct(payable(0));
     }
 
     function _currentWin() private {
