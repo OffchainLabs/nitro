@@ -86,7 +86,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        safeSelfDestruct(payable(0));
+        turn = Turn.NO_CHALLENGE;
     }
 
     function _currentWin() private {
