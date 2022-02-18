@@ -322,11 +322,11 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
 		}
 	}
-	globalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
+	startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
 	if err != nil {
 		return err
 	}
-	err = machine.SetGlobalState(globalState)
+	err = machine.SetGlobalState(startGlobalState)
 	if err != nil {
 		return err
 	}
@@ -360,11 +360,11 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return err
 		}
 	}
-	batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, globalState.Batch)
+	batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
 	if err != nil {
 		return err
 	}
-	err = machine.AddSequencerInboxMessage(globalState.Batch, batchBytes)
+	err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
 	if err != nil {
 		return err
 	}

@@ -236,11 +236,11 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		t.Fatal(err)
 	}
 
-	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress(("sequencer")))
+	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress("sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress(("sequencer")))
+	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress("sequencer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	asserterStartGlobalState := validator.GoGlobalState{
 		BlockHash:  asserterGenesis.Hash(),
-		Batch:      0,
+		Batch:      1,
 		PosInBatch: 0,
 	}
 	asserterEndGlobalState := validator.GoGlobalState{

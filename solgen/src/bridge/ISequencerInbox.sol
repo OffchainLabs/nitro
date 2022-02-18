@@ -15,6 +15,32 @@ interface ISequencerInbox {
         uint256 futureSeconds;
     }
 
+    struct TimeBounds {
+        uint64 minTimestamp;
+        uint64 maxTimestamp;
+        uint64 minBlockNumber;
+        uint64 maxBlockNumber;
+    }
+
+    event SequencerBatchDelivered(
+        uint256 indexed batchSequenceNumber,
+        bytes32 indexed beforeAcc,
+        bytes32 indexed afterAcc,
+        bytes32 delayedAcc,
+        uint256 afterDelayedMessagesRead,
+        TimeBounds timeBounds,
+        bytes data
+    );
+
+    event SequencerBatchDeliveredFromOrigin(
+        uint256 indexed batchSequenceNumber,
+        bytes32 indexed beforeAcc,
+        bytes32 indexed afterAcc,
+        bytes32 delayedAcc,
+        uint256 afterDelayedMessagesRead,
+        TimeBounds timeBounds
+    );
+
     function inboxAccs(uint256 index) external view returns (bytes32);
 
     function batchCount() external view returns (uint256);

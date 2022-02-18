@@ -33,32 +33,6 @@ contract SequencerInbox is ISequencerInbox {
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    struct TimeBounds {
-        uint64 minTimestamp;
-        uint64 maxTimestamp;
-        uint64 minBlockNumber;
-        uint64 maxBlockNumber;
-    }
-
-    event SequencerBatchDelivered(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        TimeBounds timeBounds,
-        bytes data
-    );
-
-    event SequencerBatchDeliveredFromOrigin(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        TimeBounds timeBounds
-    );
-
     function initialize(IBridge _delayedBridge, address rollup_) external {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");

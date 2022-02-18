@@ -89,7 +89,7 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc     common.Hash
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
-	TimeBounds        bridgegen.SequencerInboxTimeBounds
+	TimeBounds        bridgegen.ISequencerInboxTimeBounds
 	dataIfAvailable   *[]byte
 	txIndexInBlock    uint
 }
