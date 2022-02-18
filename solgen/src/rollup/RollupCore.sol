@@ -276,9 +276,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      * @param initialNode Initial node to start the chain with
      */
     function initializeCore(Node memory initialNode) internal {
+        __Pausable_init();
         _nodes[0] = initialNode;
         _firstUnresolvedNode = 1;
-        __Pausable_init();
     }
 
     /**
