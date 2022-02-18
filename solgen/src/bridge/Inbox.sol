@@ -10,6 +10,7 @@ import "./IBridge.sol";
 
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
+import "../libraries/DelegateCallAware.sol";
 import "../libraries/ProxyUtil.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
@@ -21,7 +22,7 @@ import "./Bridge.sol";
 * @notice Messages created via this inbox are enqueued in the delayed accumulator
 * to await inclusion in the SequencerInbox
 */
-contract Inbox is PausableUpgradeable, IInbox {
+contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     uint8 internal constant ETH_TRANSFER = 0;
     uint8 internal constant L2_MSG = 3;
     uint8 internal constant L1MessageType_L2FundedByL1 = 7;
@@ -54,7 +55,7 @@ contract Inbox is PausableUpgradeable, IInbox {
         _unpause();
     }
 
-    function initialize(IBridge _bridge) external {
+    function initialize(IBridge _bridge) external onlyDelegated {
         if(address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
         __Pausable_init();
@@ -62,7 +63,7 @@ contract Inbox is PausableUpgradeable, IInbox {
 
     /// @dev function to be called one time during the inbox upgrade process
     /// this is used to fix the storage slots
-    function postUpgradeInit(IBridge _bridge) external {
+    function postUpgradeInit(IBridge _bridge) external onlyDelegated {
         // it is assumed the inbox contract is behind a Proxy controlled by a proxy admin
         // this function can only be called by the proxy admin contract
         address proxyAdmin = ProxyUtil.getProxyAdmin();

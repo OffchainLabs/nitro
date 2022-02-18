@@ -35,7 +35,6 @@ import "./RollupAdminLogic.sol";
 import "../bridge/IBridge.sol";
 
 import "./RollupLib.sol";
-import "../libraries/ICloneable.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address delayedBridge);

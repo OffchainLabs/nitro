@@ -1,11 +1,10 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/Cloneable.sol";
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 
-abstract contract ChallengeCore is Cloneable {
+abstract contract ChallengeCore {
     event InitiatedChallenge();
 
     enum Turn {
