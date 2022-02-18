@@ -85,11 +85,11 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *TransactionStreamer) ReorgTo(count uint64) error {
+func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
 	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
 }
 
-func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	err := s.reorgToInternal(batch, count)
@@ -121,7 +121,7 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	if count == 0 {
 		return errors.New("cannot reorg out init message")
 	}
@@ -144,7 +144,7 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) e
 		return err
 	}
 
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(count))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -163,13 +163,13 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) e
 func dbKey(prefix []byte, pos uint64) []byte {
 	var key []byte
 	key = append(key, prefix...)
-	key = append(key, uint64ToBytes(pos)...)
+	key = append(key, uint64ToBytes(uint64(pos))...)
 	return key
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
-	key := dbKey(messagePrefix, seqNum)
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
 		return arbstate.MessageWithMetadata{}, err
@@ -180,7 +180,7 @@ func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMet
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessageCount() (uint64, error) {
+func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 	posBytes, err := s.db.Get(messageCountKey)
 	if err != nil {
 		return 0, err
@@ -190,19 +190,19 @@ func (s *TransactionStreamer) GetMessageCount() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return pos, nil
+	return arbutil.MessageIndex(pos), nil
 }
 
-func (s *TransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
 	if pos > 0 {
-		key := dbKey(messagePrefix, pos-1)
+		key := dbKey(messagePrefix, uint64(pos-1))
 		hasPrev, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -218,7 +218,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 		if len(messages) == 0 {
 			break
 		}
-		key := dbKey(messagePrefix, pos)
+		key := dbKey(messagePrefix, uint64(pos))
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -455,7 +455,7 @@ func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
 	return 0, nil
 }
 
-func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (uint64, error) {
+func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
 	genesis, err := s.GetGenesisBlockNumber()
 	if err != nil {
 		return 0, err
@@ -463,7 +463,7 @@ func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (uint64
 	return arbutil.BlockNumberToMessageCount(blockNum, genesis), nil
 }
 
-func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum uint64) (int64, error) {
+func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.MessageIndex) (int64, error) {
 	genesis, err := s.GetGenesisBlockNumber()
 	if err != nil {
 		return 0, err
@@ -473,12 +473,12 @@ func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum uint64) (int6
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		key := dbKey(messagePrefix, pos+uint64(i))
+		key := dbKey(messagePrefix, uint64(pos)+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)
 		if err != nil {
 			return err
@@ -488,7 +488,7 @@ func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.Mess
 			return err
 		}
 	}
-	newCount, err := rlp.EncodeToBytes(pos + uint64(len(messages)))
+	newCount, err := rlp.EncodeToBytes(uint64(pos) + uint64(len(messages)))
 	if err != nil {
 		return err
 	}

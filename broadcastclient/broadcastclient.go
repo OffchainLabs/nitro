@@ -19,6 +19,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -31,7 +32,7 @@ type BroadcastClientConfig struct {
 var DefaultBroadcastClientConfig BroadcastClientConfig
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error
+	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
@@ -46,7 +47,7 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
-	ConfirmedSequenceNumberListener chan uint64
+	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
 }

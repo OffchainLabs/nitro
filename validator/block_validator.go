@@ -38,7 +38,7 @@ type BlockValidator struct {
 	blocksValidated   uint64
 	earliestBatchKept uint64
 
-	posNextSend       uint64
+	posNextSend       arbutil.MessageIndex
 	globalPosNextSend GlobalStatePosition
 
 	config                   *BlockValidatorConfig
@@ -69,14 +69,14 @@ type BlockValidatorRegistrer interface {
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
-	GetBatchMessageCount(seqNum uint64) (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
 }
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error)
 	GetGenesisBlockNumber() (uint64, error)
 }
 
@@ -89,12 +89,12 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
-func GlobalStatePositionsFor(reader InboxTrackerInterface, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+func GlobalStatePositionsFor(reader InboxTrackerInterface, pos arbutil.MessageIndex, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
 	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
-	var firstInBatch uint64
+	var firstInBatch arbutil.MessageIndex
 	if batch > 0 {
 		firstInBatch, err = reader.GetBatchMessageCount(batch - 1)
 		if err != nil {
@@ -107,11 +107,11 @@ func GlobalStatePositionsFor(reader InboxTrackerInterface, pos uint64, batch uin
 	if firstInBatch > pos {
 		return GlobalStatePosition{}, GlobalStatePosition{}, fmt.Errorf("batch %d starts from %d, failed getting for %d", batch, firstInBatch, pos)
 	}
-	startPos := GlobalStatePosition{batch, pos - firstInBatch}
+	startPos := GlobalStatePosition{batch, uint64(pos - firstInBatch)}
 	if msgCountInBatch == pos+1 {
 		return startPos, GlobalStatePosition{batch + 1, 0}, nil
 	}
-	return startPos, GlobalStatePosition{batch, pos + 1 - firstInBatch}, nil
+	return startPos, GlobalStatePosition{batch, uint64(pos + 1 - firstInBatch)}, nil
 }
 
 type validationEntry struct {
