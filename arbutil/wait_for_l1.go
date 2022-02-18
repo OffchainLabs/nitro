@@ -71,6 +71,12 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 	chanHead, cancel := HeaderSubscribeWithRetry(ctx, client)
 	defer cancel()
 
+	checkInterval := timeout / 5
+	if checkInterval > time.Second {
+		checkInterval = time.Second
+	}
+	timer := time.NewTimer(checkInterval)
+	defer timer.Stop()
 	for {
 		receipt, err := client.TransactionReceipt(ctx, txhash)
 		if err == nil && receipt != nil {
@@ -87,9 +93,10 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 				return receipt, nil
 			}
 		}
+		timer.Reset(checkInterval)
 		select {
 		case <-chanHead:
-		case <-time.After(timeout / 5):
+		case <-timer.C:
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
