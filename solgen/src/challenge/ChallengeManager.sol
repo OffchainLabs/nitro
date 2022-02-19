@@ -5,14 +5,18 @@ import "./ExecutionChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 import "./BlockChallenge.sol";
 import "./IBlockChallengeFactory.sol";
+import "./ChallengeCore.sol";
 
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract ChallengeManager {
     using BlockChallengeLib for BlockChallengeState;
+    using ChallengeCoreLib for BisectableChallengeState;
+
     IOneStepProofEntry public osp;
 
+    // TODO: is complete state useful? we delete when complete
     enum ChallengeTrackerState {
         PendingBlockChallenge,
         PendingExecutionChallenge,
@@ -28,10 +32,6 @@ contract ChallengeManager {
     }
     uint256 challengeCounter;
     mapping(uint256 => ChallengeTracker) public challenges;
-
-    // TODO: flatten execution challenge outside of block challenge? makes it easier to initialise it
-    // TODO: expose user functionality in manager
-    // TODO: think through challenge counter and different aggregates useful to surface (ie total challenges per user)
 
     constructor(IOneStepProofEntry osp_) {
         // TODO: does the challenge manager need to be behind a proxy in case there is a need to upgrade it?
@@ -69,6 +69,7 @@ contract ChallengeManager {
         newChall.trackerState = ChallengeTrackerState.PendingBlockChallenge;
         newChall.osp = osp;
         challengeCounter = currChallId++;
+        // TODO: should we emit an event here?
         return currChallId;
     }
 
@@ -94,7 +95,6 @@ contract ChallengeManager {
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
     ) external {
-        // TODO: do we need to validate that this is not empty?
         BlockChallengeLib.challengeExecution(
             challenges,
             challengeId,
@@ -140,13 +140,34 @@ contract ChallengeManager {
         uint256 challengePosition,
         bytes32[] calldata newSegments
     ) external {
-        // TODO: detect if execution or block
-
+        BisectableChallengeState storage bisectionState = getCurrentBisectionState(challengeId);
+        bisectionState.bisectExecution(
+            oldSegmentsStart,
+            oldSegmentsLength,
+            oldSegments,
+            challengePosition,
+            newSegments
+        );
     }
 
     function timeout(uint256 challengeId) external {
-        // TODO: detect if execution or block
+        BisectableChallengeState storage bisectionState = getCurrentBisectionState(challengeId);
+        bisectionState.timeout();
+    }
 
+    function getCurrentBisectionState(uint256 challengeId)
+        internal
+        view
+        returns (BisectableChallengeState storage)
+    {
+        ChallengeManager.ChallengeTracker storage currTrckr = challenges[challengeId];
+        ChallengeTrackerState currState = currTrckr.trackerState;
+        require(currState != ChallengeTrackerState.Complete, "CHALLENGE_ALREADY_COMPLETE");
+        
+        return
+            currState == ChallengeTrackerState.PendingBlockChallenge
+            ? currTrckr.blockChallState.bisectionState
+            : currTrckr.execChallState.bisectionState;
     }
 
     function clearChallenge(uint256 challengeId) external {
