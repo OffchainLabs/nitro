@@ -4,15 +4,31 @@ pragma solidity ^0.8.0;
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 
-abstract contract ChallengeCore {
+
+enum Turn {
+    NO_CHALLENGE,
+    ASSERTER,
+    CHALLENGER
+}
+
+struct BisectableChallengeState {
+    address asserter;
+    address challenger;
+    uint256 asserterTimeLeft;
+    uint256 challengerTimeLeft;
+    uint256 lastMoveTimestamp;
+    Turn turn;
+    bytes32 challengeStateHash;
+}
+
+string constant NO_TURN = "NO_TURN";
+uint256 constant MAX_CHALLENGE_DEGREE = 40;
+
+// TODO: use clearer name to differentiate from ChallengeLib.sol that is used for utils
+library ChallengeCoreLib {
+    using ChallengeCoreLib for BisectableChallengeState;
+
     event InitiatedChallenge();
-
-    enum Turn {
-        NO_CHALLENGE,
-        ASSERTER,
-        CHALLENGER
-    }
-
     event Bisected(
         bytes32 indexed challengeRoot,
         uint256 challengedSegmentStart,
@@ -22,68 +38,93 @@ abstract contract ChallengeCore {
     event AsserterTimedOut();
     event ChallengerTimedOut();
 
-    address public asserter;
-    address public challenger;
-
-    uint256 public asserterTimeLeft;
-    uint256 public challengerTimeLeft;
-    uint256 public lastMoveTimestamp;
-
-    Turn public turn;
-    bytes32 public challengeStateHash;
-
-    string constant NO_TURN = "NO_TURN";
-    uint256 constant MAX_CHALLENGE_DEGREE = 40;
-
-    IChallengeResultReceiver public resultReceiver;
-
-    modifier takeTurn() {
-        require(msg.sender == currentResponder(), "BIS_SENDER");
-        require(
-            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
-            "BIS_DEADLINE"
-        );
-
-        _;
-
-        if (turn == Turn.CHALLENGER) {
-            challengerTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.ASSERTER;
-        } else {
-            asserterTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.CHALLENGER;
-        }
-        lastMoveTimestamp = block.timestamp;
+    function emptyBisectionState() internal pure returns (BisectableChallengeState memory res) {
+        return res;
     }
 
-    function currentResponder() public view returns (address) {
-        if (turn == Turn.ASSERTER) {
-            return asserter;
-        } else if (turn == Turn.CHALLENGER) {
-            return challenger;
+    function isEmpty(BisectableChallengeState memory actual) internal pure returns (bool) {
+        BisectableChallengeState memory expected = emptyBisectionState();
+        return (
+            actual.asserter == expected.asserter &&
+            actual.challenger == expected.challenger &&
+            actual.challengeStateHash == expected.challengeStateHash
+        );
+    }
+
+    function createBisectableChallenge(
+        address _asserter,
+        address _challenger,
+        uint256 _asserterTimeLeft,
+        uint256 _challengerTimeLeft,
+        uint256 _lastMoveTimestamp,
+        Turn _turn,
+        bytes32 _challengeStateHash
+    ) internal pure returns (BisectableChallengeState memory) {
+        return BisectableChallengeState({
+            asserter: _asserter,
+            challenger: _challenger,
+            asserterTimeLeft: _asserterTimeLeft,
+            challengerTimeLeft: _challengerTimeLeft,
+            lastMoveTimestamp: _lastMoveTimestamp,
+            turn: _turn,
+            challengeStateHash: _challengeStateHash
+        });
+    }
+
+    function beforeTurn(BisectableChallengeState memory currChallenge) internal view {
+        require(msg.sender == currChallenge.currentResponder(), "BIS_SENDER");
+        require(
+            block.timestamp - currChallenge.lastMoveTimestamp <= currChallenge.currentResponderTimeLeft(),
+            "BIS_DEADLINE"
+        );
+    }
+
+    function afterTurn(BisectableChallengeState memory currChallenge) internal view {
+        if (currChallenge.turn == Turn.CHALLENGER) {
+            currChallenge.challengerTimeLeft -= block.timestamp - currChallenge.lastMoveTimestamp;
+            currChallenge.turn = Turn.ASSERTER;
+        } else {
+            currChallenge.asserterTimeLeft -= block.timestamp - currChallenge.lastMoveTimestamp;
+            currChallenge.turn = Turn.CHALLENGER;
+        }
+        currChallenge.lastMoveTimestamp = block.timestamp;
+    }
+
+    modifier takeTurn(BisectableChallengeState memory currChallenge) {
+        currChallenge.beforeTurn();
+        _;
+        currChallenge.afterTurn();
+    }
+
+    function currentResponder(BisectableChallengeState memory currChallenge) internal pure returns (address) {
+        if (currChallenge.turn == Turn.ASSERTER) {
+            return currChallenge.asserter;
+        } else if (currChallenge.turn == Turn.CHALLENGER) {
+            return currChallenge.challenger;
         } else {
             revert(NO_TURN);
         }
     }
 
-    function currentResponderTimeLeft() public view returns (uint256) {
-        if (turn == Turn.ASSERTER) {
-            return asserterTimeLeft;
-        } else if (turn == Turn.CHALLENGER) {
-            return challengerTimeLeft;
+    function currentResponderTimeLeft(BisectableChallengeState memory currChallenge) internal pure returns (uint256) {
+        if (currChallenge.turn == Turn.ASSERTER) {
+            return currChallenge.asserterTimeLeft;
+        } else if (currChallenge.turn == Turn.CHALLENGER) {
+            return currChallenge.challengerTimeLeft;
         } else {
             revert(NO_TURN);
         }
     }
 
     function extractChallengeSegment(
+        BisectableChallengeState memory currChallenge,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
         uint256 challengePosition
-    ) internal view returns (uint256 segmentStart, uint256 segmentLength) {
+    ) internal pure returns (uint256 segmentStart, uint256 segmentLength) {
         require(
-            challengeStateHash ==
+            currChallenge.challengeStateHash ==
                 ChallengeLib.hashChallengeState(
                     oldSegmentsStart,
                     oldSegmentsLength,
@@ -112,16 +153,18 @@ abstract contract ChallengeCore {
      * or follows another execution objection
      */
     function bisectExecution(
+        BisectableChallengeState memory currChallenge,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes32[] calldata newSegments
-    ) external takeTurn {
+    ) external takeTurn(currChallenge) {
         (
             uint256 challengeStart,
             uint256 challengeLength
-        ) = extractChallengeSegment(
+        ) = ChallengeCoreLib.extractChallengeSegment(
+                currChallenge,
                 oldSegmentsStart,
                 oldSegmentsLength,
                 oldSegments,
@@ -143,45 +186,48 @@ abstract contract ChallengeCore {
 
         require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
 
-        challengeStateHash = ChallengeLib.hashChallengeState(
+        bytes32 newChallengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
             challengeLength,
             newSegments
         );
+        currChallenge.challengeStateHash = newChallengeStateHash;
 
         emit Bisected(
-            challengeStateHash,
+            newChallengeStateHash,
             challengeStart,
             challengeLength,
             newSegments
         );
     }
 
-    function timeout() external {
-        uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
+    function timeout(BisectableChallengeState memory currChallenge) external {
+        uint256 timeSinceLastMove = block.timestamp - currChallenge.lastMoveTimestamp;
         require(
-            timeSinceLastMove > currentResponderTimeLeft(),
+            timeSinceLastMove > currChallenge.currentResponderTimeLeft(),
             "TIMEOUT_DEADLINE"
         );
 
-        if (turn == Turn.ASSERTER) {
+        if (currChallenge.turn == Turn.ASSERTER) {
             emit AsserterTimedOut();
-            _challengerWin();
-        } else if (turn == Turn.CHALLENGER) {
+            _challengerWin(currChallenge);
+        } else if (currChallenge.turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
-            _asserterWin();
+            _asserterWin(currChallenge);
         } else {
             revert(NO_TURN);
         }
     }
 
-    function _asserterWin() private {
-        turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(asserter, challenger);
+    function _asserterWin(BisectableChallengeState memory currChallenge) private pure {
+        currChallenge.turn = Turn.NO_CHALLENGE;
+        // TODO: manage result without callback
+        // currChallenge.resultReceiver.completeChallenge(currChallenge.asserter, currChallenge.challenger);
     }
 
-    function _challengerWin() private {
-        turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(challenger, asserter);
+    function _challengerWin(BisectableChallengeState memory currChallenge) private pure {
+        currChallenge.turn = Turn.NO_CHALLENGE;
+        // TODO: manage result without callback
+        // currChallenge.resultReceiver.completeChallenge(currChallenge.challenger, currChallenge.asserter);
     }
 }

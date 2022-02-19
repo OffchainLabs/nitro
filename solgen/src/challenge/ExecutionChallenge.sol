@@ -8,15 +8,40 @@ import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
 
-contract ExecutionChallenge is ChallengeCore, DelegateCallAware, IChallenge {
+
+struct ExecutionChallengeState {
+    BisectableChallengeState bisectionState;
+    IOneStepProofEntry osp;
+    ExecutionContext execCtx;
+}
+
+library ExecutionChallengeLib {
+    using ChallengeCoreLib for BisectableChallengeState;
+
     event OneStepProofCompleted();
 
-    IOneStepProofEntry public osp;
-    ExecutionContext public execCtx;
+    modifier takeTurn(ExecutionChallengeState memory currChallenge) {
+        currChallenge.bisectionState.beforeTurn();
+        _;
+        currChallenge.bisectionState.afterTurn();
+    }
 
-    function initialize(
+    function emptyExecutionState() internal pure returns (ExecutionChallengeState memory res) {
+        return res;
+    }
+
+    function isEmpty(ExecutionChallengeState memory actual) internal pure returns (bool) {
+        ExecutionChallengeState memory expected = emptyExecutionState();
+        return (
+            actual.bisectionState.isEmpty() &&
+            actual.execCtx.maxInboxMessagesRead == expected.execCtx.maxInboxMessagesRead &&
+            actual.execCtx.sequencerInbox == expected.execCtx.sequencerInbox &&
+            actual.osp == expected.osp
+        );
+    }
+
+    function createExecutionChallenge(
         IOneStepProofEntry osp_,
-        IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,
         uint256 challenge_length,
@@ -24,41 +49,47 @@ contract ExecutionChallenge is ChallengeCore, DelegateCallAware, IChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) public onlyDelegated {
-        require(address(resultReceiver) == address(0), "ALREADY_INIT");
-        require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
+    ) internal returns (ExecutionChallengeState memory) {
         require(challenge_length <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
-        osp = osp_;
-        resultReceiver = resultReceiver_;
-        execCtx = execCtx_;
+
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        challengeStateHash = ChallengeLib.hashChallengeState(0, challenge_length, segments);
-        asserter = asserter_;
-        challenger = challenger_;
-        asserterTimeLeft = asserterTimeLeft_;
-        challengerTimeLeft = challengerTimeLeft_;
-        lastMoveTimestamp = block.timestamp;
-        turn = Turn.CHALLENGER;
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, challenge_length, segments);
 
-        emit InitiatedChallenge();
-        emit Bisected(
+        emit ChallengeCoreLib.InitiatedChallenge();
+        emit ChallengeCoreLib.Bisected(
             challengeStateHash,
             0,
             challenge_length,
             segments
         );
+
+        BisectableChallengeState memory bisectionState = ChallengeCoreLib.createBisectableChallenge(
+            asserter_,
+            challenger_,
+            asserterTimeLeft_,
+            challengerTimeLeft_,
+            block.timestamp,
+            Turn.CHALLENGER,
+            challengeStateHash
+        );
+        return ExecutionChallengeState({
+            bisectionState: bisectionState,
+            execCtx: execCtx_,
+            osp: osp_
+        });
     }
 
     function oneStepProveExecution(
+        ExecutionChallengeState memory currChallenge,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes calldata proof
-    ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
+    ) internal takeTurn(currChallenge) {
+        (uint256 challengeStart, uint256 challengeLength) = currChallenge.bisectionState.extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,
@@ -66,8 +97,8 @@ contract ExecutionChallenge is ChallengeCore, DelegateCallAware, IChallenge {
         );
         require(challengeLength == 1, "TOO_LONG");
 
-        bytes32 afterHash = osp.proveOneStep(
-            execCtx,
+        bytes32 afterHash = currChallenge.osp.proveOneStep(
+            currChallenge.execCtx,
             challengeStart,
             oldSegments[challengePosition],
             proof
@@ -78,18 +109,19 @@ contract ExecutionChallenge is ChallengeCore, DelegateCallAware, IChallenge {
         );
 
         emit OneStepProofCompleted();
-        _currentWin();
+        _currentWin(currChallenge);
     }
 
-    function clearChallenge() external override {
-        require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        turn = Turn.NO_CHALLENGE;
+    function clearChallenge(ExecutionChallengeState memory currChallenge) internal pure {
+        // TODO: review this logic on how its triggered
+        // require(msg.sender == address(currChallenge.bisectionState.resultReceiver), "NOT_RES_RECEIVER");
+        currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
     }
 
-    function _currentWin() private {
+    function _currentWin(ExecutionChallengeState memory currChallenge) private pure {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout
-        challengeStateHash = bytes32(0);
+        currChallenge.bisectionState.challengeStateHash = bytes32(0);
 
         // if (turn == Turn.ASSERTER) {
         //     _asserterWin();

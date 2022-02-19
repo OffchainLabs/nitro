@@ -9,27 +9,31 @@ import "./IBlockChallengeFactory.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ChallengeManager is IExecutionChallengeFactory, IBlockChallengeFactory {
+contract ChallengeManager {
+    using BlockChallengeLib for BlockChallengeState;
     IOneStepProofEntry public osp;
-    UpgradeableBeacon public executionBeacon;
-    UpgradeableBeacon public blockBeacon;
+
+    struct ChallengeTracker {
+        BlockChallengeState challengeState;
+        IChallengeResultReceiver resultReceiver;
+    }
+    uint256 challengeCounter;
+    mapping(uint256 => ChallengeTracker) public challenges;
+
+    // TODO: flatten execution challenge outside of block challenge? makes it easier to initialise it
+    // TODO: expose user functionality in manager
+    // TODO: think through challenge counter and different aggregates useful to surface (ie total challenges per user)
 
     constructor(IOneStepProofEntry osp_) {
         // TODO: does the challenge manager need to be behind a proxy in case there is a need to upgrade it?
         // Instead, migrating to a new `challengeFactory` in the rollup might work.
         // For ongoing challenges, the admin can `forceResolveChallenge` if need be.
 		osp = osp_;
-        address execChallengeTemplate = address(new ExecutionChallenge());
-        executionBeacon = new UpgradeableBeacon(execChallengeTemplate);
-        executionBeacon.transferOwnership(msg.sender);
-
-        address blockChallengeTemplate = address(new BlockChallenge());
-        blockBeacon = new UpgradeableBeacon(blockChallengeTemplate);
-        blockBeacon.transferOwnership(msg.sender);
     }
 
+    /// @dev this is called by the rollup
     function createBlockChallenge(
-        ChallengeContracts calldata contractAddresses,
+        IBlockChallengeFactory.ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] calldata startAndEndMachineStatuses_,
         GlobalState[2] calldata startAndEndGlobalStates_,
@@ -38,10 +42,10 @@ contract ChallengeManager is IExecutionChallengeFactory, IBlockChallengeFactory 
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external override returns (IChallenge) {
-        address clone = address(new BeaconProxy(address(blockBeacon), ""));
-        BlockChallenge(clone).initialize(
-            IExecutionChallengeFactory(this),
+    ) external returns (uint256) {
+        uint256 currChallId = challengeCounter;
+        ChallengeTracker storage newChall = challenges[currChallId];
+        newChall.challengeState.createBlockChallenge(
             contractAddresses,
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
@@ -52,31 +56,8 @@ contract ChallengeManager is IExecutionChallengeFactory, IBlockChallengeFactory 
             asserterTimeLeft_,
             challengerTimeLeft_
         );
-        return IChallenge(clone);
-    }
-
-    function createExecChallenge(
-        IChallengeResultReceiver resultReceiver_,
-        ExecutionContext memory execCtx_,
-        bytes32[2] memory startAndEndHashes,
-        uint256 challenge_length_,
-        address asserter_,
-        address challenger_,
-        uint256 asserterTimeLeft_,
-        uint256 challengerTimeLeft_
-    ) external override returns (IChallenge) {
-        address clone = address(new BeaconProxy(address(executionBeacon), ""));
-        ExecutionChallenge(clone).initialize(
-            osp,
-            resultReceiver_,
-            execCtx_,
-            startAndEndHashes,
-            challenge_length_,
-            asserter_,
-            challenger_,
-            asserterTimeLeft_,
-            challengerTimeLeft_
-        );
-        return IChallenge(clone);
+        newChall.resultReceiver = contractAddresses.resultReceiver;
+        challengeCounter = currChallId++;
+        return currChallId;
     }
 }

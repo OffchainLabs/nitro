@@ -319,6 +319,7 @@ abstract contract AbsRollupUserLogic is
             "CHAL_HASH2"
         );
 
+        // TODO: benchmark cost of reading from same storage slot twice `node1.prevNum`
         // Calculate upper limit for allowed node proposal time:
         uint256 commonEndTime = getNodeStorage(node1.prevNum).firstChildBlock +
             // Dispute start: dispute timer for a node starts when its first child is created

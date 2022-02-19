@@ -6,31 +6,34 @@ import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
-import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "./IExecutionChallengeFactory.sol";
+import "./ExecutionChallenge.sol";
 import "./IBlockChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultReceiver, IChallenge {
+
+struct BlockChallengeState {
+    BisectableChallengeState bisectionState;
+    ExecutionChallengeState executionChallenge;
+    bytes32 wasmModuleRoot;
+    GlobalState[2] startAndEndGlobalStates;
+    uint256 executionChallengeAtSteps;
+    ISequencerInbox sequencerInbox;
+    IBridge delayedBridge;
+}
+
+
+library BlockChallengeLib {
+    using ExecutionChallengeLib for ExecutionChallengeState;
+    using BlockChallengeLib for BlockChallengeState;
+    using ChallengeCoreLib for BisectableChallengeState;
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
-    event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
+    event ExecutionChallengeBegun(uint256 challengeId, uint256 blockSteps);
 
-    IExecutionChallengeFactory public executionChallengeFactory;
 
-    bytes32 public wasmModuleRoot;
-    GlobalState[2] internal startAndEndGlobalStates;
-
-    IChallenge public executionChallenge;
-    uint256 public executionChallengeAtSteps;
-
-    ISequencerInbox public sequencerInbox;
-    IBridge public delayedBridge;
-
-    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
-    function initialize(
-        IExecutionChallengeFactory executionChallengeFactory_,
+    function createBlockChallenge(
+        BlockChallengeState storage storagePointer,
         IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
@@ -40,46 +43,47 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external onlyDelegated {
-        require(address(resultReceiver) == address(0), "ALREADY_INIT");
-        require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
-        executionChallengeFactory = executionChallengeFactory_;
-        resultReceiver = IChallengeResultReceiver(contractAddresses.resultReceiver);
-        sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
-        delayedBridge = IBridge(contractAddresses.delayedBridge);
-        wasmModuleRoot = wasmModuleRoot_;
-        startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
-        startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        asserter = asserter_;
-        challenger = challenger_;
-        asserterTimeLeft = asserterTimeLeft_;
-        challengerTimeLeft = challengerTimeLeft_;
-        lastMoveTimestamp = block.timestamp;
-        turn = Turn.CHALLENGER;
+    ) internal {
+        // We need to use a storagePointer since solidity can't copy startAndEndGlobalStates_ from mem to state
+        bytes32 challengeStateHash;
+        {
+            bytes32[] memory segments = new bytes32[](2);
+            segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
+            segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
+            challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
+            
+            emit ChallengeCoreLib.InitiatedChallenge();
+            emit ChallengeCoreLib.Bisected(
+                challengeStateHash,
+                0,
+                numBlocks,
+                segments
+            );
+        }
 
-        bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
-        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
-        challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
-
-        emit InitiatedChallenge();
-        emit Bisected(
-            challengeStateHash,
-            0,
-            numBlocks,
-            segments
+        BisectableChallengeState memory bisectionState = ChallengeCoreLib.createBisectableChallenge(
+            asserter_,
+            challenger_,
+            asserterTimeLeft_,
+            challengerTimeLeft_,
+            block.timestamp,
+            Turn.CHALLENGER,
+            challengeStateHash
         );
-    }
 
-    function getStartGlobalState() external view returns (GlobalState memory) {
-        return startAndEndGlobalStates[0];
-    }
-
-    function getEndGlobalState() external view returns (GlobalState memory) {
-        return startAndEndGlobalStates[1];
+        storagePointer.bisectionState = bisectionState;
+        storagePointer.wasmModuleRoot = wasmModuleRoot_;
+        storagePointer.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
+        storagePointer.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
+        storagePointer.executionChallenge = ExecutionChallengeLib.emptyExecutionState();
+        // TODO: validate this value before using
+        storagePointer.executionChallengeAtSteps = 0;
+        storagePointer.sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
+        storagePointer.delayedBridge = IBridge(contractAddresses.delayedBridge);
     }
 
     function challengeExecution(
+        BlockChallengeState memory currChallenge,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
@@ -87,15 +91,15 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
-    ) external {
-        require(msg.sender == currentResponder(), "EXEC_SENDER");
+    ) internal {
+        require(msg.sender == currChallenge.bisectionState.currentResponder(), "EXEC_SENDER");
         require(
-            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
+            block.timestamp - currChallenge.bisectionState.lastMoveTimestamp <= currChallenge.bisectionState.currentResponderTimeLeft(),
             "EXEC_DEADLINE"
         );
 
         uint256 challengeLength;
-        (executionChallengeAtSteps, challengeLength) = extractChallengeSegment(
+        (currChallenge.executionChallengeAtSteps, challengeLength) = currChallenge.bisectionState.extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,
@@ -103,18 +107,18 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         );
         require(challengeLength == 1, "TOO_LONG");
 
-        address newAsserter = asserter;
-        address newChallenger = challenger;
-        uint256 newAsserterTimeLeft = asserterTimeLeft;
-        uint256 newChallengerTimeLeft = challengerTimeLeft;
+        address newAsserter = currChallenge.bisectionState.asserter;
+        address newChallenger = currChallenge.bisectionState.challenger;
+        uint256 newAsserterTimeLeft = currChallenge.bisectionState.asserterTimeLeft;
+        uint256 newChallengerTimeLeft = currChallenge.bisectionState.challengerTimeLeft;
 
-        if (turn == Turn.CHALLENGER) {
+        if (currChallenge.bisectionState.turn == Turn.CHALLENGER) {
             (newAsserter, newChallenger) = (newChallenger, newAsserter);
             (newAsserterTimeLeft, newChallengerTimeLeft) = (
                 newChallengerTimeLeft,
                 newAsserterTimeLeft
             );
-        } else if (turn != Turn.ASSERTER) {
+        } else if (currChallenge.bisectionState.turn != Turn.ASSERTER) {
             revert(NO_TURN);
         }
 
@@ -142,7 +146,7 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
                     globalStateHashes[0] == globalStateHashes[1],
                 "HALTED_CHANGE"
             );
-            _currentWin();
+            _currentWin(currChallenge);
             return;
         }
 
@@ -153,7 +157,8 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
 
         bytes32[2] memory startAndEndHashes;
         startAndEndHashes[0] = getStartMachineHash(
-            globalStateHashes[0]
+            globalStateHashes[0],
+            currChallenge.wasmModuleRoot
         );
         startAndEndHashes[1] = getEndMachineHash(
             machineStatuses[1],
@@ -161,13 +166,15 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         );
 
         ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: startAndEndGlobalStates[1].getInboxPosition(),
-            sequencerInbox: sequencerInbox,
-            delayedBridge: delayedBridge
+            maxInboxMessagesRead: currChallenge.startAndEndGlobalStates[1].getInboxPosition(),
+            sequencerInbox: currChallenge.sequencerInbox,
+            delayedBridge: currChallenge.delayedBridge
         });
 
-        executionChallenge = executionChallengeFactory.createExecChallenge(
-            this,
+        // TODO: read OSP from manager?
+        IOneStepProofEntry temp = IOneStepProofEntry(address(0));
+        currChallenge.executionChallenge = ExecutionChallengeLib.createExecutionChallenge(
+            temp,
             execCtx,
             startAndEndHashes,
             numSteps,
@@ -176,14 +183,15 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
             newAsserterTimeLeft,
             newChallengerTimeLeft
         );
-        turn = Turn.NO_CHALLENGE;
-
-        emit ExecutionChallengeBegun(executionChallenge, executionChallengeAtSteps);
+        currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
+        // TODO: create Id system for exec/block challenges
+        uint256 execChallId = 0;
+        emit ExecutionChallengeBegun(execChallId, currChallenge.executionChallengeAtSteps);
     }
 
-    function getStartMachineHash(bytes32 globalStateHash)
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot)
         internal
-        view
+        pure
         returns (bytes32)
     {
         ValueStack memory values;
@@ -239,33 +247,40 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         }
     }
 
-    function clearChallenge() external override {
-        require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        turn = Turn.NO_CHALLENGE;
-        if (address(executionChallenge) != address(0)) {
-            executionChallenge.clearChallenge();
+    // TODO: think through flow of clearing challenges, involves exec and block called by manager
+    function clearChallenge(BlockChallengeState memory blockChallengeState) internal pure {
+        // require(msg.sender == address(blockChallengeState.bisectionState.resultReceiver), "NOT_RES_RECEIVER");
+        blockChallengeState.bisectionState.turn = Turn.NO_CHALLENGE;
+        if (blockChallengeState.executionChallenge.isEmpty()) {
+            blockChallengeState.executionChallenge.clearChallenge();
         }
     }
 
-    function completeChallenge(address winner, address loser)
-        external
-        override 
+    // TODO: this is a callback from execution challenge, manager needs to stich together
+    function completeChallenge(
+        BlockChallengeState memory currChallenge,
+        address /* winner */,
+        address /* loser */
+    )
+        internal pure
     {
-        require(msg.sender == address(executionChallenge), "NOT_EXEC_CHAL");
+        // TODO: this validation is now down by ChallengeManager
+        // require(msg.sender == address(currChallenge.bisectionState.executionChallenge), "NOT_EXEC_CHAL");
         // since this is being called by the execution challenge, 
         // and since we transition to NO_CHALLENGE when we create 
         // an execution challenge, that must mean the state is 
         // already NO_CHALLENGE. So we dont technically need to set that here.
         // However to guard against a possible future missed refactoring
         // it's probably safest to set it here anyway
-        if(turn != Turn.NO_CHALLENGE) turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(winner, loser);
+        if(currChallenge.bisectionState.turn != Turn.NO_CHALLENGE) currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
+        // TODO: flatten this out, since exec calls this, which then calls rollup
+        // currChallenge.bisectionState.resultReceiver.completeChallenge(winner, loser);
     }
 
-    function _currentWin() private {
+    function _currentWin(BlockChallengeState memory blockChallengeState) private pure {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout
-        challengeStateHash = bytes32(0);
+        blockChallengeState.bisectionState.challengeStateHash = bytes32(0);
 
         // if (turn == Turn.ASSERTER) {
         //     _asserterWin();
