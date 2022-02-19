@@ -6,7 +6,7 @@ import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
 interface IExecutionChallengeFactory {
-    function createChallenge(
+    function createExecChallenge(
         IChallengeResultReceiver resultReceiver_,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,

@@ -360,7 +360,7 @@ abstract contract AbsRollupUserLogic is
         uint256 challengerTimeLeft
     ) internal returns (IChallenge) {
         return
-            challengeFactory.createChallenge(
+            challengeFactory.createBlockChallenge(
                 IBlockChallengeFactory.ChallengeContracts({
                     resultReceiver: this,
                     sequencerInbox: sequencerBridge,

@@ -166,7 +166,7 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
             delayedBridge: delayedBridge
         });
 
-        executionChallenge = executionChallengeFactory.createChallenge(
+        executionChallenge = executionChallengeFactory.createExecChallenge(
             this,
             execCtx,
             startAndEndHashes,

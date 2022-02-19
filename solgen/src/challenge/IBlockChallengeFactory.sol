@@ -12,7 +12,7 @@ interface IBlockChallengeFactory {
         IBridge delayedBridge;
     }
 
-    function createChallenge(
+    function createBlockChallenge(
         ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
