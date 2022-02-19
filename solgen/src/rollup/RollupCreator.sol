@@ -85,7 +85,7 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), expectedRollupAddr);
+        ) = bridgeCreator.createBridge(address(frame.admin), expectedRollupAddr, config.sequencerInboxMaxTimeVariation);
 
         frame.admin.transferOwnership(config.owner);
 

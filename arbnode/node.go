@@ -187,7 +187,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	var confirmPeriodBlocks uint64 = 20
 	var extraChallengeTimeBlocks uint64 = 20
 	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(60 * 60 * 24 * 15),
+		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 		FutureBlocks:  big.NewInt(12),
 		DelaySeconds:  big.NewInt(60 * 60 * 24),
 		FutureSeconds: big.NewInt(60 * 60),
