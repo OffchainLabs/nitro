@@ -21,13 +21,14 @@ contract ChallengeManager is IChallengeManager {
         Complete
     }
 
+    // TODO: bubble up asserter/challenger and only store it once instead of twice
     struct ChallengeTracker {
         ChallengeTrackerState trackerState;
         BlockChallengeState blockChallState;
         ExecutionChallengeState execChallState;
         IChallengeResultReceiver resultReceiver;
         IOneStepProofEntry osp;
-        address winner;
+        ChallengeWinner winner;
     }
     uint256 challengeCounter;
     mapping(uint256 => ChallengeTracker) public challenges;
@@ -53,6 +54,7 @@ contract ChallengeManager is IChallengeManager {
     ) external override returns (uint256) {
         // we never use chall id of 0 to avoid mistakes with mapping default value
         uint256 currChallId = challengeCounter + 1;
+        challengeCounter = currChallId;
         ChallengeTracker storage currTrckr = challenges[currChallId];
         BlockChallengeLib.createBlockChallenge(
             currTrckr.blockChallState,
@@ -69,9 +71,7 @@ contract ChallengeManager is IChallengeManager {
         currTrckr.resultReceiver = contractAddresses.resultReceiver;
         currTrckr.trackerState = ChallengeTrackerState.PendingBlockChallenge;
         currTrckr.osp = osp;
-        currTrckr.winner = address(0);
-        challengeCounter = currChallId;
-        // TODO: should we emit an event here?
+        currTrckr.winner = ChallengeWinner.NoWinner;
         return currChallId;
     }
 
@@ -154,8 +154,12 @@ contract ChallengeManager is IChallengeManager {
 
     function timeout(uint256 challengeId) external {
         BisectableChallengeState storage bisectionState = getCurrentBisectionState(challengeId);
-        address winner = bisectionState.timeout();
+        
+        ChallengeWinner winner = bisectionState.timeout();
+        
+        bisectionState.turn = Turn.NO_CHALLENGE;
         challenges[challengeId].winner = winner;
+        challenges[challengeId].trackerState = ChallengeTrackerState.Complete;
     }
 
     function getCurrentBisectionState(uint256 challengeId)
@@ -176,9 +180,10 @@ contract ChallengeManager is IChallengeManager {
     function challengeWinner(uint256 challengeId) external view override returns (address winner) {
         ChallengeTracker storage currTrckr = challenges[challengeId];
         require(currTrckr.trackerState == ChallengeTrackerState.Complete, "NOT_COMPLETE");
-        winner = currTrckr.winner;
-        require(winner != address(0), "NO_WINNER");
-        return winner;
+        return
+            currTrckr.winner == ChallengeWinner.AsserterWin
+            ? currTrckr.blockChallState.bisectionState.asserter
+            : currTrckr.blockChallState.bisectionState.challenger;
     }
 
     function clearChallenge(uint256 challengeId) external override {

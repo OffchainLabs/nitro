@@ -4,6 +4,11 @@ pragma solidity ^0.8.0;
 import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 
+enum ChallengeWinner {
+    NoWinner,
+    AsserterWin,
+    ChallengerWin
+}
 
 enum Turn {
     NO_CHALLENGE,
@@ -188,7 +193,7 @@ library ChallengeCoreLib {
         );
     }
 
-    function timeout(BisectableChallengeState storage currChallenge) internal returns (address winner) {
+    function timeout(BisectableChallengeState storage currChallenge) internal returns (ChallengeWinner winner) {
         uint256 timeSinceLastMove = block.timestamp - currChallenge.lastMoveTimestamp;
         require(
             timeSinceLastMove > currChallenge.currentResponderTimeLeft(),
@@ -196,12 +201,10 @@ library ChallengeCoreLib {
         );
         if (currChallenge.turn == Turn.ASSERTER) {
             emit AsserterTimedOut();
-            currChallenge.turn = Turn.NO_CHALLENGE;
-            return currChallenge.challenger;
+            return ChallengeWinner.ChallengerWin;
         } else if (currChallenge.turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
-            currChallenge.turn = Turn.NO_CHALLENGE;
-            return currChallenge.asserter;
+            return ChallengeWinner.AsserterWin;
         } else {
             revert(NO_TURN);
         }
