@@ -25,7 +25,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         rollupEventBridge.rollupInitialized(config.owner, config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
-        challengeFactory = connectedContracts.blockChallengeFactory;
+        challengeManager = connectedContracts.challengeManager;
 
         Node memory node = createInitialNode();
         initializeCore(node);
@@ -261,13 +261,11 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     {
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
-            IChallenge chall = inChallenge(stakerA[i], stakerB[i]);
-
-            require(address(0) != address(chall), "NOT_IN_CHALL");
+            uint256 challengeId = inChallenge(stakerA[i], stakerB[i]);
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
 
-            chall.clearChallenge();
+            challengeManager.clearChallenge(challengeId);
         }
         emit OwnerFunctionCalled(21);
     }

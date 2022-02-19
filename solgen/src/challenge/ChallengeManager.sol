@@ -2,21 +2,19 @@
 pragma solidity ^0.8.0;
 
 import "./ExecutionChallenge.sol";
-import "./IExecutionChallengeFactory.sol";
 import "./BlockChallenge.sol";
-import "./IBlockChallengeFactory.sol";
 import "./ChallengeCore.sol";
+import "./IChallengeManager.sol";
 
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ChallengeManager {
+contract ChallengeManager is IChallengeManager {
     using BlockChallengeLib for BlockChallengeState;
     using ChallengeCoreLib for BisectableChallengeState;
 
-    IOneStepProofEntry public osp;
+    IOneStepProofEntry public override osp;
 
-    // TODO: is complete state useful? we delete when complete
     enum ChallengeTrackerState {
         PendingBlockChallenge,
         PendingExecutionChallenge,
@@ -41,8 +39,8 @@ contract ChallengeManager {
     }
 
     /// @dev this is called by the rollup
-    function createBlockChallenge(
-        IBlockChallengeFactory.ChallengeContracts calldata contractAddresses,
+    function createChallenge(
+        ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] calldata startAndEndMachineStatuses_,
         GlobalState[2] calldata startAndEndGlobalStates_,
@@ -51,10 +49,12 @@ contract ChallengeManager {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external returns (uint256) {
-        uint256 currChallId = challengeCounter;
-        ChallengeTracker storage newChall = challenges[currChallId];
-        newChall.blockChallState.createBlockChallenge(
+    ) external override returns (uint256) {
+        // we never use chall id of 0 to avoid mistakes with mapping default value
+        uint256 currChallId = challengeCounter + 1;
+        ChallengeTracker storage currTrckr = challenges[currChallId];
+        BlockChallengeLib.createBlockChallenge(
+            currTrckr.blockChallState,
             contractAddresses,
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
@@ -65,10 +65,10 @@ contract ChallengeManager {
             asserterTimeLeft_,
             challengerTimeLeft_
         );
-        newChall.resultReceiver = contractAddresses.resultReceiver;
-        newChall.trackerState = ChallengeTrackerState.PendingBlockChallenge;
-        newChall.osp = osp;
-        challengeCounter = currChallId++;
+        currTrckr.resultReceiver = contractAddresses.resultReceiver;
+        currTrckr.trackerState = ChallengeTrackerState.PendingBlockChallenge;
+        currTrckr.osp = osp;
+        challengeCounter = currChallId;
         // TODO: should we emit an event here?
         return currChallId;
     }
@@ -160,7 +160,7 @@ contract ChallengeManager {
         view
         returns (BisectableChallengeState storage)
     {
-        ChallengeManager.ChallengeTracker storage currTrckr = challenges[challengeId];
+        ChallengeTracker storage currTrckr = challenges[challengeId];
         ChallengeTrackerState currState = currTrckr.trackerState;
         require(currState != ChallengeTrackerState.Complete, "CHALLENGE_ALREADY_COMPLETE");
         
@@ -170,9 +170,16 @@ contract ChallengeManager {
             : currTrckr.execChallState.bisectionState;
     }
 
-    function clearChallenge(uint256 challengeId) external {
-        require(msg.sender == address(challenges[challengeId].resultReceiver), "NOT_RES_RECEIVER");
-        delete challenges[challengeId];
+    function challengeWinner(uint256 challengeId) external view override returns (address) {
+        ChallengeTracker storage currTrckr = challenges[challengeId];
+        require(currTrckr.trackerState == ChallengeTrackerState.Complete, "NOT_COMPLETE");
+        // TODO: track winner
+        return address(0);
     }
 
+    function clearChallenge(uint256 challengeId) external override {
+        ChallengeTracker storage currTrckr = challenges[challengeId];
+        require(msg.sender == address(currTrckr.resultReceiver), "NOT_RES_RECEIVER");
+        delete challenges[challengeId];
+    }
 }

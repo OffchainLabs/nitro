@@ -1,7 +1,6 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/DelegateCallAware.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
@@ -19,20 +18,8 @@ library ExecutionChallengeLib {
 
     event OneStepProofCompleted();
 
-    function emptyExecutionState() internal pure returns (ExecutionChallengeState memory res) {
-        return res;
-    }
-
-    function isEmpty(ExecutionChallengeState memory actual) internal pure returns (bool) {
-        ExecutionChallengeState memory expected = emptyExecutionState();
-        return (
-            actual.bisectionState.isEmpty() &&
-            actual.execCtx.maxInboxMessagesRead == expected.execCtx.maxInboxMessagesRead &&
-            actual.execCtx.sequencerInbox == expected.execCtx.sequencerInbox
-        );
-    }
-
     function createExecutionChallenge(
+        ExecutionChallengeState storage currChallenge,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,
         uint256 challenge_length,
@@ -40,7 +27,7 @@ library ExecutionChallengeLib {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) internal returns (ExecutionChallengeState memory) {
+    ) internal {
         require(challenge_length <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
 
         bytes32[] memory segments = new bytes32[](2);
@@ -65,10 +52,8 @@ library ExecutionChallengeLib {
             Turn.CHALLENGER,
             challengeStateHash
         );
-        return ExecutionChallengeState({
-            bisectionState: bisectionState,
-            execCtx: execCtx_
-        });
+        currChallenge.bisectionState = bisectionState;
+        currChallenge.execCtx = execCtx_;
     }
 
     function oneStepProveExecution(

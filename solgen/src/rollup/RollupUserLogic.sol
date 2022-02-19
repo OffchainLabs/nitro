@@ -331,7 +331,7 @@ abstract contract AbsRollupUserLogic is
             return;
         }
         // Start a challenge between staker1 and staker2. Staker1 will defend the correctness of node1, and staker2 will challenge it.
-        IChallenge challengeAddress = createChallengeHelper(
+        uint256 challengeId = createChallengeHelper(
             stakers,
             machineStatuses,
             globalStates,
@@ -341,10 +341,10 @@ abstract contract AbsRollupUserLogic is
             commonEndTime - proposedTimes[1]
         ); // trusted external call
 
-        challengeStarted(stakers[0], stakers[1], challengeAddress);
+        challengeStarted(stakers[0], stakers[1], challengeId);
 
         emit RollupChallengeStarted(
-            challengeAddress,
+            challengeId,
             stakers[0],
             stakers[1],
             nodeNums[0]
@@ -359,10 +359,10 @@ abstract contract AbsRollupUserLogic is
         bytes32[2] calldata wasmModuleRoots,
         uint256 asserterTimeLeft,
         uint256 challengerTimeLeft
-    ) internal returns (IChallenge) {
+    ) internal returns (uint256) {
         return
-            challengeFactory.createBlockChallenge(
-                IBlockChallengeFactory.ChallengeContracts({
+            challengeManager.createChallenge(
+                ChallengeContracts({
                     resultReceiver: this,
                     sequencerInbox: sequencerBridge,
                     delayedBridge: delayedBridge
@@ -388,13 +388,11 @@ abstract contract AbsRollupUserLogic is
         override
         whenNotPaused
     {
-        // Only the challenge contract can call this to declare the winner and loser
-        require(
-            msg.sender == address(inChallenge(winningStaker, losingStaker)),
-            "WRONG_SENDER"
-        );
-
+        uint256 challengeId = inChallenge(winningStaker, losingStaker);
+        address actualWinner = challengeManager.challengeWinner(challengeId);
+        require(winningStaker == actualWinner, "NOT_ACTUAL_WINNER");
         completeChallengeImpl(winningStaker, losingStaker);
+        challengeManager.clearChallenge(challengeId);
     }
 
     function completeChallengeImpl(address winningStaker, address losingStaker)
@@ -617,7 +615,7 @@ abstract contract AbsRollupUserLogic is
     function requireUnchallengedStaker(address stakerAddress) private view {
         require(isStaked(stakerAddress), "NOT_STAKED");
         require(
-            address(currentChallenge(stakerAddress)) == address(0),
+            currentChallenge(stakerAddress) == 0,
             "IN_CHAL"
         );
     }

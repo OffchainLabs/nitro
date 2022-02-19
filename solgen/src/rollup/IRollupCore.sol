@@ -31,7 +31,7 @@ interface IRollupCore {
             uint64,
             uint64,
             uint256,
-            IChallenge,
+            uint256,
             bool
         );
 
@@ -56,7 +56,7 @@ interface IRollupCore {
     event NodeRejected(uint64 indexed nodeNum);
 
     event RollupChallengeStarted(
-        IChallenge indexed challengeContract,
+        uint256 indexed challengeId,
         address asserter,
         address challenger,
         uint64 challengedNode
@@ -106,7 +106,7 @@ interface IRollupCore {
      * @param staker Staker address to lookup
      * @return Current challenge of the staker
      */
-    function currentChallenge(address staker) external view returns (IChallenge);
+    function currentChallenge(address staker) external view returns (uint256);
 
     /**
      * @notice Get the amount staked of the given staker

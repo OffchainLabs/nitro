@@ -1,15 +1,14 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/DelegateCallAware.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./IChallenge.sol";
 import "./ExecutionChallenge.sol";
-import "./IBlockChallengeFactory.sol";
 import "./ChallengeManager.sol";
+import { ChallengeContracts } from "./IChallengeManager.sol";
 
 struct BlockChallengeState {
     BisectableChallengeState bisectionState;
@@ -20,9 +19,7 @@ struct BlockChallengeState {
     IBridge delayedBridge;
 }
 
-
 library BlockChallengeLib {
-    using BlockChallengeLib for BlockChallengeState;
     using ChallengeCoreLib for BisectableChallengeState;
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
@@ -31,8 +28,8 @@ library BlockChallengeLib {
 
 
     function createBlockChallenge(
-        BlockChallengeState storage storagePointer,
-        IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
+        BlockChallengeState storage currChallenge,
+        ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
@@ -42,7 +39,6 @@ library BlockChallengeLib {
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
     ) internal {
-        // We need to use a storagePointer since solidity can't copy startAndEndGlobalStates_ from mem to state
         bytes32 challengeStateHash;
         {
             bytes32[] memory segments = new bytes32[](2);
@@ -69,14 +65,13 @@ library BlockChallengeLib {
             challengeStateHash
         );
 
-        storagePointer.bisectionState = bisectionState;
-        storagePointer.wasmModuleRoot = wasmModuleRoot_;
-        storagePointer.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
-        storagePointer.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        // TODO: validate this value before using
-        storagePointer.executionChallengeAtSteps = 0;
-        storagePointer.sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
-        storagePointer.delayedBridge = IBridge(contractAddresses.delayedBridge);
+        currChallenge.bisectionState = bisectionState;
+        currChallenge.wasmModuleRoot = wasmModuleRoot_;
+        currChallenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
+        currChallenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
+        currChallenge.executionChallengeAtSteps = 0;
+        currChallenge.sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
+        currChallenge.delayedBridge = IBridge(contractAddresses.delayedBridge);
     }
 
     function challengeExecution(
@@ -178,8 +173,11 @@ library BlockChallengeLib {
             delayedBridge: currChallenge.delayedBridge
         });
 
+        // block bisection is now complete, so we create an execution challenge
+        currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
         currTrckr.trackerState = ChallengeManager.ChallengeTrackerState.PendingExecutionChallenge;
-        currTrckr.execChallState = ExecutionChallengeLib.createExecutionChallenge(
+        ExecutionChallengeLib.createExecutionChallenge(
+            currTrckr.execChallState,
             execCtx,
             startAndEndHashes,
             numSteps,
@@ -188,7 +186,6 @@ library BlockChallengeLib {
             newAsserterTimeLeft,
             newChallengerTimeLeft
         );
-        currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
         // TODO: should we emit the challenge id here? could be useful, but validator should already have it laying around
         emit ExecutionChallengeBegun(currChallenge.executionChallengeAtSteps);
     }

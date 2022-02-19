@@ -38,19 +38,6 @@ library ChallengeCoreLib {
     event AsserterTimedOut();
     event ChallengerTimedOut();
 
-    function emptyBisectionState() internal pure returns (BisectableChallengeState memory res) {
-        return res;
-    }
-
-    function isEmpty(BisectableChallengeState memory actual) internal pure returns (bool) {
-        BisectableChallengeState memory expected = emptyBisectionState();
-        return (
-            actual.asserter == expected.asserter &&
-            actual.challenger == expected.challenger &&
-            actual.challengeStateHash == expected.challengeStateHash
-        );
-    }
-
     function createBisectableChallenge(
         address _asserter,
         address _challenger,
