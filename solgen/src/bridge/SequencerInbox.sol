@@ -9,6 +9,7 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
+import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -22,12 +23,9 @@ contract SequencerInbox is ISequencerInbox {
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
-
+    
     /// @dev The size of the batch header
     uint256 constant public HEADER_LENGTH = 40;
-
-    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
-    uint256 public constant MAX_DATA_SIZE = 117964;
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
@@ -59,18 +57,16 @@ contract SequencerInbox is ISequencerInbox {
         TimeBounds timeBounds
     );
 
-    function initialize(IBridge _delayedBridge, address rollup_) external {
+    function initialize(
+        IBridge _delayedBridge, 
+        address rollup_, 
+        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
+    ) external {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
         rollup = rollup_;
-
-        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 / 15,
-            futureBlocks: 12,
-            delaySeconds: 60 * 60 * 24,
-            futureSeconds: 60 * 60
-        });
+        maxTimeVariation = maxTimeVariation_;
     }
 
     function getTimeBounds() internal view returns (TimeBounds memory) {

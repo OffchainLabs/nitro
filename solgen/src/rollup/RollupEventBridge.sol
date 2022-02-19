@@ -23,14 +23,15 @@ import "./IRollupLogic.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
 import "../libraries/Cloneable.sol";
+import {
+    ROLLUP_PROTOCOL_EVENT_TYPE,
+    INITIALIZATION_MSG_TYPE
+} from "../libraries/MessageTypes.sol";
 
 /**
  * @title The inbox for rollup protocol events
  */
 contract RollupEventBridge is IMessageProvider, Cloneable {
-    uint8 internal constant INITIALIZATION_MSG_TYPE = 11;
-    uint8 internal constant ROLLUP_PROTOCOL_EVENT_TYPE = 8;
-
     uint8 internal constant CREATE_NODE_EVENT = 0;
     uint8 internal constant CONFIRM_NODE_EVENT = 1;
     uint8 internal constant REJECT_NODE_EVENT = 2;
