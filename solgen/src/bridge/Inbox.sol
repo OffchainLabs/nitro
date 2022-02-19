@@ -33,11 +33,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
 
     modifier onlyOwner() {
-        // the rollup contract owns the bridge
-        address bridgeowner = Bridge(address(bridge)).owner();
-        // we want to validate the owner of the rollup
-        //address owner = RollupBase(rollup).owner();
-        if(msg.sender != bridgeowner) revert NotOwner(msg.sender, bridgeowner);
+        // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
+        address bridgeOwner = Bridge(address(bridge)).owner();
+        if(msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
         _;
     }
 
