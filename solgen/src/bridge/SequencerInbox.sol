@@ -220,7 +220,6 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 afterAcc
             ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
         }
-        uint256 sequenceNumber = inboxAccs.length - 1;
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
