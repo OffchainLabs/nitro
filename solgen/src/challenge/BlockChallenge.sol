@@ -248,27 +248,6 @@ library BlockChallengeLib {
         }
     }
 
-    // TODO: this is a callback from execution challenge, manager needs to stich together
-    function completeChallenge(
-        BlockChallengeState memory currChallenge,
-        address /* winner */,
-        address /* loser */
-    )
-        internal pure
-    {
-        // TODO: this validation is now down by ChallengeManager
-        // require(msg.sender == address(currChallenge.bisectionState.executionChallenge), "NOT_EXEC_CHAL");
-        // since this is being called by the execution challenge, 
-        // and since we transition to NO_CHALLENGE when we create 
-        // an execution challenge, that must mean the state is 
-        // already NO_CHALLENGE. So we dont technically need to set that here.
-        // However to guard against a possible future missed refactoring
-        // it's probably safest to set it here anyway
-        if(currChallenge.bisectionState.turn != Turn.NO_CHALLENGE) currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
-        // TODO: flatten this out, since exec calls this, which then calls rollup
-        // currChallenge.bisectionState.resultReceiver.completeChallenge(winner, loser);
-    }
-
     function _currentWin(BlockChallengeState memory blockChallengeState) private pure {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout

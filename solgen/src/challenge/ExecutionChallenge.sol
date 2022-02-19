@@ -100,12 +100,6 @@ library ExecutionChallengeLib {
         currChallenge.bisectionState.afterTurn();
     }
 
-    function clearChallenge(ExecutionChallengeState memory currChallenge) internal pure {
-        // TODO: review this logic on how its triggered
-        // require(msg.sender == address(currChallenge.bisectionState.resultReceiver), "NOT_RES_RECEIVER");
-        currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
-    }
-
     function _currentWin(ExecutionChallengeState memory currChallenge) private pure {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout

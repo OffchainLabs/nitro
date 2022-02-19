@@ -27,6 +27,7 @@ contract ChallengeManager is IChallengeManager {
         ExecutionChallengeState execChallState;
         IChallengeResultReceiver resultReceiver;
         IOneStepProofEntry osp;
+        address winner;
     }
     uint256 challengeCounter;
     mapping(uint256 => ChallengeTracker) public challenges;
@@ -68,6 +69,7 @@ contract ChallengeManager is IChallengeManager {
         currTrckr.resultReceiver = contractAddresses.resultReceiver;
         currTrckr.trackerState = ChallengeTrackerState.PendingBlockChallenge;
         currTrckr.osp = osp;
+        currTrckr.winner = address(0);
         challengeCounter = currChallId;
         // TODO: should we emit an event here?
         return currChallId;
@@ -152,7 +154,8 @@ contract ChallengeManager is IChallengeManager {
 
     function timeout(uint256 challengeId) external {
         BisectableChallengeState storage bisectionState = getCurrentBisectionState(challengeId);
-        bisectionState.timeout();
+        address winner = bisectionState.timeout();
+        challenges[challengeId].winner = winner;
     }
 
     function getCurrentBisectionState(uint256 challengeId)
@@ -170,11 +173,12 @@ contract ChallengeManager is IChallengeManager {
             : currTrckr.execChallState.bisectionState;
     }
 
-    function challengeWinner(uint256 challengeId) external view override returns (address) {
+    function challengeWinner(uint256 challengeId) external view override returns (address winner) {
         ChallengeTracker storage currTrckr = challenges[challengeId];
         require(currTrckr.trackerState == ChallengeTrackerState.Complete, "NOT_COMPLETE");
-        // TODO: track winner
-        return address(0);
+        winner = currTrckr.winner;
+        require(winner != address(0), "NO_WINNER");
+        return winner;
     }
 
     function clearChallenge(uint256 challengeId) external override {

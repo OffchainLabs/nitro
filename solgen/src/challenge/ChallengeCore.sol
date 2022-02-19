@@ -146,7 +146,7 @@ library ChallengeCoreLib {
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes32[] calldata newSegments
-    ) external takeTurn(currChallenge) {
+    ) internal takeTurn(currChallenge) {
         (
             uint256 challengeStart,
             uint256 challengeLength
@@ -188,33 +188,22 @@ library ChallengeCoreLib {
         );
     }
 
-    function timeout(BisectableChallengeState memory currChallenge) external {
+    function timeout(BisectableChallengeState storage currChallenge) internal returns (address winner) {
         uint256 timeSinceLastMove = block.timestamp - currChallenge.lastMoveTimestamp;
         require(
             timeSinceLastMove > currChallenge.currentResponderTimeLeft(),
             "TIMEOUT_DEADLINE"
         );
-
         if (currChallenge.turn == Turn.ASSERTER) {
             emit AsserterTimedOut();
-            _challengerWin(currChallenge);
+            currChallenge.turn = Turn.NO_CHALLENGE;
+            return currChallenge.challenger;
         } else if (currChallenge.turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
-            _asserterWin(currChallenge);
+            currChallenge.turn = Turn.NO_CHALLENGE;
+            return currChallenge.asserter;
         } else {
             revert(NO_TURN);
         }
-    }
-
-    function _asserterWin(BisectableChallengeState memory currChallenge) private pure {
-        currChallenge.turn = Turn.NO_CHALLENGE;
-        // TODO: manage result without callback
-        // currChallenge.resultReceiver.completeChallenge(currChallenge.asserter, currChallenge.challenger);
-    }
-
-    function _challengerWin(BisectableChallengeState memory currChallenge) private pure {
-        currChallenge.turn = Turn.NO_CHALLENGE;
-        // TODO: manage result without callback
-        // currChallenge.resultReceiver.completeChallenge(currChallenge.challenger, currChallenge.asserter);
     }
 }
