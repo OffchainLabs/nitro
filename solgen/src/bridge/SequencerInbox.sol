@@ -223,7 +223,7 @@ contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
             beforeAcc,
             afterAcc,
             delayedAcc,
-            totalDelayedMessagesRead,
+            afterDelayedMessagesRead,
             timeBounds,
             BatchDataLocation.SeparateBatchEvent
         );
