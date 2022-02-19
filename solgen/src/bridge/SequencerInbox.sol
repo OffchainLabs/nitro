@@ -166,7 +166,7 @@ contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external refundsGas(gasRefunder) {
+    ) external refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
@@ -197,7 +197,7 @@ contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external override refundsGas(gasRefunder) {
+    ) external override refundsGasNoCalldata(gasRefunder, payable(msg.sender)) {
         require(
             isBatchPoster[msg.sender] || msg.sender == rollup,
             "NOT_BATCH_POSTER"

@@ -14,20 +14,30 @@ interface IGasRefunder {
 }
 
 abstract contract GasRefundEnabled {
-    modifier refundsGas(IGasRefunder gasRefunder) {
+    modifier refundsGasWithCalldata(IGasRefunder gasRefunder, address payable spender) {
         uint256 startGasLeft = gasleft();
-        
         _;
-
         if (address(gasRefunder) != address(0)) {
             uint256 calldataSize;
             assembly {
                 calldataSize := calldatasize()
             }
             gasRefunder.onGasSpent(
-                payable(msg.sender),
+                spender,
                 startGasLeft - gasleft(),
                 calldataSize
+            );
+        }
+    }
+
+    modifier refundsGasNoCalldata(IGasRefunder gasRefunder, address payable spender) {
+        uint256 startGasLeft = gasleft();
+        _;
+        if (address(gasRefunder) != address(0)) {
+            gasRefunder.onGasSpent(
+                spender,
+                startGasLeft - gasleft(),
+                0
             );
         }
     }
