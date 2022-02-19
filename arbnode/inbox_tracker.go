@@ -9,7 +9,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -335,7 +334,7 @@ type multiplexerBackend struct {
 	positionWithinMessage uint64
 
 	ctx    context.Context
-	client ethereum.ChainReader
+	client L1Interface
 	inbox  *InboxTracker
 }
 
@@ -375,7 +374,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.ChainReader, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client L1Interface, batches []*SequencerInboxBatch) error {
 	if len(batches) == 0 {
 		return nil
 	}

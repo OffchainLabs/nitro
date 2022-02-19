@@ -57,7 +57,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     );
 
     /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
-    event SequencerBatchData(bytes data);
+    event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
 
     function initialize(
         IBridge _delayedBridge, 
@@ -220,8 +220,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
                 afterAcc
             ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
         }
+        uint256 sequenceNumber = inboxAccs.length - 1;
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            sequenceNumber,
             beforeAcc,
             afterAcc,
             delayedAcc,
@@ -229,7 +230,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             timeBounds,
             BatchDataLocation.SeparateBatchEvent
         );
-        emit SequencerBatchData(data);
+        emit SequencerBatchData(sequenceNumber, data);
     }
 
     function packHeader(uint256 afterDelayedMessagesRead) internal view returns (bytes memory, TimeBounds memory) {
