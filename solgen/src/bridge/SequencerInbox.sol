@@ -8,7 +8,7 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
-import "../libraries/IGasRefunder.sol";
+import { GasRefundEnabled, IGasRefunder } from "../libraries/IGasRefunder.sol";
 import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 /**
@@ -18,7 +18,7 @@ import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
  * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
-contract SequencerInbox is ISequencerInbox {
+contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
@@ -38,6 +38,12 @@ contract SequencerInbox is ISequencerInbox {
         uint64 maxBlockNumber;
     }
 
+    enum BatchDataLocation {
+        TxInput,
+        SeparateBatchEvent,
+        DelayedInbox
+    }
+
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
         bytes32 indexed beforeAcc,
@@ -45,17 +51,11 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
         TimeBounds timeBounds,
-        bytes data
+        BatchDataLocation dataLocation
     );
 
-    event SequencerBatchDeliveredFromOrigin(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        TimeBounds timeBounds
-    );
+    /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
+    event SequencerBatchData(bytes data);
 
     function initialize(
         IBridge _delayedBridge, 
@@ -157,7 +157,7 @@ contract SequencerInbox is ISequencerInbox {
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds,
-            ""
+            BatchDataLocation.DelayedInbox
         );
     }
 
@@ -166,8 +166,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external {
-        uint256 startGasLeft = gasleft();
+    ) external refundsGas(gasRefunder) {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
@@ -182,26 +181,15 @@ contract SequencerInbox is ISequencerInbox {
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
-        emit SequencerBatchDeliveredFromOrigin(
+        emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
-            timeBounds
+            timeBounds,
+            BatchDataLocation.TxInput
         );
-
-        if (address(gasRefunder) != address(0)) {
-            uint256 calldataSize;
-            assembly {
-                calldataSize := calldatasize()
-            }
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                calldataSize
-            );
-        }
     }
 
     function addSequencerL2Batch(
@@ -209,8 +197,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external override {
-        uint256 startGasLeft = gasleft();
+    ) external override refundsGas(gasRefunder) {
         require(
             isBatchPoster[msg.sender] || msg.sender == rollup,
             "NOT_BATCH_POSTER"
@@ -236,18 +223,11 @@ contract SequencerInbox is ISequencerInbox {
             beforeAcc,
             afterAcc,
             delayedAcc,
-            afterDelayedMessagesRead,
+            totalDelayedMessagesRead,
             timeBounds,
-            data
+            BatchDataLocation.SeparateBatchEvent
         );
-
-        if (address(gasRefunder) != address(0)) {
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                0
-            );
-        }
+        emit SequencerBatchData(data);
     }
 
     function packHeader(uint256 afterDelayedMessagesRead) internal view returns (bytes memory, TimeBounds memory) {

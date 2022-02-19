@@ -12,3 +12,23 @@ interface IGasRefunder {
         uint256 calldataSize
     ) external returns (bool success);
 }
+
+abstract contract GasRefundEnabled {
+    modifier refundsGas(IGasRefunder gasRefunder) {
+        uint256 startGasLeft = gasleft();
+        
+        _;
+
+        if (address(gasRefunder) != address(0)) {
+            uint256 calldataSize;
+            assembly {
+                calldataSize := calldatasize()
+            }
+            gasRefunder.onGasSpent(
+                payable(msg.sender),
+                startGasLeft - gasleft(),
+                calldataSize
+            );
+        }
+    }
+}
