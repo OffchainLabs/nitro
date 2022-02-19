@@ -13,9 +13,18 @@ contract ChallengeManager {
     using BlockChallengeLib for BlockChallengeState;
     IOneStepProofEntry public osp;
 
+    enum ChallengeTrackerState {
+        PendingBlockChallenge,
+        PendingExecutionChallenge,
+        Complete
+    }
+
     struct ChallengeTracker {
-        BlockChallengeState challengeState;
+        ChallengeTrackerState trackerState;
+        BlockChallengeState blockChallState;
+        ExecutionChallengeState execChallState;
         IChallengeResultReceiver resultReceiver;
+        IOneStepProofEntry osp;
     }
     uint256 challengeCounter;
     mapping(uint256 => ChallengeTracker) public challenges;
@@ -45,7 +54,7 @@ contract ChallengeManager {
     ) external returns (uint256) {
         uint256 currChallId = challengeCounter;
         ChallengeTracker storage newChall = challenges[currChallId];
-        newChall.challengeState.createBlockChallenge(
+        newChall.blockChallState.createBlockChallenge(
             contractAddresses,
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
@@ -57,7 +66,92 @@ contract ChallengeManager {
             challengerTimeLeft_
         );
         newChall.resultReceiver = contractAddresses.resultReceiver;
+        newChall.trackerState = ChallengeTrackerState.PendingBlockChallenge;
+        newChall.osp = osp;
         challengeCounter = currChallId++;
         return currChallId;
     }
+
+    function getStartGlobalState(uint256 challengeId) external view returns (GlobalState memory) {
+        return challenges[challengeId].blockChallState.startAndEndGlobalStates[0];
+    }
+
+    function getEndGlobalState(uint256 challengeId) external view returns (GlobalState memory) {
+        return challenges[challengeId].blockChallState.startAndEndGlobalStates[1];
+    }
+
+    function getStartAndEndGlobalStates(uint256 challengeId) external view returns (GlobalState[2] memory) {
+        return challenges[challengeId].blockChallState.startAndEndGlobalStates;
+    }
+
+    function challengeExecution(
+        uint256 challengeId,
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition,
+        MachineStatus[2] calldata machineStatuses,
+        bytes32[2] calldata globalStateHashes,
+        uint256 numSteps
+    ) external {
+        // TODO: do we need to validate that this is not empty?
+        BlockChallengeLib.challengeExecution(
+            challenges,
+            challengeId,
+            oldSegmentsStart,
+            oldSegmentsLength,
+            oldSegments,
+            challengePosition,
+            machineStatuses,
+            globalStateHashes,
+            numSteps
+        );
+    }
+
+    function oneStepProveExecution(
+        uint256 challengeId,
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition,
+        bytes calldata proof
+    ) external {
+        ExecutionChallengeLib.oneStepProveExecution(
+            challenges,
+            challengeId,
+            oldSegmentsStart,
+            oldSegmentsLength,
+            oldSegments,
+            challengePosition,
+            proof
+        );
+    }
+
+    /**
+     * @notice Initiate the next round in the bisection by objecting to execution correctness with a bisection
+     * of an execution segment with the same length but a different endpoint. This is either the initial move
+     * or follows another execution objection
+     */
+    function bisectExecution(
+        uint256 challengeId,
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition,
+        bytes32[] calldata newSegments
+    ) external {
+        // TODO: detect if execution or block
+
+    }
+
+    function timeout(uint256 challengeId) external {
+        // TODO: detect if execution or block
+
+    }
+
+    function clearChallenge(uint256 challengeId) external {
+        require(msg.sender == address(challenges[challengeId].resultReceiver), "NOT_RES_RECEIVER");
+        delete challenges[challengeId];
+    }
+
 }

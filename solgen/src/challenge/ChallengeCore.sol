@@ -71,7 +71,7 @@ library ChallengeCoreLib {
         });
     }
 
-    function beforeTurn(BisectableChallengeState memory currChallenge) internal view {
+    function beforeTurn(BisectableChallengeState storage currChallenge) internal view {
         require(msg.sender == currChallenge.currentResponder(), "BIS_SENDER");
         require(
             block.timestamp - currChallenge.lastMoveTimestamp <= currChallenge.currentResponderTimeLeft(),
@@ -79,7 +79,7 @@ library ChallengeCoreLib {
         );
     }
 
-    function afterTurn(BisectableChallengeState memory currChallenge) internal view {
+    function afterTurn(BisectableChallengeState storage currChallenge) internal {
         if (currChallenge.turn == Turn.CHALLENGER) {
             currChallenge.challengerTimeLeft -= block.timestamp - currChallenge.lastMoveTimestamp;
             currChallenge.turn = Turn.ASSERTER;
@@ -90,7 +90,7 @@ library ChallengeCoreLib {
         currChallenge.lastMoveTimestamp = block.timestamp;
     }
 
-    modifier takeTurn(BisectableChallengeState memory currChallenge) {
+    modifier takeTurn(BisectableChallengeState storage currChallenge) {
         currChallenge.beforeTurn();
         _;
         currChallenge.afterTurn();
@@ -153,7 +153,7 @@ library ChallengeCoreLib {
      * or follows another execution objection
      */
     function bisectExecution(
-        BisectableChallengeState memory currChallenge,
+        BisectableChallengeState storage currChallenge,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,

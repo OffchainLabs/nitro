@@ -9,11 +9,10 @@ import "./ChallengeLib.sol";
 import "./IChallenge.sol";
 import "./ExecutionChallenge.sol";
 import "./IBlockChallengeFactory.sol";
-
+import "./ChallengeManager.sol";
 
 struct BlockChallengeState {
     BisectableChallengeState bisectionState;
-    ExecutionChallengeState executionChallenge;
     bytes32 wasmModuleRoot;
     GlobalState[2] startAndEndGlobalStates;
     uint256 executionChallengeAtSteps;
@@ -23,13 +22,12 @@ struct BlockChallengeState {
 
 
 library BlockChallengeLib {
-    using ExecutionChallengeLib for ExecutionChallengeState;
     using BlockChallengeLib for BlockChallengeState;
     using ChallengeCoreLib for BisectableChallengeState;
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
-    event ExecutionChallengeBegun(uint256 challengeId, uint256 blockSteps);
+    event ExecutionChallengeBegun(uint256 blockSteps);
 
 
     function createBlockChallenge(
@@ -75,7 +73,6 @@ library BlockChallengeLib {
         storagePointer.wasmModuleRoot = wasmModuleRoot_;
         storagePointer.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         storagePointer.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        storagePointer.executionChallenge = ExecutionChallengeLib.emptyExecutionState();
         // TODO: validate this value before using
         storagePointer.executionChallengeAtSteps = 0;
         storagePointer.sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
@@ -83,7 +80,8 @@ library BlockChallengeLib {
     }
 
     function challengeExecution(
-        BlockChallengeState memory currChallenge,
+        mapping(uint256 => ChallengeManager.ChallengeTracker) storage challenges,
+        uint256 challengeId,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
@@ -92,6 +90,15 @@ library BlockChallengeLib {
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
     ) internal {
+        // we pass the mapping and key instead of the struct since this uses less of the stack
+        ChallengeManager.ChallengeTracker storage currTrckr = challenges[challengeId];
+        require(
+            currTrckr.trackerState ==
+            ChallengeManager.ChallengeTrackerState.PendingBlockChallenge,
+            "NOT_BLOCK_CHALL"
+        );
+        BlockChallengeState storage currChallenge = currTrckr.blockChallState;
+
         require(msg.sender == currChallenge.bisectionState.currentResponder(), "EXEC_SENDER");
         require(
             block.timestamp - currChallenge.bisectionState.lastMoveTimestamp <= currChallenge.bisectionState.currentResponderTimeLeft(),
@@ -171,10 +178,8 @@ library BlockChallengeLib {
             delayedBridge: currChallenge.delayedBridge
         });
 
-        // TODO: read OSP from manager?
-        IOneStepProofEntry temp = IOneStepProofEntry(address(0));
-        currChallenge.executionChallenge = ExecutionChallengeLib.createExecutionChallenge(
-            temp,
+        currTrckr.trackerState = ChallengeManager.ChallengeTrackerState.PendingExecutionChallenge;
+        currTrckr.execChallState = ExecutionChallengeLib.createExecutionChallenge(
             execCtx,
             startAndEndHashes,
             numSteps,
@@ -184,9 +189,8 @@ library BlockChallengeLib {
             newChallengerTimeLeft
         );
         currChallenge.bisectionState.turn = Turn.NO_CHALLENGE;
-        // TODO: create Id system for exec/block challenges
-        uint256 execChallId = 0;
-        emit ExecutionChallengeBegun(execChallId, currChallenge.executionChallengeAtSteps);
+        // TODO: should we emit the challenge id here? could be useful, but validator should already have it laying around
+        emit ExecutionChallengeBegun(currChallenge.executionChallengeAtSteps);
     }
 
     function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot)
@@ -244,15 +248,6 @@ library BlockChallengeLib {
             return keccak256(abi.encodePacked("Machine too far:"));
         } else {
             revert("BAD_BLOCK_STATUS");
-        }
-    }
-
-    // TODO: think through flow of clearing challenges, involves exec and block called by manager
-    function clearChallenge(BlockChallengeState memory blockChallengeState) internal pure {
-        // require(msg.sender == address(blockChallengeState.bisectionState.resultReceiver), "NOT_RES_RECEIVER");
-        blockChallengeState.bisectionState.turn = Turn.NO_CHALLENGE;
-        if (blockChallengeState.executionChallenge.isEmpty()) {
-            blockChallengeState.executionChallenge.clearChallenge();
         }
     }
 

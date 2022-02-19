@@ -7,11 +7,10 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-
+import "./ChallengeManager.sol";
 
 struct ExecutionChallengeState {
     BisectableChallengeState bisectionState;
-    IOneStepProofEntry osp;
     ExecutionContext execCtx;
 }
 
@@ -19,12 +18,6 @@ library ExecutionChallengeLib {
     using ChallengeCoreLib for BisectableChallengeState;
 
     event OneStepProofCompleted();
-
-    modifier takeTurn(ExecutionChallengeState memory currChallenge) {
-        currChallenge.bisectionState.beforeTurn();
-        _;
-        currChallenge.bisectionState.afterTurn();
-    }
 
     function emptyExecutionState() internal pure returns (ExecutionChallengeState memory res) {
         return res;
@@ -35,13 +28,11 @@ library ExecutionChallengeLib {
         return (
             actual.bisectionState.isEmpty() &&
             actual.execCtx.maxInboxMessagesRead == expected.execCtx.maxInboxMessagesRead &&
-            actual.execCtx.sequencerInbox == expected.execCtx.sequencerInbox &&
-            actual.osp == expected.osp
+            actual.execCtx.sequencerInbox == expected.execCtx.sequencerInbox
         );
     }
 
     function createExecutionChallenge(
-        IOneStepProofEntry osp_,
         ExecutionContext memory execCtx_,
         bytes32[2] memory startAndEndHashes,
         uint256 challenge_length,
@@ -76,19 +67,30 @@ library ExecutionChallengeLib {
         );
         return ExecutionChallengeState({
             bisectionState: bisectionState,
-            execCtx: execCtx_,
-            osp: osp_
+            execCtx: execCtx_
         });
     }
 
     function oneStepProveExecution(
-        ExecutionChallengeState memory currChallenge,
+        mapping(uint256 => ChallengeManager.ChallengeTracker) storage challenges,
+        uint256 challengeId,
         uint256 oldSegmentsStart,
         uint256 oldSegmentsLength,
         bytes32[] calldata oldSegments,
         uint256 challengePosition,
         bytes calldata proof
-    ) internal takeTurn(currChallenge) {
+    ) internal {
+        ChallengeManager.ChallengeTracker storage currTrckr = challenges[challengeId];
+        require(
+            currTrckr.trackerState ==
+            ChallengeManager.ChallengeTrackerState.PendingExecutionChallenge,
+            "NOT_EXEC_CHALL"
+        );
+        ExecutionChallengeState storage currChallenge = currTrckr.execChallState;
+
+        // TODO: use takeTurn modifier if stack allows
+        currChallenge.bisectionState.beforeTurn();
+
         (uint256 challengeStart, uint256 challengeLength) = currChallenge.bisectionState.extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
@@ -97,7 +99,7 @@ library ExecutionChallengeLib {
         );
         require(challengeLength == 1, "TOO_LONG");
 
-        bytes32 afterHash = currChallenge.osp.proveOneStep(
+        bytes32 afterHash = currTrckr.osp.proveOneStep(
             currChallenge.execCtx,
             challengeStart,
             oldSegments[challengePosition],
@@ -110,6 +112,7 @@ library ExecutionChallengeLib {
 
         emit OneStepProofCompleted();
         _currentWin(currChallenge);
+        currChallenge.bisectionState.afterTurn();
     }
 
     function clearChallenge(ExecutionChallengeState memory currChallenge) internal pure {
