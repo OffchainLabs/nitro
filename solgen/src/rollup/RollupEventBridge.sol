@@ -22,7 +22,7 @@ import "./IRollupLogic.sol";
 
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
 import {
     ROLLUP_PROTOCOL_EVENT_TYPE,
     INITIALIZATION_MSG_TYPE
@@ -31,7 +31,7 @@ import {
 /**
  * @title The inbox for rollup protocol events
  */
-contract RollupEventBridge is IMessageProvider, Cloneable {
+contract RollupEventBridge is IMessageProvider, DelegateCallAware {
     uint8 internal constant CREATE_NODE_EVENT = 0;
     uint8 internal constant CONFIRM_NODE_EVENT = 1;
     uint8 internal constant REJECT_NODE_EVENT = 2;
@@ -45,7 +45,7 @@ contract RollupEventBridge is IMessageProvider, Cloneable {
         _;
     }
 
-    function initialize(address _bridge, address _rollup) external {
+    function initialize(address _bridge, address _rollup) external onlyDelegated {
         require(rollup == address(0), "ALREADY_INIT");
         bridge = IBridge(_bridge);
         rollup = _rollup;

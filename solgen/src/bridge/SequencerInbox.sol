@@ -8,7 +8,9 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
+
 import { GasRefundEnabled, IGasRefunder } from "../libraries/IGasRefunder.sol";
+import "../libraries/DelegateCallAware.sol";
 import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 /**
@@ -18,7 +20,7 @@ import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
  * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
-contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
+contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
@@ -61,7 +63,7 @@ contract SequencerInbox is ISequencerInbox, GasRefundEnabled {
         IBridge _delayedBridge, 
         address rollup_, 
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
-    ) external {
+    ) external onlyDelegated {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
