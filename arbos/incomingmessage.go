@@ -421,13 +421,13 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if err != nil {
 		return nil, err
 	}
-	maxGas, err := util.HashFromReader(rd)
+	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	maxGasBig := maxGas.Big()
-	if !maxGasBig.IsUint64() {
-		return nil, errors.New("gas too large")
+	gasLimitBig := gasLimit.Big()
+	if !gasLimitBig.IsUint64() {
+		return nil, errors.New("gas limit too large")
 	}
 	gasFeeCap, err := util.HashFromReader(rd)
 	if err != nil {
@@ -457,7 +457,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		From:              util.RemapL1Address(header.Poster),
 		DepositValue:      depositValue.Big(),
 		GasFeeCap:         gasFeeCap.Big(),
-		Gas:               maxGasBig.Uint64(),
+		Gas:               gasLimitBig.Uint64(),
 		To:                pDestAddr,
 		Value:             callvalue.Big(),
 		Beneficiary:       callvalueRefundAddress,
