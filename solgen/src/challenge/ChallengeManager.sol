@@ -80,7 +80,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
         segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
-        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         uint64 challengeIndex = ++totalChallengesCreated;
         // The following is an assertion since it should never be possible, but it's an important invariant
@@ -97,12 +96,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         challenge.lastMoveTimestamp = block.timestamp;
         challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.BLOCK;
-        challenge.challengeStateHash = challengeStateHash;
 
         emit InitiatedChallenge(challengeIndex);
-        emit Bisected(
+        completeBisection(
             challengeIndex,
-            challengeStateHash,
             0,
             numBlocks,
             segments
@@ -148,16 +145,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         require(selection.oldSegments[selection.challengePosition] == newSegments[0], "DIFF_START");
 
-        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
-            challengeStart,
-            challengeLength,
-            newSegments
-        );
-        challenge.challengeStateHash = challengeStateHash;
-
-        emit Bisected(
+        completeBisection(
             challengeIndex,
-            challengeStateHash,
             challengeStart,
             challengeLength,
             newSegments
@@ -227,15 +216,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps, segments);
 
         challenge.maxInboxMessages = challenge.maxInboxMessages;
-        challenge.challengeStateHash = challengeStateHash;
         challenge.mode = ChallengeMode.EXECUTION;
 
-        emit Bisected(
+        completeBisection(
             challengeIndex,
-            challengeStateHash,
             0,
             numSteps,
             segments
@@ -317,6 +303,28 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         } else {
             revert(NO_TURN);
         }
+    }
+
+    function completeBisection(
+        uint64 challengeIndex,
+        uint256 challengeStart,
+        uint256 challengeLength,
+        bytes32[] memory newSegments
+    ) private {
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
+            challengeStart,
+            challengeLength,
+            newSegments
+        );
+        challenges[challengeIndex].challengeStateHash = challengeStateHash;
+
+        emit Bisected(
+            challengeIndex,
+            challengeStateHash,
+            challengeStart,
+            challengeLength,
+            newSegments
+        );
     }
 
     function _asserterWin(Challenge storage challenge) private {
