@@ -8,8 +8,9 @@ pragma solidity ^0.8.4;
 import "./IBridge.sol";
 import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
+import "../libraries/DelegateCallAware.sol";
 
-contract Outbox is IOutbox {
+contract Outbox is DelegateCallAware, IOutbox {
     address public rollup;              // the rollup contract
     IBridge public bridge;              // the bridge contract
 
@@ -29,7 +30,7 @@ contract Outbox is IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    function initialize(address _rollup, IBridge _bridge) external {
+    function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
         if(rollup != address(0)) revert AlreadyInit();
         rollup = _rollup;
         bridge = _bridge;

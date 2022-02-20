@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*
- * Copyright 2019, Offchain Labs, Inc.
+ * Copyright 2021, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
-interface ICloneable {
-    function isMaster() external view returns (bool);
-}
+// 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
+uint256 constant MAX_DATA_SIZE = 117964;

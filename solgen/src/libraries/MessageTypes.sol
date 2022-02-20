@@ -16,16 +16,13 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
-library ProxyUtil {
-    function getProxyAdmin() internal view returns (address admin) {
-        // https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.4.0/contracts/proxy/transparent/TransparentUpgradeableProxy.sol
-        // Storage slot with the admin of the proxy contract.
-        // This is the keccak-256 hash of "eip1967.proxy.admin" subtracted by 1, and is
-        bytes32 slot = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
-        assembly {
-            admin := sload(slot)
-        }
-    }
-}
+uint8 constant L2_MSG = 3;
+uint8 constant L1MessageType_L2FundedByL1 = 7;
+uint8 constant L1MessageType_submitRetryableTx = 9;
+uint8 constant L2MessageType_unsignedEOATx = 0;
+uint8 constant L2MessageType_unsignedContractTx = 1;
+
+uint8 constant ROLLUP_PROTOCOL_EVENT_TYPE = 8;
+uint8 constant INITIALIZATION_MSG_TYPE = 11;

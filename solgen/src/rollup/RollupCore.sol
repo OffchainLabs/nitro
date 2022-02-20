@@ -640,7 +640,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             );
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
-            memoryFrame.node = NodeLib.initialize(
+            memoryFrame.node = NodeLib.createNode(
                 RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
