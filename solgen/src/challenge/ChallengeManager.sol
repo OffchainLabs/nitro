@@ -101,8 +101,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
         // No need to set maxInboxMessages until execution challenge
-        challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
-        challenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
+        challenge.endGlobalState = startAndEndGlobalStates_[1];
         challenge.next = ChallengeLib.Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
@@ -114,7 +113,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         challenge.lastMoveTimestamp = block.timestamp;
         challenge.mode = ChallengeLib.ChallengeMode.BLOCK;
 
-        emit InitiatedChallenge(challengeIndex);
+        emit InitiatedChallenge(
+            challengeIndex,
+            startAndEndGlobalStates_[0]
+        );
         completeBisection(
             challengeIndex,
             0,
@@ -122,14 +124,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             segments
         );
         return challengeIndex;
-    }
-
-    function getStartGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
-        return challenges[challengeIndex].startAndEndGlobalStates[0];
-    }
-
-    function getEndGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
-        return challenges[challengeIndex].startAndEndGlobalStates[1];
     }
 
     /**
@@ -216,12 +210,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             globalStateHashes[1]
         );
 
-        uint256 maxInboxMessagesRead = challenge.startAndEndGlobalStates[1].getInboxPosition();
-        if (machineStatuses[1] == MachineStatus.ERRORED || challenge.startAndEndGlobalStates[1].getPositionInMessage() > 0) {
+        uint256 maxInboxMessagesRead = challenge.endGlobalState.getInboxPosition();
+        if (machineStatuses[1] == MachineStatus.ERRORED || challenge.endGlobalState.getPositionInMessage() > 0) {
             maxInboxMessagesRead++;
         }
 
-        challenge.maxInboxMessages = challenge.maxInboxMessages;
+        challenge.maxInboxMessages = maxInboxMessagesRead;
         challenge.mode = ChallengeLib.ChallengeMode.EXECUTION;
 
         completeBisection(

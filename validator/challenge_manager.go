@@ -85,10 +85,30 @@ func NewChallengeManager(
 	targetNumMachines int,
 	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
+	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
+
+	logs, err := l1client.FilterLogs(ctx, ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(startL1Block),
+		Addresses: []common.Address{challengeManagerAddr},
+		Topics:    [][]common.Hash{{challengeBisectedID}, {uint64ToIndex(challengeIndex)}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, errors.New("didn't find InitiatedChallenge event")
+	}
+	// Multiple logs are in theory fine, as they should all reveal the same preimage.
+	// We'll use the most recent log to be safe.
+	evmLog := logs[len(logs)-1]
+	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
+	if err != nil {
+		return nil, err
+	}
+
 	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
 	if err != nil {
 		return nil, err
@@ -96,6 +116,7 @@ func NewChallengeManager(
 	backend, err := NewBlockChallengeBackend(
 		ctx,
 		challengeIndex,
+		parsedLog.StartState,
 		l2blockChain,
 		inboxTracker,
 		l1client,
@@ -106,7 +127,7 @@ func NewChallengeManager(
 		return nil, err
 	}
 	return &ChallengeManager{
-		con:                   challengeCoreCon,
+		con:                   con,
 		challengeManagerAddr:  challengeManagerAddr,
 		challengeIndex:        challengeIndex,
 		client:                l1client,
@@ -186,10 +207,14 @@ func (m *ChallengeManager) ChallengeIndex() uint64 {
 	return m.challengeIndex
 }
 
-func (m *ChallengeManager) challengeFilterIndex() common.Hash {
+func uint64ToIndex(val uint64) common.Hash {
 	var challengeIndex common.Hash
-	binary.BigEndian.PutUint64(challengeIndex[(32-8):], m.challengeIndex)
+	binary.BigEndian.PutUint64(challengeIndex[(32-8):], val)
 	return challengeIndex
+}
+
+func (m *ChallengeManager) challengeFilterIndex() common.Hash {
+	return uint64ToIndex(m.challengeIndex)
 }
 
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.

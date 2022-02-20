@@ -82,6 +82,7 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 func NewBlockChallengeBackend(
 	ctx context.Context,
 	challengeIndex uint64,
+	solStartGs challengegen.GlobalState,
 	bc *core.BlockChain,
 	inboxTracker InboxTrackerInterface,
 	client bind.ContractBackend,
@@ -91,13 +92,14 @@ func NewBlockChallengeBackend(
 	callOpts := &bind.CallOpts{Context: ctx}
 	challengeCon, err := challengegen.NewChallengeManager(challengeAddr, client)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 
-	solStartGs, err := challengeCon.GetStartGlobalState(callOpts, challengeIndex)
+	info, err := challengeCon.ChallengeInfo(callOpts, challengeIndex)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
+	
 	startGs := GoGlobalStateFromSolidity(solStartGs)
 	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
 	if startGs.BlockHash != (common.Hash{}) {
@@ -121,11 +123,7 @@ func NewBlockChallengeBackend(
 		return nil, fmt.Errorf("start block %v and start message count %v don't correspond", startBlockNum, startMsgCount)
 	}
 
-	solEndGs, err := challengeCon.GetEndGlobalState(callOpts, challengeIndex)
-	if err != nil {
-		return nil, err
-	}
-	endGs := GoGlobalStateFromSolidity(solEndGs)
+	endGs := GoGlobalStateFromSolidity(info.EndGlobalState)
 	var endMsgCount arbutil.MessageIndex
 	if endGs.Batch > 0 {
 		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
