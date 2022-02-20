@@ -81,7 +81,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	_, tx, challengeFactory, err := challengegen.DeployChallengeFactory(auth, client, ospEntry)
+	challengeManagerAddr, tx, challengeManager, err := challengegen.DeployChallengeManager(auth, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +89,14 @@ func CreateChallenge(
 	if err != nil {
 		t.Fatal(err)
 	}
+	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	tx, err = challengeFactory.CreateChallenge(
+	tx, err = challengeManager.CreateChallenge(
 		auth,
-		challengegen.IChallengeFactoryChallengeContracts{
-			ResultReceiver: resultReceiverAddr,
-			SequencerInbox: sequencerInbox,
-			DelayedBridge:  delayedBridge,
-		},
 		wasmModuleRoot,
 		[2]uint8{
 			validator.StatusFinished,
@@ -112,17 +112,12 @@ func CreateChallenge(
 		big.NewInt(100000),
 		big.NewInt(100000),
 	)
-	receipt, err := arbutil.EnsureTxSucceeded(context.Background(), client, tx)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengeCreatedEvent, err := challengeFactory.ParseChallengeCreated(*receipt.Logs[len(receipt.Logs)-1])
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return resultReceiver, challengeCreatedEvent.Challenge
+	return resultReceiver, challengeManagerAddr
 }
 
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
@@ -299,7 +294,7 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	numBlocks := asserterLatestBlock.NumberU64() - asserterGenesis.NumberU64()
 
-	resultReceiver, challenge := CreateChallenge(
+	resultReceiver, challengeManagerAddr := CreateChallenge(
 		t,
 		&deployerTxOpts,
 		l1Backend,
@@ -315,12 +310,12 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challenge, asserterL2Blockchain, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, 0, 4, 12)
+	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 0, asserterL2Blockchain, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, 0, 4, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challenge, challengerL2Blockchain, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, 0, 4, 12)
+	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 0, challengerL2Blockchain, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, 0, 4, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
