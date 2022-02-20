@@ -25,11 +25,11 @@ library ChallengeLib {
         uint256 lastMoveTimestamp;
 
         bytes32 wasmModuleRoot;
-        uint256 maxInboxMessages;
         bytes32 challengeStateHash;
 
         uint64 globalEndInboxPosition;
         uint64 globalEndMessagePosition;
+        uint64 maxInboxMessages;
 
         ChallengeMode mode;
     }

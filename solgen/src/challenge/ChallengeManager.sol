@@ -212,7 +212,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             globalStateHashes[1]
         );
 
-        uint256 maxInboxMessagesRead = challenge.globalEndInboxPosition;
+        uint64 maxInboxMessagesRead = challenge.globalEndInboxPosition;
         if (machineStatuses[1] == MachineStatus.ERRORED || challenge.globalEndMessagePosition > 0) {
             maxInboxMessagesRead++;
         }

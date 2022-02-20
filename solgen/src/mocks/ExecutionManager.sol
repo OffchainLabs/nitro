@@ -7,7 +7,7 @@ contract SingleExecutionChallenge is ChallengeManager {
     constructor(
         IOneStepProofEntry osp_,
         IChallengeResultReceiver resultReceiver_,
-        uint256 maxInboxMessagesRead_,
+        uint64 maxInboxMessagesRead_,
         bytes32[2] memory startAndEndHashes,
         uint256 numSteps_,
         address asserter_,

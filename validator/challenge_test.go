@@ -64,7 +64,7 @@ func CreateChallenge(
 		client,
 		ospEntry,
 		resultReceiverAddr,
-		new(big.Int).SetUint64(^uint64(0)),
+		^uint64(0),
 		[2][32]byte{startHashBytes, endHashBytes},
 		big.NewInt(int64(endMachineSteps)),
 		asserter,
