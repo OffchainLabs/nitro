@@ -30,13 +30,29 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex];
     }
 
-    modifier takeTurn(uint64 challengeIndex) {
+    modifier takeTurn(uint64 challengeIndex, ChallengeLib.SegmentSelection calldata selection) {
         Challenge storage challenge = challenges[challengeIndex];
         require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
         require(
             block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
             "CHAL_DEADLINE"
         );
+
+        require(
+            challenge.challengeStateHash ==
+            ChallengeLib.hashChallengeState(
+                selection.oldSegmentsStart,
+                selection.oldSegmentsLength,
+                selection.oldSegments
+            ),
+            "BIS_STATE"
+        );
+        if (
+            selection.oldSegments.length < 2 ||
+            selection.challengePosition >= selection.oldSegments.length - 1
+        ) {
+            revert("BAD_CHALLENGE_POS");
+        }
 
         _;
 
@@ -126,9 +142,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint64 challengeIndex,
         ChallengeLib.SegmentSelection calldata selection,
         bytes32[] calldata newSegments
-    ) external takeTurn(challengeIndex) {
-        Challenge storage challenge = challenges[challengeIndex];
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
+    ) external takeTurn(challengeIndex, selection) {
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
         require(challengeLength > 1, "TOO_SHORT");
         {
             uint256 expectedDegree = challengeLength;
@@ -159,27 +174,28 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
-    ) external takeTurn(challengeIndex) {
-        Challenge storage challenge = challenges[challengeIndex];
-        (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
-        require(challengeLength == 1, "TOO_LONG");
-
+    ) external takeTurn(challengeIndex, selection) {
+        require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
         require(
             selection.oldSegments[selection.challengePosition] ==
-                ChallengeLib.blockStateHash(
-                    machineStatuses[0],
-                    globalStateHashes[0]
-                ),
+            ChallengeLib.blockStateHash(
+                machineStatuses[0],
+                globalStateHashes[0]
+            ),
             "WRONG_START"
         );
         require(
             selection.oldSegments[selection.challengePosition + 1] !=
-                ChallengeLib.blockStateHash(
-                    machineStatuses[1],
-                    globalStateHashes[1]
-                ),
+            ChallengeLib.blockStateHash(
+                machineStatuses[1],
+                globalStateHashes[1]
+            ),
             "SAME_END"
         );
+
+        Challenge storage challenge = challenges[challengeIndex];
+        (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+        require(challengeLength == 1, "TOO_LONG");
 
         if (machineStatuses[0] != MachineStatus.FINISHED) {
             // If the machine is in a halted state, it can't change
@@ -197,12 +213,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             require(globalStateHashes[0] == globalStateHashes[1], "ERROR_CHANGE");
         }
 
-        bytes32[2] memory startAndEndHashes;
-        startAndEndHashes[0] = ChallengeLib.getStartMachineHash(
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = ChallengeLib.getStartMachineHash(
             globalStateHashes[0],
             challenge.wasmModuleRoot
         );
-        startAndEndHashes[1] = ChallengeLib.getEndMachineHash(
+        segments[1] = ChallengeLib.getEndMachineHash(
             machineStatuses[1],
             globalStateHashes[1]
         );
@@ -211,11 +227,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         if (machineStatuses[1] == MachineStatus.ERRORED || challenge.startAndEndGlobalStates[1].getPositionInMessage() > 0) {
             maxInboxMessagesRead++;
         }
-
-        require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
-        bytes32[] memory segments = new bytes32[](2);
-        segments[0] = startAndEndHashes[0];
-        segments[1] = startAndEndHashes[1];
 
         challenge.maxInboxMessages = challenge.maxInboxMessages;
         challenge.mode = ChallengeMode.EXECUTION;
@@ -234,9 +245,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint64 challengeIndex,
         ChallengeLib.SegmentSelection calldata selection,
         bytes calldata proof
-    ) external takeTurn(challengeIndex) {
+    ) external takeTurn(challengeIndex, selection) {
         Challenge storage challenge = challenges[challengeIndex];
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
         bytes32 afterHash = osp.proveOneStep(

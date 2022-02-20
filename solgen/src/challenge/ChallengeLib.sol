@@ -71,22 +71,8 @@ library ChallengeLib {
         }
     }
 
-    function extractChallengeSegment(bytes32 currentStateHash, SegmentSelection calldata selection) internal pure returns (uint256 segmentStart, uint256 segmentLength) {
-        require(
-            currentStateHash ==
-            ChallengeLib.hashChallengeState(
-                selection.oldSegmentsStart,
-                selection.oldSegmentsLength,
-                selection.oldSegments
-            ),
-            "BIS_STATE"
-        );
-        if (
-            selection.oldSegments.length < 2 ||
-            selection.challengePosition >= selection.oldSegments.length - 1
-        ) {
-            revert("BAD_CHALLENGE_POS");
-        }
+
+    function extractChallengeSegment(SegmentSelection calldata selection) internal pure returns (uint256 segmentStart, uint256 segmentLength) {
         uint256 oldChallengeDegree = selection.oldSegments.length - 1;
         segmentLength = selection.oldSegmentsLength / oldChallengeDegree;
         // Intentionally done before challengeLength is potentially added to for the final segment
