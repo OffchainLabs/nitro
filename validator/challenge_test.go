@@ -157,6 +157,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		asserterMachine,
 		0,
 		4,
+		12,
 	)
 	Require(t, err)
 
@@ -168,6 +169,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		challengerMachine,
 		0,
 		4,
+		12,
 	)
 	Require(t, err)
 

@@ -8,7 +8,6 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
@@ -89,25 +88,18 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 
 func (b *ExecutionChallengeBackend) IssueOneStepProof(
 	ctx context.Context,
-	client bind.ContractBackend,
-	auth *bind.TransactOpts,
-	challengeIndex uint64,
-	challengeManager common.Address,
+	core *challengeCore,
 	oldState *ChallengeState,
 	startSegment int,
 ) (*types.Transaction, error) {
-	con, err := challengegen.NewChallengeManager(challengeManager, client)
-	if err != nil {
-		return nil, err
-	}
 	mach, err := b.getMachineAt(ctx, oldState.Segments[startSegment].Position)
 	if err != nil {
 		return nil, err
 	}
 	proof := mach.ProveNextStep()
-	return con.OneStepProveExecution(
-		auth,
-		challengeIndex,
+	return core.con.OneStepProveExecution(
+		core.auth,
+		core.challengeIndex,
 		challengegen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),

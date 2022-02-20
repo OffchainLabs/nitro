@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
@@ -62,9 +61,6 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 }
 
 type BlockChallengeBackend struct {
-	challengeCon           *challengegen.ChallengeManager
-	client                 bind.ContractBackend
-	challengeIndex         uint64
 	bc                     *core.BlockChain
 	startBlock             int64
 	startPosition          uint64
@@ -80,19 +76,11 @@ type BlockChallengeBackend struct {
 var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(
-	challengeIndex uint64,
 	initialState *challengegen.ChallengeManagerInitiatedChallenge,
 	bc *core.BlockChain,
 	inboxTracker InboxTrackerInterface,
-	client bind.ContractBackend,
-	challengeAddr common.Address,
 	genesisBlockNumber uint64,
 ) (*BlockChallengeBackend, error) {
-	challengeCon, err := challengegen.NewChallengeManager(challengeAddr, client)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-
 	startGs := GoGlobalStateFromSolidity(initialState.StartState)
 	startBlockNum := arbutil.MessageCountToBlockNumber(0, genesisBlockNumber)
 	if startGs.BlockHash != (common.Hash{}) {
@@ -105,6 +93,7 @@ func NewBlockChallengeBackend(
 
 	var startMsgCount arbutil.MessageIndex
 	if startGs.Batch > 0 {
+		var err error
 		startMsgCount, err = inboxTracker.GetBatchMessageCount(startGs.Batch - 1)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get challenge start batch metadata")
@@ -119,6 +108,7 @@ func NewBlockChallengeBackend(
 	endGs := GoGlobalStateFromSolidity(initialState.EndState)
 	var endMsgCount arbutil.MessageIndex
 	if endGs.Batch > 0 {
+		var err error
 		endMsgCount, err = inboxTracker.GetBatchMessageCount(endGs.Batch - 1)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get challenge end batch metadata")
@@ -127,9 +117,6 @@ func NewBlockChallengeBackend(
 	endMsgCount += arbutil.MessageIndex(endGs.PosInBatch)
 
 	return &BlockChallengeBackend{
-		client:                 client,
-		challengeIndex:         challengeIndex,
-		challengeCon:           challengeCon,
 		bc:                     bc,
 		startBlock:             startBlockNum,
 		startGs:                startGs,
@@ -263,7 +250,7 @@ func (b *BlockChallengeBackend) GetHashAtStep(_ context.Context, position uint64
 }
 
 func (b *BlockChallengeBackend) IssueExecChallenge(
-	auth *bind.TransactOpts,
+	core *challengeCore,
 	oldState *ChallengeState,
 	startSegment int,
 	numsteps uint64,
@@ -284,9 +271,9 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 		globalStates[0].Hash(),
 		globalStates[1].Hash(),
 	}
-	return b.challengeCon.ChallengeExecution(
-		auth,
-		b.challengeIndex,
+	return core.con.ChallengeExecution(
+		core.auth,
+		core.challengeIndex,
 		challengegen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),

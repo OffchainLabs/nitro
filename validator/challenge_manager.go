@@ -25,6 +25,7 @@ const maxBisectionDegree uint64 = 40
 
 const challengeModeExecution = 2
 
+var initiatedChallengeID common.Hash
 var challengeBisectedID common.Hash
 var executionChallengeBegunID common.Hash
 
@@ -33,6 +34,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	initiatedChallengeID = parsedChallengeManagerABI.Events["ChallengeInitiated"].ID
 	challengeBisectedID = parsedChallengeManagerABI.Events["Bisected"].ID
 	executionChallengeBegunID = parsedChallengeManagerABI.Events["ExecutionChallengeBegun"].ID
 }
@@ -42,8 +44,7 @@ type ChallengeBackend interface {
 	GetHashAtStep(ctx context.Context, position uint64) (common.Hash, error)
 }
 
-type ChallengeManager struct {
-	// fields used in both block and execution challenge
+type challengeCore struct {
 	con                  *challengegen.ChallengeManager
 	challengeManagerAddr common.Address
 	challengeIndex       uint64
@@ -52,6 +53,11 @@ type ChallengeManager struct {
 	actingAs             common.Address
 	startL1Block         *big.Int
 	confirmationBlocks   int64
+}
+
+type ChallengeManager struct {
+	// fields used in both block and execution challenge
+	*challengeCore
 
 	// fields below are used while working on block challenge
 	blockChallengeBackend *BlockChallengeBackend
@@ -93,7 +99,7 @@ func NewChallengeManager(
 	logs, err := l1client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(startL1Block),
 		Addresses: []common.Address{challengeManagerAddr},
-		Topics:    [][]common.Hash{{challengeBisectedID}, {uint64ToIndex(challengeIndex)}},
+		Topics:    [][]common.Hash{{initiatedChallengeID}, {uint64ToIndex(challengeIndex)}},
 	})
 	if err != nil {
 		return nil, err
@@ -114,32 +120,31 @@ func NewChallengeManager(
 		return nil, err
 	}
 	backend, err := NewBlockChallengeBackend(
-		challengeIndex,
 		parsedLog,
 		l2blockChain,
 		inboxTracker,
-		l1client,
-		challengeManagerAddr,
 		genesisBlockNum,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeManager{
-		con:                   con,
-		challengeManagerAddr:  challengeManagerAddr,
-		challengeIndex:        challengeIndex,
-		client:                l1client,
-		auth:                  auth,
-		actingAs:              fromAddr,
-		startL1Block:          new(big.Int).SetUint64(startL1Block),
+		challengeCore: &challengeCore{
+			con:                  con,
+			challengeManagerAddr: challengeManagerAddr,
+			challengeIndex:       challengeIndex,
+			client:               l1client,
+			auth:                 auth,
+			actingAs:             fromAddr,
+			startL1Block:         new(big.Int).SetUint64(startL1Block),
+			confirmationBlocks:   confirmationBlocks,
+		},
 		blockChallengeBackend: backend,
 		inboxReader:           inboxReader,
 		inboxTracker:          inboxTracker,
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
 		targetNumMachines:     targetNumMachines,
-		confirmationBlocks:    confirmationBlocks,
 	}, nil
 }
 
@@ -152,6 +157,7 @@ func NewExecutionChallengeManager(
 	initialMachine MachineInterface,
 	startL1Block uint64,
 	targetNumMachines int,
+	confirmationBlocks int64,
 ) (*ChallengeManager, error) {
 	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
@@ -162,13 +168,16 @@ func NewExecutionChallengeManager(
 		return nil, err
 	}
 	return &ChallengeManager{
-		con:                       con,
-		challengeManagerAddr:      challengeManagerAddr,
-		challengeIndex:            challengeIndex,
-		client:                    l1client,
-		auth:                      auth,
-		actingAs:                  auth.From,
-		startL1Block:              new(big.Int).SetUint64(startL1Block),
+		challengeCore: &challengeCore{
+			con:                  con,
+			challengeManagerAddr: challengeManagerAddr,
+			challengeIndex:       challengeIndex,
+			client:               l1client,
+			auth:                 auth,
+			actingAs:             auth.From,
+			startL1Block:         new(big.Int).SetUint64(startL1Block),
+			confirmationBlocks:   confirmationBlocks,
+		},
 		executionChallengeBackend: backend,
 	}, nil
 }
@@ -527,10 +536,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		log.Info("sending onestepproof", "challenge", m.challengeIndex, "startPosition", startPosition, "endPosition", endPosition)
 		return m.executionChallengeBackend.IssueOneStepProof(
 			ctx,
-			m.client,
-			m.auth,
-			m.challengeIndex,
-			m.challengeManagerAddr,
+			m.challengeCore,
 			state,
 			nextMovePos,
 		)
@@ -557,7 +563,7 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	stepCount = stepCountMachine.GetStepCount()
 	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "blockNum", blockNum)
 	return m.blockChallengeBackend.IssueExecChallenge(
-		m.auth,
+		m.challengeCore,
 		state,
 		nextMovePos,
 		stepCount,
