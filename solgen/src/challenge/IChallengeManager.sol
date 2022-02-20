@@ -39,8 +39,8 @@ interface IChallengeManager {
     }
 
     struct Challenge {
-        Participant asserter;
-        Participant challenger;
+        Participant current;
+        Participant next;
 
         uint256 lastMoveTimestamp;
 
@@ -50,7 +50,6 @@ interface IChallengeManager {
 
         bytes32 challengeStateHash;
 
-        Turn turn;
         ChallengeMode mode;
     }
 

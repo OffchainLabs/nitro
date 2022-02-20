@@ -25,16 +25,15 @@ contract SingleExecutionChallenge is ChallengeManager {
         segments[1] = startAndEndHashes[1];
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps_, segments);
         challenge.challengeStateHash = challengeStateHash;
-        challenge.asserter = Participant({
+        challenge.next = Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
         });
-        challenge.challenger = Participant({
+        challenge.current = Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
         });
         challenge.lastMoveTimestamp = block.timestamp;
-        challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.EXECUTION;
 
         emit Bisected(

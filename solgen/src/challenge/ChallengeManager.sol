@@ -53,18 +53,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         _;
 
-        if (challenge.turn == Turn.NO_CHALLENGE) {
+        if (challenge.mode == ChallengeMode.NONE) {
             // Early return since challenge must have terminated
             return;
-        } else if (challenge.turn == Turn.CHALLENGER) {
-            challenge.challenger.timeLeft -= timeUsedSinceLastMove(challengeIndex);
-            challenge.turn = Turn.ASSERTER;
-        } else if (challenge.turn == Turn.ASSERTER) {
-            challenge.asserter.timeLeft -= timeUsedSinceLastMove(challengeIndex);
-            challenge.turn = Turn.CHALLENGER;
-        } else {
-            revert("invalid turn state");
         }
+
+        Participant memory current = challenge.current;
+        challenge.current = challenge.next;
+        challenge.next = current;
+
         challenge.lastMoveTimestamp = block.timestamp;
     }
 
@@ -105,16 +102,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         // No need to set maxInboxMessages until execution challenge
         challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         challenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        challenge.asserter = Participant({
+        challenge.next = Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
         });
-        challenge.challenger = Participant({
+        challenge.current = Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
         });
         challenge.lastMoveTimestamp = block.timestamp;
-        challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.BLOCK;
 
         emit InitiatedChallenge(challengeIndex);
@@ -268,16 +264,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function timeout(uint64 challengeIndex) external override {
-        Challenge storage challenge = challenges[challengeIndex];
         require(isTimedOut(challengeIndex), "TIMEOUT_DEADLINE");
-
-        if (challenge.turn == Turn.ASSERTER) {
-            _challengerWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
-        } else if (challenge.turn == Turn.CHALLENGER) {
-            _asserterWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
-        } else {
-            revert(NO_TURN);
-        }
+        _nextWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
     }
 
     function clearChallenge(uint64 challengeIndex) external override {
@@ -288,24 +276,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
     function currentResponder(uint64 challengeIndex) public view override returns (address) {
         Challenge storage challenge = challenges[challengeIndex];
-        if (challenge.turn == Turn.ASSERTER) {
-            return challenge.asserter.addr;
-        } else if (challenge.turn == Turn.CHALLENGER) {
-            return challenge.challenger.addr;
-        } else {
-            revert(NO_TURN);
-        }
+        return challenge.current.addr;
     }
 
     function currentResponderTimeLeft(uint64 challengeIndex) public override view returns (uint256) {
         Challenge storage challenge = challenges[challengeIndex];
-        if (challenge.turn == Turn.ASSERTER) {
-            return challenge.asserter.timeLeft;
-        } else if (challenge.turn == Turn.CHALLENGER) {
-            return challenge.challenger.timeLeft;
-        } else {
-            revert(NO_TURN);
-        }
+        return challenge.current.timeLeft;
     }
 
     function isTimedOut(uint64 challengeIndex) public view override returns (bool) {
@@ -347,16 +323,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         );
     }
 
-    function _asserterWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
+    function _nextWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         Challenge storage challenge = challenges[challengeIndex];
-        resultReceiver.completeChallenge(challenge.asserter.addr, challenge.challenger.addr);
-        delete challenges[challengeIndex];
-        emit ChallengeEnded(challengeIndex, reason);
-    }
-
-    function _challengerWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
-        Challenge storage challenge = challenges[challengeIndex];
-        resultReceiver.completeChallenge(challenge.challenger.addr, challenge.asserter.addr);
+        resultReceiver.completeChallenge(challenge.next.addr, challenge.current.addr);
         delete challenges[challengeIndex];
         emit ChallengeEnded(challengeIndex, reason);
     }
