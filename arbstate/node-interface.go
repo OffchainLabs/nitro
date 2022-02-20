@@ -52,7 +52,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			RequestId:     common.Hash{},
 			From:          sender,
 			DepositValue:  deposit,
-			GasPrice:      msg.GasPrice(),
+			GasFeeCap:     msg.GasPrice(),
 			Gas:           msg.Gas(),
 			To:            to,
 			Value:         l2CallValue,
