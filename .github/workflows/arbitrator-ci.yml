@@ -152,3 +152,10 @@ jobs:
           cd solgen
           yarn install
           yarn hardhat --network localhost test test/geth
+
+      - name: Run other contract tests
+        run: |
+          npm install --global yarn
+          cd solgen
+          yarn install
+          yarn hardhat --network hardhat test test/hardhat
