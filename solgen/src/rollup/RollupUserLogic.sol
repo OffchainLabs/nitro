@@ -2,13 +2,15 @@
 
 pragma solidity ^0.8.0;
 
-import { AAPStorage } from  "./AdminAwareProxy.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+
 import { IRollupUser } from "./IRollupLogic.sol";
+import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
 
 abstract contract AbsRollupUserLogic is
-    AAPStorage,
     RollupCore,
+    UUPSNotUpgradeable,
     IRollupUser,
     IChallengeResultReceiver
 {
@@ -18,6 +20,10 @@ abstract contract AbsRollupUserLogic is
     modifier onlyValidator() {
         require(isValidator[msg.sender], "NOT_VALIDATOR");
         _;
+    }
+
+    function isERC20Enabled() public view override returns (bool) {
+        return stakeToken != address(0);
     }
 
     /**
@@ -166,7 +172,8 @@ abstract contract AbsRollupUserLogic is
      */
     function stakeOnNewNode(
         RollupLib.Assertion calldata assertion,
-        bytes32 expectedNodeHash
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
     ) external onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
@@ -182,7 +189,7 @@ abstract contract AbsRollupUserLogic is
             // put into L1 inbox before the prev node’s L1 blocknum
             require(
                 assertion.afterState.globalState.getInboxPosition() >=
-                    assertion.beforeState.inboxMaxCount,
+                    prevNodeInboxMaxCount,
                 "TOO_SMALL"
             );
 
@@ -192,7 +199,7 @@ abstract contract AbsRollupUserLogic is
                 "BAD_PREV_STATUS"
             );
         }
-        createNewNode(assertion, prevNode, expectedNodeHash);
+        createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
 
         stakeOnNode(msg.sender, latestNodeCreated());
     }
@@ -354,11 +361,11 @@ abstract contract AbsRollupUserLogic is
     ) internal returns (IChallenge) {
         return
             challengeFactory.createChallenge(
-                [
-                    address(this),
-                    address(sequencerBridge),
-                    address(delayedBridge)
-                ],
+                IBlockChallengeFactory.ChallengeContracts({
+                    resultReceiver: this,
+                    sequencerInbox: sequencerBridge,
+                    delayedBridge: delayedBridge
+                }),
                 wasmModuleRoots[0],
                 machineStatuses,
                 globalStates,
@@ -404,8 +411,8 @@ abstract contract AbsRollupUserLogic is
         increaseStakeBy(winningStaker, amountWon);
         remainingLoserStake -= amountWon;
         clearChallenge(winningStaker);
-        // Credit the other half to the owner address
-        increaseWithdrawableFunds(owner, remainingLoserStake);
+        // Credit the other half to the loserStakeEscrow address
+        increaseWithdrawableFunds(loserStakeEscrow, remainingLoserStake);
         // Turning loser into zombie renders the loser's remaining stake inaccessible
         turnIntoZombie(losingStaker);
     }
@@ -621,13 +628,11 @@ abstract contract AbsRollupUserLogic is
 }
 
 contract RollupUserLogic is AbsRollupUserLogic {
-    function initialize(
-        RollupLib.Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external override {
-        require(config.stakeToken == address(0), "NO_TOKEN_ALLOWED");
-        require(!isMasterCopy, "NO_INIT_MASTER");
-        // stakeToken = _stakeToken;
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address _stakeToken) external view override onlyProxy {
+        require(_stakeToken == address(0), "NO_TOKEN_ALLOWED");
+        require(!isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
@@ -671,14 +676,11 @@ contract RollupUserLogic is AbsRollupUserLogic {
 }
 
 contract ERC20RollupUserLogic is AbsRollupUserLogic {
-    function initialize(
-        RollupLib.Config calldata config,
-        ContractDependencies calldata /* connectedContracts */
-    ) external override {
-        require(config.stakeToken != address(0), "NEED_STAKE_TOKEN");
-        require(stakeToken == address(0), "ALREADY_INIT");
-        require(!isMasterCopy, "NO_INIT_MASTER");
-        stakeToken = config.stakeToken;
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address _stakeToken) external view override onlyProxy {
+        require(_stakeToken != address(0), "NEED_STAKE_TOKEN");
+        require(isERC20Enabled(), "FACET_NOT_ERC20");
     }
 
     /**
@@ -694,7 +696,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _newStake(tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -715,7 +717,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     {
         _addToDeposit(stakerAddress, tokenAmount);
         require(
-            IERC20(stakeToken).transferFrom(
+            IERC20Upgradeable(stakeToken).transferFrom(
                 msg.sender,
                 address(this),
                 tokenAmount
@@ -738,7 +740,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
         require(
-            IERC20(stakeToken).transfer(destination, amount),
+            IERC20Upgradeable(stakeToken).transfer(destination, amount),
             "TRANSFER_FAILED"
         );
         return amount;

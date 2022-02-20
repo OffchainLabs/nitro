@@ -18,31 +18,48 @@
 
 pragma solidity ^0.8.0;
 
+import "../challenge/IBlockChallengeFactory.sol";
 import "../challenge/ChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
 
+import "../bridge/IBridge.sol";
+import "../bridge/IOutbox.sol";
+import "./RollupEventBridge.sol";
+import "./IRollupLogic.sol";
+
+struct Config {
+    uint64 confirmPeriodBlocks;
+    uint64 extraChallengeTimeBlocks;
+    address stakeToken;
+    uint256 baseStake;
+    bytes32 wasmModuleRoot;
+    address owner;
+    address loserStakeEscrow;
+    uint256 chainId;
+    ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
+}
+
+struct ContractDependencies {
+    IBridge delayedBridge;
+    ISequencerInbox sequencerInbox;
+    IOutbox outbox;
+    RollupEventBridge rollupEventBridge;
+    IBlockChallengeFactory blockChallengeFactory;
+
+    IRollupAdmin rollupAdminLogic;
+    IRollupUser rollupUserLogic;
+}
+
 library RollupLib {
     using GlobalStateLib for GlobalState;
 
-    struct Config {
-        uint64 confirmPeriodBlocks;
-        uint64 extraChallengeTimeBlocks;
-        address stakeToken;
-        uint256 baseStake;
-        bytes32 wasmModuleRoot;
-        address owner;
-        uint256 chainId;
-        ISequencerInbox.MaxTimeVariation sequencerInboxMaxTimeVariation;
-    }
-
     struct ExecutionState {
         GlobalState globalState;
-        uint256 inboxMaxCount;
         MachineStatus machineStatus;
     }
 
-    function stateHash(ExecutionState calldata execState)
+    function stateHash(ExecutionState calldata execState, uint256 inboxMaxCount)
         internal
         pure
         returns (bytes32)
@@ -51,14 +68,14 @@ library RollupLib {
             keccak256(
                 abi.encodePacked(
                     execState.globalState.hash(),
-                    execState.inboxMaxCount,
+                    inboxMaxCount,
                     execState.machineStatus
                 )
             );
     }
 
     /// @dev same as stateHash but expects execState in memory instead of calldata
-    function stateHashMem(ExecutionState memory execState)
+    function stateHashMem(ExecutionState memory execState, uint256 inboxMaxCount)
         internal
         pure
         returns (bytes32)
@@ -67,7 +84,7 @@ library RollupLib {
             keccak256(
                 abi.encodePacked(
                     execState.globalState.hash(),
-                    execState.inboxMaxCount,
+                    inboxMaxCount,
                     execState.machineStatus
                 )
             );

@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
@@ -9,8 +9,9 @@ import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
+import "./IBlockChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
+contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultReceiver, IChallenge {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
@@ -30,7 +31,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
         IExecutionChallengeFactory executionChallengeFactory_,
-        address[3] memory contractAddresses,
+        IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,
@@ -39,11 +40,13 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external {
+    ) external onlyDelegated {
+        require(address(resultReceiver) == address(0), "ALREADY_INIT");
+        require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
         executionChallengeFactory = executionChallengeFactory_;
-        resultReceiver = IChallengeResultReceiver(contractAddresses[0]);
-        sequencerInbox = ISequencerInbox(contractAddresses[1]);
-        delayedBridge = IBridge(contractAddresses[2]);
+        resultReceiver = IChallengeResultReceiver(contractAddresses.resultReceiver);
+        sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
+        delayedBridge = IBridge(contractAddresses.delayedBridge);
         wasmModuleRoot = wasmModuleRoot_;
         startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
@@ -238,19 +241,25 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver, IChallenge {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+        turn = Turn.NO_CHALLENGE;
         if (address(executionChallenge) != address(0)) {
             executionChallenge.clearChallenge();
         }
-        safeSelfDestruct(payable(0));
     }
 
     function completeChallenge(address winner, address loser)
         external
-        override
+        override 
     {
         require(msg.sender == address(executionChallenge), "NOT_EXEC_CHAL");
+        // since this is being called by the execution challenge, 
+        // and since we transition to NO_CHALLENGE when we create 
+        // an execution challenge, that must mean the state is 
+        // already NO_CHALLENGE. So we dont technically need to set that here.
+        // However to guard against a possible future missed refactoring
+        // it's probably safest to set it here anyway
+        if(turn != Turn.NO_CHALLENGE) turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(winner, loser);
-        safeSelfDestruct(payable(0));
     }
 
     function _currentWin() private {

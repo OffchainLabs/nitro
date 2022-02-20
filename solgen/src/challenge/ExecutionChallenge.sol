@@ -1,16 +1,14 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract ExecutionChallenge is ChallengeCore, IChallenge {
+contract ExecutionChallenge is ChallengeCore, DelegateCallAware, IChallenge {
     event OneStepProofCompleted();
 
     IOneStepProofEntry public osp;
@@ -26,8 +24,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) public {
-        require(!isMasterCopy, "MASTER_INIT");
+    ) public onlyDelegated {
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
         require(challenge_length <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
@@ -86,7 +83,7 @@ contract ExecutionChallenge is ChallengeCore, IChallenge {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        safeSelfDestruct(payable(0));
+        turn = Turn.NO_CHALLENGE;
     }
 
     function _currentWin() private {

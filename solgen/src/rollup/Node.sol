@@ -56,7 +56,7 @@ library NodeLib {
      * @param _deadlineBlock Initial value of deadlineBlock
      * @param _nodeHash Initial value of nodeHash
      */
-    function initialize(
+    function createNode(
         bytes32 _stateHash,
         bytes32 _challengeHash,
         bytes32 _confirmData,

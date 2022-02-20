@@ -8,8 +8,9 @@ pragma solidity ^0.8.4;
 import "./IBridge.sol";
 import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
+import "../libraries/DelegateCallAware.sol";
 
-contract Outbox is IOutbox {
+contract Outbox is DelegateCallAware, IOutbox {
     address public rollup;              // the rollup contract
     IBridge public bridge;              // the bridge contract
 
@@ -20,7 +21,6 @@ contract Outbox is IOutbox {
         uint128 l2Block;
         uint128 l1Block;
         uint128 timestamp;
-        uint128 batchNum;
         bytes32 outputId;
         address sender;
     }
@@ -30,7 +30,7 @@ contract Outbox is IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    function initialize(address _rollup, IBridge _bridge) external {
+    function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
         if(rollup != address(0)) revert AlreadyInit();
         rollup = _rollup;
         bridge = _bridge;
@@ -61,8 +61,9 @@ contract Outbox is IOutbox {
         return uint256(context.timestamp);
     }
 
-    function l2ToL1BatchNum() external view override returns (uint256) {
-        return uint256(context.batchNum);
+    // @deprecated batch number is now always 0
+    function l2ToL1BatchNum() external pure override returns (uint256) {
+        return 0;
     }
 
     function l2ToL1OutputId() external view override returns (bytes32) {
@@ -84,7 +85,6 @@ contract Outbox is IOutbox {
      * @param calldataForL1 abi-encoded L1 message data
      */
     function executeTransaction(
-        uint256,
         bytes32[] calldata proof,
         uint256 index,
         address l2Sender,
@@ -120,7 +120,6 @@ contract Outbox is IOutbox {
             l2Block: uint128(l2Block),
             l1Block: uint128(l1Block),
             timestamp: uint128(l2Timestamp),
-            batchNum: 0,
             outputId: outputId
         });
 

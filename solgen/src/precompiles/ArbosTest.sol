@@ -1,6 +1,10 @@
 pragma solidity >=0.4.21 <0.9.0;
 
+/// @title Deprecated - Provides a method of burning arbitrary amounts of gas,
+/// @notice This exists for historical reasons. Pre-Nitro, `ArbosTest` had additional methods only the zero address could call. 
+/// These have been removed since users don't use them and calls to missing methods revert.
+/// Precompiled contract that exists in every Arbitrum chain at 0x0000000000000000000000000000000000000069.
 interface ArbosTest {
-    // unproductively burns the amount of L2 ArbGas
+    /// @notice Unproductively burns the amount of L2 ArbGas
     function burnArbGas(uint gasAmount) external pure;
 }

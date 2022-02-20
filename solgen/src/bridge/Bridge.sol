@@ -5,12 +5,12 @@
 
 pragma solidity ^0.8.4;
 
-import "./Inbox.sol";
-import "./Outbox.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 
 import "./IBridge.sol";
+import "./Messages.sol";
+import "../libraries/DelegateCallAware.sol";
 
 /**
  * @title Staging ground for incoming and outgoing messages
@@ -19,8 +19,9 @@ import "./IBridge.sol";
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-contract Bridge is OwnableUpgradeable, IBridge {
-    using Address for address;
+contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
+    using AddressUpgradeable for address;
+
     struct InOutInfo {
         uint256 index;
         bool allowed;
@@ -37,7 +38,7 @@ contract Bridge is OwnableUpgradeable, IBridge {
     /// @dev Accumulator for delayed inbox messages; tail represents hash of the current state; each element represents the inclusion of a new message.
     bytes32[] public override inboxAccs;
 
-    function initialize() external initializer {
+    function initialize() external initializer onlyDelegated {
         __Ownable_init();
     }
 
@@ -105,11 +106,11 @@ contract Bridge is OwnableUpgradeable, IBridge {
     ) external override returns (bool success, bytes memory returnData) {
         if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !destAddr.isContract()) revert NotContract(destAddr);
-        address currentOutbox = activeOutbox;
+        address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
         (success, returnData) = destAddr.call{ value: amount }(data);
-        activeOutbox = currentOutbox;
+        activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, destAddr, amount, data);
     }
 

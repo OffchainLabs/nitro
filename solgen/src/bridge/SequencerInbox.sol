@@ -9,6 +9,8 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 import "../libraries/IGasRefunder.sol";
+import "../libraries/DelegateCallAware.sol";
+import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -17,18 +19,25 @@ import "../libraries/IGasRefunder.sol";
  * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
-contract SequencerInbox is ISequencerInbox {
+contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
-
-    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
-    uint256 public constant MAX_DATA_SIZE = 117964;
+    
+    /// @dev The size of the batch header
+    uint256 constant public HEADER_LENGTH = 40;
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
+
+    struct TimeBounds {
+        uint64 minTimestamp;
+        uint64 maxTimestamp;
+        uint64 minBlockNumber;
+        uint64 maxBlockNumber;
+    }
 
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
@@ -36,7 +45,7 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds,
+        TimeBounds timeBounds,
         bytes data
     );
 
@@ -46,49 +55,52 @@ contract SequencerInbox is ISequencerInbox {
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        uint64[4] timeBounds
+        TimeBounds timeBounds
     );
 
-    function initialize(IBridge _delayedBridge, address rollup_) external {
+    function initialize(
+        IBridge _delayedBridge, 
+        address rollup_, 
+        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
+    ) external onlyDelegated {
         require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
         require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
         delayedBridge = _delayedBridge;
         rollup = rollup_;
-
-        maxTimeVariation = ISequencerInbox.MaxTimeVariation({
-            delayBlocks: 60 * 60 * 24 / 15,
-            futureBlocks: 12,
-            delaySeconds: 60 * 60 * 24,
-            futureSeconds: 60 * 60
-        });
+        maxTimeVariation = maxTimeVariation_;
     }
 
-    function getTimeBounds() internal view returns (uint64[4] memory) {
-        uint64[4] memory bounds;
+    function getTimeBounds() internal view returns (TimeBounds memory) {
+        TimeBounds memory bounds;
         if (block.timestamp > maxTimeVariation.delaySeconds) {
-            bounds[0] = uint64(block.timestamp - maxTimeVariation.delaySeconds);
-        } else {
-            bounds[0] = 0;
+            bounds.minTimestamp = uint64(block.timestamp - maxTimeVariation.delaySeconds);
         }
-        bounds[1] = uint64(block.timestamp + maxTimeVariation.futureSeconds);
+        bounds.maxTimestamp = uint64(block.timestamp + maxTimeVariation.futureSeconds);
         if (block.number > maxTimeVariation.delayBlocks) {
-            bounds[2] = uint64(block.number - maxTimeVariation.delayBlocks);
-        } else {
-            bounds[2] = 0;
+            bounds.minBlockNumber = uint64(block.number - maxTimeVariation.delayBlocks);
         }
-        bounds[3] = uint64(block.number + maxTimeVariation.futureBlocks);
+        bounds.maxBlockNumber = uint64(block.number + maxTimeVariation.futureBlocks);
         return bounds;
     }
 
+    /// @notice Force messages from the delayed inbox to be included in the chain
+    /// Callable by any address, but message can only be force-included after maxTimeVariation.delayBlocks and maxTimeVariation.delaySeconds
+    /// has elapsed. As part of normal behaviour the sequencer will include these messages
+    /// so it's only necessary to call this if the sequencer is down, or not including
+    /// any delayed messages.
+    /// @param _totalDelayedMessagesRead The total number of messages to read up to
+    /// @param kind The kind of the last message to be included
+    /// @param l1BlockAndTimestamp The l1 block and the l1 timestamp of the last message to be included
+    /// @param gasPriceL1 The l1 gas price of the last message to be included
+    /// @param sender The sender of the last message to be included
+    /// @param messageDataHash The messageDataHash of the last message to be included
     function forceInclusion(
         uint256 _totalDelayedMessagesRead,
         uint8 kind,
         uint256[2] calldata l1BlockAndTimestamp,
-        uint256 inboxSeqNum,
         uint256 gasPriceL1,
         address sender,
-        bytes32 messageDataHash,
-        bytes calldata emptyData
+        bytes32 messageDataHash
     ) external {
         require(
             _totalDelayedMessagesRead > totalDelayedMessagesRead,
@@ -100,7 +112,7 @@ contract SequencerInbox is ISequencerInbox {
                 sender,
                 l1BlockAndTimestamp[0],
                 l1BlockAndTimestamp[1],
-                inboxSeqNum,
+                _totalDelayedMessagesRead - 1,
                 gasPriceL1,
                 messageDataHash
             );
@@ -130,13 +142,15 @@ contract SequencerInbox is ISequencerInbox {
             );
         }
 
-        require(emptyData.length == 0, "NOT_EMPTY");
+        (
+            bytes32 dataHash,
+            TimeBounds memory timeBounds
+        ) = formEmptyDataHash(_totalDelayedMessagesRead);
         (
             bytes32 beforeAcc,
             bytes32 delayedAcc,
-            bytes32 afterAcc,
-            uint64[4] memory timeBounds
-        ) = addSequencerL2BatchImpl(emptyData, _totalDelayedMessagesRead);
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead);
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -144,7 +158,7 @@ contract SequencerInbox is ISequencerInbox {
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds,
-            emptyData
+            ""
         );
     }
 
@@ -154,23 +168,21 @@ contract SequencerInbox is ISequencerInbox {
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
     ) external {
+        uint256 startGasLeft = gasleft();
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
-        uint256 startGasLeft = gasleft();
-        uint256 calldataSize;
-        assembly {
-            calldataSize := calldatasize()
-        }
-
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
+        (
+            bytes32 dataHash,
+            TimeBounds memory timeBounds
+        ) = formDataHash(data, afterDelayedMessagesRead);
         (
             bytes32 beforeAcc,
             bytes32 delayedAcc,
-            bytes32 afterAcc,
-            uint64[4] memory timeBounds
-        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
         emit SequencerBatchDeliveredFromOrigin(
             inboxAccs.length - 1,
             beforeAcc,
@@ -178,45 +190,6 @@ contract SequencerInbox is ISequencerInbox {
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds
-        );
-
-        if (address(gasRefunder) != address(0)) {
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                calldataSize
-            );
-        }
-    }
-
-    function addSequencerL2Batch(
-        uint256 sequenceNumber,
-        bytes calldata data,
-        uint256 afterDelayedMessagesRead,
-        IGasRefunder gasRefunder
-    ) external override {
-        require(
-            isBatchPoster[msg.sender] || msg.sender == rollup,
-            "NOT_BATCH_POSTER"
-        );
-
-        uint256 startGasLeft = gasleft();
-
-        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc,
-            uint64[4] memory timeBounds
-        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
-        emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
-            beforeAcc,
-            afterAcc,
-            delayedAcc,
-            afterDelayedMessagesRead,
-            timeBounds,
-            data
         );
 
         if (address(gasRefunder) != address(0)) {
@@ -232,16 +205,97 @@ contract SequencerInbox is ISequencerInbox {
         }
     }
 
-    function addSequencerL2BatchImpl(
+    function addSequencerL2Batch(
+        uint256 sequenceNumber,
         bytes calldata data,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder
+    ) external override {
+        uint256 startGasLeft = gasleft();
+        require(
+            isBatchPoster[msg.sender] || msg.sender == rollup,
+            "NOT_BATCH_POSTER"
+        );
+
+        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
+
+        TimeBounds memory timeBounds;
+        bytes32 beforeAcc;
+        bytes32 delayedAcc;
+        bytes32 afterAcc;
+        {
+            bytes32 dataHash;
+            (dataHash, timeBounds) = formDataHash(data, afterDelayedMessagesRead);
+            (
+                beforeAcc,
+                delayedAcc,
+                afterAcc
+            ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        }
+        emit SequencerBatchDelivered(
+            inboxAccs.length - 1,
+            beforeAcc,
+            afterAcc,
+            delayedAcc,
+            afterDelayedMessagesRead,
+            timeBounds,
+            data
+        );
+
+        if (address(gasRefunder) != address(0)) {
+            gasRefunder.onGasSpent(
+                payable(msg.sender),
+                startGasLeft - gasleft(),
+                0
+            );
+        }
+    }
+
+    function packHeader(uint256 afterDelayedMessagesRead) internal view returns (bytes memory, TimeBounds memory) {
+        TimeBounds memory timeBounds = getTimeBounds();
+        bytes memory header = abi.encodePacked(
+            timeBounds.minTimestamp,
+            timeBounds.maxTimestamp,
+            timeBounds.minBlockNumber,
+            timeBounds.maxBlockNumber,
+            uint64(afterDelayedMessagesRead)
+        );
+        require(header.length == HEADER_LENGTH, "BAD_HEADER_LEN");
+        return (header, timeBounds);
+    }
+
+    function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
+        uint256 fullDataLen = HEADER_LENGTH + data.length;
+        require(fullDataLen >= HEADER_LENGTH, "DATA_LEN_OVERFLOW");
+        require(fullDataLen <= MAX_DATA_SIZE, "DATA_TOO_LARGE");
+        bytes memory fullData = new bytes(fullDataLen);
+        (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
+
+        for (uint256 i = 0; i < HEADER_LENGTH; i++) {
+            fullData[i] = header[i];
+        }
+        // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
+        assembly {
+            calldatacopy(add(fullData, add(HEADER_LENGTH, 32)), data.offset, data.length)
+        }
+        return (keccak256(fullData), timeBounds);
+    }
+
+
+    function formEmptyDataHash(uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
+        (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
+        return (keccak256(header), timeBounds);
+    }
+
+    function addSequencerL2BatchImpl(
+        bytes32 dataHash,
         uint256 afterDelayedMessagesRead
     )
         internal
         returns (
             bytes32 beforeAcc,
             bytes32 delayedAcc,
-            bytes32 acc,
-            uint64[4] memory timeBounds
+            bytes32 acc
         )
     {
         require(
@@ -253,36 +307,14 @@ contract SequencerInbox is ISequencerInbox {
             "DELAYED_TOO_FAR"
         );
 
-        uint256 fullDataLen = 40 + data.length;
-        require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
-        require(fullDataLen <= MAX_DATA_SIZE, "DATA_TOO_LARGE");
-        bytes memory fullData = new bytes(fullDataLen);
-        timeBounds = getTimeBounds();
-        bytes memory header = abi.encodePacked(
-            timeBounds[0],
-            timeBounds[1],
-            timeBounds[2],
-            timeBounds[3],
-            uint64(afterDelayedMessagesRead)
-        );
-        require(header.length == 40, "BAD_HEADER_LEN");
-
-        for (uint256 i = 0; i < 40; i++) {
-            fullData[i] = header[i];
-        }
-        // copy data into fullData at offset 40 (the extra 32 offset is because solidity puts the array len first)
-        assembly {
-            calldatacopy(add(fullData, 72), data.offset, data.length)
-        }
-
         if (inboxAccs.length > 0) {
             beforeAcc = inboxAccs[inboxAccs.length - 1];
         }
         if (afterDelayedMessagesRead > 0) {
             delayedAcc = delayedBridge.inboxAccs(afterDelayedMessagesRead - 1);
         }
-        bytes32 fullDataHash = keccak256(fullData);
-        acc = keccak256(abi.encodePacked(beforeAcc, fullDataHash, delayedAcc));
+
+        acc = keccak256(abi.encodePacked(beforeAcc, dataHash, delayedAcc));
         inboxAccs.push(acc);
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }

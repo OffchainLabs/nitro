@@ -18,8 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./Node.sol";
 import "./IRollupCore.sol";
@@ -27,15 +26,13 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../libraries/Cloneable.sol";
-
 import "../challenge/IBlockChallengeFactory.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
+abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -51,9 +48,10 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
     IBlockChallengeFactory public challengeFactory;
+    // when a staker loses a challenge, half of their funds get escrowed in this address
+    address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
-    uint256 public challengeExecutionBisectionDegree;
 
     mapping(address => bool) public isValidator;
 
@@ -85,6 +83,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
+    uint256 totalWithdrawableFunds;
 
     /**
      * @notice Get a storage reference to the Node for the given node index
@@ -277,6 +276,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
      * @param initialNode Initial node to start the chain with
      */
     function initializeCore(Node memory initialNode) internal {
+        __Pausable_init();
         _nodes[0] = initialNode;
         _firstUnresolvedNode = 1;
     }
@@ -514,6 +514,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     function withdrawFunds(address account) internal returns (uint256) {
         uint256 amount = _withdrawableFunds[account];
         _withdrawableFunds[account] = 0;
+        totalWithdrawableFunds -= amount;
         emit UserWithdrawableFundsUpdated(account, amount, 0);
         return amount;
     }
@@ -528,6 +529,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
         uint256 initialWithdrawable = _withdrawableFunds[account];
         uint256 finalWithdrawable = initialWithdrawable + amount;
         _withdrawableFunds[account] = finalWithdrawable;
+        totalWithdrawableFunds += amount;
         emit UserWithdrawableFundsUpdated(
             account,
             initialWithdrawable,
@@ -566,6 +568,7 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
     function createNewNode(
         RollupLib.Assertion calldata assertion,
         uint64 prevNodeNum,
+        uint256 prevNodeInboxMaxCount,
         bytes32 expectedNodeHash
     ) internal returns (bytes32 newNodeHash) {
         require(
@@ -579,12 +582,10 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             // validate data
             memoryFrame.prevNode = getNode(prevNodeNum);
             memoryFrame.currentInboxSize = sequencerBridge.batchCount();
-            // ensure that the assertion specified the correct inbox size
-            require(assertion.afterState.inboxMaxCount == memoryFrame.currentInboxSize, "WRONG_INBOX_COUNT");
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState) ==
+                RollupLib.stateHash(assertion.beforeState, prevNodeInboxMaxCount) ==
                     memoryFrame.prevNode.stateHash,
                 "PREV_STATE_HASH"
             );
@@ -639,8 +640,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             );
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
-            memoryFrame.node = NodeLib.initialize(
-                RollupLib.stateHash(assertion.afterState),
+            memoryFrame.node = NodeLib.createNode(
+                RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
                     block.number,
@@ -676,7 +677,8 @@ abstract contract RollupCore is IRollupCore, Cloneable, Pausable {
             newNodeHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
-            wasmModuleRoot
+            wasmModuleRoot,
+            memoryFrame.currentInboxSize
         );
 
         return newNodeHash;

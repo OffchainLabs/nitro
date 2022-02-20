@@ -18,20 +18,18 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/proxy/Proxy.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
-import "../rollup/AdminAwareProxy.sol";
-import "../rollup/RollupCore.sol";
+import "./AdminFallbackProxy.sol";
+import "../rollup/IRollupLogic.sol";
 
-contract ProxyTesterLogic is AAPStorage, RollupCore {
-    function initialize(
-        RollupLib.Config calldata config,
-        ContractDependencies calldata /* connectedContracts */
-    ) external pure override {
-        require(config.owner != address(0), "OWNER_IS_ZERO");
-    }
-
-    function setOwner(address newOwner) external {
-        owner = newOwner;
-    }
+contract ArbitrumProxy is AdminFallbackProxy {
+    constructor(
+        Config memory config,
+        ContractDependencies memory connectedContracts
+    ) AdminFallbackProxy(
+        address(connectedContracts.rollupAdminLogic),
+        abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
+        address(connectedContracts.rollupUserLogic),
+        abi.encodeWithSelector(IRollupUser.initialize.selector, config.stakeToken),
+        config.owner
+    ) {}
 }
