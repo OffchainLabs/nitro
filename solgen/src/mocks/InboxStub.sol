@@ -10,16 +10,15 @@ import "../bridge/IBridge.sol";
 
 import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
+import {
+    L2_MSG, 
+    L1MessageType_L2FundedByL1, 
+    L1MessageType_submitRetryableTx, 
+    L2MessageType_unsignedEOATx, 
+    L2MessageType_unsignedContractTx 
+} from "../libraries/MessageTypes.sol";
 
 contract InboxStub is IInbox {
-    uint8 internal constant ETH_TRANSFER = 0;
-    uint8 internal constant L2_MSG = 3;
-    uint8 internal constant L1MessageType_L2FundedByL1 = 7;
-    uint8 internal constant L1MessageType_submitRetryableTx = 9;
-
-    uint8 internal constant L2MessageType_unsignedEOATx = 0;
-    uint8 internal constant L2MessageType_unsignedContractTx = 1;
-
     IBridge public override bridge;
 
     bool public paused;

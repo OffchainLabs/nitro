@@ -20,14 +20,14 @@ pragma solidity ^0.8.0;
 
 import "./IRollupLogic.sol";
 import "../challenge/IChallenge.sol";
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract ValidatorWallet is OwnableUpgradeable, Cloneable {
+contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
     using Address for address;
 
-    function initialize() external initializer {
+    function initialize() external initializer onlyDelegated {
         __Ownable_init();
     }
 

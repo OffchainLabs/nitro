@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
 import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
@@ -11,7 +11,7 @@ import "./IChallenge.sol";
 import "./IExecutionChallengeFactory.sol";
 import "./IBlockChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
+contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultReceiver {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
@@ -40,8 +40,7 @@ contract BlockChallenge is ChallengeCore, IChallengeResultReceiver {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external {
-        require(!isMasterCopy, "MASTER_INIT");
+    ) external onlyDelegated {
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
         executionChallengeFactory = executionChallengeFactory_;
