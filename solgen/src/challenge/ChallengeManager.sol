@@ -53,14 +53,17 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         _;
 
-        if (challenge.turn == Turn.CHALLENGER) {
+        if (challenge.turn == Turn.NO_CHALLENGE) {
+            // Early return since challenge must have terminated
+            return;
+        } else if (challenge.turn == Turn.CHALLENGER) {
             challenge.challengerTimeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.ASSERTER;
         } else if (challenge.turn == Turn.ASSERTER) {
             challenge.asserterTimeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.CHALLENGER;
         } else {
-            revert(NO_TURN);
+            revert("invalid turn state");
         }
         challenge.lastMoveTimestamp = block.timestamp;
     }
