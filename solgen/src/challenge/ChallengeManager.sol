@@ -101,7 +101,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
         // No need to set maxInboxMessages until execution challenge
-        challenge.endGlobalState = startAndEndGlobalStates_[1];
+        challenge.globalEndInboxPosition = startAndEndGlobalStates_[1].getInboxPosition();
+        challenge.globalEndMessagePosition = startAndEndGlobalStates_[1].getPositionInMessage();
         challenge.next = ChallengeLib.Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
@@ -115,7 +116,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         emit InitiatedChallenge(
             challengeIndex,
-            startAndEndGlobalStates_[0]
+            startAndEndGlobalStates_[0],
+            startAndEndGlobalStates_[1]
         );
         completeBisection(
             challengeIndex,
@@ -210,8 +212,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             globalStateHashes[1]
         );
 
-        uint256 maxInboxMessagesRead = challenge.endGlobalState.getInboxPosition();
-        if (machineStatuses[1] == MachineStatus.ERRORED || challenge.endGlobalState.getPositionInMessage() > 0) {
+        uint256 maxInboxMessagesRead = challenge.globalEndInboxPosition;
+        if (machineStatuses[1] == MachineStatus.ERRORED || challenge.globalEndMessagePosition > 0) {
             maxInboxMessagesRead++;
         }
 

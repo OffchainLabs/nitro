@@ -114,9 +114,8 @@ func NewChallengeManager(
 		return nil, err
 	}
 	backend, err := NewBlockChallengeBackend(
-		ctx,
 		challengeIndex,
-		parsedLog.StartState,
+		parsedLog,
 		l2blockChain,
 		inboxTracker,
 		l1client,

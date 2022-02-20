@@ -26,9 +26,10 @@ library ChallengeLib {
 
         bytes32 wasmModuleRoot;
         uint256 maxInboxMessages;
-        GlobalState endGlobalState;
-
         bytes32 challengeStateHash;
+
+        uint64 globalEndInboxPosition;
+        uint64 globalEndMessagePosition;
 
         ChallengeMode mode;
     }

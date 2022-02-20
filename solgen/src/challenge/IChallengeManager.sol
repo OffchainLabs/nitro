@@ -28,7 +28,7 @@ interface IChallengeManager {
         CLEARED
     }
 
-    event InitiatedChallenge(uint64 indexed challengeIndex, GlobalState startState);
+    event InitiatedChallenge(uint64 indexed challengeIndex, GlobalState startState, GlobalState endState);
 
     event Bisected(
         uint64 indexed challengeIndex,
