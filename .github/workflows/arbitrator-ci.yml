@@ -151,4 +151,4 @@ jobs:
           npm install --global yarn
           cd solgen
           yarn install
-          yarn hardhat test --network localhost
+          yarn hardhat --network localhost test test/geth
