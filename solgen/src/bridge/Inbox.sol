@@ -151,7 +151,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasFeeCap,
         uint256 nonce,
         address to,
-        uint256 amount,
+        uint256 value,
         bytes calldata data
     ) external virtual override whenNotPaused returns (uint256) {
         return
@@ -164,7 +164,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     gasFeeCap,
                     nonce,
                     uint256(uint160(bytes20(to))),
-                    amount,
+                    value,
                     data
                 )
             );
@@ -174,7 +174,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 gasFeeCap,
         address to,
-        uint256 amount,
+        uint256 value,
         bytes calldata data
     ) external virtual override whenNotPaused returns (uint256) {
         return
@@ -186,7 +186,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     gasLimit,
                     gasFeeCap,
                     uint256(uint160(bytes20(to))),
-                    amount,
+                    value,
                     data
                 )
             );

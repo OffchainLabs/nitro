@@ -81,7 +81,7 @@ contract Outbox is DelegateCallAware, IOutbox {
      * @param l2Block l2 block number at which sendTxToL1 call was made
      * @param l1Block l1 block number at which sendTxToL1 call was made
      * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
-     * @param amount value in L1 message in wei
+     * @param value wei in L1 message
      * @param calldataForL1 abi-encoded L1 message data
      */
     function executeTransaction(
@@ -92,7 +92,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
+        uint256 value,
         bytes calldata calldataForL1
     ) external virtual {
         bytes32 outputId;
@@ -103,7 +103,7 @@ contract Outbox is DelegateCallAware, IOutbox {
                 l2Block,
                 l1Block,
                 l2Timestamp,
-                amount,
+                value,
                 calldataForL1
             );
 
@@ -124,7 +124,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         });
 
         // set and reset vars around execution so they remain valid during call
-        executeBridgeCall(to, amount, calldataForL1);
+        executeBridgeCall(to, value, calldataForL1);
 
         context = prevContext;
     }
@@ -149,10 +149,10 @@ contract Outbox is DelegateCallAware, IOutbox {
 
     function executeBridgeCall(
         address to,
-        uint256 amount,
+        uint256 value,
         bytes memory data
     ) internal {
-        (bool success, bytes memory returndata) = bridge.executeCall(to, amount, data);
+        (bool success, bytes memory returndata) = bridge.executeCall(to, value, data);
         if (!success) {
             if (returndata.length > 0) {
                 // solhint-disable-next-line no-inline-assembly
@@ -172,7 +172,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
+        uint256 value,
         bytes calldata calldataForL1
     ) public pure returns (bytes32) {
         return
@@ -183,7 +183,7 @@ contract Outbox is DelegateCallAware, IOutbox {
                     l2Block,
                     l1Block,
                     l2Timestamp,
-                    amount,
+                    value,
                     calldataForL1
                 )
             );

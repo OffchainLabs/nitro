@@ -113,7 +113,7 @@ func TestTransactionStreamer(t *testing.T) {
 				if state.balances[source].Cmp(minBalance) < 0 {
 					continue
 				}
-				amount := big.NewInt(int64(rand.Int() % 1000))
+				value := big.NewInt(int64(rand.Int() % 1000))
 				var dest common.Address
 				if j == 0 {
 					binary.LittleEndian.PutUint64(dest[:], uint64(len(state.accounts)))
@@ -127,7 +127,7 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialBaseFeeWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
-				l2Message = append(l2Message, math.U256Bytes(amount)...)
+				l2Message = append(l2Message, math.U256Bytes(value)...)
 				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
@@ -138,11 +138,11 @@ func TestTransactionStreamer(t *testing.T) {
 					},
 					DelayedMessagesRead: 0,
 				})
-				state.balances[source].Sub(state.balances[source], amount)
+				state.balances[source].Sub(state.balances[source], value)
 				if state.balances[dest] == nil {
 					state.balances[dest] = new(big.Int)
 				}
-				state.balances[dest].Add(state.balances[dest], amount)
+				state.balances[dest].Add(state.balances[dest], value)
 			}
 
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))

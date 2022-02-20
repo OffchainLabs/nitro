@@ -203,7 +203,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
 					Timestamp:   common.BigToHash(parsedLog.Timestamp),
 					RequestId:   common.BigToHash(parsedLog.MessageIndex),
-					BaseFeeL1:   common.BigToHash(parsedLog.GasPrice),
+					BaseFeeL1:   common.BigToHash(parsedLog.BaseFeeL1),
 				},
 				L2msg: data,
 			},

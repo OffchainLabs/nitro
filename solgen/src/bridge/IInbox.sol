@@ -26,7 +26,7 @@ interface IInbox is IMessageProvider {
         uint256 gasFeeCap,
         uint256 nonce,
         address to,
-        uint256 amount,
+        uint256 value,
         bytes calldata data
     ) external returns (uint256);
 
@@ -34,7 +34,7 @@ interface IInbox is IMessageProvider {
         uint256 gasLimit,
         uint256 gasFeeCap,
         address to,
-        uint256 amount,
+        uint256 value,
         bytes calldata data
     ) external returns (uint256);
 

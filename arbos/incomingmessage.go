@@ -336,7 +336,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		destination = &to
 	}
 
-	callvalue, err := util.HashFromReader(rd)
+	value, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -357,7 +357,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			GasFeeCap: gasFeeCap.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
-			Value:     callvalue.Big(),
+			Value:     value.Big(),
 			Data:      calldata,
 		}
 	case L2MessageKind_ContractTx:
@@ -368,7 +368,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			GasFeeCap: gasFeeCap.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
-			Value:     callvalue.Big(),
+			Value:     value.Big(),
 			Data:      calldata,
 		}
 	default:

@@ -30,7 +30,7 @@ interface IBridge {
     event BridgeCallTriggered(
         address indexed outbox,
         address indexed to,
-        uint256 amount,
+        uint256 value,
         bytes data
     );
 
@@ -46,7 +46,7 @@ interface IBridge {
 
     function executeCall(
         address to,
-        uint256 amount,
+        uint256 value,
         bytes calldata data
     ) external returns (bool success, bytes memory returnData);
 
