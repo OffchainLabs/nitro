@@ -18,23 +18,23 @@ contract SingleExecutionChallenge is ChallengeManager {
         osp = osp_;
         resultReceiver = resultReceiver_;
         uint64 challengeIndex = ++totalChallengesCreated;
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.maxInboxMessages = maxInboxMessagesRead_;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps_, segments);
         challenge.challengeStateHash = challengeStateHash;
-        challenge.next = Participant({
+        challenge.next = ChallengeLib.Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
         });
-        challenge.current = Participant({
+        challenge.current = ChallengeLib.Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
         });
         challenge.lastMoveTimestamp = block.timestamp;
-        challenge.mode = ChallengeMode.EXECUTION;
+        challenge.mode = ChallengeLib.ChallengeMode.EXECUTION;
 
         emit Bisected(
            challengeIndex,

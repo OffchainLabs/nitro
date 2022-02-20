@@ -2,15 +2,50 @@
 pragma solidity ^0.8.0;
 
 import "../state/Machine.sol";
+import "../state/GlobalState.sol";
 
 library ChallengeLib {
     using MachineLib for Machine;
+
+    enum ChallengeMode {
+        NONE,
+        BLOCK,
+        EXECUTION
+    }
+
+    struct Participant {
+        address addr;
+        uint256 timeLeft;
+    }
+
+    struct Challenge {
+        Participant current;
+        Participant next;
+
+        uint256 lastMoveTimestamp;
+
+        bytes32 wasmModuleRoot;
+        uint256 maxInboxMessages;
+        GlobalState[2] startAndEndGlobalStates;
+
+        bytes32 challengeStateHash;
+
+        ChallengeMode mode;
+    }
 
     struct SegmentSelection {
         uint256 oldSegmentsStart;
         uint256 oldSegmentsLength;
         bytes32[] oldSegments;
         uint256 challengePosition;
+    }
+
+    function timeUsedSinceLastMove(Challenge storage challenge) internal view returns (uint256) {
+        return block.timestamp - challenge.lastMoveTimestamp;
+    }
+
+    function isTimedOut(Challenge storage challenge) internal view returns (bool) {
+        return timeUsedSinceLastMove(challenge) > challenge.current.timeLeft;
     }
 
     function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot)

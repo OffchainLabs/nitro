@@ -1,7 +1,6 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../state/GlobalState.sol";
 import "../state/Machine.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -9,17 +8,13 @@ import "../osp/IOneStepProofEntry.sol";
 
 import "./IChallengeResultReceiver.sol";
 
+import "./ChallengeLib.sol";
+
 interface IChallengeManager {
     enum Turn {
         NO_CHALLENGE,
         ASSERTER,
         CHALLENGER
-    }
-
-    enum ChallengeMode {
-        NONE,
-        BLOCK,
-        EXECUTION
     }
 
     enum ChallengeWinner {
@@ -31,26 +26,6 @@ interface IChallengeManager {
     enum ChallengeTerminationType {
         TIMEOUT,
         CLEARED
-    }
-
-    struct Participant {
-        address addr;
-        uint256 timeLeft;
-    }
-
-    struct Challenge {
-        Participant current;
-        Participant next;
-
-        uint256 lastMoveTimestamp;
-
-        bytes32 wasmModuleRoot;
-        uint256 maxInboxMessages;
-        GlobalState[2] startAndEndGlobalStates;
-
-        bytes32 challengeStateHash;
-
-        ChallengeMode mode;
     }
 
     event InitiatedChallenge(uint64 indexed challengeIndex);
@@ -86,7 +61,7 @@ interface IChallengeManager {
         uint256 challengerTimeLeft_
     ) external returns (uint64);
 
-    function challengeInfo(uint64 challengeIndex_) external view returns (Challenge memory);
+    function challengeInfo(uint64 challengeIndex_) external view returns (ChallengeLib.Challenge memory);
 
 //    function asserter() external view returns (address);
 //    function challenger() external view returns (address);

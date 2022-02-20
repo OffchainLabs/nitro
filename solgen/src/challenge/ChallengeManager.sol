@@ -13,12 +13,13 @@ import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
 contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
+    using ChallengeLib for ChallengeLib.Challenge;
 
     string constant NO_TURN = "NO_TURN";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
-    mapping (uint256 => Challenge) public challenges;
+    mapping (uint256 => ChallengeLib.Challenge) public challenges;
 
     IChallengeResultReceiver public resultReceiver;
 
@@ -26,12 +27,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     IBridge public delayedBridge;
     IOneStepProofEntry public osp;
 
-    function challengeInfo(uint64 challengeIndex) external view override returns (Challenge memory) {
+    function challengeInfo(uint64 challengeIndex) external view override returns (ChallengeLib.Challenge memory) {
         return challenges[challengeIndex];
     }
 
     modifier takeTurn(uint64 challengeIndex, ChallengeLib.SegmentSelection calldata selection) {
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
         require(!isTimedOut(challengeIndex), "CHAL_DEADLINE");
 
@@ -53,12 +54,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         _;
 
-        if (challenge.mode == ChallengeMode.NONE) {
+        if (challenge.mode == ChallengeLib.ChallengeMode.NONE) {
             // Early return since challenge must have terminated
             return;
         }
 
-        Participant memory current = challenge.current;
+        ChallengeLib.Participant memory current = challenge.current;
         challenge.current = challenge.next;
         challenge.next = current;
 
@@ -97,21 +98,21 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint64 challengeIndex = ++totalChallengesCreated;
         // The following is an assertion since it should never be possible, but it's an important invariant
         assert(challengeIndex != NO_CHAL_INDEX);
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
         // No need to set maxInboxMessages until execution challenge
         challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         challenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        challenge.next = Participant({
+        challenge.next = ChallengeLib.Participant({
             addr: asserter_,
             timeLeft: asserterTimeLeft_
         });
-        challenge.current = Participant({
+        challenge.current = ChallengeLib.Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
         });
         challenge.lastMoveTimestamp = block.timestamp;
-        challenge.mode = ChallengeMode.BLOCK;
+        challenge.mode = ChallengeLib.ChallengeMode.BLOCK;
 
         emit InitiatedChallenge(challengeIndex);
         completeBisection(
@@ -124,13 +125,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function getStartGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
-        Challenge storage challenge = challenges[challengeIndex];
-        return challenge.startAndEndGlobalStates[0];
+        return challenges[challengeIndex].startAndEndGlobalStates[0];
     }
 
     function getEndGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
-        Challenge storage challenge = challenges[challengeIndex];
-        return challenge.startAndEndGlobalStates[1];
+        return challenges[challengeIndex].startAndEndGlobalStates[1];
     }
 
     /**
@@ -187,7 +186,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             )
         );
 
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
@@ -223,7 +222,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         }
 
         challenge.maxInboxMessages = challenge.maxInboxMessages;
-        challenge.mode = ChallengeMode.EXECUTION;
+        challenge.mode = ChallengeLib.ChallengeMode.EXECUTION;
 
         completeBisection(
             challengeIndex,
@@ -240,7 +239,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.SegmentSelection calldata selection,
         bytes calldata proof
     ) external takeTurn(challengeIndex, selection) {
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
@@ -275,21 +274,19 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function currentResponder(uint64 challengeIndex) public view override returns (address) {
-        Challenge storage challenge = challenges[challengeIndex];
-        return challenge.current.addr;
+        return challenges[challengeIndex].current.addr;
     }
 
     function currentResponderTimeLeft(uint64 challengeIndex) public override view returns (uint256) {
-        Challenge storage challenge = challenges[challengeIndex];
-        return challenge.current.timeLeft;
+        return challenges[challengeIndex].current.timeLeft;
     }
 
     function isTimedOut(uint64 challengeIndex) public view override returns (bool) {
-        return timeUsedSinceLastMove(challengeIndex) > currentResponderTimeLeft(challengeIndex);
+        return challenges[challengeIndex].isTimedOut();
     }
 
     function timeUsedSinceLastMove(uint64 challengeIndex) private view returns (uint256) {
-        return block.timestamp - challenges[challengeIndex].lastMoveTimestamp;
+        return challenges[challengeIndex].timeUsedSinceLastMove();
     }
 
     function requireValidBisection(
@@ -324,13 +321,13 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function _nextWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
-        Challenge storage challenge = challenges[challengeIndex];
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         resultReceiver.completeChallenge(challenge.next.addr, challenge.current.addr);
         delete challenges[challengeIndex];
         emit ChallengeEnded(challengeIndex, reason);
     }
 
-    function _currentWin(Challenge storage challenge) private {
+    function _currentWin(ChallengeLib.Challenge storage challenge) private {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout
         challenge.challengeStateHash = bytes32(0);
