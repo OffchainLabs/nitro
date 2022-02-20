@@ -6,16 +6,30 @@ import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
-import "./ChallengeCore.sol";
 import "./IChallenge.sol";
 import "./IChallengeFactory.sol";
 
-contract Challenge is ChallengeCore, DelegateCallAware {
+contract Challenge is DelegateCallAware, IChallenge {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
+    string constant NO_TURN = "NO_TURN";
+    uint256 constant MAX_CHALLENGE_DEGREE = 40;
+
     bytes32 public wasmModuleRoot;
     GlobalState[2] internal startAndEndGlobalStates;
+
+    address public override asserter;
+    address public override challenger;
+
+    uint256 public asserterTimeLeft;
+    uint256 public challengerTimeLeft;
+    uint256 public override lastMoveTimestamp;
+
+    Turn public turn;
+    bytes32 public challengeStateHash;
+
+    IChallengeResultReceiver public resultReceiver;
 
     ISequencerInbox public sequencerInbox;
     IBridge public delayedBridge;
@@ -24,6 +38,25 @@ contract Challenge is ChallengeCore, DelegateCallAware {
     ChallengeMode public mode;
 
     uint256 maxInboxMessages;
+
+    modifier takeTurn() {
+        require(msg.sender == currentResponder(), "BIS_SENDER");
+        require(
+            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
+            "BIS_DEADLINE"
+        );
+
+        _;
+
+        if (turn == Turn.CHALLENGER) {
+            challengerTimeLeft -= block.timestamp - lastMoveTimestamp;
+            turn = Turn.ASSERTER;
+        } else {
+            asserterTimeLeft -= block.timestamp - lastMoveTimestamp;
+            turn = Turn.CHALLENGER;
+        }
+        lastMoveTimestamp = block.timestamp;
+    }
 
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
@@ -75,6 +108,57 @@ contract Challenge is ChallengeCore, DelegateCallAware {
 
     function getEndGlobalState() external view returns (GlobalState memory) {
         return startAndEndGlobalStates[1];
+    }
+
+    /**
+     * @notice Initiate the next round in the bisection by objecting to execution correctness with a bisection
+     * of an execution segment with the same length but a different endpoint. This is either the initial move
+     * or follows another execution objection
+     */
+    function bisectExecution(
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition,
+        bytes32[] calldata newSegments
+    ) external takeTurn {
+        (
+        uint256 challengeStart,
+        uint256 challengeLength
+        ) = extractChallengeSegment(
+            oldSegmentsStart,
+            oldSegmentsLength,
+            oldSegments,
+            challengePosition
+        );
+        require(challengeLength > 1, "TOO_SHORT");
+        {
+            uint256 expectedDegree = challengeLength;
+            if (expectedDegree > MAX_CHALLENGE_DEGREE) {
+                expectedDegree = MAX_CHALLENGE_DEGREE;
+            }
+            require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
+        }
+        require(
+            newSegments[newSegments.length - 1] !=
+            oldSegments[challengePosition + 1],
+            "SAME_END"
+        );
+
+        require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
+
+        challengeStateHash = ChallengeLib.hashChallengeState(
+            challengeStart,
+            challengeLength,
+            newSegments
+        );
+
+        emit Bisected(
+            challengeStateHash,
+            challengeStart,
+            challengeLength,
+            newSegments
+        );
     }
 
     function challengeExecution(
@@ -210,6 +294,79 @@ contract Challenge is ChallengeCore, DelegateCallAware {
         _currentWin();
     }
 
+    function timeout() external override {
+        uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
+        require(
+            timeSinceLastMove > currentResponderTimeLeft(),
+            "TIMEOUT_DEADLINE"
+        );
+
+        if (turn == Turn.ASSERTER) {
+            emit AsserterTimedOut();
+            _challengerWin();
+        } else if (turn == Turn.CHALLENGER) {
+            emit ChallengerTimedOut();
+            _asserterWin();
+        } else {
+            revert(NO_TURN);
+        }
+    }
+
+    function clearChallenge() external override {
+        require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+        turn = Turn.NO_CHALLENGE;
+    }
+
+    function currentResponder() public view returns (address) {
+        if (turn == Turn.ASSERTER) {
+            return asserter;
+        } else if (turn == Turn.CHALLENGER) {
+            return challenger;
+        } else {
+            revert(NO_TURN);
+        }
+    }
+
+    function currentResponderTimeLeft() public override view returns (uint256) {
+        if (turn == Turn.ASSERTER) {
+            return asserterTimeLeft;
+        } else if (turn == Turn.CHALLENGER) {
+            return challengerTimeLeft;
+        } else {
+            revert(NO_TURN);
+        }
+    }
+
+    function extractChallengeSegment(
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition
+    ) internal view returns (uint256 segmentStart, uint256 segmentLength) {
+        require(
+            challengeStateHash ==
+            ChallengeLib.hashChallengeState(
+                oldSegmentsStart,
+                oldSegmentsLength,
+                oldSegments
+            ),
+            "BIS_STATE"
+        );
+        if (
+            oldSegments.length < 2 ||
+            challengePosition >= oldSegments.length - 1
+        ) {
+            revert("BAD_CHALLENGE_POS");
+        }
+        uint256 oldChallengeDegree = oldSegments.length - 1;
+        segmentLength = oldSegmentsLength / oldChallengeDegree;
+        // Intentionally done before challengeLength is potentially added to for the final segment
+        segmentStart = oldSegmentsStart + segmentLength * challengePosition;
+        if (challengePosition == oldSegments.length - 2) {
+            segmentLength += oldSegmentsLength % oldChallengeDegree;
+        }
+    }
+
     function getStartMachineHash(bytes32 globalStateHash)
         internal
         view
@@ -268,9 +425,14 @@ contract Challenge is ChallengeCore, DelegateCallAware {
         }
     }
 
-    function clearChallenge() external override {
-        require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+    function _asserterWin() private {
         turn = Turn.NO_CHALLENGE;
+        resultReceiver.completeChallenge(asserter, challenger);
+    }
+
+    function _challengerWin() private {
+        turn = Turn.NO_CHALLENGE;
+        resultReceiver.completeChallenge(challenger, asserter);
     }
 
     function _currentWin() private {
