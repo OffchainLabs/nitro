@@ -28,9 +28,9 @@ const sequencerBatchDataEvent = "SequencerBatchData"
 type batchDataLocation uint8
 
 const (
-	txInput batchDataLocation = iota
-	separateBatchEvent
-	delayedInbox
+	batchDataTxInput batchDataLocation = iota
+	batchDataSeparateEvent
+	batchDataNone
 )
 
 func init() {
@@ -108,7 +108,7 @@ type SequencerInboxBatch struct {
 
 func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) ([]byte, error) {
 	switch m.dataLocation {
-	case txInput:
+	case batchDataTxInput:
 		tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
 		if err != nil {
 			return nil, errors.WithStack(err)
@@ -119,7 +119,7 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) (
 			return nil, errors.WithStack(err)
 		}
 		return args["data"].([]byte), nil
-	case separateBatchEvent:
+	case batchDataSeparateEvent:
 		var numberAsHash common.Hash
 		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
 		query := ethereum.FilterQuery{
@@ -143,7 +143,7 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) (
 			return nil, errors.WithStack(err)
 		}
 		return event.Data, nil
-	case delayedInbox:
+	case batchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
 	default:
