@@ -8,29 +8,35 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "./IExecutionChallengeFactory.sol";
 import "./IBlockChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultReceiver {
+contract BlockChallenge is ChallengeCore, DelegateCallAware {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
-    event ExecutionChallengeBegun(IChallenge indexed challenge, uint256 blockSteps);
+    enum ChallengeMode {
+        NONE,
+        BLOCK,
+        EXECUTION
+    }
 
-    IExecutionChallengeFactory public executionChallengeFactory;
+    event ExecutionChallengeBegun(uint256 blockSteps);
+    event OneStepProofCompleted();
 
     bytes32 public wasmModuleRoot;
     GlobalState[2] internal startAndEndGlobalStates;
 
-    IChallenge public executionChallenge;
-    uint256 public executionChallengeAtSteps;
-
     ISequencerInbox public sequencerInbox;
     IBridge public delayedBridge;
+    IOneStepProofEntry public osp;
+
+    ChallengeMode public mode;
+
+    uint256 maxInboxMessages;
 
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
-        IExecutionChallengeFactory executionChallengeFactory_,
+        IOneStepProofEntry osp_,
         IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
@@ -43,10 +49,10 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
     ) external onlyDelegated {
         require(address(resultReceiver) == address(0), "ALREADY_INIT");
         require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
-        executionChallengeFactory = executionChallengeFactory_;
         resultReceiver = IChallengeResultReceiver(contractAddresses.resultReceiver);
         sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
         delayedBridge = IBridge(contractAddresses.delayedBridge);
+        osp = osp_;
         wasmModuleRoot = wasmModuleRoot_;
         startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
@@ -56,6 +62,7 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         challengerTimeLeft = challengerTimeLeft_;
         lastMoveTimestamp = block.timestamp;
         turn = Turn.CHALLENGER;
+        mode = ChallengeMode.BLOCK;
 
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
@@ -94,29 +101,13 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
             "EXEC_DEADLINE"
         );
 
-        uint256 challengeLength;
-        (executionChallengeAtSteps, challengeLength) = extractChallengeSegment(
+        (uint256 executionChallengeAtSteps, uint256 challengeLength) = extractChallengeSegment(
             oldSegmentsStart,
             oldSegmentsLength,
             oldSegments,
             challengePosition
         );
         require(challengeLength == 1, "TOO_LONG");
-
-        address newAsserter = asserter;
-        address newChallenger = challenger;
-        uint256 newAsserterTimeLeft = asserterTimeLeft;
-        uint256 newChallengerTimeLeft = challengerTimeLeft;
-
-        if (turn == Turn.CHALLENGER) {
-            (newAsserter, newChallenger) = (newChallenger, newAsserter);
-            (newAsserterTimeLeft, newChallengerTimeLeft) = (
-                newChallengerTimeLeft,
-                newAsserterTimeLeft
-            );
-        } else if (turn != Turn.ASSERTER) {
-            revert(NO_TURN);
-        }
 
         require(
             oldSegments[challengePosition] ==
@@ -164,25 +155,68 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
         if (machineStatuses[1] == MachineStatus.ERRORED || startAndEndGlobalStates[1].getPositionInMessage() > 0) {
             maxInboxMessagesRead++;
         }
-        ExecutionContext memory execCtx = ExecutionContext({
-            maxInboxMessagesRead: maxInboxMessagesRead,
-            sequencerInbox: sequencerInbox,
-            delayedBridge: delayedBridge
-        });
 
-        executionChallenge = executionChallengeFactory.createChallenge(
-            this,
-            execCtx,
-            startAndEndHashes,
-            numSteps,
-            newAsserter,
-            newChallenger,
-            newAsserterTimeLeft,
-            newChallengerTimeLeft
+
+        if (turn == Turn.CHALLENGER) {
+            (asserter, challenger) = (challenger, asserter);
+            (asserterTimeLeft, challengerTimeLeft) = (challengerTimeLeft, asserterTimeLeft);
+        } else if (turn != Turn.ASSERTER) {
+            revert(NO_TURN);
+        }
+
+        require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
+        maxInboxMessages = maxInboxMessages;
+        bytes32[] memory segments = new bytes32[](2);
+        segments[0] = startAndEndHashes[0];
+        segments[1] = startAndEndHashes[1];
+        challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps, segments);
+        lastMoveTimestamp = block.timestamp;
+        turn = Turn.CHALLENGER;
+        mode = ChallengeMode.EXECUTION;
+
+        emit InitiatedChallenge();
+        emit Bisected(
+            challengeStateHash,
+            0,
+                numSteps,
+            segments
         );
-        turn = Turn.NO_CHALLENGE;
 
-        emit ExecutionChallengeBegun(executionChallenge, executionChallengeAtSteps);
+        emit ExecutionChallengeBegun(executionChallengeAtSteps);
+    }
+
+    function oneStepProveExecution(
+        uint256 oldSegmentsStart,
+        uint256 oldSegmentsLength,
+        bytes32[] calldata oldSegments,
+        uint256 challengePosition,
+        bytes calldata proof
+    ) external takeTurn {
+        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
+            oldSegmentsStart,
+            oldSegmentsLength,
+            oldSegments,
+            challengePosition
+        );
+        require(challengeLength == 1, "TOO_LONG");
+
+        bytes32 afterHash = osp.proveOneStep(
+            ExecutionContext({
+                maxInboxMessagesRead: maxInboxMessages,
+                sequencerInbox: sequencerInbox,
+                delayedBridge: delayedBridge
+            }),
+            challengeStart,
+            oldSegments[challengePosition],
+            proof
+        );
+        require(
+            afterHash != oldSegments[challengePosition + 1],
+            "SAME_OSP_END"
+        );
+
+        emit OneStepProofCompleted();
+        _currentWin();
     }
 
     function getStartMachineHash(bytes32 globalStateHash)
@@ -246,24 +280,6 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware, IChallengeResultRec
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         turn = Turn.NO_CHALLENGE;
-        if (address(executionChallenge) != address(0)) {
-            executionChallenge.clearChallenge();
-        }
-    }
-
-    function completeChallenge(address winner, address loser)
-        external
-        override 
-    {
-        require(msg.sender == address(executionChallenge), "NOT_EXEC_CHAL");
-        // since this is being called by the execution challenge, 
-        // and since we transition to NO_CHALLENGE when we create 
-        // an execution challenge, that must mean the state is 
-        // already NO_CHALLENGE. So we dont technically need to set that here.
-        // However to guard against a possible future missed refactoring
-        // it's probably safest to set it here anyway
-        if(turn != Turn.NO_CHALLENGE) turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(winner, loser);
     }
 
     function _currentWin() private {

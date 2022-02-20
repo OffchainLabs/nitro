@@ -138,13 +138,7 @@ func deployChallengeFactory(ctx context.Context, client arbutil.L1Interface, aut
 		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	execChallengeFactoryAddr, tx, _, err := challengegen.DeployExecutionChallengeFactory(auth, client, ospEntryAddr)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
-	if err != nil {
-		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
-	}
-
-	blockChallengeFactoryAddr, tx, _, err := challengegen.DeployBlockChallengeFactory(auth, client, execChallengeFactoryAddr)
+	blockChallengeFactoryAddr, tx, _, err := challengegen.DeployBlockChallengeFactory(auth, client, ospEntryAddr)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)

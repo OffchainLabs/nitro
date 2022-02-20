@@ -64,9 +64,7 @@ func CreateChallenge(
 		client,
 		ospEntry,
 		resultReceiverAddr,
-		mocksgen.ExecutionContext{
-			MaxInboxMessagesRead: new(big.Int).SetUint64(^uint64(0)),
-		},
+		new(big.Int).SetUint64(^uint64(0)),
 		[2][32]byte{startHashBytes, endHashBytes},
 		big.NewInt(int64(endMachineSteps)),
 		asserter,

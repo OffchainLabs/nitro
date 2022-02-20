@@ -84,7 +84,7 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 }
 
 func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState *ChallengeState, startSegment int) (*types.Transaction, error) {
-	con, err := challengegen.NewExecutionChallenge(challenge, client)
+	con, err := challengegen.NewBlockChallenge(challenge, client)
 	if err != nil {
 		return nil, err
 	}

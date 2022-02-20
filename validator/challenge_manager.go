@@ -25,7 +25,10 @@ import (
 
 const maxBisectionDegree uint64 = 40
 
+const challengeModeExecution = 2
+
 var challengeBisectedID common.Hash
+var executionChallengeBegunID common.Hash
 
 func init() {
 	parsedChallengeCoreABI, err := abi.JSON(strings.NewReader(challengegen.ChallengeCoreABI))
@@ -33,6 +36,7 @@ func init() {
 		panic(err)
 	}
 	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
+	executionChallengeBegunID = parsedChallengeCoreABI.Events["ExecutionChallengeBegun"].ID
 }
 
 type ChallengeBackend interface {
@@ -42,7 +46,7 @@ type ChallengeBackend interface {
 
 type ChallengeManager struct {
 	// fields used in both block and execution challenge
-	con                *challengegen.ChallengeCore
+	con                *challengegen.BlockChallenge
 	challengeAddr      common.Address
 	rootChallengeAddr  common.Address
 	client             bind.ContractBackend
@@ -69,7 +73,7 @@ type ChallengeManager struct {
 }
 
 func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, fromAddr common.Address, blockChallengeAddr common.Address, l2blockChain *core.BlockChain, inboxReader InboxReaderInterface, inboxTracker InboxTrackerInterface, txStreamer TransactionStreamerInterface, startL1Block uint64, targetNumMachines int, confirmationBlocks int64) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewChallengeCore(blockChallengeAddr, l1client)
+	challengeCoreCon, err := challengegen.NewBlockChallenge(blockChallengeAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +105,7 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 
 // for testing only - skips block challenges
 func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, execChallengeAddr common.Address, initialMachine MachineInterface, startL1Block uint64, targetNumMachines int) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewChallengeCore(execChallengeAddr, l1client)
+	challengeCoreCon, err := challengegen.NewBlockChallenge(execChallengeAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +173,8 @@ func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash commo
 	}
 	// Multiple logs are in theory fine, as they should all reveal the same preimage.
 	// We'll use the most recent log to be safe.
-	log := logs[len(logs)-1]
-	parsedLog, err := m.con.ParseBisected(log)
+	evmLog := logs[len(logs)-1]
+	parsedLog, err := m.con.ParseBisected(evmLog)
 	if err != nil {
 		return ChallengeState{}, err
 	}
@@ -383,14 +387,33 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	inExec, addr, blockNum, err := m.blockChallengeBackend.IsInExecutionChallenge(ctx, latestConfirmedBlock)
-	if err != nil || !inExec {
-		return err
+	callOpts := &bind.CallOpts{
+		Context:     ctx,
+		BlockNumber: latestConfirmedBlock,
 	}
-	con, err := challengegen.NewChallengeCore(addr, m.client)
+	challengeMode, err := m.con.Mode(callOpts)
+	if err != nil || challengeMode != challengeModeExecution {
+		return errors.WithStack(err)
+	}
+	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
+		FromBlock: m.startL1Block,
+		Addresses: []common.Address{m.challengeAddr},
+		Topics:    [][]common.Hash{{executionChallengeBegunID}},
+	})
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
+	if len(logs) == 0 {
+		return errors.New("expected ExecutionChallengeBegun event")
+	}
+	if len(logs) > 1 {
+		return errors.New("expected only one ExecutionChallengeBegun event")
+	}
+	ev, err := m.con.ParseExecutionChallengeBegun(logs[0])
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	blockNum := m.blockChallengeBackend.startBlock + ev.BlockSteps.Int64()
 	err = m.createInitialMachine(ctx, blockNum)
 	if err != nil {
 		return err
@@ -399,9 +422,7 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.con = con
 	m.executionChallengeBackend = execBackend
-	m.challengeAddr = addr
 	return nil
 }
 

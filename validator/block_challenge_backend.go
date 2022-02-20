@@ -292,27 +292,3 @@ func (b *BlockChallengeBackend) IssueExecChallenge(ctx context.Context, client b
 		big.NewInt(int64(numsteps)),
 	)
 }
-
-func inExecChallengeError(err error) (bool, common.Address, int64, error) {
-	return false, common.Address{}, 0, err
-}
-
-func (b *BlockChallengeBackend) IsInExecutionChallenge(ctx context.Context, latestConfirmedBlock *big.Int) (bool, common.Address, int64, error) {
-	callOpts := &bind.CallOpts{
-		Context:     ctx,
-		BlockNumber: latestConfirmedBlock,
-	}
-	addr, err := b.blockChallengeCon.ExecutionChallenge(callOpts)
-	if err != nil {
-		return inExecChallengeError(err)
-	}
-	if addr == (common.Address{}) {
-		return inExecChallengeError(nil)
-	}
-
-	blockOffset, err := b.blockChallengeCon.ExecutionChallengeAtSteps(callOpts)
-	if err != nil {
-		return inExecChallengeError(err)
-	}
-	return true, addr, b.startBlock + blockOffset.Int64(), nil
-}

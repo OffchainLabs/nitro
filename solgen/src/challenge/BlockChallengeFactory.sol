@@ -7,11 +7,11 @@ import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract BlockChallengeFactory is IBlockChallengeFactory {
-    IExecutionChallengeFactory public executionChallengeFactory;
     UpgradeableBeacon public beacon;
+    IOneStepProofEntry public osp;
 
-    constructor(IExecutionChallengeFactory executionChallengeFactory_) {
-        executionChallengeFactory = executionChallengeFactory_;
+    constructor(IOneStepProofEntry osp_) {
+        osp = osp_;
         address challengeTemplate = address(new BlockChallenge());
         beacon = new UpgradeableBeacon(challengeTemplate);
         beacon.transferOwnership(msg.sender);
@@ -30,7 +30,7 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
     ) external override returns (IChallenge) {
         address clone = address(new BeaconProxy(address(beacon), ""));
         BlockChallenge(clone).initialize(
-            executionChallengeFactory,
+            osp,
             contractAddresses,
             wasmModuleRoot_,
             startAndEndMachineStatuses_,
