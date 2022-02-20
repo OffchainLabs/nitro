@@ -283,10 +283,12 @@ func (b *BlockChallengeBackend) IssueExecChallenge(ctx context.Context, client b
 	}
 	return con.ChallengeExecution(
 		auth,
-		oldState.Start,
-		new(big.Int).Sub(oldState.End, oldState.Start),
-		oldState.RawSegments,
-		big.NewInt(int64(startSegment)),
+		challengegen.IChallengeSegmentSelection{
+			OldSegmentsStart:  oldState.Start,
+			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
+			OldSegments:       oldState.RawSegments,
+			ChallengePosition: big.NewInt(int64(startSegment)),
+		},
 		machineStatuses,
 		globalStateHashes,
 		big.NewInt(int64(numsteps)),

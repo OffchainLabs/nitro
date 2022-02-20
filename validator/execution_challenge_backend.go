@@ -95,10 +95,12 @@ func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, clien
 	proof := mach.ProveNextStep()
 	return con.OneStepProveExecution(
 		auth,
-		oldState.Start,
-		new(big.Int).Sub(oldState.End, oldState.Start),
-		oldState.RawSegments,
-		big.NewInt(int64(startSegment)),
+		challengegen.IChallengeSegmentSelection{
+			OldSegmentsStart:  oldState.Start,
+			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
+			OldSegments:       oldState.RawSegments,
+			ChallengePosition: big.NewInt(int64(startSegment)),
+		},
 		proof,
 	)
 }

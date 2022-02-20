@@ -108,21 +108,10 @@ contract Challenge is DelegateCallAware, IChallenge {
      * or follows another execution objection
      */
     function bisectExecution(
-        uint256 oldSegmentsStart,
-        uint256 oldSegmentsLength,
-        bytes32[] calldata oldSegments,
-        uint256 challengePosition,
+        SegmentSelection calldata selection,
         bytes32[] calldata newSegments
     ) external takeTurn {
-        (
-        uint256 challengeStart,
-        uint256 challengeLength
-        ) = extractChallengeSegment(
-            oldSegmentsStart,
-            oldSegmentsLength,
-            oldSegments,
-            challengePosition
-        );
+        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(selection);
         require(challengeLength > 1, "TOO_SHORT");
         {
             uint256 expectedDegree = challengeLength;
@@ -133,11 +122,11 @@ contract Challenge is DelegateCallAware, IChallenge {
         }
         require(
             newSegments[newSegments.length - 1] !=
-            oldSegments[challengePosition + 1],
+            selection.oldSegments[selection.challengePosition + 1],
             "SAME_END"
         );
 
-        require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
+        require(selection.oldSegments[selection.challengePosition] == newSegments[0], "DIFF_START");
 
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
@@ -155,10 +144,7 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function challengeExecution(
-        uint256 oldSegmentsStart,
-        uint256 oldSegmentsLength,
-        bytes32[] calldata oldSegments,
-        uint256 challengePosition,
+        SegmentSelection calldata selection,
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
@@ -169,16 +155,11 @@ contract Challenge is DelegateCallAware, IChallenge {
             "EXEC_DEADLINE"
         );
 
-        (uint256 executionChallengeAtSteps, uint256 challengeLength) = extractChallengeSegment(
-            oldSegmentsStart,
-            oldSegmentsLength,
-            oldSegments,
-            challengePosition
-        );
+        (uint256 executionChallengeAtSteps, uint256 challengeLength) = extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
         require(
-            oldSegments[challengePosition] ==
+            selection.oldSegments[selection.challengePosition] ==
                 ChallengeLib.blockStateHash(
                     machineStatuses[0],
                     globalStateHashes[0]
@@ -186,7 +167,7 @@ contract Challenge is DelegateCallAware, IChallenge {
             "WRONG_START"
         );
         require(
-            oldSegments[challengePosition + 1] !=
+            selection.oldSegments[selection.challengePosition + 1] !=
                 ChallengeLib.blockStateHash(
                     machineStatuses[1],
                     globalStateHashes[1]
@@ -261,18 +242,10 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function oneStepProveExecution(
-        uint256 oldSegmentsStart,
-        uint256 oldSegmentsLength,
-        bytes32[] calldata oldSegments,
-        uint256 challengePosition,
+        SegmentSelection calldata selection,
         bytes calldata proof
     ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(
-            oldSegmentsStart,
-            oldSegmentsLength,
-            oldSegments,
-            challengePosition
-        );
+        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
         bytes32 afterHash = osp.proveOneStep(
@@ -282,11 +255,11 @@ contract Challenge is DelegateCallAware, IChallenge {
                 delayedBridge: delayedBridge
             }),
             challengeStart,
-            oldSegments[challengePosition],
+                selection.oldSegments[selection.challengePosition],
             proof
         );
         require(
-            afterHash != oldSegments[challengePosition + 1],
+            afterHash != selection.oldSegments[selection.challengePosition + 1],
             "SAME_OSP_END"
         );
 
@@ -337,33 +310,28 @@ contract Challenge is DelegateCallAware, IChallenge {
         }
     }
 
-    function extractChallengeSegment(
-        uint256 oldSegmentsStart,
-        uint256 oldSegmentsLength,
-        bytes32[] calldata oldSegments,
-        uint256 challengePosition
-    ) internal view returns (uint256 segmentStart, uint256 segmentLength) {
+    function extractChallengeSegment(SegmentSelection calldata selection) internal view returns (uint256 segmentStart, uint256 segmentLength) {
         require(
             challenge.challengeStateHash ==
             ChallengeLib.hashChallengeState(
-                oldSegmentsStart,
-                oldSegmentsLength,
-                oldSegments
+                selection.oldSegmentsStart,
+                selection.oldSegmentsLength,
+                selection.oldSegments
             ),
             "BIS_STATE"
         );
         if (
-            oldSegments.length < 2 ||
-            challengePosition >= oldSegments.length - 1
+            selection.oldSegments.length < 2 ||
+            selection.challengePosition >= selection.oldSegments.length - 1
         ) {
             revert("BAD_CHALLENGE_POS");
         }
-        uint256 oldChallengeDegree = oldSegments.length - 1;
-        segmentLength = oldSegmentsLength / oldChallengeDegree;
+        uint256 oldChallengeDegree = selection.oldSegments.length - 1;
+        segmentLength = selection.oldSegmentsLength / oldChallengeDegree;
         // Intentionally done before challengeLength is potentially added to for the final segment
-        segmentStart = oldSegmentsStart + segmentLength * challengePosition;
-        if (challengePosition == oldSegments.length - 2) {
-            segmentLength += oldSegmentsLength % oldChallengeDegree;
+        segmentStart = selection.oldSegmentsStart + segmentLength * selection.challengePosition;
+        if (selection.challengePosition == selection.oldSegments.length - 2) {
+            segmentLength += selection.oldSegmentsLength % oldChallengeDegree;
         }
     }
 

@@ -17,6 +17,13 @@ interface IChallenge {
         EXECUTION
     }
 
+    struct SegmentSelection {
+        uint256 oldSegmentsStart;
+        uint256 oldSegmentsLength;
+        bytes32[] oldSegments;
+        uint256 challengePosition;
+    }
+
     struct ChallengeData {
         address asserter;
         address challenger;
