@@ -15,7 +15,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     string constant NO_TURN = "NO_TURN";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
-    uint64 totalChallengesCreated;
+    uint64 public totalChallengesCreated;
     mapping (uint256 => Challenge) public challenges;
 
     IChallengeResultReceiver public resultReceiver;
@@ -72,6 +72,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
     ) external override returns (uint64) {
+        require(msg.sender == address(resultReceiver), "ONLY_ROLLUP_CHAL");
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
         segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
