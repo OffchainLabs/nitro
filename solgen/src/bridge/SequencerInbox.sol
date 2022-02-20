@@ -43,7 +43,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     enum BatchDataLocation {
         TxInput,
         SeparateBatchEvent,
-        DelayedInbox
+        NoData
     }
 
     event SequencerBatchDelivered(
@@ -159,7 +159,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds,
-            BatchDataLocation.DelayedInbox
+            BatchDataLocation.NoData
         );
     }
 
