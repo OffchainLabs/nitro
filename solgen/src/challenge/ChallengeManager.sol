@@ -33,10 +33,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     modifier takeTurn(uint64 challengeIndex, ChallengeLib.SegmentSelection calldata selection) {
         Challenge storage challenge = challenges[challengeIndex];
         require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
-        require(
-            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
-            "CHAL_DEADLINE"
-        );
+        require(!isTimedOut(challengeIndex), "CHAL_DEADLINE");
 
         require(
             challenge.challengeStateHash ==
@@ -57,10 +54,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         _;
 
         if (challenge.turn == Turn.CHALLENGER) {
-            challenge.challengerTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+            challenge.challengerTimeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.ASSERTER;
         } else if (challenge.turn == Turn.ASSERTER) {
-            challenge.asserterTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+            challenge.asserterTimeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.CHALLENGER;
         } else {
             revert(NO_TURN);
@@ -265,27 +262,22 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
     function timeout(uint64 challengeIndex) external override {
         Challenge storage challenge = challenges[challengeIndex];
-        uint256 timeSinceLastMove = block.timestamp - challenge.lastMoveTimestamp;
-        require(
-            timeSinceLastMove > currentResponderTimeLeft(challengeIndex),
-            "TIMEOUT_DEADLINE"
-        );
+        require(isTimedOut(challengeIndex), "TIMEOUT_DEADLINE");
 
         if (challenge.turn == Turn.ASSERTER) {
-            emit AsserterTimedOut(challengeIndex);
-            _challengerWin(challenge);
+            _challengerWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
         } else if (challenge.turn == Turn.CHALLENGER) {
-            emit ChallengerTimedOut(challengeIndex);
-            _asserterWin(challenge);
+            _asserterWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
         } else {
             revert(NO_TURN);
         }
     }
+    event ChallengeTerminated(uint64 indexed challengeIndex);
 
     function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        Challenge storage challenge = challenges[challengeIndex];
-        challenge.turn = Turn.NO_CHALLENGE;
+        delete challenges[challengeIndex];
+        emit ChallengeTerminated(challengeIndex);
     }
 
     function currentResponder(uint64 challengeIndex) public view returns (address) {
@@ -310,11 +302,19 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         }
     }
 
+    function isTimedOut(uint64 challengeIndex) public view returns (bool) {
+        return timeUsedSinceLastMove(challengeIndex) > currentResponderTimeLeft(challengeIndex);
+    }
+
+    function timeUsedSinceLastMove(uint64 challengeIndex) private view returns (uint256) {
+        return block.timestamp - challenges[challengeIndex].lastMoveTimestamp;
+    }
+
     function requireValidBisection(
         ChallengeLib.SegmentSelection calldata selection,
         bytes32 startHash,
         bytes32 endHash
-    ) {
+    ) private pure {
         require(selection.oldSegments[selection.challengePosition] == startHash, "WRONG_START");
         require(selection.oldSegments[selection.challengePosition + 1] != endHash, "SAME_END");
     }
@@ -341,14 +341,18 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         );
     }
 
-    function _asserterWin(Challenge storage challenge) private {
-        challenge.turn = Turn.NO_CHALLENGE;
+    function _asserterWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
+        Challenge storage challenge = challenges[challengeIndex];
         resultReceiver.completeChallenge(challenge.asserter, challenge.challenger);
+        delete challenges[challengeIndex];
+        emit ChallengedEnded(challengeIndex, ChallengeWinner.ASSERTER, reason);
     }
 
-    function _challengerWin(Challenge storage challenge) private {
-        challenge.turn = Turn.NO_CHALLENGE;
+    function _challengerWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
+        Challenge storage challenge = challenges[challengeIndex];
         resultReceiver.completeChallenge(challenge.challenger, challenge.asserter);
+        delete challenges[challengeIndex];
+        emit ChallengedEnded(challengeIndex, ChallengeWinner.CHALLENGER, reason);
     }
 
     function _currentWin(Challenge storage challenge) private {

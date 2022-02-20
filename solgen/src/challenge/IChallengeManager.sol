@@ -22,6 +22,17 @@ interface IChallengeManager {
         EXECUTION
     }
 
+    enum ChallengeWinner {
+        NONE,
+        ASSERTER,
+        CHALLENGER
+    }
+
+    enum ChallengeTerminationType {
+        TIMEOUT,
+        CHALLENGER_TIMED_OUT
+    }
+
     struct Challenge {
         address asserter;
         address challenger;
@@ -49,11 +60,11 @@ interface IChallengeManager {
         uint256 challengedSegmentLength,
         bytes32[] chainHashes
     );
-    event AsserterTimedOut(uint64 indexed challengeIndex);
-    event ChallengerTimedOut(uint64 indexed challengeIndex);
 
     event ExecutionChallengeBegun(uint64 indexed challengeIndex, uint256 blockSteps);
     event OneStepProofCompleted(uint64 indexed challengeIndex);
+
+    event ChallengedEnded(uint64 indexed challengeIndex, ChallengeWinner winner, ChallengeTerminationType kind);
 
     function initialize(
         IChallengeResultReceiver resultReceiver_,
