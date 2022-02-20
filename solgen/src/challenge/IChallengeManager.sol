@@ -33,12 +33,15 @@ interface IChallengeManager {
         CLEARED
     }
 
-    struct Challenge {
-        address asserter;
-        address challenger;
+    struct Participant {
+        address addr;
+        uint256 timeLeft;
+    }
 
-        uint256 asserterTimeLeft;
-        uint256 challengerTimeLeft;
+    struct Challenge {
+        Participant asserter;
+        Participant challenger;
+
         uint256 lastMoveTimestamp;
 
         bytes32 wasmModuleRoot;
@@ -64,7 +67,7 @@ interface IChallengeManager {
     event ExecutionChallengeBegun(uint64 indexed challengeIndex, uint256 blockSteps);
     event OneStepProofCompleted(uint64 indexed challengeIndex);
 
-    event ChallengedEnded(uint64 indexed challengeIndex, ChallengeWinner winner, ChallengeTerminationType kind);
+    event ChallengeEnded(uint64 indexed challengeIndex, ChallengeTerminationType kind);
 
     function initialize(
         IChallengeResultReceiver resultReceiver_,
@@ -89,6 +92,8 @@ interface IChallengeManager {
 //    function asserter() external view returns (address);
 //    function challenger() external view returns (address);
 //    function lastMoveTimestamp() external view returns (uint256);
+    function currentResponder(uint64 challengeIndex) external view returns (address);
+    function isTimedOut(uint64 challengeIndex) external view returns (bool);
     function currentResponderTimeLeft(uint64 challengeIndex_) external view returns (uint256);
 
     function clearChallenge(uint64 challengeIndex_) external;

@@ -248,16 +248,10 @@ contract ValidatorUtils {
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
             uint64 challengeIndex = rollup.currentChallenge(staker);
-            if (challengeIndex != NO_CHAL_INDEX) {
-                IChallengeManager.Challenge memory challengeInfo = challengeManager.challengeInfo(challengeIndex);
-                uint256 timeSinceLastMove = block.timestamp - challengeInfo.lastMoveTimestamp;
-                if (
-                    timeSinceLastMove > challengeManager.currentResponderTimeLeft(challengeIndex) &&
-                    challengeInfo.asserter == staker
-                ) {
-                    challenges[index] = challengeIndex;
-                    index++;
-                }
+            if (challengeIndex != NO_CHAL_INDEX &&
+                challengeManager.isTimedOut(challengeIndex) &&
+                challengeManager.currentResponder(challengeIndex) == staker) {
+                challenges[index++] = challengeIndex;
             }
         }
         // Shrink array down to real size

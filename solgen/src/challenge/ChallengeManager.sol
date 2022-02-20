@@ -57,10 +57,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             // Early return since challenge must have terminated
             return;
         } else if (challenge.turn == Turn.CHALLENGER) {
-            challenge.challengerTimeLeft -= timeUsedSinceLastMove(challengeIndex);
+            challenge.challenger.timeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.ASSERTER;
         } else if (challenge.turn == Turn.ASSERTER) {
-            challenge.asserterTimeLeft -= timeUsedSinceLastMove(challengeIndex);
+            challenge.asserter.timeLeft -= timeUsedSinceLastMove(challengeIndex);
             challenge.turn = Turn.CHALLENGER;
         } else {
             revert("invalid turn state");
@@ -105,10 +105,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         // No need to set maxInboxMessages until execution challenge
         challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
         challenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        challenge.asserter = asserter_;
-        challenge.challenger = challenger_;
-        challenge.asserterTimeLeft = asserterTimeLeft_;
-        challenge.challengerTimeLeft = challengerTimeLeft_;
+        challenge.asserter = Participant({
+            addr: asserter_,
+            timeLeft: asserterTimeLeft_
+        });
+        challenge.challenger = Participant({
+            addr: challenger_,
+            timeLeft: challengerTimeLeft_
+        });
         challenge.lastMoveTimestamp = block.timestamp;
         challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.BLOCK;
@@ -279,15 +283,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         delete challenges[challengeIndex];
-        emit ChallengedEnded(challengeIndex, ChallengeWinner.NONE, ChallengeTerminationType.CLEARED);
+        emit ChallengeEnded(challengeIndex, ChallengeTerminationType.CLEARED);
     }
 
-    function currentResponder(uint64 challengeIndex) public view returns (address) {
+    function currentResponder(uint64 challengeIndex) public view override returns (address) {
         Challenge storage challenge = challenges[challengeIndex];
         if (challenge.turn == Turn.ASSERTER) {
-            return challenge.asserter;
+            return challenge.asserter.addr;
         } else if (challenge.turn == Turn.CHALLENGER) {
-            return challenge.challenger;
+            return challenge.challenger.addr;
         } else {
             revert(NO_TURN);
         }
@@ -296,15 +300,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     function currentResponderTimeLeft(uint64 challengeIndex) public override view returns (uint256) {
         Challenge storage challenge = challenges[challengeIndex];
         if (challenge.turn == Turn.ASSERTER) {
-            return challenge.asserterTimeLeft;
+            return challenge.asserter.timeLeft;
         } else if (challenge.turn == Turn.CHALLENGER) {
-            return challenge.challengerTimeLeft;
+            return challenge.challenger.timeLeft;
         } else {
             revert(NO_TURN);
         }
     }
 
-    function isTimedOut(uint64 challengeIndex) public view returns (bool) {
+    function isTimedOut(uint64 challengeIndex) public view override returns (bool) {
         return timeUsedSinceLastMove(challengeIndex) > currentResponderTimeLeft(challengeIndex);
     }
 
@@ -345,16 +349,16 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
     function _asserterWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         Challenge storage challenge = challenges[challengeIndex];
-        resultReceiver.completeChallenge(challenge.asserter, challenge.challenger);
+        resultReceiver.completeChallenge(challenge.asserter.addr, challenge.challenger.addr);
         delete challenges[challengeIndex];
-        emit ChallengedEnded(challengeIndex, ChallengeWinner.ASSERTER, reason);
+        emit ChallengeEnded(challengeIndex, reason);
     }
 
     function _challengerWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         Challenge storage challenge = challenges[challengeIndex];
-        resultReceiver.completeChallenge(challenge.challenger, challenge.asserter);
+        resultReceiver.completeChallenge(challenge.challenger.addr, challenge.asserter.addr);
         delete challenges[challengeIndex];
-        emit ChallengedEnded(challengeIndex, ChallengeWinner.CHALLENGER, reason);
+        emit ChallengeEnded(challengeIndex, reason);
     }
 
     function _currentWin(Challenge storage challenge) private {
