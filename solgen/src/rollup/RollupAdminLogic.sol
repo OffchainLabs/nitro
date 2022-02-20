@@ -6,7 +6,7 @@ import { IRollupAdmin, IRollupUser } from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../challenge/IChallenge.sol";
+import "../challenge/IChallengeManager.sol";
 import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
@@ -25,7 +25,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         rollupEventBridge.rollupInitialized(config.owner, config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
-        challengeFactory = connectedContracts.challengeFactory;
+        challengeManager = connectedContracts.challengeManager;
 
         Node memory node = createInitialNode();
         initializeCore(node);
@@ -261,13 +261,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     {
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
-            IChallenge chall = inChallenge(stakerA[i], stakerB[i]);
+            uint64 chall = inChallenge(stakerA[i], stakerB[i]);
 
-            require(address(0) != address(chall), "NOT_IN_CHALL");
+            require(chall != 0, "NOT_IN_CHALL");
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
-
-            chall.clearChallenge();
+            challengeManager.clearChallenge(chall);
         }
         emit OwnerFunctionCalled(21);
     }

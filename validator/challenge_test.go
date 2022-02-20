@@ -127,7 +127,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		endMachineHash = IncorrectMachineHash(endMachineHash)
 	}
 
-	resultReceiver, challenge := CreateChallenge(
+	resultReceiver, challengeManager := CreateChallenge(
 		t,
 		deployer,
 		backend,
@@ -149,10 +149,28 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		expectedWinner = asserter.From
 	}
 
-	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, asserterMachine, 0, 4)
+	asserterManager, err := NewExecutionChallengeManager(
+		ctx,
+		backend,
+		asserter,
+		challengeManager,
+		1,
+		asserterMachine,
+		0,
+		4,
+	)
 	Require(t, err)
 
-	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, challengerMachine, 0, 4)
+	challengerManager, err := NewExecutionChallengeManager(
+		ctx,
+		backend,
+		challenger,
+		challengeManager,
+		1,
+		challengerMachine,
+		0,
+		4,
+	)
 	Require(t, err)
 
 	for i := 0; i < 100; i++ {

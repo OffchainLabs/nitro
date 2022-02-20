@@ -6,6 +6,7 @@ package validator
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -28,12 +29,12 @@ var challengeBisectedID common.Hash
 var executionChallengeBegunID common.Hash
 
 func init() {
-	parsedChallengeCoreABI, err := challengegen.ChallengeMetaData.GetAbi()
+	parsedChallengeManagerABI, err := challengegen.ChallengeManagerMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	challengeBisectedID = parsedChallengeCoreABI.Events["Bisected"].ID
-	executionChallengeBegunID = parsedChallengeCoreABI.Events["ExecutionChallengeBegun"].ID
+	challengeBisectedID = parsedChallengeManagerABI.Events["Bisected"].ID
+	executionChallengeBegunID = parsedChallengeManagerABI.Events["ExecutionChallengeBegun"].ID
 }
 
 type ChallengeBackend interface {
@@ -43,13 +44,14 @@ type ChallengeBackend interface {
 
 type ChallengeManager struct {
 	// fields used in both block and execution challenge
-	con                *challengegen.Challenge
-	challengeAddr      common.Address
-	client             bind.ContractBackend
-	auth               *bind.TransactOpts
-	actingAs           common.Address
-	startL1Block       *big.Int
-	confirmationBlocks int64
+	con                  *challengegen.ChallengeManager
+	challengeManagerAddr common.Address
+	challengeIndex       uint64
+	client               bind.ContractBackend
+	auth                 *bind.TransactOpts
+	actingAs             common.Address
+	startL1Block         *big.Int
+	confirmationBlocks   int64
 
 	// fields below are used while working on block challenge
 	blockChallengeBackend *BlockChallengeBackend
@@ -68,8 +70,22 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
-func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, fromAddr common.Address, blockChallengeAddr common.Address, l2blockChain *core.BlockChain, inboxReader InboxReaderInterface, inboxTracker InboxTrackerInterface, txStreamer TransactionStreamerInterface, startL1Block uint64, targetNumMachines int, confirmationBlocks int64) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewChallenge(blockChallengeAddr, l1client)
+func NewChallengeManager(
+	ctx context.Context,
+	l1client bind.ContractBackend,
+	auth *bind.TransactOpts,
+	fromAddr common.Address,
+	challengeManagerAddr common.Address,
+	challengeIndex uint64,
+	l2blockChain *core.BlockChain,
+	inboxReader InboxReaderInterface,
+	inboxTracker InboxTrackerInterface,
+	txStreamer TransactionStreamerInterface,
+	startL1Block uint64,
+	targetNumMachines int,
+	confirmationBlocks int64,
+) (*ChallengeManager, error) {
+	challengeCoreCon, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +93,22 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 	if err != nil {
 		return nil, err
 	}
-	backend, err := NewBlockChallengeBackend(ctx, l2blockChain, inboxTracker, l1client, blockChallengeAddr, genesisBlockNum)
+	backend, err := NewBlockChallengeBackend(
+		ctx,
+		challengeIndex,
+		l2blockChain,
+		inboxTracker,
+		l1client,
+		challengeManagerAddr,
+		genesisBlockNum,
+	)
 	if err != nil {
 		return nil, err
 	}
 	return &ChallengeManager{
 		con:                   challengeCoreCon,
-		challengeAddr:         blockChallengeAddr,
+		challengeManagerAddr:  challengeManagerAddr,
+		challengeIndex:        challengeIndex,
 		client:                l1client,
 		auth:                  auth,
 		actingAs:              fromAddr,
@@ -99,8 +124,17 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 }
 
 // for testing only - skips block challenges
-func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, execChallengeAddr common.Address, initialMachine MachineInterface, startL1Block uint64, targetNumMachines int) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewChallenge(execChallengeAddr, l1client)
+func NewExecutionChallengeManager(
+	ctx context.Context,
+	l1client bind.ContractBackend,
+	auth *bind.TransactOpts,
+	challengeManagerAddr common.Address,
+	challengeIndex uint64,
+	initialMachine MachineInterface,
+	startL1Block uint64,
+	targetNumMachines int,
+) (*ChallengeManager, error) {
+	con, err := challengegen.NewChallengeManager(challengeManagerAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +143,9 @@ func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBac
 		return nil, err
 	}
 	return &ChallengeManager{
-		con:                       challengeCoreCon,
-		challengeAddr:             execChallengeAddr,
+		con:                       con,
+		challengeManagerAddr:      challengeManagerAddr,
+		challengeIndex:            challengeIndex,
 		client:                    l1client,
 		auth:                      auth,
 		actingAs:                  auth.From,
@@ -148,16 +183,22 @@ func (m *ChallengeManager) latestConfirmedBlock(ctx context.Context) (*big.Int, 
 	return block, nil
 }
 
-func (m *ChallengeManager) ChallengeAddress() common.Address {
-	return m.challengeAddr
+func (m *ChallengeManager) ChallengeIndex() uint64 {
+	return m.challengeIndex
+}
+
+func (m *ChallengeManager) challengeFilterIndex() common.Hash {
+	var challengeIndex common.Hash
+	binary.BigEndian.PutUint64(challengeIndex[(32-8):], m.challengeIndex)
+	return challengeIndex
 }
 
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.
 func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash common.Hash) (ChallengeState, error) {
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
-		Addresses: []common.Address{m.challengeAddr},
-		Topics:    [][]common.Hash{{challengeBisectedID}, {stateHash}},
+		Addresses: []common.Address{m.challengeManagerAddr},
+		Topics:    [][]common.Hash{{challengeBisectedID}, {m.challengeFilterIndex()}, {stateHash}},
 	})
 	if err != nil {
 		return ChallengeState{}, err
@@ -231,7 +272,8 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	}
 	return m.con.BisectExecution(
 		m.auth,
-		challengegen.IChallengeSegmentSelection{
+		m.challengeIndex,
+		challengegen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,
@@ -243,7 +285,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 
 func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
-	responder, err := m.con.CurrentResponder(callOpts)
+	responder, err := m.con.CurrentResponder(callOpts, m.challengeIndex)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +297,7 @@ func (m *ChallengeManager) IsMyTurn(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	responder, err = m.con.CurrentResponder(callOpts)
+	responder, err = m.con.CurrentResponder(callOpts, m.challengeIndex)
 	if err != nil {
 		return false, err
 	}
@@ -272,7 +314,7 @@ func (m *ChallengeManager) GetChallengeState(ctx context.Context) (*ChallengeSta
 	if err != nil {
 		return nil, err
 	}
-	challengeState, err := m.con.Challenge(callOpts)
+	challengeState, err := m.con.ChallengeInfo(callOpts, m.challengeIndex)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
@@ -292,7 +334,7 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 		if err != nil {
 			return 0, err
 		}
-		log.Debug("checking challenge segment", "challenge", m.challengeAddr, "position", segment.Position, "ourHash", ourHash, "segmentHash", segment.Hash)
+		log.Debug("checking challenge segment", "challenge", m.challengeIndex, "position", segment.Position, "ourHash", ourHash, "segmentHash", segment.Hash)
 		if segment.Hash != ourHash {
 			if i == 0 {
 				return 0, errors.Errorf(
@@ -322,7 +364,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 			return fmt.Errorf("block header %v before challenge point unknown", blockNum)
 		}
 	}
-	startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(ctx, blockHeader)
+	startGlobalState, err := m.blockChallengeBackend.FindGlobalStateFromHeader(blockHeader)
 	if err != nil {
 		return err
 	}
@@ -387,14 +429,14 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 		Context:     ctx,
 		BlockNumber: latestConfirmedBlock,
 	}
-	challengeState, err := m.con.Challenge(callOpts)
+	challengeState, err := m.con.ChallengeInfo(callOpts, m.challengeIndex)
 	if err != nil || challengeState.Mode != challengeModeExecution {
 		return errors.WithStack(err)
 	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
-		Addresses: []common.Address{m.challengeAddr},
-		Topics:    [][]common.Hash{{executionChallengeBegunID}},
+		Addresses: []common.Address{m.challengeManagerAddr},
+		Topics:    [][]common.Hash{{executionChallengeBegunID}, {m.challengeFilterIndex()}},
 	})
 	if err != nil {
 		return errors.WithStack(err)
@@ -455,12 +497,20 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	startPosition := state.Segments[nextMovePos].Position
 	endPosition := state.Segments[nextMovePos+1].Position
 	if startPosition+1 != endPosition {
-		log.Info("bisecting execution", "challenge", m.challengeAddr, "startPosition", startPosition, "endPosition", endPosition)
+		log.Info("bisecting execution", "challenge", m.challengeIndex, "startPosition", startPosition, "endPosition", endPosition)
 		return m.bisect(ctx, backend, state, nextMovePos)
 	}
 	if m.executionChallengeBackend != nil {
-		log.Info("sending onestepproof", "challenge", m.challengeAddr, "startPosition", startPosition, "endPosition", endPosition)
-		return m.executionChallengeBackend.IssueOneStepProof(ctx, m.client, m.auth, m.challengeAddr, state, nextMovePos)
+		log.Info("sending onestepproof", "challenge", m.challengeIndex, "startPosition", startPosition, "endPosition", endPosition)
+		return m.executionChallengeBackend.IssueOneStepProof(
+			ctx,
+			m.client,
+			m.auth,
+			m.challengeIndex,
+			m.challengeManagerAddr,
+			state,
+			nextMovePos,
+		)
 	}
 	blockNum := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
 	err = m.createInitialMachine(ctx, blockNum)
@@ -482,6 +532,11 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 		stepCount += stepsPerLoop
 	}
 	stepCount = stepCountMachine.GetStepCount()
-	log.Info("issuing one step proof", "challenge", m.challengeAddr, "stepCount", stepCount, "blockNum", blockNum)
-	return m.blockChallengeBackend.IssueExecChallenge(ctx, m.client, m.auth, m.challengeAddr, state, nextMovePos, stepCount)
+	log.Info("issuing one step proof", "challenge", m.challengeIndex, "stepCount", stepCount, "blockNum", blockNum)
+	return m.blockChallengeBackend.IssueExecChallenge(
+		m.auth,
+		state,
+		nextMovePos,
+		stepCount,
+	)
 }

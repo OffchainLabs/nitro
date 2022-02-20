@@ -26,7 +26,7 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../challenge/IChallengeFactory.sol";
+import "../challenge/IChallengeManager.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
@@ -47,7 +47,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
-    IChallengeFactory public challengeFactory;
+    IChallengeManager public override challengeManager;
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
     address public stakeToken;
@@ -61,14 +61,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         uint64 latestStakedNode;
     }
 
-    struct Staker {
-        uint64 index;
-        uint64 latestStakedNode;
-        uint256 amountStaked;
-        // currentChallenge is 0 if staker is not in a challenge
-        IChallenge currentChallenge;
-        bool isStaked;
-    }
+
 
     uint64 private _latestConfirmed;
     uint64 private _firstUnresolvedNode;
@@ -78,7 +71,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     mapping(uint64 => mapping(address => bool)) private _nodeStakers;
 
     address[] private _stakerList;
-    mapping(address => Staker) public override _stakerMap;
+    mapping(address => Staker) public _stakerMap;
 
     Zombie[] private _zombies;
 
@@ -168,7 +161,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         public
         view
         override
-        returns (IChallenge)
+        returns (uint64)
     {
         return _stakerMap[staker].currentChallenge;
     }
@@ -328,10 +321,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         uint64 stakerIndex = uint64(_stakerList.length);
         _stakerList.push(stakerAddress);
         _stakerMap[stakerAddress] = Staker(
+            depositAmount,
             stakerIndex,
             _latestConfirmed,
-            depositAmount,
-            IChallenge(address(0)), // new staker is not in challenge
+            0, // new staker is not in challenge
             true
         );
         _lastStakeBlock = uint64(block.number);
@@ -347,12 +340,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function inChallenge(address stakerAddress1, address stakerAddress2)
         internal
         view
-        returns (IChallenge)
+        returns (uint64)
     {
         Staker storage staker1 = _stakerMap[stakerAddress1];
         Staker storage staker2 = _stakerMap[stakerAddress2];
-        IChallenge challenge = staker1.currentChallenge;
-        require(address(challenge) != address(0), "NO_CHAL");
+        uint64 challenge = staker1.currentChallenge;
+        require(challenge != 0, "NO_CHAL");
         require(challenge == staker2.currentChallenge, "DIFF_IN_CHAL");
         return challenge;
     }
@@ -363,7 +356,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function clearChallenge(address stakerAddress) internal {
         Staker storage staker = _stakerMap[stakerAddress];
-        staker.currentChallenge = IChallenge(address(0));
+        staker.currentChallenge = 0;
     }
 
     /**
@@ -375,7 +368,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function challengeStarted(
         address staker1,
         address staker2,
-        IChallenge challenge
+        uint64 challenge
     ) internal {
         _stakerMap[staker1].currentChallenge = challenge;
         _stakerMap[staker2].currentChallenge = challenge;

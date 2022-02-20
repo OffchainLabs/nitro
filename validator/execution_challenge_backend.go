@@ -83,8 +83,16 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 	return mach.Hash(), nil
 }
 
-func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState *ChallengeState, startSegment int) (*types.Transaction, error) {
-	con, err := challengegen.NewChallenge(challenge, client)
+func (b *ExecutionChallengeBackend) IssueOneStepProof(
+	ctx context.Context,
+	client bind.ContractBackend,
+	auth *bind.TransactOpts,
+	challengeIndex uint64,
+	challengeManager common.Address,
+	oldState *ChallengeState,
+	startSegment int,
+) (*types.Transaction, error) {
+	con, err := challengegen.NewChallengeManager(challengeManager, client)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +103,8 @@ func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, clien
 	proof := mach.ProveNextStep()
 	return con.OneStepProveExecution(
 		auth,
-		challengegen.IChallengeSegmentSelection{
+		challengeIndex,
+		challengegen.ChallengeLibSegmentSelection{
 			OldSegmentsStart:  oldState.Start,
 			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
 			OldSegments:       oldState.RawSegments,

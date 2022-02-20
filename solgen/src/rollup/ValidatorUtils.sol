@@ -22,7 +22,7 @@ pragma experimental ABIEncoderV2;
 
 import "../rollup/IRollupCore.sol";
 import "../rollup/IRollupLogic.sol";
-import "../challenge/IChallenge.sol";
+import "../challenge/IChallengeManager.sol";
 
 contract ValidatorUtils {
     using NodeLib for Node;
@@ -47,7 +47,7 @@ contract ValidatorUtils {
             bool isStaked,
             uint64 latestStakedNode,
             uint256 amountStaked,
-            IChallenge currentChallenge
+            uint64 currentChallenge
         )
     {
         return (
@@ -140,7 +140,7 @@ contract ValidatorUtils {
             address staker = rollup.getStakerAddress(i);
             uint256 latestStakedNode = rollup.latestStakedNode(staker);
             if (
-                latestStakedNode <= latestConfirmed && rollup.currentChallenge(staker) == IChallenge(address(0))
+                latestStakedNode <= latestConfirmed && rollup.currentChallenge(staker) == 0
             ) {
                 stakers[index] = staker;
                 index++;
@@ -238,22 +238,22 @@ contract ValidatorUtils {
         IRollupCore rollup,
         uint64 startIndex,
         uint64 max
-    ) external view returns (address[] memory, bool hasMore) {
+    ) external view returns (uint64[] memory, bool hasMore) {
         (address[] memory stakers, bool hasMoreStakers) = getStakers(rollup, startIndex, max);
-        address[] memory challenges = new address[](stakers.length);
+        uint64[] memory challenges = new uint64[](stakers.length);
         uint256 index = 0;
+        IChallengeManager challengeManager = rollup.challengeManager();
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
-            address challengeAddr = address(rollup.currentChallenge(staker));
-            if (challengeAddr != address(0)) {
-                IChallenge challenge = IChallenge(challengeAddr);
-                IChallenge.ChallengeData memory challengeInfo = IChallenge(challengeAddr).challengeInfo();
+            uint64 challengeIndex = rollup.currentChallenge(staker);
+            if (challengeIndex != 0) {
+                IChallengeManager.Challenge memory challengeInfo = challengeManager.challengeInfo(challengeIndex);
                 uint256 timeSinceLastMove = block.timestamp - challengeInfo.lastMoveTimestamp;
                 if (
-                    timeSinceLastMove > challenge.currentResponderTimeLeft() &&
+                    timeSinceLastMove > challengeManager.currentResponderTimeLeft(challengeIndex) &&
                     challengeInfo.asserter == staker
                 ) {
-                    challenges[index] = challengeAddr;
+                    challenges[index] = challengeIndex;
                     index++;
                 }
             }

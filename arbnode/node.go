@@ -107,44 +107,49 @@ func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployChallengeFactory(
+	ctx context.Context,
+	client arbutil.L1Interface,
+	auth *bind.TransactOpts,
+	txTimeout time.Duration,
+) (common.Address, common.Address, error) {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	challengeFactoryAddr, tx, _, err := challengegen.DeployChallengeFactory(auth, client, ospEntryAddr)
+	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	return challengeFactoryAddr, nil
+	return ospEntryAddr, challengeManagerAddr, nil
 }
 
 func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
@@ -153,7 +158,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 		return nil, common.Address{}, err
 	}
 
-	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
@@ -176,7 +181,14 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	tx, err = rollupCreator.SetTemplates(
+		auth,
+		bridgeCreator,
+		ospEntryAddr,
+		challengeManagerAddr,
+		rollupAdminLogic,
+		rollupUserLogic,
+	)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
@@ -203,7 +215,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, err
 	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+1)
+	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		rollupgen.Config{

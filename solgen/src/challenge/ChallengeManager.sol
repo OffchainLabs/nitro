@@ -6,17 +6,17 @@ import "../osp/IOneStepProofEntry.sol";
 import "../state/GlobalState.sol";
 import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
-import "./IChallenge.sol";
-import "./IChallengeFactory.sol";
+import "./IChallengeManager.sol";
 
-contract Challenge is DelegateCallAware, IChallenge {
+contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
     string constant NO_TURN = "NO_TURN";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
-    ChallengeData public challenge;
+    uint64 totalChallengesCreated;
+    mapping (uint256 => Challenge) public challenges;
 
     IChallengeResultReceiver public resultReceiver;
 
@@ -24,14 +24,15 @@ contract Challenge is DelegateCallAware, IChallenge {
     IBridge public delayedBridge;
     IOneStepProofEntry public osp;
 
-    function challengeInfo() external view override returns (ChallengeData memory) {
-        return challenge;
+    function challengeInfo(uint64 challengeIndex) external view override returns (Challenge memory) {
+        return challenges[challengeIndex];
     }
 
-    modifier takeTurn() {
-        require(msg.sender == currentResponder(), "BIS_SENDER");
+    modifier takeTurn(uint64 challengeIndex) {
+        Challenge storage challenge = challenges[challengeIndex];
+        require(msg.sender == currentResponder(challengeIndex), "BIS_SENDER");
         require(
-            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(),
+            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
             "BIS_DEADLINE"
         );
 
@@ -47,10 +48,21 @@ contract Challenge is DelegateCallAware, IChallenge {
         challenge.lastMoveTimestamp = block.timestamp;
     }
 
-    // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
-        IOneStepProofEntry osp_,
-        IChallengeFactory.ChallengeContracts calldata contractAddresses,
+        IChallengeResultReceiver resultReceiver_,
+        ISequencerInbox sequencerInbox_,
+        IBridge delayedBridge_,
+        IOneStepProofEntry osp_
+    ) external override onlyDelegated {
+        require(address(resultReceiver) == address(0), "ALREADY_INIT");
+        require(address(resultReceiver_) != address(0), "NO_RESULT_RECEIVER");
+        resultReceiver = resultReceiver_;
+        sequencerInbox = sequencerInbox_;
+        delayedBridge = delayedBridge_;
+        osp = osp_;
+    }
+
+    function createChallenge(
         bytes32 wasmModuleRoot_,
         MachineStatus[2] calldata startAndEndMachineStatuses_,
         GlobalState[2] calldata startAndEndGlobalStates_,
@@ -59,19 +71,14 @@ contract Challenge is DelegateCallAware, IChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) external onlyDelegated {
-        require(address(resultReceiver) == address(0), "ALREADY_INIT");
-        require(address(contractAddresses.resultReceiver) != address(0), "NO_RESULT_RECEIVER");
-        resultReceiver = IChallengeResultReceiver(contractAddresses.resultReceiver);
-        sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
-        delayedBridge = IBridge(contractAddresses.delayedBridge);
-        osp = osp_;
-
+    ) external override returns (uint64) {
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
         segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
+        uint64 challengeIndex = ++totalChallengesCreated;
+        Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
         // No need to set maxInboxMessages until execution challenge
         challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
@@ -85,20 +92,24 @@ contract Challenge is DelegateCallAware, IChallenge {
         challenge.mode = ChallengeMode.BLOCK;
         challenge.challengeStateHash = challengeStateHash;
 
-        emit InitiatedChallenge();
+        emit InitiatedChallenge(challengeIndex);
         emit Bisected(
+            challengeIndex,
             challengeStateHash,
             0,
             numBlocks,
             segments
         );
+        return challengeIndex;
     }
 
-    function getStartGlobalState() external view returns (GlobalState memory) {
+    function getStartGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
+        Challenge storage challenge = challenges[challengeIndex];
         return challenge.startAndEndGlobalStates[0];
     }
 
-    function getEndGlobalState() external view returns (GlobalState memory) {
+    function getEndGlobalState(uint64 challengeIndex) external view returns (GlobalState memory) {
+        Challenge storage challenge = challenges[challengeIndex];
         return challenge.startAndEndGlobalStates[1];
     }
 
@@ -108,10 +119,12 @@ contract Challenge is DelegateCallAware, IChallenge {
      * or follows another execution objection
      */
     function bisectExecution(
-        SegmentSelection calldata selection,
+        uint64 challengeIndex,
+        ChallengeLib.SegmentSelection calldata selection,
         bytes32[] calldata newSegments
-    ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(selection);
+    ) external takeTurn(challengeIndex) {
+        Challenge storage challenge = challenges[challengeIndex];
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
         require(challengeLength > 1, "TOO_SHORT");
         {
             uint256 expectedDegree = challengeLength;
@@ -136,6 +149,7 @@ contract Challenge is DelegateCallAware, IChallenge {
         challenge.challengeStateHash = challengeStateHash;
 
         emit Bisected(
+            challengeIndex,
             challengeStateHash,
             challengeStart,
             challengeLength,
@@ -144,18 +158,20 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function challengeExecution(
-        SegmentSelection calldata selection,
+        uint64 challengeIndex,
+        ChallengeLib.SegmentSelection calldata selection,
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
     ) external {
-        require(msg.sender == currentResponder(), "EXEC_SENDER");
+        Challenge storage challenge = challenges[challengeIndex];
+        require(msg.sender == currentResponder(challengeIndex), "EXEC_SENDER");
         require(
-            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(),
+            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
             "EXEC_DEADLINE"
         );
 
-        (uint256 executionChallengeAtSteps, uint256 challengeLength) = extractChallengeSegment(selection);
+        (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
         require(challengeLength == 1, "TOO_LONG");
 
         require(
@@ -182,7 +198,7 @@ contract Challenge is DelegateCallAware, IChallenge {
                     globalStateHashes[0] == globalStateHashes[1],
                 "HALTED_CHANGE"
             );
-            _currentWin();
+            _currentWin(challenge);
             return;
         }
 
@@ -192,10 +208,11 @@ contract Challenge is DelegateCallAware, IChallenge {
         }
 
         bytes32[2] memory startAndEndHashes;
-        startAndEndHashes[0] = getStartMachineHash(
-            globalStateHashes[0]
+        startAndEndHashes[0] = ChallengeLib.getStartMachineHash(
+            globalStateHashes[0],
+            challenge.wasmModuleRoot
         );
-        startAndEndHashes[1] = getEndMachineHash(
+        startAndEndHashes[1] = ChallengeLib.getEndMachineHash(
             machineStatuses[1],
             globalStateHashes[1]
         );
@@ -204,7 +221,6 @@ contract Challenge is DelegateCallAware, IChallenge {
         if (machineStatuses[1] == MachineStatus.ERRORED || challenge.startAndEndGlobalStates[1].getPositionInMessage() > 0) {
             maxInboxMessagesRead++;
         }
-
 
         if (challenge.turn == Turn.CHALLENGER) {
             (challenge.asserter, challenge.challenger) = (challenge.challenger, challenge.asserter);
@@ -230,22 +246,24 @@ contract Challenge is DelegateCallAware, IChallenge {
         challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.EXECUTION;
 
-        emit InitiatedChallenge();
         emit Bisected(
+            challengeIndex,
             challengeStateHash,
             0,
             numSteps,
             segments
         );
 
-        emit ExecutionChallengeBegun(executionChallengeAtSteps);
+        emit ExecutionChallengeBegun(challengeIndex, executionChallengeAtSteps);
     }
 
     function oneStepProveExecution(
-        SegmentSelection calldata selection,
+        uint64 challengeIndex,
+        ChallengeLib.SegmentSelection calldata selection,
         bytes calldata proof
-    ) external takeTurn {
-        (uint256 challengeStart, uint256 challengeLength) = extractChallengeSegment(selection);
+    ) external takeTurn(challengeIndex) {
+        Challenge storage challenge = challenges[challengeIndex];
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
         require(challengeLength == 1, "TOO_LONG");
 
         bytes32 afterHash = osp.proveOneStep(
@@ -263,34 +281,37 @@ contract Challenge is DelegateCallAware, IChallenge {
             "SAME_OSP_END"
         );
 
-        emit OneStepProofCompleted();
-        _currentWin();
+        emit OneStepProofCompleted(challengeIndex);
+        _currentWin(challenge);
     }
 
-    function timeout() external override {
+    function timeout(uint64 challengeIndex) external override {
+        Challenge storage challenge = challenges[challengeIndex];
         uint256 timeSinceLastMove = block.timestamp - challenge.lastMoveTimestamp;
         require(
-            timeSinceLastMove > currentResponderTimeLeft(),
+            timeSinceLastMove > currentResponderTimeLeft(challengeIndex),
             "TIMEOUT_DEADLINE"
         );
 
         if (challenge.turn == Turn.ASSERTER) {
-            emit AsserterTimedOut();
-            _challengerWin();
+            emit AsserterTimedOut(challengeIndex);
+            _challengerWin(challenge);
         } else if (challenge.turn == Turn.CHALLENGER) {
-            emit ChallengerTimedOut();
-            _asserterWin();
+            emit ChallengerTimedOut(challengeIndex);
+            _asserterWin(challenge);
         } else {
             revert(NO_TURN);
         }
     }
 
-    function clearChallenge() external override {
+    function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+        Challenge storage challenge = challenges[challengeIndex];
         challenge.turn = Turn.NO_CHALLENGE;
     }
 
-    function currentResponder() public view returns (address) {
+    function currentResponder(uint64 challengeIndex) public view returns (address) {
+        Challenge storage challenge = challenges[challengeIndex];
         if (challenge.turn == Turn.ASSERTER) {
             return challenge.asserter;
         } else if (challenge.turn == Turn.CHALLENGER) {
@@ -300,7 +321,8 @@ contract Challenge is DelegateCallAware, IChallenge {
         }
     }
 
-    function currentResponderTimeLeft() public override view returns (uint256) {
+    function currentResponderTimeLeft(uint64 challengeIndex) public override view returns (uint256) {
+        Challenge storage challenge = challenges[challengeIndex];
         if (challenge.turn == Turn.ASSERTER) {
             return challenge.asserterTimeLeft;
         } else if (challenge.turn == Turn.CHALLENGER) {
@@ -310,100 +332,17 @@ contract Challenge is DelegateCallAware, IChallenge {
         }
     }
 
-    function extractChallengeSegment(SegmentSelection calldata selection) internal view returns (uint256 segmentStart, uint256 segmentLength) {
-        require(
-            challenge.challengeStateHash ==
-            ChallengeLib.hashChallengeState(
-                selection.oldSegmentsStart,
-                selection.oldSegmentsLength,
-                selection.oldSegments
-            ),
-            "BIS_STATE"
-        );
-        if (
-            selection.oldSegments.length < 2 ||
-            selection.challengePosition >= selection.oldSegments.length - 1
-        ) {
-            revert("BAD_CHALLENGE_POS");
-        }
-        uint256 oldChallengeDegree = selection.oldSegments.length - 1;
-        segmentLength = selection.oldSegmentsLength / oldChallengeDegree;
-        // Intentionally done before challengeLength is potentially added to for the final segment
-        segmentStart = selection.oldSegmentsStart + segmentLength * selection.challengePosition;
-        if (selection.challengePosition == selection.oldSegments.length - 2) {
-            segmentLength += selection.oldSegmentsLength % oldChallengeDegree;
-        }
-    }
-
-    function getStartMachineHash(bytes32 globalStateHash)
-        internal
-        view
-        returns (bytes32)
-    {
-        ValueStack memory values;
-        {
-            // Start the value stack with the function call ABI for the entrypoint
-            Value[] memory startingValues = new Value[](3);
-            startingValues[0] = ValueLib.newRefNull();
-            startingValues[1] = ValueLib.newI32(0);
-            startingValues[2] = ValueLib.newI32(0);
-            ValueArray memory valuesArray = ValueArray({
-                inner: startingValues
-            });
-            values = ValueStack({
-                proved: valuesArray,
-                remainingHash: 0
-            });
-        }
-		ValueStack memory internalStack;
-		PcStack memory blocks;
-		StackFrameWindow memory frameStack;
-
-		Machine memory mach = Machine({
-			status: MachineStatus.RUNNING,
-			valueStack: values,
-			internalStack: internalStack,
-			blockStack: blocks,
-			frameStack: frameStack,
-			globalStateHash: globalStateHash,
-			moduleIdx: 0,
-			functionIdx: 0,
-			functionPc: 0,
-			modulesRoot: challenge.wasmModuleRoot
-		});
-        return mach.hash();
-    }
-
-    function getEndMachineHash(MachineStatus status, bytes32 globalStateHash)
-        internal
-        pure
-        returns (bytes32)
-    {
-        if (status == MachineStatus.FINISHED) {
-            return
-                keccak256(
-                    abi.encodePacked("Machine finished:", globalStateHash)
-                );
-        } else if (status == MachineStatus.ERRORED) {
-            return keccak256(abi.encodePacked("Machine errored:"));
-        } else if (status == MachineStatus.TOO_FAR) {
-            return keccak256(abi.encodePacked("Machine too far:"));
-        } else {
-            revert("BAD_BLOCK_STATUS");
-        }
-    }
-
-    function _asserterWin() private {
+    function _asserterWin(Challenge storage challenge) private {
         challenge.turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(challenge.asserter, challenge.challenger);
     }
 
-    function _challengerWin() private {
+    function _challengerWin(Challenge storage challenge) private {
         challenge.turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(challenge.challenger, challenge.asserter);
     }
 
-    function _currentWin() private {
+    function _currentWin(Challenge storage challenge) private {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout
         challenge.challengeStateHash = bytes32(0);

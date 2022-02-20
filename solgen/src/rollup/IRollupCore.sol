@@ -21,20 +21,17 @@ pragma solidity ^0.8.0;
 import "./Node.sol";
 import "./RollupLib.sol";
 
-import "../challenge/IChallenge.sol";
 import "../osp/IOneStepProofEntry.sol";
 
 interface IRollupCore {
-    function _stakerMap(address stakerAddress)
-        external
-        view
-        returns (
-            uint64,
-            uint64,
-            uint256,
-            IChallenge,
-            bool
-        );
+    struct Staker {
+        uint256 amountStaked;
+        uint64 index;
+        uint64 latestStakedNode;
+        // currentChallenge is 0 if staker is not in a challenge
+        uint64 currentChallenge;
+        bool isStaked;
+    }
 
     event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
@@ -57,7 +54,7 @@ interface IRollupCore {
     event NodeRejected(uint64 indexed nodeNum);
 
     event RollupChallengeStarted(
-        IChallenge indexed challengeContract,
+        uint64 indexed challengeIndex,
         address asserter,
         address challenger,
         uint64 challengedNode
@@ -70,6 +67,8 @@ interface IRollupCore {
         uint256 initialBalance,
         uint256 finalBalance
     );
+
+    function challengeManager() external view returns (IChallengeManager);
 
     /**
      * @notice Get the Node for the given index.
@@ -107,7 +106,7 @@ interface IRollupCore {
      * @param staker Staker address to lookup
      * @return Current challenge of the staker
      */
-    function currentChallenge(address staker) external view returns (IChallenge);
+    function currentChallenge(address staker) external view returns (uint64);
 
     /**
      * @notice Get the amount staked of the given staker
