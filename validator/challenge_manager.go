@@ -7,11 +7,7 @@ package validator
 import (
 	"context"
 	"fmt"
-	"math/big"
-	"strings"
-
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -21,6 +17,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/pkg/errors"
+	"math/big"
 )
 
 const maxBisectionDegree uint64 = 40
@@ -31,7 +28,7 @@ var challengeBisectedID common.Hash
 var executionChallengeBegunID common.Hash
 
 func init() {
-	parsedChallengeCoreABI, err := abi.JSON(strings.NewReader(challengegen.ChallengeCoreABI))
+	parsedChallengeCoreABI, err := challengegen.ChallengeMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
@@ -273,14 +270,14 @@ func (m *ChallengeManager) GetChallengeState(ctx context.Context) (*ChallengeSta
 	if err != nil {
 		return nil, err
 	}
-	stateHash, err := m.con.ChallengeStateHash(callOpts)
+	challengeState, err := m.con.Challenge(callOpts)
 	if err != nil {
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
-	if stateHash == (common.Hash{}) {
+	if challengeState.ChallengeStateHash == (common.Hash{}) {
 		return nil, errors.New("lost challenge (state hash 0)")
 	}
-	state, err := m.resolveStateHash(ctx, stateHash)
+	state, err := m.resolveStateHash(ctx, challengeState.ChallengeStateHash)
 	if err != nil {
 		return nil, err
 	}
@@ -388,8 +385,8 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 		Context:     ctx,
 		BlockNumber: latestConfirmedBlock,
 	}
-	challengeMode, err := m.con.Mode(callOpts)
-	if err != nil || challengeMode != challengeModeExecution {
+	challengeState, err := m.con.Challenge(callOpts)
+	if err != nil || challengeState.Mode != challengeModeExecution {
 		return errors.WithStack(err)
 	}
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{

@@ -238,21 +238,22 @@ contract ValidatorUtils {
         IRollupCore rollup,
         uint64 startIndex,
         uint64 max
-    ) external view returns (IChallenge[] memory, bool hasMore) {
+    ) external view returns (address[] memory, bool hasMore) {
         (address[] memory stakers, bool hasMoreStakers) = getStakers(rollup, startIndex, max);
-        IChallenge[] memory challenges = new IChallenge[](stakers.length);
+        address[] memory challenges = new address[](stakers.length);
         uint256 index = 0;
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
-            IChallenge challengeAddr = rollup.currentChallenge(staker);
-            if (challengeAddr != IChallenge(address(0))) {
+            address challengeAddr = address(rollup.currentChallenge(staker));
+            if (challengeAddr != address(0)) {
                 IChallenge challenge = IChallenge(challengeAddr);
-                uint256 timeSinceLastMove = block.timestamp - challenge.lastMoveTimestamp();
+                IChallenge.ChallengeData memory challengeInfo = IChallenge(challengeAddr).challengeInfo();
+                uint256 timeSinceLastMove = block.timestamp - challengeInfo.lastMoveTimestamp;
                 if (
                     timeSinceLastMove > challenge.currentResponderTimeLeft() &&
-                    challenge.asserter() == staker
+                    challengeInfo.asserter == staker
                 ) {
-                    challenges[index] = challenge;
+                    challenges[index] = challengeAddr;
                     index++;
                 }
             }

@@ -16,18 +16,7 @@ contract Challenge is DelegateCallAware, IChallenge {
     string constant NO_TURN = "NO_TURN";
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
-    bytes32 public wasmModuleRoot;
-    GlobalState[2] internal startAndEndGlobalStates;
-
-    address public override asserter;
-    address public override challenger;
-
-    uint256 public asserterTimeLeft;
-    uint256 public challengerTimeLeft;
-    uint256 public override lastMoveTimestamp;
-
-    Turn public turn;
-    bytes32 public challengeStateHash;
+    ChallengeData public challenge;
 
     IChallengeResultReceiver public resultReceiver;
 
@@ -35,36 +24,36 @@ contract Challenge is DelegateCallAware, IChallenge {
     IBridge public delayedBridge;
     IOneStepProofEntry public osp;
 
-    ChallengeMode public mode;
-
-    uint256 maxInboxMessages;
+    function challengeInfo() external view override returns (ChallengeData memory) {
+        return challenge;
+    }
 
     modifier takeTurn() {
         require(msg.sender == currentResponder(), "BIS_SENDER");
         require(
-            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
+            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(),
             "BIS_DEADLINE"
         );
 
         _;
 
-        if (turn == Turn.CHALLENGER) {
-            challengerTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.ASSERTER;
+        if (challenge.turn == Turn.CHALLENGER) {
+            challenge.challengerTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+            challenge.turn = Turn.ASSERTER;
         } else {
-            asserterTimeLeft -= block.timestamp - lastMoveTimestamp;
-            turn = Turn.CHALLENGER;
+            challenge.asserterTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+            challenge.turn = Turn.CHALLENGER;
         }
-        lastMoveTimestamp = block.timestamp;
+        challenge.lastMoveTimestamp = block.timestamp;
     }
 
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
         IOneStepProofEntry osp_,
-        IChallengeFactory.ChallengeContracts memory contractAddresses,
+        IChallengeFactory.ChallengeContracts calldata contractAddresses,
         bytes32 wasmModuleRoot_,
-        MachineStatus[2] memory startAndEndMachineStatuses_,
-        GlobalState[2] memory startAndEndGlobalStates_,
+        MachineStatus[2] calldata startAndEndMachineStatuses_,
+        GlobalState[2] calldata startAndEndGlobalStates_,
         uint64 numBlocks,
         address asserter_,
         address challenger_,
@@ -77,21 +66,24 @@ contract Challenge is DelegateCallAware, IChallenge {
         sequencerInbox = ISequencerInbox(contractAddresses.sequencerInbox);
         delayedBridge = IBridge(contractAddresses.delayedBridge);
         osp = osp_;
-        wasmModuleRoot = wasmModuleRoot_;
-        startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
-        startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
-        asserter = asserter_;
-        challenger = challenger_;
-        asserterTimeLeft = asserterTimeLeft_;
-        challengerTimeLeft = challengerTimeLeft_;
-        lastMoveTimestamp = block.timestamp;
-        turn = Turn.CHALLENGER;
-        mode = ChallengeMode.BLOCK;
 
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
         segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
-        challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
+
+        challenge.wasmModuleRoot = wasmModuleRoot_;
+        // No need to set maxInboxMessages until execution challenge
+        challenge.startAndEndGlobalStates[0] = startAndEndGlobalStates_[0];
+        challenge.startAndEndGlobalStates[1] = startAndEndGlobalStates_[1];
+        challenge.asserter = asserter_;
+        challenge.challenger = challenger_;
+        challenge.asserterTimeLeft = asserterTimeLeft_;
+        challenge.challengerTimeLeft = challengerTimeLeft_;
+        challenge.lastMoveTimestamp = block.timestamp;
+        challenge.turn = Turn.CHALLENGER;
+        challenge.mode = ChallengeMode.BLOCK;
+        challenge.challengeStateHash = challengeStateHash;
 
         emit InitiatedChallenge();
         emit Bisected(
@@ -103,11 +95,11 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function getStartGlobalState() external view returns (GlobalState memory) {
-        return startAndEndGlobalStates[0];
+        return challenge.startAndEndGlobalStates[0];
     }
 
     function getEndGlobalState() external view returns (GlobalState memory) {
-        return startAndEndGlobalStates[1];
+        return challenge.startAndEndGlobalStates[1];
     }
 
     /**
@@ -147,11 +139,12 @@ contract Challenge is DelegateCallAware, IChallenge {
 
         require(oldSegments[challengePosition] == newSegments[0], "DIFF_START");
 
-        challengeStateHash = ChallengeLib.hashChallengeState(
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
             challengeLength,
             newSegments
         );
+        challenge.challengeStateHash = challengeStateHash;
 
         emit Bisected(
             challengeStateHash,
@@ -172,7 +165,7 @@ contract Challenge is DelegateCallAware, IChallenge {
     ) external {
         require(msg.sender == currentResponder(), "EXEC_SENDER");
         require(
-            block.timestamp - lastMoveTimestamp <= currentResponderTimeLeft(),
+            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(),
             "EXEC_DEADLINE"
         );
 
@@ -226,34 +219,41 @@ contract Challenge is DelegateCallAware, IChallenge {
             globalStateHashes[1]
         );
 
-        uint256 maxInboxMessagesRead = startAndEndGlobalStates[1].getInboxPosition();
-        if (machineStatuses[1] == MachineStatus.ERRORED || startAndEndGlobalStates[1].getPositionInMessage() > 0) {
+        uint256 maxInboxMessagesRead = challenge.startAndEndGlobalStates[1].getInboxPosition();
+        if (machineStatuses[1] == MachineStatus.ERRORED || challenge.startAndEndGlobalStates[1].getPositionInMessage() > 0) {
             maxInboxMessagesRead++;
         }
 
 
-        if (turn == Turn.CHALLENGER) {
-            (asserter, challenger) = (challenger, asserter);
-            (asserterTimeLeft, challengerTimeLeft) = (challengerTimeLeft, asserterTimeLeft);
-        } else if (turn != Turn.ASSERTER) {
+        if (challenge.turn == Turn.CHALLENGER) {
+            (challenge.asserter, challenge.challenger) = (challenge.challenger, challenge.asserter);
+            (
+                challenge.asserterTimeLeft,
+                challenge.challengerTimeLeft
+            ) =  (
+                challenge.challengerTimeLeft,
+                challenge.asserterTimeLeft
+            );
+        } else if (challenge.turn != Turn.ASSERTER) {
             revert(NO_TURN);
         }
 
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
-        maxInboxMessages = maxInboxMessages;
+        challenge.maxInboxMessages = challenge.maxInboxMessages;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps, segments);
-        lastMoveTimestamp = block.timestamp;
-        turn = Turn.CHALLENGER;
-        mode = ChallengeMode.EXECUTION;
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps, segments);
+        challenge.challengeStateHash = challengeStateHash;
+        challenge.lastMoveTimestamp = block.timestamp;
+        challenge.turn = Turn.CHALLENGER;
+        challenge.mode = ChallengeMode.EXECUTION;
 
         emit InitiatedChallenge();
         emit Bisected(
             challengeStateHash,
             0,
-                numSteps,
+            numSteps,
             segments
         );
 
@@ -277,7 +277,7 @@ contract Challenge is DelegateCallAware, IChallenge {
 
         bytes32 afterHash = osp.proveOneStep(
             ExecutionContext({
-                maxInboxMessagesRead: maxInboxMessages,
+                maxInboxMessagesRead: challenge.maxInboxMessages,
                 sequencerInbox: sequencerInbox,
                 delayedBridge: delayedBridge
             }),
@@ -295,16 +295,16 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function timeout() external override {
-        uint256 timeSinceLastMove = block.timestamp - lastMoveTimestamp;
+        uint256 timeSinceLastMove = block.timestamp - challenge.lastMoveTimestamp;
         require(
             timeSinceLastMove > currentResponderTimeLeft(),
             "TIMEOUT_DEADLINE"
         );
 
-        if (turn == Turn.ASSERTER) {
+        if (challenge.turn == Turn.ASSERTER) {
             emit AsserterTimedOut();
             _challengerWin();
-        } else if (turn == Turn.CHALLENGER) {
+        } else if (challenge.turn == Turn.CHALLENGER) {
             emit ChallengerTimedOut();
             _asserterWin();
         } else {
@@ -314,24 +314,24 @@ contract Challenge is DelegateCallAware, IChallenge {
 
     function clearChallenge() external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        turn = Turn.NO_CHALLENGE;
+        challenge.turn = Turn.NO_CHALLENGE;
     }
 
     function currentResponder() public view returns (address) {
-        if (turn == Turn.ASSERTER) {
-            return asserter;
-        } else if (turn == Turn.CHALLENGER) {
-            return challenger;
+        if (challenge.turn == Turn.ASSERTER) {
+            return challenge.asserter;
+        } else if (challenge.turn == Turn.CHALLENGER) {
+            return challenge.challenger;
         } else {
             revert(NO_TURN);
         }
     }
 
     function currentResponderTimeLeft() public override view returns (uint256) {
-        if (turn == Turn.ASSERTER) {
-            return asserterTimeLeft;
-        } else if (turn == Turn.CHALLENGER) {
-            return challengerTimeLeft;
+        if (challenge.turn == Turn.ASSERTER) {
+            return challenge.asserterTimeLeft;
+        } else if (challenge.turn == Turn.CHALLENGER) {
+            return challenge.challengerTimeLeft;
         } else {
             revert(NO_TURN);
         }
@@ -344,7 +344,7 @@ contract Challenge is DelegateCallAware, IChallenge {
         uint256 challengePosition
     ) internal view returns (uint256 segmentStart, uint256 segmentLength) {
         require(
-            challengeStateHash ==
+            challenge.challengeStateHash ==
             ChallengeLib.hashChallengeState(
                 oldSegmentsStart,
                 oldSegmentsLength,
@@ -401,7 +401,7 @@ contract Challenge is DelegateCallAware, IChallenge {
 			moduleIdx: 0,
 			functionIdx: 0,
 			functionPc: 0,
-			modulesRoot: wasmModuleRoot
+			modulesRoot: challenge.wasmModuleRoot
 		});
         return mach.hash();
     }
@@ -426,19 +426,19 @@ contract Challenge is DelegateCallAware, IChallenge {
     }
 
     function _asserterWin() private {
-        turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(asserter, challenger);
+        challenge.turn = Turn.NO_CHALLENGE;
+        resultReceiver.completeChallenge(challenge.asserter, challenge.challenger);
     }
 
     function _challengerWin() private {
-        turn = Turn.NO_CHALLENGE;
-        resultReceiver.completeChallenge(challenger, asserter);
+        challenge.turn = Turn.NO_CHALLENGE;
+        resultReceiver.completeChallenge(challenge.challenger, challenge.asserter);
     }
 
     function _currentWin() private {
         // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
         // As state is 0, no move is possible. The other party will lose via timeout
-        challengeStateHash = bytes32(0);
+        challenge.challengeStateHash = bytes32(0);
 
         // if (turn == Turn.ASSERTER) {
         //     _asserterWin();

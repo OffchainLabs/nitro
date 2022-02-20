@@ -17,17 +17,18 @@ contract SingleExecutionChallenge is Challenge {
     ) {
         osp = osp_;
         resultReceiver = resultReceiver_;
-        maxInboxMessages = maxInboxMessagesRead_;
+        challenge.maxInboxMessages = maxInboxMessagesRead_;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
-        challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps_, segments);
-        asserter = asserter_;
-        challenger = challenger_;
-        asserterTimeLeft = asserterTimeLeft_;
-        challengerTimeLeft = challengerTimeLeft_;
-        lastMoveTimestamp = block.timestamp;
-        turn = Turn.CHALLENGER;
+        bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps_, segments);
+        challenge.challengeStateHash = challengeStateHash;
+        challenge.asserter = asserter_;
+        challenge.challenger = challenger_;
+        challenge.asserterTimeLeft = asserterTimeLeft_;
+        challenge.challengerTimeLeft = challengerTimeLeft_;
+        challenge.lastMoveTimestamp = block.timestamp;
+        challenge.turn = Turn.CHALLENGER;
 
         emit Bisected(
             challengeStateHash,
