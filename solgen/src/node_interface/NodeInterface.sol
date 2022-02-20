@@ -12,7 +12,7 @@ interface NodeInterface {
      * @notice Estimate the cost of putting a message in the L2 inbox that is reexecuted
      * @param sender sender of the L1 and L2 transaction
      * @param deposit amount to deposit to sender in L2
-     * @param destAddr destination L2 contract address
+     * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param excessFeeRefundAddress gasLimit x gasFeeCap - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
@@ -21,7 +21,7 @@ interface NodeInterface {
     function estimateRetryableTicket(
         address sender,
         uint256 deposit,
-        address destAddr,
+        address to,
         uint256 l2CallValue,
         address excessFeeRefundAddress,
         address callValueRefundAddress,

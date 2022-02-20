@@ -51,7 +51,7 @@ interface IOutbox {
         bytes32 indexed outputRoot
     );
     event OutBoxTransactionExecuted(
-        address indexed destAddr,
+        address indexed to,
         address indexed l2Sender,
         uint256 indexed zero,
         uint256 transactionIndex

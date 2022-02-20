@@ -36,15 +36,15 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 		}
 		sender, _ := inputs[0].(common.Address)
 		deposit, _ := inputs[1].(*big.Int)
-		destAddr, _ := inputs[2].(common.Address)
+		to, _ := inputs[2].(common.Address)
 		l2CallValue, _ := inputs[3].(*big.Int)
 		excessFeeRefundAddress, _ := inputs[4].(common.Address)
 		callValueRefundAddress, _ := inputs[5].(common.Address)
 		data, _ := inputs[6].([]byte)
 
-		var to *common.Address
-		if destAddr != (common.Address{}) {
-			to = &destAddr
+		var pTo *common.Address
+		if to != (common.Address{}) {
+			pTo = &to
 		}
 
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
@@ -54,7 +54,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			DepositValue:  deposit,
 			GasFeeCap:     msg.GasPrice(),
 			Gas:           msg.Gas(),
-			To:            to,
+			To:            pTo,
 			Value:         l2CallValue,
 			Beneficiary:   callValueRefundAddress,
 			FeeRefundAddr: excessFeeRefundAddress,

@@ -100,18 +100,18 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     }
 
     function executeCall(
-        address destAddr,
+        address to,
         uint256 amount,
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
         if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
-        if (data.length > 0 && !destAddr.isContract()) revert NotContract(destAddr);
+        if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
-        (success, returnData) = destAddr.call{ value: amount }(data);
+        (success, returnData) = to.call{ value: amount }(data);
         activeOutbox = prevOutbox;
-        emit BridgeCallTriggered(msg.sender, destAddr, amount, data);
+        emit BridgeCallTriggered(msg.sender, to, amount, data);
     }
 
     function setInbox(address inbox, bool enabled) external override onlyOwner {

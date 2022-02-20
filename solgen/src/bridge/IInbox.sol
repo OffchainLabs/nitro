@@ -25,7 +25,7 @@ interface IInbox is IMessageProvider {
         uint256 gasLimit,
         uint256 gasFeeCap,
         uint256 nonce,
-        address destAddr,
+        address to,
         uint256 amount,
         bytes calldata data
     ) external returns (uint256);
@@ -33,7 +33,7 @@ interface IInbox is IMessageProvider {
     function sendContractTransaction(
         uint256 gasLimit,
         uint256 gasFeeCap,
-        address destAddr,
+        address to,
         uint256 amount,
         bytes calldata data
     ) external returns (uint256);
@@ -42,19 +42,19 @@ interface IInbox is IMessageProvider {
         uint256 gasLimit,
         uint256 gasFeeCap,
         uint256 nonce,
-        address destAddr,
+        address to,
         bytes calldata data
     ) external payable returns (uint256);
 
     function sendL1FundedContractTransaction(
         uint256 gasLimit,
         uint256 gasFeeCap,
-        address destAddr,
+        address to,
         bytes calldata data
     ) external payable returns (uint256);
 
     function createRetryableTicket(
-        address destAddr,
+        address to,
         uint256 arbTxCallValue,
         uint256 maxSubmissionCost,
         address submissionRefundAddress,

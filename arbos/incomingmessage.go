@@ -327,13 +327,13 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		nonce = nonceAsBig.Uint64()
 	}
 
-	destAddr, err := util.AddressFrom256FromReader(rd)
+	to, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 	var destination *common.Address
-	if destAddr != (common.Address{}) {
-		destination = &destAddr
+	if to != (common.Address{}) {
+		destination = &to
 	}
 
 	callvalue, err := util.HashFromReader(rd)
@@ -393,13 +393,13 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 }
 
 func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
-	destAddr, err := util.AddressFrom256FromReader(rd)
+	to, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	pDestAddr := &destAddr
-	if destAddr == (common.Address{}) {
-		pDestAddr = nil
+	pTo := &to
+	if to == (common.Address{}) {
+		pTo = nil
 	}
 	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
@@ -458,7 +458,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		DepositValue:      depositValue.Big(),
 		GasFeeCap:         gasFeeCap.Big(),
 		Gas:               gasLimitBig.Uint64(),
-		To:                pDestAddr,
+		To:                pTo,
 		Value:             callvalue.Big(),
 		Beneficiary:       callvalueRefundAddress,
 		SubmissionFeePaid: submissionFeePaid.Big(),
