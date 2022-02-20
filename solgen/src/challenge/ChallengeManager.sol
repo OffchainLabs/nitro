@@ -32,10 +32,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
     modifier takeTurn(uint64 challengeIndex) {
         Challenge storage challenge = challenges[challengeIndex];
-        require(msg.sender == currentResponder(challengeIndex), "BIS_SENDER");
+        require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
         require(
             block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
-            "BIS_DEADLINE"
+            "CHAL_DEADLINE"
         );
 
         _;
@@ -43,9 +43,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         if (challenge.turn == Turn.CHALLENGER) {
             challenge.challengerTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
             challenge.turn = Turn.ASSERTER;
-        } else {
+        } else if (challenge.turn == Turn.ASSERTER) {
             challenge.asserterTimeLeft -= block.timestamp - challenge.lastMoveTimestamp;
             challenge.turn = Turn.CHALLENGER;
+        } else {
+            revert(NO_TURN);
         }
         challenge.lastMoveTimestamp = block.timestamp;
     }
@@ -168,14 +170,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
-    ) external {
+    ) external takeTurn(challengeIndex) {
         Challenge storage challenge = challenges[challengeIndex];
-        require(msg.sender == currentResponder(challengeIndex), "EXEC_SENDER");
-        require(
-            block.timestamp - challenge.lastMoveTimestamp <= currentResponderTimeLeft(challengeIndex),
-            "EXEC_DEADLINE"
-        );
-
         (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(challenge.challengeStateHash, selection);
         require(challengeLength == 1, "TOO_LONG");
 
@@ -227,28 +223,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             maxInboxMessagesRead++;
         }
 
-        if (challenge.turn == Turn.CHALLENGER) {
-            (challenge.asserter, challenge.challenger) = (challenge.challenger, challenge.asserter);
-            (
-                challenge.asserterTimeLeft,
-                challenge.challengerTimeLeft
-            ) =  (
-                challenge.challengerTimeLeft,
-                challenge.asserterTimeLeft
-            );
-        } else if (challenge.turn != Turn.ASSERTER) {
-            revert(NO_TURN);
-        }
-
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
-        challenge.maxInboxMessages = challenge.maxInboxMessages;
         bytes32[] memory segments = new bytes32[](2);
         segments[0] = startAndEndHashes[0];
         segments[1] = startAndEndHashes[1];
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numSteps, segments);
+
+        challenge.maxInboxMessages = challenge.maxInboxMessages;
         challenge.challengeStateHash = challengeStateHash;
-        challenge.lastMoveTimestamp = block.timestamp;
-        challenge.turn = Turn.CHALLENGER;
         challenge.mode = ChallengeMode.EXECUTION;
 
         emit Bisected(
