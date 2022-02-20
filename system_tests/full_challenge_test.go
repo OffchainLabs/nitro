@@ -99,8 +99,8 @@ func CreateChallenge(
 		},
 		wasmModuleRoot,
 		[2]uint8{
-			validator.STATUS_FINISHED,
-			validator.STATUS_FINISHED,
+			validator.StatusFinished,
+			validator.StatusFinished,
 		},
 		[2]challengegen.GlobalState{
 			startGlobalState.AsSolidityStruct(),

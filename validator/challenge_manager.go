@@ -123,9 +123,8 @@ func NewChallengeManager(
 	}, nil
 }
 
-// for testing only - skips block challenges
+// NewExecutionChallengeManager is for testing only - skips block challenges
 func NewExecutionChallengeManager(
-	ctx context.Context,
 	l1client bind.ContractBackend,
 	auth *bind.TransactOpts,
 	challengeManagerAddr common.Address,

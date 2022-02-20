@@ -28,7 +28,11 @@ type ExecutionChallengeBackend struct {
 var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
 // machineCache may be nil, but if present, it must not have a restricted range
-func NewExecutionChallengeBackend(initialMachine MachineInterface, targetNumMachines int, machineCache *MachineCache) (*ExecutionChallengeBackend, error) {
+func NewExecutionChallengeBackend(
+	initialMachine MachineInterface,
+	targetNumMachines int,
+	machineCache *MachineCache,
+) (*ExecutionChallengeBackend, error) {
 	if initialMachine.GetStepCount() != 0 {
 		return nil, errors.New("initialMachine not at step count 0")
 	}

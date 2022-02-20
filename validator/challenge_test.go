@@ -150,7 +150,6 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	}
 
 	asserterManager, err := NewExecutionChallengeManager(
-		ctx,
 		backend,
 		asserter,
 		challengeManager,
@@ -162,7 +161,6 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	Require(t, err)
 
 	challengerManager, err := NewExecutionChallengeManager(
-		ctx,
 		backend,
 		challenger,
 		challengeManager,

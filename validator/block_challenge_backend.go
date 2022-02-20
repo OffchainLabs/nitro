@@ -210,8 +210,8 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 	return GoGlobalState{header.Hash(), extraInfo.SendRoot, batch, uint64(msgCount - batchMsgCount)}, nil
 }
 
-const STATUS_FINISHED uint8 = 1
-const STATUS_TOO_FAR uint8 = 3
+const StatusFinished uint8 = 1
+const StatusTooFar uint8 = 3
 
 func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
 	return b.startBlock + int64(step)
@@ -219,7 +219,7 @@ func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (GoGlobalState, uint8, error) {
 	if step >= b.tooFarStartsAtPosition {
-		return GoGlobalState{}, STATUS_TOO_FAR, nil
+		return GoGlobalState{}, StatusTooFar, nil
 	}
 	blockNum := b.GetBlockNrAtStep(step)
 	var header *types.Header
@@ -233,10 +233,10 @@ func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (GoGlobalState, uint8
 	if err != nil {
 		return GoGlobalState{}, 0, err
 	}
-	return globalState, STATUS_FINISHED, nil
+	return globalState, StatusFinished, nil
 }
 
-func (b *BlockChallengeBackend) SetRange(ctx context.Context, start uint64, end uint64) error {
+func (b *BlockChallengeBackend) SetRange(_ context.Context, start uint64, end uint64) error {
 	if b.startPosition == start && b.endPosition == end {
 		return nil
 	}
@@ -249,7 +249,7 @@ func (b *BlockChallengeBackend) SetRange(ctx context.Context, start uint64, end 
 		return err
 	}
 	b.startGs = newStartGs
-	if endStatus == STATUS_FINISHED {
+	if endStatus == StatusFinished {
 		b.endGs = newEndGs
 	}
 	return nil
@@ -260,11 +260,11 @@ func (b *BlockChallengeBackend) GetHashAtStep(_ context.Context, position uint64
 	if err != nil {
 		return common.Hash{}, err
 	}
-	if status == STATUS_FINISHED {
+	if status == StatusFinished {
 		data := []byte("Block state:")
 		data = append(data, gs.Hash().Bytes()...)
 		return crypto.Keccak256Hash(data), nil
-	} else if status == STATUS_TOO_FAR {
+	} else if status == StatusTooFar {
 		return crypto.Keccak256Hash([]byte("Block state, too far:")), nil
 	} else {
 		panic(fmt.Sprintf("Unknown block status: %v", status))
