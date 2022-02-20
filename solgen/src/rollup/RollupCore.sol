@@ -32,6 +32,8 @@ import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
@@ -345,7 +347,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         Staker storage staker1 = _stakerMap[stakerAddress1];
         Staker storage staker2 = _stakerMap[stakerAddress2];
         uint64 challenge = staker1.currentChallenge;
-        require(challenge != 0, "NO_CHAL");
+        require(challenge != NO_CHAL_INDEX, "NO_CHAL");
         require(challenge == staker2.currentChallenge, "DIFF_IN_CHAL");
         return challenge;
     }

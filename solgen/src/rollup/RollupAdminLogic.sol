@@ -10,6 +10,8 @@ import "../challenge/IChallengeManager.sol";
 import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
 contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
     function initialize(
         Config calldata config,
@@ -263,7 +265,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         for (uint256 i = 0; i < stakerA.length; i++) {
             uint64 chall = inChallenge(stakerA[i], stakerB[i]);
 
-            require(chall != 0, "NOT_IN_CHALL");
+            require(chall != NO_CHAL_INDEX, "NOT_IN_CHALL");
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
             challengeManager.clearChallenge(chall);

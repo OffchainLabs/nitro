@@ -24,6 +24,8 @@ import "../rollup/IRollupCore.sol";
 import "../rollup/IRollupLogic.sol";
 import "../challenge/IChallengeManager.sol";
 
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
 contract ValidatorUtils {
     using NodeLib for Node;
 
@@ -246,7 +248,7 @@ contract ValidatorUtils {
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
             uint64 challengeIndex = rollup.currentChallenge(staker);
-            if (challengeIndex != 0) {
+            if (challengeIndex != NO_CHAL_INDEX) {
                 IChallengeManager.Challenge memory challengeInfo = challengeManager.challengeInfo(challengeIndex);
                 uint256 timeSinceLastMove = block.timestamp - challengeInfo.lastMoveTimestamp;
                 if (

@@ -8,6 +8,8 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./IChallengeManager.sol";
 
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
 contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
@@ -79,6 +81,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(0, numBlocks, segments);
 
         uint64 challengeIndex = ++totalChallengesCreated;
+        // The following is an assertion since it should never be possible, but it's an important invariant
+        assert(challengeIndex != NO_CHAL_INDEX);
         Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
         // No need to set maxInboxMessages until execution challenge
