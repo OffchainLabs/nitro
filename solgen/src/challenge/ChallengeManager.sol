@@ -272,12 +272,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             revert(NO_TURN);
         }
     }
-    event ChallengeTerminated(uint64 indexed challengeIndex);
 
     function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
         delete challenges[challengeIndex];
-        emit ChallengeTerminated(challengeIndex);
+        emit ChallengedEnded(challengeIndex, ChallengeWinner.NONE, ChallengeTerminationType.CLEARED);
     }
 
     function currentResponder(uint64 challengeIndex) public view returns (address) {

@@ -30,7 +30,7 @@ interface IChallengeManager {
 
     enum ChallengeTerminationType {
         TIMEOUT,
-        CHALLENGER_TIMED_OUT
+        CLEARED
     }
 
     struct Challenge {
