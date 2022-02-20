@@ -23,7 +23,7 @@ interface IBridge {
         uint8 kind,
         address sender,
         bytes32 messageDataHash,
-        uint256 gasPrice,
+        uint256 baseFeeL1,
         uint256 timestamp
     );
 

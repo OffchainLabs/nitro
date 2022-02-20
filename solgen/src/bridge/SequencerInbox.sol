@@ -91,14 +91,14 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     /// @param _totalDelayedMessagesRead The total number of messages to read up to
     /// @param kind The kind of the last message to be included
     /// @param l1BlockAndTimestamp The l1 block and the l1 timestamp of the last message to be included
-    /// @param gasPriceL1 The l1 gas price of the last message to be included
+    /// @param baseFeeL1 The l1 gas price of the last message to be included
     /// @param sender The sender of the last message to be included
     /// @param messageDataHash The messageDataHash of the last message to be included
     function forceInclusion(
         uint256 _totalDelayedMessagesRead,
         uint8 kind,
         uint256[2] calldata l1BlockAndTimestamp,
-        uint256 gasPriceL1,
+        uint256 baseFeeL1,
         address sender,
         bytes32 messageDataHash
     ) external {
@@ -113,7 +113,7 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
                 l1BlockAndTimestamp[0],
                 l1BlockAndTimestamp[1],
                 _totalDelayedMessagesRead - 1,
-                gasPriceL1,
+                baseFeeL1,
                 messageDataHash
             );
             // Can only force-include after the Sequencer-only window has expired.

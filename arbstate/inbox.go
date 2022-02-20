@@ -294,7 +294,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,
-					GasPriceL1:  common.Hash{},
+					BaseFeeL1:   common.Hash{},
 				},
 				L2msg: segment[1:],
 			},

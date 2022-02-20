@@ -67,7 +67,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
                 sender,
                 block.number,
                 block.timestamp, // solhint-disable-line not-rely-on-time
-                tx.gasprice,
+                block.basefee,
                 messageDataHash
             );
     }
@@ -77,7 +77,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         address sender,
         uint256 blockNumber,
         uint256 blockTimestamp,
-        uint256 gasPrice,
+        uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal returns (uint256) {
         uint256 count = inboxAccs.length;
@@ -87,7 +87,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             blockNumber,
             blockTimestamp,
             count,
-            gasPrice,
+            baseFeeL1,
             messageDataHash
         );
         bytes32 prevAcc = 0;
@@ -95,7 +95,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             prevAcc = inboxAccs[count - 1];
         }
         inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
-        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, gasPrice, blockTimestamp);
+        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, baseFeeL1, blockTimestamp);
         return count;
     }
 

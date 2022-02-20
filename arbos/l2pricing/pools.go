@@ -15,7 +15,7 @@ import (
 const InitialSpeedLimitPerSecond = 1000000
 const InitialPerBlockGasLimit uint64 = 20 * 1000000
 const InitialMinimumGasPriceWei = 1 * params.GWei
-const InitialGasPriceWei = InitialMinimumGasPriceWei
+const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialSmallGasPoolSeconds = 60
 

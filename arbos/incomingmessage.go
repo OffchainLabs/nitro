@@ -40,7 +40,7 @@ type L1IncomingMessageHeader struct {
 	BlockNumber common.Hash    `json:"blockNumber"`
 	Timestamp   common.Hash    `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
-	GasPriceL1  common.Hash    `json:"gasPriceL1"`
+	BaseFeeL1   common.Hash    `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -90,7 +90,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.GasPriceL1, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.BaseFeeL1, wr); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +112,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		header.BlockNumber == other.BlockNumber &&
 		header.Timestamp == other.Timestamp &&
 		header.RequestId == other.RequestId &&
-		header.GasPriceL1 == other.GasPriceL1
+		header.BaseFeeL1 == other.BaseFeeL1
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -142,7 +142,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	gasPriceL1, err := util.HashFromReader(rd)
+	baseFeeL1, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			blockNumber,
 			timestamp,
 			requestId,
-			gasPriceL1,
+			baseFeeL1,
 		},
 		data,
 	}, nil
