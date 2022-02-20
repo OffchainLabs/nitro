@@ -221,16 +221,12 @@ func uint64ToIndex(val uint64) common.Hash {
 	return challengeIndex
 }
 
-func (m *ChallengeManager) challengeFilterIndex() common.Hash {
-	return uint64ToIndex(m.challengeIndex)
-}
-
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.
 func (m *ChallengeManager) resolveStateHash(ctx context.Context, stateHash common.Hash) (ChallengeState, error) {
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
 		Addresses: []common.Address{m.challengeManagerAddr},
-		Topics:    [][]common.Hash{{challengeBisectedID}, {m.challengeFilterIndex()}, {stateHash}},
+		Topics:    [][]common.Hash{{challengeBisectedID}, {uint64ToIndex(m.challengeIndex)}, {stateHash}},
 	})
 	if err != nil {
 		return ChallengeState{}, err
@@ -468,7 +464,7 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 	logs, err := m.client.FilterLogs(ctx, ethereum.FilterQuery{
 		FromBlock: m.startL1Block,
 		Addresses: []common.Address{m.challengeManagerAddr},
-		Topics:    [][]common.Hash{{executionChallengeBegunID}, {m.challengeFilterIndex()}},
+		Topics:    [][]common.Hash{{executionChallengeBegunID}, {uint64ToIndex(m.challengeIndex)}},
 	})
 	if err != nil {
 		return errors.WithStack(err)
