@@ -138,13 +138,13 @@ func deployChallengeFactory(ctx context.Context, client arbutil.L1Interface, aut
 		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	blockChallengeFactoryAddr, tx, _, err := challengegen.DeployBlockChallengeFactory(auth, client, ospEntryAddr)
+	challengeFactoryAddr, tx, _, err := challengegen.DeployChallengeFactory(auth, client, ospEntryAddr)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	return blockChallengeFactoryAddr, nil
+	return challengeFactoryAddr, nil
 }
 
 func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {

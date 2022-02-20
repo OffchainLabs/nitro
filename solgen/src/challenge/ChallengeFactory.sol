@@ -1,18 +1,18 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./BlockChallenge.sol";
-import "./IBlockChallengeFactory.sol";
+import "./Challenge.sol";
+import "./IChallengeFactory.sol";
 import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
-contract BlockChallengeFactory is IBlockChallengeFactory {
+contract ChallengeFactory is IChallengeFactory {
     UpgradeableBeacon public beacon;
     IOneStepProofEntry public osp;
 
     constructor(IOneStepProofEntry osp_) {
         osp = osp_;
-        address challengeTemplate = address(new BlockChallenge());
+        address challengeTemplate = address(new Challenge());
         beacon = new UpgradeableBeacon(challengeTemplate);
         beacon.transferOwnership(msg.sender);
     }
@@ -29,7 +29,7 @@ contract BlockChallengeFactory is IBlockChallengeFactory {
         uint256 challengerTimeLeft_
     ) external override returns (IChallenge) {
         address clone = address(new BeaconProxy(address(beacon), ""));
-        BlockChallenge(clone).initialize(
+        Challenge(clone).initialize(
             osp,
             contractAddresses,
             wasmModuleRoot_,

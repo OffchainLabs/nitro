@@ -18,7 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IBlockChallengeFactory.sol";
+import "../challenge/IChallengeFactory.sol";
 import "../challenge/ChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -45,7 +45,7 @@ struct ContractDependencies {
     ISequencerInbox sequencerInbox;
     IOutbox outbox;
     RollupEventBridge rollupEventBridge;
-    IBlockChallengeFactory blockChallengeFactory;
+    IChallengeFactory challengeFactory;
 
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;

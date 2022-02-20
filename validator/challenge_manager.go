@@ -46,9 +46,8 @@ type ChallengeBackend interface {
 
 type ChallengeManager struct {
 	// fields used in both block and execution challenge
-	con                *challengegen.BlockChallenge
+	con                *challengegen.Challenge
 	challengeAddr      common.Address
-	rootChallengeAddr  common.Address
 	client             bind.ContractBackend
 	auth               *bind.TransactOpts
 	actingAs           common.Address
@@ -73,7 +72,7 @@ type ChallengeManager struct {
 }
 
 func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, fromAddr common.Address, blockChallengeAddr common.Address, l2blockChain *core.BlockChain, inboxReader InboxReaderInterface, inboxTracker InboxTrackerInterface, txStreamer TransactionStreamerInterface, startL1Block uint64, targetNumMachines int, confirmationBlocks int64) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewBlockChallenge(blockChallengeAddr, l1client)
+	challengeCoreCon, err := challengegen.NewChallenge(blockChallengeAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +87,6 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 	return &ChallengeManager{
 		con:                   challengeCoreCon,
 		challengeAddr:         blockChallengeAddr,
-		rootChallengeAddr:     blockChallengeAddr,
 		client:                l1client,
 		auth:                  auth,
 		actingAs:              fromAddr,
@@ -105,7 +103,7 @@ func NewChallengeManager(ctx context.Context, l1client bind.ContractBackend, aut
 
 // for testing only - skips block challenges
 func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBackend, auth *bind.TransactOpts, execChallengeAddr common.Address, initialMachine MachineInterface, startL1Block uint64, targetNumMachines int) (*ChallengeManager, error) {
-	challengeCoreCon, err := challengegen.NewBlockChallenge(execChallengeAddr, l1client)
+	challengeCoreCon, err := challengegen.NewChallenge(execChallengeAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +114,6 @@ func NewExecutionChallengeManager(ctx context.Context, l1client bind.ContractBac
 	return &ChallengeManager{
 		con:                       challengeCoreCon,
 		challengeAddr:             execChallengeAddr,
-		rootChallengeAddr:         execChallengeAddr,
 		client:                    l1client,
 		auth:                      auth,
 		actingAs:                  auth.From,
@@ -154,8 +151,8 @@ func (m *ChallengeManager) latestConfirmedBlock(ctx context.Context) (*big.Int, 
 	return block, nil
 }
 
-func (m *ChallengeManager) RootChallengeAddress() common.Address {
-	return m.rootChallengeAddr
+func (m *ChallengeManager) ChallengeAddress() common.Address {
+	return m.challengeAddr
 }
 
 // Given the challenge's state hash, resolve the full challenge state via the Bisected event.

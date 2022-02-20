@@ -81,7 +81,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	executionChallengeFactoryAddr, tx, _, err := challengegen.DeployExecutionChallengeFactory(auth, client, ospEntry)
+	_, tx, challengeFactory, err := challengegen.DeployChallengeFactory(auth, client, ospEntry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,18 +90,9 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	_, tx, blockChallengeFactory, err := challengegen.DeployBlockChallengeFactory(auth, client, executionChallengeFactoryAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tx, err = blockChallengeFactory.CreateChallenge(
+	tx, err = challengeFactory.CreateChallenge(
 		auth,
-		challengegen.IBlockChallengeFactoryChallengeContracts{
+		challengegen.IChallengeFactoryChallengeContracts{
 			ResultReceiver: resultReceiverAddr,
 			SequencerInbox: sequencerInbox,
 			DelayedBridge:  delayedBridge,
@@ -126,7 +117,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	challengeCreatedEvent, err := blockChallengeFactory.ParseChallengeCreated(*receipt.Logs[len(receipt.Logs)-1])
+	challengeCreatedEvent, err := challengeFactory.ParseChallengeCreated(*receipt.Logs[len(receipt.Logs)-1])
 	if err != nil {
 		t.Fatal(err)
 	}

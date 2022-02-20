@@ -26,7 +26,7 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../challenge/IBlockChallengeFactory.sol";
+import "../challenge/IChallengeFactory.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
@@ -47,7 +47,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
-    IBlockChallengeFactory public challengeFactory;
+    IChallengeFactory public challengeFactory;
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
     address public stakeToken;

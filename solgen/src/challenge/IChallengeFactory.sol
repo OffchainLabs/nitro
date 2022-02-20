@@ -5,7 +5,7 @@ import "../osp/IOneStepProofEntry.sol";
 import "./IChallenge.sol";
 import "./IChallengeResultReceiver.sol";
 
-interface IBlockChallengeFactory {
+interface IChallengeFactory {
     event ChallengeCreated(IChallenge challenge);
 
     struct ChallengeContracts {

@@ -8,9 +8,9 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 import "./ChallengeCore.sol";
 import "./IChallenge.sol";
-import "./IBlockChallengeFactory.sol";
+import "./IChallengeFactory.sol";
 
-contract BlockChallenge is ChallengeCore, DelegateCallAware {
+contract Challenge is ChallengeCore, DelegateCallAware {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
@@ -37,7 +37,7 @@ contract BlockChallenge is ChallengeCore, DelegateCallAware {
     // contractAddresses = [ resultReceiver, sequencerInbox, delayedBridge ]
     function initialize(
         IOneStepProofEntry osp_,
-        IBlockChallengeFactory.ChallengeContracts memory contractAddresses,
+        IChallengeFactory.ChallengeContracts memory contractAddresses,
         bytes32 wasmModuleRoot_,
         MachineStatus[2] memory startAndEndMachineStatuses_,
         GlobalState[2] memory startAndEndGlobalStates_,

@@ -364,7 +364,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		return nil
 	}
 
-	if s.activeChallenge == nil || s.activeChallenge.RootChallengeAddress() != *info.CurrentChallenge {
+	if s.activeChallenge == nil || s.activeChallenge.ChallengeAddress() != *info.CurrentChallenge {
 		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)

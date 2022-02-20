@@ -62,7 +62,7 @@ func (s GoGlobalState) AsSolidityStruct() challengegen.GlobalState {
 }
 
 type BlockChallengeBackend struct {
-	blockChallengeCon      *challengegen.BlockChallenge
+	challengeCon           *challengegen.Challenge
 	client                 bind.ContractBackend
 	bc                     *core.BlockChain
 	startBlock             int64
@@ -80,7 +80,7 @@ var _ ChallengeBackend = (*BlockChallengeBackend)(nil)
 
 func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTracker InboxTrackerInterface, client bind.ContractBackend, challengeAddr common.Address, genesisBlockNumber uint64) (*BlockChallengeBackend, error) {
 	callOpts := &bind.CallOpts{Context: ctx}
-	challengeCon, err := challengegen.NewBlockChallenge(challengeAddr, client)
+	challengeCon, err := challengegen.NewChallenge(challengeAddr, client)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func NewBlockChallengeBackend(ctx context.Context, bc *core.BlockChain, inboxTra
 
 	return &BlockChallengeBackend{
 		client:                 client,
-		blockChallengeCon:      challengeCon,
+		challengeCon:           challengeCon,
 		bc:                     bc,
 		startBlock:             startBlockNum,
 		startGs:                startGs,
@@ -262,7 +262,7 @@ func (b *BlockChallengeBackend) GetHashAtStep(ctx context.Context, position uint
 }
 
 func (b *BlockChallengeBackend) IssueExecChallenge(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState *ChallengeState, startSegment int, numsteps uint64) (*types.Transaction, error) {
-	con, err := challengegen.NewBlockChallenge(challenge, client)
+	con, err := challengegen.NewChallenge(challenge, client)
 	if err != nil {
 		return nil, err
 	}

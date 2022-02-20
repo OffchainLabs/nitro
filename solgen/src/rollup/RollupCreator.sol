@@ -41,7 +41,7 @@ contract RollupCreator is Ownable {
     event TemplatesUpdated();
 
     BridgeCreator public bridgeCreator;
-    IBlockChallengeFactory public challengeFactory;
+    IChallengeFactory public challengeFactory;
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
@@ -49,7 +49,7 @@ contract RollupCreator is Ownable {
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
-        IBlockChallengeFactory  _challengeFactory,
+        IChallengeFactory  _challengeFactory,
         IRollupAdmin _rollupAdminLogic,
         IRollupUser _rollupUserLogic
     ) external onlyOwner {
@@ -96,7 +96,7 @@ contract RollupCreator is Ownable {
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,
                 rollupEventBridge: frame.rollupEventBridge,
-                blockChallengeFactory: challengeFactory,
+                challengeFactory: challengeFactory,
                 rollupAdminLogic: rollupAdminLogic,
                 rollupUserLogic: rollupUserLogic
             })

@@ -366,7 +366,7 @@ abstract contract AbsRollupUserLogic is
     ) internal returns (IChallenge) {
         return
             challengeFactory.createChallenge(
-                IBlockChallengeFactory.ChallengeContracts({
+                IChallengeFactory.ChallengeContracts({
                     resultReceiver: this,
                     sequencerInbox: sequencerBridge,
                     delayedBridge: delayedBridge

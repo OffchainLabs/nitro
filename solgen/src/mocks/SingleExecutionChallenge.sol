@@ -1,9 +1,9 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../challenge/BlockChallenge.sol";
+import "../challenge/Challenge.sol";
 
-contract SingleExecutionChallenge is BlockChallenge {
+contract SingleExecutionChallenge is Challenge {
     constructor(
         IOneStepProofEntry osp_,
         IChallengeResultReceiver resultReceiver_,

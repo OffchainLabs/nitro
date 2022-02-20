@@ -25,7 +25,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         rollupEventBridge.rollupInitialized(config.owner, config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
-        challengeFactory = connectedContracts.blockChallengeFactory;
+        challengeFactory = connectedContracts.challengeFactory;
 
         Node memory node = createInitialNode();
         initializeCore(node);
