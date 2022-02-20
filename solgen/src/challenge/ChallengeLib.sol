@@ -18,21 +18,18 @@ library ChallengeLib {
         pure
         returns (bytes32)
     {
-        ValueStack memory values;
-        {
-            // Start the value stack with the function call ABI for the entrypoint
-            Value[] memory startingValues = new Value[](3);
-            startingValues[0] = ValueLib.newRefNull();
-            startingValues[1] = ValueLib.newI32(0);
-            startingValues[2] = ValueLib.newI32(0);
-            ValueArray memory valuesArray = ValueArray({
+        // Start the value stack with the function call ABI for the entrypoint
+        Value[] memory startingValues = new Value[](3);
+        startingValues[0] = ValueLib.newRefNull();
+        startingValues[1] = ValueLib.newI32(0);
+        startingValues[2] = ValueLib.newI32(0);
+        ValueArray memory valuesArray = ValueArray({
             inner: startingValues
-            });
-            values = ValueStack({
+        });
+        ValueStack memory values = ValueStack({
             proved: valuesArray,
             remainingHash: 0
-            });
-        }
+        });
         ValueStack memory internalStack;
         PcStack memory blocks;
         StackFrameWindow memory frameStack;
