@@ -5,24 +5,7 @@ import "./ChallengeLib.sol";
 import "./IChallengeResultReceiver.sol";
 import "./IChallenge.sol";
 
-abstract contract ChallengeCore is IChallenge{
-    event InitiatedChallenge();
-
-    enum Turn {
-        NO_CHALLENGE,
-        ASSERTER,
-        CHALLENGER
-    }
-
-    event Bisected(
-        bytes32 indexed challengeRoot,
-        uint256 challengedSegmentStart,
-        uint256 challengedSegmentLength,
-        bytes32[] chainHashes
-    );
-    event AsserterTimedOut();
-    event ChallengerTimedOut();
-
+abstract contract ChallengeCore is IChallenge {
     address public override asserter;
     address public override challenger;
 

@@ -14,15 +14,6 @@ contract Challenge is ChallengeCore, DelegateCallAware {
     using GlobalStateLib for GlobalState;
     using MachineLib for Machine;
 
-    enum ChallengeMode {
-        NONE,
-        BLOCK,
-        EXECUTION
-    }
-
-    event ExecutionChallengeBegun(uint256 blockSteps);
-    event OneStepProofCompleted();
-
     bytes32 public wasmModuleRoot;
     GlobalState[2] internal startAndEndGlobalStates;
 
