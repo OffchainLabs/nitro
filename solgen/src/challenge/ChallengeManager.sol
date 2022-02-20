@@ -152,13 +152,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             }
             require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
         }
-        require(
-            newSegments[newSegments.length - 1] !=
-            selection.oldSegments[selection.challengePosition + 1],
-            "SAME_END"
-        );
 
-        require(selection.oldSegments[selection.challengePosition] == newSegments[0], "DIFF_START");
+        requireValidBisection(
+            selection,
+            newSegments[0],
+            newSegments[newSegments.length - 1]
+        );
 
         completeBisection(
             challengeIndex,
@@ -176,21 +175,16 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint256 numSteps
     ) external takeTurn(challengeIndex, selection) {
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
-        require(
-            selection.oldSegments[selection.challengePosition] ==
+        requireValidBisection(
+            selection,
             ChallengeLib.blockStateHash(
                 machineStatuses[0],
                 globalStateHashes[0]
             ),
-            "WRONG_START"
-        );
-        require(
-            selection.oldSegments[selection.challengePosition + 1] !=
             ChallengeLib.blockStateHash(
                 machineStatuses[1],
                 globalStateHashes[1]
-            ),
-            "SAME_END"
+            )
         );
 
         Challenge storage challenge = challenges[challengeIndex];
@@ -314,6 +308,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         } else {
             revert(NO_TURN);
         }
+    }
+
+    function requireValidBisection(
+        ChallengeLib.SegmentSelection calldata selection,
+        bytes32 startHash,
+        bytes32 endHash
+    ) {
+        require(selection.oldSegments[selection.challengePosition] == startHash, "WRONG_START");
+        require(selection.oldSegments[selection.challengePosition + 1] != endHash, "SAME_END");
     }
 
     function completeBisection(
