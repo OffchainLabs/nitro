@@ -23,16 +23,10 @@ library ChallengeLib {
     struct Challenge {
         Participant current;
         Participant next;
-
         uint256 lastMoveTimestamp;
-
         bytes32 wasmModuleRoot;
         bytes32 challengeStateHash;
-
-        uint64 globalEndInboxPosition;
-        uint64 globalEndMessagePosition;
         uint64 maxInboxMessages;
-
         ChallengeMode mode;
     }
 
