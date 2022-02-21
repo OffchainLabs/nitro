@@ -146,7 +146,7 @@ abstract contract AbsRollupUserLogic is
      * @param nodeHash Node hash of nodeNum (protects against reorgs)
      */
     function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash)
-        external
+        public
         onlyValidator
         whenNotPaused
     {
@@ -174,7 +174,7 @@ abstract contract AbsRollupUserLogic is
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
-    ) external onlyValidator whenNotPaused {
+    ) public onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
@@ -642,11 +642,25 @@ contract RollupUserLogic is AbsRollupUserLogic {
 
     /**
      * @notice Create a new stake
-     * @dev It is recomended to call stakeOnExistingNode after creating a new stake
+     * @dev It is recommended to call stakeOnExistingNode after creating a new stake
      * so that a griefer doesn't remove your stake by immediately calling returnOldDeposit
      */
-    function newStake() external payable onlyValidator whenNotPaused {
+    function newStake() public payable onlyValidator whenNotPaused {
         _newStake(msg.value);
+    }
+
+    function newstakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable {
+        newStake();
+        stakeOnExistingNode(nodeNum, nodeHash);
+    }
+
+    function newstakeOnNewNode(
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable {
+        newStake();
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
 
     /**
@@ -663,7 +677,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
     }
 
     /**
-     * @notice Withdraw uncomitted funds owned by sender from the rollup chain
+     * @notice Withdraw uncommitted funds owned by sender from the rollup chain
      * @param destination Address to transfer the withdrawn funds to
      */
     function withdrawStakerFunds(address payable destination)
@@ -690,12 +704,12 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
 
     /**
      * @notice Create a new stake
-     * @dev It is recomended to call stakeOnExistingNode after creating a new stake
+     * @dev It is recommended to call stakeOnExistingNode after creating a new stake
      * so that a griefer doesn't remove your stake by immediately calling returnOldDeposit
      * @param tokenAmount the amount of tokens staked
      */
     function newStake(uint256 tokenAmount)
-        external
+        public
         onlyValidator
         whenNotPaused
     {
@@ -708,6 +722,21 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
             ),
             "TRANSFER_FAIL"
         );
+    }
+
+    function newstakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external payable {
+        newStake(tokenAmount);
+        stakeOnExistingNode(nodeNum, nodeHash);
+    }
+
+    function newstakeOnNewNode(
+        uint256 tokenAmount,
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable {
+        newStake(tokenAmount);
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
 
     /**
@@ -732,7 +761,7 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     }
 
     /**
-     * @notice Withdraw uncomitted funds owned by sender from the rollup chain
+     * @notice Withdraw uncommitted funds owned by sender from the rollup chain
      * @param destination Address to transfer the withdrawn funds to
      */
     function withdrawStakerFunds(address payable destination)
