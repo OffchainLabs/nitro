@@ -288,6 +288,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 			return nil, err
 		}
 	}
+	resolvingNode := false
 	if shouldResolveNodes {
 		// Keep the stake of this validator placed if we plan on staking further
 		arbTx, err := s.removeOldStakers(ctx, effectiveStrategy >= StakeLatestStrategy)
@@ -298,7 +299,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		if err != nil || arbTx != nil {
 			return arbTx, err
 		}
-		if err := s.resolveNextNode(ctx, rawInfo); err != nil {
+		resolvingNode, err = s.resolveNextNode(ctx, rawInfo)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -323,12 +325,17 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	// Advance stake up to 20 times in one transaction
-	for i := 0; info.CanProgress && i < 20; i++ {
-		if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
-			return nil, err
+	// Don't attempt to create a new stake if we're resolving a node,
+	// as that might affect the current required stake.
+	if rawInfo != nil || !resolvingNode {
+		// Advance stake up to 20 times in one transaction
+		for i := 0; info.CanProgress && i < 20; i++ {
+			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
+				return nil, err
+			}
 		}
 	}
+
 	if rawInfo != nil && s.builder.BuilderTransactionCount() == 0 {
 		if err := s.createConflict(ctx, rawInfo); err != nil {
 			return nil, err
