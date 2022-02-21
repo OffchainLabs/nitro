@@ -7,6 +7,7 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"math"
 	"math/big"
 	"strconv"
@@ -360,35 +361,6 @@ func ProduceBlockAdvanced(
 	return block, receipts
 }
 
-type ArbitrumHeaderInfo struct {
-	SendRoot  common.Hash
-	SendCount uint64
-}
-
-func (info ArbitrumHeaderInfo) Extra() []byte {
-	return info.SendRoot[:]
-}
-
-func (info ArbitrumHeaderInfo) MixDigest() [32]byte {
-	mixDigest := common.Hash{}
-	binary.BigEndian.PutUint64(mixDigest[:8], info.SendCount)
-	return mixDigest
-}
-
-func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo, error) {
-	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
-		// The genesis block doesn't have an ArbOS encoded extra field
-		return ArbitrumHeaderInfo{}, nil
-	}
-	if len(header.Extra) != 32 {
-		return ArbitrumHeaderInfo{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
-	}
-	extra := ArbitrumHeaderInfo{}
-	copy(extra.SendRoot[:], header.Extra)
-	extra.SendCount = binary.BigEndian.Uint64(header.MixDigest[:8])
-	return extra, nil
-}
-
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
 		state, err := arbosState.OpenSystemArbosState(statedb, false)
@@ -405,7 +377,8 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		acc := state.SendMerkleAccumulator()
 		root, _ := acc.Root()
 		size, _ := acc.Size()
-		arbitrumHeader := ArbitrumHeaderInfo{root, size}
+		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		arbitrumHeader := arbitrum.HeaderInfo{root, size, nextL1BlockNumber}
 		header.Extra = arbitrumHeader.Extra()
 		header.MixDigest = arbitrumHeader.MixDigest()
 
