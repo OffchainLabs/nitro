@@ -156,7 +156,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		if util.BigLessThan(tx.GasPrice, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
+		if util.BigLessThan(tx.GasFeeCap, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
 			// user's bid was too low
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}

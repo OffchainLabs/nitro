@@ -17,7 +17,7 @@ import (
 type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
-	l1GasPriceEstimate          storage.StorageBackedBigInt
+	l1BaseFeeEstimate           storage.StorageBackedBigInt
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -69,18 +69,18 @@ func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
 	return ps.defaultAggregator.Set(val)
 }
 
-func (ps *L1PricingState) L1GasPriceEstimateWei() (*big.Int, error) {
-	return ps.l1GasPriceEstimate.Get()
+func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
+	return ps.l1BaseFeeEstimate.Get()
 }
 
 func (ps *L1PricingState) SetL1GasPriceEstimateWei(val *big.Int) error {
-	return ps.l1GasPriceEstimate.Set(val)
+	return ps.l1BaseFeeEstimate.Set(val)
 }
 
 const L1GasPriceEstimateMemoryWeight = 24
 
 func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1GasPriceEstimateWei()
+	curr, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +244,7 @@ func (ps *L1PricingState) PosterDataCost(
 	// add 5% to protect the aggregator from bad price fluctuation luck
 	dataGas = dataGas * 21 / 20
 
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, err
 	}

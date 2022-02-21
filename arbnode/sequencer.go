@@ -157,7 +157,7 @@ func (s *Sequencer) sequenceTransactions() {
 		BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
 		Timestamp:   timestamp,
 		RequestId:   common.Hash{},
-		GasPriceL1:  common.Hash{},
+		BaseFeeL1:   common.Hash{},
 	}
 
 	hooks := &arbos.SequencingHooks{

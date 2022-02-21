@@ -77,38 +77,38 @@ contract Outbox is DelegateCallAware, IOutbox {
      * @param proof Merkle proof of message inclusion in send root
      * @param index Merkle path to message
      * @param l2Sender sender if original message (i.e., caller of ArbSys.sendTxToL1)
-     * @param destAddr destination address for L1 contract call
+     * @param to destination address for L1 contract call
      * @param l2Block l2 block number at which sendTxToL1 call was made
      * @param l1Block l1 block number at which sendTxToL1 call was made
      * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
-     * @param amount value in L1 message in wei
-     * @param calldataForL1 abi-encoded L1 message data
+     * @param value wei in L1 message
+     * @param data abi-encoded L1 message data
      */
     function executeTransaction(
         bytes32[] calldata proof,
         uint256 index,
         address l2Sender,
-        address destAddr,
+        address to,
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
-        bytes calldata calldataForL1
+        uint256 value,
+        bytes calldata data
     ) external virtual {
         bytes32 outputId;
         {
             bytes32 userTx = calculateItemHash(
                 l2Sender,
-                destAddr,
+                to,
                 l2Block,
                 l1Block,
                 l2Timestamp,
-                amount,
-                calldataForL1
+                value,
+                data
             );
 
             outputId = recordOutputAsSpent(proof, index, userTx);
-            emit OutBoxTransactionExecuted(destAddr, l2Sender, 0, index);
+            emit OutBoxTransactionExecuted(to, l2Sender, 0, index);
         }
 
         // we temporarily store the previous values so the outbox can naturally
@@ -124,7 +124,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         });
 
         // set and reset vars around execution so they remain valid during call
-        executeBridgeCall(destAddr, amount, calldataForL1);
+        executeBridgeCall(to, value, data);
 
         context = prevContext;
     }
@@ -148,11 +148,11 @@ contract Outbox is DelegateCallAware, IOutbox {
     }
 
     function executeBridgeCall(
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes memory data
     ) internal {
-        (bool success, bytes memory returndata) = bridge.executeCall(destAddr, amount, data);
+        (bool success, bytes memory returndata) = bridge.executeCall(to, value, data);
         if (!success) {
             if (returndata.length > 0) {
                 // solhint-disable-next-line no-inline-assembly
@@ -168,23 +168,23 @@ contract Outbox is DelegateCallAware, IOutbox {
 
     function calculateItemHash(
         address l2Sender,
-        address destAddr,
+        address to,
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
-        bytes calldata calldataForL1
+        uint256 value,
+        bytes calldata data
     ) public pure returns (bytes32) {
         return
             keccak256(
                 abi.encodePacked(
                     l2Sender,
-                    destAddr,
+                    to,
                     l2Block,
                     l1Block,
                     l2Timestamp,
-                    amount,
-                    calldataForL1
+                    value,
+                    data
                 )
             );
     }

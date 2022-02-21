@@ -103,10 +103,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     function sendL1FundedUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
+        address to,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         return
@@ -115,10 +115,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
-                    maxGas,
-                    gasPriceBid,
+                    gasLimit,
+                    maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(destAddr))),
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -126,9 +126,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     function sendL1FundedContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         return
@@ -137,9 +137,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
-                    maxGas,
-                    gasPriceBid,
-                    uint256(uint160(bytes20(destAddr))),
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -147,11 +147,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     function sendUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes calldata data
     ) external virtual override whenNotPaused returns (uint256) {
         return
@@ -160,21 +160,21 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
-                    maxGas,
-                    gasPriceBid,
+                    gasLimit,
+                    maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(destAddr))),
-                    amount,
+                    uint256(uint160(to)),
+                    value,
                     data
                 )
             );
     }
 
     function sendContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
-        uint256 amount,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
         bytes calldata data
     ) external virtual override whenNotPaused returns (uint256) {
         return
@@ -183,10 +183,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
-                    maxGas,
-                    gasPriceBid,
-                    uint256(uint160(bytes20(destAddr))),
-                    amount,
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
+                    value,
                     data
                 )
             );
@@ -241,24 +241,24 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
      * @dev Advanced usage only (does not rewrite aliases for excessFeeRefundAddress and callValueRefundAddress). createRetryableTicket method is the recommended standard.
-     * @param destAddr destination L2 contract address
+     * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress maxgas x gasprice - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param maxGas Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasPriceBid price bid for L2 execution
+     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
     function createRetryableTicketNoRefundAliasRewrite(
-        address destAddr,
+        address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
         address excessFeeRefundAddress,
         address callValueRefundAddress,
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
 
@@ -267,14 +267,14 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 L1MessageType_submitRetryableTx,
                 msg.sender,
                 abi.encodePacked(
-                    uint256(uint160(bytes20(destAddr))),
+                    uint256(uint160(to)),
                     l2CallValue,
                     msg.value,
                     maxSubmissionCost,
-                    uint256(uint160(bytes20(excessFeeRefundAddress))),
-                    uint256(uint160(bytes20(callValueRefundAddress))),
-                    maxGas,
-                    gasPriceBid,
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
+                    gasLimit,
+                    maxFeePerGas,
                     data.length,
                     data
                 )
@@ -284,24 +284,24 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
      * @dev all msg.value will deposited to callValueRefundAddress on L2
-     * @param destAddr destination L2 contract address
+     * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress maxgas x gasprice - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param maxGas Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasPriceBid price bid for L2 execution
+     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
     function createRetryableTicket(
-        address destAddr,
+        address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
         address excessFeeRefundAddress,
         address callValueRefundAddress,
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
@@ -317,13 +317,13 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
         return
             createRetryableTicketNoRefundAliasRewrite(
-                destAddr,
+                to,
                 l2CallValue,
                 maxSubmissionCost,
                 excessFeeRefundAddress,
                 callValueRefundAddress,
-                maxGas,
-                gasPriceBid,
+                gasLimit,
+                maxFeePerGas,
                 data
             );
     }
