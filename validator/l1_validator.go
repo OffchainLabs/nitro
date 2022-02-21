@@ -154,36 +154,36 @@ func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Trans
 	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
 }
 
-func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) error {
+func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
-		return err
+		return false, err
 	}
 	unresolvedNodeIndex, err := v.rollup.FirstUnresolvedNode(callOpts)
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch ConfirmType(confirmType) {
 	case CONFIRM_TYPE_INVALID:
 		addr := v.wallet.Address()
 		if info == nil || addr == nil || info.LatestStakedNode <= unresolvedNodeIndex {
 			// We aren't an example of someone staked on a competitor
-			return nil
+			return false, nil
 		}
 		log.Info("rejecing node", "node", unresolvedNodeIndex)
 		_, err = v.rollup.RejectNextNode(v.builder.Auth(ctx), *addr)
-		return err
+		return true, err
 	case CONFIRM_TYPE_VALID:
 		nodeInfo, err := v.rollup.LookupNode(ctx, unresolvedNodeIndex)
 		if err != nil {
-			return err
+			return false, err
 		}
 		afterGs := nodeInfo.AfterState().GlobalState
 		_, err = v.rollup.ConfirmNextNode(v.builder.Auth(ctx), afterGs.BlockHash, afterGs.SendRoot)
-		return err
+		return true, err
 	default:
-		return nil
+		return false, nil
 	}
 }
 
@@ -217,6 +217,7 @@ type OurStakerInfo struct {
 	LatestStakedNode     uint64
 	LatestStakedNodeHash [32]byte
 	CanProgress          bool
+	StakeExists          bool
 	*StakerInfo
 }
 

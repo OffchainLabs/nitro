@@ -11,7 +11,7 @@ import "./RollupCore.sol";
 abstract contract AbsRollupUserLogic is
     RollupCore,
     UUPSNotUpgradeable,
-    IRollupUser,
+    IRollupUserAbs,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
@@ -146,7 +146,7 @@ abstract contract AbsRollupUserLogic is
      * @param nodeHash Node hash of nodeNum (protects against reorgs)
      */
     function stakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash)
-        external
+        public
         onlyValidator
         whenNotPaused
     {
@@ -174,7 +174,7 @@ abstract contract AbsRollupUserLogic is
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
-    ) external onlyValidator whenNotPaused {
+    ) public onlyValidator whenNotPaused {
         require(isStaked(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
@@ -624,7 +624,7 @@ abstract contract AbsRollupUserLogic is
         returns (uint256);
 }
 
-contract RollupUserLogic is AbsRollupUserLogic {
+contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
@@ -633,12 +633,28 @@ contract RollupUserLogic is AbsRollupUserLogic {
     }
 
     /**
-     * @notice Create a new stake
-     * @dev It is recomended to call stakeOnExistingNode after creating a new stake
-     * so that a griefer doesn't remove your stake by immediately calling returnOldDeposit
+     * @notice Create a new stake on an existing node
+     * @param nodeNum Number of the node your stake will be place one
+     * @param nodeHash Node hash of the node with the given nodeNum
      */
-    function newStake() external payable onlyValidator whenNotPaused {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable override {
         _newStake(msg.value);
+        stakeOnExistingNode(nodeNum, nodeHash);
+    }
+
+    /**
+     * @notice Create a new stake on a new node
+     * @param assertion Assertion describing the state change between the old node and the new one
+     * @param expectedNodeHash Node hash of the node that will be created
+     * @param prevNodeInboxMaxCount Total of messages in the inbox as of the previous node
+     */
+    function newStakeOnNewNode(
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable override {
+        _newStake(msg.value);
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
 
     /**
@@ -655,7 +671,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
     }
 
     /**
-     * @notice Withdraw uncomitted funds owned by sender from the rollup chain
+     * @notice Withdraw uncommitted funds owned by sender from the rollup chain
      * @param destination Address to transfer the withdrawn funds to
      */
     function withdrawStakerFunds(address payable destination)
@@ -672,7 +688,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
     }
 }
 
-contract ERC20RollupUserLogic is AbsRollupUserLogic {
+contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
@@ -681,25 +697,35 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
     }
 
     /**
-     * @notice Create a new stake
-     * @dev It is recomended to call stakeOnExistingNode after creating a new stake
-     * so that a griefer doesn't remove your stake by immediately calling returnOldDeposit
-     * @param tokenAmount the amount of tokens staked
+     * @notice Create a new stake on an existing node
+     * @param tokenAmount Amount of the rollups staking token to stake
+     * @param nodeNum Number of the node your stake will be place one
+     * @param nodeHash Node hash of the node with the given nodeNum
      */
-    function newStake(uint256 tokenAmount)
-        external
-        onlyValidator
-        whenNotPaused
-    {
+    function newStakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external override {
         _newStake(tokenAmount);
-        require(
-            IERC20Upgradeable(stakeToken).transferFrom(
-                msg.sender,
-                address(this),
-                tokenAmount
-            ),
-            "TRANSFER_FAIL"
-        );
+        stakeOnExistingNode(nodeNum, nodeHash);
+        /// @dev This is an external call, safe because it's at the end of the function
+        receiveTokens(tokenAmount);
+    }
+
+    /**
+     * @notice Create a new stake on a new node
+     * @param tokenAmount Amount of the rollups staking token to stake
+     * @param assertion Assertion describing the state change between the old node and the new one
+     * @param expectedNodeHash Node hash of the node that will be created
+     * @param prevNodeInboxMaxCount Total of messages in the inbox as of the previous node
+     */
+    function newStakeOnNewNode(
+        uint256 tokenAmount,
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external override {
+        _newStake(tokenAmount);
+        stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
+        /// @dev This is an external call, safe because it's at the end of the function
+        receiveTokens(tokenAmount);
     }
 
     /**
@@ -713,18 +739,12 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
         whenNotPaused
     {
         _addToDeposit(stakerAddress, tokenAmount);
-        require(
-            IERC20Upgradeable(stakeToken).transferFrom(
-                msg.sender,
-                address(this),
-                tokenAmount
-            ),
-            "TRANSFER_FAIL"
-        );
+        /// @dev This is an external call, safe because it's at the end of the function
+        receiveTokens(tokenAmount);
     }
 
     /**
-     * @notice Withdraw uncomitted funds owned by sender from the rollup chain
+     * @notice Withdraw uncommitted funds owned by sender from the rollup chain
      * @param destination Address to transfer the withdrawn funds to
      */
     function withdrawStakerFunds(address payable destination)
@@ -741,5 +761,16 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
             "TRANSFER_FAILED"
         );
         return amount;
+    }
+
+    function receiveTokens(uint256 tokenAmount) private {
+        require(
+            IERC20Upgradeable(stakeToken).transferFrom(
+                msg.sender,
+                address(this),
+                tokenAmount
+            ),
+            "TRANSFER_FAIL"
+        );
     }
 }
