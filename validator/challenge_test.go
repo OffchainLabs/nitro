@@ -52,7 +52,7 @@ func CreateChallenge(
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, common.Address{})
 	Require(t, err)
 
 	var startHashBytes [32]byte

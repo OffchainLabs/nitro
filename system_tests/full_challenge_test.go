@@ -76,8 +76,6 @@ func CreateChallenge(
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
-	Require(t, err)
 	challengeManagerLogic, tx, _, err := challengegen.DeployChallengeManager(auth, client)
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
@@ -88,20 +86,29 @@ func CreateChallenge(
 	Require(t, err)
 	challengeManager, err := challengegen.NewChallengeManager(challengeManagerAddr, client)
 	Require(t, err)
+
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, challengeManagerAddr)
+	Require(t, err)
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
 	Require(t, err)
-	tx, err = challengeManager.CreateChallenge(
+	tx, err = resultReceiver.CreateChallenge(
 		auth,
 		wasmModuleRoot,
 		[2]uint8{
 			validator.StatusFinished,
 			validator.StatusFinished,
 		},
-		[2]challengegen.GlobalState{
-			startGlobalState.AsSolidityStruct(),
-			endGlobalState.AsSolidityStruct(),
+		[2]mocksgen.GlobalState{
+			{
+				Bytes32Vals: [2][32]byte{startGlobalState.BlockHash, startGlobalState.SendRoot},
+				U64Vals:     [2]uint64{startGlobalState.Batch, startGlobalState.PosInBatch},
+			},
+			{
+				Bytes32Vals: [2][32]byte{endGlobalState.BlockHash, endGlobalState.SendRoot},
+				U64Vals:     [2]uint64{endGlobalState.Batch, endGlobalState.PosInBatch},
+			},
 		},
 		numBlocks,
 		asserter,
