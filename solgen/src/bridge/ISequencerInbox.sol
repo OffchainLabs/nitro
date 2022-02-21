@@ -6,6 +6,7 @@
 pragma solidity ^0.8.0;
 
 import "../libraries/IGasRefunder.sol";
+import "../libraries/Error.sol";
 
 interface ISequencerInbox {
     struct MaxTimeVariation {
@@ -14,6 +15,30 @@ interface ISequencerInbox {
         uint256 delaySeconds;
         uint256 futureSeconds;
     }
+
+    /// @dev Thrown when someone attempts to read fewer messages than have already been read
+    error DelayedBackwards();
+
+    /// @dev Thrown when someone attempts to read more messages than exist
+    error DelayedTooFar();
+
+    /// @dev Thrown if the length of the header plus the length of the batch overflows
+    error DataLengthOverflow();
+
+    /// @dev Force include can only read messages more blocks old than the delay period
+    error ForceIncludeBlockTooSoon();
+
+    /// @dev Force include can only read messages more seconds old than the delay period
+    error ForceIncludeTimeTooSoon();
+
+    /// @dev The message provided did not match the hash in the delayed inbox
+    error IncorrectMessagePreimage();
+
+    /// @dev This can only be called by the batch poster
+    error NotBatchPoster();
+
+    /// @dev The sequence number provided to this message was inconsistent with the number of batches already included
+    error BadSequencerNumber();
 
     function inboxAccs(uint256 index) external view returns (bytes32);
 
