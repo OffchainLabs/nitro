@@ -8,7 +8,8 @@ pragma solidity ^0.8.0;
 import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
-import "../libraries/IGasRefunder.sol";
+
+import { GasRefundEnabled, IGasRefunder } from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
 import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
 
@@ -19,7 +20,7 @@ import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
  * in the delayed inbox (Bridge.sol). If items in the delayed inbox are not included by a
  * sequencer within a time limit they can be force included into the rollup inbox by anyone.
  */
-contract SequencerInbox is DelegateCallAware, ISequencerInbox {
+contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox {
     bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
@@ -33,13 +34,13 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
     function initialize(
-        IBridge _delayedBridge, 
+        IBridge delayedBridge_,
         address rollup_, 
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
-        require(delayedBridge == IBridge(address(0)), "ALREADY_INIT");
-        require(_delayedBridge != IBridge(address(0)), "ZERO_BRIDGE");
-        delayedBridge = _delayedBridge;
+        if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
+        if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
+        delayedBridge = delayedBridge_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
     }
@@ -64,57 +65,41 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     /// any delayed messages.
     /// @param _totalDelayedMessagesRead The total number of messages to read up to
     /// @param kind The kind of the last message to be included
-    /// @param l1BlockAndTimestamp The l1 block and the l1 timestamp of the last message to be included
-    /// @param gasPriceL1 The l1 gas price of the last message to be included
+    /// @param l1BlockAndTime The l1 block and the l1 timestamp of the last message to be included
+    /// @param baseFeeL1 The l1 gas price of the last message to be included
     /// @param sender The sender of the last message to be included
     /// @param messageDataHash The messageDataHash of the last message to be included
     function forceInclusion(
         uint256 _totalDelayedMessagesRead,
         uint8 kind,
-        uint256[2] calldata l1BlockAndTimestamp,
-        uint256 gasPriceL1,
+        uint256[2] calldata l1BlockAndTime,
+        uint256 baseFeeL1,
         address sender,
         bytes32 messageDataHash
     ) external {
-        require(
-            _totalDelayedMessagesRead > totalDelayedMessagesRead,
-            "DELAYED_BACKWARDS"
+        if (_totalDelayedMessagesRead <= totalDelayedMessagesRead) revert DelayedBackwards();
+        bytes32 messageHash = Messages.messageHash(
+            kind,
+            sender,
+            l1BlockAndTime[0],
+            l1BlockAndTime[1],
+            _totalDelayedMessagesRead - 1,
+            baseFeeL1,
+            messageDataHash
         );
-        {
-            bytes32 messageHash = Messages.messageHash(
-                kind,
-                sender,
-                l1BlockAndTimestamp[0],
-                l1BlockAndTimestamp[1],
-                _totalDelayedMessagesRead - 1,
-                gasPriceL1,
-                messageDataHash
-            );
-            // Can only force-include after the Sequencer-only window has expired.
-            require(
-                l1BlockAndTimestamp[0] + maxTimeVariation.delayBlocks <
-                    block.number,
-                "MAX_DELAY_BLOCKS"
-            );
-            require(
-                l1BlockAndTimestamp[1] + maxTimeVariation.delaySeconds <
-                    block.timestamp,
-                "MAX_DELAY_TIME"
-            );
+        // Can only force-include after the Sequencer-only window has expired.
+        if (l1BlockAndTime[0] + maxTimeVariation.delayBlocks >= block.number) revert ForceIncludeBlockTooSoon();
+        if (l1BlockAndTime[1] + maxTimeVariation.delaySeconds >= block.timestamp) revert ForceIncludeTimeTooSoon();
 
-            // Verify that message hash represents the last message sequence of delayed message to be included
-            bytes32 prevDelayedAcc = 0;
-            if (_totalDelayedMessagesRead > 1) {
-                prevDelayedAcc = delayedBridge.inboxAccs(
-                    _totalDelayedMessagesRead - 2
-                );
-            }
-            require(
-                delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) ==
-                    Messages.accumulateInboxMessage(prevDelayedAcc, messageHash),
-                "DELAYED_ACCUMULATOR"
+        // Verify that message hash represents the last message sequence of delayed message to be included
+        bytes32 prevDelayedAcc = 0;
+        if (_totalDelayedMessagesRead > 1) {
+            prevDelayedAcc = delayedBridge.inboxAccs(
+                _totalDelayedMessagesRead - 2
             );
         }
+        if (delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
+            Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)) revert IncorrectMessagePreimage();
 
         (
             bytes32 dataHash,
@@ -132,7 +117,7 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
             delayedAcc,
             totalDelayedMessagesRead,
             timeBounds,
-            ""
+            BatchDataLocation.NoData
         );
     }
 
@@ -141,13 +126,11 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external {
-        uint256 startGasLeft = gasleft();
+    ) external refundsGasWithCalldata(gasRefunder, payable(msg.sender)) {
         // solhint-disable-next-line avoid-tx-origin
-        require(msg.sender == tx.origin, "ORIGIN_ONLY");
-        require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
-
-        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
+        if (msg.sender != tx.origin) revert NotOrigin();
+        if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
+        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
         (
             bytes32 dataHash,
             TimeBounds memory timeBounds
@@ -157,26 +140,15 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
             bytes32 delayedAcc,
             bytes32 afterAcc
         ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
-        emit SequencerBatchDeliveredFromOrigin(
+        emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
             afterAcc,
             delayedAcc,
             totalDelayedMessagesRead,
-            timeBounds
+            timeBounds,
+            BatchDataLocation.TxInput
         );
-
-        if (address(gasRefunder) != address(0)) {
-            uint256 calldataSize;
-            assembly {
-                calldataSize := calldatasize()
-            }
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                calldataSize
-            );
-        }
     }
 
     function addSequencerL2Batch(
@@ -184,45 +156,26 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder
-    ) external override {
-        uint256 startGasLeft = gasleft();
-        require(
-            isBatchPoster[msg.sender] || msg.sender == rollup,
-            "NOT_BATCH_POSTER"
-        );
+    ) external override refundsGasNoCalldata(gasRefunder, payable(msg.sender)) {
+        if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
+        if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
-        require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-
-        TimeBounds memory timeBounds;
-        bytes32 beforeAcc;
-        bytes32 delayedAcc;
-        bytes32 afterAcc;
-        {
-            bytes32 dataHash;
-            (dataHash, timeBounds) = formDataHash(data, afterDelayedMessagesRead);
-            (
-                beforeAcc,
-                delayedAcc,
-                afterAcc
-            ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
-        }
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(data, afterDelayedMessagesRead);
+        (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
         emit SequencerBatchDelivered(
-            inboxAccs.length - 1,
+            sequenceNumber,
             beforeAcc,
             afterAcc,
             delayedAcc,
             afterDelayedMessagesRead,
             timeBounds,
-            data
+            BatchDataLocation.SeparateBatchEvent
         );
-
-        if (address(gasRefunder) != address(0)) {
-            gasRefunder.onGasSpent(
-                payable(msg.sender),
-                startGasLeft - gasleft(),
-                0
-            );
-        }
+        emit SequencerBatchData(sequenceNumber, data);
     }
 
     function packHeader(uint256 afterDelayedMessagesRead) internal view returns (bytes memory, TimeBounds memory) {
@@ -234,14 +187,15 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
             timeBounds.maxBlockNumber,
             uint64(afterDelayedMessagesRead)
         );
-        require(header.length == HEADER_LENGTH, "BAD_HEADER_LEN");
+        // This must always be true from the packed encoding
+        assert(header.length == HEADER_LENGTH);
         return (header, timeBounds);
     }
 
     function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
         uint256 fullDataLen = HEADER_LENGTH + data.length;
-        require(fullDataLen >= HEADER_LENGTH, "DATA_LEN_OVERFLOW");
-        require(fullDataLen <= MAX_DATA_SIZE, "DATA_TOO_LARGE");
+        if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
+        if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
         bytes memory fullData = new bytes(fullDataLen);
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
 
@@ -272,14 +226,8 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
             bytes32 acc
         )
     {
-        require(
-            afterDelayedMessagesRead >= totalDelayedMessagesRead,
-            "DELAYED_BACKWARDS"
-        );
-        require(
-            delayedBridge.messageCount() >= afterDelayedMessagesRead,
-            "DELAYED_TOO_FAR"
-        );
+        if (afterDelayedMessagesRead < totalDelayedMessagesRead) revert DelayedBackwards();
+        if (afterDelayedMessagesRead > delayedBridge.messageCount()) revert DelayedTooFar();
 
         if (inboxAccs.length > 0) {
             beforeAcc = inboxAccs[inboxAccs.length - 1];
@@ -300,7 +248,7 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
     function setMaxTimeVariation(
         ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
     ) external override {
-        require(msg.sender == rollup, "ONLY_ROLLUP");
+        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         maxTimeVariation = maxTimeVariation_;
     }
 
@@ -308,7 +256,7 @@ contract SequencerInbox is DelegateCallAware, ISequencerInbox {
         external
         override
     {
-        require(msg.sender == rollup, "ONLY_ROLLUP");
+        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         isBatchPoster[addr] = isBatchPoster_;
     }
 }
