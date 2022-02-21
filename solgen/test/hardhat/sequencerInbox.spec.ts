@@ -21,11 +21,23 @@ import { BigNumber } from '@ethersproject/bignumber'
 import { Block, TransactionReceipt } from '@ethersproject/providers'
 import { expect } from 'chai'
 import {
+  BlockChallengeFactory,
+  BlockChallengeFactory__factory,
   Bridge,
+  BridgeCreator__factory,
   Bridge__factory,
+  ExecutionChallengeFactory__factory,
+  ExecutionChallenge__factory,
   Inbox,
+  Inbox__factory,
   MessageTester,
+  OneStepProofEntry__factory,
+  RollupAdminLogic__factory,
+  RollupCreator__factory,
+  RollupUserLogic__factory,
   SequencerInbox,
+  SequencerInbox__factory,
+  TransparentUpgradeableProxy__factory,
 } from '../../build/types'
 import { initializeAccounts } from './utils'
 import { Event } from '@ethersproject/contracts'
@@ -34,7 +46,14 @@ import {
   BridgeInterface,
   MessageDeliveredEvent,
 } from '../../build/types/Bridge'
-import { Signer } from 'ethers'
+import { constants, Signer } from 'ethers'
+import { RollupCreatedEvent } from '../../build/types/RollupCreator'
+import {
+  hexlify,
+  keccak256,
+  parseEther,
+  solidityKeccak256,
+} from 'ethers/lib/utils'
 
 const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {
   const block = (await network.provider.send('eth_getBlockByNumber', [
@@ -208,43 +227,58 @@ describe('SequencerInbox', async () => {
 
   const setupSequencerInbox = async (maxDelayBlocks = 10, maxDelayTime = 0) => {
     const accounts = await initializeAccounts()
+    const admin = accounts[0]
+    const adminAddr = await admin.getAddress()
     const user = accounts[1]
     const dummyRollup = accounts[2]
+    
+    const sequencerInboxFac = (await ethers.getContractFactory(
+      'SequencerInbox',
+    )) as SequencerInbox__factory
+    const seqInboxTemplate = await sequencerInboxFac.deploy()
+    const inboxFac = (await ethers.getContractFactory(
+      'Inbox',
+    )) as Inbox__factory
+    const inboxTemplate = await inboxFac.deploy()
+    const bridgeFac = (await ethers.getContractFactory(
+      'Bridge',
+    )) as Bridge__factory
+    const bridgeTemplate = await bridgeFac.deploy();
+    const transparentUpgradeableProxyFac = (await ethers.getContractFactory(
+      'TransparentUpgradeableProxy',
+    )) as TransparentUpgradeableProxy__factory
 
-    const Bridge = await ethers.getContractFactory('Bridge')
-    const bridge = (await Bridge.deploy()) as Bridge
-    await bridge.deployed()
+    const bridgeProxy = await transparentUpgradeableProxyFac.deploy(bridgeTemplate.address, adminAddr, "0x");
+    const sequencerInboxProxy =await transparentUpgradeableProxyFac.deploy(seqInboxTemplate.address, adminAddr, "0x");
+    const inboxProxy =await transparentUpgradeableProxyFac.deploy(inboxTemplate.address, adminAddr, "0x");
+
+    const bridge = await bridgeFac.attach(bridgeProxy.address).connect(user)
+    const sequencerInbox = await sequencerInboxFac.attach(sequencerInboxProxy.address).connect(user)
+    const inbox = await inboxFac.attach(inboxProxy.address).connect(user)
+
+    
+
     await bridge.initialize()
 
-    const Inbox = await ethers.getContractFactory('Inbox')
-    const inbox = (await Inbox.deploy()) as Inbox
-    await inbox.deployed()
-    await inbox.initialize(bridge.address)
-    await bridge.setInbox(inbox.address, true)
+    await sequencerInbox.initialize(bridgeProxy.address, await dummyRollup.getAddress(), {
+      delayBlocks: maxDelayBlocks,
+      delaySeconds: maxDelayTime,
+      futureBlocks: 10,
+      futureSeconds: 3000,
+    })
+    await inbox.initialize(bridgeProxy.address)
 
-    const SequencerInbox = await ethers.getContractFactory('SequencerInbox')
-    const sequencerInbox = (await SequencerInbox.deploy()) as SequencerInbox
-    await sequencerInbox.deployed()
-    await sequencerInbox.initialize(
-      bridge.address,
-      await dummyRollup.getAddress(),
-      {
-        delayBlocks: maxDelayBlocks,
-        delaySeconds: maxDelayTime,
-        futureBlocks: 12,
-        futureSeconds: 3600,
-      },
-    )
-
+    await bridge.setInbox(inbox.address, true);
+    
     const messageTester = (await (
       await ethers.getContractFactory('MessageTester')
     ).deploy()) as MessageTester
 
     return {
       user,
-      bridge,
-      inbox,
-      sequencerInbox,
+      bridge: bridge,
+      inbox: inbox,
+      sequencerInbox: sequencerInbox,
       messageTester,
     }
   }
