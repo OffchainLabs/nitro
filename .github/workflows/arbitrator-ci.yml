@@ -152,7 +152,7 @@ jobs:
           cd solgen
           yarn install
           yarn build
-          yarn hardhat --network localhost test test/geth
+          yarn hardhat --network localhost test test/geth/*.ts
 
       - name: Run other contract tests
         run: |
