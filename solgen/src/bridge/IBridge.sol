@@ -5,7 +5,7 @@
 
 pragma solidity ^0.8.4;
 
-import "../libraries/Error.sol";
+import { NotContract } from "../libraries/Error.sol";
 
 /// @dev Thrown when an un-authorized address tries to access an only-inbox function
 /// @param sender The un-authorized sender
