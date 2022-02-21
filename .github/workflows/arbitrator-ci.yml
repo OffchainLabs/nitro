@@ -153,7 +153,3 @@ jobs:
           yarn install
           yarn build
           yarn hardhat --network localhost test test/geth/*.ts
-
-      - name: Run other contract tests
-        run: |
-          yarn hardhat --network hardhat test test/hardhat/*.spec.ts
