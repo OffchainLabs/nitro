@@ -104,30 +104,28 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         bytes32 messageDataHash
     ) external {
         if (_totalDelayedMessagesRead <= totalDelayedMessagesRead) revert DelayedBackwards();
-        {
-            bytes32 messageHash = Messages.messageHash(
-                kind,
-                sender,
-                l1BlockAndTime[0],
-                l1BlockAndTime[1],
-                _totalDelayedMessagesRead - 1,
-                gasPriceL1,
-                messageDataHash
-            );
-            // Can only force-include after the Sequencer-only window has expired.
-            if (l1BlockAndTime[0] + maxTimeVariation.delayBlocks >= block.number) revert ForceIncludeBlockTooSoon();
-            if (l1BlockAndTime[1] + maxTimeVariation.delaySeconds >= block.timestamp) revert ForceIncludeTimeTooSoon();
+        bytes32 messageHash = Messages.messageHash(
+            kind,
+            sender,
+            l1BlockAndTime[0],
+            l1BlockAndTime[1],
+            _totalDelayedMessagesRead - 1,
+            gasPriceL1,
+            messageDataHash
+        );
+        // Can only force-include after the Sequencer-only window has expired.
+        if (l1BlockAndTime[0] + maxTimeVariation.delayBlocks >= block.number) revert ForceIncludeBlockTooSoon();
+        if (l1BlockAndTime[1] + maxTimeVariation.delaySeconds >= block.timestamp) revert ForceIncludeTimeTooSoon();
 
-            // Verify that message hash represents the last message sequence of delayed message to be included
-            bytes32 prevDelayedAcc = 0;
-            if (_totalDelayedMessagesRead > 1) {
-                prevDelayedAcc = delayedBridge.inboxAccs(
-                    _totalDelayedMessagesRead - 2
-                );
-            }
-            if (delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
-                Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)) revert IncorrectMessagePreimage();
+        // Verify that message hash represents the last message sequence of delayed message to be included
+        bytes32 prevDelayedAcc = 0;
+        if (_totalDelayedMessagesRead > 1) {
+            prevDelayedAcc = delayedBridge.inboxAccs(
+                _totalDelayedMessagesRead - 2
+            );
         }
+        if (delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
+            Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)) revert IncorrectMessagePreimage();
 
         (
             bytes32 dataHash,
@@ -188,19 +186,12 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
-        TimeBounds memory timeBounds;
-        bytes32 beforeAcc;
-        bytes32 delayedAcc;
-        bytes32 afterAcc;
-        {
-            bytes32 dataHash;
-            (dataHash, timeBounds) = formDataHash(data, afterDelayedMessagesRead);
-            (
-                beforeAcc,
-                delayedAcc,
-                afterAcc
-            ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
-        }
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(data, afterDelayedMessagesRead);
+        (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
