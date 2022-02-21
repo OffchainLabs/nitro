@@ -57,18 +57,20 @@ const (
 )
 
 type Precompile struct {
-	methods     map[[4]byte]PrecompileMethod
-	events      map[string]PrecompileEvent
-	implementer reflect.Value
-	address     common.Address
+	methods        map[[4]byte]PrecompileMethod
+	events         map[string]PrecompileEvent
+	implementer    reflect.Value
+	address        common.Address
+	activationTime *big.Int
 }
 
 type PrecompileMethod struct {
-	name        string
-	template    abi.Method
-	purity      purity
-	handler     reflect.Method
-	implementer reflect.Value
+	name           string
+	template       abi.Method
+	purity         purity
+	handler        reflect.Method
+	implementer    reflect.Value
+	activationTime *big.Int
 }
 
 type PrecompileEvent struct {
@@ -167,6 +169,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			purity,
 			handler,
 			reflect.ValueOf(implementer),
+			big.NewInt(0),
 		}
 	}
 
@@ -376,6 +379,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		events,
 		reflect.ValueOf(implementer),
 		address,
+		big.NewInt(0),
 	}
 }
 
@@ -456,14 +460,20 @@ func (p Precompile) Call(
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
 
+	timestamp := evm.Context.Time
+	if util.BigLessThan(timestamp, p.activationTime) {
+		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
+
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
 		return nil, 0, vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
-	if !ok {
-		// method does not exist
+	if !ok || util.BigLessThan(timestamp, method.activationTime) {
+		// method does not exist or hasn't yet been activated
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
