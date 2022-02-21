@@ -6,12 +6,14 @@ import "../challenge/IChallengeResultReceiver.sol";
 contract MockResultReceiver is IChallengeResultReceiver {
 	address public winner;
 	address public loser;
+	uint256 public challengeIndex;
 
-	event ChallengeCompleted(address indexed challenge, address indexed winner, address indexed loser);
+event ChallengeCompleted(uint256 indexed challengeIndex, address indexed winner, address indexed loser);
 
-	function completeChallenge(address winner_, address loser_) external override {
+	function completeChallenge(uint256 challengeIndex_, address winner_, address loser_) external override {
 		winner = winner_;
 		loser = loser_;
-		emit ChallengeCompleted(msg.sender, winner_, loser_);
+		challengeIndex = challengeIndex_;
+		emit ChallengeCompleted(challengeIndex, winner_, loser_);
 	}
 }

@@ -193,7 +193,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
                     globalStateHashes[0] == globalStateHashes[1],
                 "HALTED_CHANGE"
             );
-            _currentWin(challenge);
+            _currentWin(challengeIndex, ChallengeTerminationType.BLOCK_PROOF);
             return;
         }
 
@@ -255,7 +255,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         );
 
         emit OneStepProofCompleted(challengeIndex);
-        _currentWin(challenge);
+        _currentWin(challengeIndex, ChallengeTerminationType.EXECUTION_PROOF);
     }
 
     function timeout(uint64 challengeIndex) external override {
@@ -316,24 +316,25 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         );
     }
 
+    /// @dev This function causes the mode of the challenge to be set to NONE by deleting the challenge
     function _nextWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        resultReceiver.completeChallenge(challenge.next.addr, challenge.current.addr);
         delete challenges[challengeIndex];
+        resultReceiver.completeChallenge(challengeIndex, challenge.next.addr, challenge.current.addr);
         emit ChallengeEnded(challengeIndex, reason);
     }
 
-    function _currentWin(ChallengeLib.Challenge storage challenge) private {
-        // As a safety measure, challenges can only be resolved by timeouts during mainnet beta.
-        // As state is 0, no move is possible. The other party will lose via timeout
+    /**
+     * @dev this currently sets a challenge hash of 0 - no move is possible for the next participant to progress the
+     * state. It is assumed that wherever this function is consumed, the turn is then adjusted for the opposite party
+     * to timeout. This is done as a safety measure so challenges can only be resolved by timeouts during mainnet beta.
+     */
+    function _currentWin(uint64 challengeIndex, ChallengeTerminationType /* reason */) private {
+        ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.challengeStateHash = bytes32(0);
 
-        // if (turn == Turn.ASSERTER) {
-        //     _asserterWin();
-        // } else if (turn == Turn.CHALLENGER) {
-        //     _challengerWin();
-        // } else {
-        // 	   revert(NO_TURN);
-        // }
+//        delete challenges[challengeIndex];
+//        resultReceiver.completeChallenge(challengeIndex, challenge.current.addr, challenge.next.addr);
+//        emit ChallengeEnded(challengeIndex, reason);
     }
 }

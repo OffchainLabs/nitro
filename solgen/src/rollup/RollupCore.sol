@@ -326,7 +326,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             depositAmount,
             stakerIndex,
             _latestConfirmed,
-            0, // new staker is not in challenge
+            NO_CHAL_INDEX, // new staker is not in challenge
             true
         );
         _lastStakeBlock = uint64(block.number);
@@ -358,7 +358,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function clearChallenge(address stakerAddress) internal {
         Staker storage staker = _stakerMap[stakerAddress];
-        staker.currentChallenge = 0;
+        staker.currentChallenge = NO_CHAL_INDEX;
     }
 
     /**

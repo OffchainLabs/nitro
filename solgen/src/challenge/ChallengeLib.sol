@@ -6,7 +6,9 @@ import "../state/GlobalState.sol";
 
 library ChallengeLib {
     using MachineLib for Machine;
+    using ChallengeLib for Challenge;
 
+    /// @dev It's assumed that that uninitialzed challenges have mode NONE
     enum ChallengeMode {
         NONE,
         BLOCK,
@@ -46,7 +48,7 @@ library ChallengeLib {
     }
 
     function isTimedOut(Challenge storage challenge) internal view returns (bool) {
-        return timeUsedSinceLastMove(challenge) > challenge.current.timeLeft;
+        return challenge.timeUsedSinceLastMove() > challenge.current.timeLeft;
     }
 
     function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot)

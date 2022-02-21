@@ -11,20 +11,10 @@ import "./IChallengeResultReceiver.sol";
 import "./ChallengeLib.sol";
 
 interface IChallengeManager {
-    enum Turn {
-        NO_CHALLENGE,
-        ASSERTER,
-        CHALLENGER
-    }
-
-    enum ChallengeWinner {
-        NONE,
-        ASSERTER,
-        CHALLENGER
-    }
-
     enum ChallengeTerminationType {
         TIMEOUT,
+        BLOCK_PROOF,
+        EXECUTION_PROOF,
         CLEARED
     }
 
@@ -63,9 +53,6 @@ interface IChallengeManager {
 
     function challengeInfo(uint64 challengeIndex_) external view returns (ChallengeLib.Challenge memory);
 
-//    function asserter() external view returns (address);
-//    function challenger() external view returns (address);
-//    function lastMoveTimestamp() external view returns (uint256);
     function currentResponder(uint64 challengeIndex) external view returns (address);
     function isTimedOut(uint64 challengeIndex) external view returns (bool);
     function currentResponderTimeLeft(uint64 challengeIndex_) external view returns (uint256);

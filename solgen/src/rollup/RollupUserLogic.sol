@@ -382,13 +382,15 @@ abstract contract AbsRollupUserLogic is
      * @param winningStaker Address of the winning staker
      * @param losingStaker Address of the losing staker
      */
-    function completeChallenge(address winningStaker, address losingStaker)
+    function completeChallenge(uint256 challengeIndex, address winningStaker, address losingStaker)
         external
         override
         whenNotPaused
     {
         // Only the challenge manager contract can call this to declare the winner and loser
         require(msg.sender == address(challengeManager), "WRONG_SENDER");
+        require(currentChallenge(winningStaker) == challengeIndex, "WIN_WRONG_CHAL");
+        require(currentChallenge(losingStaker) == challengeIndex, "LOSE_WRONG_CHAL");
         completeChallengeImpl(winningStaker, losingStaker);
     }
 
@@ -612,7 +614,7 @@ abstract contract AbsRollupUserLogic is
     function requireUnchallengedStaker(address stakerAddress) private view {
         require(isStaked(stakerAddress), "NOT_STAKED");
         require(
-            currentChallenge(stakerAddress) == 0,
+            currentChallenge(stakerAddress) == NO_CHAL_INDEX,
             "IN_CHAL"
         );
     }
