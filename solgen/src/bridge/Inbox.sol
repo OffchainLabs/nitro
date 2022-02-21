@@ -104,7 +104,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     function sendL1FundedUnsignedTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         uint256 nonce,
         address to,
         bytes calldata data
@@ -116,7 +116,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
                     gasLimit,
-                    gasFeeCap,
+                    maxFeePerGas,
                     nonce,
                     uint256(uint160(bytes20(to))),
                     msg.value,
@@ -127,7 +127,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     function sendL1FundedContractTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         address to,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
@@ -138,7 +138,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
                     gasLimit,
-                    gasFeeCap,
+                    maxFeePerGas,
                     uint256(uint160(bytes20(to))),
                     msg.value,
                     data
@@ -148,7 +148,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     function sendUnsignedTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         uint256 nonce,
         address to,
         uint256 value,
@@ -161,7 +161,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
                     gasLimit,
-                    gasFeeCap,
+                    maxFeePerGas,
                     nonce,
                     uint256(uint160(bytes20(to))),
                     value,
@@ -172,7 +172,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     function sendContractTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         address to,
         uint256 value,
         bytes calldata data
@@ -184,7 +184,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
                     gasLimit,
-                    gasFeeCap,
+                    maxFeePerGas,
                     uint256(uint160(bytes20(to))),
                     value,
                     data
@@ -244,10 +244,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress gasLimit x gasFeeCap - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasFeeCap price bid for L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
@@ -258,7 +258,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address excessFeeRefundAddress,
         address callValueRefundAddress,
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
 
@@ -274,7 +274,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     uint256(uint160(bytes20(excessFeeRefundAddress))),
                     uint256(uint160(bytes20(callValueRefundAddress))),
                     gasLimit,
-                    gasFeeCap,
+                    maxFeePerGas,
                     data.length,
                     data
                 )
@@ -287,10 +287,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress gasLimit x gasFeeCap - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasFeeCap price bid for L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
@@ -301,7 +301,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address excessFeeRefundAddress,
         address callValueRefundAddress,
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
@@ -323,7 +323,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 excessFeeRefundAddress,
                 callValueRefundAddress,
                 gasLimit,
-                gasFeeCap,
+                maxFeePerGas,
                 data
             );
     }

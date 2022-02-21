@@ -23,7 +23,7 @@ interface IInbox is IMessageProvider {
 
     function sendUnsignedTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         uint256 nonce,
         address to,
         uint256 value,
@@ -32,7 +32,7 @@ interface IInbox is IMessageProvider {
 
     function sendContractTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         address to,
         uint256 value,
         bytes calldata data
@@ -40,7 +40,7 @@ interface IInbox is IMessageProvider {
 
     function sendL1FundedUnsignedTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         uint256 nonce,
         address to,
         bytes calldata data
@@ -48,7 +48,7 @@ interface IInbox is IMessageProvider {
 
     function sendL1FundedContractTransaction(
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         address to,
         bytes calldata data
     ) external payable returns (uint256);
@@ -60,7 +60,7 @@ interface IInbox is IMessageProvider {
         address submissionRefundAddress,
         address valueRefundAddress,
         uint256 gasLimit,
-        uint256 gasFeeCap,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) external payable returns (uint256);
 

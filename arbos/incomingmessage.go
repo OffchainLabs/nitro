@@ -309,7 +309,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		return nil, err
 	}
 
-	gasFeeCap, err := util.HashFromReader(rd)
+	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -354,7 +354,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			ChainId:   nil,
 			From:      util.RemapL1Address(poster),
 			Nonce:     nonce,
-			GasFeeCap: gasFeeCap.Big(),
+			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
 			Value:     value.Big(),
@@ -365,7 +365,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 			ChainId:   nil,
 			RequestId: requestId,
 			From:      util.RemapL1Address(poster),
-			GasFeeCap: gasFeeCap.Big(),
+			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
 			Value:     value.Big(),
@@ -429,7 +429,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if !gasLimitBig.IsUint64() {
 		return nil, errors.New("gas limit too large")
 	}
-	gasFeeCap, err := util.HashFromReader(rd)
+	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		RequestId:         header.RequestId,
 		From:              util.RemapL1Address(header.Poster),
 		DepositValue:      depositValue.Big(),
-		GasFeeCap:         gasFeeCap.Big(),
+		GasFeeCap:         maxFeePerGas.Big(),
 		Gas:               gasLimitBig.Uint64(),
 		To:                pTo,
 		Value:             callvalue.Big(),
