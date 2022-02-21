@@ -11,7 +11,7 @@ import "./RollupCore.sol";
 abstract contract AbsRollupUserLogic is
     RollupCore,
     UUPSNotUpgradeable,
-    IRollupUser,
+    IRollupUserAbs,
     IChallengeResultReceiver
 {
     using NodeLib for Node;
@@ -632,7 +632,7 @@ abstract contract AbsRollupUserLogic is
         returns (uint256);
 }
 
-contract RollupUserLogic is AbsRollupUserLogic {
+contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
@@ -649,16 +649,16 @@ contract RollupUserLogic is AbsRollupUserLogic {
         _newStake(msg.value);
     }
 
-    function newstakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable override {
         newStake();
         stakeOnExistingNode(nodeNum, nodeHash);
     }
 
-    function newstakeOnNewNode(
+    function newStakeOnNewNode(
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
-    ) external payable {
+    ) external payable override {
         newStake();
         stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
@@ -694,7 +694,7 @@ contract RollupUserLogic is AbsRollupUserLogic {
     }
 }
 
-contract ERC20RollupUserLogic is AbsRollupUserLogic {
+contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address _stakeToken) external view override onlyProxy {
@@ -724,17 +724,17 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic {
         );
     }
 
-    function newstakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external payable {
+    function newStakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external override {
         newStake(tokenAmount);
         stakeOnExistingNode(nodeNum, nodeHash);
     }
 
-    function newstakeOnNewNode(
+    function newStakeOnNewNode(
         uint256 tokenAmount,
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
-    ) external payable {
+    ) external override {
         newStake(tokenAmount);
         stakeOnNewNode(assertion, expectedNodeHash, prevNodeInboxMaxCount);
     }
