@@ -253,3 +253,10 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
 }
+
+func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
+	t.Helper()
+	balance, err := client.BalanceAt(ctx, account, nil)
+	Require(t, err, "could not get balance")
+	return balance
+}
