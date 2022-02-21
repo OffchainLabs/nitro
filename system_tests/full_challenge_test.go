@@ -222,11 +222,29 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		t.Fatal(err)
 	}
 
-	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress("sequencer"))
+	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
+		DelayBlocks:   big.NewInt(10000),
+		FutureBlocks:  big.NewInt(10000),
+		DelaySeconds:  big.NewInt(10000),
+		FutureSeconds: big.NewInt(10000),
+	}
+	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(
+		&deployerTxOpts,
+		l1Backend,
+		delayedBridge,
+		l1Info.GetAddress("sequencer"),
+		timeBounds,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(&deployerTxOpts, l1Backend, delayedBridge, l1Info.GetAddress("sequencer"))
+	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
+		&deployerTxOpts,
+		l1Backend,
+		delayedBridge,
+		l1Info.GetAddress("sequencer"),
+		timeBounds,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
