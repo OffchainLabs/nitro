@@ -77,27 +77,21 @@ func CreateChallenge(
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
 	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	challengeManagerAddr, tx, challengeManager, err := challengegen.DeployChallengeManager(auth, client)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	challengeManagerLogic, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	challengeManagerAddr, tx, _, err := mocksgen.DeploySimpleProxy(auth, client, challengeManagerLogic)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
+	Require(t, err)
+	challengeManager, err := challengegen.NewChallengeManager(challengeManagerAddr, client)
+	Require(t, err)
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	Require(t, err)
 	tx, err = challengeManager.CreateChallenge(
 		auth,
 		wasmModuleRoot,
@@ -115,11 +109,9 @@ func CreateChallenge(
 		big.NewInt(100000),
 		big.NewInt(100000),
 	)
+	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	Require(t, err)
 	return resultReceiver, challengeManagerAddr
 }
 
