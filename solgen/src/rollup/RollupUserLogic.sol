@@ -389,8 +389,7 @@ abstract contract AbsRollupUserLogic is
     {
         // Only the challenge manager contract can call this to declare the winner and loser
         require(msg.sender == address(challengeManager), "WRONG_SENDER");
-        require(currentChallenge(winningStaker) == challengeIndex, "WIN_WRONG_CHAL");
-        require(currentChallenge(losingStaker) == challengeIndex, "LOSE_WRONG_CHAL");
+        require (challengeIndex == inChallenge(winningStaker, losingStaker));
         completeChallengeImpl(winningStaker, losingStaker);
     }
 
