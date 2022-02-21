@@ -90,6 +90,9 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 	tx, err = challengeManager.Initialize(auth, resultReceiverAddr, sequencerInbox, delayedBridge, ospEntry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = arbutil.EnsureTxSucceeded(context.Background(), client, tx)
 	if err != nil {
 		t.Fatal(err)
