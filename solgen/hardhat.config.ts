@@ -3,9 +3,6 @@ import 'hardhat-deploy'
 import '@nomiclabs/hardhat-ethers'
 import '@typechain/hardhat'
 import 'solidity-coverage'
-import { task } from 'hardhat/config'
-import * as fs from 'fs'
-import { RollupCreator } from './build/types'
 
 /**
  * @type import('hardhat/config').HardhatUserConfig

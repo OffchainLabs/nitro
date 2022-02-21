@@ -182,11 +182,9 @@ describe('SequencerInbox', async () => {
       newTotalDelayedMessagesRead,
       kind,
       [l1blockNumber, l1Timestamp],
-      delayedInboxSeqNum,
       l1GasPrice,
       senderAddr,
       messageDataHash,
-      "0x"
     )
     if (expectedErrorMessage) {
       await expect(forceInclusionTx).to.be.revertedWith(expectedErrorMessage)
@@ -230,13 +228,13 @@ describe('SequencerInbox', async () => {
     await sequencerInbox.initialize(
       bridge.address,
       await dummyRollup.getAddress(),
+      {
+        delayBlocks: maxDelayBlocks,
+        delaySeconds: maxDelayTime,
+        futureBlocks: 12,
+        futureSeconds: 3600,
+      },
     )
-    await sequencerInbox.connect(dummyRollup).setMaxTimeVariation({
-      delayBlocks: maxDelayBlocks,
-      delaySeconds: maxDelayTime,
-      futureBlocks: 12,
-      futureSeconds: 3600,
-    })
 
     const messageTester = (await (
       await ethers.getContractFactory('MessageTester')
@@ -285,7 +283,7 @@ describe('SequencerInbox', async () => {
       delayedTx.deliveredMessageEvent.messageIndex,
       delayedTx.l1GasPrice,
       delayedTx.senderAddr,
-      delayedTx.deliveredMessageEvent.messageDataHash
+      delayedTx.deliveredMessageEvent.messageDataHash,
     )
   })
 
