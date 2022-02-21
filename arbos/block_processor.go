@@ -7,7 +7,6 @@ package arbos
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/ethereum/go-ethereum/arbitrum"
 	"math"
 	"math/big"
 	"strconv"
@@ -378,7 +377,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		root, _ := acc.Root()
 		size, _ := acc.Size()
 		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
-		arbitrumHeader := arbitrum.HeaderInfo{root, size, nextL1BlockNumber}
+		arbitrumHeader := types.HeaderInfo{root, size, nextL1BlockNumber}
 		header.Extra = arbitrumHeader.Extra()
 		header.MixDigest = arbitrumHeader.MixDigest()
 
