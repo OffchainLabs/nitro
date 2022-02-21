@@ -18,7 +18,7 @@
 
 pragma solidity ^0.8.4;
 
-import "../libraries/Error.sol";
+import { AlreadyInit, NotRollup } from "../libraries/Error.sol";
 
 /// @dev The provided proof was too long
 /// @param proofLength The length of the too-long proof
