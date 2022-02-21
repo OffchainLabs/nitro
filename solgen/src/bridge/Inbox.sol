@@ -118,7 +118,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     gasLimit,
                     maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(to))),
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -139,7 +139,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     L2MessageType_unsignedContractTx,
                     gasLimit,
                     maxFeePerGas,
-                    uint256(uint160(bytes20(to))),
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -163,7 +163,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     gasLimit,
                     maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(to))),
+                    uint256(uint160(to)),
                     value,
                     data
                 )
@@ -185,7 +185,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                     L2MessageType_unsignedContractTx,
                     gasLimit,
                     maxFeePerGas,
-                    uint256(uint160(bytes20(to))),
+                    uint256(uint160(to)),
                     value,
                     data
                 )
@@ -267,12 +267,12 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
                 L1MessageType_submitRetryableTx,
                 msg.sender,
                 abi.encodePacked(
-                    uint256(uint160(bytes20(to))),
+                    uint256(uint160(to)),
                     l2CallValue,
                     msg.value,
                     maxSubmissionCost,
-                    uint256(uint160(bytes20(excessFeeRefundAddress))),
-                    uint256(uint160(bytes20(callValueRefundAddress))),
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
                     gasLimit,
                     maxFeePerGas,
                     data.length,

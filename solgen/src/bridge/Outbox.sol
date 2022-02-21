@@ -82,7 +82,7 @@ contract Outbox is DelegateCallAware, IOutbox {
      * @param l1Block l1 block number at which sendTxToL1 call was made
      * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
      * @param value wei in L1 message
-     * @param calldataForL1 abi-encoded L1 message data
+     * @param data abi-encoded L1 message data
      */
     function executeTransaction(
         bytes32[] calldata proof,
@@ -93,7 +93,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l1Block,
         uint256 l2Timestamp,
         uint256 value,
-        bytes calldata calldataForL1
+        bytes calldata data
     ) external virtual {
         bytes32 outputId;
         {
@@ -104,7 +104,7 @@ contract Outbox is DelegateCallAware, IOutbox {
                 l1Block,
                 l2Timestamp,
                 value,
-                calldataForL1
+                data
             );
 
             outputId = recordOutputAsSpent(proof, index, userTx);
@@ -124,7 +124,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         });
 
         // set and reset vars around execution so they remain valid during call
-        executeBridgeCall(to, value, calldataForL1);
+        executeBridgeCall(to, value, data);
 
         context = prevContext;
     }
@@ -173,7 +173,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 l1Block,
         uint256 l2Timestamp,
         uint256 value,
-        bytes calldata calldataForL1
+        bytes calldata data
     ) public pure returns (bytes32) {
         return
             keccak256(
@@ -184,7 +184,7 @@ contract Outbox is DelegateCallAware, IOutbox {
                     l1Block,
                     l2Timestamp,
                     value,
-                    calldataForL1
+                    data
                 )
             );
     }
