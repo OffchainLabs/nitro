@@ -34,7 +34,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	initiatedChallengeID = parsedChallengeManagerABI.Events["ChallengeInitiated"].ID
+	initiatedChallengeID = parsedChallengeManagerABI.Events["InitiatedChallenge"].ID
 	challengeBisectedID = parsedChallengeManagerABI.Events["Bisected"].ID
 	executionChallengeBegunID = parsedChallengeManagerABI.Events["ExecutionChallengeBegun"].ID
 }
