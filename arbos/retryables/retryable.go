@@ -290,7 +290,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 	return nil
 }
 
-func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
+func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {
 		return nil, err
@@ -308,16 +308,16 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasPrice *big
 		return nil, err
 	}
 	return &types.ArbitrumRetryTx{
-		ChainId:  chainId,
-		Nonce:    nonce,
-		From:     from,
-		GasPrice: gasPrice,
-		Gas:      gas,
-		To:       to,
-		Value:    callvalue,
-		Data:     calldata,
-		TicketId: ticketId,
-		RefundTo: refundTo,
+		ChainId:   chainId,
+		Nonce:     nonce,
+		From:      from,
+		GasFeeCap: gasFeeCap,
+		Gas:       gas,
+		To:        to,
+		Value:     callvalue,
+		Data:      calldata,
+		TicketId:  ticketId,
+		RefundTo:  refundTo,
 	}, nil
 }
 

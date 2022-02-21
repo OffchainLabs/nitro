@@ -67,7 +67,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
                 sender,
                 block.number,
                 block.timestamp, // solhint-disable-line not-rely-on-time
-                tx.gasprice,
+                block.basefee,
                 messageDataHash
             );
     }
@@ -77,7 +77,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         address sender,
         uint256 blockNumber,
         uint256 blockTimestamp,
-        uint256 gasPrice,
+        uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal returns (uint256) {
         uint256 count = inboxAccs.length;
@@ -87,7 +87,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             blockNumber,
             blockTimestamp,
             count,
-            gasPrice,
+            baseFeeL1,
             messageDataHash
         );
         bytes32 prevAcc = 0;
@@ -95,23 +95,23 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             prevAcc = inboxAccs[count - 1];
         }
         inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
-        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, gasPrice, blockTimestamp);
+        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, baseFeeL1, blockTimestamp);
         return count;
     }
 
     function executeCall(
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
         if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
-        if (data.length > 0 && !destAddr.isContract()) revert NotContract(destAddr);
+        if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
-        (success, returnData) = destAddr.call{ value: amount }(data);
+        (success, returnData) = to.call{ value: value }(data);
         activeOutbox = prevOutbox;
-        emit BridgeCallTriggered(msg.sender, destAddr, amount, data);
+        emit BridgeCallTriggered(msg.sender, to, value, data);
     }
 
     function setInbox(address inbox, bool enabled) external override onlyOwner {
