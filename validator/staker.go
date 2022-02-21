@@ -364,7 +364,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 		return nil
 	}
 
-	if s.activeChallenge == nil || s.activeChallenge.RootChallengeAddress() != *info.CurrentChallenge {
+	if s.activeChallenge == nil || s.activeChallenge.ChallengeIndex() != *info.CurrentChallenge {
 		log.Warn("entered challenge", "challenge", info.CurrentChallenge)
 
 		latestConfirmedCreated, err := s.rollup.LatestConfirmedCreationBlock(ctx)
@@ -372,7 +372,21 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return err
 		}
 
-		newChallengeManager, err := NewChallengeManager(ctx, s.builder, s.builder.builderAuth, *s.builder.wallet.Address(), *info.CurrentChallenge, s.l2Blockchain, s.inboxReader, s.inboxTracker, s.txStreamer, latestConfirmedCreated, s.config.TargetNumMachines, s.config.ConfirmationBlocks)
+		newChallengeManager, err := NewChallengeManager(
+			ctx,
+			s.builder,
+			s.builder.builderAuth,
+			*s.builder.wallet.Address(),
+			s.challengeManagerAddress,
+			*info.CurrentChallenge,
+			s.l2Blockchain,
+			s.inboxReader,
+			s.inboxTracker,
+			s.txStreamer,
+			latestConfirmedCreated,
+			s.config.TargetNumMachines,
+			s.config.ConfirmationBlocks,
+		)
 		if err != nil {
 			return err
 		}

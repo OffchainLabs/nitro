@@ -36,7 +36,7 @@ type StakerInfo struct {
 	Index            uint64
 	LatestStakedNode uint64
 	AmountStaked     *big.Int
-	CurrentChallenge *common.Address
+	CurrentChallenge *uint64
 }
 
 type RollupWatcher struct {
@@ -252,8 +252,7 @@ func (r *RollupWatcher) StakerInfo(ctx context.Context, staker common.Address) (
 		LatestStakedNode: info.LatestStakedNode,
 		AmountStaked:     info.AmountStaked,
 	}
-	emptyAddress := common.Address{}
-	if info.CurrentChallenge != emptyAddress {
+	if info.CurrentChallenge != 0 {
 		chal := info.CurrentChallenge
 		stakerInfo.CurrentChallenge = &chal
 	}

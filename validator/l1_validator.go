@@ -23,18 +23,19 @@ import (
 )
 
 type Validator struct {
-	rollup             *RollupWatcher
-	rollupAddress      common.Address
-	sequencerInbox     *bridgegen.SequencerInbox
-	validatorUtils     *rollupgen.ValidatorUtils
-	client             arbutil.L1Interface
-	builder            *BuilderBackend
-	wallet             *ValidatorWallet
-	callOpts           bind.CallOpts
-	GasThreshold       *big.Int
-	SendThreshold      *big.Int
-	BlockThreshold     *big.Int
-	genesisBlockNumber uint64
+	rollup                  *RollupWatcher
+	rollupAddress           common.Address
+	challengeManagerAddress common.Address
+	sequencerInbox          *bridgegen.SequencerInbox
+	validatorUtils          *rollupgen.ValidatorUtils
+	client                  arbutil.L1Interface
+	builder                 *BuilderBackend
+	wallet                  *ValidatorWallet
+	callOpts                bind.CallOpts
+	GasThreshold            *big.Int
+	SendThreshold           *big.Int
+	BlockThreshold          *big.Int
+	genesisBlockNumber      uint64
 
 	l2Blockchain   *core.BlockChain
 	inboxReader    InboxReaderInterface
@@ -69,6 +70,10 @@ func NewValidator(
 	if err != nil {
 		return nil, err
 	}
+	challengeManagerAddress, err := rollup.ChallengeManager(&localCallOpts)
+	if err != nil {
+		return nil, err
+	}
 	sequencerInbox, err := bridgegen.NewSequencerInbox(sequencerBridgeAddress, client)
 	if err != nil {
 		return nil, err
@@ -85,23 +90,24 @@ func NewValidator(
 		return nil, err
 	}
 	return &Validator{
-		rollup:             rollup,
-		rollupAddress:      wallet.RollupAddress(),
-		sequencerInbox:     sequencerInbox,
-		validatorUtils:     validatorUtils,
-		client:             client,
-		builder:            builder,
-		wallet:             wallet,
-		GasThreshold:       big.NewInt(100_000_000_000),
-		SendThreshold:      big.NewInt(5),
-		BlockThreshold:     big.NewInt(960),
-		callOpts:           callOpts,
-		genesisBlockNumber: genesisBlockNumber,
-		l2Blockchain:       l2Blockchain,
-		inboxReader:        inboxReader,
-		inboxTracker:       inboxTracker,
-		txStreamer:         txStreamer,
-		blockValidator:     blockValidator,
+		rollup:                  rollup,
+		rollupAddress:           wallet.RollupAddress(),
+		challengeManagerAddress: challengeManagerAddress,
+		sequencerInbox:          sequencerInbox,
+		validatorUtils:          validatorUtils,
+		client:                  client,
+		builder:                 builder,
+		wallet:                  wallet,
+		GasThreshold:            big.NewInt(100_000_000_000),
+		SendThreshold:           big.NewInt(5),
+		BlockThreshold:          big.NewInt(960),
+		callOpts:                callOpts,
+		genesisBlockNumber:      genesisBlockNumber,
+		l2Blockchain:            l2Blockchain,
+		inboxReader:             inboxReader,
+		inboxTracker:            inboxTracker,
+		txStreamer:              txStreamer,
+		blockValidator:          blockValidator,
 	}, nil
 }
 
@@ -145,7 +151,7 @@ func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Trans
 		return nil, nil
 	}
 	log.Info("timing out challenges", "count", len(challengesToEliminate))
-	return v.wallet.TimeoutChallenges(ctx, challengesToEliminate)
+	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
 }
 
 func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) error {

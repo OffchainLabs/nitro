@@ -205,7 +205,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		if faultyStaker {
 			challengeAddr, err := rollup.CurrentChallenge(&bind.CallOpts{}, valWalletAddrA)
 			Require(t, err)
-			if challengeAddr != (common.Address{}) {
+			if challengeAddr != 0 {
 				atomic.StoreInt32(&stopBackgroundTxs, 1)
 			}
 		}

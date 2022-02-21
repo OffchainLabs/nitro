@@ -175,8 +175,8 @@ func (v *ValidatorWallet) ReturnOldDeposits(ctx context.Context, stakers []commo
 	return v.con.ReturnOldDeposits(v.auth, v.rollupAddress, stakers)
 }
 
-func (v *ValidatorWallet) TimeoutChallenges(ctx context.Context, challenges []common.Address) (*types.Transaction, error) {
-	return v.con.TimeoutChallenges(v.auth, challenges)
+func (v *ValidatorWallet) TimeoutChallenges(ctx context.Context, manager common.Address, challenges []uint64) (*types.Transaction, error) {
+	return v.con.TimeoutChallenges(v.auth, manager, challenges)
 }
 
 func CreateValidatorWallet(

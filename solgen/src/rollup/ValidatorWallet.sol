@@ -19,7 +19,7 @@
 pragma solidity ^0.8.0;
 
 import "./IRollupLogic.sol";
-import "../challenge/IChallenge.sol";
+import "../challenge/IChallengeManager.sol";
 import "../libraries/DelegateCallAware.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -84,10 +84,10 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         }
     }
 
-    function timeoutChallenges(IChallenge[] calldata challenges) external onlyOwner {
+    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges) external onlyOwner {
         uint256 challengesCount = challenges.length;
         for (uint256 i = 0; i < challengesCount; i++) {
-            try challenges[i].timeout() {} catch (bytes memory error) {
+            try manager.timeout(challenges[i]) {} catch (bytes memory error) {
                 if (error.length == 0) {
                     // Assume out of gas
                     // We need to revert here so gas estimation works

@@ -71,12 +71,12 @@ func (v *ValidatorUtils) RefundableStakers(ctx context.Context) ([]common.Addres
 	return addresses, nil
 }
 
-func (v *ValidatorUtils) TimedOutChallenges(ctx context.Context, max int) ([]common.Address, error) {
+func (v *ValidatorUtils) TimedOutChallenges(ctx context.Context, max int) ([]uint64, error) {
 	var count uint64 = 1024
-	addresses := make([]common.Address, 0)
+	addresses := make([]uint64, 0)
 	for i := uint64(0); ; i += count {
-		newAddrs, hasMore, err := v.con.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, i, count)
-		addresses = append(addresses, newAddrs...)
+		newIndexes, hasMore, err := v.con.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, i, count)
+		addresses = append(addresses, newIndexes...)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
