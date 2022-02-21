@@ -247,6 +247,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		LatestStakedNode:     latestStakedNode,
 		LatestStakedNodeHash: latestStakedNodeHash,
 		StakerInfo:           rawInfo,
+		StakeExists:          rawInfo != nil,
 	}
 
 	effectiveStrategy := s.strategy
@@ -316,26 +317,16 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	// Don't attempt to create a new stake if we're resolving a node,
-	// as that might affect the current required stake.
-	creatingNewStake := rawInfo == nil && s.builder.BuilderTransactionCount() == 0
-	if creatingNewStake {
-		if err := s.newStake(ctx); err != nil {
-			return nil, err
-		}
-	}
-
 	if rawInfo != nil {
 		if err = s.handleConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}
 	}
-	if rawInfo != nil || creatingNewStake {
-		// Advance stake up to 20 times in one transaction
-		for i := 0; info.CanProgress && i < 20; i++ {
-			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
-				return nil, err
-			}
+
+	// Advance stake up to 20 times in one transaction
+	for i := 0; info.CanProgress && i < 20; i++ {
+		if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
+			return nil, err
 		}
 	}
 	if rawInfo != nil && s.builder.BuilderTransactionCount() == 0 {
@@ -345,14 +336,11 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 
 	txCount := s.builder.BuilderTransactionCount()
-	if creatingNewStake {
-		// Ignore our stake creation, as it's useless by itself
-		txCount--
-	}
 	if txCount == 0 {
 		return nil, nil
 	}
-	if creatingNewStake {
+
+	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
 	return s.wallet.ExecuteTransactions(ctx, s.builder)
@@ -382,28 +370,6 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 
 	_, err := s.activeChallenge.Act(ctx)
 	return err
-}
-
-func (s *Staker) newStake(ctx context.Context) error {
-	var addr = s.wallet.Address()
-	if addr != nil {
-		info, err := s.rollup.StakerInfo(ctx, *addr)
-		if err != nil {
-			return err
-		}
-		if info != nil {
-			return nil
-		}
-	}
-	stakeAmount, err := s.rollup.CurrentRequiredStake(s.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
-	_, err = s.rollup.NewStake(s.builder.AuthWithAmount(ctx, stakeAmount))
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
@@ -438,8 +404,29 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 		info.CanProgress = false
 		info.LatestStakedNode = 0
 		info.LatestStakedNodeHash = action.hash
-		_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
-		return err
+
+		// We'll return early if we already havea stake
+		if info.StakeExists {
+			_, err = s.rollup.StakeOnNewNode(s.builder.Auth(ctx), action.assertion.AsSolidityStruct(), action.hash, action.prevInboxMaxCount)
+			return err
+		}
+
+		// If we have no stake yet, we'll put one down
+		stakeAmount, err := s.rollup.CurrentRequiredStake(s.getCallOpts(ctx))
+		if err != nil {
+			return err
+		}
+		_, err = s.rollup.NewStakeOnNewNode(
+			s.builder.AuthWithAmount(ctx, stakeAmount),
+			action.assertion.AsSolidityStruct(),
+			action.hash,
+			action.prevInboxMaxCount,
+		)
+		if err != nil {
+			return err
+		}
+		info.StakeExists = true
+		return nil
 	case existingNodeAction:
 		info.LatestStakedNode = action.number
 		info.LatestStakedNodeHash = action.hash
@@ -457,8 +444,27 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return nil
 		}
 		log.Info("staking on existing node", "node", action.number)
-		_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
-		return err
+		// We'll return early if we already havea stake
+		if info.StakeExists {
+			_, err = s.rollup.StakeOnExistingNode(s.builder.Auth(ctx), action.number, action.hash)
+			return err
+		}
+
+		// If we have no stake yet, we'll put one down
+		stakeAmount, err := s.rollup.CurrentRequiredStake(s.getCallOpts(ctx))
+		if err != nil {
+			return err
+		}
+		_, err = s.rollup.NewStakeOnExistingNode(
+			s.builder.AuthWithAmount(ctx, stakeAmount),
+			action.number,
+			action.hash,
+		)
+		if err != nil {
+			return err
+		}
+		info.StakeExists = true
+		return nil
 	default:
 		panic("invalid action type")
 	}

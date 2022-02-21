@@ -211,6 +211,7 @@ type OurStakerInfo struct {
 	LatestStakedNode     uint64
 	LatestStakedNodeHash [32]byte
 	CanProgress          bool
+	StakeExists          bool
 	*StakerInfo
 }
 
