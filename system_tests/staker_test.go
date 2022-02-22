@@ -10,9 +10,9 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,8 +24,38 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
+func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {
+	for i := uint64(0); ctx.Err() == nil; i++ {
+		l2info.Accounts["BackgroundUser"].Nonce = i
+		tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
+		err := l2clientA.SendTransaction(ctx, tx)
+		if err != nil {
+			return err
+		}
+		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+		if err != nil {
+			return err
+		}
+		if faultyStaker {
+			// Create a different transaction for the second node
+			l2info.Accounts["BackgroundUser"].Nonce = i
+			tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
+			err = l2clientB.SendTransaction(ctx, tx)
+			if err != nil {
+				return err
+			}
+			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) {
-	ctx := context.Background()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
 	l2info, l2nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
@@ -150,30 +180,17 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 
 	// Continually make L2 transactions in a background thread
-	var stopBackgroundTxs int32
+	backgroundTxsCtx, cancelBackgroundTxs := context.WithCancel(ctx)
 	backgroundTxsShutdownChan := make(chan struct{})
 	defer (func() {
-		atomic.StoreInt32(&stopBackgroundTxs, 1)
+		cancelBackgroundTxs()
 		<-backgroundTxsShutdownChan
 	})()
 	go (func() {
 		defer close(backgroundTxsShutdownChan)
-		for i := uint64(0); atomic.LoadInt32(&stopBackgroundTxs) == 0; i++ {
-			l2info.Accounts["BackgroundUser"].Nonce = i
-			tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
-			err := l2clientA.SendTransaction(ctx, tx)
-			Require(t, err)
-			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
-			Require(t, err)
-			if faultyStaker {
-				// Create a different transaction for the second node
-				l2info.Accounts["BackgroundUser"].Nonce = i
-				tx = l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big1, nil)
-				err = l2clientB.SendTransaction(ctx, tx)
-				Require(t, err)
-				_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
-				Require(t, err)
-			}
+		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA, l2clientB, faultyStaker)
+		if !errors.Is(err, context.Canceled) {
+			t.Error("error making background txs", err)
 		}
 	})()
 
@@ -206,7 +223,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			challengeAddr, err := rollup.CurrentChallenge(&bind.CallOpts{}, valWalletAddrA)
 			Require(t, err)
 			if challengeAddr != 0 {
-				atomic.StoreInt32(&stopBackgroundTxs, 1)
+				cancelBackgroundTxs()
 			}
 		}
 		if faultyStaker && !sawStakerZombie {

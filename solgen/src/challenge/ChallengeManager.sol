@@ -101,6 +101,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.wasmModuleRoot = wasmModuleRoot_;
 
+        // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
         uint64 maxInboxMessagesRead = startAndEndGlobalStates_[1].getInboxPosition();
         if (startAndEndMachineStatuses_[1] == MachineStatus.ERRORED || startAndEndGlobalStates_[1].getPositionInMessage() > 0) {
             maxInboxMessagesRead++;

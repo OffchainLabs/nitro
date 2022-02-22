@@ -39,6 +39,7 @@ interface IRollupCore {
         uint64 indexed nodeNum,
         bytes32 indexed parentNodeHash,
         bytes32 indexed nodeHash,
+        bytes32 executionHash,
         RollupLib.Assertion assertion,
         bytes32 afterInboxBatchAcc,
         bytes32 wasmModuleRoot,
@@ -114,6 +115,13 @@ interface IRollupCore {
      * @return Amount staked of the staker
      */
     function amountStaked(address staker) external view returns (uint256);
+
+    /**
+     * @notice Retrieves stored information about a requested staker
+     * @param staker Staker address to retrieve
+     * @return A structure with information about the requested staker
+     */
+    function getStaker(address staker) external view returns (Staker memory);
 
     /**
      * @notice Get the original staker address of the zombie at the given index

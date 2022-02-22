@@ -372,10 +372,6 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		DelayedMessagesRead: delayedMessagesRead,
 	}
 
-	if s.validator != nil {
-		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
-	}
-
 	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
@@ -384,6 +380,8 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
 	}
 
+	// Only write the block after we've written the messages, so if the node dies in the middle of this,
+	// it will naturally recover on startup by regenerating the missing block.
 	var logs []*types.Log
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
@@ -394,6 +392,10 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	}
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
+	}
+
+	if s.validator != nil {
+		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
 	}
 
 	return nil
@@ -432,6 +434,12 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 	err = s.writeMessages(pos, messagesWithMeta, nil)
 	if err != nil {
 		return err
+	}
+
+	for i, msg := range messagesWithMeta {
+		if s.broadcastServer != nil {
+			s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i))
+		}
 	}
 
 	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)

@@ -26,9 +26,13 @@ const txTimeout time.Duration = 5 * time.Minute
 type StakerStrategy uint8
 
 const (
+	// Watchtower: don't do anything on L1, but log if there's a bad assertion
 	WatchtowerStrategy StakerStrategy = iota
+	// Defensive: stake if there's a bad assertion
 	DefensiveStrategy
+	// Stake latest: stay staked on the latest node, challenging bad assertions
 	StakeLatestStrategy
+	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
 )
 
@@ -66,11 +70,21 @@ type Staker struct {
 	inactiveLastCheckedNode *nodeAndHash
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
+	inboxReader             InboxReaderInterface
+}
 
-	l2Blockchain *core.BlockChain
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	txStreamer   TransactionStreamerInterface
+func stakerStrategyFromString(s string) (StakerStrategy, error) {
+	if strings.ToLower(s) == "watchtower" {
+		return WatchtowerStrategy, nil
+	} else if strings.ToLower(s) == "defensive" {
+		return DefensiveStrategy, nil
+	} else if strings.ToLower(s) == "stakelatest" {
+		return StakeLatestStrategy, nil
+	} else if strings.ToLower(s) == "makenodes" {
+		return MakeNodesStrategy, nil
+	} else {
+		return WatchtowerStrategy, fmt.Errorf("unknown staker strategy \"%v\"", s)
+	}
 }
 
 func NewStaker(
@@ -90,19 +104,11 @@ func NewStaker(
 		return nil, fmt.Errorf("invalid validator utils address \"%v\"", config.UtilsAddress)
 	}
 	validatorUtilsAddress := common.HexToAddress(config.UtilsAddress)
-	var strategy StakerStrategy
-	if strings.ToLower(config.Strategy) == "watchtower" {
-		strategy = WatchtowerStrategy
-	} else if strings.ToLower(config.Strategy) == "defensive" {
-		strategy = DefensiveStrategy
-	} else if strings.ToLower(config.Strategy) == "stakelatest" {
-		strategy = StakeLatestStrategy
-	} else if strings.ToLower(config.Strategy) == "makenodes" {
-		strategy = MakeNodesStrategy
-	} else {
-		return nil, fmt.Errorf("unknown staker strategy \"%v\"", config.Strategy)
+	strategy, err := stakerStrategyFromString(config.Strategy)
+	if err != nil {
+		return nil, err
 	}
-	val, err := NewValidator(ctx, client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxReader, inboxTracker, txStreamer, blockValidator)
+	val, err := NewValidator(ctx, client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -119,15 +125,11 @@ func NewStaker(
 		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
-
-		l2Blockchain: l2Blockchain,
-		inboxReader:  inboxReader,
-		inboxTracker: inboxTracker,
-		txStreamer:   txStreamer,
+		inboxReader:         inboxReader,
 	}, nil
 }
 
-func (s *Staker) RunInBackground(ctx context.Context, stakerDelay time.Duration) chan bool {
+func (s *Staker) Start(ctx context.Context) chan bool {
 	done := make(chan bool)
 	go func() {
 		defer func() {
@@ -137,7 +139,6 @@ func (s *Staker) RunInBackground(ctx context.Context, stakerDelay time.Duration)
 		for {
 			arbTx, err := s.Act(ctx)
 			if err == nil && arbTx != nil {
-				// Note: methodName isn't accurate, it's just used for logging
 				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
 				err = errors.Wrap(err, "error waiting for tx receipt")
 				if err == nil {
@@ -158,7 +159,11 @@ func (s *Staker) RunInBackground(ctx context.Context, stakerDelay time.Duration)
 			} else {
 				backoff = time.Second
 			}
-			time.Sleep(stakerDelay)
+			select {
+			case <-time.After(s.config.StakerDelay):
+			default:
+				return
+			}
 		}
 	}()
 	return done
@@ -191,7 +196,7 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 		// We're eating into the high gas buffer to delay our tx
 		s.highGasBlocksBuffer.Sub(s.highGasBlocksBuffer, blocksSinceActCalled)
 	} else {
-		// We'll make a tx if necessary, so we can add to the buffer for future high gas
+		// We'll try to make a tx if necessary, so we can add to the buffer for future high gas
 		s.highGasBlocksBuffer.Add(s.highGasBlocksBuffer, blocksSinceActCalled)
 	}
 	// Clamp `s.highGasBlocksBuffer` to between 0 and HighGasDelayBlocks
@@ -235,17 +240,17 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	// If the wallet address is zero, or the wallet address isn't staked,
 	// this will return the latest node and its hash (atomically).
-	latestStakedNode, latestStakedNodeHash, err := s.validatorUtils.LatestStaked(callOpts, s.rollupAddress, walletAddressOrZero)
+	latestStakedNodeNum, latestStakedNodeInfo, err := s.validatorUtils.LatestStaked(callOpts, s.rollupAddress, walletAddressOrZero)
 	if err != nil {
 		return nil, err
 	}
 	if rawInfo != nil {
-		rawInfo.LatestStakedNode = latestStakedNode
+		rawInfo.LatestStakedNode = latestStakedNodeNum
 	}
 	info := OurStakerInfo{
 		CanProgress:          true,
-		LatestStakedNode:     latestStakedNode,
-		LatestStakedNodeHash: latestStakedNodeHash,
+		LatestStakedNode:     latestStakedNodeNum,
+		LatestStakedNodeHash: latestStakedNodeInfo.NodeHash,
 		StakerInfo:           rawInfo,
 		StakeExists:          rawInfo != nil,
 	}
@@ -256,7 +261,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		return nil, err
 	}
 	if !nodesLinear {
-		log.Warn("fork detected")
+		log.Warn("rollup assertion fork detected")
 		if effectiveStrategy == DefensiveStrategy {
 			effectiveStrategy = StakeLatestStrategy
 		}
@@ -336,14 +341,13 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	if rawInfo != nil && s.builder.BuilderTransactionCount() == 0 {
+	if rawInfo != nil && s.builder.BuildingTransactionCount() == 0 {
 		if err := s.createConflict(ctx, rawInfo); err != nil {
 			return nil, err
 		}
 	}
 
-	txCount := s.builder.BuilderTransactionCount()
-	if txCount == 0 {
+	if s.builder.BuildingTransactionCount() == 0 {
 		return nil, nil
 	}
 
@@ -523,37 +527,37 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 		if stakerInfo.CurrentChallenge != nil {
 			continue
 		}
-		conflictType, node1, node2, err := s.validatorUtils.FindStakerConflict(callOpts, s.rollupAddress, walletAddr, staker, big.NewInt(1024))
+		conflictInfo, err := s.validatorUtils.FindStakerConflict(callOpts, s.rollupAddress, walletAddr, staker, big.NewInt(1024))
 		if err != nil {
 			return err
 		}
-		if ConflictType(conflictType) != CONFLICT_TYPE_FOUND {
+		if ConflictType(conflictInfo.Ty) != CONFLICT_TYPE_FOUND {
 			continue
 		}
 		staker1 := walletAddr
 		staker2 := staker
-		if node2 < node1 {
+		if conflictInfo.Node2 < conflictInfo.Node1 {
 			staker1, staker2 = staker2, staker1
-			node1, node2 = node2, node1
+			conflictInfo.Node1, conflictInfo.Node2 = conflictInfo.Node2, conflictInfo.Node1
 		}
-		if node1 <= latestNode {
+		if conflictInfo.Node1 <= latestNode {
 			// removeOldStakers will take care of them
 			continue
 		}
 
-		node1Info, err := s.rollup.LookupNode(ctx, node1)
+		node1Info, err := s.rollup.LookupNode(ctx, conflictInfo.Node1)
 		if err != nil {
 			return err
 		}
-		node2Info, err := s.rollup.LookupNode(ctx, node2)
+		node2Info, err := s.rollup.LookupNode(ctx, conflictInfo.Node2)
 		if err != nil {
 			return err
 		}
-		log.Warn("creating challenge", "ourNode", node1, "otherNode", node2, "otherStaker", staker2)
+		log.Warn("creating challenge", "node1", conflictInfo.Node1, "node2", conflictInfo.Node2, "otherStaker", staker2)
 		_, err = s.rollup.CreateChallenge(
 			s.builder.Auth(ctx),
 			[2]common.Address{staker1, staker2},
-			[2]uint64{node1, node2},
+			[2]uint64{conflictInfo.Node1, conflictInfo.Node2},
 			node1Info.MachineStatuses(),
 			node1Info.GlobalStates(),
 			node1Info.Assertion.NumBlocks,

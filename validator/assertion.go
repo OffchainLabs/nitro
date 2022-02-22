@@ -63,6 +63,15 @@ func (s *ExecutionState) BlockStateHash() common.Hash {
 	}
 }
 
+// Determine the batch count required to reach the execution state.
+// If the machine errored or the state is after the beginning of the batch,
+// the current batch is required to reach the state.
+// That's because if the machine errored, it might've read the current batch before erroring,
+// and if it's in the middle of a batch, it had to read prior parts of the batch to get there.
+// However, if the machine finished successfully and the new state is the start of the batch,
+// it hasn't read the batch yet, as it just finished the last batch.
+//
+// This logic is replicated in Solidity in a few places; search for RequiredBatches to find them.
 func (s *ExecutionState) RequiredBatches() uint64 {
 	count := s.GlobalState.Batch
 	if (s.MachineStatus == MachineStatusErrored || s.GlobalState.PosInBatch > 0) && count < math.MaxUint64 {

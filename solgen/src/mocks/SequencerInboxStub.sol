@@ -37,6 +37,7 @@ contract SequencerInboxStub is SequencerInbox {
     }
 
     function getTimeBounds() internal view override returns (TimeBounds memory bounds) {
+        this; // silence warning about function not being view
         return bounds;
     }
 }

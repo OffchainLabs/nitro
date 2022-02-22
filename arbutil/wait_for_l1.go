@@ -93,6 +93,9 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 				return receipt, nil
 			}
 		}
+		if !timer.Stop() {
+			<-timer.C
+		}
 		timer.Reset(checkInterval)
 		select {
 		case <-chanHead:

@@ -17,28 +17,39 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
+)
+
+type ConfirmType uint8
+
+const (
+	CONFIRM_TYPE_NONE ConfirmType = iota
+	CONFIRM_TYPE_VALID
+	CONFIRM_TYPE_INVALID
+)
+
+type ConflictType uint8
+
+const (
+	CONFLICT_TYPE_NONE ConflictType = iota
+	CONFLICT_TYPE_FOUND
+	CONFLICT_TYPE_INDETERMINATE
+	CONFLICT_TYPE_INCOMPLETE
 )
 
 type Validator struct {
 	rollup                  *RollupWatcher
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
-	sequencerInbox          *bridgegen.SequencerInbox
 	validatorUtils          *rollupgen.ValidatorUtils
 	client                  arbutil.L1Interface
-	builder                 *BuilderBackend
+	builder                 *ValidatorTxBuilder
 	wallet                  *ValidatorWallet
 	callOpts                bind.CallOpts
-	GasThreshold            *big.Int
-	SendThreshold           *big.Int
-	BlockThreshold          *big.Int
 	genesisBlockNumber      uint64
 
 	l2Blockchain   *core.BlockChain
-	inboxReader    InboxReaderInterface
 	inboxTracker   InboxTrackerInterface
 	txStreamer     TransactionStreamerInterface
 	blockValidator *BlockValidator
@@ -51,12 +62,11 @@ func NewValidator(
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
 	l2Blockchain *core.BlockChain,
-	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
 ) (*Validator, error) {
-	builder, err := NewBuilderBackend(wallet)
+	builder, err := NewValidatorTxBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
@@ -66,15 +76,7 @@ func NewValidator(
 	}
 	localCallOpts := callOpts
 	localCallOpts.Context = ctx
-	sequencerBridgeAddress, err := rollup.SequencerBridge(&localCallOpts)
-	if err != nil {
-		return nil, err
-	}
 	challengeManagerAddress, err := rollup.ChallengeManager(&localCallOpts)
-	if err != nil {
-		return nil, err
-	}
-	sequencerInbox, err := bridgegen.NewSequencerInbox(sequencerBridgeAddress, client)
 	if err != nil {
 		return nil, err
 	}
@@ -93,18 +95,13 @@ func NewValidator(
 		rollup:                  rollup,
 		rollupAddress:           wallet.RollupAddress(),
 		challengeManagerAddress: challengeManagerAddress,
-		sequencerInbox:          sequencerInbox,
 		validatorUtils:          validatorUtils,
 		client:                  client,
 		builder:                 builder,
 		wallet:                  wallet,
-		GasThreshold:            big.NewInt(100_000_000_000),
-		SendThreshold:           big.NewInt(5),
-		BlockThreshold:          big.NewInt(960),
 		callOpts:                callOpts,
 		genesisBlockNumber:      genesisBlockNumber,
 		l2Blockchain:            l2Blockchain,
-		inboxReader:             inboxReader,
 		inboxTracker:            inboxTracker,
 		txStreamer:              txStreamer,
 		blockValidator:          blockValidator,
@@ -117,8 +114,8 @@ func (v *Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
 	return &opts
 }
 
-// removeOldStakers removes the stakes of all currently staked validators except
-// its own if dontRemoveSelf is true
+// removeOldStakers removes the stakes of all validators staked on the latest confirmed node (aka "refundable" or "old" stakers),
+// except its own if dontRemoveSelf is true
 func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
 	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
 	if err != nil {
@@ -319,8 +316,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		return nil, false, nil
 	}
 
-	// Not necessarily successors
-	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode)
+	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
 	}
@@ -415,27 +411,46 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		wrongNodesExist = true
 	}
 
-	if strategy == WatchtowerStrategy || correctNode != nil || (strategy < MakeNodesStrategy && !wrongNodesExist) {
-		return correctNode, wrongNodesExist, nil
+	if strategy > WatchtowerStrategy && correctNode == nil && (strategy >= MakeNodesStrategy || wrongNodesExist) {
+		// There's no correct node; create one.
+		var lastNodeHashIfExists *common.Hash
+		if len(successorNodes) > 0 {
+			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
+		}
+		action, err := v.createNewNodeAction(ctx, stakerInfo, blocksValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
+		return action, wrongNodesExist, err
 	}
 
+	return correctNode, wrongNodesExist, nil
+}
+
+func (v *Validator) createNewNodeAction(
+	ctx context.Context,
+	stakerInfo *OurStakerInfo,
+	blocksValidated uint64,
+	localBatchCount uint64,
+	prevInboxMaxCount *big.Int,
+	startBlock *types.Block,
+	startState *ExecutionState,
+	lastNodeHashIfExists *common.Hash,
+) (nodeAction, error) {
 	if !prevInboxMaxCount.IsUint64() {
-		return nil, false, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
+		return nil, fmt.Errorf("inbox max count %v isn't a uint64", prevInboxMaxCount)
 	}
 	minBatchCount := prevInboxMaxCount.Uint64()
 	if localBatchCount < minBatchCount {
 		// not enough batches in database
-		return nil, wrongNodesExist, nil
+		return nil, nil
 	}
 
 	if blocksValidated == 0 || localBatchCount == 0 {
 		// we haven't validated anything
-		return nil, wrongNodesExist, nil
+		return nil, nil
 	}
 	lastBlockValidated := blocksValidated - 1
 	if startBlock != nil && lastBlockValidated <= startBlock.NumberU64() {
 		// we haven't validated any new blocks
-		return nil, wrongNodesExist, nil
+		return nil, nil
 	}
 	var assertionCoversBatch uint64
 	var afterGsBatch uint64
@@ -443,16 +458,19 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	for i := localBatchCount - 1; i+1 >= minBatchCount && i > 0; i-- {
 		batchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		prevBatchMessageCount, err := v.inboxTracker.GetBatchMessageCount(i - 1)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		// Must be non-negative as a batch must contain at least one message
 		lastBlockNum := uint64(arbutil.MessageCountToBlockNumber(batchMessageCount, v.genesisBlockNumber))
 		prevBlockNum := uint64(arbutil.MessageCountToBlockNumber(prevBatchMessageCount, v.genesisBlockNumber))
-		if lastBlockValidated > prevBlockNum && lastBlockValidated <= lastBlockNum {
+		if lastBlockValidated > lastBlockNum {
+			return nil, fmt.Errorf("%v blocks have been validated but only %v appear in the latest batch", lastBlockValidated, lastBlockNum)
+		}
+		if lastBlockValidated > prevBlockNum {
 			// We found the batch containing the last validated block
 			if i+1 == minBatchCount && lastBlockValidated < lastBlockNum {
 				// We haven't reached the minimum assertion size yet
@@ -471,29 +489,27 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	}
 	if assertionCoversBatch == 0 {
 		// we haven't validated the next batch completely
-		return nil, wrongNodesExist, nil
+		return nil, nil
 	}
 	validatedBatchAcc, err := v.inboxTracker.GetBatchAcc(assertionCoversBatch)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	assertingBlock := v.l2Blockchain.GetBlockByNumber(lastBlockValidated)
 	if assertingBlock == nil {
-		return nil, false, fmt.Errorf("missing validated block %v", lastBlockValidated)
+		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
 	}
 	assertingBlockExtra, err := arbos.DeserializeHeaderExtraInformation(assertingBlock.Header())
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	hasSiblingByte := [1]byte{0}
-	lastNum := stakerInfo.LatestStakedNode
+	prevNum := stakerInfo.LatestStakedNode
 	lastHash := stakerInfo.LatestStakedNodeHash
-	if len(successorNodes) > 0 {
-		lastSuccessor := successorNodes[len(successorNodes)-1]
-		lastNum = lastSuccessor.NodeNum
-		lastHash = lastSuccessor.NodeHash
+	if lastNodeHashIfExists != nil {
+		lastHash = *lastNodeHashIfExists
 		hasSiblingByte[0] = 1
 	}
 	var assertionNumBlocks uint64
@@ -524,8 +540,8 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		hash:              newNodeHash,
 		prevInboxMaxCount: prevInboxMaxCount,
 	}
-	log.Info("creating node", "hash", newNodeHash, "lastNode", lastNum, "parentNode", stakerInfo.LatestStakedNode)
-	return action, wrongNodesExist, nil
+	log.Info("creating node", "hash", newNodeHash, "lastNode", prevNum, "parentNode", stakerInfo.LatestStakedNode)
+	return action, nil
 }
 
 // Returns (execution state, inbox max count, block proposed, error)

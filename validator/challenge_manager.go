@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -18,7 +20,6 @@ import (
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/pkg/errors"
-	"math/big"
 )
 
 const maxBisectionDegree uint64 = 40
@@ -444,7 +445,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	return nil
 }
 
-func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
+func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error {
 	if m.executionChallengeBackend != nil {
 		return nil
 	}
@@ -493,7 +494,7 @@ func (m *ChallengeManager) TestExecChallenge(ctx context.Context) error {
 }
 
 func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) {
-	err := m.TestExecChallenge(ctx)
+	err := m.LoadExecChallengeIfExists(ctx)
 	if err != nil {
 		return nil, err
 	}

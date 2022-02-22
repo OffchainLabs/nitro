@@ -186,9 +186,12 @@ abstract contract AbsRollupUserLogic is
             require(timeSinceLastNode >= minimumAssertionPeriod, "TIME_DELTA");
 
             // Minimum size requirement: any assertion must consume at least all inbox messages
-            // put into L1 inbox before the prev node’s L1 blocknum
+            // put into L1 inbox before the prev node’s L1 blocknum.
+            // We make an exception if the machine enters the errored state,
+            // as it can't consume future batches.
             require(
-                assertion.afterState.globalState.getInboxPosition() >=
+                assertion.afterState.machineStatus == MachineStatus.ERRORED ||
+                    assertion.afterState.globalState.getInboxPosition() >=
                     prevNodeInboxMaxCount,
                 "TOO_SMALL"
             );
