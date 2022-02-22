@@ -415,6 +415,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 	case createNodeAction:
 		if wrongNodesExist && s.config.DontChallenge {
 			log.Error("refusing to challenge assertion as config disables challenges")
+			info.CanProgress = false
 			return nil
 		}
 		if !active {
