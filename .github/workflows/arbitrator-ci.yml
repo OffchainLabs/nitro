@@ -152,4 +152,4 @@ jobs:
           cd solgen
           yarn install
           yarn build
-          yarn hardhat --network localhost test test/geth/*.ts
+          yarn hardhat --network localhost test test/prover/*.ts

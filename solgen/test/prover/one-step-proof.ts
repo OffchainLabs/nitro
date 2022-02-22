@@ -20,7 +20,7 @@ async function sendTestMessages() {
 }
 
 describe("OneStepProof", function () {
-  const root = "./test/geth/proofs/";
+  const root = "./test/prover/proofs/";
   const dir = fs.readdirSync(root);
 
   before(async function () {
