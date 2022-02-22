@@ -116,7 +116,7 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 		m.Message.Header.BlockNumber.Bytes(),
 		m.Message.Header.Timestamp.Bytes(),
 		m.Message.Header.RequestId.Bytes(),
-		m.Message.Header.GasPriceL1.Bytes(),
+		m.Message.Header.BaseFeeL1.Bytes(),
 		crypto.Keccak256(m.Message.L2msg),
 	)
 	return crypto.Keccak256Hash(m.BeforeInboxAcc[:], hash)
@@ -203,7 +203,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
 					Timestamp:   common.BigToHash(parsedLog.Timestamp),
 					RequestId:   common.BigToHash(parsedLog.MessageIndex),
-					GasPriceL1:  common.BigToHash(parsedLog.GasPrice),
+					BaseFeeL1:   common.BigToHash(parsedLog.BaseFeeL1),
 				},
 				L2msg: data,
 			},

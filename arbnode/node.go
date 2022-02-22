@@ -533,7 +533,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		Extra:      []byte("ArbitrumMainnet"),
 		GasLimit:   l2pricing.L2GasLimit,
 		GasUsed:    0,
-		BaseFee:    big.NewInt(l2pricing.InitialGasPriceWei),
+		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
 		Difficulty: genDifficulty,
 		MixDigest:  EmptyHash,
 		Coinbase:   common.Address{},
