@@ -50,10 +50,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 		panic(err)
 	}
 	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
-	/*networkFeeAccount, err := arbosState.NetworkFeeAccount()
-	if err != nil {
-		panic(err)
-	}*/
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
@@ -219,7 +215,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
@@ -230,7 +226,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
 	aggregator := p.getReimbursableAggregator()
-	posterCost, _, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
+	posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -257,25 +253,18 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		p.posterGas = posterCostInL2Gas.Uint64()
 		p.PosterFee = new(big.Int).Mul(posterCostInL2Gas, gasPrice) // round down
 		gasNeededToStartEVM = p.posterGas
+	}
 
-		/*// Most users shouldn't set a tip, but if one is specified ensure the user has enough funds to
-		// tip the appropriate party (the poster, if reimbursable, otherwise the network fee account)
-		if txGasPrice != nil && util.BigGreaterThan(txGasPrice, gasPrice) {
-			p.tipWeiPerGas = util.BigSub(txGasPrice, gasPrice)
-		}
-		if reimbursable && aggregator != nil {
-			p.tipRecipient = *aggregator
-		}
-		tip := util.BigMulByUint(p.tipWeiPerGas, p.msg.Gas())
-		if util.BigLessThan(p.evm.StateDB.GetBalance(from), tip) {
-			return core.ErrInsufficientFunds
-		}
-		p.evm.StateDB.SubBalance(from, tip)*/
+	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
+	tipRecipient := aggregator
+	if !reimburse {
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		tipRecipient = &networkFeeAccount
 	}
 
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return core.ErrIntrinsicGas
+		return tipRecipient, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -289,7 +278,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		}
 	}
 
-	return nil
+	return tipRecipient, nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
