@@ -46,7 +46,7 @@ contract BridgeStub is IBridge {
                 sender,
                 block.number,
                 block.timestamp, // solhint-disable-line not-rely-on-time
-                tx.gasprice,
+                block.basefee,
                 messageDataHash
             );
     }
