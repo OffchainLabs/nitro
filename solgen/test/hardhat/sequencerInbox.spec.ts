@@ -21,20 +21,11 @@ import { BigNumber } from '@ethersproject/bignumber'
 import { Block, TransactionReceipt } from '@ethersproject/providers'
 import { expect } from 'chai'
 import {
-  BlockChallengeFactory,
-  BlockChallengeFactory__factory,
   Bridge,
-  BridgeCreator__factory,
   Bridge__factory,
-  ExecutionChallengeFactory__factory,
-  ExecutionChallenge__factory,
   Inbox,
   Inbox__factory,
   MessageTester,
-  OneStepProofEntry__factory,
-  RollupAdminLogic__factory,
-  RollupCreator__factory,
-  RollupUserLogic__factory,
   SequencerInbox,
   SequencerInbox__factory,
   TransparentUpgradeableProxy__factory,
@@ -46,14 +37,7 @@ import {
   BridgeInterface,
   MessageDeliveredEvent,
 } from '../../build/types/Bridge'
-import { constants, Signer } from 'ethers'
-import { RollupCreatedEvent } from '../../build/types/RollupCreator'
-import {
-  hexlify,
-  keccak256,
-  parseEther,
-  solidityKeccak256,
-} from 'ethers/lib/utils'
+import { Signer } from 'ethers'
 
 const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {
   const block = (await network.provider.send('eth_getBlockByNumber', [
@@ -189,7 +173,6 @@ describe('SequencerInbox', async () => {
     kind: number,
     l1blockNumber: number,
     l1Timestamp: number,
-    delayedInboxSeqNum: BigNumber,
     l1GasPrice: number,
     senderAddr: string,
     messageDataHash: string,
@@ -314,7 +297,6 @@ describe('SequencerInbox', async () => {
       delayedTx.deliveredMessageEvent.kind,
       delayedTx.l1BlockNumber,
       delayedTx.l1BlockTimestamp,
-      delayedTx.deliveredMessageEvent.messageIndex,
       delayedTx.l1GasPrice,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
@@ -364,7 +346,6 @@ describe('SequencerInbox', async () => {
       delayedTx.deliveredMessageEvent.kind,
       delayedTx.l1BlockNumber,
       delayedTx.l1BlockTimestamp,
-      delayedTx.deliveredMessageEvent.messageIndex,
       delayedTx.l1GasPrice,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
@@ -375,7 +356,6 @@ describe('SequencerInbox', async () => {
       delayedTx2.deliveredMessageEvent.kind,
       delayedTx2.l1BlockNumber,
       delayedTx2.l1BlockTimestamp,
-      delayedTx2.deliveredMessageEvent.messageIndex,
       delayedTx2.l1GasPrice,
       delayedTx2.senderAddr,
       delayedTx2.deliveredMessageEvent.messageDataHash,
@@ -436,7 +416,6 @@ describe('SequencerInbox', async () => {
       delayedTx3.deliveredMessageEvent.kind,
       delayedTx3.l1BlockNumber,
       delayedTx3.l1BlockTimestamp,
-      delayedTx3.deliveredMessageEvent.messageIndex,
       delayedTx3.l1GasPrice,
       delayedTx3.senderAddr,
       delayedTx3.deliveredMessageEvent.messageDataHash,
@@ -473,7 +452,6 @@ describe('SequencerInbox', async () => {
       delayedTx.deliveredMessageEvent.kind,
       delayedTx.l1BlockNumber,
       delayedTx.l1BlockTimestamp,
-      delayedTx.deliveredMessageEvent.messageIndex,
       delayedTx.l1GasPrice,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
@@ -513,7 +491,6 @@ describe('SequencerInbox', async () => {
       delayedTx.deliveredMessageEvent.kind,
       delayedTx.l1BlockNumber,
       delayedTx.l1BlockTimestamp,
-      delayedTx.deliveredMessageEvent.messageIndex,
       delayedTx.l1GasPrice,
       delayedTx.senderAddr,
       delayedTx.deliveredMessageEvent.messageDataHash,
