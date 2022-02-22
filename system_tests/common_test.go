@@ -10,12 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -32,7 +36,7 @@ import (
 )
 
 type info = *BlockchainTestInfo
-type client = arbnode.L1Interface
+type client = arbutil.L1Interface
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
@@ -40,7 +44,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
@@ -49,7 +53,7 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 }
 
@@ -194,6 +198,19 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
 	Require(t, err)
+
+	// Give the node an init message
+	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
+		},
+		DelayedMessagesRead: 0,
+	}})
+	Require(t, err)
+
 	Require(t, node.Start(ctx))
 	client := ClientForArbBackend(t, node.Backend)
 
@@ -207,7 +224,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 

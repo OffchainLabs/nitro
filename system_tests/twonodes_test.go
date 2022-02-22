@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 func TestTwoNodesSimple(t *testing.T) {
@@ -29,7 +29,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -42,7 +42,7 @@ func TestTwoNodesSimple(t *testing.T) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)

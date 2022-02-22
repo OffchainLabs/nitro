@@ -33,45 +33,19 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     mapping(address => bool) public isBatchPoster;
     ISequencerInbox.MaxTimeVariation public maxTimeVariation;
 
-    struct TimeBounds {
-        uint64 minTimestamp;
-        uint64 maxTimestamp;
-        uint64 minBlockNumber;
-        uint64 maxBlockNumber;
-    }
-
-    enum BatchDataLocation {
-        TxInput,
-        SeparateBatchEvent,
-        NoData
-    }
-
-    event SequencerBatchDelivered(
-        uint256 indexed batchSequenceNumber,
-        bytes32 indexed beforeAcc,
-        bytes32 indexed afterAcc,
-        bytes32 delayedAcc,
-        uint256 afterDelayedMessagesRead,
-        TimeBounds timeBounds,
-        BatchDataLocation dataLocation
-    );
-
-    /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
-    event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
-
     function initialize(
-        IBridge _delayedBridge, 
+        IBridge delayedBridge_,
         address rollup_, 
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
-        if (_delayedBridge == IBridge(address(0))) revert HadZeroInit();
-        delayedBridge = _delayedBridge;
+        if (delayedBridge_ == IBridge(address(0))) revert HadZeroInit();
+        delayedBridge = delayedBridge_;
         rollup = rollup_;
         maxTimeVariation = maxTimeVariation_;
     }
 
-    function getTimeBounds() internal view returns (TimeBounds memory) {
+    function getTimeBounds() internal view virtual returns (TimeBounds memory) {
         TimeBounds memory bounds;
         if (block.timestamp > maxTimeVariation.delaySeconds) {
             bounds.minTimestamp = uint64(block.timestamp - maxTimeVariation.delaySeconds);

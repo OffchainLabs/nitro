@@ -20,3 +20,5 @@ pragma solidity ^0.8.4;
 
 // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
 uint256 constant MAX_DATA_SIZE = 117964;
+
+uint64 constant NO_CHAL_INDEX = 0;

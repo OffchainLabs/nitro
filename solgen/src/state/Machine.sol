@@ -32,7 +32,7 @@ library MachineLib {
 	using ValueStackLib for ValueStack;
 
 	function hash(Machine memory mach) internal pure returns (bytes32) {
-		// Warning: the non-running hashes are replicated in BlockChallenge
+		// Warning: the non-running hashes are replicated in Challenge
 		if (mach.status == MachineStatus.RUNNING) {
 			return keccak256(abi.encodePacked(
 				"Machine running:",

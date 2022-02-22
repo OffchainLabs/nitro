@@ -22,7 +22,7 @@ import "./RollupLib.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
-interface IRollupUser {
+interface IRollupUserAbs {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
@@ -36,6 +36,26 @@ interface IRollupUser {
     function requireUnresolvedExists() external view;
 
     function countStakedZombies(uint64 nodeNum) external view returns (uint256);
+}
+
+interface IRollupUser is IRollupUserAbs {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
+    function newStakeOnNewNode(
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable;
+}
+
+interface IRollupUserERC20 is IRollupUserAbs {
+    function newStakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external;
+
+    function newStakeOnNewNode(
+        uint256 tokenAmount,
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external;
 }
 
 interface IRollupAdmin {

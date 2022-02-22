@@ -16,6 +16,32 @@ interface ISequencerInbox {
         uint256 futureSeconds;
     }
 
+    struct TimeBounds {
+        uint64 minTimestamp;
+        uint64 maxTimestamp;
+        uint64 minBlockNumber;
+        uint64 maxBlockNumber;
+    }
+
+    enum BatchDataLocation {
+        TxInput,
+        SeparateBatchEvent,
+        NoData
+    }
+
+    event SequencerBatchDelivered(
+        uint256 indexed batchSequenceNumber,
+        bytes32 indexed beforeAcc,
+        bytes32 indexed afterAcc,
+        bytes32 delayedAcc,
+        uint256 afterDelayedMessagesRead,
+        TimeBounds timeBounds,
+        BatchDataLocation dataLocation
+    );
+
+    /// @dev a separate event that emits batch data when this isn't easily accessible in the tx.input
+    event SequencerBatchData(uint256 indexed batchSequenceNumber, bytes data);
+
     /// @dev Thrown when someone attempts to read fewer messages than have already been read
     error DelayedBackwards();
 

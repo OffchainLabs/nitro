@@ -18,7 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/IBlockChallengeFactory.sol";
+import "../challenge/IChallengeManager.sol";
 import "../challenge/ChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
@@ -45,7 +45,7 @@ struct ContractDependencies {
     ISequencerInbox sequencerInbox;
     IOutbox outbox;
     RollupEventBridge rollupEventBridge;
-    IBlockChallengeFactory blockChallengeFactory;
+    IChallengeManager challengeManager;
 
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
@@ -96,7 +96,7 @@ library RollupLib {
         uint64 numBlocks;
     }
 
-    function executionHash(Assertion calldata assertion)
+    function executionHash(Assertion memory assertion)
         internal
         pure
         returns (bytes32)
@@ -144,7 +144,7 @@ library RollupLib {
             );
     }
 
-    function confirmHash(Assertion calldata assertion)
+    function confirmHash(Assertion memory assertion)
         internal
         pure
         returns (bytes32)
