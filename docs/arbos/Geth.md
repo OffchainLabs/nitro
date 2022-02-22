@@ -110,14 +110,14 @@ The process is simplified using two functions: [`PrepareRecording`][PrepareRecor
 
 Nitro geth includes a few L2-specific transaction types. Click on any to jump to their section.
 
-| Tx Type                                           | Represents                        | Final hook                 | Source |
-|:--------------------------------------------------|:----------------------------------|:---------------------------|--------|
-| [`ArbitrumUnsignedTx`][ArbTxUnsigned]             |                                   | [`EndTxHook`][HE]          | Bridge |
-| [`ArbitrumContractTx`][ArbTxContract]             |                                   | [`EndTxHook`][HE]          | Bridge |
-| [`ArbitrumSubmitRetryableTx`][ArbTxSubmit] &nbsp; | Creating a retryable              | [`StartTxHook`][HS] &nbsp; | Bridge |
-| [`ArbitrumRetryTx`][ArbTxRetry]                   | A retryable redeem attempt &nbsp; | [`EndTxHook`][HE]          | L2     |
-| [`ArbitrumDepositTx`][ArbTxDeposit]               | A user deposit                    | [`StartTxHook`][HS]        | Bridge |
-| [`ArbitrumInternalTx`][ArbTxInternal]             | ArbOS state update                | [`StartTxHook`][HS]        | ArbOS  |
+| Tx Type                                           | Represents                           | Last Hook Reached &nbsp;   | Source |
+|:--------------------------------------------------|:-------------------------------------|:---------------------------|--------|
+| [`ArbitrumUnsignedTx`][ArbTxUnsigned]             | An L1 to L2 message                  | [`EndTxHook`][HE]          | Bridge |
+| [`ArbitrumContractTx`][ArbTxContract]             | A nonce-less L1 to L2 message &nbsp; | [`EndTxHook`][HE]          | Bridge |
+| [`ArbitrumSubmitRetryableTx`][ArbTxSubmit] &nbsp; | Creating a retryable                 | [`StartTxHook`][HS] &nbsp; | Bridge |
+| [`ArbitrumRetryTx`][ArbTxRetry]                   | A retryable redeem attempt           | [`EndTxHook`][HE]          | L2     |
+| [`ArbitrumDepositTx`][ArbTxDeposit]               | A user deposit                       | [`StartTxHook`][HS]        | Bridge |
+| [`ArbitrumInternalTx`][ArbTxInternal]             | ArbOS state update                   | [`StartTxHook`][HS]        | ArbOS  |
 
 [ArbTxUnsigned]: #ArbitrumUnsignedTx
 [ArbTxContract]: #ArbitrumContractTx
@@ -131,16 +131,16 @@ Nitro geth includes a few L2-specific transaction types. Click on any to jump to
 The following reference documents each type.
 
 ### [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link]<a name=ArbitrumUnsignedTx></a>
-TODO
+Provides a mechanism for a user on L1 to message a contract on L2. This uses the bridge for authentication rather than requiring the user's signature. Note, the user's acting address will be remapped on L2 to distinguish them from a normal L2 caller.
 
 ### [`ArbitrumContractTx`][ArbitrumContractTx_link]<a name=ArbitrumContractTx></a>
-TODO
+These are like an [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link] but are intended for smart contracts. These use the bridge's unique, sequential nonce rather than requiring the caller specify their own. An L1 contract may still use an [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link], but doing so may necessitate tracking the nonce in L1 state.
 
 ### [`ArbitrumSubmitRetryableTx`][ArbitrumSubmitRetryableTx_link]<a name=ArbitrumSubmitRetryableTx></a>
-TODO
+Represents a retryable submission and may schedule an [`ArbitrumRetryTx`](#ArbitrumRetryTx) if provided enough gas. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
 
 ### [`ArbitrumRetryTx`][ArbitrumRetryTx_link]<a name=ArbitrumRetryTx></a>
-These are scheduled by calls to `redeem` and via retryable auto-redemption. The [retryables documentation] details ... TODO
+These are scheduled by calls to the [`redeem`](Precompiles.md#ArbRetryableTx) precompile method and via retryable auto-redemption. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
 
 ### [`ArbitrumDepositTx`][ArbitrumDepositTx_link]<a name=ArbitrumDepositTx></a>
 Represents a user deposit from L1 to L2. This increases the user's balance by the amount deposited on L1.
@@ -163,20 +163,26 @@ Updates the L1 block number. This tx [is generated][block_generated_link] whenev
 [block_generated_link]: https://github.com/OffchainLabs/nitro/blob/aa55a504d32f71f4ce3a6552822c0791711f8299/arbos/block_processor.go#L150
 [block_first_link]: https://github.com/OffchainLabs/nitro/blob/aa55a504d32f71f4ce3a6552822c0791711f8299/arbos/block_processor.go#L154
 
-## Underlying Transactions and Transaction Run Modes
-Though not all geth messages are derived from a transaction, those that are carry their ... TODO
+## Transaction Run Modes and Underlying Transactions
+A [geth message][geth_message_link] may be processed for various purposes. For example, a message may be used to estimate the gas of a contract call, whereas another may perform the corresponding state transition. Nitro geth denotes the intent behind a message by means of its [`TxRunMode`][TxRunMode_link], [which it sets][set_run_mode_link] before processing it. ArbOS uses this info to make decisions about the tx the message ultimately constructs.
+
+A message [derived from a transaction][AsMessage_link] will carry that transaction in a field accessible via its [`UnderlyingTransaction`][underlying_link] method. While this is related to the way a given message is used, they are not one-to-one. The table below shows the various run modes and whether each could have an underlying transaction.
 
 | Run Mode                                 | Scope                   | Carries an Underlying Tx?                                                    |
 |:-----------------------------------------|:------------------------|:-----------------------------------------------------------------------------|
 | [`MessageCommitMode`][MC0]               | state transition &nbsp; | always                                                                       |
-| [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](#NodeInterface.sol) or when scheduled |
+| [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](Gas.md#NodeInterface.sol) or when scheduled |
 | [`MessageEthcallMode`][MC2]              | eth_calls               | never                                                                        |
 
-[MC0]: todo
-[MC1]: todo
-[MC2]: todo
+[MC0]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L648
+[MC1]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L649
+[MC2]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L650
 
-TODO
+[geth_message_link]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L628
+[TxRunMode_link]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L695
+[set_run_mode_link]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/internal/ethapi/api.go#L911
+[AsMessage_link]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L670
+[underlying_link]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L694
 
 ## Arbitrum Chain Parameters
 Nitro's geth may be configured with the following [l2-specific chain parameters][chain_params_link]. These allow the rollup creator to customize their rollup at genesis.
@@ -210,21 +216,21 @@ Retryables are mostly implemented in [ArbOS](ArbOS.md#retryables). Some modifica
 * Added gasEstimation param to DoCall. When enabled, DoCall will also also executing any retriable activated by the original call. This allows estimating gas to enable retriables.
 
 ### Added accessors
-Added ['UnderlyingTransaction'][UnderlyingTransaction_link] to Message interface
-Added ['GetCurrentTxLogs'](../../go-ethereum/core/state/statedb_arbitrum.go) to StateDB
+Added [`UnderlyingTransaction`][UnderlyingTransaction_link] to Message interface
+Added [`GetCurrentTxLogs`](../../go-ethereum/core/state/statedb_arbitrum.go) to StateDB
 We created the AdvancedPrecompile interface, which executes and charges gas with the same function call. This is used by Arbitrum's precompiles, and also wraps geth's standard precompiles. For more information on Arbitrum precompiles, see [ArbOS doc](ArbOS.md#precompiles).
 
 ### WASM build support
-The WASM arbitrum executable does not support file oprations. We created [fileutil.go](../../go-ethereum/core/rawdb/fileutil.go) to wrap fileutil calls, stubbing them out when building WASM. ['fake_leveldb.go'](../../go-ethereum/ethdb/leveldb/fake_leveldb.go) is a similar WASM-mock for leveldb. These are not required for the WASM block-replayer.
+The WASM arbitrum executable does not support file oprations. We created [`fileutil.go`](../../go-ethereum/core/rawdb/fileutil.go) to wrap fileutil calls, stubbing them out when building WASM. [`fake_leveldb.go`](../../go-ethereum/ethdb/leveldb/fake_leveldb.go) is a similar WASM-mock for leveldb. These are not required for the WASM block-replayer.
 
 ### Types
-Arbitrum introduces a new ['signer'](../../go-ethereum/core/types/arbitrum_signer.go), and multiple new [`transaction types`](../../go-ethereum/core/types/transaction.go).
+Arbitrum introduces a new [`signer`](../../go-ethereum/core/types/arbitrum_signer.go), and multiple new [`transaction types`](../../go-ethereum/core/types/transaction.go).
 
 ### ReorgToOldBlock
-Geth natively only allows reorgs to a fork of the currently-known network. In nitro, reorgs can sometimes be detected before computing the forked block. We added the ['ReorgToOldBlock'](../../go-ethereum/core/blockchain_arbitrum.go) function to support reorging to a block that's an ancestor of current head.
+Geth natively only allows reorgs to a fork of the currently-known network. In nitro, reorgs can sometimes be detected before computing the forked block. We added the [`ReorgToOldBlock`](../../go-ethereum/core/blockchain_arbitrum.go) function to support reorging to a block that's an ancestor of current head.
 
 ### Genesis block creation
-Genesis block in nitro is not necessarily block #0. Nitro supports importing blocks that take place before genesis. We split out ['WriteHeadBlock'][WriteHeadBlock_link] from gensis.Commit and use it to commit non-zero genesis blocks.
+Genesis block in nitro is not necessarily block #0. Nitro supports importing blocks that take place before genesis. We split out [`WriteHeadBlock`][WriteHeadBlock_link] from gensis.Commit and use it to commit non-zero genesis blocks.
 
 [pad_estimates_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/accounts/abi/bind/base.go#L352
 [conservation_link]: https://github.com/OffchainLabs/go-ethereum/blob/0ba62aab54fd7d6f1570a235f4e3a877db9b2bd0/core/state/statedb.go#L42
