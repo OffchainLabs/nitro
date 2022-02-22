@@ -3,6 +3,9 @@ pragma solidity ^0.8.0;
 
 import "../libraries/CryptographyPrimitives.sol";
 
+/// @dev The requested hash preimage at the given offset has not been proven yet
+error NotProven(bytes32 fullHash, uint64 offset);
+
 contract HashProofHelper {
 	struct KeccakState {
 		uint64 offset;
@@ -11,7 +14,12 @@ contract HashProofHelper {
 		uint256 length;
 	}
 
-	mapping(bytes32 => mapping(uint64 => bytes)) public preimageParts;
+	struct PreimagePart {
+		bool proven;
+		bytes part;
+	}
+
+	mapping(bytes32 => mapping(uint64 => PreimagePart)) private preimageParts;
 	mapping(address => KeccakState) public keccakStates;
 
 	event PreimagePartProven(
@@ -33,7 +41,10 @@ contract HashProofHelper {
 			}
 			part = data[offset:(offset + partLength)];
 		}
-		preimageParts[fullHash][offset] = part;
+		preimageParts[fullHash][offset] = PreimagePart({
+			proven: true,
+			part: part
+		});
 		emit PreimagePartProven(
 			fullHash,
 			offset,
@@ -81,7 +92,10 @@ contract HashProofHelper {
 			uint8 b = uint8(state.state[stateIdx] >> ((i % 8) * 8));
 			fullHash |= bytes32(uint256(b) << (248 - (i * 8)));
 		}
-		preimageParts[fullHash][state.offset] = state.part;
+		preimageParts[fullHash][state.offset] = PreimagePart({
+			proven: true,
+			part: state.part
+		});
 		emit PreimagePartProven(
 			fullHash,
 			state.offset,
@@ -131,5 +145,14 @@ contract HashProofHelper {
 
 	function clearSplitProof() external {
 		delete keccakStates[msg.sender];
+	}
+
+	/// Retrieves up to 32 bytes of the preimage of fullHash at the given offset, reverting if it hasn't been proven yet.
+	function getPreimagePart(bytes32 fullHash, uint64 offset) external view returns (bytes memory) {
+		PreimagePart storage part = preimageParts[fullHash][offset];
+		if (!part.proven) {
+			revert NotProven(fullHash, offset);
+		}
+		return part.part;
 	}
 }

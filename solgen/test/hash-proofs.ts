@@ -17,7 +17,7 @@ describe("HashProofHelper", function () {
       const proofTx = await hashProofHelper.proveWithFullPreimage(bytes, offset);
       const receipt = await proofTx.wait();
       const log = hashProofHelper.interface.parseLog(receipt.logs[0]);
-      const provenPart = await hashProofHelper.preimageParts(hash, offset);
+      const provenPart = await hashProofHelper.getPreimagePart(hash, offset);
 
       let dataHex = data.toString(16);
       dataHex = "00".slice(dataHex.length) + dataHex;
@@ -56,7 +56,7 @@ describe("HashProofHelper", function () {
         const receipt = await proofTx.wait();
         if (receipt.logs.length > 0) {
           log = hashProofHelper.interface.parseLog(receipt.logs[0]);
-          provenPart = await hashProofHelper.preimageParts(hash, offset);
+          provenPart = await hashProofHelper.getPreimagePart(hash, offset);
         }
         provenLen = newProvenLen;
       }
