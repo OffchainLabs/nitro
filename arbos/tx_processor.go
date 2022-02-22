@@ -351,8 +351,6 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 
 	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
 	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
-	/*p.evm.StateDB.AddBalance(p.tipRecipient, util.BigMul(p.tipWeiPerGas, gasUsed))     // tip on gas used
-	p.evm.StateDB.AddBalance(p.msg.From(), util.BigMulByUint(p.tipWeiPerGas, gasLeft)) // refund unused tip*/
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
