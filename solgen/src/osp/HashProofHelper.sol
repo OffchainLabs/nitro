@@ -4,12 +4,6 @@ pragma solidity ^0.8.0;
 import "../libraries/CryptographyPrimitives.sol";
 
 contract HashProofHelper {
-	struct PreimagePart {
-		bytes32 fullHash;
-		uint64 offset;
-		bytes part;
-	}
-
 	struct KeccakState {
 		uint64 offset;
 		bytes part;
@@ -17,21 +11,20 @@ contract HashProofHelper {
 		uint256 length;
 	}
 
-	PreimagePart[] public preimageParts;
+	mapping(bytes32 => mapping(uint64 => bytes)) public preimageParts;
 	mapping(address => KeccakState) public keccakStates;
 
 	event PreimagePartProven(
 		bytes32 indexed fullHash,
 		uint64 indexed offset,
-		uint256 indexed proofNumber,
 		bytes part
 	);
 
 	uint256 constant MAX_PART_LENGTH = 32;
 	uint256 constant KECCAK_ROUND_INPUT = 136;
 
-	function proveWithFullPreimage(bytes calldata data, uint64 offset) external returns (uint256 proofNumber) {
-		bytes32 fullHash = keccak256(data);
+	function proveWithFullPreimage(bytes calldata data, uint64 offset) external returns (bytes32 fullHash) {
+		fullHash = keccak256(data);
 		bytes memory part;
 		if (data.length > offset) {
 			uint256 partLength = data.length - offset;
@@ -40,16 +33,10 @@ contract HashProofHelper {
 			}
 			part = data[offset:(offset + partLength)];
 		}
-		proofNumber = preimageParts.length;
-		preimageParts.push(PreimagePart({
-			fullHash: fullHash,
-			offset: offset,
-			part: part
-		}));
+		preimageParts[fullHash][offset] = part;
 		emit PreimagePartProven(
 			fullHash,
 			offset,
-			proofNumber,
 			part
 		);
 	}
@@ -57,7 +44,7 @@ contract HashProofHelper {
 	// Flags: a bitset signaling various things about the proof, ordered from least to most significant bits.
 	//   0th bit: indicates that this data is the final chunk of preimage data.
 	//   1st bit: indicates that the preimage part currently being built should be cleared before this.
-	function proveWithSplitPreimage(bytes calldata data, uint64 offset, uint256 flags) external returns (uint256 proofNumber) {
+	function proveWithSplitPreimage(bytes calldata data, uint64 offset, uint256 flags) external returns (bytes32 fullHash) {
 		bool isFinal = (flags & (1 << 0)) != 0;
 		if ((flags & (1 << 1)) != 0) {
 			delete keccakStates[msg.sender];
@@ -85,9 +72,8 @@ contract HashProofHelper {
 			}
 		}
 		if (!isFinal) {
-			return 0;
+			return bytes32(0);
 		}
-		bytes32 fullHash;
 		for (uint256 i = 0; i < 32; i++) {
 			uint256 stateIdx = i / 8;
 			// work around our weird keccakF function state ordering
@@ -95,19 +81,13 @@ contract HashProofHelper {
 			uint8 b = uint8(state.state[stateIdx] >> ((i % 8) * 8));
 			fullHash |= bytes32(uint256(b) << (248 - (i * 8)));
 		}
-		proofNumber = preimageParts.length;
-		preimageParts.push(PreimagePart({
-			fullHash: fullHash,
-			offset: state.offset,
-			part: state.part
-		}));
-		delete keccakStates[msg.sender];
+		preimageParts[fullHash][state.offset] = state.part;
 		emit PreimagePartProven(
 			fullHash,
 			state.offset,
-			proofNumber,
 			state.part
 		);
+		delete keccakStates[msg.sender];
 	}
 
 	function keccakUpdate(KeccakState storage state, bytes calldata data, bool isFinal) internal {
