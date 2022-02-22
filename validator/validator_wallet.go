@@ -127,7 +127,7 @@ func combineTxes(txes []*types.Transaction) ([][]byte, []common.Address, []*big.
 }
 
 // Not thread safe! Don't call this from multiple threads at the same time.
-func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *BuilderBackend) (*types.Transaction, error) {
+func (v *ValidatorWallet) ExecuteTransactions(ctx context.Context, builder *ValidatorTxBuilder) (*types.Transaction, error) {
 	txes := builder.transactions
 	if len(txes) == 0 {
 		return nil, nil

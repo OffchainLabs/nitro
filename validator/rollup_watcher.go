@@ -7,9 +7,11 @@ package validator
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
@@ -40,11 +42,11 @@ type StakerInfo struct {
 }
 
 type RollupWatcher struct {
+	*rollupgen.RollupUserLogic
 	address      common.Address
 	fromBlock    uint64
 	client       arbutil.L1Interface
 	baseCallOpts bind.CallOpts
-	*rollupgen.RollupUserLogic
 }
 
 func NewRollupWatcher(ctx context.Context, address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
@@ -139,13 +141,16 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}, nil
 }
 
-func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64) ([]*NodeInfo, error) {
+func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
 	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	if node.LatestChildNumber == 0 {
 		return nil, nil
+	}
+	if node.NodeHash != nodeHash {
+		return nil, fmt.Errorf("Got unexpected node hash %v looking for node number %v with expected hash %v (reorg?)", node.NodeHash, nodeNum, nodeHash)
 	}
 	latestChild, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), node.LatestChildNumber)
 	if err != nil {
@@ -155,13 +160,14 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64) 
 		FromBlock: new(big.Int).SetUint64(node.CreatedAtBlock),
 		ToBlock:   new(big.Int).SetUint64(latestChild.CreatedAtBlock),
 		Addresses: []common.Address{r.address},
-		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {node.NodeHash}},
+		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {nodeHash}},
 	}
 	logs, err := r.client.FilterLogs(ctx, query)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
+	lastHash := nodeHash
 	for i, ethLog := range logs {
 		parsedLog, err := r.ParseNodeCreated(ethLog)
 		if err != nil {
@@ -171,18 +177,17 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64) 
 		if i > 0 {
 			lastHashIsSibling[0] = 1
 		}
+		lastHash = crypto.Keccak256Hash(lastHashIsSibling[:], lastHash[:], parsedLog.ExecutionHash[:], parsedLog.AfterInboxBatchAcc[:])
 		infos = append(infos, &NodeInfo{
 			NodeNum:            parsedLog.NodeNum,
 			BlockProposed:      ethLog.BlockNumber,
 			Assertion:          NewAssertionFromSolidity(parsedLog.Assertion),
 			InboxMaxCount:      parsedLog.InboxMaxCount,
 			AfterInboxBatchAcc: parsedLog.AfterInboxBatchAcc,
-			NodeHash:           parsedLog.NodeHash,
+			NodeHash:           lastHash,
 			WasmModuleRoot:     parsedLog.WasmModuleRoot,
 		})
 	}
-	// TODO: If we want to verify consistency here, we can that that the node hash of the last node
-	// found matches latestChild since it encompasses all preceding nodes
 	return infos, nil
 }
 

@@ -35,29 +35,17 @@ contract ValidatorUtils {
         INVALID
     }
 
-    enum NodeConflict {
+    enum NodeConflictType {
         NONE,
         FOUND,
         INDETERMINATE,
         INCOMPLETE
     }
 
-    function stakerInfo(IRollupCore rollup, address stakerAddress)
-        external
-        view
-        returns (
-            bool isStaked,
-            uint64 latestStakedNode,
-            uint256 amountStaked,
-            uint64 currentChallenge
-        )
-    {
-        return (
-            rollup.isStaked(stakerAddress),
-            rollup.latestStakedNode(stakerAddress),
-            rollup.amountStaked(stakerAddress),
-            rollup.currentChallenge(stakerAddress)
-        );
+    struct NodeConflict {
+        NodeConflictType ty;
+        uint64 node1;
+        uint64 node2;
     }
 
     function findStakerConflict(
@@ -68,11 +56,7 @@ contract ValidatorUtils {
     )
         external
         view
-        returns (
-            NodeConflict,
-            uint64,
-            uint64
-        )
+        returns (NodeConflict memory)
     {
         uint64 staker1NodeNum = rollup.latestStakedNode(staker1);
         uint64 staker2NodeNum = rollup.latestStakedNode(staker2);
@@ -91,12 +75,11 @@ contract ValidatorUtils {
         }
     }
 
-    function requireRejectable(IRollupCore rollup) external view returns (bool) {
+    function requireRejectable(IRollupCore rollup) external view {
         IRollupUser(address(rollup)).requireUnresolvedExists();
         uint64 firstUnresolvedNode = rollup.firstUnresolvedNode();
         Node memory node = rollup.getNode(firstUnresolvedNode);
-        bool inOrder = node.prevNum == rollup.latestConfirmed();
-        if (inOrder) {
+        if (node.prevNum == rollup.latestConfirmed()) {
             // Verify the block's deadline has passed
             require(block.number >= node.deadlineBlock, "BEFORE_DEADLINE");
             rollup.getNode(node.prevNum).requirePastChildConfirmDeadline();
@@ -107,7 +90,6 @@ contract ValidatorUtils {
                 "HAS_STAKERS"
             );
         }
-        return inOrder;
     }
 
     function requireConfirmable(IRollupCore rollup) external view {
@@ -154,13 +136,13 @@ contract ValidatorUtils {
         return stakers;
     }
 
-    function latestStaked(IRollupCore rollup, address staker) external view returns (uint64, bytes32) {
-        uint64 node = rollup.latestStakedNode(staker);
-        if (node == 0) {
-            node = rollup.latestConfirmed();
+    function latestStaked(IRollupCore rollup, address staker) external view returns (uint64, Node memory) {
+        uint64 num = rollup.latestStakedNode(staker);
+        if (num == 0) {
+            num = rollup.latestConfirmed();
         }
-        bytes32 acc = rollup.getNode(node).nodeHash;
-        return (node, acc);
+        Node memory node = rollup.getNode(num);
+        return (num, node);
     }
 
     function stakedNodes(IRollupCore rollup, address staker) external view returns (uint64[] memory) {
@@ -187,11 +169,7 @@ contract ValidatorUtils {
     )
         public
         view
-        returns (
-            NodeConflict,
-            uint64,
-            uint64
-        )
+        returns (NodeConflict memory)
     {
         uint64 firstUnresolvedNode = rollup.firstUnresolvedNode();
         uint64 node1Prev = rollup.getNode(node1).prevNum;
@@ -199,13 +177,13 @@ contract ValidatorUtils {
 
         for (uint256 i = 0; i < maxDepth; i++) {
             if (node1 == node2) {
-                return (NodeConflict.NONE, node1, node2);
+                return NodeConflict(NodeConflictType.NONE, node1, node2);
             }
             if (node1Prev == node2Prev) {
-                return (NodeConflict.FOUND, node1, node2);
+                return NodeConflict(NodeConflictType.FOUND, node1, node2);
             }
             if (node1Prev < firstUnresolvedNode && node2Prev < firstUnresolvedNode) {
-                return (NodeConflict.INDETERMINATE, 0, 0);
+                return NodeConflict(NodeConflictType.INDETERMINATE, 0, 0);
             }
             if (node1Prev < node2Prev) {
                 node2 = node2Prev;
@@ -215,7 +193,7 @@ contract ValidatorUtils {
                 node1Prev = rollup.getNode(node1).prevNum;
             }
         }
-        return (NodeConflict.INCOMPLETE, node1, node2);
+        return NodeConflict(NodeConflictType.INCOMPLETE, 0, 0);
     }
 
     function getStakers(

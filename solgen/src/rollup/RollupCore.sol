@@ -63,8 +63,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         uint64 latestStakedNode;
     }
 
-
-
     uint64 private _latestConfirmed;
     uint64 private _firstUnresolvedNode;
     uint64 private _latestNodeCreated;
@@ -180,6 +178,15 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         returns (uint256)
     {
         return _stakerMap[staker].amountStaked;
+    }
+
+    /**
+     * @notice Retrieves stored information about a requested staker
+     * @param staker Staker address to retrieve
+     * @return A structure with information about the requested staker
+     */
+    function getStaker(address staker) external view override returns (Staker memory) {
+        return _stakerMap[staker];
     }
 
     /**
@@ -580,20 +587,27 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState, prevNodeInboxMaxCount) ==
-                    memoryFrame.prevNode.stateHash,
+                RollupLib.stateHash(
+                    assertion.beforeState,
+                    prevNodeInboxMaxCount
+                ) == memoryFrame.prevNode.stateHash,
                 "PREV_STATE_HASH"
             );
 
             // Ensure that the assertion doesn't read past the end of the current inbox
-            uint256 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
+            uint256 afterInboxCount = assertion
+                .afterState
+                .globalState
+                .getInboxPosition();
             require(
-                afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
+                afterInboxCount >=
+                    assertion.beforeState.globalState.getInboxPosition(),
                 "INBOX_BACKWARDS"
             );
+            // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
             if (
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getPositionInMessage() > 0
+                assertion.afterState.globalState.getPositionInMessage() > 0
             ) {
                 // The current inbox message was read
                 afterInboxCount++;
@@ -636,7 +650,10 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
             memoryFrame.node = NodeLib.createNode(
-                RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
+                RollupLib.stateHash(
+                    assertion.afterState,
+                    memoryFrame.currentInboxSize
+                ),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
                     block.number,
@@ -670,6 +687,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             latestNodeCreated(),
             memoryFrame.prevNode.nodeHash,
             newNodeHash,
+            memoryFrame.executionHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
             wasmModuleRoot,

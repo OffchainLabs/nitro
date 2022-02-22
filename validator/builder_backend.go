@@ -17,16 +17,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-type BuilderBackend struct {
+type ValidatorTxBuilder struct {
+	arbutil.L1Interface
 	transactions []*types.Transaction
 	builderAuth  *bind.TransactOpts
 	realSender   common.Address
 	wallet       *ValidatorWallet
-
-	arbutil.L1Interface
 }
 
-func NewBuilderBackend(wallet *ValidatorWallet) (*BuilderBackend, error) {
+func NewValidatorTxBuilder(wallet *ValidatorWallet) (*ValidatorTxBuilder, error) {
 	randKey, err := crypto.GenerateKey()
 	if err != nil {
 		return nil, err
@@ -35,7 +34,7 @@ func NewBuilderBackend(wallet *ValidatorWallet) (*BuilderBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &BuilderBackend{
+	return &ValidatorTxBuilder{
 		builderAuth: fakeAuth,
 		realSender:  wallet.From(),
 		wallet:      wallet,
@@ -43,19 +42,19 @@ func NewBuilderBackend(wallet *ValidatorWallet) (*BuilderBackend, error) {
 	}, nil
 }
 
-func (b *BuilderBackend) BuilderTransactionCount() int {
+func (b *ValidatorTxBuilder) BuildingTransactionCount() int {
 	return len(b.transactions)
 }
 
-func (b *BuilderBackend) ClearTransactions() {
+func (b *ValidatorTxBuilder) ClearTransactions() {
 	b.transactions = nil
 }
 
-func (b *BuilderBackend) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
+func (b *ValidatorTxBuilder) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
 	return 0, nil
 }
 
-func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+func (b *ValidatorTxBuilder) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	b.transactions = append(b.transactions, tx)
 	data, dest, amount, totalAmount := combineTxes(b.transactions)
 	if b.wallet.Address() == nil {
@@ -75,7 +74,7 @@ func (b *BuilderBackend) SendTransaction(ctx context.Context, tx *types.Transact
 	return errors.WithStack(err)
 }
 
-func (b *BuilderBackend) AuthWithAmount(ctx context.Context, amount *big.Int) *bind.TransactOpts {
+func (b *ValidatorTxBuilder) AuthWithAmount(ctx context.Context, amount *big.Int) *bind.TransactOpts {
 	return &bind.TransactOpts{
 		From:     b.builderAuth.From,
 		Nonce:    b.builderAuth.Nonce,
@@ -87,6 +86,6 @@ func (b *BuilderBackend) AuthWithAmount(ctx context.Context, amount *big.Int) *b
 	}
 }
 
-func (b *BuilderBackend) Auth(ctx context.Context) *bind.TransactOpts {
+func (b *ValidatorTxBuilder) Auth(ctx context.Context) *bind.TransactOpts {
 	return b.AuthWithAmount(ctx, big.NewInt(0))
 }
