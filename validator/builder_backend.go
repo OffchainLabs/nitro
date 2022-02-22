@@ -17,6 +17,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ValidatorTxBuilder combines any transactions sent to it via SendTransaction into one batch,
+// which is then sent to the validator wallet.
+// This lets the validator make multiple atomic transactions.
+// This inherits from an eth client so it can be used as an L1Interface,
+// where it transparently intercepts calls to SendTransaction and queues them for the next batch.
 type ValidatorTxBuilder struct {
 	arbutil.L1Interface
 	transactions []*types.Transaction
