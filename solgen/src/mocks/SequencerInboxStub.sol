@@ -13,7 +13,9 @@ contract SequencerInboxStub is SequencerInbox {
         rollup = msg.sender;
         maxTimeVariation = maxTimeVariation_;
         isBatchPoster[sequencer_] = true;
+    }
 
+    function addInitMessage() external {
         (
             bytes32 dataHash,
             TimeBounds memory timeBounds
@@ -32,5 +34,9 @@ contract SequencerInboxStub is SequencerInbox {
             timeBounds,
             BatchDataLocation.NoData
         );
+    }
+
+    function getTimeBounds() internal view override returns (TimeBounds memory bounds) {
+        return bounds;
     }
 }

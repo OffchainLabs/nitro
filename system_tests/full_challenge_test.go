@@ -146,43 +146,27 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 			value++
 		}
 		err := writeTxToBatch(batchWriter, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
-		if err != nil {
-			t.Fatal(err)
-		}
+		Require(t, err)
 	}
 	err := batchWriter.Flush()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	receipt, err := arbutil.EnsureTxSucceeded(ctx, backend, tx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	nodeSeqInbox, err := arbnode.NewSequencerInbox(backend, seqInboxAddr, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	batches, err := nodeSeqInbox.LookupBatchesInRange(ctx, receipt.BlockNumber, receipt.BlockNumber)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	if len(batches) == 0 {
 		t.Fatal("batch not found after AddSequencerL2BatchFromOrigin")
 	}
 	err = l2Node.InboxTracker.AddSequencerBatches(ctx, backend, batches)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	_, err = l2Node.InboxTracker.GetBatchMetadata(0)
-	if err != nil {
-		t.Fatal("failed to get batch metadata after adding batch:", err)
-	}
+	Require(t, err, "failed to get batch metadata after adding batch:")
 }
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
@@ -219,10 +203,10 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
 	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
 	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger")
-	delayedBridge, _, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
-	if err != nil {
-		t.Fatal(err)
-	}
+	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	Require(t, err)
 
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(10000),
@@ -230,48 +214,48 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		DelaySeconds:  big.NewInt(10000),
 		FutureSeconds: big.NewInt(10000),
 	}
-	asserterSeqInboxAddr, _, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(
+	asserterSeqInboxAddr, tx, asserterSeqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&deployerTxOpts,
 		l1Backend,
 		delayedBridge,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	challengerSeqInboxAddr, _, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	Require(t, err)
+	tx, err = asserterSeqInbox.AddInitMessage(&deployerTxOpts)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	Require(t, err)
+	challengerSeqInboxAddr, tx, challengerSeqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&deployerTxOpts,
 		l1Backend,
 		delayedBridge,
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	Require(t, err)
+	tx, err = challengerSeqInbox.AddInitMessage(&deployerTxOpts)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(context.Background(), l1Backend, tx)
+	Require(t, err)
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain := createL2BlockChain(t, nil)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, &conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	err = asserterL2.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain := createL2BlockChain(t, nil)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, &conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 	err = challengerL2.Start(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))

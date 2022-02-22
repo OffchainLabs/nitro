@@ -15,7 +15,7 @@ async function sendTestMessages() {
     const path = msgRoot + "msg" + String(msgNum) + ".bin";
     const buf = fs.readFileSync(path);
     await inbox.sendL2MessageFromOrigin(buf, gasOpts);
-    await seqInbox.addSequencerL2BatchFromOrigin(1 + msgNum, buf, 0, ethers.constants.AddressZero, gasOpts);
+    await seqInbox.addSequencerL2BatchFromOrigin(msgNum, buf, 0, ethers.constants.AddressZero, gasOpts);
   }
 }
 

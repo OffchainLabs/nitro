@@ -45,7 +45,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         maxTimeVariation = maxTimeVariation_;
     }
 
-    function getTimeBounds() internal view returns (TimeBounds memory) {
+    function getTimeBounds() internal view virtual returns (TimeBounds memory) {
         TimeBounds memory bounds;
         if (block.timestamp > maxTimeVariation.delaySeconds) {
             bounds.minTimestamp = uint64(block.timestamp - maxTimeVariation.delaySeconds);
