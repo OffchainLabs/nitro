@@ -75,8 +75,6 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 	if checkInterval > time.Second {
 		checkInterval = time.Second
 	}
-	timer := time.NewTimer(checkInterval)
-	defer timer.Stop()
 	for {
 		receipt, err := client.TransactionReceipt(ctx, txhash)
 		if err == nil && receipt != nil {
@@ -93,13 +91,11 @@ func WaitForTx(ctxinput context.Context, client L1Interface, txhash common.Hash,
 				return receipt, nil
 			}
 		}
-		if !timer.Stop() {
-			<-timer.C
-		}
-		timer.Reset(checkInterval)
+		// Note: time.After won't free the timer until after it expires.
+		// However, that's fine here, as checkInterval is at most a second.
 		select {
 		case <-chanHead:
-		case <-timer.C:
+		case <-time.After(checkInterval):
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
