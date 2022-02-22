@@ -51,7 +51,7 @@ const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {
   }
 }
 
-describe('SequencerInbox', async () => {
+describe('SequencerInboxForceInclude', async () => {
   const findMatchingLogs = <TInterface extends Interface, TEvent extends Event>(
     receipt: TransactionReceipt,
     iFace: TInterface,
@@ -88,11 +88,11 @@ describe('SequencerInbox', async () => {
     const sendUnsignedTx = await inbox
       .connect(sender)
       .sendUnsignedTransaction(l2Gas, l2GasPrice, nonce, destAddr, amount, data)
+    const sendUnsignedTxReceipt = await sendUnsignedTx.wait()
 
     const countAfter = (await bridge.functions.messageCount())[0].toNumber()
     expect(countAfter, 'Unexpected inbox count').to.eq(countBefore + 1)
 
-    const sendUnsignedTxReceipt = await sendUnsignedTx.wait()
     const senderAddr = await sender.getAddress()
 
     const l1GasPrice = sendUnsignedTxReceipt.effectiveGasPrice.toNumber()

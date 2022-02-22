@@ -28,4 +28,4 @@ jobs:
           cd solgen
           yarn install
           yarn build
-          yarn hardhat --network hardhat test test/hardhat/*.spec.ts
+          yarn hardhat --network hardhat test test/contract/*.spec.ts
