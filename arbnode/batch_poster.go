@@ -64,7 +64,7 @@ func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *Transacti
 		streamer:        streamer,
 		config:          config,
 		inboxContract:   inboxContract,
-		sequencesPosted: 0,
+		sequencesPosted: 1,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
 	}, nil

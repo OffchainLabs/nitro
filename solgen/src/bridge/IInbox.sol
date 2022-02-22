@@ -3,54 +3,64 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
 import "./IMessageProvider.sol";
+import { AlreadyInit, NotOrigin, DataTooLarge } from "../libraries/Error.sol";
+
+/// @dev The contract is paused, so cannot be paused
+error AlreadyPaused();
+
+/// @dev The contract is unpaused, so cannot be unpaused
+error AlreadyUnpaused();
+
+/// @dev The contract is paused
+error Paused();
 
 interface IInbox is IMessageProvider {
     function sendL2Message(bytes calldata messageData) external returns (uint256);
 
     function sendUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes calldata data
     ) external returns (uint256);
 
     function sendContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
-        uint256 amount,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
         bytes calldata data
     ) external returns (uint256);
 
     function sendL1FundedUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
+        address to,
         bytes calldata data
     ) external payable returns (uint256);
 
     function sendL1FundedContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
         bytes calldata data
     ) external payable returns (uint256);
 
     function createRetryableTicket(
-        address destAddr,
+        address to,
         uint256 arbTxCallValue,
         uint256 maxSubmissionCost,
         address submissionRefundAddress,
         address valueRefundAddress,
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         bytes calldata data
     ) external payable returns (uint256);
 

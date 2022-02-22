@@ -1,15 +1,25 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../state/Values.sol";
-import "../state/Machines.sol";
-import "../state/Modules.sol";
+import "../state/Value.sol";
+import "../state/Machine.sol";
+import "../state/Module.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProverMath is IOneStepProver {
-	function executeEqz(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
-		Value memory v = ValueStacks.pop(mach.valueStack);
+	using ValueLib for Value;
+    using ValueStackLib for ValueStack;
+
+	function executeEqz(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
+		Value memory v = mach.valueStack.pop();
+		if (inst.opcode == Instructions.I32_EQZ) {
+			require(v.valueType == ValueType.I32, "NOT_I32");
+		} else if (inst.opcode == Instructions.I64_EQZ) {
+			require(v.valueType == ValueType.I64, "NOT_I64");
+		} else {
+			revert("BAD_EQZ");
+		}
 
 		uint32 output;
 		if (v.contents == 0) {
@@ -18,7 +28,7 @@ contract OneStepProverMath is IOneStepProver {
 			output = 0;
 		}
 
-		ValueStacks.push(mach.valueStack, Values.newI32(output));
+		mach.valueStack.push(ValueLib.newI32(output));
 	}
 
 	function signExtend(uint32 a) internal pure returns (uint64) {
@@ -55,8 +65,8 @@ contract OneStepProverMath is IOneStepProver {
 	}
 
 	function executeI32RelOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
-		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 b = mach.valueStack.pop().assumeI32();
+		uint32 a = mach.valueStack.pop().assumeI32();
 
 		uint16 relop = inst.opcode - Instructions.I32_RELOP_BASE;
 		uint64 a64;
@@ -73,18 +83,18 @@ contract OneStepProverMath is IOneStepProver {
 
 		bool res = I64RelOp(a64, b64, relop);
 
-		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+		mach.valueStack.push(ValueLib.newBoolean(res));
 	}
 
 	function executeI64RelOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
-		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 b = mach.valueStack.pop().assumeI64();
+		uint64 a = mach.valueStack.pop().assumeI64();
 
 		uint16 relop = inst.opcode - Instructions.I64_RELOP_BASE;
 
 		bool res = I64RelOp(a, b, relop);
 
-		ValueStacks.push(mach.valueStack, Values.newBoolean(res));
+		mach.valueStack.push(ValueLib.newBoolean(res));
 	}
 
 
@@ -118,23 +128,23 @@ contract OneStepProverMath is IOneStepProver {
 	}
 
 	function executeI32UnOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 a = mach.valueStack.pop().assumeI32();
 
 		uint16 unop = inst.opcode - Instructions.I32_UNOP_BASE;
 
 		uint32 res = genericIUnOp(a, unop, 32);
 
-		ValueStacks.push(mach.valueStack, Values.newI32(res));
+		mach.valueStack.push(ValueLib.newI32(res));
 	}
 
 	function executeI64UnOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 a = mach.valueStack.pop().assumeI64();
 
 		uint16 unop = inst.opcode - Instructions.I64_UNOP_BASE;
 
 		uint64 res = uint64(genericIUnOp(a, unop, 64));
 
-		ValueStacks.push(mach.valueStack, Values.newI64(res));
+		mach.valueStack.push(ValueLib.newI64(res));
 	}
 
 	function rotl32(uint32 a, uint32 b) internal pure returns (uint32) {
@@ -196,8 +206,8 @@ contract OneStepProverMath is IOneStepProver {
 	}
 
 	function executeI32BinOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint32 b = Values.assumeI32(ValueStacks.pop(mach.valueStack));
-		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 b = mach.valueStack.pop().assumeI32();
+		uint32 a = mach.valueStack.pop().assumeI32();
 		uint32 res;
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I32_ADD;
@@ -237,12 +247,12 @@ contract OneStepProverMath is IOneStepProver {
 			}
 		}
 
-		ValueStacks.push(mach.valueStack, Values.newI32(res));
+		mach.valueStack.push(ValueLib.newI32(res));
 	}
 
 	function executeI64BinOp(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint64 b = Values.assumeI64(ValueStacks.pop(mach.valueStack));
-		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 b = mach.valueStack.pop().assumeI64();
+		uint64 a = mach.valueStack.pop().assumeI64();
 		uint64 res;
 
 		uint16 opcodeOffset = inst.opcode - Instructions.I64_ADD;
@@ -282,19 +292,19 @@ contract OneStepProverMath is IOneStepProver {
 			}
 		}
 
-		ValueStacks.push(mach.valueStack, Values.newI64(res));
+		mach.valueStack.push(ValueLib.newI64(res));
 	}
 
 	function executeI32WrapI64(Machine memory mach, Module memory, Instruction calldata, bytes calldata) internal pure {
-		uint64 a = Values.assumeI64(ValueStacks.pop(mach.valueStack));
+		uint64 a = mach.valueStack.pop().assumeI64();
 
 		uint32 a32 = uint32(a);
 
-		ValueStacks.push(mach.valueStack, Values.newI32(a32));
+		mach.valueStack.push(ValueLib.newI32(a32));
 	}
 
 	function executeI64ExtendI32(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
-		uint32 a = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+		uint32 a = mach.valueStack.pop().assumeI32();
 
 		uint64 a64;
 
@@ -304,7 +314,7 @@ contract OneStepProverMath is IOneStepProver {
 			a64 = uint64(a);
 		}
 
-		ValueStacks.push(mach.valueStack, Values.newI64(a64));
+		mach.valueStack.push(ValueLib.newI64(a64));
 	}
 
 	function executeExtendSameType(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
@@ -334,7 +344,7 @@ contract OneStepProverMath is IOneStepProver {
 		} else {
 			resultMask = (1 << 64) - 1;
 		}
-		Value memory val = ValueStacks.pop(mach.valueStack);
+		Value memory val = mach.valueStack.pop();
 		require(val.valueType == ty, "BAD_EXTEND_SAME_TYPE_TYPE");
 		uint256 sourceMask = (1 << sourceBits) - 1;
 		val.contents &= sourceMask;
@@ -342,7 +352,7 @@ contract OneStepProverMath is IOneStepProver {
 			// Extend sign flag
 			val.contents |= resultMask & ~sourceMask;
 		}
-		ValueStacks.push(mach.valueStack, val);
+		mach.valueStack.push(val);
 	}
 
 	function executeReinterpret(Machine memory mach, Module memory, Instruction calldata inst, bytes calldata) internal pure {
@@ -363,10 +373,10 @@ contract OneStepProverMath is IOneStepProver {
 		} else {
 			revert("INVALID_REINTERPRET");
 		}
-		Value memory val = ValueStacks.pop(mach.valueStack);
+		Value memory val = mach.valueStack.pop();
 		require(val.valueType == sourceTy, "INVALID_REINTERPRET_TYPE");
 		val.valueType = destTy;
-		ValueStacks.push(mach.valueStack, val);
+		mach.valueStack.push(val);
 	}
 
 	function executeOneStep(ExecutionContext calldata, Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof) override pure external returns (Machine memory mach, Module memory mod) {

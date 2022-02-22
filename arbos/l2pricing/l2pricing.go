@@ -43,9 +43,9 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(smallGasPoolOffset, InitialSmallGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
 	_ = sto.SetUint64ByUint64(smallGasPoolSecondsOffset, InitialSmallGasPoolSeconds)
-	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialGasPriceWei)
+	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialBaseFeeWei)
 	_ = sto.SetUint64ByUint64(minGasPriceWeiOffset, InitialMinimumGasPriceWei)
-	_ = sto.SetUint64ByUint64(maxGasPriceWeiOffset, 2*InitialGasPriceWei)
+	_ = sto.SetUint64ByUint64(maxGasPriceWeiOffset, 2*InitialBaseFeeWei)
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	return sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
 }

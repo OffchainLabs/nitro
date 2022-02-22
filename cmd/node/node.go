@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,18 +28,18 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
 func main() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
-	log.Info("running node")
+
+	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
 	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
 	l1conn := flag.String("l1conn", "", "l1 connection (required if l1role != none)")
-	l1keyfile := flag.String("l1keyfile", "", "l1 private key file (required if l1role == sequencer)")
+	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
+	seqAccount := flag.String("l1SeqAccount", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
@@ -46,8 +47,11 @@ func main() {
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
+	importFile := flag.String("importfile", "", "path for json data to import")
+	devInit := flag.Bool("dev", false, "init with dev data (1 account with balance) instead of file import")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
+
 	httphost := flag.String("httphost", "localhost", "http host")
 	httpPort := flag.Int("httpport", 7545, "http port")
 	httpvhosts := flag.String("httpvhosts", "localhost", "list of virtual hosts to accept requests from")
@@ -69,11 +73,15 @@ func main() {
 
 	flag.Parse()
 
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(*loglevel))
+	log.Root().SetHandler(glogger)
+
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
-	log.Info("Running with", "role", *l1role)
+	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *l1role == "none" {
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
@@ -103,16 +111,7 @@ func main() {
 			panic(err)
 		}
 		if nodeConf.BatchPoster {
-			if *l1keyfile == "" {
-				flag.Usage()
-				panic("sequencer requires l1 keyfile")
-			}
-			fileReader, err := os.Open(*l1keyfile)
-			if err != nil {
-				flag.Usage()
-				panic("sequencer without valid l1priv key")
-			}
-			l1TransactionOpts, err = bind.NewTransactorWithChainID(fileReader, *l1passphrase, l1ChainId)
+			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *seqAccount, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
 			}
@@ -123,7 +122,12 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, time.Minute*5)
+			var wasmModuleRoot common.Hash
+			if nodeConf.BlockValidator {
+				// TODO actually figure out the wasmModuleRoot
+				panic("deploy as validator not yet supported")
+			}
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, wasmModuleRoot, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
@@ -213,26 +217,65 @@ func main() {
 		Timeout: *feedInputTimeout,
 		URL:     *feedInputUrl,
 	}
+
+	var initDataReader statetransfer.InitDataReader = nil
+
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	initData := statetransfer.ArbosInitializationInfo{
-		Accounts: []statetransfer.AccountInitializationInfo{
-			{
-				Addr:       devAddr,
-				EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-				Nonce:      0,
+	if *importFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(*importFile)
+		if err != nil {
+			panic(err)
+		}
+	} else if *devInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       devAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
+				},
 			},
-		},
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, 0, params.ArbitrumOneChainConfig())
-	if err != nil {
-		panic(err)
+	var l2BlockChain *core.BlockChain
+	if initDataReader != nil {
+		blockReader, err := initDataReader.GetStoredBlockReader()
+		if err != nil {
+			panic(err)
+		}
+		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
+			panic(err)
+		}
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, params.ArbitrumOneChainConfig())
+		if err != nil {
+			panic(err)
+		}
+
+	} else {
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if blocksInDb == 0 {
+			panic("No initialization mode supplied, no blocks in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), params.ArbitrumOneChainConfig())
+		if err != nil {
+			panic(err)
+		}
 	}
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts)
+
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

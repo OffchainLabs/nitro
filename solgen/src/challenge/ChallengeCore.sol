@@ -2,10 +2,9 @@
 pragma solidity ^0.8.0;
 
 import "./ChallengeLib.sol";
-import "./Cloneable.sol";
 import "./IChallengeResultReceiver.sol";
 
-abstract contract ChallengeCore is Cloneable {
+abstract contract ChallengeCore {
     event InitiatedChallenge();
 
     enum Turn {
@@ -177,12 +176,12 @@ abstract contract ChallengeCore is Cloneable {
     }
 
     function _asserterWin() private {
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(asserter, challenger);
-        safeSelfDestruct(payable(0));
     }
 
     function _challengerWin() private {
+        turn = Turn.NO_CHALLENGE;
         resultReceiver.completeChallenge(challenger, asserter);
-        safeSelfDestruct(payable(0));
     }
 }

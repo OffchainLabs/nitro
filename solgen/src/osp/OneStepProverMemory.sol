@@ -1,12 +1,17 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../state/Values.sol";
-import "../state/Machines.sol";
+import "../state/Value.sol";
+import "../state/Machine.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProverMemory is IOneStepProver {
+    using MerkleProofLib for MerkleProof;
+    using ModuleMemoryLib for ModuleMemory;
+	using ValueLib for Value;
+    using ValueStackLib for ValueStack;
+
     uint256 constant LEAF_SIZE = 32;
     uint64 constant PAGE_SIZE = 65536;
 
@@ -106,7 +111,7 @@ contract OneStepProverMemory is IOneStepProver {
 
         // Neither of these can overflow as they're computed with much less than 256 bit integers.
         uint256 startIdx = inst.argumentData +
-            ValueStacks.pop(mach.valueStack).contents;
+            mach.valueStack.pop().assumeI32();
         if (startIdx + readBytes > mod.moduleMemory.size) {
             mach.status = MachineStatus.ERRORED;
             return;
@@ -120,7 +125,8 @@ contract OneStepProverMemory is IOneStepProver {
             uint256 idx = startIdx + i;
             uint256 leafIdx = idx / LEAF_SIZE;
             if (leafIdx != lastProvedLeafIdx) {
-                (lastProvedLeafContents, proofOffset, ) = ModuleMemories
+                // This hits the stack size if we phrase it as mod.moduleMemory.proveLeaf(...)
+                (lastProvedLeafContents, proofOffset, ) = ModuleMemoryLib
                     .proveLeaf(mod.moduleMemory, leafIdx, proof, proofOffset);
                 lastProvedLeafIdx = leafIdx;
             }
@@ -147,8 +153,7 @@ contract OneStepProverMemory is IOneStepProver {
             }
         }
 
-        ValueStacks.push(
-            mach.valueStack,
+        mach.valueStack.push(
             Value({valueType: ty, contents: readValue})
         );
     }
@@ -194,7 +199,7 @@ contract OneStepProverMemory is IOneStepProver {
                 revert("INVALID_MEMORY_STORE_OPCODE");
             }
 
-            Value memory writingVal = ValueStacks.pop(mach.valueStack);
+            Value memory writingVal = mach.valueStack.pop();
             require(writingVal.valueType == ty, "BAD_STORE_TYPE");
             toWrite = uint64(writingVal.contents);
             if (writeBytes < 8) {
@@ -204,7 +209,7 @@ contract OneStepProverMemory is IOneStepProver {
 
         // Neither of these can overflow as they're computed with much less than 256 bit integers.
         uint256 startIdx = inst.argumentData +
-            ValueStacks.pop(mach.valueStack).contents;
+            mach.valueStack.pop().assumeI32();
         if (startIdx + writeBytes > mod.moduleMemory.size) {
             mach.status = MachineStatus.ERRORED;
             return;
@@ -220,18 +225,18 @@ contract OneStepProverMemory is IOneStepProver {
             if (leafIdx != lastProvedLeafIdx) {
                 if (lastProvedLeafIdx != ~uint256(0)) {
                     // Apply the last leaf update
-                    mod.moduleMemory.merkleRoot = MerkleProofs
+                    mod.moduleMemory.merkleRoot = lastProvedMerkle
                         .computeRootFromMemory(
-                            lastProvedMerkle,
                             lastProvedLeafIdx,
                             lastProvedLeafContents
                         );
                 }
+                // This hits the stack size if we phrase it as mod.moduleMemory.proveLeaf(...)
                 (
                     lastProvedLeafContents,
                     proofOffset,
                     lastProvedMerkle
-                ) = ModuleMemories.proveLeaf(
+                ) = ModuleMemoryLib.proveLeaf(
                     mod.moduleMemory,
                     leafIdx,
                     proof,
@@ -247,46 +252,60 @@ contract OneStepProverMemory is IOneStepProver {
             );
             toWrite >>= 8;
         }
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            lastProvedMerkle,
+        mod.moduleMemory.merkleRoot = lastProvedMerkle.computeRootFromMemory(
             lastProvedLeafIdx,
             lastProvedLeafContents
         );
     }
 
-    function executeMemorySize(Machine memory mach, Module memory mod, Instruction calldata, bytes calldata) internal pure {
+    function executeMemorySize(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
         uint32 pages = uint32(mod.moduleMemory.size / PAGE_SIZE);
-        ValueStacks.push(mach.valueStack, Values.newI32(pages));
+        mach.valueStack.push(ValueLib.newI32(pages));
     }
 
-    function executeMemoryGrow(Machine memory mach, Module memory mod, Instruction calldata, bytes calldata) internal pure {
+    function executeMemoryGrow(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
         uint32 oldPages = uint32(mod.moduleMemory.size / PAGE_SIZE);
-        uint32 growingPages = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+        uint32 growingPages = mach.valueStack.pop().assumeI32();
         // Safe as the input integers are too small to overflow a uint256
-        uint256 newSize = (uint256(oldPages) + uint256(growingPages)) * PAGE_SIZE;
+        uint256 newSize = (uint256(oldPages) + uint256(growingPages)) *
+            PAGE_SIZE;
         // Note: we require the size remain *below* 2^32, meaning the actual limit is 2^32-PAGE_SIZE
         if (newSize < (1 << 32)) {
             mod.moduleMemory.size = uint64(newSize);
-            ValueStacks.push(mach.valueStack, Values.newI32(oldPages));
+            mach.valueStack.push(ValueLib.newI32(oldPages));
         } else {
-            ValueStacks.push(mach.valueStack, Values.newI32(~uint32(0)));
+            mach.valueStack.push(ValueLib.newI32(~uint32(0)));
         }
     }
 
-    function executeOneStep(ExecutionContext calldata, Machine calldata startMach, Module calldata startMod, Instruction calldata inst, bytes calldata proof)
-        external
-        pure
-        override
-        returns (Machine memory mach, Module memory mod)
-    {
+    function executeOneStep(
+        ExecutionContext calldata,
+        Machine calldata startMach,
+        Module calldata startMod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) external pure override returns (Machine memory mach, Module memory mod) {
         mach = startMach;
         mod = startMod;
 
         uint16 opcode = inst.opcode;
 
-        function(Machine memory, Module memory, Instruction calldata, bytes calldata)
-            internal
-            pure impl;
+        function(
+            Machine memory,
+            Module memory,
+            Instruction calldata,
+            bytes calldata
+        ) internal pure impl;
         if (
             opcode >= Instructions.I32_LOAD &&
             opcode <= Instructions.I64_LOAD32_U

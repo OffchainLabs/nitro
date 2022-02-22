@@ -1,8 +1,8 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "../state/Values.sol";
-import "../state/Machines.sol";
+import "../state/Value.sol";
+import "../state/Machine.sol";
 import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 import "../bridge/Messages.sol";
@@ -10,16 +10,14 @@ import "../bridge/IBridge.sol";
 import "../bridge/ISequencerInbox.sol";
 
 contract OneStepProverHostIo is IOneStepProver {
+    using GlobalStateLib for GlobalState;
+    using MerkleProofLib for MerkleProof;
+    using ModuleMemoryLib for ModuleMemory;
+	using ValueLib for Value;
+    using ValueStackLib for ValueStack;
+
     uint256 constant LEAF_SIZE = 32;
     uint256 constant INBOX_NUM = 2;
-
-    ISequencerInbox seqInbox;
-    IBridge delayedInbox;
-
-    constructor(ISequencerInbox _seqInbox, IBridge _delayedInbox) {
-        seqInbox = _seqInbox;
-        delayedInbox = _delayedInbox;
-    }
 
     function setLeafByte(
         bytes32 oldLeaf,
@@ -42,10 +40,10 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata inst,
         bytes calldata proof
     ) internal pure {
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
-        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+        uint256 ptr = mach.valueStack.pop().assumeI32();
+        uint32 idx = mach.valueStack.pop().assumeI32();
 
-        if (idx >= GlobalStates.BYTES32_VALS_NUM) {
+        if (idx >= GlobalStateLib.BYTES32_VALS_NUM) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
@@ -58,12 +56,10 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 startLeafContents;
         MerkleProof memory merkleProof;
-        (startLeafContents, proofOffset, merkleProof) = ModuleMemories
-            .proveLeaf(mod.moduleMemory, leafIdx, proof, proofOffset);
+        (startLeafContents, proofOffset, merkleProof) = mod.moduleMemory.proveLeaf(leafIdx, proof, proofOffset);
 
         if (inst.opcode == Instructions.GET_GLOBAL_STATE_BYTES32) {
-            mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-                merkleProof,
+            mod.moduleMemory.merkleRoot = merkleProof.computeRootFromMemory(
                 leafIdx,
                 state.bytes32_vals[idx]
             );
@@ -78,24 +74,24 @@ contract OneStepProverHostIo is IOneStepProver {
         internal
         pure
     {
-        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+        uint32 idx = mach.valueStack.pop().assumeI32();
 
-        if (idx >= GlobalStates.U64_VALS_NUM) {
+        if (idx >= GlobalStateLib.U64_VALS_NUM) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
 
-        ValueStacks.push(mach.valueStack, Values.newI64(state.u64_vals[idx]));
+        mach.valueStack.push(ValueLib.newI64(state.u64_vals[idx]));
     }
 
     function executeSetU64(Machine memory mach, GlobalState memory state)
         internal
         pure
     {
-        uint64 val = Values.assumeI64(ValueStacks.pop(mach.valueStack));
-        uint32 idx = Values.assumeI32(ValueStacks.pop(mach.valueStack));
+        uint64 val = mach.valueStack.pop().assumeI64();
+        uint32 idx = mach.valueStack.pop().assumeI32();
 
-        if (idx >= GlobalStates.U64_VALS_NUM) {
+        if (idx >= GlobalStateLib.U64_VALS_NUM) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
@@ -109,8 +105,8 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata,
         bytes calldata proof
     ) internal pure {
-        uint256 preimageOffset = ValueStacks.pop(mach.valueStack).contents;
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
+        uint256 preimageOffset = mach.valueStack.pop().assumeI32();
+        uint256 ptr = mach.valueStack.pop().assumeI32();
         if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.status = MachineStatus.ERRORED;
             return;
@@ -120,8 +116,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 leafContents;
         MerkleProof memory merkleProof;
-            (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-                mod.moduleMemory,
+            (leafContents, proofOffset, merkleProof) = mod.moduleMemory.proveLeaf(
                 leafIdx,
                 proof,
                 proofOffset
@@ -152,16 +147,15 @@ contract OneStepProverHostIo is IOneStepProver {
             );
         }
 
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            merkleProof,
+        mod.moduleMemory.merkleRoot = merkleProof.computeRootFromMemory(
             leafIdx,
             leafContents
         );
 
-        ValueStacks.push(mach.valueStack, Values.newI32(uint32(extracted.length)));
+        mach.valueStack.push(ValueLib.newI32(uint32(extracted.length)));
     }
 
-    function validateSequencerInbox(uint64 msgIndex, bytes calldata message)
+    function validateSequencerInbox(ExecutionContext calldata execCtx, uint64 msgIndex, bytes calldata message)
         internal
         view
         returns (bool)
@@ -174,36 +168,30 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes32 beforeAcc;
         bytes32 delayedAcc;
 
-        if (msgIndex > seqInbox.batchCount()) {
-            return false;
-        }
         if (msgIndex > 0) {
-            beforeAcc = seqInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.sequencerInbox.inboxAccs(msgIndex - 1);
         }
         if (afterDelayedMsg > 0) {
-            delayedAcc = delayedInbox.inboxAccs(afterDelayedMsg - 1);
+            delayedAcc = execCtx.delayedBridge.inboxAccs(afterDelayedMsg - 1);
         }
         bytes32 acc = keccak256(
             abi.encodePacked(beforeAcc, messageHash, delayedAcc)
         );
-        require(acc == seqInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
+        require(acc == execCtx.sequencerInbox.inboxAccs(msgIndex), "BAD_SEQINBOX_MESSAGE");
         return true;
     }
 
-    function validateDelayedInbox(uint64 msgIndex, bytes calldata message)
+    function validateDelayedInbox(ExecutionContext calldata execCtx, uint64 msgIndex, bytes calldata message)
         internal
         view
         returns (bool)
     {
-        if (msgIndex > delayedInbox.messageCount()) {
-            return false;
-        }
         require(message.length >= 161, "BAD_DELAYED_PROOF");
 
         bytes32 beforeAcc;
 
         if (msgIndex > 0) {
-            beforeAcc = delayedInbox.inboxAccs(msgIndex - 1);
+            beforeAcc = execCtx.delayedBridge.inboxAccs(msgIndex - 1);
         }
 
         bytes32 messageDataHash = keccak256(message[161:]);
@@ -219,9 +207,9 @@ contract OneStepProverHostIo is IOneStepProver {
                 messageDataHash
             )
         );
-        bytes32 acc = Messages.addMessageToInbox(beforeAcc, messageHash);
+        bytes32 acc = Messages.accumulateInboxMessage(beforeAcc, messageHash);
 
-        require(acc == delayedInbox.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
+        require(acc == execCtx.delayedBridge.inboxAccs(msgIndex), "BAD_DELAYED_MESSAGE");
         return true;
     }
 
@@ -232,9 +220,9 @@ contract OneStepProverHostIo is IOneStepProver {
         Instruction calldata inst,
         bytes calldata proof
     ) internal view {
-        uint256 messageOffset = ValueStacks.pop(mach.valueStack).contents;
-        uint256 ptr = ValueStacks.pop(mach.valueStack).contents;
-        uint256 msgIndex = ValueStacks.pop(mach.valueStack).contents;
+        uint256 messageOffset = mach.valueStack.pop().assumeI32();
+        uint256 ptr = mach.valueStack.pop().assumeI32();
+        uint256 msgIndex = mach.valueStack.pop().assumeI64();
         if (inst.argumentData == Instructions.INBOX_INDEX_SEQUENCER && msgIndex >= execCtx.maxInboxMessagesRead) {
             mach.status = MachineStatus.TOO_FAR;
             return;
@@ -249,8 +237,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         bytes32 leafContents;
         MerkleProof memory merkleProof;
-        (leafContents, proofOffset, merkleProof) = ModuleMemories.proveLeaf(
-            mod.moduleMemory,
+        (leafContents, proofOffset, merkleProof) = mod.moduleMemory.proveLeaf(
             leafIdx,
             proof,
             proofOffset
@@ -261,7 +248,7 @@ contract OneStepProverHostIo is IOneStepProver {
             require(proof[proofOffset] == 0, "UNKNOWN_INBOX_PROOF");
             proofOffset++;
 
-            function(uint64, bytes calldata)
+            function(ExecutionContext calldata, uint64, bytes calldata)
                 internal
                 view
                 returns (bool) inboxValidate;
@@ -275,7 +262,7 @@ contract OneStepProverHostIo is IOneStepProver {
                 mach.status = MachineStatus.ERRORED;
                 return;
             }
-            success = inboxValidate(uint64(msgIndex), proof[proofOffset:]);
+            success = inboxValidate(execCtx, uint64(msgIndex), proof[proofOffset:]);
             if (!success) {
                 mach.status = MachineStatus.ERRORED;
                 return;
@@ -294,12 +281,11 @@ contract OneStepProverHostIo is IOneStepProver {
             );
         }
 
-        mod.moduleMemory.merkleRoot = MerkleProofs.computeRootFromMemory(
-            merkleProof,
+        mod.moduleMemory.merkleRoot = merkleProof.computeRootFromMemory(
             leafIdx,
             leafContents
         );
-        ValueStacks.push(mach.valueStack, Values.newI32(i));
+        mach.valueStack.push(ValueLib.newI32(i));
     }
 
     function executeHaltAndSetFinished(
@@ -325,7 +311,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint256 proofOffset = 0;
         (state, proofOffset) = Deserialize.globalState(proof, proofOffset);
         require(
-            GlobalStates.hash(state) == mach.globalStateHash,
+            state.hash() == mach.globalStateHash,
             "BAD_GLOBAL_STATE"
         );
 
@@ -342,7 +328,7 @@ contract OneStepProverHostIo is IOneStepProver {
             revert("INVALID_GLOBALSTATE_OPCODE");
         }
 
-        mach.globalStateHash = GlobalStates.hash(state);
+        mach.globalStateHash = state.hash();
     }
 
     function executeOneStep(

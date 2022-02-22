@@ -40,7 +40,7 @@ type L1IncomingMessageHeader struct {
 	BlockNumber common.Hash    `json:"blockNumber"`
 	Timestamp   common.Hash    `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
-	GasPriceL1  common.Hash    `json:"gasPriceL1"`
+	BaseFeeL1   common.Hash    `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -90,7 +90,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.GasPriceL1, wr); err != nil {
+	if err := util.HashToWriter(msg.Header.BaseFeeL1, wr); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +112,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		header.BlockNumber == other.BlockNumber &&
 		header.Timestamp == other.Timestamp &&
 		header.RequestId == other.RequestId &&
-		header.GasPriceL1 == other.GasPriceL1
+		header.BaseFeeL1 == other.BaseFeeL1
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -142,7 +142,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	gasPriceL1, err := util.HashFromReader(rd)
+	baseFeeL1, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			blockNumber,
 			timestamp,
 			requestId,
-			gasPriceL1,
+			baseFeeL1,
 		},
 		data,
 	}, nil
@@ -309,7 +309,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		return nil, err
 	}
 
-	gasPrice, err := util.HashFromReader(rd)
+	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -327,16 +327,16 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		nonce = nonceAsBig.Uint64()
 	}
 
-	destAddr, err := util.AddressFrom256FromReader(rd)
+	to, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 	var destination *common.Address
-	if destAddr != (common.Address{}) {
-		destination = &destAddr
+	if to != (common.Address{}) {
+		destination = &to
 	}
 
-	callvalue, err := util.HashFromReader(rd)
+	value, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -351,24 +351,24 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 	switch txKind {
 	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
-			ChainId:  nil,
-			From:     util.RemapL1Address(poster),
-			Nonce:    nonce,
-			GasPrice: gasPrice.Big(),
-			Gas:      gasLimit.Big().Uint64(),
-			To:       destination,
-			Value:    callvalue.Big(),
-			Data:     calldata,
+			ChainId:   nil,
+			From:      util.RemapL1Address(poster),
+			Nonce:     nonce,
+			GasFeeCap: maxFeePerGas.Big(),
+			Gas:       gasLimit.Big().Uint64(),
+			To:        destination,
+			Value:     value.Big(),
+			Data:      calldata,
 		}
 	case L2MessageKind_ContractTx:
 		inner = &types.ArbitrumContractTx{
 			ChainId:   nil,
 			RequestId: requestId,
 			From:      util.RemapL1Address(poster),
-			GasPrice:  gasPrice.Big(),
+			GasFeeCap: maxFeePerGas.Big(),
 			Gas:       gasLimit.Big().Uint64(),
 			To:        destination,
-			Value:     callvalue.Big(),
+			Value:     value.Big(),
 			Data:      calldata,
 		}
 	default:
@@ -393,13 +393,13 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 }
 
 func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
-	destAddr, err := util.AddressFrom256FromReader(rd)
+	to, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	pDestAddr := &destAddr
-	if destAddr == (common.Address{}) {
-		pDestAddr = nil
+	pTo := &to
+	if to == (common.Address{}) {
+		pTo = nil
 	}
 	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
@@ -421,15 +421,15 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if err != nil {
 		return nil, err
 	}
-	maxGas, err := util.HashFromReader(rd)
+	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	maxGasBig := maxGas.Big()
-	if !maxGasBig.IsUint64() {
-		return nil, errors.New("gas too large")
+	gasLimitBig := gasLimit.Big()
+	if !gasLimitBig.IsUint64() {
+		return nil, errors.New("gas limit too large")
 	}
-	gasPriceBid, err := util.HashFromReader(rd)
+	maxFeePerGas, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -456,9 +456,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		RequestId:         header.RequestId,
 		From:              util.RemapL1Address(header.Poster),
 		DepositValue:      depositValue.Big(),
-		GasPrice:          gasPriceBid.Big(),
-		Gas:               maxGasBig.Uint64(),
-		To:                pDestAddr,
+		GasFeeCap:         maxFeePerGas.Big(),
+		Gas:               gasLimitBig.Uint64(),
+		To:                pTo,
 		Value:             callvalue.Big(),
 		Beneficiary:       callvalueRefundAddress,
 		SubmissionFeePaid: submissionFeePaid.Big(),

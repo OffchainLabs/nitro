@@ -60,7 +60,7 @@ func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock
 	}, nil
 }
 
-func (r *InboxReader) Start(ctxIn context.Context) {
+func (r *InboxReader) Start(ctxIn context.Context) error {
 	ctx := r.StopWaiter.Start(ctxIn)
 	r.ThreadTracker.LaunchThread(func() {
 		for {
@@ -76,6 +76,23 @@ func (r *InboxReader) Start(ctxIn context.Context) {
 			}
 		}
 	})
+
+	// Ensure we read the init message before other things start up
+	for i := 0; ; i++ {
+		batchCount, err := r.tracker.GetBatchCount()
+		if err != nil {
+			return err
+		}
+		if batchCount > 0 {
+			break
+		}
+		if i == 30*10 {
+			return errors.New("failed to read init message")
+		}
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	return nil
 }
 
 func (r *InboxReader) Tracker() *InboxTracker {
@@ -283,7 +300,7 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				reorgingDelayed = true
 			}
 
-			log.Trace("looking up messages", "from", from.String(), "to", to.String())
+			log.Trace("looking up messages", "from", from.String(), "to", to.String(), "reorgingDelayed", reorgingDelayed, "reorgingSequencer", reorgingSequencer)
 			if !reorgingDelayed && !reorgingSequencer && (len(delayedMessages) != 0 || len(sequencerBatches) != 0) {
 				delayedMismatch, err := ir.addMessages(ctx, sequencerBatches, delayedMessages)
 				if err != nil {

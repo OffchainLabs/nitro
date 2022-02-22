@@ -2,8 +2,9 @@
 pragma solidity ^0.8.0;
 
 import "../challenge/ExecutionChallenge.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-contract SingleExecutionChallenge is ExecutionChallenge {
+contract SingleExecutionChallenge is ERC1967Proxy {
     constructor(
         IOneStepProofEntry osp_,
         IChallengeResultReceiver resultReceiver_,
@@ -14,9 +15,10 @@ contract SingleExecutionChallenge is ExecutionChallenge {
         address challenger_,
         uint256 asserterTimeLeft_,
         uint256 challengerTimeLeft_
-    ) {
-        isMasterCopy = false;
-        initialize(
+    ) ERC1967Proxy(
+        address(new ExecutionChallenge()),
+        abi.encodeWithSelector(
+            ExecutionChallenge.initialize.selector,
             osp_,
             resultReceiver_,
             execCtx_,
@@ -26,6 +28,6 @@ contract SingleExecutionChallenge is ExecutionChallenge {
             challenger_,
             asserterTimeLeft_,
             challengerTimeLeft_
-        );
-    }
+        )
+    ) {}
 }

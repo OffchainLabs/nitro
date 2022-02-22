@@ -1,10 +1,10 @@
 //SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "./ValueStacks.sol";
-import "./PcStacks.sol";
+import "./ValueStack.sol";
+import "./PcStack.sol";
 import "./Instructions.sol";
-import "./StackFrames.sol";
+import "./StackFrame.sol";
 
 enum MachineStatus {
 	RUNNING,
@@ -26,16 +26,20 @@ struct Machine {
 	bytes32 modulesRoot;
 }
 
-library Machines {
+library MachineLib {
+	using PcStackLib for PcStack;
+	using StackFrameLib for StackFrameWindow;
+	using ValueStackLib for ValueStack;
+
 	function hash(Machine memory mach) internal pure returns (bytes32) {
 		// Warning: the non-running hashes are replicated in BlockChallenge
 		if (mach.status == MachineStatus.RUNNING) {
 			return keccak256(abi.encodePacked(
 				"Machine running:",
-				ValueStacks.hash(mach.valueStack),
-				ValueStacks.hash(mach.internalStack),
-				PcStacks.hash(mach.blockStack),
-				StackFrames.hash(mach.frameStack),
+				mach.valueStack.hash(),
+				mach.internalStack.hash(),
+				mach.blockStack.hash(),
+				mach.frameStack.hash(),
 				mach.globalStateHash,
 				mach.moduleIdx,
 				mach.functionIdx,

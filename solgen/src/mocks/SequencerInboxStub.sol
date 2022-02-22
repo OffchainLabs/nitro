@@ -8,18 +8,15 @@ pragma solidity ^0.8.0;
 import "../bridge/IBridge.sol";
 import "../bridge/Messages.sol";
 import "../bridge/ISequencerInbox.sol";
+import "../libraries/IGasRefunder.sol";
 
 contract SequencerInboxStub is ISequencerInbox {
-	bytes32[] public override inboxAccs;
+    bytes32[] public override inboxAccs;
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
 
     mapping(address => bool) public isBatchPoster;
-    uint256 public maxDelayBlocks;
-    uint256 public maxFutureBlocks;
-    uint256 public maxDelaySeconds;
-    uint256 public maxFutureSeconds;
 
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
@@ -40,25 +37,16 @@ contract SequencerInboxStub is ISequencerInbox {
         uint64[4] timeBounds
     );
 
-    constructor(
-        IBridge _delayedBridge,
-        address _sequencer
-    ) {
+    constructor(IBridge _delayedBridge, address _sequencer) {
         delayedBridge = _delayedBridge;
         isBatchPoster[_sequencer] = true;
-
-		maxDelaySeconds = 60*60*24;
-		maxFutureSeconds = 60*60;
-
-		maxDelayBlocks = maxDelaySeconds * 15;
-		maxFutureBlocks = 12;
     }
 
     function addSequencerL2BatchFromOrigin(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        uint256 gasRefunder
+        IGasRefunder
     ) external {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "ORIGIN_ONLY");
@@ -70,10 +58,11 @@ contract SequencerInboxStub is ISequencerInbox {
         }
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            data,
-            afterDelayedMessagesRead
-        );
+        (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
 
         uint64[4] memory emptyTimeBounds;
         emit SequencerBatchDeliveredFromOrigin(
@@ -84,25 +73,22 @@ contract SequencerInboxStub is ISequencerInbox {
             totalDelayedMessagesRead,
             emptyTimeBounds
         );
-
-        if (gasRefunder != 0) {
-            revert("NOT_SUPPORTED");
-        }
     }
 
     function addSequencerL2Batch(
         uint256 sequenceNumber,
         bytes calldata data,
         uint256 afterDelayedMessagesRead,
-        uint256 gasRefunder
-    ) external {
+        IGasRefunder
+    ) external override {
         require(isBatchPoster[msg.sender], "NOT_BATCH_POSTER");
 
         require(inboxAccs.length == sequenceNumber, "BAD_SEQ_NUM");
-        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
-            data,
-            afterDelayedMessagesRead
-        );
+        (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 afterAcc
+        ) = addSequencerL2BatchImpl(data, afterDelayedMessagesRead);
         uint64[4] memory emptyTimeBounds;
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
@@ -113,18 +99,27 @@ contract SequencerInboxStub is ISequencerInbox {
             emptyTimeBounds,
             data
         );
-
-        if (gasRefunder != 0) {
-            revert("NOT_SUPPORTED");
-        }
     }
 
     function addSequencerL2BatchImpl(
         bytes calldata data,
         uint256 afterDelayedMessagesRead
-    ) internal returns (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 acc) {
-        require(afterDelayedMessagesRead >= totalDelayedMessagesRead, "DELAYED_BACKWARDS");
-        require(delayedBridge.messageCount() >= afterDelayedMessagesRead, "DELAYED_TOO_FAR");
+    )
+        internal
+        returns (
+            bytes32 beforeAcc,
+            bytes32 delayedAcc,
+            bytes32 acc
+        )
+    {
+        require(
+            afterDelayedMessagesRead >= totalDelayedMessagesRead,
+            "DELAYED_BACKWARDS"
+        );
+        require(
+            delayedBridge.messageCount() >= afterDelayedMessagesRead,
+            "DELAYED_TOO_FAR"
+        );
 
         uint256 fullDataLen = 40 + data.length;
         require(fullDataLen >= 40, "DATA_LEN_OVERFLOW");
@@ -158,7 +153,18 @@ contract SequencerInboxStub is ISequencerInbox {
         totalDelayedMessagesRead = afterDelayedMessagesRead;
     }
 
-    function batchCount() override external view returns (uint256) {
+    function batchCount() external view override returns (uint256) {
         return inboxAccs.length;
+    }
+
+    function setMaxTimeVariation(
+        ISequencerInbox.MaxTimeVariation memory timeVariation
+    ) external override {}
+
+    function setIsBatchPoster(address addr, bool isBatchPoster_)
+        external
+        override
+    {
+        isBatchPoster[addr] = isBatchPoster_;
     }
 }

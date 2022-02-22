@@ -33,7 +33,7 @@ import (
 	"github.com/offchainlabs/arbstate/validator"
 )
 
-func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client, delayedBridge common.Address, seqInbox common.Address) common.Address {
+func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, _, _, err := ospgen.DeployOneStepProver0(auth, client)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethc
 	if err != nil {
 		t.Fatal(err)
 	}
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, seqInbox, delayedBridge)
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +66,8 @@ func CreateChallenge(
 	auth *bind.TransactOpts,
 	client *ethclient.Client,
 	ospEntry common.Address,
+	sequencerInbox common.Address,
+	delayedBridge common.Address,
 	wasmModuleRoot common.Hash,
 	startGlobalState validator.GoGlobalState,
 	endGlobalState validator.GoGlobalState,
@@ -87,11 +89,20 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	challenge, tx, _, err := challengegen.DeployBlockChallenge(
+	challengeAddr, tx, challenge, err := challengegen.DeployBlockChallenge(auth, client)
+	_, err = arbnode.EnsureTxSucceeded(context.Background(), client, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err = challenge.Initialize(
 		auth,
-		client,
 		executionChallengeFactoryAddr,
-		resultReceiverAddr,
+		[3]common.Address{
+			resultReceiverAddr,
+			sequencerInbox,
+			delayedBridge,
+		},
 		wasmModuleRoot,
 		[2]uint8{
 			validator.STATUS_FINISHED,
@@ -115,7 +126,7 @@ func CreateChallenge(
 		t.Fatal(err)
 	}
 
-	return resultReceiver, challenge
+	return resultReceiver, challengeAddr
 }
 
 func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
@@ -151,7 +162,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 		t.Fatal(err)
 	}
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), batchBuffer.Bytes(), big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(0), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,6 +308,8 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 		&deployerTxOpts,
 		l1Backend,
 		ospEntry,
+		trueSeqInboxAddr,
+		delayedBridge,
 		wasmModuleRoot,
 		asserterStartGlobalState,
 		asserterEndGlobalState,

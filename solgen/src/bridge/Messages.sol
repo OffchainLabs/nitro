@@ -12,7 +12,7 @@ library Messages {
         uint256 blockNumber,
         uint256 timestamp,
         uint256 inboxSeqNum,
-        uint256 gasPriceL1,
+        uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal pure returns (bytes32) {
         return
@@ -23,13 +23,13 @@ library Messages {
                     blockNumber,
                     timestamp,
                     inboxSeqNum,
-                    gasPriceL1,
+                    baseFeeL1,
                     messageDataHash
                 )
             );
     }
 
-    function addMessageToInbox(bytes32 inbox, bytes32 message) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(inbox, message));
+    function accumulateInboxMessage(bytes32 prevAcc, bytes32 message) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(prevAcc, message));
     }
 }
