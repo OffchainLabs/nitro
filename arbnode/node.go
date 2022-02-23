@@ -625,7 +625,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	return GetBlockChain(chainDb, cacheConfig, config)
 }
 
-// TODO: is that right?
-func shouldPreserveFalse(block *types.Block) bool {
+// Don't preserve reorg'd out blocks
+func shouldPreserveFalse(header *types.Header) bool {
 	return false
 }
