@@ -11,6 +11,7 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
+import "../libraries/EthCallAware.sol";
 import { 
     L2_MSG, 
     L1MessageType_L2FundedByL1, 
@@ -29,7 +30,7 @@ import "./Bridge.sol";
 * @notice Messages created via this inbox are enqueued in the delayed accumulator
 * to await inclusion in the SequencerInbox
 */
-contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
+contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
     IBridge public override bridge;
 
     modifier onlyOwner() {
@@ -74,6 +75,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      */
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
+        revertOnCall
         whenNotPaused
         returns (uint256)
     {
@@ -93,6 +95,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     function sendL2Message(bytes calldata messageData)
         external
         override
+        revertOnCall
         whenNotPaused
         returns (uint256)
     {
@@ -108,7 +111,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 nonce,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override revertOnCall whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -130,7 +133,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override revertOnCall whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -153,7 +156,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused returns (uint256) {
+    ) external virtual override revertOnCall whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -176,7 +179,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override whenNotPaused returns (uint256) {
+    ) external virtual override revertOnCall whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -199,6 +202,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         payable
         virtual
         override
+        revertOnCall
         whenNotPaused
         returns (uint256)
     {
@@ -260,7 +264,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual whenNotPaused returns (uint256) {
+    ) public payable virtual revertOnCall whenNotPaused returns (uint256) {
 
         return
             _deliverMessage(
@@ -303,7 +307,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual override whenNotPaused returns (uint256) {
+    ) external payable virtual override revertOnCall whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os

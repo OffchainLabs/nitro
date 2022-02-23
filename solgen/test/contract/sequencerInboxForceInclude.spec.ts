@@ -281,7 +281,7 @@ describe('SequencerInboxForceInclude', async () => {
       messageTester,
     }
   }
-
+  
   it('can force-include', async () => {
     const {
       user,
