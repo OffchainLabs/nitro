@@ -7,7 +7,7 @@ pragma solidity ^0.8.4;
 
 import "./IBridge.sol";
 import "./IMessageProvider.sol";
-import { AlreadyInit, NotOrigin, DataTooLarge } from "../libraries/Error.sol";
+import {AlreadyInit, NotOrigin, DataTooLarge} from "../libraries/Error.sol";
 
 /// @dev The contract is paused, so cannot be paused
 error AlreadyPaused();

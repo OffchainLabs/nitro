@@ -3,10 +3,9 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-
 pragma solidity ^0.8.0;
 
-import { NotOwner } from "./Error.sol";
+import {NotOwner} from "./Error.sol";
 
 /// @dev A stateless contract that allows you to infer if the current call has been delegated or not
 /// Pattern used here is from UUPS implementation by the OpenZeppelin team
@@ -31,7 +30,7 @@ abstract contract DelegateCallAware {
         _;
     }
 
-    /// @dev Check that msg.sender is the current EIP 1967 proxy admin 
+    /// @dev Check that msg.sender is the current EIP 1967 proxy admin
     modifier onlyProxyOwner() {
         // Storage slot with the admin of the proxy contract
         // This is the keccak-256 hash of "eip1967.proxy.admin" subtracted by 1
@@ -40,7 +39,7 @@ abstract contract DelegateCallAware {
         assembly {
             admin := sload(slot)
         }
-        if(msg.sender != admin) revert NotOwner(msg.sender, admin);
+        if (msg.sender != admin) revert NotOwner(msg.sender, admin);
         _;
     }
 }

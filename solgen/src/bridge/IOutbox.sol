@@ -18,7 +18,7 @@
 
 pragma solidity ^0.8.4;
 
-import { AlreadyInit, NotRollup } from "../libraries/Error.sol";
+import {AlreadyInit, NotRollup} from "../libraries/Error.sol";
 
 /// @dev The provided proof was too long
 /// @param proofLength The length of the too-long proof
@@ -41,10 +41,7 @@ error AlreadySpent(uint256 index);
 error BridgeCallFailed();
 
 interface IOutbox {
-    event SendRootUpdated(
-        bytes32 indexed blockHash,
-        bytes32 indexed outputRoot
-    );
+    event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
     event OutBoxTransactionExecuted(
         address indexed to,
         address indexed l2Sender,
