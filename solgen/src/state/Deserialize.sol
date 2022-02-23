@@ -235,16 +235,16 @@ library Deserialize {
         offset = startOffset;
 
         // using constant ints for array size requires newer solidity
-        bytes32[2] memory bytes32_vals;
-        uint64[2] memory u64_vals;
+        bytes32[2] memory bytes32Vals;
+        uint64[2] memory u64Vals;
 
         for (uint8 i = 0; i < GlobalStateLib.BYTES32_VALS_NUM; i++) {
-            (bytes32_vals[i], offset) = b32(proof, offset);
+            (bytes32Vals[i], offset) = b32(proof, offset);
         }
         for (uint8 i = 0; i < GlobalStateLib.U64_VALS_NUM; i++) {
-            (u64_vals[i], offset) = u64(proof, offset);
+            (u64Vals[i], offset) = u64(proof, offset);
         }
-        state = GlobalState({bytes32_vals: bytes32_vals, u64_vals: u64_vals});
+        state = GlobalState({bytes32Vals: bytes32Vals, u64Vals: u64Vals});
     }
 
     function machine(bytes calldata proof, uint256 startOffset)
@@ -255,15 +255,15 @@ library Deserialize {
         offset = startOffset;
         MachineStatus status;
         {
-            uint8 status_u8;
-            (status_u8, offset) = u8(proof, offset);
-            if (status_u8 == 0) {
+            uint8 statusU8;
+            (statusU8, offset) = u8(proof, offset);
+            if (statusU8 == 0) {
                 status = MachineStatus.RUNNING;
-            } else if (status_u8 == 1) {
+            } else if (statusU8 == 1) {
                 status = MachineStatus.FINISHED;
-            } else if (status_u8 == 2) {
+            } else if (statusU8 == 2) {
                 status = MachineStatus.ERRORED;
-            } else if (status_u8 == 3) {
+            } else if (statusU8 == 3) {
                 status = MachineStatus.TOO_FAR;
             } else {
                 revert("UNKNOWN_MACH_STATUS");

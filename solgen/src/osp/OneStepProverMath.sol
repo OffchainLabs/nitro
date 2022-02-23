@@ -43,7 +43,7 @@ contract OneStepProverMath is IOneStepProver {
         return uint64(a);
     }
 
-    function I64RelOp(
+    function i64RelOp(
         uint64 a,
         uint64 b,
         uint16 relop
@@ -99,7 +99,7 @@ contract OneStepProverMath is IOneStepProver {
             b64 = uint64(b);
         }
 
-        bool res = I64RelOp(a64, b64, relop);
+        bool res = i64RelOp(a64, b64, relop);
 
         mach.valueStack.push(ValueLib.newBoolean(res));
     }
@@ -115,7 +115,7 @@ contract OneStepProverMath is IOneStepProver {
 
         uint16 relop = inst.opcode - Instructions.I64_RELOP_BASE;
 
-        bool res = I64RelOp(a, b, relop);
+        bool res = i64RelOp(a, b, relop);
 
         mach.valueStack.push(ValueLib.newBoolean(res));
     }

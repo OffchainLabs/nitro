@@ -345,7 +345,7 @@ abstract contract AbsRollupUserLogic is
     ) external override whenNotPaused {
         // Only the challenge manager contract can call this to declare the winner and loser
         require(msg.sender == address(challengeManager), "WRONG_SENDER");
-        require(challengeIndex == inChallenge(winningStaker, losingStaker));
+        require(challengeIndex == inChallenge(winningStaker, losingStaker), "NOT_IN_CHAL");
         completeChallengeImpl(winningStaker, losingStaker);
     }
 

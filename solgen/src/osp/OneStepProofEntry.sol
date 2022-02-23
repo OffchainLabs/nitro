@@ -11,10 +11,10 @@ contract OneStepProofEntry is IOneStepProofEntry {
     using MerkleProofLib for MerkleProof;
     using MachineLib for Machine;
 
-    IOneStepProver prover0;
-    IOneStepProver proverMem;
-    IOneStepProver proverMath;
-    IOneStepProver proverHostIo;
+    IOneStepProver public prover0;
+    IOneStepProver public proverMem;
+    IOneStepProver public proverMath;
+    IOneStepProver public proverHostIo;
 
     constructor(
         IOneStepProver prover0_,
