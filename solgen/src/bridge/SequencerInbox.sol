@@ -9,9 +9,9 @@ import "./IBridge.sol";
 import "./ISequencerInbox.sol";
 import "./Messages.sol";
 
-import { GasRefundEnabled, IGasRefunder } from "../libraries/IGasRefunder.sol";
+import {GasRefundEnabled, IGasRefunder} from "../libraries/IGasRefunder.sol";
 import "../libraries/DelegateCallAware.sol";
-import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
+import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 /**
  * @title Accepts batches from the sequencer and adds them to the rollup inbox.
@@ -25,9 +25,9 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 public totalDelayedMessagesRead;
 
     IBridge public delayedBridge;
-    
+
     /// @dev The size of the batch header
-    uint256 constant public HEADER_LENGTH = 40;
+    uint256 public constant HEADER_LENGTH = 40;
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
@@ -35,7 +35,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
 
     function initialize(
         IBridge delayedBridge_,
-        address rollup_, 
+        address rollup_,
         ISequencerInbox.MaxTimeVariation calldata maxTimeVariation_
     ) external onlyDelegated {
         if (delayedBridge != IBridge(address(0))) revert AlreadyInit();
@@ -88,28 +88,28 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
             messageDataHash
         );
         // Can only force-include after the Sequencer-only window has expired.
-        if (l1BlockAndTime[0] + maxTimeVariation.delayBlocks >= block.number) revert ForceIncludeBlockTooSoon();
-        if (l1BlockAndTime[1] + maxTimeVariation.delaySeconds >= block.timestamp) revert ForceIncludeTimeTooSoon();
+        if (l1BlockAndTime[0] + maxTimeVariation.delayBlocks >= block.number)
+            revert ForceIncludeBlockTooSoon();
+        if (l1BlockAndTime[1] + maxTimeVariation.delaySeconds >= block.timestamp)
+            revert ForceIncludeTimeTooSoon();
 
         // Verify that message hash represents the last message sequence of delayed message to be included
         bytes32 prevDelayedAcc = 0;
         if (_totalDelayedMessagesRead > 1) {
-            prevDelayedAcc = delayedBridge.inboxAccs(
-                _totalDelayedMessagesRead - 2
-            );
+            prevDelayedAcc = delayedBridge.inboxAccs(_totalDelayedMessagesRead - 2);
         }
-        if (delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
-            Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)) revert IncorrectMessagePreimage();
+        if (
+            delayedBridge.inboxAccs(_totalDelayedMessagesRead - 1) !=
+            Messages.accumulateInboxMessage(prevDelayedAcc, messageHash)
+        ) revert IncorrectMessagePreimage();
 
-        (
-            bytes32 dataHash,
-            TimeBounds memory timeBounds
-        ) = formEmptyDataHash(_totalDelayedMessagesRead);
-        (
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, _totalDelayedMessagesRead);
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formEmptyDataHash(
+            _totalDelayedMessagesRead
+        );
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+            dataHash,
+            _totalDelayedMessagesRead
+        );
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -131,15 +131,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (msg.sender != tx.origin) revert NotOrigin();
         if (!isBatchPoster[msg.sender]) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
-        (
-            bytes32 dataHash,
-            TimeBounds memory timeBounds
-        ) = formDataHash(data, afterDelayedMessagesRead);
-        (
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
+            data,
+            afterDelayedMessagesRead
+        );
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+            dataHash,
+            afterDelayedMessagesRead
+        );
         emit SequencerBatchDelivered(
             inboxAccs.length - 1,
             beforeAcc,
@@ -160,12 +159,14 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         if (!isBatchPoster[msg.sender] && msg.sender != rollup) revert NotBatchPoster();
         if (inboxAccs.length != sequenceNumber) revert BadSequencerNumber();
 
-        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(data, afterDelayedMessagesRead);
-        (
-            bytes32 beforeAcc,
-            bytes32 delayedAcc,
-            bytes32 afterAcc
-        ) = addSequencerL2BatchImpl(dataHash, afterDelayedMessagesRead);
+        (bytes32 dataHash, TimeBounds memory timeBounds) = formDataHash(
+            data,
+            afterDelayedMessagesRead
+        );
+        (bytes32 beforeAcc, bytes32 delayedAcc, bytes32 afterAcc) = addSequencerL2BatchImpl(
+            dataHash,
+            afterDelayedMessagesRead
+        );
         emit SequencerBatchDelivered(
             sequenceNumber,
             beforeAcc,
@@ -178,7 +179,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         emit SequencerBatchData(sequenceNumber, data);
     }
 
-    function packHeader(uint256 afterDelayedMessagesRead) internal view returns (bytes memory, TimeBounds memory) {
+    function packHeader(uint256 afterDelayedMessagesRead)
+        internal
+        view
+        returns (bytes memory, TimeBounds memory)
+    {
         TimeBounds memory timeBounds = getTimeBounds();
         bytes memory header = abi.encodePacked(
             timeBounds.minTimestamp,
@@ -192,7 +197,11 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return (header, timeBounds);
     }
 
-    function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
+    function formDataHash(bytes calldata data, uint256 afterDelayedMessagesRead)
+        internal
+        view
+        returns (bytes32, TimeBounds memory)
+    {
         uint256 fullDataLen = HEADER_LENGTH + data.length;
         if (fullDataLen < HEADER_LENGTH) revert DataLengthOverflow();
         if (fullDataLen > MAX_DATA_SIZE) revert DataTooLarge(fullDataLen, MAX_DATA_SIZE);
@@ -209,16 +218,16 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return (keccak256(fullData), timeBounds);
     }
 
-
-    function formEmptyDataHash(uint256 afterDelayedMessagesRead) internal view returns (bytes32, TimeBounds memory) {
+    function formEmptyDataHash(uint256 afterDelayedMessagesRead)
+        internal
+        view
+        returns (bytes32, TimeBounds memory)
+    {
         (bytes memory header, TimeBounds memory timeBounds) = packHeader(afterDelayedMessagesRead);
         return (keccak256(header), timeBounds);
     }
 
-    function addSequencerL2BatchImpl(
-        bytes32 dataHash,
-        uint256 afterDelayedMessagesRead
-    )
+    function addSequencerL2BatchImpl(bytes32 dataHash, uint256 afterDelayedMessagesRead)
         internal
         returns (
             bytes32 beforeAcc,
@@ -245,17 +254,15 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         return inboxAccs.length;
     }
 
-    function setMaxTimeVariation(
-        ISequencerInbox.MaxTimeVariation memory maxTimeVariation_
-    ) external override {
+    function setMaxTimeVariation(ISequencerInbox.MaxTimeVariation memory maxTimeVariation_)
+        external
+        override
+    {
         if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         maxTimeVariation = maxTimeVariation_;
     }
 
-    function setIsBatchPoster(address addr, bool isBatchPoster_)
-        external
-        override
-    {
+    function setIsBatchPoster(address addr, bool isBatchPoster_) external override {
         if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         isBatchPoster[addr] = isBatchPoster_;
     }

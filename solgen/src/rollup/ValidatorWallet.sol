@@ -39,7 +39,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         uint256 numTxes = data.length;
         for (uint256 i = 0; i < numTxes; i++) {
             if (data[i].length > 0) require(destination[i].isContract(), "NO_CODE_AT_ADDR");
-            (bool success, ) = address(destination[i]).call{ value: amount[i] }(data[i]);
+            (bool success, ) = address(destination[i]).call{value: amount[i]}(data[i]);
             if (!success) {
                 assembly {
                     let ptr := mload(0x40)
@@ -57,7 +57,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         uint256 amount
     ) external payable onlyOwner {
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
-        (bool success, ) = destination.call{ value: amount }(data);
+        (bool success, ) = destination.call{value: amount}(data);
         if (!success) {
             assembly {
                 let ptr := mload(0x40)
@@ -84,7 +84,10 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         }
     }
 
-    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges) external onlyOwner {
+    function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges)
+        external
+        onlyOwner
+    {
         uint256 challengesCount = challenges.length;
         for (uint256 i = 0; i < challengesCount; i++) {
             try manager.timeout(challenges[i]) {} catch (bytes memory error) {

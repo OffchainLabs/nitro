@@ -6,7 +6,7 @@
 pragma solidity ^0.8.0;
 
 import "../libraries/IGasRefunder.sol";
-import { AlreadyInit, HadZeroInit, NotOrigin, DataTooLarge, NotRollup } from "../libraries/Error.sol";
+import {AlreadyInit, HadZeroInit, NotOrigin, DataTooLarge, NotRollup} from "../libraries/Error.sol";
 
 interface ISequencerInbox {
     struct MaxTimeVariation {

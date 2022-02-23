@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
-import { IRollupUser } from "./IRollupLogic.sol";
+import {IRollupUser} from "./IRollupLogic.sol";
 import "../libraries/UUPSNotUpgradeable.sol";
 import "./RollupCore.sol";
 
@@ -30,17 +30,11 @@ abstract contract AbsRollupUserLogic is
      * @notice Reject the next unresolved node
      * @param stakerAddress Example staker staked on sibling, used to prove a node is on an unconfirmable branch and can be rejected
      */
-    function rejectNextNode(address stakerAddress)
-        external
-        onlyValidator
-        whenNotPaused
-    {
+    function rejectNextNode(address stakerAddress) external onlyValidator whenNotPaused {
         requireUnresolvedExists();
         uint64 latestConfirmedNodeNum = latestConfirmed();
         uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
-        Node storage firstUnresolvedNode_ = getNodeStorage(
-            firstUnresolvedNodeNum
-        );
+        Node storage firstUnresolvedNode_ = getNodeStorage(firstUnresolvedNodeNum);
 
         if (firstUnresolvedNode_.prevNum == latestConfirmedNodeNum) {
             /**If the first unresolved node is a child of the latest confirmed node, to prove it can be rejected, we show:
@@ -57,24 +51,19 @@ abstract contract AbsRollupUserLogic is
             requireUnresolved(latestStakedNode(stakerAddress));
 
             // 3. staker isn't staked on first unresolved node; this proves staker's latest staked can't be a child of firstUnresolvedNode (recall staking on node requires staking on all of its parents)
-            require(
-                !nodeHasStaker(firstUnresolvedNodeNum, stakerAddress),
-                "STAKED_ON_TARGET"
-            );
+            require(!nodeHasStaker(firstUnresolvedNodeNum, stakerAddress), "STAKED_ON_TARGET");
             // If a staker is staked on a node that is neither a child nor a parent of firstUnresolvedNode, it must be a sibling, QED
 
             // Verify the block's deadline has passed
             firstUnresolvedNode_.requirePastDeadline();
 
-            getNodeStorage(latestConfirmedNodeNum)
-                .requirePastChildConfirmDeadline();
+            getNodeStorage(latestConfirmedNodeNum).requirePastChildConfirmDeadline();
 
             removeOldZombies(0);
 
             // Verify that no staker is staked on this node
             require(
-                firstUnresolvedNode_.stakerCount ==
-                    countStakedZombies(firstUnresolvedNodeNum),
+                firstUnresolvedNode_.stakerCount == countStakedZombies(firstUnresolvedNodeNum),
                 "HAS_STAKERS"
             );
         }
@@ -113,10 +102,7 @@ abstract contract AbsRollupUserLogic is
         removeOldZombies(0);
 
         // All non-zombie stakers are staked on this node
-        require(
-            node.stakerCount == stakerCount() + countStakedZombies(nodeNum),
-            "NOT_ALL_STAKED"
-        );
+        require(node.stakerCount == stakerCount() + countStakedZombies(nodeNum), "NOT_ALL_STAKED");
 
         confirmNode(nodeNum, blockHash, sendRoot);
     }
@@ -125,11 +111,7 @@ abstract contract AbsRollupUserLogic is
      * @notice Create a new stake
      * @param depositAmount The amount of either eth or tokens staked
      */
-    function _newStake(uint256 depositAmount)
-        internal
-        onlyValidator
-        whenNotPaused
-    {
+    function _newStake(uint256 depositAmount) internal onlyValidator whenNotPaused {
         // Verify that sender is not already a staker
         require(!isStaked(msg.sender), "ALREADY_STAKED");
         require(!isZombie(msg.sender), "STAKER_IS_ZOMBIE");
@@ -158,10 +140,7 @@ abstract contract AbsRollupUserLogic is
         );
         Node storage node = getNodeStorage(nodeNum);
         require(node.nodeHash == nodeHash, "NODE_REORG");
-        require(
-            latestStakedNode(msg.sender) == node.prevNum,
-            "NOT_STAKED_PREV"
-        );
+        require(latestStakedNode(msg.sender) == node.prevNum, "NOT_STAKED_PREV");
         stakeOnNode(msg.sender, nodeNum);
     }
 
@@ -180,8 +159,7 @@ abstract contract AbsRollupUserLogic is
         uint64 prevNode = latestStakedNode(msg.sender);
 
         {
-            uint256 timeSinceLastNode = block.number -
-                getNode(prevNode).createdAtBlock;
+            uint256 timeSinceLastNode = block.number - getNode(prevNode).createdAtBlock;
             // Verify that assertion meets the minimum Delta time requirement
             require(timeSinceLastNode >= minimumAssertionPeriod, "TIME_DELTA");
 
@@ -191,15 +169,11 @@ abstract contract AbsRollupUserLogic is
             // as it can't consume future batches.
             require(
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getInboxPosition() >=
-                    prevNodeInboxMaxCount,
+                    assertion.afterState.globalState.getInboxPosition() >= prevNodeInboxMaxCount,
                 "TOO_SMALL"
             );
             // Minimum size requirement: any assertion must contain at least one block
-            require(
-                assertion.numBlocks > 0,
-                "EMPTY_ASSERTION"
-            );
+            require(assertion.numBlocks > 0, "EMPTY_ASSERTION");
 
             // The rollup cannot advance normally from an errored state
             require(
@@ -219,16 +193,8 @@ abstract contract AbsRollupUserLogic is
      * and move it to the desired node.
      * @param stakerAddress Address of the staker whose stake is refunded
      */
-    function returnOldDeposit(address stakerAddress)
-        external
-        override
-        onlyValidator
-        whenNotPaused
-    {
-        require(
-            latestStakedNode(stakerAddress) <= latestConfirmed(),
-            "TOO_RECENT"
-        );
+    function returnOldDeposit(address stakerAddress) external override onlyValidator whenNotPaused {
+        require(latestStakedNode(stakerAddress) <= latestConfirmed(), "TOO_RECENT");
         requireUnchallengedStaker(stakerAddress);
         withdrawStaker(stakerAddress);
     }
@@ -251,11 +217,7 @@ abstract contract AbsRollupUserLogic is
      * @notice Reduce the amount staked for the sender (difference between initial amount staked and target is creditted back to the sender).
      * @param target Target amount of stake for the staker. If this is below the current minimum, it will be set to minimum instead
      */
-    function reduceDeposit(uint256 target)
-        external
-        onlyValidator
-        whenNotPaused
-    {
+    function reduceDeposit(uint256 target) external onlyValidator whenNotPaused {
         requireUnchallengedStaker(msg.sender);
         uint256 currentRequired = currentRequiredStake();
         if (target < currentRequired) {
@@ -306,11 +268,7 @@ abstract contract AbsRollupUserLogic is
         require(
             node1.challengeHash ==
                 RollupLib.challengeRootHash(
-                    RollupLib.executionHash(
-                        machineStatuses,
-                        globalStates,
-                        numBlocks
-                    ),
+                    RollupLib.executionHash(machineStatuses, globalStates, numBlocks),
                     proposedTimes[0],
                     wasmModuleRoots[0]
                 ),
@@ -350,12 +308,7 @@ abstract contract AbsRollupUserLogic is
 
         challengeStarted(stakers[0], stakers[1], challengeIndex);
 
-        emit RollupChallengeStarted(
-            challengeIndex,
-            stakers[0],
-            stakers[1],
-            nodeNums[0]
-        );
+        emit RollupChallengeStarted(challengeIndex, stakers[0], stakers[1], nodeNums[0]);
     }
 
     function createChallengeHelper(
@@ -385,20 +338,18 @@ abstract contract AbsRollupUserLogic is
      * @param winningStaker Address of the winning staker
      * @param losingStaker Address of the losing staker
      */
-    function completeChallenge(uint256 challengeIndex, address winningStaker, address losingStaker)
-        external
-        override
-        whenNotPaused
-    {
+    function completeChallenge(
+        uint256 challengeIndex,
+        address winningStaker,
+        address losingStaker
+    ) external override whenNotPaused {
         // Only the challenge manager contract can call this to declare the winner and loser
         require(msg.sender == address(challengeManager), "WRONG_SENDER");
-        require (challengeIndex == inChallenge(winningStaker, losingStaker));
+        require(challengeIndex == inChallenge(winningStaker, losingStaker));
         completeChallengeImpl(winningStaker, losingStaker);
     }
 
-    function completeChallengeImpl(address winningStaker, address losingStaker)
-        private
-    {
+    function completeChallengeImpl(address winningStaker, address losingStaker) private {
         uint256 remainingLoserStake = amountStaked(losingStaker);
         uint256 winnerStake = amountStaked(winningStaker);
         if (remainingLoserStake > winnerStake) {
@@ -449,11 +400,7 @@ abstract contract AbsRollupUserLogic is
      * @notice Remove any zombies whose latest stake is earlier than the first unresolved node
      * @param startIndex Index in the zombie list to start removing zombies from (to limit the cost of this transaction)
      */
-    function removeOldZombies(uint256 startIndex)
-        public
-        onlyValidator
-        whenNotPaused
-    {
+    function removeOldZombies(uint256 startIndex) public onlyValidator whenNotPaused {
         uint256 currentZombieCount = zombieCount();
         uint256 firstUnresolved = firstUnresolvedNode();
         for (uint256 i = startIndex; i < currentZombieCount; i++) {
@@ -482,9 +429,7 @@ abstract contract AbsRollupUserLogic is
         if (_firstUnresolvedNodeNum - 1 == _latestCreatedNode) {
             return baseStake;
         }
-        uint256 firstUnresolvedDeadline = getNodeStorage(
-            _firstUnresolvedNodeNum
-        ).deadlineBlock;
+        uint256 firstUnresolvedDeadline = getNodeStorage(_firstUnresolvedNodeNum).deadlineBlock;
         if (_blockNumber < firstUnresolvedDeadline) {
             return baseStake;
         }
@@ -547,23 +492,13 @@ abstract contract AbsRollupUserLogic is
         uint64 firstUnresolvedNodeNum,
         uint64 latestCreatedNode
     ) external view returns (uint256) {
-        return
-            currentRequiredStake(
-                blockNumber,
-                firstUnresolvedNodeNum,
-                latestCreatedNode
-            );
+        return currentRequiredStake(blockNumber, firstUnresolvedNodeNum, latestCreatedNode);
     }
 
     function currentRequiredStake() public view returns (uint256) {
         uint64 firstUnresolvedNodeNum = firstUnresolvedNode();
 
-        return
-            currentRequiredStake(
-                block.number,
-                firstUnresolvedNodeNum,
-                latestNodeCreated()
-            );
+        return currentRequiredStake(block.number, firstUnresolvedNodeNum, latestNodeCreated());
     }
 
     /**
@@ -576,12 +511,7 @@ abstract contract AbsRollupUserLogic is
      * @param nodeNum The node on which to count staked zombies
      * @return The number of zombies staked on the node
      */
-    function countStakedZombies(uint64 nodeNum)
-        public
-        view
-        override
-        returns (uint256)
-    {
+    function countStakedZombies(uint64 nodeNum) public view override returns (uint256) {
         uint256 currentZombieCount = zombieCount();
         uint256 stakedZombieCount = 0;
         for (uint256 i = 0; i < currentZombieCount; i++) {
@@ -598,8 +528,7 @@ abstract contract AbsRollupUserLogic is
     function requireUnresolvedExists() public view override {
         uint256 firstUnresolved = firstUnresolvedNode();
         require(
-            firstUnresolved > latestConfirmed() &&
-                firstUnresolved <= latestNodeCreated(),
+            firstUnresolved > latestConfirmed() && firstUnresolved <= latestNodeCreated(),
             "NO_UNRESOLVED"
         );
     }
@@ -615,16 +544,10 @@ abstract contract AbsRollupUserLogic is
      */
     function requireUnchallengedStaker(address stakerAddress) private view {
         require(isStaked(stakerAddress), "NOT_STAKED");
-        require(
-            currentChallenge(stakerAddress) == NO_CHAL_INDEX,
-            "IN_CHAL"
-        );
+        require(currentChallenge(stakerAddress) == NO_CHAL_INDEX, "IN_CHAL");
     }
 
-    function withdrawStakerFunds(address payable destination)
-        external
-        virtual
-        returns (uint256);
+    function withdrawStakerFunds(address payable destination) external virtual returns (uint256);
 }
 
 contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
@@ -664,12 +587,7 @@ contract RollupUserLogic is AbsRollupUserLogic, IRollupUser {
      * @notice Increase the amount staked eth for the given staker
      * @param stakerAddress Address of the staker whose stake is increased
      */
-    function addToDeposit(address stakerAddress)
-        external
-        payable
-        onlyValidator
-        whenNotPaused
-    {
+    function addToDeposit(address stakerAddress) external payable onlyValidator whenNotPaused {
         _addToDeposit(stakerAddress, msg.value);
     }
 
@@ -705,7 +623,11 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
      * @param nodeNum Number of the node your stake will be place one
      * @param nodeHash Node hash of the node with the given nodeNum
      */
-    function newStakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external override {
+    function newStakeOnExistingNode(
+        uint256 tokenAmount,
+        uint64 nodeNum,
+        bytes32 nodeHash
+    ) external override {
         _newStake(tokenAmount);
         stakeOnExistingNode(nodeNum, nodeHash);
         /// @dev This is an external call, safe because it's at the end of the function
@@ -759,20 +681,13 @@ contract ERC20RollupUserLogic is AbsRollupUserLogic, IRollupUserERC20 {
     {
         uint256 amount = withdrawFunds(msg.sender);
         // This is safe because it occurs after all checks and effects
-        require(
-            IERC20Upgradeable(stakeToken).transfer(destination, amount),
-            "TRANSFER_FAILED"
-        );
+        require(IERC20Upgradeable(stakeToken).transfer(destination, amount), "TRANSFER_FAILED");
         return amount;
     }
 
     function receiveTokens(uint256 tokenAmount) private {
         require(
-            IERC20Upgradeable(stakeToken).transferFrom(
-                msg.sender,
-                address(this),
-                tokenAmount
-            ),
+            IERC20Upgradeable(stakeToken).transferFrom(msg.sender, address(this), tokenAmount),
             "TRANSFER_FAIL"
         );
     }

@@ -253,9 +253,10 @@ solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prov
 	golangci-lint run --fix
 	@touch $@
 
-.make/fmt: build-node-deps | .make
+.make/fmt: build-node-deps .make/yarndeps | .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
+	yarn --cwd solgen prettier:solidity
 	@touch $@
 
 .make/test-go: $(go_source) build-node-deps test-go-deps | .make

@@ -18,7 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import { DoubleLogicERC1967Upgrade } from "./AdminFallbackProxy.sol";
+import {DoubleLogicERC1967Upgrade} from "./AdminFallbackProxy.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 /// @notice An extension to OZ's UUPSUpgradeable contract to be used for handling UUPS upgrades with a DoubleLogicERC1967Upgrade proxy
@@ -61,7 +61,11 @@ abstract contract SecondaryLogicUUPSUpgradeable is UUPSUpgradeable, DoubleLogicE
      *
      * Emits an {UpgradedSecondary} event.
      */
-    function upgradeSecondaryToAndCall(address newImplementation, bytes memory data) external payable onlyProxy {
+    function upgradeSecondaryToAndCall(address newImplementation, bytes memory data)
+        external
+        payable
+        onlyProxy
+    {
         _authorizeSecondaryUpgrade(newImplementation);
         _upgradeSecondaryToAndCallUUPS(newImplementation, data, true);
     }
