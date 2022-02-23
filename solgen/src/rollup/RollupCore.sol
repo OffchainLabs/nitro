@@ -18,8 +18,7 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./Node.sol";
 import "./IRollupCore.sol";
@@ -27,13 +26,15 @@ import "./RollupLib.sol";
 import "./RollupEventBridge.sol";
 import "./IRollupCore.sol";
 
-import "../challenge/IBlockChallengeFactory.sol";
+import "../challenge/IChallengeManager.sol";
 
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IOutbox.sol";
 
-abstract contract RollupCore is IRollupCore, Pausable {
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
+abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using NodeLib for Node;
     using GlobalStateLib for GlobalState;
 
@@ -48,12 +49,11 @@ abstract contract RollupCore is IRollupCore, Pausable {
     ISequencerInbox public sequencerBridge;
     IOutbox public outbox;
     RollupEventBridge public rollupEventBridge;
-    IBlockChallengeFactory public challengeFactory;
+    IChallengeManager public override challengeManager;
     // when a staker loses a challenge, half of their funds get escrowed in this address
     address public loserStakeEscrow;
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
-    uint256 public challengeExecutionBisectionDegree;
 
     mapping(address => bool) public isValidator;
 
@@ -61,15 +61,6 @@ abstract contract RollupCore is IRollupCore, Pausable {
     struct Zombie {
         address stakerAddress;
         uint64 latestStakedNode;
-    }
-
-    struct Staker {
-        uint64 index;
-        uint64 latestStakedNode;
-        uint256 amountStaked;
-        // currentChallenge is 0 if staker is not in a challenge
-        IChallenge currentChallenge;
-        bool isStaked;
     }
 
     uint64 private _latestConfirmed;
@@ -80,11 +71,12 @@ abstract contract RollupCore is IRollupCore, Pausable {
     mapping(uint64 => mapping(address => bool)) private _nodeStakers;
 
     address[] private _stakerList;
-    mapping(address => Staker) public override _stakerMap;
+    mapping(address => Staker) public _stakerMap;
 
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
+    uint256 totalWithdrawableFunds;
 
     /**
      * @notice Get a storage reference to the Node for the given node index
@@ -169,7 +161,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
         public
         view
         override
-        returns (IChallenge)
+        returns (uint64)
     {
         return _stakerMap[staker].currentChallenge;
     }
@@ -186,6 +178,15 @@ abstract contract RollupCore is IRollupCore, Pausable {
         returns (uint256)
     {
         return _stakerMap[staker].amountStaked;
+    }
+
+    /**
+     * @notice Retrieves stored information about a requested staker
+     * @param staker Staker address to retrieve
+     * @return A structure with information about the requested staker
+     */
+    function getStaker(address staker) external view override returns (Staker memory) {
+        return _stakerMap[staker];
     }
 
     /**
@@ -277,6 +278,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
      * @param initialNode Initial node to start the chain with
      */
     function initializeCore(Node memory initialNode) internal {
+        __Pausable_init();
         _nodes[0] = initialNode;
         _firstUnresolvedNode = 1;
     }
@@ -328,10 +330,10 @@ abstract contract RollupCore is IRollupCore, Pausable {
         uint64 stakerIndex = uint64(_stakerList.length);
         _stakerList.push(stakerAddress);
         _stakerMap[stakerAddress] = Staker(
+            depositAmount,
             stakerIndex,
             _latestConfirmed,
-            depositAmount,
-            IChallenge(address(0)), // new staker is not in challenge
+            NO_CHAL_INDEX, // new staker is not in challenge
             true
         );
         _lastStakeBlock = uint64(block.number);
@@ -347,12 +349,12 @@ abstract contract RollupCore is IRollupCore, Pausable {
     function inChallenge(address stakerAddress1, address stakerAddress2)
         internal
         view
-        returns (IChallenge)
+        returns (uint64)
     {
         Staker storage staker1 = _stakerMap[stakerAddress1];
         Staker storage staker2 = _stakerMap[stakerAddress2];
-        IChallenge challenge = staker1.currentChallenge;
-        require(address(challenge) != address(0), "NO_CHAL");
+        uint64 challenge = staker1.currentChallenge;
+        require(challenge != NO_CHAL_INDEX, "NO_CHAL");
         require(challenge == staker2.currentChallenge, "DIFF_IN_CHAL");
         return challenge;
     }
@@ -363,7 +365,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
      */
     function clearChallenge(address stakerAddress) internal {
         Staker storage staker = _stakerMap[stakerAddress];
-        staker.currentChallenge = IChallenge(address(0));
+        staker.currentChallenge = NO_CHAL_INDEX;
     }
 
     /**
@@ -375,7 +377,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
     function challengeStarted(
         address staker1,
         address staker2,
-        IChallenge challenge
+        uint64 challenge
     ) internal {
         _stakerMap[staker1].currentChallenge = challenge;
         _stakerMap[staker2].currentChallenge = challenge;
@@ -514,6 +516,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
     function withdrawFunds(address account) internal returns (uint256) {
         uint256 amount = _withdrawableFunds[account];
         _withdrawableFunds[account] = 0;
+        totalWithdrawableFunds -= amount;
         emit UserWithdrawableFundsUpdated(account, amount, 0);
         return amount;
     }
@@ -528,6 +531,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
         uint256 initialWithdrawable = _withdrawableFunds[account];
         uint256 finalWithdrawable = initialWithdrawable + amount;
         _withdrawableFunds[account] = finalWithdrawable;
+        totalWithdrawableFunds += amount;
         emit UserWithdrawableFundsUpdated(
             account,
             initialWithdrawable,
@@ -583,20 +587,27 @@ abstract contract RollupCore is IRollupCore, Pausable {
 
             // Make sure the previous state is correct against the node being built on
             require(
-                RollupLib.stateHash(assertion.beforeState, prevNodeInboxMaxCount) ==
-                    memoryFrame.prevNode.stateHash,
+                RollupLib.stateHash(
+                    assertion.beforeState,
+                    prevNodeInboxMaxCount
+                ) == memoryFrame.prevNode.stateHash,
                 "PREV_STATE_HASH"
             );
 
             // Ensure that the assertion doesn't read past the end of the current inbox
-            uint256 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
+            uint256 afterInboxCount = assertion
+                .afterState
+                .globalState
+                .getInboxPosition();
             require(
-                afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
+                afterInboxCount >=
+                    assertion.beforeState.globalState.getInboxPosition(),
                 "INBOX_BACKWARDS"
             );
+            // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
             if (
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
-                    assertion.afterState.globalState.getPositionInMessage() > 0
+                assertion.afterState.globalState.getPositionInMessage() > 0
             ) {
                 // The current inbox message was read
                 afterInboxCount++;
@@ -638,8 +649,11 @@ abstract contract RollupCore is IRollupCore, Pausable {
             );
             require(newNodeHash == expectedNodeHash, "UNEXPECTED_NODE_HASH");
 
-            memoryFrame.node = NodeLib.initialize(
-                RollupLib.stateHash(assertion.afterState, memoryFrame.currentInboxSize),
+            memoryFrame.node = NodeLib.createNode(
+                RollupLib.stateHash(
+                    assertion.afterState,
+                    memoryFrame.currentInboxSize
+                ),
                 RollupLib.challengeRootHash(
                     memoryFrame.executionHash,
                     block.number,
@@ -673,6 +687,7 @@ abstract contract RollupCore is IRollupCore, Pausable {
             latestNodeCreated(),
             memoryFrame.prevNode.nodeHash,
             newNodeHash,
+            memoryFrame.executionHash,
             assertion,
             memoryFrame.sequencerBatchAcc,
             wasmModuleRoot,

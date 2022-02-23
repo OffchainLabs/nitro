@@ -35,14 +35,14 @@ import "./RollupAdminLogic.sol";
 import "../bridge/IBridge.sol";
 
 import "./RollupLib.sol";
-import "../libraries/ICloneable.sol";
 
 contract RollupCreator is Ownable {
     event RollupCreated(address indexed rollupAddress, address inboxAddress, address adminProxy, address sequencerInbox, address delayedBridge);
     event TemplatesUpdated();
 
     BridgeCreator public bridgeCreator;
-    IBlockChallengeFactory public challengeFactory;
+    IOneStepProofEntry public osp;
+    IChallengeManager public challengeManagerTemplate;
     IRollupAdmin public rollupAdminLogic;
     IRollupUser public rollupUserLogic;
 
@@ -50,12 +50,14 @@ contract RollupCreator is Ownable {
 
     function setTemplates(
         BridgeCreator _bridgeCreator,
-        IBlockChallengeFactory  _challengeFactory,
+        IOneStepProofEntry _osp,
+        IChallengeManager  _challengeManagerLogic,
         IRollupAdmin _rollupAdminLogic,
         IRollupUser _rollupUserLogic
     ) external onlyOwner {
         bridgeCreator = _bridgeCreator;
-        challengeFactory = _challengeFactory;
+        osp = _osp;
+        challengeManagerTemplate = _challengeManagerLogic;
         rollupAdminLogic = _rollupAdminLogic;
         rollupUserLogic = _rollupUserLogic;
         emit TemplatesUpdated();
@@ -86,9 +88,19 @@ contract RollupCreator is Ownable {
             frame.inbox,
             frame.rollupEventBridge,
             frame.outbox
-        ) = bridgeCreator.createBridge(address(frame.admin), expectedRollupAddr);
+        ) = bridgeCreator.createBridge(address(frame.admin), expectedRollupAddr, config.sequencerInboxMaxTimeVariation);
 
         frame.admin.transferOwnership(config.owner);
+
+        IChallengeManager challengeManager = IChallengeManager(address(
+            new TransparentUpgradeableProxy(address(challengeManagerTemplate), address(frame.admin), "")
+        ));
+        challengeManager.initialize(
+            IChallengeResultReceiver(expectedRollupAddr),
+            frame.sequencerInbox,
+            frame.delayedBridge,
+            osp
+        );
 
         frame.rollup = new ArbitrumProxy(
             config,
@@ -97,7 +109,7 @@ contract RollupCreator is Ownable {
                 sequencerInbox: frame.sequencerInbox,
                 outbox: frame.outbox,
                 rollupEventBridge: frame.rollupEventBridge,
-                blockChallengeFactory: challengeFactory,
+                challengeManager: challengeManager,
                 rollupAdminLogic: rollupAdminLogic,
                 rollupUserLogic: rollupUserLogic
             })

@@ -235,9 +235,6 @@ $(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
-solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
-	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
-
 solgen/test/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/lib/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/lib/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
@@ -246,6 +243,9 @@ solgen/test/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-
 
 solgen/test/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
+
+solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
+	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 # strategic rules to minimize dependency building
 

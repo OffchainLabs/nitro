@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*
- * Copyright 2019, Offchain Labs, Inc.
+ * Copyright 2021, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,13 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
-interface ICloneable {
-    function isMaster() external view returns (bool);
-}
+uint8 constant L2_MSG = 3;
+uint8 constant L1MessageType_L2FundedByL1 = 7;
+uint8 constant L1MessageType_submitRetryableTx = 9;
+uint8 constant L2MessageType_unsignedEOATx = 0;
+uint8 constant L2MessageType_unsignedContractTx = 1;
+
+uint8 constant ROLLUP_PROTOCOL_EVENT_TYPE = 8;
+uint8 constant INITIALIZATION_MSG_TYPE = 11;

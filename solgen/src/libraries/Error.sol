@@ -8,10 +8,18 @@ pragma solidity ^0.8.4;
 /// @dev Init was already called
 error AlreadyInit();
 
+/// Init was called with param set to zero that must be nonzero
+error HadZeroInit();
+
 /// @dev Thrown when non owner tries to access an only-owner function
 /// @param sender The msg.sender who is not the owner
 /// @param owner The owner address
 error NotOwner(address sender, address owner);
+
+/// @dev Thrown when an address that is not the rollup tries to call an only-rollup function
+/// @param sender The sender who is not the rollup
+/// @param rollup The rollup address authorized to call this function
+error NotRollup(address sender, address rollup);
 
 /// @dev Thrown when the contract was not called directly from the origin ie msg.sender != tx.origin
 error NotOrigin();

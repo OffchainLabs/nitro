@@ -3,6 +3,7 @@
 /replay
 /cmd/replay/replay
 /*.bin
+/*.test
 .idea
 .vscode
 cmd/node/data
