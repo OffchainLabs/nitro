@@ -5,6 +5,7 @@
 package replay_fuzz
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 
@@ -128,15 +129,18 @@ func Fuzz(input []byte) int {
 	}
 
 	// Append a header to the input (this part is authenticated by L1).
-	// The first 32 bytes encode timestamp and L1 block number bounds,
-	// and the next 8 encode the after delayed message count.
-	// For simplicity, these are all set to 0.
-	inputWithHeader := append(make([]byte, 40), input...)
+	// The first 32 bytes encode timestamp and L1 block number bounds.
+	// For simplicity, those are all set to 0.
+	// The next 8 bytes encode the after delayed message count.
+	delayedMessages := [][]byte{input}
+	header := make([]byte, 40)
+	binary.BigEndian.PutUint64(header[32:], uint64(len(delayedMessages)))
+	inputWithHeader := append(header, input...)
 	inbox := &inboxBackend{
 		batchSeqNum:           0,
 		batches:               [][]byte{inputWithHeader},
 		positionWithinMessage: 0,
-		delayedMessages:       [][]byte{},
+		delayedMessages:       delayedMessages,
 	}
 	_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox)
 	if err != nil {
