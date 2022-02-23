@@ -18,7 +18,7 @@
 
 pragma solidity >=0.4.21 <0.9.0;
 
-/// @title Provides aggregators and their users methods for configuring how they participate in L1 aggregation. 
+/// @title Provides aggregators and their users methods for configuring how they participate in L1 aggregation.
 /// @notice Precompiled contract that exists in every Arbitrum chain at 0x000000000000000000000000000000000000006d
 interface ArbAggregator {
     /// @notice Get the preferred aggregator for an address.
@@ -63,12 +63,12 @@ interface ArbAggregator {
 
     /// @notice Get the tx base fee (in approximate L1 gas) for aggregator
     /// @param aggregator The aggregator to get the base fee for
-    function getTxBaseFee(address aggregator) external view returns (uint);
+    function getTxBaseFee(address aggregator) external view returns (uint256);
 
     /// @notice Set the tx base fee (in approximate L1 gas) for aggregator
     /// Revert unless called by aggregator or the chain owner
     /// Revert if feeInL1Gas is outside the chain's allowed bounds
     /// @param aggregator The aggregator to set the fee for
     /// @param feeInL1Gas The base fee in L1 gas
-    function setTxBaseFee(address aggregator, uint feeInL1Gas) external;
+    function setTxBaseFee(address aggregator, uint256 feeInL1Gas) external;
 }

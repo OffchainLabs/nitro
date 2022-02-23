@@ -21,42 +21,37 @@ pragma solidity ^0.8.0;
 import "./Node.sol";
 import "./RollupLib.sol";
 
-import "../challenge/IChallenge.sol";
+import "../osp/IOneStepProofEntry.sol";
 
 interface IRollupCore {
-    function _stakerMap(address stakerAddress)
-        external
-        view
-        returns (
-            uint64,
-            uint64,
-            uint256,
-            IChallenge,
-            bool
-        );
+    struct Staker {
+        uint256 amountStaked;
+        uint64 index;
+        uint64 latestStakedNode;
+        // currentChallenge is 0 if staker is not in a challenge
+        uint64 currentChallenge;
+        bool isStaked;
+    }
 
     event RollupInitialized(bytes32 machineHash, uint256 chainId);
 
     event NodeCreated(
-        uint256 indexed nodeNum,
+        uint64 indexed nodeNum,
         bytes32 indexed parentNodeHash,
         bytes32 indexed nodeHash,
+        bytes32 executionHash,
         RollupLib.Assertion assertion,
         bytes32 afterInboxBatchAcc,
         bytes32 wasmModuleRoot,
         uint256 inboxMaxCount
     );
 
-    event NodeConfirmed(
-        uint64 indexed nodeNum,
-        bytes32 blockHash,
-        bytes32 sendRoot
-    );
+    event NodeConfirmed(uint64 indexed nodeNum, bytes32 blockHash, bytes32 sendRoot);
 
     event NodeRejected(uint64 indexed nodeNum);
 
     event RollupChallengeStarted(
-        IChallenge indexed challengeContract,
+        uint64 indexed challengeIndex,
         address asserter,
         address challenger,
         uint64 challengedNode
@@ -69,6 +64,8 @@ interface IRollupCore {
         uint256 initialBalance,
         uint256 finalBalance
     );
+
+    function challengeManager() external view returns (IChallengeManager);
 
     /**
      * @notice Get the Node for the given index.
@@ -106,7 +103,7 @@ interface IRollupCore {
      * @param staker Staker address to lookup
      * @return Current challenge of the staker
      */
-    function currentChallenge(address staker) external view returns (IChallenge);
+    function currentChallenge(address staker) external view returns (uint64);
 
     /**
      * @notice Get the amount staked of the given staker
@@ -114,6 +111,13 @@ interface IRollupCore {
      * @return Amount staked of the staker
      */
     function amountStaked(address staker) external view returns (uint256);
+
+    /**
+     * @notice Retrieves stored information about a requested staker
+     * @param staker Staker address to retrieve
+     * @return A structure with information about the requested staker
+     */
+    function getStaker(address staker) external view returns (Staker memory);
 
     /**
      * @notice Get the original staker address of the zombie at the given index

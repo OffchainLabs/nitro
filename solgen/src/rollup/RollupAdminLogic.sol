@@ -2,19 +2,23 @@
 
 pragma solidity ^0.8.0;
 
-import { IRollupAdmin, IRollupUser } from "./IRollupLogic.sol";
+import {IRollupAdmin, IRollupUser} from "./IRollupLogic.sol";
 import "./RollupCore.sol";
 import "../bridge/IOutbox.sol";
 import "../bridge/ISequencerInbox.sol";
-import "../challenge/IChallenge.sol";
+import "../challenge/IChallengeManager.sol";
 import "../libraries/SecondaryLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
+import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
+
 contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgradeable {
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external override onlyProxy initializer {
+    function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
+        external
+        override
+        onlyProxy
+        initializer
+    {
         delayedBridge = connectedContracts.delayedBridge;
         sequencerBridge = connectedContracts.sequencerInbox;
         outbox = connectedContracts.outbox;
@@ -25,7 +29,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         rollupEventBridge.rollupInitialized(config.owner, config.chainId);
         sequencerBridge.addSequencerL2Batch(0, "", 1, IGasRefunder(address(0)));
 
-        challengeFactory = connectedContracts.blockChallengeFactory;
+        challengeManager = connectedContracts.challengeManager;
 
         Node memory node = createInitialNode();
         initializeCore(node);
@@ -52,17 +56,10 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         emit RollupInitialized(config.wasmModuleRoot, config.chainId);
     }
 
-    function createInitialNode()
-        private
-        view
-        returns (Node memory)
-    {
+    function createInitialNode() private view returns (Node memory) {
         GlobalState memory emptyGlobalState;
         bytes32 state = RollupLib.stateHashMem(
-            RollupLib.ExecutionState(
-                emptyGlobalState,
-                MachineStatus.FINISHED
-            ),
+            RollupLib.ExecutionState(emptyGlobalState, MachineStatus.FINISHED),
             1 // inboxMaxCount - force the first assertion to read a message
         );
         return
@@ -211,7 +208,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
          * To change the stake token without breaking consistency one would need to:
          * Pause the system, have all stakers remove their funds,
          * update the user logic to handle ERC20s, change the stake token, then resume.
-         * 
+         *
          * Note: To avoid loss of funds stakers must remove their funds and claim all the
          * available withdrawable funds before the system is paused.
          */
@@ -229,7 +226,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
      * @notice Set max delay for sequencer inbox
      * @param maxTimeVariation the maximum time variation parameters
      */
-    function setSequencerInboxMaxTimeVariation(ISequencerInbox.MaxTimeVariation calldata maxTimeVariation) external override {
+    function setSequencerInboxMaxTimeVariation(
+        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation
+    ) external override {
         sequencerBridge.setMaxTimeVariation(maxTimeVariation);
         emit OwnerFunctionCalled(14);
     }
@@ -261,13 +260,12 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     {
         require(stakerA.length == stakerB.length, "WRONG_LENGTH");
         for (uint256 i = 0; i < stakerA.length; i++) {
-            IChallenge chall = inChallenge(stakerA[i], stakerB[i]);
+            uint64 chall = inChallenge(stakerA[i], stakerB[i]);
 
-            require(address(0) != address(chall), "NOT_IN_CHALL");
+            require(chall != NO_CHAL_INDEX, "NOT_IN_CHALL");
             clearChallenge(stakerA[i]);
             clearChallenge(stakerB[i]);
-
-            chall.clearChallenge();
+            challengeManager.clearChallenge(chall);
         }
         emit OwnerFunctionCalled(21);
     }
@@ -288,12 +286,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
     ) external override whenPaused {
         require(prevNode == latestConfirmed(), "ONLY_LATEST_CONFIRMED");
 
-        createNewNode(
-            assertion,
-            prevNode,
-            prevNodeInboxMaxCount,
-            expectedNodeHash
-        );
+        createNewNode(assertion, prevNode, prevNodeInboxMaxCount, expectedNodeHash);
 
         emit OwnerFunctionCalled(23);
     }
@@ -304,11 +297,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, SecondaryLogicUUPSUpgrade
         bytes32 sendRoot
     ) external override whenPaused {
         // this skips deadline, staker and zombie validation
-        confirmNode(
-            nodeNum,
-            blockHash,
-            sendRoot
-        );
+        confirmNode(nodeNum, blockHash, sendRoot);
         emit OwnerFunctionCalled(24);
     }
 

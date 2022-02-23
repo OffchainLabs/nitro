@@ -11,11 +11,11 @@ import "../bridge/IBridge.sol";
 import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
 import {
-    L2_MSG, 
-    L1MessageType_L2FundedByL1, 
-    L1MessageType_submitRetryableTx, 
-    L2MessageType_unsignedEOATx, 
-    L2MessageType_unsignedContractTx 
+    L2_MSG,
+    L1MessageType_L2FundedByL1,
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedEOATx,
+    L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 
 contract InboxStub is IInbox {
@@ -33,10 +33,7 @@ contract InboxStub is IInbox {
      * @dev This method is an optimization to avoid having to emit the entirety of the messageData in a log. Instead validators are expected to be able to parse the data from the transaction's input
      * @param messageData Data of the message being sent
      */
-    function sendL2MessageFromOrigin(bytes calldata messageData)
-        external
-        returns (uint256)
-    {
+    function sendL2MessageFromOrigin(bytes calldata messageData) external returns (uint256) {
         // solhint-disable-next-line avoid-tx-origin
         require(msg.sender == tx.origin, "origin only");
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
@@ -49,11 +46,7 @@ contract InboxStub is IInbox {
      * @dev This method can be used to send any type of message that doesn't require L1 validation
      * @param messageData Data of the message being sent
      */
-    function sendL2Message(bytes calldata messageData)
-        external
-        override
-        returns (uint256)
-    {
+    function sendL2Message(bytes calldata messageData) external override returns (uint256) {
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -64,7 +57,7 @@ contract InboxStub is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
     }
 
     function sendUnsignedTransaction(

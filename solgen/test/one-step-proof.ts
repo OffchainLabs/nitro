@@ -30,6 +30,8 @@ describe("OneStepProof", function () {
     await sendTestMessages();
   })
 
+  it("should deploy test harness", function() {})
+
   for (let file of dir) {
     if (!file.endsWith(".json")) continue;
     it("Should pass " + file + " proofs", async function () {
