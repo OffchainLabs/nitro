@@ -31,49 +31,26 @@ library StackFrameLib {
             );
     }
 
-    function hash(StackFrameWindow memory window)
-        internal
-        pure
-        returns (bytes32 h)
-    {
+    function hash(StackFrameWindow memory window) internal pure returns (bytes32 h) {
         h = window.remainingHash;
         for (uint256 i = 0; i < window.proved.length; i++) {
-            h = keccak256(
-                abi.encodePacked(
-                    "Stack frame stack:",
-                    hash(window.proved[i]),
-                    h
-                )
-            );
+            h = keccak256(abi.encodePacked("Stack frame stack:", hash(window.proved[i]), h));
         }
     }
 
-    function peek(StackFrameWindow memory window)
-        internal
-        pure
-        returns (StackFrame memory)
-    {
+    function peek(StackFrameWindow memory window) internal pure returns (StackFrame memory) {
         require(window.proved.length == 1, "BAD_WINDOW_LENGTH");
         return window.proved[0];
     }
 
-    function pop(StackFrameWindow memory window)
-        internal
-        pure
-        returns (StackFrame memory frame)
-    {
+    function pop(StackFrameWindow memory window) internal pure returns (StackFrame memory frame) {
         require(window.proved.length == 1, "BAD_WINDOW_LENGTH");
         frame = window.proved[0];
         window.proved = new StackFrame[](0);
     }
 
-    function push(StackFrameWindow memory window, StackFrame memory frame)
-        internal
-        pure
-    {
-        StackFrame[] memory newProved = new StackFrame[](
-            window.proved.length + 1
-        );
+    function push(StackFrameWindow memory window, StackFrame memory frame) internal pure {
+        StackFrame[] memory newProved = new StackFrame[](window.proved.length + 1);
         for (uint256 i = 0; i < window.proved.length; i++) {
             newProved[i] = window.proved[i];
         }

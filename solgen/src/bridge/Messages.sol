@@ -29,7 +29,11 @@ library Messages {
             );
     }
 
-    function accumulateInboxMessage(bytes32 prevAcc, bytes32 message) internal pure returns (bytes32) {
+    function accumulateInboxMessage(bytes32 prevAcc, bytes32 message)
+        internal
+        pure
+        returns (bytes32)
+    {
         return keccak256(abi.encodePacked(prevAcc, message));
     }
 }
