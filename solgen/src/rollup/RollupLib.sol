@@ -46,7 +46,6 @@ struct ContractDependencies {
     IOutbox outbox;
     RollupEventBridge rollupEventBridge;
     IChallengeManager challengeManager;
-
     IRollupAdmin rollupAdminLogic;
     IRollupUser rollupUserLogic;
 }
@@ -96,11 +95,7 @@ library RollupLib {
         uint64 numBlocks;
     }
 
-    function executionHash(Assertion memory assertion)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function executionHash(Assertion memory assertion) internal pure returns (bytes32) {
         MachineStatus[2] memory statuses;
         statuses[0] = assertion.beforeState.machineStatus;
         statuses[1] = assertion.afterState.machineStatus;
@@ -111,22 +106,15 @@ library RollupLib {
         return executionHash(statuses, globalStates, assertion.numBlocks);
     }
 
-    function executionHash(MachineStatus[2] memory statuses, GlobalState[2] memory globalStates, uint64 numBlocks)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function executionHash(
+        MachineStatus[2] memory statuses,
+        GlobalState[2] memory globalStates,
+        uint64 numBlocks
+    ) internal pure returns (bytes32) {
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(
-            statuses[0],
-            globalStates[0].hash()
-        );
-        segments[1] = ChallengeLib.blockStateHash(
-            statuses[1],
-            globalStates[1].hash()
-        );
-        return
-            ChallengeLib.hashChallengeState(0, numBlocks, segments);
+        segments[0] = ChallengeLib.blockStateHash(statuses[0], globalStates[0].hash());
+        segments[1] = ChallengeLib.blockStateHash(statuses[1], globalStates[1].hash());
+        return ChallengeLib.hashChallengeState(0, numBlocks, segments);
     }
 
     function challengeRootHash(
@@ -134,21 +122,10 @@ library RollupLib {
         uint256 proposedTime,
         bytes32 wasmModuleRoot
     ) internal pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encodePacked(
-                    execution,
-                    proposedTime,
-                    wasmModuleRoot
-                )
-            );
+        return keccak256(abi.encodePacked(execution, proposedTime, wasmModuleRoot));
     }
 
-    function confirmHash(Assertion memory assertion)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function confirmHash(Assertion memory assertion) internal pure returns (bytes32) {
         return
             confirmHash(
                 assertion.afterState.globalState.getBlockHash(),
@@ -156,11 +133,7 @@ library RollupLib {
             );
     }
 
-    function confirmHash(bytes32 blockHash, bytes32 sendRoot)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function confirmHash(bytes32 blockHash, bytes32 sendRoot) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(blockHash, sendRoot));
     }
 
@@ -171,14 +144,6 @@ library RollupLib {
         bytes32 inboxAcc
     ) internal pure returns (bytes32) {
         uint8 hasSiblingInt = hasSibling ? 1 : 0;
-        return
-            keccak256(
-                abi.encodePacked(
-                    hasSiblingInt,
-                    lastHash,
-                    assertionExecHash,
-                    inboxAcc
-                )
-            );
+        return keccak256(abi.encodePacked(hasSiblingInt, lastHash, assertionExecHash, inboxAcc));
     }
 }

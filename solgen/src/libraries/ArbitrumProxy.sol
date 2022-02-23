@@ -22,14 +22,13 @@ import "./AdminFallbackProxy.sol";
 import "../rollup/IRollupLogic.sol";
 
 contract ArbitrumProxy is AdminFallbackProxy {
-    constructor(
-        Config memory config,
-        ContractDependencies memory connectedContracts
-    ) AdminFallbackProxy(
-        address(connectedContracts.rollupAdminLogic),
-        abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
-        address(connectedContracts.rollupUserLogic),
-        abi.encodeWithSelector(IRollupUserAbs.initialize.selector, config.stakeToken),
-        config.owner
-    ) {}
+    constructor(Config memory config, ContractDependencies memory connectedContracts)
+        AdminFallbackProxy(
+            address(connectedContracts.rollupAdminLogic),
+            abi.encodeWithSelector(IRollupAdmin.initialize.selector, config, connectedContracts),
+            address(connectedContracts.rollupUserLogic),
+            abi.encodeWithSelector(IRollupUserAbs.initialize.selector, config.stakeToken),
+            config.owner
+        )
+    {}
 }

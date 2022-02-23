@@ -11,11 +11,11 @@ import "../libraries/MerkleLib.sol";
 import "../libraries/DelegateCallAware.sol";
 
 contract Outbox is DelegateCallAware, IOutbox {
-    address public rollup;              // the rollup contract
-    IBridge public bridge;              // the bridge contract
+    address public rollup; // the rollup contract
+    IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool  ) spent;   // maps leaf number => if spent
-    mapping(bytes32 => bytes32) roots;  // maps root hashes => L2 block hash
+    mapping(uint256 => bool) spent; // maps leaf number => if spent
+    mapping(bytes32 => bytes32) roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
         uint128 l2Block;
@@ -31,13 +31,13 @@ contract Outbox is DelegateCallAware, IOutbox {
     uint128 public constant OUTBOX_VERSION = 2;
 
     function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
-        if(rollup != address(0)) revert AlreadyInit();
+        if (rollup != address(0)) revert AlreadyInit();
         rollup = _rollup;
         bridge = _bridge;
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
-        if(msg.sender != rollup) revert NotRollup(msg.sender, rollup);
+        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
@@ -134,14 +134,14 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 index,
         bytes32 item
     ) internal returns (bytes32) {
-        if(proof.length >= 256) revert ProofTooLong(proof.length);
-        if(index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
+        if (proof.length >= 256) revert ProofTooLong(proof.length);
+        if (index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
 
         // Hash the leaf an extra time to prove it's a leaf
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
-        if(roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
+        if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if(spent[index]) revert AlreadySpent(index);
+        if (spent[index]) revert AlreadySpent(index);
         spent[index] = true;
 
         return bytes32(index);
@@ -176,17 +176,7 @@ contract Outbox is DelegateCallAware, IOutbox {
         bytes calldata data
     ) public pure returns (bytes32) {
         return
-            keccak256(
-                abi.encodePacked(
-                    l2Sender,
-                    to,
-                    l2Block,
-                    l1Block,
-                    l2Timestamp,
-                    value,
-                    data
-                )
-            );
+            keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
 
     function calculateMerkleRoot(

@@ -103,7 +103,10 @@ contract BridgeStub is IBridge {
         }
     }
 
-    function setOutbox(address /* outbox */, bool /* enabled*/) external pure override {
+    function setOutbox(
+        address, /* outbox */
+        bool /* enabled*/
+    ) external pure override {
         revert("NOT_IMPLEMENTED");
     }
 

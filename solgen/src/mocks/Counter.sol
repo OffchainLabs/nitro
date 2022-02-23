@@ -6,9 +6,9 @@
 pragma solidity ^0.8.0;
 
 contract Simple {
-  uint64 public counter;
+    uint64 public counter;
 
-  function increment() external {
-    counter++;
-  }
+    function increment() external {
+        counter++;
+    }
 }
