@@ -168,6 +168,14 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 	}
 }
 
+func (b *BlockchainTestInfo) GetDefaultCallOpts(name string) *bind.CallOpts {
+	b.T.Helper()
+	auth := b.GetDefaultTransactOpts(name)
+	return &bind.CallOpts{
+		From: auth.From,
+	}
+}
+
 func (b *BlockchainTestInfo) SignTxAs(name string, data types.TxData) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(name)

@@ -1,0 +1,13 @@
+{
+  "extends": ["solhint:recommended"],
+  "rules": {
+    "prettier/prettier": "error",
+    "avoid-throw": false,
+    "avoid-suicide": "error",
+    "avoid-sha3": "warn",
+    "max-line-length": "off",
+    "compiler-version": "off",
+    "func-visibility": ["warn",{"ignoreConstructors":true}]
+  },
+  "plugins": ["prettier"]
+}

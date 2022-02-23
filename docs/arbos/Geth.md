@@ -114,9 +114,9 @@ Nitro geth includes a few L2-specific transaction types. Click on any to jump to
 |:--------------------------------------------------|:-------------------------------------|:---------------------------|--------|
 | [`ArbitrumUnsignedTx`][ArbTxUnsigned]             | An L1 to L2 message                  | [`EndTxHook`][HE]          | Bridge |
 | [`ArbitrumContractTx`][ArbTxContract]             | A nonce-less L1 to L2 message &nbsp; | [`EndTxHook`][HE]          | Bridge |
+| [`ArbitrumDepositTx`][ArbTxDeposit]               | A user deposit                       | [`StartTxHook`][HS]        | Bridge |
 | [`ArbitrumSubmitRetryableTx`][ArbTxSubmit] &nbsp; | Creating a retryable                 | [`StartTxHook`][HS] &nbsp; | Bridge |
 | [`ArbitrumRetryTx`][ArbTxRetry]                   | A retryable redeem attempt           | [`EndTxHook`][HE]          | L2     |
-| [`ArbitrumDepositTx`][ArbTxDeposit]               | A user deposit                       | [`StartTxHook`][HS]        | Bridge |
 | [`ArbitrumInternalTx`][ArbTxInternal]             | ArbOS state update                   | [`StartTxHook`][HS]        | ArbOS  |
 
 [ArbTxUnsigned]: #ArbitrumUnsignedTx
@@ -136,14 +136,14 @@ Provides a mechanism for a user on L1 to message a contract on L2. This uses the
 ### [`ArbitrumContractTx`][ArbitrumContractTx_link]<a name=ArbitrumContractTx></a>
 These are like an [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link] but are intended for smart contracts. These use the bridge's unique, sequential nonce rather than requiring the caller specify their own. An L1 contract may still use an [`ArbitrumUnsignedTx`][ArbitrumUnsignedTx_link], but doing so may necessitate tracking the nonce in L1 state.
 
+### [`ArbitrumDepositTx`][ArbitrumDepositTx_link]<a name=ArbitrumDepositTx></a>
+Represents a user deposit from L1 to L2. This increases the user's balance by the amount deposited on L1.
+
 ### [`ArbitrumSubmitRetryableTx`][ArbitrumSubmitRetryableTx_link]<a name=ArbitrumSubmitRetryableTx></a>
 Represents a retryable submission and may schedule an [`ArbitrumRetryTx`](#ArbitrumRetryTx) if provided enough gas. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
 
 ### [`ArbitrumRetryTx`][ArbitrumRetryTx_link]<a name=ArbitrumRetryTx></a>
 These are scheduled by calls to the [`redeem`](Precompiles.md#ArbRetryableTx) precompile method and via retryable auto-redemption. Please see the [retryables documentation](ArbOS.md#Retryables) for more info.
-
-### [`ArbitrumDepositTx`][ArbitrumDepositTx_link]<a name=ArbitrumDepositTx></a>
-Represents a user deposit from L1 to L2. This increases the user's balance by the amount deposited on L1.
 
 ### [`ArbitrumInternalTx`][ArbitrumInternalTx_link]<a name=ArbitrumInternalTx></a>
 Because tracing support requires ArbOS's state-changes happen inside a transaction, ArbOS may create a tx of this type to update its state in-between user-generated transactions. Such a tx has a [`Type`][InternalType_link] field signifying the state it will update, though currently this is just future-proofing as there's only one value it may have. Below are the internal tx types.

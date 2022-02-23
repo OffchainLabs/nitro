@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -58,10 +59,10 @@ func TestSequencerFeed(t *testing.T) {
 	err := client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, client1, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = arbnode.WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -110,13 +111,13 @@ func TestLyingSequencer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientC, fraudTx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = arbnode.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,13 +135,13 @@ func TestLyingSequencer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, realTx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, realTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction after NodeC posts a batch.
-	_, err = arbnode.WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 type InboxReaderConfig struct {
@@ -42,10 +43,10 @@ type InboxReader struct {
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
-	client         L1Interface
+	client         arbutil.L1Interface
 }
 
-func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,
