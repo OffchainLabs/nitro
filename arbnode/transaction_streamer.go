@@ -386,7 +386,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
-	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
 	if err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		for _, receipt := range receipts {
 			logs = append(logs, receipt.Logs...)
 		}
-		status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+		status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
 		if err != nil {
 			return err
 		}
