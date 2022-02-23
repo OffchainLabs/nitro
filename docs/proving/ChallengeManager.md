@@ -3,7 +3,7 @@
 The `ChallengeManager` arbitrates challenge games. Here's a diagram of the challenge state machine:
 
 ```mermaid
-flowchart LR
+flowchart TD
     B[Block challenge]
     E[Execution challenge]
     W[Waiting for timeout to allow for an emergency upgrade]
