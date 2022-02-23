@@ -4,6 +4,8 @@
 /cmd/replay/replay
 /*.bin
 /*.test
+/system_tests/*_fuzz/*
+!/system_tests/*_fuzz/*_fuzz.go
 .idea
 .vscode
 cmd/node/data
