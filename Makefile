@@ -251,6 +251,7 @@ solgen/test/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prov
 
 .make/lint: build-node-deps | .make
 	golangci-lint run --fix
+	yarn --cwd solgen solhint
 	@touch $@
 
 .make/fmt: build-node-deps .make/yarndeps | .make
