@@ -16,8 +16,8 @@ contract OneStepProverHostIo is IOneStepProver {
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
 
-    uint256 constant LEAF_SIZE = 32;
-    uint256 constant INBOX_NUM = 2;
+    uint256 private constant LEAF_SIZE = 32;
+    uint256 private constant INBOX_NUM = 2;
 
     function setLeafByte(
         bytes32 oldLeaf,
@@ -65,10 +65,10 @@ contract OneStepProverHostIo is IOneStepProver {
         if (inst.opcode == Instructions.GET_GLOBAL_STATE_BYTES32) {
             mod.moduleMemory.merkleRoot = merkleProof.computeRootFromMemory(
                 leafIdx,
-                state.bytes32_vals[idx]
+                state.bytes32Vals[idx]
             );
         } else if (inst.opcode == Instructions.SET_GLOBAL_STATE_BYTES32) {
-            state.bytes32_vals[idx] = startLeafContents;
+            state.bytes32Vals[idx] = startLeafContents;
         } else {
             revert("BAD_GLOBAL_STATE_OPCODE");
         }
@@ -82,7 +82,7 @@ contract OneStepProverHostIo is IOneStepProver {
             return;
         }
 
-        mach.valueStack.push(ValueLib.newI64(state.u64_vals[idx]));
+        mach.valueStack.push(ValueLib.newI64(state.u64Vals[idx]));
     }
 
     function executeSetU64(Machine memory mach, GlobalState memory state) internal pure {
@@ -93,7 +93,7 @@ contract OneStepProverHostIo is IOneStepProver {
             mach.status = MachineStatus.ERRORED;
             return;
         }
-        state.u64_vals[idx] = val;
+        state.u64Vals[idx] = val;
     }
 
     function executeReadPreImage(

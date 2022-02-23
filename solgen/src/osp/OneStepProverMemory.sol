@@ -12,8 +12,8 @@ contract OneStepProverMemory is IOneStepProver {
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
 
-    uint256 constant LEAF_SIZE = 32;
-    uint64 constant PAGE_SIZE = 65536;
+    uint256 private constant LEAF_SIZE = 32;
+    uint64 private constant PAGE_SIZE = 65536;
 
     function pullLeafByte(bytes32 leaf, uint256 idx) internal pure returns (uint8) {
         require(idx < LEAF_SIZE, "BAD_PULL_LEAF_BYTE_IDX");
