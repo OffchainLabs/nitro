@@ -4,7 +4,7 @@ import { ethers, run } from "hardhat";
 describe("HashProofHelper", function () {
   it("Should produce valid proofs from full preimages", async function () {
     await run("deploy", { tags: "HashProofHelper" });
-
+    
     const hashProofHelper = await ethers.getContract("HashProofHelper");
 
     for (let i = 0; i < 16; i += 1) {
