@@ -63,7 +63,12 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 		resultChan,
 		ctx,
 	}
-	return <-resultChan
+	select {
+	case res := <-resultChan:
+		return res
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Sequencer) Initialize(ctx context.Context) error {
@@ -97,7 +102,7 @@ func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender co
 	return nil
 }
 
-func (s *Sequencer) sequenceTransactions() {
+func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
 	l1Block := atomic.LoadUint64(&s.l1BlockNumber)
 	for s.l1Client != nil && l1Block == 0 {
@@ -112,7 +117,11 @@ func (s *Sequencer) sequenceTransactions() {
 	for {
 		var queueItem txQueueItem
 		if len(txes) == 0 {
-			queueItem = <-s.txQueue
+			select {
+			case queueItem = <-s.txQueue:
+			case <-ctx.Done():
+				return
+			}
 		} else {
 			done := false
 			select {
@@ -224,16 +233,9 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		})
 	}
 
-	s.LaunchThread(func(ctx context.Context) {
-		for {
-			s.sequenceTransactions()
-			select {
-			// TODO: don't use time.After
-			case <-time.After(minBlockInterval):
-			case <-ctx.Done():
-				return
-			}
-		}
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		s.sequenceTransactions(ctx)
+		return minBlockInterval
 	})
 
 	return nil

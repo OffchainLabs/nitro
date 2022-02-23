@@ -4,47 +4,67 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 type StopWaiterSafe struct {
-	started  uint32
-	stopped  uint32
-	stopFunc func()
+	mutex    sync.Mutex // protects started, stopped, ctx, stopFunc
+	started  bool
+	stopped  bool
 	ctx      context.Context
-	wg       sync.WaitGroup
+	stopFunc func()
+
+	wg sync.WaitGroup
 }
 
 func (s *StopWaiterSafe) Started() bool {
-	return atomic.LoadUint32(&s.started) != 0
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.started
 }
 
 func (s *StopWaiterSafe) Stopped() bool {
-	return atomic.LoadUint32(&s.stopped) != 0
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.stopped
 }
 
-func (s *StopWaiterSafe) GetContext() context.Context {
-	return s.ctx
+func (s *StopWaiterSafe) GetContext() (context.Context, error) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.started {
+		return s.ctx, nil
+	}
+	return nil, errors.New("not started")
 }
 
 // start-after-start will error, start-after-stop will immediately cancel
 func (s *StopWaiterSafe) Start(ctx context.Context) error {
-	alreadyStarted := atomic.SwapUint32(&s.started, 1)
-	if alreadyStarted != 0 {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.started {
 		return errors.New("start after start")
 	}
+	s.started = true
 	s.ctx, s.stopFunc = context.WithCancel(ctx)
-	if s.Stopped() {
+	if s.stopped {
 		s.stopFunc()
 	}
 	return nil
 }
 
+func (s *StopWaiterSafe) StopOnly() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if s.started && !s.stopped {
+		s.stopFunc()
+	}
+	s.stopped = true
+}
+
 // Stopping multiple times, even before start, will work
 func (s *StopWaiterSafe) StopAndWait() {
-	atomic.StoreUint32(&s.stopped, 1)
-	s.stopFunc()
+	s.StopOnly()
 	s.wg.Wait()
 }
 
@@ -69,16 +89,20 @@ func (s *StopWaiterSafe) LaunchUntrackedThread(foo func()) {
 	go foo()
 }
 
-func (s *StopWaiterSafe) LaunchWithInterval(foo func(context.Context), interval time.Duration) error {
+// call function iteratively in a thread.
+// input param return value is how long to wait before next invocation
+func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration) error {
 	return s.LaunchThread(func(ctx context.Context) {
-	ThreadMainLoop:
 		for {
-			foo(ctx)
+			interval := foo(ctx)
+			if ctx.Err() != nil {
+				return
+			}
 			timer := time.NewTimer(interval)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				break ThreadMainLoop
+				return
 			case <-timer.C:
 			}
 		}
@@ -102,8 +126,16 @@ func (s *StopWaiter) LaunchThread(foo func(context.Context)) {
 	}
 }
 
-func (s *StopWaiter) LaunchWithInterval(foo func(context.Context), interval time.Duration) {
-	if err := s.StopWaiterSafe.LaunchWithInterval(foo, interval); err != nil {
+func (s *StopWaiter) CallIteratively(foo func(context.Context) time.Duration) {
+	if err := s.StopWaiterSafe.CallIteratively(foo); err != nil {
 		panic(err)
 	}
+}
+
+func (s *StopWaiter) GetContext() context.Context {
+	ctx, err := s.StopWaiterSafe.GetContext()
+	if err != nil {
+		panic(err)
+	}
+	return ctx
 }

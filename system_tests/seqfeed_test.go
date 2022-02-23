@@ -49,8 +49,8 @@ func TestSequencerFeed(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info1, _, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, true)
-	_, _, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, false)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, true)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, false)
 
 	l2info1.GenerateAccount("User2")
 
@@ -69,6 +69,8 @@ func TestSequencerFeed(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }
 
 func TestLyingSequencer(t *testing.T) {
@@ -89,7 +91,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(port)
-	l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
+	l2clientC, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 
 	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.NodeConfigL1Test
@@ -97,7 +99,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
-	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
+	l2clientB, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
@@ -160,4 +162,8 @@ func TestLyingSequencer(t *testing.T) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+	nodeC.StopAndWait()
 }

@@ -63,19 +63,12 @@ func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMess
 
 func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn)
-	r.LaunchThread(func(ctx context.Context) {
-		for {
-			err := r.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			// TODO: don't use time.After
-			case <-time.After(time.Second):
-			}
+	r.CallIteratively(func(ctx context.Context) time.Duration {
+		err := r.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
+		return time.Second
 	})
 
 	// Ensure we read the init message before other things start up

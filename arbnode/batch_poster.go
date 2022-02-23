@@ -344,24 +344,17 @@ func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
-	b.LaunchThread(func(ctx context.Context) {
-		for {
-			tx, err := b.postSequencerBatch()
+	b.CallIteratively(func(ctx context.Context) time.Duration {
+		tx, err := b.postSequencerBatch()
+		if err != nil {
+			log.Error("error posting batch", "err", err)
+		}
+		if tx != nil {
+			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
 			if err != nil {
-				log.Error("error posting batch", "err", err)
-			}
-			if tx != nil {
-				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
-				if err != nil {
-					log.Error("failed ensuring batch tx succeeded", "err", err)
-				}
-			}
-			select {
-			case <-ctx.Done():
-				return
-			// TODO: dont use time.After
-			case <-time.After(b.config.BatchPollDelay):
+				log.Error("failed ensuring batch tx succeeded", "err", err)
 			}
 		}
+		return b.config.BatchPollDelay
 	})
 }

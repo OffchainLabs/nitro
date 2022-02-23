@@ -523,7 +523,7 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationEntry.SeqMsgNr = startPos.BatchNumber
 		// validation can take long time. Don't wait for it when shutting down
-		go v.validate(ctx, validationEntry, startPos, endPos)
+		v.LaunchThread(func(ctx context.Context) { v.validate(ctx, validationEntry, startPos, endPos) })
 		v.posNextSend += 1
 		v.globalPosNextSend = endPos
 	}

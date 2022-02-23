@@ -172,17 +172,11 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 
 func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.StopWaiter.Start(ctxIn)
-	d.LaunchThread(func(ctx context.Context) {
-		for {
-			err := d.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
+	d.CallIteratively(func(ctx context.Context) time.Duration {
+		err := d.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
+		return time.Second
 	})
 }

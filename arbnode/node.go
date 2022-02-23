@@ -433,7 +433,7 @@ func (n *Node) Start(ctx context.Context) error {
 	return nil
 }
 
-func (n *Node) StopAndWait(ctx context.Context) {
+func (n *Node) StopAndWait() {
 	if n.BroadcastClient != nil {
 		n.BroadcastClient.StopAndWait()
 	}
