@@ -37,37 +37,56 @@ describe('EthCallAware', async () => {
   const num = 10
   const data = '0x2020'
 
-  it('allows transaction to continue', async () => {
-    const ethCallAware = await setupEthCallAware()
-    const res = await ethCallAware.functions.testFunction(num, data)
-    const receipt = await res.wait()
+  const tests = async (skipEthCallAware: boolean) => {
+    it(`allows transaction to continue (skipped: ${skipEthCallAware})`, async () => {
+      const ethCallAware = await setupEthCallAware()
+      const res = await ethCallAware.functions.testFunction(
+        num,
+        data,
+        skipEthCallAware,
+      )
+      const receipt = await res.wait()
 
-    const event = ethCallAware.interface.parseLog(receipt.logs[0])
-      .args as TxSuccessEvent['args']
-    expect(event.data, 'data').to.eq(data)
-    expect(event.num.toNumber(), 'num').to.eq(num)
-  })
+      const event = ethCallAware.interface.parseLog(receipt.logs[0])
+        .args as TxSuccessEvent['args']
+      expect(event.data, 'data').to.eq(data)
+      expect(event.num.toNumber(), 'num').to.eq(num)
+    })
 
-  it('call reverts with data', async () => {
-    const ethCallAware = await setupEthCallAware()
-    const callData = ethCallAware.interface.encodeFunctionData('testFunction', [
-      num,
-      data,
-    ])
-    await expect(
-      ethCallAware.callStatic.testFunction(num, data),
-    ).to.be.revertedWith(`CallAwareData("${callData}")`)
-  })
-  it('estimate gas returns correct value', async () => {
-    const ethCallAware = await setupEthCallAware()
-    const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data)
+    it(`call reverts with data (skipped: ${skipEthCallAware})`, async () => {
+      const ethCallAware = await setupEthCallAware()
 
-    const res = await ethCallAware.functions.testFunction(num, data)
-    const receipt = await res.wait()
-    const event = ethCallAware.interface.parseLog(receipt.logs[0])
-      .args as TxSuccessEvent['args']
-    expect(event.data, 'data').to.eq(data)
-    expect(event.num.toNumber(), 'num').to.eq(num)
-    expect(gasEstimate.toNumber(), 'gas used').to.eq(receipt.gasUsed)
-  })
+      if (skipEthCallAware) {
+          // we expect this to succeed
+        await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware)
+      } else {
+        const revertData = ethCallAware.interface.encodeFunctionData(
+          'testFunction',
+          [num, data, skipEthCallAware],
+        )
+        await expect(
+          ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
+        ).to.be.revertedWith(`CallAwareData("${revertData}")`)
+      }
+    })
+    it(`estimate gas returns correct value (skipped: ${skipEthCallAware})`, async () => {
+      const ethCallAware = await setupEthCallAware()
+      const gasEstimate = await ethCallAware.estimateGas.testFunction(
+        num,
+        data,
+        skipEthCallAware,
+      )
+
+      const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware)
+      const receipt = await res.wait()
+      const event = ethCallAware.interface.parseLog(receipt.logs[0])
+        .args as TxSuccessEvent['args']
+      expect(event.data, 'data').to.eq(data)
+      expect(event.num.toNumber(), 'num').to.eq(num)
+      expect(gasEstimate.toNumber(), 'gas used').to.eq(receipt.gasUsed)
+    })
+  }
+
+  tests(false)
+  tests(true)
 })

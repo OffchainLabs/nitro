@@ -11,7 +11,7 @@ contract EthCallAwareTester is EthCallAware {
 
     event TxSuccess(uint256 num, bytes data);
 
-    function testFunction(uint256 num, bytes calldata data) revertOnCall public {
+    function testFunction(uint256 num, bytes calldata data, bool skip) revertOnCall(skip) public {
         emit TxSuccess(num, data);
     }
 }

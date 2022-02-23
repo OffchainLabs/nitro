@@ -27,8 +27,9 @@ abstract contract EthCallAware {
     /// @dev Tries to determine if the current execution is a transaction
     /// or a call. Allows execution to continue if the execution is a transaction
     /// and reverts with the provided data if the execution is a call
-    modifier revertOnCall() {
-        if(isCall()) revert CallAwareData(msg.data);
+    /// @param skip Whether the the call awareness check should be skipped
+    modifier revertOnCall(bool skip) {
+        if(!skip && isCall()) revert CallAwareData(msg.data);
         _;
     }
 
