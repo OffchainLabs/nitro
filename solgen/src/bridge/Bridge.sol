@@ -60,7 +60,7 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
-        if(!allowedInboxesMap[msg.sender].allowed) revert NotInbox(msg.sender);
+        if (!allowedInboxesMap[msg.sender].allowed) revert NotInbox(msg.sender);
         return
             addMessageToAccumulator(
                 kind,
@@ -95,7 +95,16 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             prevAcc = inboxAccs[count - 1];
         }
         inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
-        emit MessageDelivered(count, prevAcc, msg.sender, kind, sender, messageDataHash, baseFeeL1, blockTimestamp);
+        emit MessageDelivered(
+            count,
+            prevAcc,
+            msg.sender,
+            kind,
+            sender,
+            messageDataHash,
+            baseFeeL1,
+            blockTimestamp
+        );
         return count;
     }
 
@@ -104,12 +113,12 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         uint256 value,
         bytes calldata data
     ) external override returns (bool success, bytes memory returnData) {
-        if(!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
+        if (!allowedOutboxesMap[msg.sender].allowed) revert NotOutbox(msg.sender);
         if (data.length > 0 && !to.isContract()) revert NotContract(to);
         address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
-        (success, returnData) = to.call{ value: value }(data);
+        (success, returnData) = to.call{value: value}(data);
         activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
     }

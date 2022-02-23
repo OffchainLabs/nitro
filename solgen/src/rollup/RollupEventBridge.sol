@@ -23,10 +23,7 @@ import "./IRollupLogic.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";
-import {
-    ROLLUP_PROTOCOL_EVENT_TYPE,
-    INITIALIZATION_MSG_TYPE
-} from "../libraries/MessageTypes.sol";
+import {ROLLUP_PROTOCOL_EVENT_TYPE, INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 /**
  * @title The inbox for rollup protocol events
@@ -51,14 +48,8 @@ contract RollupEventBridge is IMessageProvider, DelegateCallAware {
         rollup = _rollup;
     }
 
-    function rollupInitialized(
-        address owner,
-        uint256 chainId
-    ) external onlyRollup {
-        bytes memory initMsg = abi.encodePacked(
-            owner,
-            chainId
-        );
+    function rollupInitialized(address owner, uint256 chainId) external onlyRollup {
+        bytes memory initMsg = abi.encodePacked(owner, chainId);
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),

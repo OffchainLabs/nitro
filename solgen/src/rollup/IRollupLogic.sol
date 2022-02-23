@@ -40,6 +40,7 @@ interface IRollupUserAbs {
 
 interface IRollupUser is IRollupUserAbs {
     function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
+
     function newStakeOnNewNode(
         RollupLib.Assertion calldata assertion,
         bytes32 expectedNodeHash,
@@ -48,7 +49,11 @@ interface IRollupUser is IRollupUserAbs {
 }
 
 interface IRollupUserERC20 is IRollupUserAbs {
-    function newStakeOnExistingNode(uint256 tokenAmount, uint64 nodeNum, bytes32 nodeHash) external;
+    function newStakeOnExistingNode(
+        uint256 tokenAmount,
+        uint64 nodeNum,
+        bytes32 nodeHash
+    ) external;
 
     function newStakeOnNewNode(
         uint256 tokenAmount,
@@ -61,10 +66,8 @@ interface IRollupUserERC20 is IRollupUserAbs {
 interface IRollupAdmin {
     event OwnerFunctionCalled(uint256 indexed id);
 
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external;
+    function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
+        external;
 
     /**
      * @notice Add a contract authorized to put messages into this rollup's inbox
@@ -102,8 +105,7 @@ interface IRollupAdmin {
      * @param _validator addresses to set in the whitelist
      * @param _val value to set in the whitelist for corresponding address
      */
-    function setValidator(address[] memory _validator, bool[] memory _val)
-        external;
+    function setValidator(address[] memory _validator, bool[] memory _val) external;
 
     /**
      * @notice Set a new owner address for the rollup proxy
@@ -165,10 +167,7 @@ interface IRollupAdmin {
      */
     function upgradeBeacon(address beacon, address newImplementation) external;
 
-    function forceResolveChallenge(
-        address[] memory stackerA,
-        address[] memory stackerB
-    ) external;
+    function forceResolveChallenge(address[] memory stackerA, address[] memory stackerB) external;
 
     function forceRefundStaker(address[] memory stacker) external;
 

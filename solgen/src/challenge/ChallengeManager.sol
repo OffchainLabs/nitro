@@ -19,7 +19,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     uint256 constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
-    mapping (uint256 => ChallengeLib.Challenge) public challenges;
+    mapping(uint256 => ChallengeLib.Challenge) public challenges;
 
     IChallengeResultReceiver public resultReceiver;
 
@@ -27,7 +27,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     IBridge public delayedBridge;
     IOneStepProofEntry public osp;
 
-    function challengeInfo(uint64 challengeIndex) external view override returns (ChallengeLib.Challenge memory) {
+    function challengeInfo(uint64 challengeIndex)
+        external
+        view
+        override
+        returns (ChallengeLib.Challenge memory)
+    {
         return challenges[challengeIndex];
     }
 
@@ -38,11 +43,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         require(
             challenge.challengeStateHash ==
-            ChallengeLib.hashChallengeState(
-                selection.oldSegmentsStart,
-                selection.oldSegmentsLength,
-                selection.oldSegments
-            ),
+                ChallengeLib.hashChallengeState(
+                    selection.oldSegmentsStart,
+                    selection.oldSegmentsLength,
+                    selection.oldSegments
+                ),
             "BIS_STATE"
         );
         if (
@@ -92,8 +97,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     ) external override returns (uint64) {
         require(msg.sender == address(resultReceiver), "ONLY_ROLLUP_CHAL");
         bytes32[] memory segments = new bytes32[](2);
-        segments[0] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[0], startAndEndGlobalStates_[0].hash());
-        segments[1] = ChallengeLib.blockStateHash(startAndEndMachineStatuses_[1], startAndEndGlobalStates_[1].hash());
+        segments[0] = ChallengeLib.blockStateHash(
+            startAndEndMachineStatuses_[0],
+            startAndEndGlobalStates_[0].hash()
+        );
+        segments[1] = ChallengeLib.blockStateHash(
+            startAndEndMachineStatuses_[1],
+            startAndEndGlobalStates_[1].hash()
+        );
 
         uint64 challengeIndex = ++totalChallengesCreated;
         // The following is an assertion since it should never be possible, but it's an important invariant
@@ -103,14 +114,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
 
         // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
         uint64 maxInboxMessagesRead = startAndEndGlobalStates_[1].getInboxPosition();
-        if (startAndEndMachineStatuses_[1] == MachineStatus.ERRORED || startAndEndGlobalStates_[1].getPositionInMessage() > 0) {
+        if (
+            startAndEndMachineStatuses_[1] == MachineStatus.ERRORED ||
+            startAndEndGlobalStates_[1].getPositionInMessage() > 0
+        ) {
             maxInboxMessagesRead++;
         }
         challenge.maxInboxMessages = maxInboxMessagesRead;
-        challenge.next = ChallengeLib.Participant({
-            addr: asserter_,
-            timeLeft: asserterTimeLeft_
-        });
+        challenge.next = ChallengeLib.Participant({addr: asserter_, timeLeft: asserterTimeLeft_});
         challenge.current = ChallengeLib.Participant({
             addr: challenger_,
             timeLeft: challengerTimeLeft_
@@ -123,12 +134,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             startAndEndGlobalStates_[0],
             startAndEndGlobalStates_[1]
         );
-        completeBisection(
-            challengeIndex,
-            0,
-            numBlocks,
-            segments
-        );
+        completeBisection(challengeIndex, 0, numBlocks, segments);
         return challengeIndex;
     }
 
@@ -142,7 +148,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.SegmentSelection calldata selection,
         bytes32[] calldata newSegments
     ) external takeTurn(challengeIndex, selection) {
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
+            selection
+        );
         require(challengeLength > 1, "TOO_SHORT");
         {
             uint256 expectedDegree = challengeLength;
@@ -152,18 +160,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             require(newSegments.length == expectedDegree + 1, "WRONG_DEGREE");
         }
 
-        requireValidBisection(
-            selection,
-            newSegments[0],
-            newSegments[newSegments.length - 1]
-        );
+        requireValidBisection(selection, newSegments[0], newSegments[newSegments.length - 1]);
 
-        completeBisection(
-            challengeIndex,
-            challengeStart,
-            challengeLength,
-            newSegments
-        );
+        completeBisection(challengeIndex, challengeStart, challengeLength, newSegments);
     }
 
     function challengeExecution(
@@ -176,18 +175,13 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
         requireValidBisection(
             selection,
-            ChallengeLib.blockStateHash(
-                machineStatuses[0],
-                globalStateHashes[0]
-            ),
-            ChallengeLib.blockStateHash(
-                machineStatuses[1],
-                globalStateHashes[1]
-            )
+            ChallengeLib.blockStateHash(machineStatuses[0], globalStateHashes[0]),
+            ChallengeLib.blockStateHash(machineStatuses[1], globalStateHashes[1])
         );
 
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+        (uint256 executionChallengeAtSteps, uint256 challengeLength) = ChallengeLib
+            .extractChallengeSegment(selection);
         require(challengeLength == 1, "TOO_LONG");
 
         if (machineStatuses[0] != MachineStatus.FINISHED) {
@@ -211,19 +205,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
             globalStateHashes[0],
             challenge.wasmModuleRoot
         );
-        segments[1] = ChallengeLib.getEndMachineHash(
-            machineStatuses[1],
-            globalStateHashes[1]
-        );
+        segments[1] = ChallengeLib.getEndMachineHash(machineStatuses[1], globalStateHashes[1]);
 
         challenge.mode = ChallengeLib.ChallengeMode.EXECUTION;
 
-        completeBisection(
-            challengeIndex,
-            0,
-            numSteps,
-            segments
-        );
+        completeBisection(challengeIndex, 0, numSteps, segments);
 
         emit ExecutionChallengeBegun(challengeIndex, executionChallengeAtSteps);
     }
@@ -234,7 +220,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes calldata proof
     ) external takeTurn(challengeIndex, selection) {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
+            selection
+        );
         require(challengeLength == 1, "TOO_LONG");
 
         bytes32 afterHash = osp.proveOneStep(
@@ -244,7 +232,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
                 delayedBridge: delayedBridge
             }),
             challengeStart,
-                selection.oldSegments[selection.challengePosition],
+            selection.oldSegments[selection.challengePosition],
             proof
         );
         require(
@@ -271,7 +259,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex].current.addr;
     }
 
-    function currentResponderTimeLeft(uint64 challengeIndex) public override view returns (uint256) {
+    function currentResponderTimeLeft(uint64 challengeIndex)
+        public
+        view
+        override
+        returns (uint256)
+    {
         return challenges[challengeIndex].current.timeLeft;
     }
 
@@ -318,7 +311,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     function _nextWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         delete challenges[challengeIndex];
-        resultReceiver.completeChallenge(challengeIndex, challenge.next.addr, challenge.current.addr);
+        resultReceiver.completeChallenge(
+            challengeIndex,
+            challenge.next.addr,
+            challenge.current.addr
+        );
         emit ChallengeEnded(challengeIndex, reason);
     }
 
@@ -327,12 +324,15 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
      * state. It is assumed that wherever this function is consumed, the turn is then adjusted for the opposite party
      * to timeout. This is done as a safety measure so challenges can only be resolved by timeouts during mainnet beta.
      */
-    function _currentWin(uint64 challengeIndex, ChallengeTerminationType /* reason */) private {
+    function _currentWin(
+        uint64 challengeIndex,
+        ChallengeTerminationType /* reason */
+    ) private {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.challengeStateHash = bytes32(0);
 
-//        delete challenges[challengeIndex];
-//        resultReceiver.completeChallenge(challengeIndex, challenge.current.addr, challenge.next.addr);
-//        emit ChallengeEnded(challengeIndex, reason);
+        //        delete challenges[challengeIndex];
+        //        resultReceiver.completeChallenge(challengeIndex, challenge.current.addr, challenge.next.addr);
+        //        emit ChallengeEnded(challengeIndex, reason);
     }
 }

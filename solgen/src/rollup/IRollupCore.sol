@@ -46,11 +46,7 @@ interface IRollupCore {
         uint256 inboxMaxCount
     );
 
-    event NodeConfirmed(
-        uint64 indexed nodeNum,
-        bytes32 blockHash,
-        bytes32 sendRoot
-    );
+    event NodeConfirmed(uint64 indexed nodeNum, bytes32 blockHash, bytes32 sendRoot);
 
     event NodeRejected(uint64 indexed nodeNum);
 
