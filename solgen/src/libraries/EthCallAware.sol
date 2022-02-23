@@ -32,9 +32,16 @@ abstract contract EthCallAware {
         _;
     }
 
+    /// @dev Tries to determine if the current execution is a transaction
+    /// or a call
     function isCall() internal view returns(bool) {
-        // because of the base fee, the gas price should 
-        // never be this low in a production environment
+        // when making eth_calls many libraries leave empty, or allow arbitrary setting, of some 
+        // transaction fields such as 'from' and 'gasPrice'. Since it's impossible for a user to 
+        // sign a transaction from the 0x000.. address we know that if a transaction has that as its origin
+        // then we must be in an eth_call. Likewise the base fee stops transactions being mined at 0 or 1 wei
+        // gas prices, so those values are also indicators of an eth_call. 
+        // See https://twitter.com/0xkarmacoma/status/1493380279309717505 for more details.
+
         // remix sets a gasprice of 1, whereas ethersjs uses 0
         return tx.gasprice <= 1;
     }
