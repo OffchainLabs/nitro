@@ -53,11 +53,7 @@ contract ValidatorUtils {
         address staker1,
         address staker2,
         uint256 maxDepth
-    )
-        external
-        view
-        returns (NodeConflict memory)
-    {
+    ) external view returns (NodeConflict memory) {
         uint64 staker1NodeNum = rollup.latestStakedNode(staker1);
         uint64 staker2NodeNum = rollup.latestStakedNode(staker2);
         return findNodeConflict(rollup, staker1NodeNum, staker2NodeNum, maxDepth);
@@ -86,7 +82,8 @@ contract ValidatorUtils {
 
             // Verify that no staker is staked on this node
             require(
-                node.stakerCount == IRollupUser(address(rollup)).countStakedZombies(firstUnresolvedNode),
+                node.stakerCount ==
+                    IRollupUser(address(rollup)).countStakedZombies(firstUnresolvedNode),
                 "HAS_STAKERS"
             );
         }
@@ -123,9 +120,7 @@ contract ValidatorUtils {
         for (uint64 i = 0; i < stakerCount; i++) {
             address staker = rollup.getStakerAddress(i);
             uint256 latestStakedNode = rollup.latestStakedNode(staker);
-            if (
-                latestStakedNode <= latestConfirmed && rollup.currentChallenge(staker) == 0
-            ) {
+            if (latestStakedNode <= latestConfirmed && rollup.currentChallenge(staker) == 0) {
                 stakers[index] = staker;
                 index++;
             }
@@ -136,7 +131,11 @@ contract ValidatorUtils {
         return stakers;
     }
 
-    function latestStaked(IRollupCore rollup, address staker) external view returns (uint64, Node memory) {
+    function latestStaked(IRollupCore rollup, address staker)
+        external
+        view
+        returns (uint64, Node memory)
+    {
         uint64 num = rollup.latestStakedNode(staker);
         if (num == 0) {
             num = rollup.latestConfirmed();
@@ -145,7 +144,11 @@ contract ValidatorUtils {
         return (num, node);
     }
 
-    function stakedNodes(IRollupCore rollup, address staker) external view returns (uint64[] memory) {
+    function stakedNodes(IRollupCore rollup, address staker)
+        external
+        view
+        returns (uint64[] memory)
+    {
         uint64[] memory nodes = new uint64[](100000);
         uint256 index = 0;
         for (uint64 i = rollup.latestConfirmed(); i <= rollup.latestNodeCreated(); i++) {
@@ -166,11 +169,7 @@ contract ValidatorUtils {
         uint64 node1,
         uint64 node2,
         uint256 maxDepth
-    )
-        public
-        view
-        returns (NodeConflict memory)
-    {
+    ) public view returns (NodeConflict memory) {
         uint64 firstUnresolvedNode = rollup.firstUnresolvedNode();
         uint64 node1Prev = rollup.getNode(node1).prevNum;
         uint64 node2Prev = rollup.getNode(node2).prevNum;
@@ -226,9 +225,11 @@ contract ValidatorUtils {
         for (uint256 i = 0; i < stakers.length; i++) {
             address staker = stakers[i];
             uint64 challengeIndex = rollup.currentChallenge(staker);
-            if (challengeIndex != NO_CHAL_INDEX &&
+            if (
+                challengeIndex != NO_CHAL_INDEX &&
                 challengeManager.isTimedOut(challengeIndex) &&
-                challengeManager.currentResponder(challengeIndex) == staker) {
+                challengeManager.currentResponder(challengeIndex) == staker
+            ) {
                 challenges[index++] = challengeIndex;
             }
         }

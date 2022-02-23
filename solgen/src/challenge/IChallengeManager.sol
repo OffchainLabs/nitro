@@ -18,7 +18,11 @@ interface IChallengeManager {
         CLEARED
     }
 
-    event InitiatedChallenge(uint64 indexed challengeIndex, GlobalState startState, GlobalState endState);
+    event InitiatedChallenge(
+        uint64 indexed challengeIndex,
+        GlobalState startState,
+        GlobalState endState
+    );
 
     event Bisected(
         uint64 indexed challengeIndex,
@@ -51,12 +55,18 @@ interface IChallengeManager {
         uint256 challengerTimeLeft_
     ) external returns (uint64);
 
-    function challengeInfo(uint64 challengeIndex_) external view returns (ChallengeLib.Challenge memory);
+    function challengeInfo(uint64 challengeIndex_)
+        external
+        view
+        returns (ChallengeLib.Challenge memory);
 
     function currentResponder(uint64 challengeIndex) external view returns (address);
+
     function isTimedOut(uint64 challengeIndex) external view returns (bool);
+
     function currentResponderTimeLeft(uint64 challengeIndex_) external view returns (uint256);
 
     function clearChallenge(uint64 challengeIndex_) external;
+
     function timeout(uint64 challengeIndex_) external;
 }

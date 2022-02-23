@@ -21,3 +21,4 @@ solgen/test/proofs/*.json
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
 target/
+yarn-error.log

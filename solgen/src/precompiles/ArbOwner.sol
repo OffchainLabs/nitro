@@ -18,11 +18,10 @@
 
 pragma solidity >=0.4.21 <0.9.0;
 
-
-/// @title Provides owners with tools for managing the rollup. 
+/// @title Provides owners with tools for managing the rollup.
 /// @notice Calls by non-owners will always revert.
 /// Most of Arbitrum Classic's owner methods have been removed since they no longer make sense in Nitro:
-/// - What were once chain parameters are now parts of ArbOS's state, and those that remain are set at genesis. 
+/// - What were once chain parameters are now parts of ArbOS's state, and those that remain are set at genesis.
 /// - ArbOS upgrades happen with the rest of the system rather than being independent
 /// - Exemptions to address aliasing are no longer offered. Exemptions were intended to support backward compatibility for contracts deployed before aliasing was introduced, but no exemptions were ever requested.
 /// Precompiled contract that exists in every Arbitrum chain at 0x0000000000000000000000000000000000000070.
@@ -34,13 +33,13 @@ interface ArbOwner {
     function removeChainOwner(address ownerToRemove) external;
 
     /// @notice See if the user is a chain owner
-    function isChainOwner(address addr) external view returns(bool);
+    function isChainOwner(address addr) external view returns (bool);
 
     /// @notice Retrieves the list of chain owners
-    function getAllChainOwners() external view returns(address[] memory);
+    function getAllChainOwners() external view returns (address[] memory);
 
     /// @notice Sets the L1 gas price estimate directly, bypassing the autoregression
-    function setL1GasPriceEstimate(uint priceInWei) external;
+    function setL1GasPriceEstimate(uint256 priceInWei) external;
 
     /// @notice Sets the L2 gas price directly, bypassing the pool calculus
     function setL2GasPrice(uint256 priceInWei) external;
@@ -61,7 +60,7 @@ interface ArbOwner {
     function setMaxTxGasLimit(uint64 limit) external view;
 
     /// @notice Gets the network fee collector
-    function getNetworkFeeAccount() external view returns(address);
+    function getNetworkFeeAccount() external view returns (address);
 
     /// @notice Sets the network fee collector
     function setNetworkFeeAccount(address newNetworkFeeAccount) external view;
