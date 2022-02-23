@@ -230,7 +230,7 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
-	v.ThreadTracker.LaunchThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
+	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -508,8 +508,8 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	}
 }
 
-func (v *BlockValidator) startValidationLoop(ctx context.Context) {
-	v.ThreadTracker.LaunchThread(func() {
+func (v *BlockValidator) startValidationLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.sendValidationsChan:
@@ -558,8 +558,8 @@ func (v *BlockValidator) progressValidated() {
 	}
 }
 
-func (v *BlockValidator) startProgressLoop(ctx context.Context) {
-	v.ThreadTracker.LaunchThread(func() {
+func (v *BlockValidator) startProgressLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -589,9 +589,9 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 }
 
 func (v *BlockValidator) Start(ctxIn context.Context) error {
-	ctx := v.StopWaiter.Start(ctxIn)
-	v.startProgressLoop(ctx)
-	v.startValidationLoop(ctx)
+	v.StopWaiter.Start(ctxIn)
+	v.startProgressLoop()
+	v.startValidationLoop()
 	return nil
 }
 

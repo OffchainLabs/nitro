@@ -535,8 +535,8 @@ func (s *TransactionStreamer) Initialize() error {
 }
 
 func (s *TransactionStreamer) Start(ctxIn context.Context) {
-	ctx := s.StopWaiter.Start(ctxIn)
-	s.ThreadTracker.LaunchThread(func() {
+	s.StopWaiter.Start(ctxIn)
+	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {

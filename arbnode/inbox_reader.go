@@ -61,8 +61,8 @@ func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock
 }
 
 func (r *InboxReader) Start(ctxIn context.Context) error {
-	ctx := r.StopWaiter.Start(ctxIn)
-	r.ThreadTracker.LaunchThread(func() {
+	r.StopWaiter.Start(ctxIn)
+	r.LaunchThread(func(ctx context.Context) {
 		for {
 			err := r.run(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {

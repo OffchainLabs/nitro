@@ -52,9 +52,8 @@ func NewClientConnection(conn net.Conn, desc *netpoll.Desc, clientManager *Clien
 }
 
 func (cc *ClientConnection) Start(parentCtx context.Context) {
-	ctx := cc.StopWaiter.Start(parentCtx)
-
-	go func() {
+	cc.StopWaiter.Start(parentCtx)
+	cc.LaunchThread(func(ctx context.Context) {
 		defer close(cc.out)
 		for {
 			select {
@@ -76,11 +75,11 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (cc *ClientConnection) StopAndWait() {
-	if cc.ThreadTracker == nil {
+	if !cc.Started() {
 		// If client connection never started, need to close channel
 		close(cc.out)
 	}

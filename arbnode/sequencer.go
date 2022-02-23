@@ -198,17 +198,17 @@ func (s *Sequencer) sequenceTransactions() {
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
-	ctx := s.StopWaiter.Start(ctxIn)
+	s.StopWaiter.Start(ctxIn)
 	if s.l1Client != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := HeaderSubscribeWithRetry(ctx, s.l1Client)
+		headerChan, cancel := HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
 		defer cancel()
 
-		s.ThreadTracker.LaunchThread(func() {
+		s.LaunchThread(func(ctx context.Context) {
 			for {
 				select {
 				case header, ok := <-headerChan:
@@ -223,7 +223,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		})
 	}
 
-	s.ThreadTracker.LaunchThread(func() {
+	s.LaunchThread(func(ctx context.Context) {
 		for {
 			s.sequenceTransactions()
 			select {

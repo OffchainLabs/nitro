@@ -341,8 +341,8 @@ func (b *BatchPoster) postSequencerBatch() error {
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
-	ctx := b.StopWaiter.Start(ctxIn)
-	b.ThreadTracker.LaunchThread(func() {
+	b.StopWaiter.Start(ctxIn)
+	b.LaunchThread(func(ctx context.Context) {
 		for {
 			err := b.postSequencerBatch()
 			if err != nil {

@@ -196,9 +196,9 @@ func (cm *ClientManager) verifyClients() {
 }
 
 func (cm *ClientManager) Start(parentCtx context.Context) {
-	ctx := cm.StopWaiter.Start(parentCtx)
+	cm.StopWaiter.Start(parentCtx)
 
-	cm.ThreadTracker.LaunchThread(func() {
+	cm.LaunchThread(func(ctx context.Context) {
 		defer cm.removeAll()
 
 		pingInterval := time.NewTicker(cm.settings.Ping)
