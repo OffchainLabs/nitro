@@ -10,13 +10,12 @@ cmd/node/data
 cmd/node/node
 solgen/coverage
 solgen/coverage.json
-solgen/typechain-types
-solgen/artifacts
+solgen/build/
 solgen/cache/
 solgen/go/
 solgen/node_modules/
 solgen/deployments/
-solgen/test/proofs/*.json
+solgen/test/prover/proofs/*.json
 .make/
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
