@@ -133,12 +133,12 @@ func Fuzz(input []byte) int {
 	// For simplicity, those are all set to 0.
 	// The next 8 bytes encode the after delayed message count.
 	delayedMessages := [][]byte{input}
-	header := make([]byte, 40)
-	binary.BigEndian.PutUint64(header[32:], uint64(len(delayedMessages)))
-	inputWithHeader := append(header, input...)
+	seqBatch := make([]byte, 40)
+	binary.BigEndian.PutUint64(seqBatch[32:], uint64(len(delayedMessages)))
+	seqBatch = append(seqBatch, input...)
 	inbox := &inboxBackend{
 		batchSeqNum:           0,
-		batches:               [][]byte{inputWithHeader},
+		batches:               [][]byte{seqBatch},
 		positionWithinMessage: 0,
 		delayedMessages:       delayedMessages,
 	}
