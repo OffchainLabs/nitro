@@ -382,8 +382,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			SendCount:     size,
 			L1BlockNumber: nextL1BlockNumber,
 		}
-		header.Extra = arbitrumHeader.Extra()
-		header.MixDigest = arbitrumHeader.MixDigest()
+		arbitrumHeader.UpdateHeaderWithInfo(header)
 
 		state.UpgradeArbosVersionIfNecessary(header.Time)
 	}
