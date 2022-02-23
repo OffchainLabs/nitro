@@ -70,15 +70,16 @@ func (s *StopWaiterSafe) StopAndWait() {
 
 // If stop was already called, thread might silently not be launched
 func (s *StopWaiterSafe) LaunchThread(foo func(context.Context)) error {
-	if !s.Started() {
-		return errors.New("launch thread before start")
+	ctx, err := s.GetContext()
+	if err != nil {
+		return err
 	}
 	if s.Stopped() {
 		return nil
 	}
 	s.wg.Add(1)
 	go func() {
-		foo(s.ctx)
+		foo(ctx)
 		s.wg.Done()
 	}()
 	return nil
