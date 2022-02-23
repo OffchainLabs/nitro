@@ -21,20 +21,11 @@ import { BigNumber } from '@ethersproject/bignumber'
 import { Block, TransactionReceipt } from '@ethersproject/providers'
 import { expect } from 'chai'
 import {
-  BlockChallengeFactory,
-  BlockChallengeFactory__factory,
   Bridge,
-  BridgeCreator__factory,
   Bridge__factory,
-  ExecutionChallengeFactory__factory,
-  ExecutionChallenge__factory,
   Inbox,
   Inbox__factory,
   MessageTester,
-  OneStepProofEntry__factory,
-  RollupAdminLogic__factory,
-  RollupCreator__factory,
-  RollupUserLogic__factory,
   SequencerInbox,
   SequencerInbox__factory,
   TransparentUpgradeableProxy__factory,
@@ -46,14 +37,7 @@ import {
   BridgeInterface,
   MessageDeliveredEvent,
 } from '../../build/types/Bridge'
-import { constants, Signer } from 'ethers'
-import { RollupCreatedEvent } from '../../build/types/RollupCreator'
-import {
-  hexlify,
-  keccak256,
-  parseEther,
-  solidityKeccak256,
-} from 'ethers/lib/utils'
+import { Signer } from 'ethers'
 
 const mineBlocks = async (count: number, timeDiffPerBlock = 14) => {
   const block = (await network.provider.send('eth_getBlockByNumber', [
