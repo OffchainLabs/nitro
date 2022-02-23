@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/arbutil"
 
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
@@ -105,7 +105,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
@@ -125,7 +125,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
+	receipt, err := arbutil.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -167,7 +167,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
@@ -187,7 +187,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbnode.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
+	receipt, err := arbutil.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -199,7 +199,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
 	// get receipt for the auto-redeem, make sure it failed
-	receipt, err = arbnode.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	receipt, err = arbutil.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
 		Fail(t, receipt.GasUsed)
@@ -209,13 +209,13 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
 	Require(t, err)
-	receipt, err = arbnode.EnsureTxSucceeded(ctx, l2client, tx)
+	receipt, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	receipt, err = arbnode.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	receipt, err = arbutil.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
 		Fail(t)
@@ -267,7 +267,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")

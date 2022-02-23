@@ -3,6 +3,7 @@
 /replay
 /cmd/replay/replay
 /*.bin
+/*.test
 .idea
 .vscode
 cmd/node/data
@@ -20,3 +21,4 @@ solgen/test/proofs/*.json
 /cmd/statetransfer/statetransfer
 /reproducible-wasm/*.wasm
 target/
+yarn-error.log

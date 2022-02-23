@@ -4,8 +4,8 @@ module.exports = async (hre) => {
   const { deployer } = await getNamedAccounts();
 
   const bridge = await ethers.getContract("BridgeStub");
-
-  await deploy("SequencerInboxStub", {from: deployer, args: [bridge.address, deployer]})
+  const maxTime = {delayBlocks: 10000, futureBlocks: 10000, delaySeconds: 10000, futureSeconds: 10000}
+  await deploy("SequencerInboxStub", {from: deployer, args: [bridge.address, deployer, maxTime]})
 };
 
 module.exports.tags = ["SequencerInboxStub", "test"];

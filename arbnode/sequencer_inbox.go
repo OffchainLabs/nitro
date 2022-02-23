@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
 	"math/big"
 
@@ -48,10 +49,10 @@ type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    L1Interface
+	client    arbutil.L1Interface
 }
 
-func NewSequencerInbox(client L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -100,13 +101,13 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc     common.Hash
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
-	TimeBounds        bridgegen.SequencerInboxTimeBounds
+	TimeBounds        bridgegen.ISequencerInboxTimeBounds
 	txIndexInBlock    uint
 	dataLocation      batchDataLocation
 	bridgeAddress     common.Address
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	switch m.dataLocation {
 	case batchDataTxInput:
 		tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
@@ -151,7 +152,7 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client L1Interface) (
 	}
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client L1Interface) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	var fullData []byte
 
 	// Serialize the header

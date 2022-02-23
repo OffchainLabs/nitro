@@ -11,31 +11,31 @@ import "./IBridge.sol";
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
-import { 
-    L2_MSG, 
-    L1MessageType_L2FundedByL1, 
-    L1MessageType_submitRetryableTx, 
-    L2MessageType_unsignedEOATx, 
-    L2MessageType_unsignedContractTx 
+import {
+    L2_MSG,
+    L1MessageType_L2FundedByL1,
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedEOATx,
+    L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
-import { MAX_DATA_SIZE } from "../libraries/Constants.sol";
+import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
 import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Bridge.sol";
 
 /**
-* @title Inbox for user and contract originated messages
-* @notice Messages created via this inbox are enqueued in the delayed accumulator
-* to await inclusion in the SequencerInbox
-*/
+ * @title Inbox for user and contract originated messages
+ * @notice Messages created via this inbox are enqueued in the delayed accumulator
+ * to await inclusion in the SequencerInbox
+ */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
 
     modifier onlyOwner() {
         // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
         address bridgeOwner = Bridge(address(bridge)).owner();
-        if(msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
+        if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
         _;
     }
 
@@ -50,7 +50,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     }
 
     function initialize(IBridge _bridge) external initializer onlyDelegated {
-        if(address(bridge) != address(0)) revert AlreadyInit();
+        if (address(bridge) != address(0)) revert AlreadyInit();
         bridge = _bridge;
         __Pausable_init();
     }
@@ -59,7 +59,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     /// this is used to fix the storage slots
     function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
         uint8 slotsToWipe = 3;
-        for(uint8 i = 0; i<slotsToWipe; i++) {
+        for (uint8 i = 0; i < slotsToWipe; i++) {
             assembly {
                 sstore(i, 0)
             }
@@ -78,8 +78,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
-        if(msg.sender != tx.origin) revert NotOrigin();
-        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
+        if (msg.sender != tx.origin) revert NotOrigin();
+        if (messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -96,7 +97,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         whenNotPaused
         returns (uint256)
     {
-        if(messageData.length > MAX_DATA_SIZE) revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
+        if (messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
@@ -205,6 +207,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
+        // solhint-disable-next-line avoid-tx-origin
         if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
             // isContract check fails if this function is called during a contract's constructor.
             // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
@@ -261,7 +264,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
-
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
@@ -333,7 +335,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        if(_messageData.length > MAX_DATA_SIZE) revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
+        if (_messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
@@ -344,6 +347,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
     }
 }

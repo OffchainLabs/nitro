@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/util"
 	"github.com/pkg/errors"
 )
@@ -42,11 +43,11 @@ type Sequencer struct {
 
 	txStreamer    *TransactionStreamer
 	txQueue       chan txQueueItem
-	l1Client      L1Interface
+	l1Client      arbutil.L1Interface
 	l1BlockNumber uint64
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),
@@ -205,7 +206,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
+		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
 		defer cancel()
 
 		s.LaunchThread(func(ctx context.Context) {

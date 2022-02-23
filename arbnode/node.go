@@ -30,9 +30,11 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/offchainlabs/arbstate/statetransfer"
@@ -48,18 +50,18 @@ type RollupAddresses struct {
 	DeployedAt     uint64
 }
 
-func andTxSucceeded(ctx context.Context, l1client L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
@@ -105,47 +107,58 @@ func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployChallengeFactory(
+	ctx context.Context,
+	client arbutil.L1Interface,
+	auth *bind.TransactOpts,
+	txTimeout time.Duration,
+) (common.Address, common.Address, error) {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	return ospEntryAddr, nil
+	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+	}
+
+	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
+func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
@@ -168,7 +181,14 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	tx, err = rollupCreator.SetTemplates(
+		auth,
+		bridgeCreator,
+		ospEntryAddr,
+		challengeManagerAddr,
+		rollupAdminLogic,
+		rollupUserLogic,
+	)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
@@ -177,15 +197,14 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
-	// Deployment sometimes fails without a manually set gas limit
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	var confirmPeriodBlocks uint64 = 20
-	var extraChallengeTimeBlocks uint64 = 20
+	var extraChallengeTimeBlocks uint64 = 200
 	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 		FutureBlocks:  big.NewInt(12),
@@ -196,7 +215,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	if err != nil {
 		return nil, err
 	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+1)
+	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		rollupgen.Config{
@@ -215,7 +234,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	receipt, err := arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -278,7 +297,7 @@ type Node struct {
 	BroadcastClient  *broadcastclient.BroadcastClient
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
@@ -340,7 +359,10 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !config.BatchPoster {
@@ -550,7 +572,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	}
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
-		Nonce:      types.EncodeNonce(0),
+		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
 		Time:       timestamp,
 		ParentHash: prevHash,
 		Extra:      []byte("ArbitrumMainnet"),
@@ -626,7 +648,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	return GetBlockChain(chainDb, cacheConfig, config)
 }
 
-// TODO: is that right?
-func shouldPreserveFalse(block *types.Block) bool {
+// Don't preserve reorg'd out blocks
+func shouldPreserveFalse(header *types.Header) bool {
 	return false
 }

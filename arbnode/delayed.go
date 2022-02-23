@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -54,11 +55,11 @@ type DelayedBridge struct {
 	con              *bridgegen.IBridge
 	address          common.Address
 	fromBlock        uint64
-	client           L1Interface
+	client           arbutil.L1Interface
 	messageProviders map[common.Address]*bridgegen.IMessageProvider
 }
 
-func NewDelayedBridge(client L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
+func NewDelayedBridge(client arbutil.L1Interface, addr common.Address, fromBlock uint64) (*DelayedBridge, error) {
 	con, err := bridgegen.NewIBridge(addr, client)
 	if err != nil {
 		return nil, err
