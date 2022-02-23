@@ -1,6 +1,24 @@
+// SPDX-License-Identifier: Apache-2.0
+
+/*
+ * Copyright 2020, Offchain Labs, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 pragma solidity >=0.4.21 <0.9.0;
 
-/// @title Provides aggregators and their users methods for configuring how they participate in L1 aggregation. 
+/// @title Provides aggregators and their users methods for configuring how they participate in L1 aggregation.
 /// @notice Precompiled contract that exists in every Arbitrum chain at 0x000000000000000000000000000000000000006d
 interface ArbAggregator {
     /// @notice Get the preferred aggregator for an address.
@@ -45,12 +63,12 @@ interface ArbAggregator {
 
     /// @notice Get the tx base fee (in approximate L1 gas) for aggregator
     /// @param aggregator The aggregator to get the base fee for
-    function getTxBaseFee(address aggregator) external view returns (uint);
+    function getTxBaseFee(address aggregator) external view returns (uint256);
 
     /// @notice Set the tx base fee (in approximate L1 gas) for aggregator
     /// Revert unless called by aggregator or the chain owner
     /// Revert if feeInL1Gas is outside the chain's allowed bounds
     /// @param aggregator The aggregator to set the fee for
     /// @param feeInL1Gas The base fee in L1 gas
-    function setTxBaseFee(address aggregator, uint feeInL1Gas) external;
+    function setTxBaseFee(address aggregator, uint256 feeInL1Gas) external;
 }

@@ -22,12 +22,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
-	inboxTracker InboxTrackerInterface
-	blockchain   *core.BlockChain
+	inboxTracker    InboxTrackerInterface
+	blockchain      *core.BlockChain
+	genesisBlockNum uint64
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
@@ -36,7 +38,7 @@ type BlockValidator struct {
 	blocksValidated   uint64
 	earliestBatchKept uint64
 
-	posNextSend       uint64
+	posNextSend       arbutil.MessageIndex
 	globalPosNextSend GlobalStatePosition
 
 	config                   *BlockValidatorConfig
@@ -67,13 +69,15 @@ type BlockValidatorRegistrer interface {
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
-	GetBatchMessageCount(seqNum uint64) (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
 }
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error)
+	GetGenesisBlockNumber() (uint64, error)
 }
 
 type InboxReaderInterface interface {
@@ -85,12 +89,12 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
-func GlobalStatePoisionsFor(reader InboxTrackerInterface, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+func GlobalStatePositionsFor(reader InboxTrackerInterface, pos arbutil.MessageIndex, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
 	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
-	var firstInBatch uint64
+	var firstInBatch arbutil.MessageIndex
 	if batch > 0 {
 		firstInBatch, err = reader.GetBatchMessageCount(batch - 1)
 		if err != nil {
@@ -103,11 +107,11 @@ func GlobalStatePoisionsFor(reader InboxTrackerInterface, pos uint64, batch uint
 	if firstInBatch > pos {
 		return GlobalStatePosition{}, GlobalStatePosition{}, fmt.Errorf("batch %d starts from %d, failed getting for %d", batch, firstInBatch, pos)
 	}
-	startPos := GlobalStatePosition{batch, pos - firstInBatch}
+	startPos := GlobalStatePosition{batch, uint64(pos - firstInBatch)}
 	if msgCountInBatch == pos+1 {
 		return startPos, GlobalStatePosition{batch + 1, 0}, nil
 	}
-	return startPos, GlobalStatePosition{batch, pos + 1 - firstInBatch}, nil
+	return startPos, GlobalStatePosition{batch, uint64(pos + 1 - firstInBatch)}, nil
 }
 
 type validationEntry struct {
@@ -146,25 +150,34 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
+	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
 	validator := &BlockValidator{
 		inboxTracker:        inbox,
 		blockchain:          blockchain,
-		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		genesisBlockNum:     genesisBlockNum,
+		// TODO: this skips validating the genesis block
+		posNextSend: 1,
+		globalPosNextSend: GlobalStatePosition{
+			BatchNumber: 1,
+		},
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
-	return validator
+	return validator, nil
 }
 
 func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
@@ -190,7 +203,11 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 }
 
 func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
-	if header.ParentHash != prevHeader.Hash() {
+	var prevHash common.Hash
+	if prevHeader != nil {
+		prevHash = prevHeader.Hash()
+	}
+	if header.ParentHash != prevHash {
 		err = fmt.Errorf("bad arguments: prev does not match")
 		return
 	}
@@ -204,9 +221,11 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 		err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
 		return
 	}
-	if header.Nonce != prevHeader.Nonce {
+	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
-		delayedMsgNr = prevHeader.Nonce.Uint64()
+		if prevHeader != nil {
+			delayedMsgNr = prevHeader.Nonce.Uint64()
+		}
 	}
 	return
 }
@@ -479,8 +498,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if !haveBatch {
 			return
 		}
-		// valdationEntries is By blockNumber, which is one more than pos
-		entry, found := v.validationEntries.Load(v.posNextSend + 1)
+		// valdationEntries is By blockNumber
+		nextBlockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum) + 1)
+		entry, found := v.validationEntries.Load(nextBlockNum)
 		if !found {
 			return
 		}
@@ -489,9 +509,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		startPos, endPos, err := GlobalStatePoisionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
+		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
+			return
 		}
 		if startPos != v.globalPosNextSend {
 			log.Error("inconsistent pos mapping", "uint_pos", v.posNextSend, "expected", v.globalPosNextSend, "found", startPos)

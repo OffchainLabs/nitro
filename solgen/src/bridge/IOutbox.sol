@@ -18,12 +18,7 @@
 
 pragma solidity ^0.8.4;
 
-import "../libraries/Error.sol";
-
-/// @dev Thrown when an address that is not the rollup tries to call an only-rollup function
-/// @param sender The sender who is not the rollup
-/// @param rollup The rollup address authorized to call this function
-error NotRollup(address sender, address rollup);
+import {AlreadyInit, NotRollup} from "../libraries/Error.sol";
 
 /// @dev The provided proof was too long
 /// @param proofLength The length of the too-long proof
@@ -46,12 +41,9 @@ error AlreadySpent(uint256 index);
 error BridgeCallFailed();
 
 interface IOutbox {
-    event SendRootUpdated(
-        bytes32 indexed blockHash,
-        bytes32 indexed outputRoot
-    );
+    event SendRootUpdated(bytes32 indexed blockHash, bytes32 indexed outputRoot);
     event OutBoxTransactionExecuted(
-        address indexed destAddr,
+        address indexed to,
         address indexed l2Sender,
         uint256 indexed zero,
         uint256 transactionIndex

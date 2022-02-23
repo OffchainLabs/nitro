@@ -28,7 +28,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -72,7 +72,7 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 
 // Gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -134,7 +134,7 @@ func (con ArbGasInfo) GetSmallGasPoolSeconds(c ctx, evm mech) (huge, error) {
 
 // Gets the current estimate of the L1 gas price
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	return c.state.L1PricingState().L1GasPriceEstimateWei()
+	return c.state.L1PricingState().L1BaseFeeEstimateWei()
 }
 
 // Gets the fee paid to the aggregator for posting this tx

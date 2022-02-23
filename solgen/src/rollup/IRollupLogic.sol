@@ -22,8 +22,12 @@ import "./RollupLib.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
-interface IRollupUser {
-    function initialize(address stakeToken) external;
+interface IRollupUserAbs {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address stakeToken) external view;
+
+    function isERC20Enabled() external view returns (bool);
 
     function returnOldDeposit(address stakerAddress) external;
 
@@ -34,13 +38,36 @@ interface IRollupUser {
     function countStakedZombies(uint64 nodeNum) external view returns (uint256);
 }
 
+interface IRollupUser is IRollupUserAbs {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
+
+    function newStakeOnNewNode(
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable;
+}
+
+interface IRollupUserERC20 is IRollupUserAbs {
+    function newStakeOnExistingNode(
+        uint256 tokenAmount,
+        uint64 nodeNum,
+        bytes32 nodeHash
+    ) external;
+
+    function newStakeOnNewNode(
+        uint256 tokenAmount,
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external;
+}
+
 interface IRollupAdmin {
     event OwnerFunctionCalled(uint256 indexed id);
 
-    function initialize(
-        Config calldata config,
-        ContractDependencies calldata connectedContracts
-    ) external;
+    function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
+        external;
 
     /**
      * @notice Add a contract authorized to put messages into this rollup's inbox
@@ -78,8 +105,7 @@ interface IRollupAdmin {
      * @param _validator addresses to set in the whitelist
      * @param _val value to set in the whitelist for corresponding address
      */
-    function setValidator(address[] memory _validator, bool[] memory _val)
-        external;
+    function setValidator(address[] memory _validator, bool[] memory _val) external;
 
     /**
      * @notice Set a new owner address for the rollup proxy
@@ -128,14 +154,6 @@ interface IRollupAdmin {
     ) external;
 
     /**
-     * @notice Set execution bisection degree
-     * @param newChallengeExecutionBisectionDegree execution bisection degree
-     */
-    function setChallengeExecutionBisectionDegree(
-        uint256 newChallengeExecutionBisectionDegree
-    ) external;
-
-    /**
      * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
      * @param addr the address
      * @param isBatchPoster if the specified address should be authorized as a batch poster
@@ -149,10 +167,7 @@ interface IRollupAdmin {
      */
     function upgradeBeacon(address beacon, address newImplementation) external;
 
-    function forceResolveChallenge(
-        address[] memory stackerA,
-        address[] memory stackerB
-    ) external;
+    function forceResolveChallenge(address[] memory stackerA, address[] memory stackerB) external;
 
     function forceRefundStaker(address[] memory stacker) external;
 
