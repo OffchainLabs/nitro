@@ -15,8 +15,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using MachineLib for Machine;
     using ChallengeLib for ChallengeLib.Challenge;
 
-    string constant NO_TURN = "NO_TURN";
-    uint256 constant MAX_CHALLENGE_DEGREE = 40;
+    string private constant NO_TURN = "NO_TURN";
+    uint256 private constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
     mapping(uint256 => ChallengeLib.Challenge) public challenges;
