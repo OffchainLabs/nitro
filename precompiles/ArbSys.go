@@ -53,7 +53,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 
 // Gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // Nitro starts at version 53
+	version := new(big.Int).SetUint64(55 + c.state.FormatVersion()) // Nitro starts at version 56
 	return version, nil
 }
 

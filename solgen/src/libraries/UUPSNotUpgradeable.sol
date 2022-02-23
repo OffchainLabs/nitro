@@ -4,7 +4,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
-import { DoubleLogicERC1967Upgrade } from "./AdminFallbackProxy.sol";
+import {DoubleLogicERC1967Upgrade} from "./AdminFallbackProxy.sol";
 
 /**
  * @dev UUPSUpgradeable by OpenZeppelin but not upgradeable. This is expected to be used on the secondary
@@ -23,7 +23,10 @@ abstract contract UUPSNotUpgradeable is IERC1822Proxiable, DoubleLogicERC1967Upg
      */
     modifier onlyProxy() {
         require(address(this) != __self, "Function must be called through delegatecall");
-        require(_getSecondaryImplementation() == __self, "Function must be called through active proxy");
+        require(
+            _getSecondaryImplementation() == __self,
+            "Function must be called through active proxy"
+        );
         _;
     }
 
@@ -32,7 +35,10 @@ abstract contract UUPSNotUpgradeable is IERC1822Proxiable, DoubleLogicERC1967Upg
      * callable on the implementing contract but not through proxies.
      */
     modifier notDelegated() {
-        require(address(this) == __self, "UUPSNotUpgradeable: must not be called through delegatecall");
+        require(
+            address(this) == __self,
+            "UUPSNotUpgradeable: must not be called through delegatecall"
+        );
         _;
     }
 

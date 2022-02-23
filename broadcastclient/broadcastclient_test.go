@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
@@ -47,7 +48,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastSingle(arbstate.MessageWithMetadata{}, uint64(i))
+			b.BroadcastSingle(arbstate.MessageWithMetadata{}, arbutil.MessageIndex(i))
 		}
 	}()
 
@@ -65,10 +66,10 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
-			SequenceNumber: pos + uint64(i),
+			SequenceNumber: pos + arbutil.MessageIndex(i),
 			Message:        message,
 		}
 	}

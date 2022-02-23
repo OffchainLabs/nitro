@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -55,13 +56,27 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
+	// Add the init message
+	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: []byte{},
+		},
+		DelayedMessagesRead: 0,
+	}})
+	if err != nil {
+		Fail(t, err)
+	}
+
 	return inbox, bc
 }
 
 type blockTestState struct {
 	balances    map[common.Address]*big.Int
 	accounts    []common.Address
-	numMessages uint64
+	numMessages arbutil.MessageIndex
 	blockNumber uint64
 }
 
@@ -86,7 +101,7 @@ func TestTransactionStreamer(t *testing.T) {
 			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000)),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
-		numMessages: 0,
+		numMessages: 1,
 		blockNumber: 0,
 	})
 	for i := 1; i < 100; i++ {
@@ -147,7 +162,7 @@ func TestTransactionStreamer(t *testing.T) {
 
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
-			state.numMessages += uint64(len(messages))
+			state.numMessages += arbutil.MessageIndex(len(messages))
 			state.blockNumber += uint64(len(messages))
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()
