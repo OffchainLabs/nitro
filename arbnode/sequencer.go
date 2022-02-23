@@ -37,6 +37,11 @@ type txQueueItem struct {
 	ctx        context.Context
 }
 
+func (i *txQueueItem) returnResult(err error) {
+	i.resultChan <- err
+	close(i.resultChan)
+}
+
 type Sequencer struct {
 	txStreamer    *TransactionStreamer
 	txQueue       chan txQueueItem
@@ -123,17 +128,17 @@ func (s *Sequencer) sequenceTransactions() {
 		}
 		err := queueItem.ctx.Err()
 		if err != nil {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 			continue
 		}
 		txBytes, err := queueItem.tx.MarshalBinary()
 		if err != nil {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 			continue
 		}
 		if len(txBytes) > int(maxTxDataSize) {
 			// This tx is too large
-			queueItem.resultChan <- core.ErrOversizedData
+			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
 		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
@@ -143,7 +148,7 @@ func (s *Sequencer) sequenceTransactions() {
 			select {
 			case s.txQueue <- queueItem:
 			default:
-				queueItem.resultChan <- core.ErrOversizedData
+				queueItem.returnResult(core.ErrOversizedData)
 			}
 			break
 		}
@@ -174,7 +179,7 @@ func (s *Sequencer) sequenceTransactions() {
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 		}
 		return
 	}
@@ -191,7 +196,7 @@ func (s *Sequencer) sequenceTransactions() {
 			default:
 			}
 		}
-		queueItem.resultChan <- err
+		queueItem.returnResult(err)
 	}
 }
 
