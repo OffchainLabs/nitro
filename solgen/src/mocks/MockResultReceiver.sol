@@ -5,7 +5,7 @@ import "../challenge/IChallengeResultReceiver.sol";
 import "../challenge/IChallengeManager.sol";
 
 contract MockResultReceiver is IChallengeResultReceiver {
-    IChallengeManager manager;
+    IChallengeManager public manager;
     address public winner;
     address public loser;
     uint256 public challengeIndex;

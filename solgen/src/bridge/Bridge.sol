@@ -118,6 +118,10 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
         address prevOutbox = activeOutbox;
         activeOutbox = msg.sender;
         // We set and reset active outbox around external call so activeOutbox remains valid during call
+
+        // We use a low level call here since we want to bubble up whether it succeeded or failed to the caller
+        // rather than reverting on failure as well as allow contract and non-contract calls
+        // solhint-disable-next-line avoid-low-level-calls
         (success, returnData) = to.call{value: value}(data);
         activeOutbox = prevOutbox;
         emit BridgeCallTriggered(msg.sender, to, value, data);
