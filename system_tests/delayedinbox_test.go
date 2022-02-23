@@ -9,12 +9,10 @@ import (
 	"math/big"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -46,26 +44,8 @@ func TestDelayInboxSimple(t *testing.T) {
 	l2info.GenerateAccount("User2")
 
 	delayedTx := l2info.PrepareTx("Owner", "User2", 50001, big.NewInt(1e6), nil)
+	SendSignedTxViaL1(t, ctx, l1info, l1client, l2client, delayedTx)
 
-	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
-	Require(t, err)
-	usertxopts := l1info.GetDefaultTransactOpts("User")
-	txbytes, err := delayedTx.MarshalBinary()
-	Require(t, err)
-	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
-	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
-	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
-	Require(t, err)
-
-	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
-	for i := 0; i < 30; i++ {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
-		})
-	}
-	_, err = arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
-	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e6)) != 0 {

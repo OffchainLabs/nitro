@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
@@ -55,6 +56,30 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+}
+
+func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo, l1client arbutil.L1Interface, l2client arbutil.L1Interface, delayedTx *types.Transaction) *types.Receipt {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+	usertxopts := l1info.GetDefaultTransactOpts("User")
+
+	txbytes, err := delayedTx.MarshalBinary()
+	Require(t, err)
+	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
+	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	receipt, err := arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	Require(t, err)
+	return receipt
 }
 
 func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
