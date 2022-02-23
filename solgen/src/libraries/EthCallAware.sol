@@ -36,7 +36,7 @@ abstract contract EthCallAware {
     /// @dev Tries to determine if the current execution is a transaction
     /// or a call
     function isCall() internal view returns(bool) {
-        // when making eth_calls many libraries leave empty, or allow arbitrary setting, of some 
+        // when making eth_calls many libraries leave empty, or allow arbitrary setting of, some 
         // transaction fields such as 'from' and 'gasPrice'. Since it's impossible for a user to 
         // sign a transaction from the 0x000.. address we know that if a transaction has that as its origin
         // then we must be in an eth_call. Likewise the base fee stops transactions being mined at 0 or 1 wei
