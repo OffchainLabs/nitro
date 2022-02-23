@@ -76,7 +76,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     Zombie[] private _zombies;
 
     mapping(address => uint256) private _withdrawableFunds;
-    uint256 totalWithdrawableFunds;
+    uint256 public totalWithdrawableFunds;
 
     /**
      * @notice Get a storage reference to the Node for the given node index

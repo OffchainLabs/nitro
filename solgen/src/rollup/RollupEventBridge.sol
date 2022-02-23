@@ -34,8 +34,8 @@ contract RollupEventBridge is IMessageProvider, DelegateCallAware {
     uint8 internal constant REJECT_NODE_EVENT = 2;
     uint8 internal constant STAKE_CREATED_EVENT = 3;
 
-    IBridge bridge;
-    address rollup;
+    IBridge public bridge;
+    address public rollup;
 
     modifier onlyRollup() {
         require(msg.sender == rollup, "ONLY_ROLLUP");

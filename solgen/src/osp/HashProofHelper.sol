@@ -27,8 +27,8 @@ contract HashProofHelper {
         bytes part
     );
 
-    uint256 constant MAX_PART_LENGTH = 32;
-    uint256 constant KECCAK_ROUND_INPUT = 136;
+    uint256 private constant MAX_PART_LENGTH = 32;
+    uint256 private constant KECCAK_ROUND_INPUT = 136;
 
     function proveWithFullPreimage(bytes calldata data, uint64 offset)
         external

@@ -39,6 +39,8 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         uint256 numTxes = data.length;
         for (uint256 i = 0; i < numTxes; i++) {
             if (data[i].length > 0) require(destination[i].isContract(), "NO_CODE_AT_ADDR");
+            // We use a low level call here to allow for contract and non-contract calls
+            // solhint-disable-next-line avoid-low-level-calls
             (bool success, ) = address(destination[i]).call{value: amount[i]}(data[i]);
             if (!success) {
                 assembly {
@@ -57,6 +59,8 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         uint256 amount
     ) external payable onlyOwner {
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
+        // We use a low level call here to allow for contract and non-contract calls
+        // solhint-disable-next-line avoid-low-level-calls
         (bool success, ) = destination.call{value: amount}(data);
         if (!success) {
             assembly {
