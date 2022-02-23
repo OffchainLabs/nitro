@@ -336,7 +336,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         //        address next = challenge.next.addr;
         //        address current = challenge.current.addr;
         //        delete challenges[challengeIndex];
-        //        resultReceiver.completeChallenge(challengeIndex, challenge.current.addr, challenge.next.addr);
+        //        resultReceiver.completeChallenge(challengeIndex, current, next);
         //        emit ChallengeEnded(challengeIndex, reason);
     }
 }
