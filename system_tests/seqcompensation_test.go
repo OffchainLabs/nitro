@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 // Sequencer address gets something for posting batches
@@ -29,7 +29,7 @@ func TestSequencerCompensation(t *testing.T) {
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -42,7 +42,7 @@ func TestSequencerCompensation(t *testing.T) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	// clientB sees balance means sequencer message was sent
