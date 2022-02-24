@@ -71,6 +71,11 @@ func main() {
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
 	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
 
+	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
+	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
+	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
+	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+
 	flag.Parse()
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
@@ -96,6 +101,20 @@ func main() {
 		panic("l1role not recognized")
 	}
 
+	if *l1validator {
+		if !nodeConf.L1Reader {
+			flag.Usage()
+			panic("l1validator requires l1role other than \"none\"")
+		}
+		nodeConf.L1Validator = true
+		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
+		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
+		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
+			flag.Usage()
+			panic("L1 validator requires block validator to safely function")
+		}
+	}
+
 	ctx := context.Background()
 
 	var l1client *ethclient.Client
@@ -110,7 +129,7 @@ func main() {
 			flag.Usage()
 			panic(err)
 		}
-		if nodeConf.BatchPoster {
+		if nodeConf.BatchPoster || nodeConf.L1Validator {
 			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *seqAccount, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
@@ -127,7 +146,11 @@ func main() {
 				// TODO actually figure out the wasmModuleRoot
 				panic("deploy as validator not yet supported")
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, wasmModuleRoot, time.Minute*5)
+			var validators uint64
+			if nodeConf.L1Validator {
+				validators++
+			}
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
@@ -275,7 +298,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}
@@ -288,4 +311,5 @@ func main() {
 	}
 
 	stack.Wait()
+	node.StopAndWait()
 }
