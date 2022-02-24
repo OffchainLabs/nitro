@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/pkg/errors"
@@ -364,7 +363,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 				if lastBlock == nil {
 					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
 				}
-				lastBlockExtra, err := arbos.DeserializeHeaderExtraInformation(lastBlock.Header())
+				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
 				if err != nil {
 					return nil, false, err
 				}
@@ -503,7 +502,7 @@ func (v *L1Validator) createNewNodeAction(
 	if assertingBlock == nil {
 		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
 	}
-	assertingBlockExtra, err := arbos.DeserializeHeaderExtraInformation(assertingBlock.Header())
+	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
 	if err != nil {
 		return nil, err
 	}
