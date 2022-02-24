@@ -288,4 +288,5 @@ func main() {
 	}
 
 	stack.Wait()
+	node.StopAndWait()
 }

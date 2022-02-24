@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -36,6 +37,8 @@ type TransactionStreamerInterface interface {
 }
 
 type BroadcastClient struct {
+	util.StopWaiter
+
 	websocketUrl    string
 	lastInboxSeqNum *big.Int
 
@@ -68,12 +71,13 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 	}
 }
 
-func (bc *BroadcastClient) Start(ctx context.Context) {
-	go (func() {
+func (bc *BroadcastClient) Start(ctxIn context.Context) {
+	bc.StopWaiter.Start(ctxIn)
+	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			err := bc.connect(ctx)
 			if err == nil {
-				bc.startBackgroundReader(ctx)
+				bc.startBackgroundReader()
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -83,7 +87,7 @@ func (bc *BroadcastClient) Start(ctx context.Context) {
 			case <-time.After(5 * time.Second):
 			}
 		}
-	})()
+	})
 }
 
 func (bc *BroadcastClient) connect(ctx context.Context) error {
@@ -115,8 +119,8 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 	return nil
 }
 
-func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
-	go func() {
+func (bc *BroadcastClient) startBackgroundReader() {
+	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
@@ -171,7 +175,7 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (bc *BroadcastClient) GetRetryCount() int64 {

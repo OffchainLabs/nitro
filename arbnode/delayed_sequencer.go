@@ -11,9 +11,11 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type DelayedSequencer struct {
+	util.StopWaiter
 	client          arbutil.L1Interface
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
@@ -168,18 +170,13 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctx context.Context) {
-	go (func() {
-		for {
-			err := d.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
+func (d *DelayedSequencer) Start(ctxIn context.Context) {
+	d.StopWaiter.Start(ctxIn)
+	d.CallIteratively(func(ctx context.Context) time.Duration {
+		err := d.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
-	})()
+		return time.Second
+	})
 }

@@ -18,9 +18,12 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type BatchPoster struct {
+	util.StopWaiter
+
 	client          arbutil.L1Interface
 	inbox           *InboxTracker
 	streamer        *TransactionStreamer
@@ -339,24 +342,19 @@ func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
 	return tx, err
 }
 
-func (b *BatchPoster) Start(ctx context.Context) {
-	go (func() {
-		for {
-			tx, err := b.postSequencerBatch()
+func (b *BatchPoster) Start(ctxIn context.Context) {
+	b.StopWaiter.Start(ctxIn)
+	b.CallIteratively(func(ctx context.Context) time.Duration {
+		tx, err := b.postSequencerBatch()
+		if err != nil {
+			log.Error("error posting batch", "err", err)
+		}
+		if tx != nil {
+			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
 			if err != nil {
-				log.Error("error posting batch", "err", err)
-			}
-			if tx != nil {
-				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
-				if err != nil {
-					log.Error("failed ensuring batch tx succeeded", "err", err)
-				}
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(b.config.BatchPollDelay):
+				log.Error("failed ensuring batch tx succeeded", "err", err)
 			}
 		}
-	})()
+		return b.config.BatchPollDelay
+	})
 }
