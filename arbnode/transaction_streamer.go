@@ -24,12 +24,15 @@ import (
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
+	util.StopWaiter
+
 	db ethdb.Database
 	bc *core.BlockChain
 
@@ -386,7 +389,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	for _, receipt := range receipts {
 		logs = append(logs, receipt.Logs...)
 	}
-	status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+	status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
 	if err != nil {
 		return err
 	}
@@ -572,7 +575,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		for _, receipt := range receipts {
 			logs = append(logs, receipt.Logs...)
 		}
-		status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+		status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
 		if err != nil {
 			return err
 		}
@@ -594,8 +597,9 @@ func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
 
-func (s *TransactionStreamer) Start(ctx context.Context) {
-	go (func() {
+func (s *TransactionStreamer) Start(ctxIn context.Context) {
+	s.StopWaiter.Start(ctxIn)
+	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -608,5 +612,5 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			case <-time.After(10 * time.Second):
 			}
 		}
-	})()
+	})
 }

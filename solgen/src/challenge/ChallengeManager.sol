@@ -15,8 +15,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using MachineLib for Machine;
     using ChallengeLib for ChallengeLib.Challenge;
 
-    string constant NO_TURN = "NO_TURN";
-    uint256 constant MAX_CHALLENGE_DEGREE = 40;
+    string private constant NO_TURN = "NO_TURN";
+    uint256 private constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
     mapping(uint256 => ChallengeLib.Challenge) public challenges;
@@ -310,12 +310,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     /// @dev This function causes the mode of the challenge to be set to NONE by deleting the challenge
     function _nextWin(uint64 challengeIndex, ChallengeTerminationType reason) private {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
+        address next = challenge.next.addr;
+        address current = challenge.current.addr;
         delete challenges[challengeIndex];
-        resultReceiver.completeChallenge(
-            challengeIndex,
-            challenge.next.addr,
-            challenge.current.addr
-        );
+        resultReceiver.completeChallenge(challengeIndex, next, current);
         emit ChallengeEnded(challengeIndex, reason);
     }
 
@@ -331,8 +329,10 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         challenge.challengeStateHash = bytes32(0);
 
+        //        address next = challenge.next.addr;
+        //        address current = challenge.current.addr;
         //        delete challenges[challengeIndex];
-        //        resultReceiver.completeChallenge(challengeIndex, challenge.current.addr, challenge.next.addr);
+        //        resultReceiver.completeChallenge(challengeIndex, current, next);
         //        emit ChallengeEnded(challengeIndex, reason);
     }
 }

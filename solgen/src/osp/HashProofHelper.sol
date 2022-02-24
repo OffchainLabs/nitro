@@ -3,13 +3,10 @@ pragma solidity ^0.8.0;
 
 import "../libraries/CryptographyPrimitives.sol";
 
-contract HashProofHelper {
-    struct PreimagePart {
-        bytes32 fullHash;
-        uint64 offset;
-        bytes part;
-    }
+/// @dev The requested hash preimage at the given offset has not been proven yet
+error NotProven(bytes32 fullHash, uint64 offset);
 
+contract HashProofHelper {
     struct KeccakState {
         uint64 offset;
         bytes part;
@@ -17,24 +14,24 @@ contract HashProofHelper {
         uint256 length;
     }
 
-    PreimagePart[] public preimageParts;
+    struct PreimagePart {
+        bool proven;
+        bytes part;
+    }
+
+    mapping(bytes32 => mapping(uint64 => PreimagePart)) private preimageParts;
     mapping(address => KeccakState) public keccakStates;
 
-    event PreimagePartProven(
-        bytes32 indexed fullHash,
-        uint64 indexed offset,
-        uint256 indexed proofNumber,
-        bytes part
-    );
+    event PreimagePartProven(bytes32 indexed fullHash, uint64 indexed offset, bytes part);
 
-    uint256 constant MAX_PART_LENGTH = 32;
-    uint256 constant KECCAK_ROUND_INPUT = 136;
+    uint256 private constant MAX_PART_LENGTH = 32;
+    uint256 private constant KECCAK_ROUND_INPUT = 136;
 
     function proveWithFullPreimage(bytes calldata data, uint64 offset)
         external
-        returns (uint256 proofNumber)
+        returns (bytes32 fullHash)
     {
-        bytes32 fullHash = keccak256(data);
+        fullHash = keccak256(data);
         bytes memory part;
         if (data.length > offset) {
             uint256 partLength = data.length - offset;
@@ -43,9 +40,8 @@ contract HashProofHelper {
             }
             part = data[offset:(offset + partLength)];
         }
-        proofNumber = preimageParts.length;
-        preimageParts.push(PreimagePart({fullHash: fullHash, offset: offset, part: part}));
-        emit PreimagePartProven(fullHash, offset, proofNumber, part);
+        preimageParts[fullHash][offset] = PreimagePart({proven: true, part: part});
+        emit PreimagePartProven(fullHash, offset, part);
     }
 
     // Flags: a bitset signaling various things about the proof, ordered from least to most significant bits.
@@ -55,7 +51,7 @@ contract HashProofHelper {
         bytes calldata data,
         uint64 offset,
         uint256 flags
-    ) external returns (uint256 proofNumber) {
+    ) external returns (bytes32 fullHash) {
         bool isFinal = (flags & (1 << 0)) != 0;
         if ((flags & (1 << 1)) != 0) {
             delete keccakStates[msg.sender];
@@ -83,9 +79,8 @@ contract HashProofHelper {
             }
         }
         if (!isFinal) {
-            return 0;
+            return bytes32(0);
         }
-        bytes32 fullHash;
         for (uint256 i = 0; i < 32; i++) {
             uint256 stateIdx = i / 8;
             // work around our weird keccakF function state ordering
@@ -93,12 +88,9 @@ contract HashProofHelper {
             uint8 b = uint8(state.state[stateIdx] >> ((i % 8) * 8));
             fullHash |= bytes32(uint256(b) << (248 - (i * 8)));
         }
-        proofNumber = preimageParts.length;
-        preimageParts.push(
-            PreimagePart({fullHash: fullHash, offset: state.offset, part: state.part})
-        );
+        preimageParts[fullHash][state.offset] = PreimagePart({proven: true, part: state.part});
+        emit PreimagePartProven(fullHash, state.offset, state.part);
         delete keccakStates[msg.sender];
-        emit PreimagePartProven(fullHash, state.offset, proofNumber, state.part);
     }
 
     function keccakUpdate(
@@ -146,5 +138,14 @@ contract HashProofHelper {
 
     function clearSplitProof() external {
         delete keccakStates[msg.sender];
+    }
+
+    /// Retrieves up to 32 bytes of the preimage of fullHash at the given offset, reverting if it hasn't been proven yet.
+    function getPreimagePart(bytes32 fullHash, uint64 offset) external view returns (bytes memory) {
+        PreimagePart storage part = preimageParts[fullHash][offset];
+        if (!part.proven) {
+            revert NotProven(fullHash, offset);
+        }
+        return part.part;
     }
 }

@@ -57,7 +57,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	broadcasterSettings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9642",
+		Port:          "0",
 		Ping:          5 * time.Second,
 		ClientTimeout: 30 * time.Second,
 		Queue:         1,
@@ -66,7 +66,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	b := NewBroadcaster(broadcasterSettings)
 	Require(t, b.Start(ctx))
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	dummyMessage := arbstate.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {
