@@ -66,7 +66,23 @@ func uint64ToBytes(x uint64) []byte {
 }
 
 func (s *TransactionStreamer) SetBlockValidator(validator *validator.BlockValidator) {
+	if s.Started() {
+		panic("trying to set block validator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set block validator when already set")
+	}
 	s.validator = validator
+}
+
+func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.coordinator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.coordinator = coordinator
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -199,6 +215,12 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
+}
+
+func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	return s.GetMessageCount()
 }
 
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
@@ -435,11 +457,18 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
-		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
+		newMessage := arbstate.MessageWithMetadata{
 			Message:             message,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
-		})
+		}
+		messagesWithMeta = append(messagesWithMeta, newMessage)
+		if s.coordinator != nil {
+			if err := s.coordinator.SequencingMessage(pos+arbutil.MessageIndex(i), &newMessage); err != nil {
+				return err
+			}
+		}
 	}
+
 	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
 	err = s.writeMessages(pos, messagesWithMeta, nil)
 	if err != nil {

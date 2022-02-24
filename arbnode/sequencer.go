@@ -106,10 +106,20 @@ func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender co
 	return nil
 }
 
+func (s *Sequencer) ForwardTarget() string {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	if s.forwarder == nil {
+		return ""
+	}
+	return s.forwarder.target
+}
+
 func (s *Sequencer) ForwardTo(url string) {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
 	s.forwarder, _ = NewForwarder(url)
+	s.forwarder.Initialize(s.GetContext())
 }
 
 func (s *Sequencer) DontForward() {
@@ -215,7 +225,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
 	}
-	if errors.Is(err, errNotMainSequencer) {
+	if errors.Is(err, ErrNotMainSequencer) {
 		// we changed roles
 		// forward if we have where to
 		if s.forwardIfSet(queueItems) {
@@ -229,6 +239,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 				item.resultChan <- errors.New("queue full")
 			}
 		}
+		return
 	}
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)
