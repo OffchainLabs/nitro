@@ -270,6 +270,7 @@ func ProduceBlockAdvanced(
 
 		if err != nil {
 			log.Debug("error applying transaction", "tx", tx, "err", err)
+			gasLeft -= params.TxGas
 			continue
 		}
 
