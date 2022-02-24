@@ -553,7 +553,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		Time:       timestamp,
 		ParentHash: prevHash,
 		Extra:      []byte("ArbitrumMainnet"),
-		GasLimit:   l2pricing.L2GasLimit,
+		GasLimit:   l2pricing.GethBlockGasLimit,
 		GasUsed:    0,
 		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
 		Difficulty: genDifficulty,

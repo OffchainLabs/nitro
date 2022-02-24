@@ -64,7 +64,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    l2pricing.L2GasLimit,
+		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -163,7 +163,7 @@ func ProduceBlockAdvanced(
 	userTxsCompleted := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
-	gethGas := core.GasPool(1 << 63)
+	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
@@ -233,6 +233,10 @@ func ProduceBlockAdvanced(
 			}
 
 			computeGas := tx.Gas() - dataGas
+			if computeGas < params.TxGas {
+				// ensure at least TxGas is left in the pool before trying a state transition
+				computeGas = params.TxGas
+			}
 
 			if computeGas > gasLeft && isUserTx && userTxsCompleted > 0 {
 				return nil, nil, core.ErrGasLimitReached
@@ -240,8 +244,6 @@ func ProduceBlockAdvanced(
 
 			snap := statedb.Snapshot()
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
-
-			gasLeft -= computeGas
 
 			receipt, result, err := core.ApplyTransaction(
 				chainConfig,
@@ -315,9 +317,16 @@ func ProduceBlockAdvanced(
 			}
 		}
 
+		computeUsed := gasUsed - dataGas
+		if computeUsed < params.TxGas {
+			// a tx, even if invalid, must at least reduce the pool by TxGas
+			computeUsed = params.TxGas
+		}
+		gasLeft -= computeUsed
+
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
-		gasLeft -= gasUsed - dataGas
+
 		if isUserTx {
 			userTxsCompleted++
 		}
