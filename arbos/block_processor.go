@@ -269,8 +269,13 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
+			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
-			gasLeft -= params.TxGas
+			if gasLeft > params.TxGas {
+				gasLeft -= params.TxGas
+			} else {
+				gasLeft = 0
+			}
 			continue
 		}
 
