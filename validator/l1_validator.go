@@ -231,15 +231,18 @@ func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool,
 		}
 	}
 
-	nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
-	if err != nil {
-		return 0, false, err
-	}
+	// Validate the PosInBatch if it's non-zero
+	if gs.PosInBatch > 0 {
+		nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
+		if err != nil {
+			return 0, false, err
+		}
 
-	if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
-		// This PosInBatch would enter the next batch. Return the last block before the next batch.
-		// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
-		return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
+		if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
+			// This PosInBatch would enter the next batch. Return the last block before the next batch.
+			// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
+			return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
+		}
 	}
 
 	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
@@ -280,11 +283,11 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		}
 	}
 
-	var blocksValidated uint64
+	var lastBlockValidated uint64
 	if v.blockValidator != nil {
-		blocksValidated = v.blockValidator.BlocksValidated()
+		lastBlockValidated = v.blockValidator.BlocksValidated()
 	} else {
-		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64() + 1
+		lastBlockValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
 
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
@@ -293,11 +296,11 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			}
 			// Must be non-negative as a batch must contain at least one message
 			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
-			if blocksValidated > lastBatchBlock {
-				blocksValidated = lastBatchBlock + 1
+			if lastBlockValidated > lastBatchBlock {
+				lastBlockValidated = lastBatchBlock
 			}
 		} else {
-			blocksValidated = 0
+			lastBlockValidated = 0
 		}
 	}
 
@@ -351,8 +354,8 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			if err != nil {
 				return nil, false, err
 			}
-			if int64(blocksValidated) < lastBlockNum {
-				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", blocksValidated, lastBlockNum)
+			if int64(lastBlockValidated) < lastBlockNum {
+				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", lastBlockValidated, lastBlockNum)
 			}
 			var expectedBlockHash common.Hash
 			var expectedSendRoot common.Hash
@@ -418,7 +421,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		if len(successorNodes) > 0 {
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
-		action, err := v.createNewNodeAction(ctx, stakerInfo, blocksValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
+		action, err := v.createNewNodeAction(ctx, stakerInfo, lastBlockValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
 		return action, wrongNodesExist, err
 	}
 
@@ -428,7 +431,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 func (v *L1Validator) createNewNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
-	blocksValidated uint64,
+	lastBlockValidated uint64,
 	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
 	startBlock *types.Block,
@@ -444,11 +447,10 @@ func (v *L1Validator) createNewNodeAction(
 		return nil, nil
 	}
 
-	if blocksValidated == 0 || localBatchCount == 0 {
+	if localBatchCount == 0 {
 		// we haven't validated anything
 		return nil, nil
 	}
-	lastBlockValidated := blocksValidated - 1
 	if startBlock != nil && lastBlockValidated <= startBlock.NumberU64() {
 		// we haven't validated any new blocks
 		return nil, nil
