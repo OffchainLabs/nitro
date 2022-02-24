@@ -37,10 +37,10 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, false)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -157,6 +157,9 @@ func TestTwoNodesLong(t *testing.T) {
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		Fail(t, "Unexpected balance")
 	}
+
+	nodeA.StopAndWait()
+
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
@@ -171,4 +174,6 @@ func TestTwoNodesLong(t *testing.T) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+
+	nodeB.StopAndWait()
 }
