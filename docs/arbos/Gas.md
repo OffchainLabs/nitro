@@ -1,11 +1,14 @@
 # Gas and Fees
-A transaction's fees include the sum
+There are two parties a user pays when submitting a tx:
 
-Gas is a concept that serves two purposes:  and buying network resources.
+- the poster, if reimbursable, for L1 resources such as the L1 calldata needed to post the tx
+- the network fee account for L2 resources, which include the computation, storage, and other burdens L2 nodes must bare to service the tx
 
+Though subject to change when batch-compression pricing is fully implemented, [the L1 component](ArbOS.md#l1pricingstate) of a tx's fee consists of the approximate cost of posting the tx's calldata to the L1 inbox. This best-effort estimate is computed using ArbOS's running L1 gas-price estimate and the poster's self-reported compressibility-discount ratio. These [charges are dropped][drop_l1_link] if the poster is not the user's preferred aggregator, which the user may set using [`ArbAggregator`](Precompiles.md#ArbAggregator)'s [`SetPreferredAggregator`](Precompiles.md#ArbAggregator) precompile method.
 
+[The L2 component](ArbOS.md#l2pricingstate) consists of the traditional fees geth would pay to miners in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](Precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
 
-
+[drop_l1_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l1pricing/l1pricing.go#L232
 
 ## Tips in L2
 While tips are not advised for those using the sequencer, which prioritizes transactions on a first-come first-served basis, 3rd-party aggregators may choose to order txes based on tips. A user specifies a tip by setting a gas price in excess of the basefee and will [pay that difference][pay_difference_link] on the amount of gas the tx uses.
@@ -18,7 +21,7 @@ A poster receives the tip only when the user has set them as their [preferred ag
 ## Gas Estimating Retryables
 When a transaction schedules another, the subsequent tx's execution [will be included][estimation_inclusion_link] when estimating gas via the node's RPC. A tx's gas estimate, then, can only be found if all the txes succeed at a given gas limit. This is especially important when working with retryables and scheduling redeem attempts.
 
-Because a call to [`redeem`](#ArbRetryableTx) donates all of the call's gas, doing multiple requires limiting the amount of gas provided to each subcall. Otherwise the first will take all of the gas and force the second to necessarily fail irrespective of the estimation's gas limit.
+Because a call to [`redeem`](Precompiles.md#ArbRetryableTx) donates all of the call's gas, doing multiple requires limiting the amount of gas provided to each subcall. Otherwise the first will take all of the gas and force the second to necessarily fail irrespective of the estimation's gas limit.
 
 Gas estimation for Retryable submissions is possible via [`NodeInterface.sol`][node_interface_link] and similarly requires the auto-redeem attempt succeed.
 
