@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 
@@ -181,7 +180,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
 		return GoGlobalState{}, err
 	}
