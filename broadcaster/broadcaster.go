@@ -6,6 +6,7 @@ package broadcaster
 
 import (
 	"context"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -181,6 +182,10 @@ func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 
 func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
+}
+
+func (b *Broadcaster) ListenerAddr() net.Addr {
+	return b.server.ListenerAddr()
 }
 
 func (b *Broadcaster) GetCachedMessageCount() int {

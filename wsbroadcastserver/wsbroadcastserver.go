@@ -221,6 +221,10 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	return nil
 }
 
+func (s *WSBroadcastServer) ListenerAddr() net.Addr {
+	return s.listener.Addr()
+}
+
 func (s *WSBroadcastServer) StopAndWait() {
 	err := s.listener.Close()
 	if err != nil {
