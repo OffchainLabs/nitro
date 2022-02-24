@@ -38,7 +38,7 @@ const (
 	CONFLICT_TYPE_INCOMPLETE
 )
 
-type Validator struct {
+type L1Validator struct {
 	rollup                  *RollupWatcher
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
@@ -55,8 +55,7 @@ type Validator struct {
 	blockValidator *BlockValidator
 }
 
-func NewValidator(
-	ctx context.Context,
+func NewL1Validator(
 	client arbutil.L1Interface,
 	wallet *ValidatorWallet,
 	validatorUtilsAddress common.Address,
@@ -65,18 +64,12 @@ func NewValidator(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-) (*Validator, error) {
+) (*L1Validator, error) {
 	builder, err := NewValidatorTxBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := NewRollupWatcher(ctx, wallet.RollupAddress(), builder, callOpts)
-	if err != nil {
-		return nil, err
-	}
-	localCallOpts := callOpts
-	localCallOpts.Context = ctx
-	challengeManagerAddress, err := rollup.ChallengeManager(&localCallOpts)
+	rollup, err := NewRollupWatcher(wallet.RollupAddress(), builder, callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -91,32 +84,40 @@ func NewValidator(
 	if err != nil {
 		return nil, err
 	}
-	return &Validator{
-		rollup:                  rollup,
-		rollupAddress:           wallet.RollupAddress(),
-		challengeManagerAddress: challengeManagerAddress,
-		validatorUtils:          validatorUtils,
-		client:                  client,
-		builder:                 builder,
-		wallet:                  wallet,
-		callOpts:                callOpts,
-		genesisBlockNumber:      genesisBlockNumber,
-		l2Blockchain:            l2Blockchain,
-		inboxTracker:            inboxTracker,
-		txStreamer:              txStreamer,
-		blockValidator:          blockValidator,
+	return &L1Validator{
+		rollup:             rollup,
+		rollupAddress:      wallet.RollupAddress(),
+		validatorUtils:     validatorUtils,
+		client:             client,
+		builder:            builder,
+		wallet:             wallet,
+		callOpts:           callOpts,
+		genesisBlockNumber: genesisBlockNumber,
+		l2Blockchain:       l2Blockchain,
+		inboxTracker:       inboxTracker,
+		txStreamer:         txStreamer,
+		blockValidator:     blockValidator,
 	}, nil
 }
 
-func (v *Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
+func (v *L1Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
 	opts := v.callOpts
 	opts.Context = ctx
 	return &opts
 }
 
+func (v *L1Validator) Initialize(ctx context.Context) error {
+	err := v.rollup.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
+	return err
+}
+
 // removeOldStakers removes the stakes of all validators staked on the latest confirmed node (aka "refundable" or "old" stakers),
 // except its own if dontRemoveSelf is true
-func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
+func (v *L1Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
 	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (
 	return v.wallet.ReturnOldDeposits(ctx, stakersToEliminate)
 }
 
-func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
+func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
 	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, 0, 10)
 	if err != nil {
 		return nil, err
@@ -151,7 +152,7 @@ func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Trans
 	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
 }
 
-func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
+func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
@@ -184,7 +185,7 @@ func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool
 	}
 }
 
-func (v *Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
+func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
@@ -220,7 +221,7 @@ type OurStakerInfo struct {
 
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
-func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
+func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
 	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
@@ -244,7 +245,7 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, e
 	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
 }
 
-func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
+func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
@@ -283,7 +284,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	if v.blockValidator != nil {
 		blocksValidated = v.blockValidator.BlocksValidated()
 	} else {
-		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64() + 1
 
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
@@ -293,7 +294,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			// Must be non-negative as a batch must contain at least one message
 			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
 			if blocksValidated > lastBatchBlock {
-				blocksValidated = lastBatchBlock
+				blocksValidated = lastBatchBlock + 1
 			}
 		} else {
 			blocksValidated = 0
@@ -424,7 +425,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 	return correctNode, wrongNodesExist, nil
 }
 
-func (v *Validator) createNewNodeAction(
+func (v *L1Validator) createNewNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
 	blocksValidated uint64,

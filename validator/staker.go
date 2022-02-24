@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
@@ -41,16 +40,24 @@ type L1PostingStrategy struct {
 	HighGasDelayBlocks int64
 }
 
-type ValidatorConfig struct {
-	Strategy             string
-	UtilsAddress         string
-	StakerDelay          time.Duration
-	WalletFactoryAddress string
-	L1PostingStrategy    L1PostingStrategy
-	DontChallenge        bool
-	WithdrawDestination  string
-	TargetNumMachines    int
-	ConfirmationBlocks   int64
+type L1ValidatorConfig struct {
+	Strategy            string
+	StakerDelay         time.Duration
+	L1PostingStrategy   L1PostingStrategy
+	DontChallenge       bool
+	WithdrawDestination string
+	TargetNumMachines   int
+	ConfirmationBlocks  int64
+}
+
+var DefaultL1ValidatorConfig = L1ValidatorConfig{
+	Strategy:            "Watchtower",
+	StakerDelay:         time.Minute,
+	L1PostingStrategy:   L1PostingStrategy{},
+	DontChallenge:       false,
+	WithdrawDestination: "",
+	TargetNumMachines:   4,
+	ConfirmationBlocks:  12,
 }
 
 type nodeAndHash struct {
@@ -59,12 +66,11 @@ type nodeAndHash struct {
 }
 
 type Staker struct {
-	*Validator
+	*L1Validator
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
-	auth                    *bind.TransactOpts
-	config                  ValidatorConfig
+	config                  L1ValidatorConfig
 	highGasBlocksBuffer     *big.Int
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
@@ -88,27 +94,22 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 }
 
 func NewStaker(
-	ctx context.Context,
-	client *ethclient.Client,
+	client arbutil.L1Interface,
 	wallet *ValidatorWallet,
 	callOpts bind.CallOpts,
-	auth *bind.TransactOpts,
-	config ValidatorConfig,
+	config L1ValidatorConfig,
 	l2Blockchain *core.BlockChain,
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
+	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
-	if !common.IsHexAddress(config.UtilsAddress) {
-		return nil, fmt.Errorf("invalid validator utils address \"%v\"", config.UtilsAddress)
-	}
-	validatorUtilsAddress := common.HexToAddress(config.UtilsAddress)
 	strategy, err := stakerStrategyFromString(config.Strategy)
 	if err != nil {
 		return nil, err
 	}
-	val, err := NewValidator(ctx, client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
+	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}
@@ -117,10 +118,9 @@ func NewStaker(
 		withdrawDestination = common.HexToAddress(config.WithdrawDestination)
 	}
 	return &Staker{
-		Validator:           val,
+		L1Validator:         val,
 		strategy:            strategy,
 		baseCallOpts:        callOpts,
-		auth:                auth,
 		config:              config,
 		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:  nil,
@@ -129,14 +129,10 @@ func NewStaker(
 	}, nil
 }
 
-func (s *Staker) Start(ctx context.Context) chan bool {
-	done := make(chan bool)
+func (s *Staker) Start(ctx context.Context) {
 	go func() {
-		defer func() {
-			done <- true
-		}()
 		backoff := time.Second
-		for {
+		for ctx.Err() == nil {
 			arbTx, err := s.Act(ctx)
 			if err == nil && arbTx != nil {
 				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
@@ -161,12 +157,11 @@ func (s *Staker) Start(ctx context.Context) chan bool {
 			}
 			select {
 			case <-time.After(s.config.StakerDelay):
-			default:
+			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	return done
 }
 
 func (s *Staker) shouldAct(ctx context.Context) bool {
