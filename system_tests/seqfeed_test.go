@@ -91,7 +91,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(port)
-	l2clientC, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 
 	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.NodeConfigL1Test
@@ -99,7 +99,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
-	l2clientB, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
