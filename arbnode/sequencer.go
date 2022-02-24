@@ -203,9 +203,9 @@ func (s *Sequencer) Start(ctx context.Context) error {
 		}
 
 		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, s.l1Client)
-		defer cancel()
 
 		go (func() {
+			defer cancel()
 			for {
 				select {
 				case header, ok := <-headerChan:
