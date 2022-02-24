@@ -43,7 +43,7 @@ type L1PostingStrategy struct {
 
 type L1ValidatorConfig struct {
 	Strategy            string
-	StakerDelay         time.Duration
+	StakerInterval      time.Duration
 	L1PostingStrategy   L1PostingStrategy
 	DontChallenge       bool
 	WithdrawDestination string
@@ -53,7 +53,7 @@ type L1ValidatorConfig struct {
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Strategy:            "Watchtower",
-	StakerDelay:         time.Minute,
+	StakerInterval:      time.Minute,
 	L1PostingStrategy:   L1PostingStrategy{},
 	DontChallenge:       false,
 	WithdrawDestination: "",
@@ -145,7 +145,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		if err == nil {
 			backoff = time.Second
-			return s.config.StakerDelay
+			return s.config.StakerInterval
 		}
 		log.Warn("error acting as staker", "err", err)
 		if backoff < 60*time.Second {
