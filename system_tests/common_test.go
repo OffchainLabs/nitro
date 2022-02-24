@@ -10,12 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -27,12 +31,13 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 	"github.com/offchainlabs/arbstate/util/testhelpers"
 )
 
 type info = *BlockchainTestInfo
-type client = arbnode.L1Interface
+type client = arbutil.L1Interface
 
 func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, txs []*types.Transaction) {
 	t.Helper()
@@ -40,7 +45,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
@@ -49,8 +54,32 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+}
+
+func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo, l1client arbutil.L1Interface, l2client arbutil.L1Interface, delayedTx *types.Transaction) *types.Receipt {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+	usertxopts := l1info.GetDefaultTransactOpts("User")
+
+	txbytes, err := delayedTx.MarshalBinary()
+	Require(t, err)
+	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
+	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
+	Require(t, err)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	receipt, err := arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	Require(t, err)
+	return receipt
 }
 
 func GetBaseFee(t *testing.T, client client, ctx context.Context) *big.Int {
@@ -122,7 +151,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), common.Hash{}, 5*time.Second)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, 5*time.Second)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -175,7 +204,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	if !isSequencer {
 		nodeConfig.BatchPoster = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -192,8 +221,21 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.NodeConfig, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
-	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
+
+	// Give the node an init message
+	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
+		},
+		DelayedMessagesRead: 0,
+	}})
+	Require(t, err)
+
 	Require(t, node.Start(ctx))
 	client := ClientForArbBackend(t, node.Backend)
 
@@ -207,7 +249,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+		_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 
@@ -245,11 +287,18 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, params.ArbitrumTestChainConfig())
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
 	err = node.Start(ctx)
 	Require(t, err)
 	l2client := ClientForArbBackend(t, node.Backend)
 	return l2client, node
+}
+
+func GetBalance(t *testing.T, ctx context.Context, client *ethclient.Client, account common.Address) *big.Int {
+	t.Helper()
+	balance, err := client.BalanceAt(ctx, account, nil)
+	Require(t, err, "could not get balance")
+	return balance
 }

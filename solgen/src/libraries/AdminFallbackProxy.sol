@@ -23,16 +23,17 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Upgrade.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/StorageSlot.sol";
 
-
 /// @notice An extension to OZ's ERC1967Upgrade implementation to support two logic contracts
 abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
     using Address for address;
 
     // This is the keccak-256 hash of "eip1967.proxy.implementation.secondary" subtracted by 1
-    bytes32 internal constant _IMPLEMENTATION_SECONDARY_SLOT = 0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d;
+    bytes32 internal constant _IMPLEMENTATION_SECONDARY_SLOT =
+        0x2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d;
 
     // This is the keccak-256 hash of "eip1967.proxy.rollback.secondary" subtracted by 1
-    bytes32 private constant _ROLLBACK_SECONDARY_SLOT = 0x49bd798cd84788856140a4cd5030756b4d08a9e4d55db725ec195f232d262a89;
+    bytes32 private constant _ROLLBACK_SECONDARY_SLOT =
+        0x49bd798cd84788856140a4cd5030756b4d08a9e4d55db725ec195f232d262a89;
 
     /**
      * @dev Emitted when the secondary implementation is upgraded.
@@ -50,7 +51,10 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
      * @dev Stores a new address in the EIP1967 implementation slot.
      */
     function _setSecondaryImplementation(address newImplementation) private {
-        require(Address.isContract(newImplementation), "ERC1967: new secondary implementation is not a contract");
+        require(
+            Address.isContract(newImplementation),
+            "ERC1967: new secondary implementation is not a contract"
+        );
         StorageSlot.getAddressSlot(_IMPLEMENTATION_SECONDARY_SLOT).value = newImplementation;
     }
 
@@ -97,7 +101,10 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
             _setSecondaryImplementation(newImplementation);
         } else {
             try IERC1822Proxiable(newImplementation).proxiableUUID() returns (bytes32 slot) {
-                require(slot == _IMPLEMENTATION_SECONDARY_SLOT, "ERC1967Upgrade: unsupported proxiableUUID");
+                require(
+                    slot == _IMPLEMENTATION_SECONDARY_SLOT,
+                    "ERC1967Upgrade: unsupported proxiableUUID"
+                );
             } catch {
                 revert("ERC1967Upgrade: new secondary implementation is not UUPS");
             }
@@ -105,7 +112,6 @@ abstract contract DoubleLogicERC1967Upgrade is ERC1967Upgrade {
         }
     }
 }
-
 
 /// @notice similar to TransparentUpgradeableProxy but allows the admin to fallback to a separate logic contract using DoubleLogicERC1967Upgrade
 /// @dev this follows the UUPS pattern for upgradeability - read more at https://github.com/OpenZeppelin/openzeppelin-contracts/tree/v4.5.0/contracts/proxy#transparent-vs-uups-proxies
@@ -125,20 +131,20 @@ contract AdminFallbackProxy is Proxy, DoubleLogicERC1967Upgrade {
         address adminAddr
     ) payable {
         assert(_ADMIN_SLOT == bytes32(uint256(keccak256("eip1967.proxy.admin")) - 1));
-        assert(_IMPLEMENTATION_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1));
-        assert(_IMPLEMENTATION_SECONDARY_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1));
+        assert(
+            _IMPLEMENTATION_SLOT == bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)
+        );
+        assert(
+            _IMPLEMENTATION_SECONDARY_SLOT ==
+                bytes32(uint256(keccak256("eip1967.proxy.implementation.secondary")) - 1)
+        );
         _changeAdmin(adminAddr);
         _upgradeToAndCall(adminLogic, adminData, false);
         _upgradeSecondaryToAndCall(userLogic, userData, false);
     }
 
     /// @inheritdoc Proxy
-    function _implementation()
-        internal
-        view
-        override
-        returns (address)
-    {
+    function _implementation() internal view override returns (address) {
         require(msg.data.length >= 4, "NO_FUNC_SIG");
         // if the sender is the proxy's admin, delegate to admin logic
         // if the admin is disabled (set to addr zero), all calls will be forwarded to user logic

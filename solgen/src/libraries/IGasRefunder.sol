@@ -1,4 +1,4 @@
-// 
+//
 // Copyright 2021, Offchain Labs, Inc. All rights reserved.
 // SPDX-License-Identifier: UNLICENSED
 //
@@ -22,11 +22,7 @@ abstract contract GasRefundEnabled {
             assembly {
                 calldataSize := calldatasize()
             }
-            gasRefunder.onGasSpent(
-                spender,
-                startGasLeft - gasleft(),
-                calldataSize
-            );
+            gasRefunder.onGasSpent(spender, startGasLeft - gasleft(), calldataSize);
         }
     }
 
@@ -34,11 +30,7 @@ abstract contract GasRefundEnabled {
         uint256 startGasLeft = gasleft();
         _;
         if (address(gasRefunder) != address(0)) {
-            gasRefunder.onGasSpent(
-                spender,
-                startGasLeft - gasleft(),
-                0
-            );
+            gasRefunder.onGasSpent(spender, startGasLeft - gasleft(), 0);
         }
     }
 }

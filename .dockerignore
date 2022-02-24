@@ -7,7 +7,7 @@
 **/.gitmodules
 go-ethereum/tests
 **/*.yml
-solgen/artifacts
+solgen/build
 solgen/cache/
 solgen/go
 **/node_modules

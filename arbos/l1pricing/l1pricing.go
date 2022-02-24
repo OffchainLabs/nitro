@@ -5,8 +5,9 @@
 package l1pricing
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -217,26 +218,26 @@ func (ps *L1PricingState) PosterDataCost(
 	sender common.Address,
 	aggregator *common.Address,
 	data []byte,
-) (*big.Int, error) {
+) (*big.Int, bool, error) {
 	if aggregator == nil {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 	reimbursableAggregator, err := ps.ReimbursableAggregatorForSender(sender)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if reimbursableAggregator == nil {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 	if *reimbursableAggregator != *aggregator {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 
 	bytesToCharge := uint64(len(data) + TxFixedCost)
 
 	ratio, err := ps.AggregatorCompressionRatio(*reimbursableAggregator)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	dataGas := 16 * bytesToCharge * ratio / DataWasNotCompressed
@@ -246,14 +247,14 @@ func (ps *L1PricingState) PosterDataCost(
 
 	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	baseCharge, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), price)
-	return new(big.Int).Add(baseCharge, chargeForBytes), nil
+	return new(big.Int).Add(baseCharge, chargeForBytes), true, nil
 }

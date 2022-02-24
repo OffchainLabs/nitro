@@ -215,16 +215,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
+	from := p.msg.From()
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
+	aggregator := p.getReimbursableAggregator()
+	posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -253,9 +255,16 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		gasNeededToStartEVM = p.posterGas
 	}
 
+	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
+	tipRecipient := aggregator
+	if !reimburse {
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		tipRecipient = &networkFeeAccount
+	}
+
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return core.ErrIntrinsicGas
+		return tipRecipient, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -269,7 +278,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		}
 	}
 
-	return nil
+	return tipRecipient, nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -327,10 +336,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
-	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
+	gasUsed := util.UintToBig(p.msg.Gas() - gasLeft)
 
-	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
-	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
+	totalCost := util.BigMul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
+	computeCost := util.BigSub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.

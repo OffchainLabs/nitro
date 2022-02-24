@@ -12,14 +12,19 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type BatchPoster struct {
-	client          L1Interface
+	util.StopWaiter
+
+	client          arbutil.L1Interface
 	inbox           *InboxTracker
 	streamer        *TransactionStreamer
 	config          *BatchPosterConfig
@@ -50,7 +55,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:    2,
 }
 
-func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
@@ -286,7 +291,7 @@ func (b *BatchPoster) lastSubmissionIsSynced() bool {
 }
 
 // TODO make sure we detect end of block!
-func (b *BatchPoster) postSequencerBatch() error {
+func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
 	for !b.lastSubmissionIsSynced() {
 		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
 		<-time.After(b.config.SubmissionSyncDelay)
@@ -296,14 +301,14 @@ func (b *BatchPoster) postSequencerBatch() error {
 		var err error
 		prevBatchMeta, err = b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	segments := newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config)
 	msgToPost := prevBatchMeta.MessageCount
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for msgToPost < msgCount {
 		msg, err := b.streamer.GetMessage(msgToPost)
@@ -323,32 +328,33 @@ func (b *BatchPoster) postSequencerBatch() error {
 	}
 	sequencerMsg, err := segments.CloseAndGetBytes()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
-		return nil
+		return nil, nil
 	}
-	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
 	if err == nil {
 		b.sequencesPosted++
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	}
-	return err
+	return tx, err
 }
 
-func (b *BatchPoster) Start(ctx context.Context) {
-	go (func() {
-		for {
-			err := b.postSequencerBatch()
+func (b *BatchPoster) Start(ctxIn context.Context) {
+	b.StopWaiter.Start(ctxIn)
+	b.CallIteratively(func(ctx context.Context) time.Duration {
+		tx, err := b.postSequencerBatch()
+		if err != nil {
+			log.Error("error posting batch", "err", err)
+		}
+		if tx != nil {
+			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
 			if err != nil {
-				log.Error("error posting batch", "err", err.Error())
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(b.config.BatchPollDelay):
+				log.Error("failed ensuring batch tx succeeded", "err", err)
 			}
 		}
-	})()
+		return b.config.BatchPollDelay
+	})
 }

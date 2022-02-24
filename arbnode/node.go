@@ -30,9 +30,11 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/broadcaster"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
 	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
 	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
 	"github.com/offchainlabs/arbstate/statetransfer"
@@ -41,25 +43,27 @@ import (
 )
 
 type RollupAddresses struct {
-	Bridge         common.Address
-	Inbox          common.Address
-	SequencerInbox common.Address
-	Rollup         common.Address
-	DeployedAt     uint64
+	Bridge                 common.Address
+	Inbox                  common.Address
+	SequencerInbox         common.Address
+	Rollup                 common.Address
+	ValidatorUtils         common.Address
+	ValidatorWalletCreator common.Address
+	DeployedAt             uint64
 }
 
-func andTxSucceeded(ctx context.Context, l1client L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
@@ -105,47 +109,58 @@ func deployBridgeCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployChallengeFactory(
+	ctx context.Context,
+	client arbutil.L1Interface,
+	auth *bind.TransactOpts,
+	txTimeout time.Duration,
+) (common.Address, common.Address, error) {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
-		return common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
-	return ospEntryAddr, nil
+	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
+	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	if err != nil {
+		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
+	}
+
+	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
+func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
 	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	challengeFactory, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, client, auth, txTimeout)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
@@ -168,7 +183,14 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	tx, err = rollupCreator.SetTemplates(auth, bridgeCreator, challengeFactory, rollupAdminLogic, rollupUserLogic)
+	tx, err = rollupCreator.SetTemplates(
+		auth,
+		bridgeCreator,
+		ospEntryAddr,
+		challengeManagerAddr,
+		rollupAdminLogic,
+		rollupUserLogic,
+	)
 	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
@@ -177,15 +199,14 @@ func deployRollupCreator(ctx context.Context, client L1Interface, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
-	// Deployment sometimes fails without a manually set gas limit
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	var confirmPeriodBlocks uint64 = 20
-	var extraChallengeTimeBlocks uint64 = 20
+	var extraChallengeTimeBlocks uint64 = 200
 	seqInboxParams := rollupgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
 		FutureBlocks:  big.NewInt(12),
@@ -196,7 +217,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	if err != nil {
 		return nil, err
 	}
-	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+1)
+	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
 		deployAuth,
 		rollupgen.Config{
@@ -215,7 +236,7 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	receipt, err := arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -234,12 +255,40 @@ func DeployOnL1(ctx context.Context, l1client L1Interface, deployAuth *bind.Tran
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
 	}
 
+	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(deployAuth, l1client)
+	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(deployAuth, l1client)
+	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	var allowValidators []bool
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+		allowValidators = append(allowValidators, true)
+	}
+	if len(validatorAddrs) > 0 {
+		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
+		err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting validator: %w", err)
+		}
+	}
+
 	return &RollupAddresses{
-		Bridge:         info.DelayedBridge,
-		Inbox:          info.InboxAddress,
-		SequencerInbox: info.SequencerInbox,
-		DeployedAt:     receipt.BlockNumber.Uint64(),
-		Rollup:         info.RollupAddress,
+		Bridge:                 info.DelayedBridge,
+		Inbox:                  info.InboxAddress,
+		SequencerInbox:         info.SequencerInbox,
+		DeployedAt:             receipt.BlockNumber.Uint64(),
+		Rollup:                 info.RollupAddress,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
 }
 
@@ -257,10 +306,12 @@ type NodeConfig struct {
 	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
 	BroadcastClient        bool
 	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
+	L1Validator            bool
+	L1ValidatorConfig      validator.L1ValidatorConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
 type Node struct {
@@ -274,11 +325,12 @@ type Node struct {
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
 	BlockValidator   *validator.BlockValidator
+	Staker           *validator.Staker
 	BroadcastServer  *broadcaster.Broadcaster
 	BroadcastClient  *broadcastclient.BroadcastClient
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
@@ -315,7 +367,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
 	}
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient}, nil
 	}
 
 	if deployInfo == nil {
@@ -340,11 +392,27 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var staker *validator.Staker
+	if config.L1Validator {
+		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
+		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, validatorTxOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		if err != nil {
+			return nil, err
+		}
+		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.L1ValidatorConfig, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, broadcastServer, broadcastClient}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClient}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -358,7 +426,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, broadcastServer, broadcastClient}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClient}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -399,6 +467,13 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	if n.Staker != nil {
+		err = n.Staker.Initialize(ctx)
+		if err != nil {
+			return err
+		}
+		n.Staker.Start(ctx)
+	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
@@ -409,6 +484,29 @@ func (n *Node) Start(ctx context.Context) error {
 		n.BroadcastClient.Start(ctx)
 	}
 	return nil
+}
+
+func (n *Node) StopAndWait() {
+	if n.BroadcastClient != nil {
+		n.BroadcastClient.StopAndWait()
+	}
+	if n.BroadcastServer != nil {
+		n.BroadcastServer.StopAndWait()
+	}
+	if n.BlockValidator != nil {
+		n.BlockValidator.StopAndWait()
+	}
+	if n.BatchPoster != nil {
+		n.BatchPoster.StopAndWait()
+	}
+	if n.DelayedSequencer != nil {
+		n.DelayedSequencer.StopAndWait()
+	}
+	if n.InboxReader != nil {
+		n.InboxReader.StopAndWait()
+	}
+	n.TxPublisher.StopAndWait()
+	n.TxStreamer.StopAndWait()
 }
 
 func CreateDefaultStack() (*node.Node, error) {
@@ -527,7 +625,7 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 	}
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(blockNumber),
-		Nonce:      types.EncodeNonce(0),
+		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
 		Time:       timestamp,
 		ParentHash: prevHash,
 		Extra:      []byte("ArbitrumMainnet"),
@@ -603,7 +701,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	return GetBlockChain(chainDb, cacheConfig, config)
 }
 
-// TODO: is that right?
-func shouldPreserveFalse(block *types.Block) bool {
+// Don't preserve reorg'd out blocks
+func shouldPreserveFalse(header *types.Header) bool {
 	return false
 }

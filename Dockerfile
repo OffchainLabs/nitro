@@ -51,7 +51,7 @@ COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
-COPY --from=contracts-builder app/solgen/artifacts solgen/artifacts/
+COPY --from=contracts-builder app/solgen/build/ solgen/build/
 COPY solgen/gen.go solgen/
 COPY go-ethereum go-ethereum/
 RUN mkdir -p solgen/go/ && \

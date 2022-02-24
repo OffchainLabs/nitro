@@ -11,16 +11,16 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 )
 
 func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, false)
 
 	l2info.GenerateAccount("User2")
 
@@ -29,7 +29,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -42,7 +42,7 @@ func TestTwoNodesSimple(t *testing.T) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
@@ -51,4 +51,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }
