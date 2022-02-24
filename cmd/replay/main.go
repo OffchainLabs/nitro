@@ -149,7 +149,7 @@ func main() {
 
 	log.Info("Final State", "newBlockHash", newBlockHash, "StateRoot", newBlock.Root())
 
-	extraInfo, err := arbos.DeserializeHeaderExtraInformation(newBlock.Header())
+	extraInfo, err := types.DeserializeHeaderExtraInformation(newBlock.Header())
 	if err != nil {
 		panic(fmt.Sprintf("Error deserializing header extra info: %v", err))
 	}

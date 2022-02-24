@@ -131,11 +131,11 @@ type validationEntry struct {
 }
 
 func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
-	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
 		return nil, err
 	}
-	prevExtraInfo, err := arbos.DeserializeHeaderExtraInformation(prevHeader)
+	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(prevHeader)
 	if err != nil {
 		return nil, err
 	}
