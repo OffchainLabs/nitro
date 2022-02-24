@@ -6,6 +6,8 @@ package broadcastclient
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -23,7 +25,7 @@ func TestReceiveMessages(t *testing.T) {
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9742",
+		Port:          "0",
 		Ping:          5 * time.Second,
 		ClientTimeout: 20 * time.Second,
 		Queue:         1,
@@ -43,7 +45,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		startMakeBroadcastClient(ctx, t, i, messageCount, &wg)
+		startMakeBroadcastClient(ctx, t, b.ListenerAddr(), i, messageCount, &wg)
 	}
 
 	go func() {
@@ -76,9 +78,14 @@ func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force 
 	return nil
 }
 
-func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expectedCount int, wg *sync.WaitGroup) {
+func newTestBroadcastClient(listenerAddress net.Addr, idleTimeout time.Duration, txStreamer TransactionStreamerInterface) *BroadcastClient {
+	port := listenerAddress.(*net.TCPAddr).Port
+	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), nil, idleTimeout, txStreamer)
+}
+
+func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9742/", nil, 20*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(addr, 20*time.Second, ts)
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
@@ -116,7 +123,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9743",
+		Port:          "0",
 		Ping:          1 * time.Second,
 		ClientTimeout: 2 * time.Second,
 		Queue:         1,
@@ -132,7 +139,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	defer b.StopAndWait()
 
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 20*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), 20*time.Second, ts)
 	broadcastClient.Start(ctx)
 
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
@@ -168,7 +175,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9743",
+		Port:          "0",
 		Ping:          50 * time.Second,
 		ClientTimeout: 150 * time.Second,
 		Queue:         1,
@@ -183,7 +190,7 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 	}
 	defer b1.StopAndWait()
 
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9743/", nil, 2*time.Second, nil)
+	broadcastClient := newTestBroadcastClient(b1.ListenerAddr(), 2*time.Second, nil)
 
 	broadcastClient.Start(ctx)
 
@@ -203,7 +210,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9842",
+		Port:          "0",
 		Ping:          5 * time.Second,
 		ClientTimeout: 15 * time.Second,
 		Queue:         1,
@@ -224,7 +231,7 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
-		connectAndGetCachedMessages(ctx, t, i, &wg)
+		connectAndGetCachedMessages(ctx, b.ListenerAddr(), t, i, &wg)
 	}
 
 	wg.Wait()
@@ -265,9 +272,9 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	}
 }
 
-func connectAndGetCachedMessages(ctx context.Context, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
+func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.T, clientIndex int, wg *sync.WaitGroup) {
 	ts := NewDummyTransactionStreamer()
-	broadcastClient := NewBroadcastClient("ws://127.0.0.1:9842/", nil, 60*time.Second, ts)
+	broadcastClient := newTestBroadcastClient(addr, 60*time.Second, ts)
 	broadcastClient.Start(ctx)
 
 	go func() {
