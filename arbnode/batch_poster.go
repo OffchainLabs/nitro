@@ -24,35 +24,34 @@ import (
 type BatchPoster struct {
 	util.StopWaiter
 
-	client          arbutil.L1Interface
-	inbox           *InboxTracker
-	streamer        *TransactionStreamer
-	config          *BatchPosterConfig
-	inboxContract   *bridgegen.SequencerInbox
-	sequencesPosted uint64
-	gasRefunder     common.Address
-	transactOpts    *bind.TransactOpts
+	client        arbutil.L1Interface
+	inbox         *InboxTracker
+	streamer      *TransactionStreamer
+	config        *BatchPosterConfig
+	inboxContract *bridgegen.SequencerInbox
+	gasRefunder   common.Address
+	transactOpts  *bind.TransactOpts
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize        int
-	BatchPollDelay      time.Duration
-	SubmissionSyncDelay time.Duration
-	CompressionLevel    int
+	MaxBatchSize      int
+	BatchPollDelay    time.Duration
+	PostingErrorDelay time.Duration
+	CompressionLevel  int
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:        500,
-	BatchPollDelay:      time.Second / 10,
-	SubmissionSyncDelay: time.Second,
-	CompressionLevel:    brotli.DefaultCompression,
+	MaxBatchSize:      500,
+	BatchPollDelay:    time.Second / 10,
+	PostingErrorDelay: time.Second * 5,
+	CompressionLevel:  brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:        10000,
-	BatchPollDelay:      time.Millisecond * 10,
-	SubmissionSyncDelay: time.Millisecond * 10,
-	CompressionLevel:    2,
+	MaxBatchSize:      10000,
+	BatchPollDelay:    time.Millisecond * 10,
+	PostingErrorDelay: time.Millisecond * 10,
+	CompressionLevel:  2,
 }
 
 func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
@@ -61,14 +60,13 @@ func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *T
 		return nil, err
 	}
 	return &BatchPoster{
-		client:          client,
-		inbox:           inbox,
-		streamer:        streamer,
-		config:          config,
-		inboxContract:   inboxContract,
-		sequencesPosted: 1,
-		transactOpts:    transactOpts,
-		gasRefunder:     refunder,
+		client:        client,
+		inbox:         inbox,
+		streamer:      streamer,
+		config:        config,
+		inboxContract: inboxContract,
+		transactOpts:  transactOpts,
+		gasRefunder:   refunder,
 	}, nil
 }
 
@@ -272,34 +270,22 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) lastSubmissionIsSynced() bool {
-	batchcount, err := b.inbox.GetBatchCount()
+func (b *BatchPoster) postSequencerBatch(ctx context.Context) (*types.Transaction, error) {
+	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
-		log.Warn("BatchPoster: batchcount failed", "err", err)
-		return false
+		return nil, err
 	}
-	if batchcount < b.sequencesPosted {
-		b.sequencesPosted = batchcount
-		return false
+	inboxContractCount, err := b.inboxContract.BatchCount(&bind.CallOpts{Context: ctx, Pending: true})
+	if err != nil {
+		return nil, err
 	}
-	if batchcount > b.sequencesPosted {
-		log.Warn("detected unexpected sequences posted", "actual", batchcount, "expected", b.sequencesPosted)
-		b.sequencesPosted = batchcount
-		return true
-	}
-	return true
-}
-
-// TODO make sure we detect end of block!
-func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
-	for !b.lastSubmissionIsSynced() {
-		log.Warn("BatchPoster: not in sync", "sequencedPosted", b.sequencesPosted)
-		<-time.After(b.config.SubmissionSyncDelay)
+	if inboxContractCount.Cmp(new(big.Int).SetUint64(batchSeqNum)) != 0 {
+		return nil, fmt.Errorf("inbox tracker not synced: contract has %v batches but inbox tracker has %v", inboxContractCount, batchSeqNum)
 	}
 	var prevBatchMeta BatchMetadata
-	if b.sequencesPosted > 0 {
+	if batchSeqNum > 0 {
 		var err error
-		prevBatchMeta, err = b.inbox.GetBatchMetadata(b.sequencesPosted - 1)
+		prevBatchMeta, err = b.inbox.GetBatchMetadata(batchSeqNum - 1)
 		if err != nil {
 			return nil, err
 		}
@@ -331,13 +317,14 @@ func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
 		return nil, err
 	}
 	if sequencerMsg == nil {
-		log.Debug("BatchPoster: batch nil", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
+		log.Debug("BatchPoster: batch nil", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
 		return nil, nil
 	}
-	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+	txOpts := *b.transactOpts
+	txOpts.Context = ctx
+	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
 	if err == nil {
-		b.sequencesPosted++
-		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
+		log.Info("BatchPoster: batch sent", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
 	}
 	return tx, err
 }
@@ -345,9 +332,10 @@ func (b *BatchPoster) postSequencerBatch() (*types.Transaction, error) {
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		tx, err := b.postSequencerBatch()
+		tx, err := b.postSequencerBatch(ctx)
 		if err != nil {
 			log.Error("error posting batch", "err", err)
+			return b.config.PostingErrorDelay
 		}
 		if tx != nil {
 			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
