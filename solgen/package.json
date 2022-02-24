@@ -7,8 +7,8 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "hardhat compile",
-    "solhint": "./node_modules/.bin/solhint -f table src/**/*.sol",
-    "prettier:solidity": "./node_modules/.bin/prettier --write src/**/*.sol"
+    "solhint": "solhint -f table src/**/*.sol",
+    "prettier:solidity": "prettier --write src/**/*.sol"
   },
   "dependencies": {
     "@openzeppelin/contracts": "4.5.0",
