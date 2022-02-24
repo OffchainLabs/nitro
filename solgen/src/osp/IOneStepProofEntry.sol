@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "./IOneStepProver.sol";
 
 library OneStepProofEntryLib {
-    uint256 constant MAX_STEPS = 1 << 43;
+    uint256 internal constant MAX_STEPS = 1 << 43;
 }
 
 interface IOneStepProofEntry {

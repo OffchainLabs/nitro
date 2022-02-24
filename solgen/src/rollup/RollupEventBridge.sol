@@ -22,42 +22,34 @@ import "./IRollupLogic.sol";
 
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
-import "../libraries/Cloneable.sol";
+import "../libraries/DelegateCallAware.sol";
+import {ROLLUP_PROTOCOL_EVENT_TYPE, INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 /**
  * @title The inbox for rollup protocol events
  */
-contract RollupEventBridge is IMessageProvider, Cloneable {
-    uint8 internal constant INITIALIZATION_MSG_TYPE = 11;
-    uint8 internal constant ROLLUP_PROTOCOL_EVENT_TYPE = 8;
-
+contract RollupEventBridge is IMessageProvider, DelegateCallAware {
     uint8 internal constant CREATE_NODE_EVENT = 0;
     uint8 internal constant CONFIRM_NODE_EVENT = 1;
     uint8 internal constant REJECT_NODE_EVENT = 2;
     uint8 internal constant STAKE_CREATED_EVENT = 3;
 
-    IBridge bridge;
-    address rollup;
+    IBridge public bridge;
+    address public rollup;
 
     modifier onlyRollup() {
         require(msg.sender == rollup, "ONLY_ROLLUP");
         _;
     }
 
-    function initialize(address _bridge, address _rollup) external {
+    function initialize(address _bridge, address _rollup) external onlyDelegated {
         require(rollup == address(0), "ALREADY_INIT");
         bridge = IBridge(_bridge);
         rollup = _rollup;
     }
 
-    function rollupInitialized(
-        address owner,
-        uint256 chainId
-    ) external onlyRollup {
-        bytes memory initMsg = abi.encodePacked(
-            owner,
-            chainId
-        );
+    function rollupInitialized(address owner, uint256 chainId) external onlyRollup {
+        bytes memory initMsg = abi.encodePacked(owner, chainId);
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),

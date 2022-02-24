@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -46,8 +47,11 @@ func main() {
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
+	importFile := flag.String("importfile", "", "path for json data to import")
+	devInit := flag.Bool("dev", false, "init with dev data (1 account with balance) instead of file import")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
+
 	httphost := flag.String("httphost", "localhost", "http host")
 	httpPort := flag.Int("httpport", 7545, "http port")
 	httpvhosts := flag.String("httpvhosts", "localhost", "list of virtual hosts to accept requests from")
@@ -213,26 +217,65 @@ func main() {
 		Timeout: *feedInputTimeout,
 		URL:     *feedInputUrl,
 	}
+
+	var initDataReader statetransfer.InitDataReader = nil
+
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	initData := statetransfer.ArbosInitializationInfo{
-		Accounts: []statetransfer.AccountInitializationInfo{
-			{
-				Addr:       devAddr,
-				EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-				Nonce:      0,
+	if *importFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(*importFile)
+		if err != nil {
+			panic(err)
+		}
+	} else if *devInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       devAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
+				},
 			},
-		},
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
+		if err != nil {
+			panic(err)
+		}
 	}
 
-	l2blockchain, err := arbnode.CreateDefaultBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), &initData, 0, params.ArbitrumOneChainConfig())
-	if err != nil {
-		panic(err)
+	var l2BlockChain *core.BlockChain
+	if initDataReader != nil {
+		blockReader, err := initDataReader.GetStoredBlockReader()
+		if err != nil {
+			panic(err)
+		}
+		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
+			panic(err)
+		}
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, params.ArbitrumOneChainConfig())
+		if err != nil {
+			panic(err)
+		}
+
+	} else {
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if blocksInDb == 0 {
+			panic("No initialization mode supplied, no blocks in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), params.ArbitrumOneChainConfig())
+		if err != nil {
+			panic(err)
+		}
 	}
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts)
+
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

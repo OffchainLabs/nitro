@@ -19,9 +19,16 @@
 pragma solidity ^0.8.0;
 
 import "./RollupLib.sol";
+import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
-interface IRollupUser {
+interface IRollupUserAbs {
+    /// @dev the user logic just validated configuration and shouldn't write to state during init
+    /// this allows the admin logic to ensure consistency on parameters.
+    function initialize(address stakeToken) external view;
+
+    function isERC20Enabled() external view returns (bool);
+
     function returnOldDeposit(address stakerAddress) external;
 
     function requireUnresolved(uint256 nodeNum) external view;
@@ -31,8 +38,36 @@ interface IRollupUser {
     function countStakedZombies(uint64 nodeNum) external view returns (uint256);
 }
 
+interface IRollupUser is IRollupUserAbs {
+    function newStakeOnExistingNode(uint64 nodeNum, bytes32 nodeHash) external payable;
+
+    function newStakeOnNewNode(
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external payable;
+}
+
+interface IRollupUserERC20 is IRollupUserAbs {
+    function newStakeOnExistingNode(
+        uint256 tokenAmount,
+        uint64 nodeNum,
+        bytes32 nodeHash
+    ) external;
+
+    function newStakeOnNewNode(
+        uint256 tokenAmount,
+        RollupLib.Assertion calldata assertion,
+        bytes32 expectedNodeHash,
+        uint256 prevNodeInboxMaxCount
+    ) external;
+}
+
 interface IRollupAdmin {
     event OwnerFunctionCalled(uint256 indexed id);
+
+    function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
+        external;
 
     /**
      * @notice Add a contract authorized to put messages into this rollup's inbox
@@ -64,25 +99,16 @@ interface IRollupAdmin {
     function resume() external;
 
     /**
-     * @notice Set the addresses of rollup logic contracts called
-     * @param newAdminLogic address of logic that owner of rollup calls
-     * @param newUserLogic ddress of logic that user of rollup calls
-     */
-    function setLogicContracts(address newAdminLogic, address newUserLogic)
-        external;
-
-    /**
      * @notice Set the addresses of the validator whitelist
      * @dev It is expected that both arrays are same length, and validator at
      * position i corresponds to the value at position i
      * @param _validator addresses to set in the whitelist
      * @param _val value to set in the whitelist for corresponding address
      */
-    function setValidator(address[] memory _validator, bool[] memory _val)
-        external;
+    function setValidator(address[] memory _validator, bool[] memory _val) external;
 
     /**
-     * @notice Set a new owner address for the rollup
+     * @notice Set a new owner address for the rollup proxy
      * @param newOwner address of new rollup owner
      */
     function setOwner(address newOwner) external;
@@ -98,12 +124,6 @@ interface IRollupAdmin {
      * @param newConfirmPeriod new number of blocks until a node is confirmed
      */
     function setConfirmPeriodBlocks(uint64 newConfirmPeriod) external;
-
-    /**
-     * @notice Set the proving WASM module root
-     * @param newWasmModuleRoot new module root
-     */
-    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
 
     /**
      * @notice Set number of extra blocks after a challenge
@@ -134,14 +154,6 @@ interface IRollupAdmin {
     ) external;
 
     /**
-     * @notice Set execution bisection degree
-     * @param newChallengeExecutionBisectionDegree execution bisection degree
-     */
-    function setChallengeExecutionBisectionDegree(
-        uint256 newChallengeExecutionBisectionDegree
-    ) external;
-
-    /**
      * @notice Updates whether an address is authorized to be a batch poster at the sequencer inbox
      * @param addr the address
      * @param isBatchPoster if the specified address should be authorized as a batch poster
@@ -155,10 +167,7 @@ interface IRollupAdmin {
      */
     function upgradeBeacon(address beacon, address newImplementation) external;
 
-    function forceResolveChallenge(
-        address[] memory stackerA,
-        address[] memory stackerB
-    ) external;
+    function forceResolveChallenge(address[] memory stackerA, address[] memory stackerB) external;
 
     function forceRefundStaker(address[] memory stacker) external;
 
@@ -174,4 +183,12 @@ interface IRollupAdmin {
         bytes32 blockHash,
         bytes32 sendRoot
     ) external;
+
+    function setLoserStakeEscrow(address newLoserStakerEscrow) external;
+
+    /**
+     * @notice Set the proving WASM module root
+     * @param newWasmModuleRoot new module root
+     */
+    function setWasmModuleRoot(bytes32 newWasmModuleRoot) external;
 }

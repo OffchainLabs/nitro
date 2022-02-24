@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/pkg/errors"
 )
 
@@ -40,14 +41,14 @@ type txQueueItem struct {
 type Sequencer struct {
 	txStreamer    *TransactionStreamer
 	txQueue       chan txQueueItem
-	l1Client      L1Interface
+	l1Client      arbutil.L1Interface
 	l1BlockNumber uint64
 
 	forwarderMutex sync.Mutex
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),
@@ -189,7 +190,7 @@ func (s *Sequencer) sequenceTransactions() {
 		BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
 		Timestamp:   timestamp,
 		RequestId:   common.Hash{},
-		GasPriceL1:  common.Hash{},
+		BaseFeeL1:   common.Hash{},
 	}
 
 	hooks := &arbos.SequencingHooks{
@@ -248,7 +249,7 @@ func (s *Sequencer) Start(ctx context.Context) error {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := HeaderSubscribeWithRetry(ctx, s.l1Client)
+		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, s.l1Client)
 		defer cancel()
 
 		go (func() {

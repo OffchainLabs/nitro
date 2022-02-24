@@ -46,7 +46,7 @@ contract BridgeStub is IBridge {
                 sender,
                 block.number,
                 block.timestamp, // solhint-disable-line not-rely-on-time
-                tx.gasprice,
+                block.basefee,
                 messageDataHash
             );
     }
@@ -103,7 +103,10 @@ contract BridgeStub is IBridge {
         }
     }
 
-    function setOutbox(address /* outbox */, bool /* enabled*/) external pure override {
+    function setOutbox(
+        address, /* outbox */
+        bool /* enabled*/
+    ) external pure override {
         revert("NOT_IMPLEMENTED");
     }
 

@@ -20,6 +20,7 @@ pragma solidity ^0.8.0;
 
 import "../bridge/Bridge.sol";
 import "../bridge/SequencerInbox.sol";
+import "../bridge/ISequencerInbox.sol";
 import "../bridge/Inbox.sol";
 import "../bridge/Outbox.sol";
 import "./RollupEventBridge.sol";
@@ -72,7 +73,8 @@ contract BridgeCreator is Ownable {
 
     function createBridge(
         address adminProxy,
-        address rollup
+        address rollup,
+        ISequencerInbox.MaxTimeVariation memory maxTimeVariation
     )
         external
         returns (
@@ -113,7 +115,7 @@ contract BridgeCreator is Ownable {
         }
 
         frame.delayedBridge.initialize();
-        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup);
+        frame.sequencerInbox.initialize(IBridge(frame.delayedBridge), rollup, maxTimeVariation);
         frame.inbox.initialize(IBridge(frame.delayedBridge));
         frame.rollupEventBridge.initialize(address(frame.delayedBridge), rollup);
         frame.outbox.initialize(rollup, IBridge(frame.delayedBridge));

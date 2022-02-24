@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/statetransfer"
 
 	"github.com/offchainlabs/arbstate/arbos/util"
@@ -42,7 +43,9 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	db := rawdb.NewMemoryDatabase()
-	bc, err := CreateDefaultBlockChain(db, nil, &initData, 0, chainConfig)
+	initReader := statetransfer.NewMemoryInitDataReader(&initData)
+
+	bc, err := WriteOrTestBlockChain(db, nil, initReader, 0, chainConfig)
 
 	if err != nil {
 		Fail(t, err)
@@ -53,13 +56,27 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 
+	// Add the init message
+	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_SetChainParams,
+			},
+			L2msg: []byte{},
+		},
+		DelayedMessagesRead: 0,
+	}})
+	if err != nil {
+		Fail(t, err)
+	}
+
 	return inbox, bc
 }
 
 type blockTestState struct {
 	balances    map[common.Address]*big.Int
 	accounts    []common.Address
-	numMessages uint64
+	numMessages arbutil.MessageIndex
 	blockNumber uint64
 }
 
@@ -73,7 +90,7 @@ func TestTransactionStreamer(t *testing.T) {
 	defer cancel()
 	inbox.Start(ctx)
 
-	maxExpectedGasCost := big.NewInt(l2pricing.InitialGasPriceWei)
+	maxExpectedGasCost := big.NewInt(l2pricing.InitialBaseFeeWei)
 	maxExpectedGasCost.Mul(maxExpectedGasCost, big.NewInt(2100*2))
 
 	minBalance := new(big.Int).Mul(maxExpectedGasCost, big.NewInt(100))
@@ -84,7 +101,7 @@ func TestTransactionStreamer(t *testing.T) {
 			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000)),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
-		numMessages: 0,
+		numMessages: 1,
 		blockNumber: 0,
 	})
 	for i := 1; i < 100; i++ {
@@ -111,7 +128,7 @@ func TestTransactionStreamer(t *testing.T) {
 				if state.balances[source].Cmp(minBalance) < 0 {
 					continue
 				}
-				amount := big.NewInt(int64(rand.Int() % 1000))
+				value := big.NewInt(int64(rand.Int() % 1000))
 				var dest common.Address
 				if j == 0 {
 					binary.LittleEndian.PutUint64(dest[:], uint64(len(state.accounts)))
@@ -123,9 +140,9 @@ func TestTransactionStreamer(t *testing.T) {
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, math.U256Bytes(new(big.Int).SetUint64(gas))...)
-				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialGasPriceWei))...)
+				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialBaseFeeWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
-				l2Message = append(l2Message, math.U256Bytes(amount)...)
+				l2Message = append(l2Message, math.U256Bytes(value)...)
 				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
@@ -136,16 +153,16 @@ func TestTransactionStreamer(t *testing.T) {
 					},
 					DelayedMessagesRead: 0,
 				})
-				state.balances[source].Sub(state.balances[source], amount)
+				state.balances[source].Sub(state.balances[source], value)
 				if state.balances[dest] == nil {
 					state.balances[dest] = new(big.Int)
 				}
-				state.balances[dest].Add(state.balances[dest], amount)
+				state.balances[dest].Add(state.balances[dest], value)
 			}
 
 			Require(t, inbox.AddMessages(state.numMessages, false, messages))
 
-			state.numMessages += uint64(len(messages))
+			state.numMessages += arbutil.MessageIndex(len(messages))
 			state.blockNumber += uint64(len(messages))
 			for i := 0; ; i++ {
 				blockNumber := bc.CurrentHeader().Number.Uint64()

@@ -16,16 +16,9 @@
  * limitations under the License.
  */
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
-library ProxyUtil {
-    function getProxyAdmin() internal view returns (address admin) {
-        // https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.4.0/contracts/proxy/transparent/TransparentUpgradeableProxy.sol
-        // Storage slot with the admin of the proxy contract.
-        // This is the keccak-256 hash of "eip1967.proxy.admin" subtracted by 1, and is
-        bytes32 slot = 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103;
-        assembly {
-            admin := sload(slot)
-        }
-    }
-}
+// 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
+uint256 constant MAX_DATA_SIZE = 117964;
+
+uint64 constant NO_CHAL_INDEX = 0;

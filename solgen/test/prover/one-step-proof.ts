@@ -20,7 +20,7 @@ async function sendTestMessages() {
 }
 
 describe("OneStepProof", function () {
-  const root = "./test/proofs/";
+  const root = "./test/prover/proofs/";
   const dir = fs.readdirSync(root);
 
   before(async function () {
@@ -29,6 +29,8 @@ describe("OneStepProof", function () {
     await run("deploy", { "tags": "InboxStub" });
     await sendTestMessages();
   })
+
+  it("should deploy test harness", function() {})
 
   for (let file of dir) {
     if (!file.endsWith(".json")) continue;

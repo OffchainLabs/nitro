@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /*
- * Copyright 2021, Offchain Labs, Inc.
+ * Copyright 2020, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,24 @@
 
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/proxy/Proxy.sol";
-import "@openzeppelin/contracts/utils/Address.sol";
-import "../rollup/AdminAwareProxy.sol";
-import "../rollup/RollupCore.sol";
+import "../libraries/CryptographyPrimitives.sol";
 
-contract ProxyTesterLogic is AAPStorage, RollupCore {
-    function initialize(
-        RollupLib.Config calldata config,
-        ContractDependencies calldata /* connectedContracts */
-    ) external pure override {
-        require(config.owner != address(0), "OWNER_IS_ZERO");
+library CryptographyPrimitivesTester {
+    function keccakF(uint256[25] memory input) public pure returns (uint256[25] memory) {
+        return CryptographyPrimitives.keccakF(input);
     }
 
-    function setOwner(address newOwner) external {
-        owner = newOwner;
+    function sha256Block(bytes32[2] memory inputChunk, bytes32 hashState)
+        public
+        pure
+        returns (bytes32)
+    {
+        return
+            bytes32(
+                CryptographyPrimitives.sha256Block(
+                    [uint256(inputChunk[0]), uint256(inputChunk[1])],
+                    uint256(hashState)
+                )
+            );
     }
 }

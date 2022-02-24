@@ -5,8 +5,9 @@
 package l1pricing
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
 	"math/big"
+
+	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -17,7 +18,7 @@ import (
 type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
-	l1GasPriceEstimate          storage.StorageBackedBigInt
+	l1BaseFeeEstimate           storage.StorageBackedBigInt
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -69,18 +70,18 @@ func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
 	return ps.defaultAggregator.Set(val)
 }
 
-func (ps *L1PricingState) L1GasPriceEstimateWei() (*big.Int, error) {
-	return ps.l1GasPriceEstimate.Get()
+func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
+	return ps.l1BaseFeeEstimate.Get()
 }
 
 func (ps *L1PricingState) SetL1GasPriceEstimateWei(val *big.Int) error {
-	return ps.l1GasPriceEstimate.Set(val)
+	return ps.l1BaseFeeEstimate.Set(val)
 }
 
 const L1GasPriceEstimateMemoryWeight = 24
 
 func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1GasPriceEstimateWei()
+	curr, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return err
 	}
@@ -168,7 +169,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, err
 	}
@@ -217,26 +218,26 @@ func (ps *L1PricingState) PosterDataCost(
 	sender common.Address,
 	aggregator *common.Address,
 	data []byte,
-) (*big.Int, error) {
+) (*big.Int, bool, error) {
 	if aggregator == nil {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 	reimbursableAggregator, err := ps.ReimbursableAggregatorForSender(sender)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if reimbursableAggregator == nil {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 	if *reimbursableAggregator != *aggregator {
-		return big.NewInt(0), nil
+		return big.NewInt(0), false, nil
 	}
 
 	bytesToCharge := uint64(len(data) + TxFixedCost)
 
 	ratio, err := ps.AggregatorCompressionRatio(*reimbursableAggregator)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	dataGas := 16 * bytesToCharge * ratio / DataWasNotCompressed
@@ -244,16 +245,16 @@ func (ps *L1PricingState) PosterDataCost(
 	// add 5% to protect the aggregator from bad price fluctuation luck
 	dataGas = dataGas * 21 / 20
 
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	baseCharge, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), price)
-	return new(big.Int).Add(baseCharge, chargeForBytes), nil
+	return new(big.Int).Add(baseCharge, chargeForBytes), true, nil
 }

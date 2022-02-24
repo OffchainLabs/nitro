@@ -8,19 +8,19 @@ pragma solidity ^0.8.4;
 import "./IBridge.sol";
 import "./IOutbox.sol";
 import "../libraries/MerkleLib.sol";
+import "../libraries/DelegateCallAware.sol";
 
-contract Outbox is IOutbox {
-    address public rollup;              // the rollup contract
-    IBridge public bridge;              // the bridge contract
+contract Outbox is DelegateCallAware, IOutbox {
+    address public rollup; // the rollup contract
+    IBridge public bridge; // the bridge contract
 
-    mapping(uint256 => bool  ) spent;   // maps leaf number => if spent
-    mapping(bytes32 => bytes32) roots;  // maps root hashes => L2 block hash
+    mapping(uint256 => bool) public spent; // maps leaf number => if spent
+    mapping(bytes32 => bytes32) public roots; // maps root hashes => L2 block hash
 
     struct L2ToL1Context {
         uint128 l2Block;
         uint128 l1Block;
         uint128 timestamp;
-        uint128 batchNum;
         bytes32 outputId;
         address sender;
     }
@@ -30,14 +30,14 @@ contract Outbox is IOutbox {
     L2ToL1Context internal context;
     uint128 public constant OUTBOX_VERSION = 2;
 
-    function initialize(address _rollup, IBridge _bridge) external {
-        if(rollup != address(0)) revert AlreadyInit();
+    function initialize(address _rollup, IBridge _bridge) external onlyDelegated {
+        if (rollup != address(0)) revert AlreadyInit();
         rollup = _rollup;
         bridge = _bridge;
     }
 
     function updateSendRoot(bytes32 root, bytes32 l2BlockHash) external override {
-        if(msg.sender != rollup) revert NotRollup(msg.sender, rollup);
+        if (msg.sender != rollup) revert NotRollup(msg.sender, rollup);
         roots[root] = l2BlockHash;
         emit SendRootUpdated(root, l2BlockHash);
     }
@@ -61,8 +61,9 @@ contract Outbox is IOutbox {
         return uint256(context.timestamp);
     }
 
-    function l2ToL1BatchNum() external view override returns (uint256) {
-        return uint256(context.batchNum);
+    // @deprecated batch number is now always 0
+    function l2ToL1BatchNum() external pure override returns (uint256) {
+        return 0;
     }
 
     function l2ToL1OutputId() external view override returns (bytes32) {
@@ -76,39 +77,38 @@ contract Outbox is IOutbox {
      * @param proof Merkle proof of message inclusion in send root
      * @param index Merkle path to message
      * @param l2Sender sender if original message (i.e., caller of ArbSys.sendTxToL1)
-     * @param destAddr destination address for L1 contract call
+     * @param to destination address for L1 contract call
      * @param l2Block l2 block number at which sendTxToL1 call was made
      * @param l1Block l1 block number at which sendTxToL1 call was made
      * @param l2Timestamp l2 Timestamp at which sendTxToL1 call was made
-     * @param amount value in L1 message in wei
-     * @param calldataForL1 abi-encoded L1 message data
+     * @param value wei in L1 message
+     * @param data abi-encoded L1 message data
      */
     function executeTransaction(
-        uint256,
         bytes32[] calldata proof,
         uint256 index,
         address l2Sender,
-        address destAddr,
+        address to,
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
-        bytes calldata calldataForL1
+        uint256 value,
+        bytes calldata data
     ) external virtual {
         bytes32 outputId;
         {
             bytes32 userTx = calculateItemHash(
                 l2Sender,
-                destAddr,
+                to,
                 l2Block,
                 l1Block,
                 l2Timestamp,
-                amount,
-                calldataForL1
+                value,
+                data
             );
 
             outputId = recordOutputAsSpent(proof, index, userTx);
-            emit OutBoxTransactionExecuted(destAddr, l2Sender, 0, index);
+            emit OutBoxTransactionExecuted(to, l2Sender, 0, index);
         }
 
         // we temporarily store the previous values so the outbox can naturally
@@ -120,12 +120,11 @@ contract Outbox is IOutbox {
             l2Block: uint128(l2Block),
             l1Block: uint128(l1Block),
             timestamp: uint128(l2Timestamp),
-            batchNum: 0,
             outputId: outputId
         });
 
         // set and reset vars around execution so they remain valid during call
-        executeBridgeCall(destAddr, amount, calldataForL1);
+        executeBridgeCall(to, value, data);
 
         context = prevContext;
     }
@@ -135,25 +134,25 @@ contract Outbox is IOutbox {
         uint256 index,
         bytes32 item
     ) internal returns (bytes32) {
-        if(proof.length >= 256) revert ProofTooLong(proof.length);
-        if(index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
+        if (proof.length >= 256) revert ProofTooLong(proof.length);
+        if (index >= 2**proof.length) revert PathNotMinimal(index, 2**proof.length);
 
         // Hash the leaf an extra time to prove it's a leaf
         bytes32 calcRoot = calculateMerkleRoot(proof, index, item);
-        if(roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
+        if (roots[calcRoot] == bytes32(0)) revert UnknownRoot(calcRoot);
 
-        if(spent[index]) revert AlreadySpent(index);
+        if (spent[index]) revert AlreadySpent(index);
         spent[index] = true;
 
         return bytes32(index);
     }
 
     function executeBridgeCall(
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes memory data
     ) internal {
-        (bool success, bytes memory returndata) = bridge.executeCall(destAddr, amount, data);
+        (bool success, bytes memory returndata) = bridge.executeCall(to, value, data);
         if (!success) {
             if (returndata.length > 0) {
                 // solhint-disable-next-line no-inline-assembly
@@ -169,25 +168,15 @@ contract Outbox is IOutbox {
 
     function calculateItemHash(
         address l2Sender,
-        address destAddr,
+        address to,
         uint256 l2Block,
         uint256 l1Block,
         uint256 l2Timestamp,
-        uint256 amount,
-        bytes calldata calldataForL1
+        uint256 value,
+        bytes calldata data
     ) public pure returns (bytes32) {
         return
-            keccak256(
-                abi.encodePacked(
-                    l2Sender,
-                    destAddr,
-                    l2Block,
-                    l1Block,
-                    l2Timestamp,
-                    amount,
-                    calldataForL1
-                )
-            );
+            keccak256(abi.encodePacked(l2Sender, to, l2Block, l1Block, l2Timestamp, value, data));
     }
 
     function calculateMerkleRoot(
