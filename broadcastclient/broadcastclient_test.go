@@ -17,7 +17,8 @@ import (
 )
 
 func TestReceiveMessages(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
@@ -42,7 +43,6 @@ func TestReceiveMessages(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < clientCount; i++ {
-		wg.Add(1)
 		startMakeBroadcastClient(ctx, t, i, messageCount, &wg)
 	}
 
@@ -82,18 +82,25 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expe
 	broadcastClient.Start(ctx)
 	messageCount := 0
 
+	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		defer broadcastClient.Close()
 		for {
+			gotMsg := false
 			select {
 			case <-ts.messageReceiver:
 				messageCount++
+				gotMsg = true
 
 				if messageCount == expectedCount {
 					return
 				}
 			case <-time.After(60 * time.Second):
+			case <-ctx.Done():
+			}
+			if !gotMsg {
 				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
@@ -103,7 +110,8 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, index int, expe
 }
 
 func TestServerClientDisconnect(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
@@ -154,7 +162,8 @@ func TestServerClientDisconnect(t *testing.T) {
 }
 
 func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
@@ -188,7 +197,8 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 }
 
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
@@ -264,22 +274,33 @@ func connectAndGetCachedMessages(ctx context.Context, t *testing.T, clientIndex 
 		defer wg.Done()
 		defer broadcastClient.Close()
 
+		gotMsg := false
 		// Wait for client to receive first item
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg)
+			gotMsg = true
 		case <-time.After(10 * time.Second):
+		case <-ctx.Done():
+		}
+		if !gotMsg {
 			t.Errorf("client %d did not receive first batch item\n", clientIndex)
 			return
 		}
 
+		gotMsg = false
 		// Wait for client to receive second item
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg)
+			gotMsg = true
 		case <-time.After(10 * time.Second):
+		case <-ctx.Done():
+		}
+		if !gotMsg {
 			t.Errorf("client %d did not receive second batch item\n", clientIndex)
 			return
 		}
+
 	}()
 }
