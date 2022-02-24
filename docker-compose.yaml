@@ -9,8 +9,9 @@ services:
     volumes:
       - "l1data:/root/.ethereum"
       - "l1keystore:/keystore"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --ws --ws.addr 0.0.0.0 --dev --password /root/.ethereum/passphrase
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3 --dev --dev.period 1 --password /root/.ethereum/passphrase
   sequencer:
+    pid: host # allow debugging
     build: .
     ports:
       - "7545:7545"
@@ -19,7 +20,7 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0
+    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes
     depends_on:
       - geth
 volumes:
