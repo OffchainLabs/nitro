@@ -20,7 +20,7 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes
+    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes -stakerinterval 10s
     depends_on:
       - geth
 volumes:

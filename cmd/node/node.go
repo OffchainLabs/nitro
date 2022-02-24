@@ -74,6 +74,7 @@ func main() {
 	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
 	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
 	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
+	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 
 	flag.Parse()
 
@@ -107,6 +108,7 @@ func main() {
 		}
 		nodeConf.L1Validator = true
 		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
+		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
 		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
 			flag.Usage()
 			panic("L1 validator requires block validator to safely function")
