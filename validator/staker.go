@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/pkg/errors"
 )
 
@@ -67,6 +68,7 @@ type nodeAndHash struct {
 
 type Staker struct {
 	*L1Validator
+	util.StopWaiter
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
@@ -129,39 +131,28 @@ func NewStaker(
 	}, nil
 }
 
-func (s *Staker) Start(ctx context.Context) {
-	go func() {
-		backoff := time.Second
-		for ctx.Err() == nil {
-			arbTx, err := s.Act(ctx)
-			if err == nil && arbTx != nil {
-				_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
-				err = errors.Wrap(err, "error waiting for tx receipt")
-				if err == nil {
-					log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
-				}
-			}
-			if err != nil {
-				log.Warn("error acting as staker", "err", err)
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(backoff):
-				}
-				if backoff < 60*time.Second {
-					backoff *= 2
-				}
-				continue
-			} else {
-				backoff = time.Second
-			}
-			select {
-			case <-time.After(s.config.StakerDelay):
-			case <-ctx.Done():
-				return
+func (s *Staker) Start(ctxIn context.Context) {
+	s.StopWaiter.Start(ctxIn)
+	backoff := time.Second
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		arbTx, err := s.Act(ctx)
+		if err == nil && arbTx != nil {
+			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
+			err = errors.Wrap(err, "error waiting for tx receipt")
+			if err == nil {
+				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
 			}
 		}
-	}()
+		if err == nil {
+			backoff = time.Second
+			return s.config.StakerDelay
+		}
+		log.Warn("error acting as staker", "err", err)
+		if backoff < 60*time.Second {
+			backoff *= 2
+		}
+		return backoff
+	})
 }
 
 func (s *Staker) shouldAct(ctx context.Context) bool {

@@ -78,6 +78,7 @@ func (p *preimageCache) RemoveFromCache(hashlist []common.Hash) error {
 			curEntry.Data = nil
 			deletionsNum := atomic.AddInt32(&p.deletionsSinceMaintenance, 1)
 			if deletionsNum%maintenanceEvery == 0 {
+				// maintains in-memory structure. No need for StopAndWait
 				go p.CacheMaintenance()
 			}
 		}

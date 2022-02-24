@@ -486,6 +486,29 @@ func (n *Node) Start(ctx context.Context) error {
 	return nil
 }
 
+func (n *Node) StopAndWait() {
+	if n.BroadcastClient != nil {
+		n.BroadcastClient.StopAndWait()
+	}
+	if n.BroadcastServer != nil {
+		n.BroadcastServer.StopAndWait()
+	}
+	if n.BlockValidator != nil {
+		n.BlockValidator.StopAndWait()
+	}
+	if n.BatchPoster != nil {
+		n.BatchPoster.StopAndWait()
+	}
+	if n.DelayedSequencer != nil {
+		n.DelayedSequencer.StopAndWait()
+	}
+	if n.InboxReader != nil {
+		n.InboxReader.StopAndWait()
+	}
+	n.TxPublisher.StopAndWait()
+	n.TxStreamer.StopAndWait()
+}
+
 func CreateDefaultStack() (*node.Node, error) {
 	stackConf := node.DefaultConfig
 	var err error
