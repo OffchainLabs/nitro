@@ -19,7 +19,6 @@ import { blockStateHash, hashChallengeState } from './challengeLib'
 import * as globalStateLib from './globalStateLib'
 import { constants } from 'ethers'
 
-
 export interface Node {
   nodeNum: number
   proposedBlock: number
@@ -46,25 +45,25 @@ export const assertionEquals = (
   assertion2: AssertionStruct,
 ) => {
   return (
-    assertion1.beforeState.globalState.bytes32_vals[0] ===
-      assertion2.beforeState.globalState.bytes32_vals[0] &&
-    assertion1.beforeState.globalState.bytes32_vals[1] ===
-      assertion2.beforeState.globalState.bytes32_vals[1] &&
-    BigNumber.from(assertion1.beforeState.globalState.u64_vals[0]).eq(
-      assertion2.beforeState.globalState.u64_vals[0],
+    assertion1.beforeState.globalState.bytes32Vals[0] ===
+      assertion2.beforeState.globalState.bytes32Vals[0] &&
+    assertion1.beforeState.globalState.bytes32Vals[1] ===
+      assertion2.beforeState.globalState.bytes32Vals[1] &&
+    BigNumber.from(assertion1.beforeState.globalState.u64Vals[0]).eq(
+      assertion2.beforeState.globalState.u64Vals[0],
     ) &&
-    BigNumber.from(assertion1.beforeState.globalState.u64_vals[1]).eq(
-      assertion2.beforeState.globalState.u64_vals[1],
+    BigNumber.from(assertion1.beforeState.globalState.u64Vals[1]).eq(
+      assertion2.beforeState.globalState.u64Vals[1],
     ) &&
-    assertion1.afterState.globalState.bytes32_vals[0] ===
-      assertion2.afterState.globalState.bytes32_vals[0] &&
-    assertion1.afterState.globalState.bytes32_vals[1] ===
-      assertion2.afterState.globalState.bytes32_vals[1] &&
-    BigNumber.from(assertion1.afterState.globalState.u64_vals[0]).eq(
-      assertion2.afterState.globalState.u64_vals[0],
+    assertion1.afterState.globalState.bytes32Vals[0] ===
+      assertion2.afterState.globalState.bytes32Vals[0] &&
+    assertion1.afterState.globalState.bytes32Vals[1] ===
+      assertion2.afterState.globalState.bytes32Vals[1] &&
+    BigNumber.from(assertion1.afterState.globalState.u64Vals[0]).eq(
+      assertion2.afterState.globalState.u64Vals[0],
     ) &&
-    BigNumber.from(assertion1.afterState.globalState.u64_vals[1]).eq(
-      assertion2.afterState.globalState.u64_vals[1],
+    BigNumber.from(assertion1.afterState.globalState.u64Vals[1]).eq(
+      assertion2.afterState.globalState.u64Vals[1],
     ) &&
     BigNumber.from(assertion1.numBlocks).eq(assertion2.numBlocks)
   )
@@ -153,10 +152,6 @@ export class RollupContract {
     return new RollupContract(this.rollup.connect(signerOrProvider))
   }
 
-  newStake(overrides: PayableOverrides = {}): Promise<ContractTransaction> {
-    return this.rollup.newStake(overrides)
-  }
-
   async stakeOnNewNode(
     sequencerInbox: SequencerInbox,
     parentNode: {
@@ -166,13 +161,14 @@ export class RollupContract {
     },
     assertion: AssertionStruct,
     siblingNode?: Node,
+    stakeToAdd?: BigNumber,
   ): Promise<{
     tx: ContractTransaction
     node: Node
     expectedNewNodeHash: BytesLike
   }> {
     const inboxPosition = BigNumber.from(
-      assertion.afterState.globalState.u64_vals[0],
+      assertion.afterState.globalState.u64Vals[0],
     ).toNumber()
     const afterInboxAcc =
       inboxPosition > 0
@@ -184,11 +180,18 @@ export class RollupContract {
       assertionExecutionHash2(assertion),
       afterInboxAcc,
     )
-    const tx = await this.rollup.stakeOnNewNode(
-      assertion,
-      newNodeHash,
-      parentNode.inboxMaxCount,
-    )
+    const tx = stakeToAdd
+      ? await this.rollup.newStakeOnNewNode(
+          assertion,
+          newNodeHash,
+          parentNode.inboxMaxCount,
+          { value: stakeToAdd },
+        )
+      : await this.rollup.stakeOnNewNode(
+          assertion,
+          newNodeHash,
+          parentNode.inboxMaxCount,
+        )
     const { node } = await nodeFromTx(this.rollup.interface, tx)
     return { tx, node, expectedNewNodeHash: newNodeHash }
   }
@@ -277,7 +280,7 @@ export async function forceCreateNode(
   siblingNode?: Node,
 ): Promise<{ tx: ContractTransaction; node: Node }> {
   const inboxPosition = BigNumber.from(
-    assertion.afterState.globalState.u64_vals[0],
+    assertion.afterState.globalState.u64Vals[0],
   ).toNumber()
   const afterInboxAcc =
     inboxPosition > 0
