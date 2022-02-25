@@ -53,9 +53,6 @@ interface ArbOwner {
     /// @notice Sets the number of seconds worth of the speed limit the large gas pool contains
     function setGasPoolSeconds(uint64 factor) external view;
 
-    /// @notice Sets the number of seconds worth of the speed limit the small gas pool contains
-    function setSmallGasPoolSeconds(uint64 factor) external view;
-
     /// @notice Sets the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external view;
 

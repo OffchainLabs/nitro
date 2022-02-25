@@ -49,7 +49,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	if err != nil {
 		panic(err)
 	}
-	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
