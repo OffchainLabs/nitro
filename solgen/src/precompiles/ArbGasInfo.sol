@@ -106,9 +106,6 @@ interface ArbGasInfo {
     /// @notice Get the number of seconds worth of the speed limit the large gas pool contains
     function getGasPoolSeconds() external view returns (uint256);
 
-    /// @notice Get the number of seconds worth of the speed limit the small gas pool contains
-    function getSmallGasPoolSeconds() external view returns (uint256);
-
     /// @notice Get ArbOS's estimate of the L1 gas price in wei
     function getL1GasPriceEstimate() external view returns (uint256);
 

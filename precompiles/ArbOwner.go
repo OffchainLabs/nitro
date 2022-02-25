@@ -69,11 +69,6 @@ func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
 }
 
-// Sets the number of seconds worth of the speed limit the small gas pool contains
-func (con ArbOwner) SetSmallGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
-	return c.state.L2PricingState().SetSmallGasPoolSeconds(seconds)
-}
-
 // Sets the maximum size a tx (and block) can be
 func (con ArbOwner) SetMaxTxGasLimit(c ctx, evm mech, limit uint64) error {
 	return c.state.L2PricingState().SetMaxPerBlockGasLimit(limit)
