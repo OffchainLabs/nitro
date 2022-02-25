@@ -32,6 +32,9 @@ jobs:
       - name: Run tests
         run: yarn --cwd solgen hardhat --network hardhat test solgen/test/contract/*.spec.ts
 
+      - name: Run coverage
+        run: yarn --cwd solgen hardhat coverage --testfiles "solgen/test/contract/*.spec.ts"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
