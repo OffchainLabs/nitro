@@ -3,10 +3,16 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - 'arbitrator/**'
+      - 'solgen/src/osp/**'
+      - 'solgen/src/mock/**'
+      - 'solgen/test/**'
+      - 'solgen/hardhat.config.ts'
+      - 'Makefile'
   push:
     branches:
       - master
-      - develop
 
 env:
   RUST_BACKTRACE: 1
