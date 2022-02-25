@@ -17,10 +17,10 @@ import (
 func TestTwoNodesSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, false)
 
 	l2info.GenerateAccount("User2")
 
@@ -51,4 +51,7 @@ func TestTwoNodesSimple(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l1pricing"
 	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/pkg/errors"
 )
 
@@ -37,7 +38,14 @@ type txQueueItem struct {
 	ctx        context.Context
 }
 
+func (i *txQueueItem) returnResult(err error) {
+	i.resultChan <- err
+	close(i.resultChan)
+}
+
 type Sequencer struct {
+	util.StopWaiter
+
 	txStreamer    *TransactionStreamer
 	txQueue       chan txQueueItem
 	l1Client      arbutil.L1Interface
@@ -60,7 +68,12 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 		resultChan,
 		ctx,
 	}
-	return <-resultChan
+	select {
+	case res := <-resultChan:
+		return res
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Sequencer) Initialize(ctx context.Context) error {
@@ -94,7 +107,7 @@ func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender co
 	return nil
 }
 
-func (s *Sequencer) sequenceTransactions() {
+func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	timestamp := common.BigToHash(new(big.Int).SetInt64(time.Now().Unix()))
 	l1Block := atomic.LoadUint64(&s.l1BlockNumber)
 	for s.l1Client != nil && l1Block == 0 {
@@ -109,7 +122,11 @@ func (s *Sequencer) sequenceTransactions() {
 	for {
 		var queueItem txQueueItem
 		if len(txes) == 0 {
-			queueItem = <-s.txQueue
+			select {
+			case queueItem = <-s.txQueue:
+			case <-ctx.Done():
+				return
+			}
 		} else {
 			done := false
 			select {
@@ -123,17 +140,17 @@ func (s *Sequencer) sequenceTransactions() {
 		}
 		err := queueItem.ctx.Err()
 		if err != nil {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 			continue
 		}
 		txBytes, err := queueItem.tx.MarshalBinary()
 		if err != nil {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 			continue
 		}
 		if len(txBytes) > int(maxTxDataSize) {
 			// This tx is too large
-			queueItem.resultChan <- core.ErrOversizedData
+			queueItem.returnResult(core.ErrOversizedData)
 			continue
 		}
 		if totalBatchSize+len(txBytes) > int(maxTxDataSize) {
@@ -143,7 +160,7 @@ func (s *Sequencer) sequenceTransactions() {
 			select {
 			case s.txQueue <- queueItem:
 			default:
-				queueItem.resultChan <- core.ErrOversizedData
+				queueItem.returnResult(core.ErrOversizedData)
 			}
 			break
 		}
@@ -174,7 +191,7 @@ func (s *Sequencer) sequenceTransactions() {
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)
 		for _, queueItem := range queueItems {
-			queueItem.resultChan <- err
+			queueItem.returnResult(err)
 		}
 		return
 	}
@@ -191,21 +208,22 @@ func (s *Sequencer) sequenceTransactions() {
 			default:
 			}
 		}
-		queueItem.resultChan <- err
+		queueItem.returnResult(err)
 	}
 }
 
-func (s *Sequencer) Start(ctx context.Context) error {
+func (s *Sequencer) Start(ctxIn context.Context) error {
+	s.StopWaiter.Start(ctxIn)
 	if s.l1Client != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, s.l1Client)
-		defer cancel()
+		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
 
-		go (func() {
+		s.LaunchThread(func(ctx context.Context) {
+			defer cancel()
 			for {
 				select {
 				case header, ok := <-headerChan:
@@ -217,15 +235,13 @@ func (s *Sequencer) Start(ctx context.Context) error {
 					return
 				}
 			}
-		})()
+		})
 	}
 
-	go (func() {
-		for {
-			s.sequenceTransactions()
-			time.Sleep(minBlockInterval)
-		}
-	})()
+	s.CallIteratively(func(ctx context.Context) time.Duration {
+		s.sequenceTransactions(ctx)
+		return minBlockInterval
+	})
 
 	return nil
 }
