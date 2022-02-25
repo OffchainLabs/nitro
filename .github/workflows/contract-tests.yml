@@ -20,12 +20,28 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v2
+
+      - name: Setup nodejs
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'yarn'
+          cache-dependency-path: '**/yarn.lock'
+
+      - name: Install dependencies
+        run: yarn --cwd solgen install
+
+      - name: Build
+        run: yarn --cwd solgen build
 
       - name: Run tests
-        run: |
-          npm install --global yarn
-          cd solgen
-          yarn install
-          yarn build
-          yarn hardhat --network hardhat test test/contract/*.spec.ts
+        run: yarn --cwd solgen hardhat --network hardhat test test/contract/*.spec.ts
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v2
+        with:
+          fail_ci_if_error: true
+          files: ./solgen/coverage.json
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
