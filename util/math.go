@@ -85,7 +85,7 @@ func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 
 // divide a huge by another
 func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
-	return new(big.Int).Mul(dividend, divisor)
+	return new(big.Int).Div(dividend, divisor)
 }
 
 // multiply a huge by a rational
@@ -115,8 +115,8 @@ func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 }
 
 // divide a huge by an integer
-func BigDivByInt(dividend *big.Int, divisor int64) *big.Int {
-	return BigDiv(dividend, big.NewInt(divisor))
+func BigDivByUint(dividend *big.Int, divisor uint64) *big.Int {
+	return BigDiv(dividend, UintToBig(divisor))
 }
 
 // add two big floats together

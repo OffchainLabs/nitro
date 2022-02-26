@@ -43,3 +43,9 @@ func PrintRed(args ...interface{}) {
 	fmt.Print(args...)
 	println(Clear)
 }
+
+func PrintYellow(args ...interface{}) {
+	print(Yellow)
+	fmt.Print(args...)
+	println(Clear)
+}
