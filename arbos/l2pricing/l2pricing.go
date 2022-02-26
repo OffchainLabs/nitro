@@ -14,6 +14,7 @@ import (
 type L2PricingState struct {
 	storage             *storage.Storage
 	gasPool             storage.StorageBackedInt64
+	gasPoolLastBlock    storage.StorageBackedInt64
 	gasPoolSeconds      storage.StorageBackedUint64
 	gasPoolTarget       storage.StorageBackedUint64
 	gasPoolVoice        storage.StorageBackedUint64
@@ -27,6 +28,7 @@ type L2PricingState struct {
 
 const (
 	gasPoolOffset uint64 = iota
+	gasPoolLastBlock
 	gasPoolSecondsOffset
 	gasPoolTargetOffset
 	gasPoolVoiceOffset
@@ -42,6 +44,7 @@ const GethBlockGasLimit = 1 << 63
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
+	_ = sto.SetUint64ByUint64(gasPoolLastBlock, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
 	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, InitialGasPoolTarget)
 	_ = sto.SetUint64ByUint64(gasPoolVoiceOffset, InitialGasPoolVoice)
@@ -57,6 +60,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	return &L2PricingState{
 		sto,
 		sto.OpenStorageBackedInt64(gasPoolOffset),
+		sto.OpenStorageBackedInt64(gasPoolLastBlock),
 		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
 		sto.OpenStorageBackedUint64(gasPoolTargetOffset),
 		sto.OpenStorageBackedUint64(gasPoolVoiceOffset),
@@ -73,8 +77,16 @@ func (ps *L2PricingState) GasPool() (int64, error) {
 	return ps.gasPool.Get()
 }
 
-func (ps *L2PricingState) SetGasPool(val int64) error {
-	return ps.gasPool.Set(val)
+func (ps *L2PricingState) SetGasPool(val int64) {
+	ps.Restrict(ps.gasPool.Set(val))
+}
+
+func (ps *L2PricingState) GasPoolLastBlock() (int64, error) {
+	return ps.gasPoolLastBlock.Get()
+}
+
+func (ps *L2PricingState) SetGasPoolLastBlock(val int64) {
+	ps.Restrict(ps.gasPoolLastBlock.Set(val))
 }
 
 func (ps *L2PricingState) GasPoolSeconds() (uint64, error) {
@@ -90,8 +102,8 @@ func (ps *L2PricingState) GasPoolTarget() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetGasPoolTarget(target uint64) error {
-	if target > 100 {
-		target = 100
+	if target > 10000 {
+		target = 10000
 	}
 	return ps.gasPoolTarget.Set(target)
 }
