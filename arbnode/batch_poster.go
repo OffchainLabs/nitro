@@ -52,7 +52,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:    2,
 }
 
-func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func NewBatchPoster(client L1Interface, inbox *InboxTracker, streamer *Transacti
 		sequencesPosted: 0,
 		transactOpts:    transactOpts,
 		gasRefunder:     refunder,
-		das:             das.GetSingletonTestingDAS(),
+		das:             das,
 	}, nil
 }
 

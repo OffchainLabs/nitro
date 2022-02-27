@@ -70,16 +70,15 @@ func TestSequencerFeed(t *testing.T) {
 	}
 }
 
-func TestLyingSequencer(t *testing.T) {
+func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode, port int) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	port := 9643
 
 	// The truthful sequencer
 	nodeConfigA := arbnode.NodeConfigL1Test
 	nodeConfigA.BatchPoster = true
 	nodeConfigA.Broadcaster = false
+	nodeConfigA.DataAvailabilityMode = dasMode
 	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
 
@@ -88,6 +87,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(port)
+	nodeConfigC.DataAvailabilityMode = dasMode // shouldn't matter
 	l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 
 	// The client node, connects to lying sequencer's feed
@@ -96,6 +96,7 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
+	nodeConfigB.DataAvailabilityMode = dasMode
 	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -159,4 +160,12 @@ func TestLyingSequencer(t *testing.T) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
+}
+
+func TestLyingSequencer(t *testing.T) {
+	testLyingSequencer(t, arbnode.OnchainDataAvailability, 9643)
+}
+
+func TestLyingSequencerLocalDAS(t *testing.T) {
+	testLyingSequencer(t, arbnode.LocalDataAvailability, 9644)
 }

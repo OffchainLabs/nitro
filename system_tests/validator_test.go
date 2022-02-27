@@ -18,13 +18,19 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func TestValidatorSimple(t *testing.T) {
+func testValidatorSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l1NodeConfigA := arbnode.NodeConfigL1Test
+	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l2info, node1, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, true)
+	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
+	l1NodeConfigB.BlockValidator = true
+	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, node1, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
@@ -71,4 +77,12 @@ func TestValidatorSimple(t *testing.T) {
 		Fail(t, "did not validate all blocks")
 	}
 
+}
+
+func TestValidatorSimple(t *testing.T) {
+	testValidatorSimple(t, arbnode.OnchainDataAvailability)
+}
+
+func TestValidatorSimpleLocalDAS(t *testing.T) {
+	testValidatorSimple(t, arbnode.LocalDataAvailability)
 }

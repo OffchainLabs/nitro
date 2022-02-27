@@ -20,7 +20,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func TestTwoNodesLong(t *testing.T) {
+func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -37,10 +37,17 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
+	l1NodeConfigA := arbnode.NodeConfigL1Test
+	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l2info, node1, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
+	l1NodeConfigB.BlockValidator = false
+	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, node1, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -171,4 +178,12 @@ func TestTwoNodesLong(t *testing.T) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+}
+
+func TestTwoNodesLong(t *testing.T) {
+	testTwoNodesLong(t, arbnode.OnchainDataAvailability)
+}
+
+func TestTwoNodesLongLocalDAS(t *testing.T) {
+	testTwoNodesLong(t, arbnode.LocalDataAvailability)
 }

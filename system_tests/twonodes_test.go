@@ -14,13 +14,19 @@ import (
 	"github.com/offchainlabs/arbstate/arbnode"
 )
 
-func TestTwoNodesSimple(t *testing.T) {
+func testTwoNodesSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l1NodeConfigA := arbnode.NodeConfigL1Test
+	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
-	l2clientB, _ := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
+	l1NodeConfigB.BlockValidator = false
+	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, node1, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
@@ -51,4 +57,12 @@ func TestTwoNodesSimple(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+}
+
+func TestTwoNodesSimple(t *testing.T) {
+	testTwoNodesSimple(t, arbnode.OnchainDataAvailability)
+}
+
+func TestTwoNodesSimpleLocalDAS(t *testing.T) {
+	testTwoNodesSimple(t, arbnode.LocalDataAvailability)
 }

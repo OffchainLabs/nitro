@@ -45,6 +45,9 @@ func main() {
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
+	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
+	// add more dataAvailability options here
+
 	datadir := flag.String("datadir", "", "directory to store chain state")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
@@ -88,6 +91,14 @@ func main() {
 		panic("l1role not recognized")
 	}
 
+	if *dataAvailabilityMode == "onchain" {
+		nodeConf.DataAvailabilityMode = arbnode.OnchainDataAvailability
+	} else if *dataAvailabilityMode == "local" {
+		nodeConf.DataAvailabilityMode = arbnode.LocalDataAvailability
+	} else {
+		flag.Usage()
+		panic("dataavailability.mode not recognized")
+	}
 	ctx := context.Background()
 
 	var l1client *ethclient.Client

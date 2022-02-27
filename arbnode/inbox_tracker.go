@@ -30,11 +30,11 @@ type InboxTracker struct {
 	das        das.DataAvailabilityService
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*InboxTracker, error) {
+func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das das.DataAvailabilityService) (*InboxTracker, error) {
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
-		das:        das.GetSingletonTestingDAS(),
+		das:        das,
 	}
 	return db, nil
 }

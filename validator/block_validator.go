@@ -44,6 +44,8 @@ type BlockValidator struct {
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
 
+	das das.DataAvailabilityService
+
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
 	progressChan        chan uint64
@@ -147,7 +149,7 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig, das das.DataAvailabilityService) *BlockValidator {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
@@ -162,6 +164,7 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		das:                 das,
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
@@ -360,7 +363,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if seqMsg[40] == 'd' {
 		log.Error("GET PREIMAGE HERE")
 		hash := seqMsg[41:]
-		preimages[common.BytesToHash(hash)], err = das.GetSingletonTestingDAS().Retrieve(hash)
+		preimages[common.BytesToHash(hash)], err = v.das.Retrieve(hash)
 		if err != nil {
 			panic(err)
 		}
