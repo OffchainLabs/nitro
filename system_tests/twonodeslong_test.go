@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/das"
 )
 
 func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
@@ -185,5 +186,6 @@ func TestTwoNodesLong(t *testing.T) {
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
+	defer das.CleanupSingletonTestingDAS()
 	testTwoNodesLong(t, arbnode.LocalDataAvailability)
 }

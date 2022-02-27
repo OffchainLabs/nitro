@@ -360,15 +360,18 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
 	}
+
 	if seqMsg[40] == 'd' {
-		log.Error("GET PREIMAGE HERE")
+		if v.das == nil {
+			panic("No DAS configured, but sequencer message found with DAS header")
+		}
 		hash := seqMsg[41:]
 		preimages[common.BytesToHash(hash)], err = v.das.Retrieve(hash)
 		if err != nil {
+			// There isn't a way to recover from this.
+			// The DAS internally will implement a retry strategy.
 			panic(err)
 		}
-	} else if seqMsg[40] == 0 {
-		log.Error("UNPACKED ALREADY")
 	}
 
 	basemachine, err := GetHostIoMachine(ctx)

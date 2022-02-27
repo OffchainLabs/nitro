@@ -333,21 +333,19 @@ func (b *BatchPoster) postSequencerBatch() error {
 		return nil
 	}
 
-	// Careful, this is an interface.
 	if b.das != nil {
-		fullMsg := make([]byte, 1) // TODO capacity
-		fullMsg[0] = 'd'           // Header
-		cert, _, _ := b.das.Store(sequencerMsg)
-		// TODO fallback on error
-		fullMsg = append(fullMsg, cert...)
-		sequencerMsg = fullMsg
+		fullMsg := make([]byte, 1, 33)
+		fullMsg[0] = 'd' // Header indicating batch data stored in DAS
+		cert, _, err := b.das.Store(sequencerMsg)
+		if err != nil {
+			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+		} else {
+			fullMsg = append(fullMsg, cert...)
+			sequencerMsg = fullMsg
+		}
 	}
 
-	// TODO send this batch to DAS instead
-	// If the certificate comes back, write it to the contract instead, otherwise write the inbox as-is
-	// Give the certificate a different type?
 	_, err = b.inboxContract.AddSequencerL2BatchFromOrigin(b.transactOpts, new(big.Int).SetUint64(b.sequencesPosted), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
-
 	if err == nil {
 		b.sequencesPosted++
 		log.Info("BatchPoster: batch sent", "sequence nr.", b.sequencesPosted, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))

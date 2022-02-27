@@ -291,7 +291,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		err = batch.Delete(seqBatchIter.Key()) // TODO what happens here if there's nothing to delete??
+		err = batch.Delete(seqBatchIter.Key())
 		if err != nil {
 			return err
 		}

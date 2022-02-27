@@ -69,7 +69,10 @@ func parseSequencerMessage(data []byte, das das.DataAvailabilityService) *sequen
 	if len(data) >= 41 {
 		if data[40] == 'd' {
 			var err error
-			payload, err = das.Retrieve(data[41:]) // TODO handle error
+			if das == nil {
+				panic("No DAS configured, but sequencer message found with DAS header")
+			}
+			payload, err = das.Retrieve(data[41:])
 			if err != nil {
 				panic(err)
 			}
@@ -78,7 +81,7 @@ func parseSequencerMessage(data []byte, das das.DataAvailabilityService) *sequen
 		}
 	}
 
-	if len(data) >= 41 && payload[0] == 0 { // TODO this is where the top level type is read off
+	if len(data) >= 41 && payload[0] == 0 {
 		reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
 		stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
 		for {

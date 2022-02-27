@@ -16,6 +16,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/das"
 )
 
 func testValidatorSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
@@ -84,5 +85,6 @@ func TestValidatorSimple(t *testing.T) {
 }
 
 func TestValidatorSimpleLocalDAS(t *testing.T) {
+	defer das.CleanupSingletonTestingDAS()
 	testValidatorSimple(t, arbnode.LocalDataAvailability)
 }

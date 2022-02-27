@@ -49,6 +49,14 @@ func GetSingletonTestingDAS() DataAvailabilityService {
 	return singletonDAS
 }
 
+func CleanupSingletonTestingDAS() {
+	das, ok := GetSingletonTestingDAS().(*LocalDiskDataAvailabilityService)
+	if !ok {
+		panic("Singleton DAS wrong type")
+	}
+	os.RemoveAll(das.dbPath)
+}
+
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
 	pubKeyPath := dbPath + "/pubkey"
 	privKeyPath := dbPath + "/privkey"
@@ -119,7 +127,7 @@ func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsS
 
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(h)
 
-	log.Error("Storing message at", "path", path)
+	log.Debug("Storing message at", "path", path)
 
 	err = os.WriteFile(path, message, 0600)
 	if err != nil {
@@ -131,6 +139,6 @@ func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsS
 
 func (das *LocalDiskDataAvailabilityService) Retrieve(hash []byte) ([]byte, error) {
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(hash)
-	log.Error("Retrieving message from", "path", path)
+	log.Debug("Retrieving message from", "path", path)
 	return os.ReadFile(path)
 }

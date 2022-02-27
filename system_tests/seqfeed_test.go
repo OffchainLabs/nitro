@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/das"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -167,5 +168,6 @@ func TestLyingSequencer(t *testing.T) {
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
+	defer das.CleanupSingletonTestingDAS()
 	testLyingSequencer(t, arbnode.LocalDataAvailability, 9644)
 }
