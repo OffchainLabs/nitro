@@ -81,22 +81,24 @@ func parseSequencerMessage(data []byte, das das.DataAvailabilityService) *sequen
 		}
 	}
 
-	if len(data) >= 41 && payload[0] == 0 {
-		reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
-		stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
-		for {
-			var segment []byte
-			err := stream.Decode(&segment)
-			if err != nil {
-				if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-					log.Warn("error parsing sequencer message segment", "err", err.Error())
+	if len(data) >= 41 {
+		if payload[0] == 0 {
+			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
+			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+			for {
+				var segment []byte
+				err := stream.Decode(&segment)
+				if err != nil {
+					if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+						log.Warn("error parsing sequencer message segment", "err", err.Error())
+					}
+					break
 				}
-				break
+				segments = append(segments, segment)
 			}
-			segments = append(segments, segment)
+		} else {
+			log.Warn("unknown sequencer message format")
 		}
-	} else {
-		log.Warn("unknown sequencer message format")
 	}
 	return &sequencerMessage{
 		minTimestamp:         minTimestamp,
@@ -314,7 +316,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,
-					GasPriceL1:  common.Hash{},
+					BaseFeeL1:   common.Hash{},
 				},
 				L2msg: segment[1:],
 			},
@@ -322,7 +324,13 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		}
 	} else if segmentKind == BatchSegmentKindDelayedMessages {
 		if r.delayedMessagesRead >= seqMsg.afterDelayedMessages {
-			log.Warn("attempt to access delayed msg", "msg", r.delayedMessagesRead, "segment_upto", seqMsg.afterDelayedMessages)
+			if segmentNum < uint64(len(seqMsg.segments)) {
+				log.Warn(
+					"attempt to read past batch delayed message count",
+					"delayedMessagesRead", r.delayedMessagesRead,
+					"batchAfterDelayedMessages", seqMsg.afterDelayedMessages,
+				)
+			}
 			msg = &MessageWithMetadata{
 				Message:             invalidMessage,
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,

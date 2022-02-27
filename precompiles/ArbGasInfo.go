@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/params"
@@ -27,7 +28,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -59,16 +60,19 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 // Gets prices in wei when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, huge, huge, error) {
-	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
+	maybeAggregator, err := c.state.L1PricingState().ReimbursableAggregatorForSender(c.caller)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	return con.GetPricesInWeiWithAggregator(c, evm, aggregator)
+	if maybeAggregator == nil {
+		return con.GetPricesInWeiWithAggregator(c, evm, common.Address{})
+	}
+	return con.GetPricesInWeiWithAggregator(c, evm, *maybeAggregator)
 }
 
 // Gets prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -92,11 +96,14 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 // Gets prices in ArbGas when using the caller's preferred aggregator
 func (con ArbGasInfo) GetPricesInArbGas(c ctx, evm mech) (huge, huge, huge, error) {
-	aggregator, _, err := c.state.L1PricingState().PreferredAggregator(c.caller)
+	maybeAggregator, err := c.state.L1PricingState().ReimbursableAggregatorForSender(c.caller)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return con.GetPricesInArbGasWithAggregator(c, evm, aggregator)
+	if maybeAggregator == nil {
+		return con.GetPricesInArbGasWithAggregator(c, evm, common.Address{})
+	}
+	return con.GetPricesInArbGasWithAggregator(c, evm, *maybeAggregator)
 }
 
 // Gets the rollup's speed limit, pool size, and tx gas limit
@@ -127,7 +134,7 @@ func (con ArbGasInfo) GetSmallGasPoolSeconds(c ctx, evm mech) (huge, error) {
 
 // Gets the current estimate of the L1 gas price
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	return c.state.L1PricingState().L1GasPriceEstimateWei()
+	return c.state.L1PricingState().L1BaseFeeEstimateWei()
 }
 
 // Gets the fee paid to the aggregator for posting this tx

@@ -8,9 +8,11 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type ArbosInitializationInfo struct {
+	Blocks               []StoredBlock
 	AddressTableContents []common.Address
 	RetryableData        []InitializationDataForRetryable
 	Accounts             []AccountInitializationInfo
@@ -44,4 +46,10 @@ type AccountInitContractInfo struct {
 type AccountInitAggregatorInfo struct {
 	FeeCollector common.Address
 	BaseFeeL1Gas *big.Int
+}
+
+type StoredBlock struct {
+	Header       types.Header
+	Transactions []types.ArbitrumLegacyTransactionResult `json:"transactions" gencodec:"required"`
+	Reciepts     types.Receipts                          `json:"reciepts" gencodec:"required"`
 }

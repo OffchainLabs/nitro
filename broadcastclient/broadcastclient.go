@@ -19,7 +19,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
 )
 
@@ -31,10 +33,12 @@ type BroadcastClientConfig struct {
 var DefaultBroadcastClientConfig BroadcastClientConfig
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error
+	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
+	util.StopWaiter
+
 	websocketUrl    string
 	lastInboxSeqNum *big.Int
 
@@ -46,7 +50,7 @@ type BroadcastClient struct {
 
 	retrying                        bool
 	shuttingDown                    bool
-	ConfirmedSequenceNumberListener chan uint64
+	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
 }
@@ -67,12 +71,13 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 	}
 }
 
-func (bc *BroadcastClient) Start(ctx context.Context) {
-	go (func() {
+func (bc *BroadcastClient) Start(ctxIn context.Context) {
+	bc.StopWaiter.Start(ctxIn)
+	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			err := bc.connect(ctx)
 			if err == nil {
-				bc.startBackgroundReader(ctx)
+				bc.startBackgroundReader()
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -82,7 +87,7 @@ func (bc *BroadcastClient) Start(ctx context.Context) {
 			case <-time.After(5 * time.Second):
 			}
 		}
-	})()
+	})
 }
 
 func (bc *BroadcastClient) connect(ctx context.Context) error {
@@ -114,8 +119,8 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 	return nil
 }
 
-func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
-	go func() {
+func (bc *BroadcastClient) startBackgroundReader() {
+	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
@@ -170,7 +175,7 @@ func (bc *BroadcastClient) startBackgroundReader(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 func (bc *BroadcastClient) GetRetryCount() int64 {

@@ -30,28 +30,28 @@ contract BridgeStub is IBridge {
         return allowedInboxesMap[inbox].allowed;
     }
 
-    function allowedOutboxes(address) external view override returns (bool) {
+    function allowedOutboxes(address) external pure override returns (bool) {
         revert("NOT_IMPLEMENTED");
     }
 
-    function deliverMessageToInbox(
+    function enqueueDelayedMessage(
         uint8 kind,
         address sender,
         bytes32 messageDataHash
     ) external payable override returns (uint256) {
         require(allowedInboxesMap[msg.sender].allowed, "NOT_FROM_INBOX");
         return
-            addMessageToInbox(
+            addMessageToAccumulator(
                 kind,
                 sender,
                 block.number,
                 block.timestamp, // solhint-disable-line not-rely-on-time
-                tx.gasprice,
+                block.basefee,
                 messageDataHash
             );
     }
 
-    function addMessageToInbox(
+    function addMessageToAccumulator(
         uint8,
         address,
         uint256,
@@ -73,7 +73,7 @@ contract BridgeStub is IBridge {
         if (count > 0) {
             prevAcc = inboxAccs[count - 1];
         }
-        inboxAccs.push(Messages.addMessageToInbox(prevAcc, messageHash));
+        inboxAccs.push(Messages.accumulateInboxMessage(prevAcc, messageHash));
         return count;
     }
 
@@ -81,7 +81,7 @@ contract BridgeStub is IBridge {
         address,
         uint256,
         bytes calldata
-    ) external override returns (bool, bytes memory) {
+    ) external pure override returns (bool, bytes memory) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -103,7 +103,10 @@ contract BridgeStub is IBridge {
         }
     }
 
-    function setOutbox(address outbox, bool enabled) external override {
+    function setOutbox(
+        address, /* outbox */
+        bool /* enabled*/
+    ) external pure override {
         revert("NOT_IMPLEMENTED");
     }
 

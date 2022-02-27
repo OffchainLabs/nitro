@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
 )
@@ -27,12 +27,12 @@ func TestDeploy(t *testing.T) {
 
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -58,7 +58,7 @@ func TestEstimate(t *testing.T) {
 	Require(t, err, "could not deploy ArbOwner contract")
 	tx, err := arbOwner.SetMinimumGasPrice(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	// make an empty block to let the gas price update
@@ -79,7 +79,7 @@ func TestEstimate(t *testing.T) {
 	// deploy a test contract
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	receipt, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
@@ -98,7 +98,7 @@ func TestEstimate(t *testing.T) {
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})

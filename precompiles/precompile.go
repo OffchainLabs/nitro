@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -56,18 +57,20 @@ const (
 )
 
 type Precompile struct {
-	methods     map[[4]byte]PrecompileMethod
-	events      map[string]PrecompileEvent
-	implementer reflect.Value
-	address     common.Address
+	methods      map[[4]byte]PrecompileMethod
+	events       map[string]PrecompileEvent
+	implementer  reflect.Value
+	address      common.Address
+	arbosVersion uint64
 }
 
 type PrecompileMethod struct {
-	name        string
-	template    abi.Method
-	purity      purity
-	handler     reflect.Method
-	implementer reflect.Value
+	name         string
+	template     abi.Method
+	purity       purity
+	handler      reflect.Method
+	implementer  reflect.Value
+	arbosVersion uint64
 }
 
 type PrecompileEvent struct {
@@ -166,6 +169,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			purity,
 			handler,
 			reflect.ValueOf(implementer),
+			0,
 		}
 	}
 
@@ -174,12 +178,14 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 	supportedIndices := map[string]struct{}{
 		// the solidity value types: https://docs.soliditylang.org/en/v0.8.9/types.html
 		"address": {},
-		"bytes32": {},
 		"bool":    {},
 	}
 	for i := 8; i <= 256; i += 8 {
 		supportedIndices["int"+strconv.Itoa(i)] = struct{}{}
 		supportedIndices["uint"+strconv.Itoa(i)] = struct{}{}
+	}
+	for i := 1; i <= 32; i += 1 {
+		supportedIndices["bytes"+strconv.Itoa(i)] = struct{}{}
 	}
 
 	for _, event := range source.Events {
@@ -373,6 +379,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		events,
 		reflect.ValueOf(implementer),
 		address,
+		0,
 	}
 }
 
@@ -399,9 +406,6 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
-
-	insert(ownerOnly(makePrecompile(templates.ArbOwnerMetaData, &ArbOwner{Address: hex("70")})))
-	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
 
 	eventCtx := func(gasLimit uint64, err error) *context {
 		if err != nil {
@@ -431,6 +435,16 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 
+	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
+	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
+		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
+		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
+	}
+	_, ArbOwner := makePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+
+	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
+	insert(debugOnly(makePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+
 	return contracts
 }
 
@@ -446,14 +460,21 @@ func (p Precompile) Call(
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
 
+	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
+
+	if arbosVersion < p.arbosVersion {
+		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
+
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
 		return nil, 0, vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
-	if !ok {
-		// method does not exist
+	if !ok || arbosVersion < method.arbosVersion {
+		// method does not exist or hasn't yet been activated
 		return nil, 0, vm.ErrExecutionReverted
 	}
 
@@ -479,7 +500,7 @@ func (p Precompile) Call(
 		readOnly:    method.purity <= view,
 	}
 
-	argsCost := params.CopyGas * uint64(len(input)-4)
+	argsCost := params.CopyGas * util.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied
 		return nil, 0, vm.ErrExecutionReverted
@@ -550,7 +571,7 @@ func (p Precompile) Call(
 		log.Fatal("Could not encode precompile result ", err)
 	}
 
-	resultCost := params.CopyGas * uint64(len(encoded))
+	resultCost := params.CopyGas * util.WordsForBytes(uint64(len(encoded)))
 	if err := callerCtx.Burn(resultCost); err != nil {
 		// user cannot afford the result data returned
 		return nil, 0, vm.ErrExecutionReverted
@@ -561,4 +582,13 @@ func (p Precompile) Call(
 
 func (p Precompile) Precompile() Precompile {
 	return p
+}
+
+// Needed for the fuzzing harness
+func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
+	ret := make([][4]byte, 0, len(p.methods))
+	for sig := range p.methods {
+		ret = append(ret, sig)
+	}
+	return ret
 }

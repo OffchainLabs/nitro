@@ -1,0 +1,30 @@
+version: "3.9"
+services:
+  geth:
+    image: ethereum/client-go:stable
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+    volumes:
+      - "l1data:/root/.ethereum"
+      - "l1keystore:/keystore"
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3 --dev --dev.period 1 --password /root/.ethereum/passphrase
+  sequencer:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545:7545"
+      - "7546:7546"
+    volumes:
+      - "seqdata:/data"
+      - "l1keystore:/l1keystore"
+      - "deploydata:/deploydata"
+    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes -stakerinterval 10s
+    depends_on:
+      - geth
+volumes:
+  l1data:
+  l1keystore:
+  seqdata:
+  deploydata:

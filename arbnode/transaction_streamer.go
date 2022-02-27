@@ -22,13 +22,17 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/broadcaster"
+	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
+	util.StopWaiter
+
 	db ethdb.Database
 	bc *core.BlockChain
 
@@ -84,11 +88,11 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *TransactionStreamer) ReorgTo(count uint64) error {
+func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
 	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
 }
 
-func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 	err := s.reorgToInternal(batch, count)
@@ -120,22 +124,30 @@ func deleteStartingAt(db ethdb.Database, batch ethdb.Batch, prefix []byte, minKe
 	return nil
 }
 
-func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) error {
+func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.MessageIndex) error {
+	if count == 0 {
+		return errors.New("cannot reorg out init message")
+	}
 	atomic.AddUint32(&s.reorgPending, 1)
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 	atomic.AddUint32(&s.reorgPending, ^uint32(0)) // decrement
-	targetBlock := s.bc.GetBlockByNumber(count)
+	blockNum, err := s.MessageCountToBlockNumber(count)
+	if err != nil {
+		return err
+	}
+	// We can safely cast blockNum to a uint64 as we checked count == 0 above
+	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		return errors.New("reorg target block not found")
 	}
 
-	err := s.bc.ReorgToOldBlock(targetBlock)
+	err = s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
 	}
 
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(count))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))
 	if err != nil {
 		return err
 	}
@@ -154,13 +166,13 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count uint64) e
 func dbKey(prefix []byte, pos uint64) []byte {
 	var key []byte
 	key = append(key, prefix...)
-	key = append(key, uint64ToBytes(pos)...)
+	key = append(key, uint64ToBytes(uint64(pos))...)
 	return key
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error) {
-	key := dbKey(messagePrefix, seqNum)
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
 		return arbstate.MessageWithMetadata{}, err
@@ -171,7 +183,7 @@ func (s *TransactionStreamer) GetMessage(seqNum uint64) (arbstate.MessageWithMet
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessageCount() (uint64, error) {
+func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 	posBytes, err := s.db.Get(messageCountKey)
 	if err != nil {
 		return 0, err
@@ -181,19 +193,19 @@ func (s *TransactionStreamer) GetMessageCount() (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return pos, nil
+	return arbutil.MessageIndex(pos), nil
 }
 
-func (s *TransactionStreamer) AddMessages(pos uint64, force bool, messages []arbstate.MessageWithMetadata) error {
+func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
-func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
 	if pos > 0 {
-		key := dbKey(messagePrefix, pos-1)
+		key := dbKey(messagePrefix, uint64(pos-1))
 		hasPrev, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -209,7 +221,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 		if len(messages) == 0 {
 			break
 		}
-		key := dbKey(messagePrefix, pos)
+		key := dbKey(messagePrefix, uint64(pos))
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
 			return err
@@ -267,11 +279,64 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos uint64, force bool, mes
 	return s.writeMessages(pos, messages, batch)
 }
 
-func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessage) error {
+func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbos.L1IncomingMessage, error) {
+	if len(txErrors) != len(txes) {
+		return nil, fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(txErrors), len(txes))
+	}
+	var l2Message []byte
+	if len(txes) == 1 && txErrors[0] == nil {
+		txBytes, err := txes[0].MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	} else {
+		l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+		sizeBuf := make([]byte, 8)
+		for i, tx := range txes {
+			if txErrors[i] != nil {
+				continue
+			}
+			txBytes, err := tx.MarshalBinary()
+			if err != nil {
+				return nil, err
+			}
+			binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+			l2Message = append(l2Message, sizeBuf...)
+			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+			l2Message = append(l2Message, txBytes...)
+		}
+	}
+	return &arbos.L1IncomingMessage{
+		Header: header,
+		L2msg:  l2Message,
+	}, nil
+}
+
+func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	s.reorgMutex.Lock()
+	defer s.reorgMutex.Unlock()
 
 	pos, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
+	lastBlockHeader := s.bc.CurrentHeader()
+	if lastBlockHeader == nil {
+		return errors.New("current block header not found")
+	}
+	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
+	if err != nil {
+		return err
+	}
+	if lastBlockHeader.Number.Int64() != expectedBlockNum {
+		return fmt.Errorf("block production not caught up: last block number %v but expected %v", lastBlockHeader.Number, expectedBlockNum)
+	}
+	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
 	}
@@ -285,29 +350,61 @@ func (s *TransactionStreamer) SequenceMessages(messages []*arbos.L1IncomingMessa
 		delayedMessagesRead = lastMsg.DelayedMessagesRead
 	}
 
-	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
-	for _, message := range messages {
-		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
-			Message:             message,
-			DelayedMessagesRead: delayedMessagesRead,
-		})
+	block, receipts := arbos.ProduceBlockAdvanced(
+		header,
+		txes,
+		delayedMessagesRead,
+		lastBlockHeader,
+		statedb,
+		s.bc,
+		s.bc.Config(),
+		hooks,
+	)
+
+	if len(receipts) == 0 {
+		return nil
 	}
 
-	if err := s.writeMessages(pos, messagesWithMeta, nil); err != nil {
+	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
+	if err != nil {
+		return err
+	}
+
+	msgWithMeta := arbstate.MessageWithMetadata{
+		Message:             msg,
+		DelayedMessagesRead: delayedMessagesRead,
+	}
+
+	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
 
 	if s.broadcastServer != nil {
-		for i, message := range messagesWithMeta {
-			// TODO method for broadcasting more than one?
-			s.broadcastServer.BroadcastSingle(message, pos+uint64(i))
-		}
+		s.broadcastServer.BroadcastSingle(msgWithMeta, pos)
+	}
+
+	// Only write the block after we've written the messages, so if the node dies in the middle of this,
+	// it will naturally recover on startup by regenerating the missing block.
+	var logs []*types.Log
+	for _, receipt := range receipts {
+		logs = append(logs, receipt.Logs...)
+	}
+	status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
+	if err != nil {
+		return err
+	}
+	if status == core.SideStatTy {
+		return errors.New("geth rejected block as non-canonical")
+	}
+
+	if s.validator != nil {
+		s.validator.NewBlock(block, lastBlockHeader, msgWithMeta)
 	}
 
 	return nil
 }
 
-func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
+func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messages []*arbos.L1IncomingMessage, firstDelayedSeqNum uint64) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -337,17 +434,62 @@ func (s *TransactionStreamer) SequenceDelayedMessages(messages []*arbos.L1Incomi
 		})
 	}
 	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
-	return s.writeMessages(pos, messagesWithMeta, nil)
+	err = s.writeMessages(pos, messagesWithMeta, nil)
+	if err != nil {
+		return err
+	}
+
+	for i, msg := range messagesWithMeta {
+		if s.broadcastServer != nil {
+			s.broadcastServer.BroadcastSingle(msg, pos+arbutil.MessageIndex(i))
+		}
+	}
+
+	expectedBlockNum, err := s.MessageCountToBlockNumber(pos)
+	if err != nil {
+		return err
+	}
+
+	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
+	if s.bc.CurrentHeader().Number.Int64() >= expectedBlockNum {
+		err = s.createBlocks(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *TransactionStreamer) GetGenesisBlockNumber() (uint64, error) {
+	// TODO: when block 0 is no longer necessarily the genesis, track this
+	return 0, nil
+}
+
+func (s *TransactionStreamer) BlockNumberToMessageCount(blockNum uint64) (arbutil.MessageIndex, error) {
+	genesis, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.BlockNumberToMessageCount(blockNum, genesis), nil
+}
+
+func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.MessageIndex) (int64, error) {
+	genesis, err := s.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
 }
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		key := dbKey(messagePrefix, pos+uint64(i))
+		key := dbKey(messagePrefix, uint64(pos)+uint64(i))
 		msgBytes, err := rlp.EncodeToBytes(msg)
 		if err != nil {
 			return err
@@ -357,7 +499,7 @@ func (s *TransactionStreamer) writeMessages(pos uint64, messages []arbstate.Mess
 			return err
 		}
 	}
-	newCount, err := rlp.EncodeToBytes(pos + uint64(len(messages)))
+	newCount, err := rlp.EncodeToBytes(uint64(pos) + uint64(len(messages)))
 	if err != nil {
 		return err
 	}
@@ -391,7 +533,10 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
-	pos := lastBlockHeader.Number.Uint64()
+	pos, err := s.BlockNumberToMessageCount(lastBlockHeader.Number.Uint64())
+	if err != nil {
+		return err
+	}
 	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
 	if err != nil {
 		return err
@@ -430,7 +575,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 		for _, receipt := range receipts {
 			logs = append(logs, receipt.Logs...)
 		}
-		status, err := s.bc.WriteBlockWithState(block, receipts, logs, statedb, true)
+		status, err := s.bc.WriteBlockAndSetHead(block, receipts, logs, statedb, true)
 		if err != nil {
 			return err
 		}
@@ -452,8 +597,9 @@ func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
 
-func (s *TransactionStreamer) Start(ctx context.Context) {
-	go (func() {
+func (s *TransactionStreamer) Start(ctxIn context.Context) {
+	s.StopWaiter.Start(ctxIn)
+	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -466,5 +612,5 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			case <-time.After(10 * time.Second):
 			}
 		}
-	})()
+	})
 }

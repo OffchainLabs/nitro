@@ -70,7 +70,7 @@ func TestEthDepositMessage(t *testing.T) {
 		BlockNumber: common.BigToHash(big.NewInt(864513)),
 		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
 		RequestId:   common.BigToHash(big.NewInt(3)),
-		GasPriceL1:  common.BigToHash(big.NewInt(10000000000000)),
+		BaseFeeL1:   common.BigToHash(big.NewInt(10000000000000)),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {
@@ -126,13 +126,13 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		}
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 			if err != nil {
 				Fail(t, err)
 			}
 		}
 
-		arbos.FinalizeBlock(nil, nil, nil, statedb)
+		arbos.FinalizeBlock(nil, nil, statedb)
 	}
 }
 

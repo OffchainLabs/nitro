@@ -25,11 +25,18 @@ Each time a tx calls a method of an L2-specific precompile, a [`call context`][c
 [packing_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L438
 [call_context_link]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/precompiles/context.go#L26
 
+## Messages
+
+An [`L1IncomingMessage`][L1IncomingMessage_link] represents an incoming sequencer message. A message includes one or more user transactions depending on load, and is made into a [unique L2 block][ProduceBlockAdvanced_link]. The L2 block may include additional system transactions added in while processing the message's user txes, but ultimately the relationship is still bijective: for every [`L1IncomingMessage`][L1IncomingMessage_link] there is an L2 block with a unique L2 block hash, and for every L2 block after chain initialization there was an [`L1IncomingMessage`][L1IncomingMessage_link] that made it. A sequencer batch may contain more than one [`L1IncomingMessage`][L1IncomingMessage_link].
+
+[L1IncomingMessage_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/incomingmessage.go#L54
+[ProduceBlockAdvanced_link]: https://github.com/OffchainLabs/nitro/blob/4ac7e9268e9885a025e0060c9ec30f9612f9e651/arbos/block_processor.go#L118
+
 ## Retryables<a name=Retryables></a>
 
-A Retryable is a transaction whose *submission* is separate from its *execution*.  A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1.  If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
+A Retryable is a transaction whose *submission* is separable from its *execution*. A retryable can be submitted for a fixed cost (dependent only on its calldata size) paid at L1. If the L1 transition to request submission succeeds (i.e. does not revert) then the submission of the Retryable to the L2 state is guaranteed to succeed.
 
-After a Retryable is submitted, anyone can try to *redeem* it, by calling the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile.  The party requesting the redeem provides the gas that will be used to execute the Retryable.  If execution of the Retryable succeeds, the Retryable is deleted.  If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will be [automatically discarded][discard_link], unless some party has paid a fee to [*renew*][renew_link] the Retryable for another full period.  A Retryable can live indefinitely as long as it is renewed each time before it expires.
+In the common case a Retryable's submission is followed by an attempt to execute the transaction. If the attempt fails or isn't scheduled after the Retryable is submitted, anyone can try to *redeem* it, by calling the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile. The party requesting the redeem provides the gas that will be used to execute the Retryable. If execution of the Retryable succeeds, the Retryable is deleted. If execution fails, the Retryable continues to exist and further attempts can be made to redeem it.  If a fixed period (currently one week) elapses without a successful redeem, the Retryable expires and will be [automatically discarded][discard_link], unless some party has paid a fee to [*renew*][renew_link] the Retryable for another full period. A Retryable can live indefinitely as long as it is renewed each time before it expires.
 
 [discard_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/retryables/retryable.go#L262
 [renew_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/retryables/retryable.go#L207
@@ -39,13 +46,13 @@ After a Retryable is submitted, anyone can try to *redeem* it, by calling the [`
 
 A transaction to submit a Retryable does the following:
 
-* create a new Retryable with the caller, destination, callvalue, and calldata of the submit transaction
+* create a new Retryable with the caller, destination, callvalue, calldata, and beneficiary of the submit transaction
 * deduct funds to cover the callvalue from the caller (as usual) and place them into escrow for later use in redeeming the Retryable
 * assign a unique TicketID to the Retryable
 * cause the ArbRetryableTx precompiled contract to emit a TicketCreated event containing the TicketID
 * if the submit transaction contains gas, schedule a redeem of the new Retryable, using the supplied gas, as if the [`redeem`](Precompiles.md#ArbRetryableTx) method of the [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx) precompile had been called.
 
-In many use cases, the submitter will provide gas and will intend for the immediate redeem to succeed, with later retries available only as a backup mechanism should the immediate redeem fail. (It might fail, for example, because the L2 gas price has increased unexpectedly.) In this way, an L1 contract can submit a transaction to L2 in such a way that the transaction will normally run immediately at L2 but allowing any party to retry the transaction should it fail.
+In most use cases, the submitter will provide gas and will intend for the immediate redeem to succeed, with later retries available only as a backup mechanism should the immediate redeem fail. (It might fail, for example, because the L2 gas price has increased unexpectedly.) In this way, an L1 contract can submit a transaction to L2 in such a way that the transaction will normally run immediately at L2 but allowing any party to retry the transaction should it fail.
 
 When a Retryable is redeemed, it will execute with the sender, destination, callvalue, and calldata of the original submission. The callvalue will have been escrowed during the initial submission of the Retryable, for this purpose.  If a Retryable with callvalue is eventually discarded, having never successfully run, the escrowed callvalue will be paid out to a "beneficiary" account that is specified in the initial submission.
 
@@ -55,11 +62,11 @@ A Retryable's beneficiary has the unique power to [`cancel`](Precompiles.md#ArbR
 
 ### Redeeming a Retryable
 
-If a redeem is not done at submission or the submission's initial redeem fails, anyone can attempt to redeem the retryable again by calling [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx)'s [`redeem`](Precompiles.md#ArbRetryableTx) precompile method, which donates the call's gas to the next attempt. ArbOS will [enqueue the redeem][enqueue_link], which is its own special `ArbitrumRetryTx` type, to its list of redeems that ArbOS [guarantees to exhaust][exhaust_link] before moving on to the next non-redeem transaction in the block its forming. In this manner redeems are scheduled to happen as soon as possible, and will always be in the same block since the gas donated came from the pool.
+If a redeem is not done at submission or the submission's initial redeem fails, anyone can attempt to redeem the retryable again by calling [`ArbRetryableTx`](Precompiles.md#ArbRetryableTx)'s [`redeem`](Precompiles.md#ArbRetryableTx) precompile method, which donates the call's gas to the next attempt. ArbOS will [enqueue the redeem][enqueue_link], which is its own special `ArbitrumRetryTx` type, to its list of redeems that ArbOS [guarantees to exhaust][exhaust_link] before moving on to the next non-redeem transaction in the block its forming. In this manner redeems are scheduled to happen as soon as possible, and will always be in the same block as the tx that scheduled it. Note that the redeem attempt's gas comes from the call to [`redeem`](Precompiles.md#ArbRetryableTx), so there's no chance the block's gas limit is reached before execution.
 
-On success, the `To` address keeps the escrowed callvalue, and any unused gas is returned to the pools. On failure, the callvalue is returned to the escrow for the next redeemer. In either case, the network fee was paid during the scheduling tx, so no fees are charged and no refunds are made. 
+On success, the `To` address keeps the escrowed callvalue, and any unused gas is returned to ArbOS's gas pools. On failure, the callvalue is returned to the escrow for the next redeemer. In either case, the network fee was paid during the scheduling tx, so no fees are charged and no refunds are made. 
 
-During redemption of a retryable, attempts to cancel the same retryable, or to schedule another redeem of the same retryable, will revert.
+During redemption of a retryable, attempts to cancel the same retryable, or to schedule another redeem of the same retryable, will revert. In this manner retryables are not self-modifying.
 
 [enqueue_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L245
 [exhaust_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L135
@@ -97,7 +104,7 @@ This component maintains the last 256 L1 block hashes in a circular buffer. This
 [ArbitrumInternalTx_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L116
 [TxProcessor_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L33
 
-### [`l1PricingState`][l1PricingState_link]
+### [`l1PricingState`][l1PricingState_link]<a name=l1PricingState></a>
 
 In addition to supporting the [`ArbAggregator precompile`](Precompiles.md#ArbAggregator), the L1 pricing state provides tools for determining the L1 component of a transaction's gas costs. Aggregators, whose compressed batches are the messages ArbOS uses to build L2 blocks, inform ArbOS of their compression ratios so that L2 fees can be fairly allocated between the network fee account and the aggregator posting a given transaction.
 
@@ -107,12 +114,27 @@ The L1 pricing state also keeps a running estimate of the L1 gas price, which up
 
 [l1PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l1pricing/l1pricing.go#L16
 
-### [`l2PricingState`][l2PricingState_link]
+### [`l2PricingState`][l2PricingState_link]<a name=l2PricingState></a>
 
 The L2 pricing state tracks L2 resource usage to determine a reasonable L2 gas price. This process considers a variety of factors, including user demand, the state of geth, and the computational speed limit. The primary mechanism for doing so consists of a pair of pools, one larger than the other, that drain as L2-specific resources are consumed and filled as time passes. L1-specific resources like L1 calldata are not tracked by the pools, as they have little bearing on the actual work done by the network actors that the speed limit is meant to keep stable and synced. 
 
 While much of this state is accessible through the [`ArbGasInfo`](Precompiles.md#ArbGasInfo) and [`ArbOwner`](Precompiles.md#ArbOwner) precompiles, most changes are automatic and happen during [block production][block_production_link] and [the transaction hooks](Geth.md#Hooks). Each of an incoming message's txes removes from the pool the L2 component of the gas it uses, and afterward the message's timestamp [informs the pricing mechanism][notify_pricer_link] of the time that's passed as ArbOS [finalizes the block][finalizeblock_link].
 
+ArbOS's larger gas pool [determines][maintain_limit_link] the per-block gas limit, setting a dynamic [upper limit][per_block_limit_link] on the amount of compute gas an L2 block may have. This limit is always enforced, though for the [first transaction][first_transaction_link] it's done in the [GasChargingHook](Geth.md#GasChargingHook) to avoid sharp decreases in the L1 gas price from over-inflating the compute component purchased to above the gas limit. This improves UX by allowing the first tx to succeed rather than requiring a resubmission. Because the first tx lowers the amount of space left in the block, subsequent transactions do not employ this strategy and may fail from such compute-component inflation. This is acceptable because such txes are only present in cases where the system is under heavy load and the result is that the user's tx is dropped without charges since the state transition fails early. Those trusting the sequencer can rely on the tx being automatically resubmitted in such a scenario.
+
+The reason we need a per-block gas limit is that Arbitrator WAVM execution is much slower than native tx execution. This means that there can only be so much gas -- which roughly translates to wall-clock time -- in an L2 block. It also provides an opportunity for ArbOS to limit the size of blocks should demand continue to surge even as the price rises.
+
+ArbOS's per-block gas limit is distinct from geth's block limit, which ArbOS [sets sufficiently high][geth_pool_set_link] so as to never run out. This is safe since geth's block limit exists to constrain the amount of work done per block, which ArbOS already does via its own per-block gas limit. Though it'll never run out, a block's txes use the [same geth gas pool][same_geth_pool_link] to maintain the invariant that the pool decreases monotonically after each tx. Block headers [use the geth block limit][use_geth_pool_link] for internal consistency and to ensure gas estimation works. These are both distinct from the [`gasLeft`][per_block_limit_link] variable, which ephemerally exists outside of global state to both keep L2 blocks from exceeding ArbOS's per-block gas limit and to [deduct space][deduct_space_link] in situations where the state transition failed or [used negligable amounts][neglibale_amounts_link] of compute gas. ArbOS does not need to persist [`gasLeft`][per_block_limit_link] because it is its _pool_ that induces a revert and because txes use the geth block limit during EVM execution.
+
 [l2PricingState_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/l2pricing/l2pricing.go#L14
 [block_production_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L77
 [notify_pricer_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/block_processor.go#L336
+
+[maintain_limit_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l2pricing/pools.go#L98
+[per_block_limit_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L146
+[first_transaction_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L237
+[geth_pool_set_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L166
+[same_geth_pool_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L199
+[use_geth_pool_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L67
+[deduct_space_link]: https://github.com/OffchainLabs/nitro/blob/faf55a1da8afcabb1f3c406b291e721bfde71a05/arbos/block_processor.go#L272
+[neglibale_amounts_link]: https://github.com/OffchainLabs/nitro/blob/faf55a1da8afcabb1f3c406b291e721bfde71a05/arbos/block_processor.go#L328

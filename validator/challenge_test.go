@@ -33,7 +33,7 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
 	Require(t, err)
 
-	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{}, common.Address{})
+	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
 	Require(t, err)
 
 	ospEntry, _, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
@@ -52,7 +52,7 @@ func CreateChallenge(
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
-	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client)
+	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, common.Address{})
 	Require(t, err)
 
 	var startHashBytes [32]byte
@@ -64,9 +64,7 @@ func CreateChallenge(
 		client,
 		ospEntry,
 		resultReceiverAddr,
-		mocksgen.ExecutionContext{
-			MaxInboxMessagesRead: new(big.Int).SetUint64(^uint64(0)),
-		},
+		^uint64(0),
 		[2][32]byte{startHashBytes, endHashBytes},
 		big.NewInt(int64(endMachineSteps)),
 		asserter,
@@ -129,7 +127,7 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		endMachineHash = IncorrectMachineHash(endMachineHash)
 	}
 
-	resultReceiver, challenge := CreateChallenge(
+	resultReceiver, challengeManager := CreateChallenge(
 		t,
 		deployer,
 		backend,
@@ -151,10 +149,28 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 		expectedWinner = asserter.From
 	}
 
-	asserterManager, err := NewExecutionChallengeManager(ctx, backend, asserter, challenge, asserterMachine, 0, 4)
+	asserterManager, err := NewExecutionChallengeManager(
+		backend,
+		asserter,
+		challengeManager,
+		1,
+		asserterMachine,
+		0,
+		4,
+		12,
+	)
 	Require(t, err)
 
-	challengerManager, err := NewExecutionChallengeManager(ctx, backend, challenger, challenge, challengerMachine, 0, 4)
+	challengerManager, err := NewExecutionChallengeManager(
+		backend,
+		challenger,
+		challengeManager,
+		1,
+		challengerMachine,
+		0,
+		4,
+		12,
+	)
 	Require(t, err)
 
 	for i := 0; i < 100; i++ {

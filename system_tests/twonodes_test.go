@@ -12,22 +12,24 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/das"
 )
 
 func testTwoNodesSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	l1NodeConfigA := arbnode.NodeConfigL1Test
 	l1NodeConfigA.DataAvailabilityMode = dasMode
-	l2info, node1, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.NodeConfigL1Test
 	l1NodeConfigB.BatchPoster = false
 	l1NodeConfigB.BlockValidator = false
 	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, node1, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
@@ -36,7 +38,7 @@ func testTwoNodesSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	err := l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbnode.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -49,7 +51,7 @@ func testTwoNodesSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 		})
 	}
 
-	_, err = arbnode.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
@@ -58,6 +60,9 @@ func testTwoNodesSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }
 
 func TestTwoNodesSimple(t *testing.T) {

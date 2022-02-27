@@ -105,6 +105,16 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	return state, statedb
 }
 
+// Get the ArbOS version
+func ArbOSVersion(stateDB vm.StateDB) uint64 {
+	backingStorage := storage.NewGeth(stateDB, burn.NewSystemBurner(false))
+	arbosVersion, err := backingStorage.GetUint64ByUint64(uint64(versionOffset))
+	if err != nil {
+		log.Fatal("faled to get the ArbOS version", err)
+	}
+	return arbosVersion
+}
+
 type ArbosStateOffset uint64
 
 const (
@@ -252,4 +262,12 @@ func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
 
 func (state *ArbosState) SetNetworkFeeAccount(account common.Address) error {
 	return state.networkFeeAccount.Set(account)
+}
+
+func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
+	return state.backingStorage.Keccak(data...)
+}
+
+func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
+	return state.backingStorage.KeccakHash(data...)
 }

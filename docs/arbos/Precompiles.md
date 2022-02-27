@@ -304,6 +304,14 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 [Os11]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbOwner.sol#L41
 [Os12]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbOwner.sol#L44
 
+| Events                                                      |                                                           |
+|:------------------------------------------------------------|:----------------------------------------------------------|
+| [<img src=e.png height=16>][Oes0] [`OwnerActs`][Oe0] &nbsp; | Emitted when a successful call is made to this precompile |
+
+[Oe0]: https://github.com/OffchainLabs/nitro/blob/e4d981d16a3938ce18d1e648cb1c58d69d23b85e/precompiles/wrapper.go#L105
+
+[Oes0]: https://github.com/OffchainLabs/nitro/blob/e4d981d16a3938ce18d1e648cb1c58d69d23b85e/solgen/src/precompiles/ArbOwner.sol#L47
+
 
 # [ArbOwnerPublic][ArbOwnerPublic_link]<a name=ArbOwnerPublic></a>
 Provides non-owners with info about the current chain owners.
@@ -327,13 +335,13 @@ Provides non-owners with info about the current chain owners.
 Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](ArbOS.md#Retryables).
 
 
-| Methods                                                                    |                                                                             | Nitro changes          |
-|:---------------------------------------------------------------------------|:----------------------------------------------------------------------------|:-----------------------|
-| [<img src=e.png height=16>][RTs0] [`Cancel`][RT0]`(ticket)`                | Cancel the ticket and refund its callvalue to its beneficiary               |                        |
-| [<img src=e.png height=16>][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | Gets the beneficiary of the ticket                                          |                        |
-| [<img src=e.png height=16>][RTs2] [`GetLifetime`][RT2]`()`                 | Gets the default lifetime period a retryable has at creation                | Reverts when not found |
-| [<img src=e.png height=16>][RTs3] [`GetTimeout`][RT3]`(ticket)`            | Gets the timestamp for when ticket will expire                              |                        |
-| [<img src=e.png height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                             | Doesn't add callvalue  |
+| Methods                                                                    |                                                                                    | Nitro changes          |
+|:---------------------------------------------------------------------------|:-----------------------------------------------------------------------------------|:-----------------------|
+| [<img src=e.png height=16>][RTs0] [`Cancel`][RT0]`(ticket)`                | Cancel the ticket and refund its callvalue to its beneficiary                      |                        |
+| [<img src=e.png height=16>][RTs1] [`GetBeneficiary`][RT1]`(ticket)` &nbsp; | Gets the beneficiary of the ticket                                                 |                        |
+| [<img src=e.png height=16>][RTs2] [`GetLifetime`][RT2]`()`                 | Gets the default lifetime period a retryable has at creation                       | Reverts when not found |
+| [<img src=e.png height=16>][RTs3] [`GetTimeout`][RT3]`(ticket)`            | Gets the timestamp for when ticket will expire                                     |                        |
+| [<img src=e.png height=16>][RTs4] [`Keepalive`][RT4]`(ticket)`             | Adds one lifetime period to the ticket's expiry                                    | Doesn't add callvalue  |
 | [<img src=e.png height=16>][RTs5] [`Redeem`][RT5]`(ticket)`                | Schedule an attempt to redeem the retryable, donating all of the call's gas &nbsp; | Happens next tx        |
 
 [RT0]: https://github.com/OffchainLabs/nitro/blob/8f2988fcb2683c7b39de2635af22f1f8d6fa9c79/precompiles/ArbRetryableTx.go#L184
@@ -437,10 +445,10 @@ Provides system-level functionality for interacting with L1 and understanding th
 [Ses0]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbSys.sol#L107
 [Ses1]: https://github.com/OffchainLabs/nitro/blob/f11ba39cf91ee1fe1b5f6b67e8386e5efd147667/solgen/src/precompiles/ArbSys.sol#L126
 
-| Removed Methods                                              |                                                              |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
+| Removed Methods                                                                  |                                                                   |
+|:---------------------------------------------------------------------------------|:------------------------------------------------------------------|
 | [<img src=e.png height=16>][Srs0] [`GetStorageAt`][Sr0]`(account, index)` &nbsp; | Nitro doesn't need this introspection, and users couldn't call it |
-| [<img src=e.png height=16>][Srs1] [`GetTransactionCount`][Sr1]`(account)` | Nitro doesn't need this introspection, and users couldn't call it |
+| [<img src=e.png height=16>][Srs1] [`GetTransactionCount`][Sr1]`(account)`        | Nitro doesn't need this introspection, and users couldn't call it |
 
 [Sr0]: https://github.com/OffchainLabs/arb-os/blob/89e36db597c4857a4dac3efd7cc01b13c7845cc0/arb_os/arbsys.mini#L335
 [Sr1]: https://github.com/OffchainLabs/arb-os/blob/89e36db597c4857a4dac3efd7cc01b13c7845cc0/arb_os/arbsys.mini#L315

@@ -9,8 +9,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/util/merkletree"
 )
@@ -53,7 +53,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 
 // Gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // Nitro starts at version 53
+	version := new(big.Int).SetUint64(55 + c.state.FormatVersion()) // Nitro starts at version 56
 	return version, nil
 }
 
@@ -74,7 +74,7 @@ func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest 
 
 // Checks if the caller's caller was aliased
 func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType)
+	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
 	return aliased, nil
 }
 
@@ -87,7 +87,7 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 		address = c.txProcessor.Callers[evm.Depth()-2]
 	}
 
-	if evm.Depth() == 2 && util.DoesTxTypeAlias(*c.txProcessor.TopTxType) {
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType) {
 		address = util.InverseRemapL1Address(address)
 	}
 
@@ -96,11 +96,33 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 
 // Sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
+	timestamp, _ := c.state.LastTimestampSeen()
+	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
+	if err != nil {
+		return nil, err
+	}
+	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
 
-	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
 	arbosState := c.state
+	sendHash, err := arbosState.KeccakHash(
+		c.caller.Bytes(),
+		destination.Bytes(),
+		math.U256Bytes(evm.Context.BlockNumber),
+		math.U256Bytes(bigL1BlockNum),
+		math.U256Bytes(evm.Context.Time),
+		common.BigToHash(value).Bytes(),
+		calldataForL1,
+	)
+	if err != nil {
+		return nil, err
+	}
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
+	if err != nil {
+		return nil, err
+	}
+
+	size, err := merkleAcc.Size()
 	if err != nil {
 		return nil, err
 	}
@@ -125,13 +147,6 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		}
 	}
 
-	size, _ := merkleAcc.Size()
-	timestamp, _ := arbosState.LastTimestampSeen()
-	blockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
-	if err != nil {
-		return nil, err
-	}
-
 	leafNum := big.NewInt(int64(size - 1))
 
 	err = con.L2ToL1Transaction(
@@ -143,8 +158,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
-		big.NewInt(int64(blockNum)),
-		big.NewInt(int64(timestamp)),
+		bigL1BlockNum,
+		new(big.Int).SetUint64(timestamp),
 		value,
 		calldataForL1,
 	)

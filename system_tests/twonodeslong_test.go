@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/das"
 )
 
@@ -41,14 +42,14 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 
 	l1NodeConfigA := arbnode.NodeConfigL1Test
 	l1NodeConfigA.DataAvailabilityMode = dasMode
-	l2info, node1, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.NodeConfigL1Test
 	l1NodeConfigB.BatchPoster = false
 	l1NodeConfigB.BlockValidator = false
 	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, node1, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -107,7 +108,7 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+			_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				Fail(t, err)
 			}
@@ -141,15 +142,15 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 				Fail(t, err)
 			}
 		}
-		_, err := arbnode.EnsureTxSucceeded(ctx, l1client, tx)
+		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 		if err != nil {
 			Fail(t, err)
 		}
 	}
 
-	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
@@ -165,6 +166,9 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		Fail(t, "Unexpected balance")
 	}
+
+	nodeA.StopAndWait()
+
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
@@ -179,6 +183,8 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+
+	nodeB.StopAndWait()
 }
 
 func TestTwoNodesLong(t *testing.T) {

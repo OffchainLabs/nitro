@@ -20,9 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
 )
 
@@ -50,7 +50,7 @@ func TestSequencerInboxReader(t *testing.T) {
 	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
 
 	ownerAddress := l2Info.GetAddress("Owner")
-	startL2BlockNumber := l2Backend.APIBackend().CurrentHeader().Number.Uint64()
+	var startL2BlockNumber uint64 = 0
 
 	startState, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.LatestBlockNumber)
 	Require(t, err)
@@ -109,7 +109,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				}
 				tx := l1Info.SignTxAs("ReorgPadding", rawTx)
 				Require(t, l1Client.SendTransaction(ctx, tx))
-				_, _ = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
+				_, _ = arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
 			}
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := l1Client.HeaderByNumber(ctx, nil)
@@ -130,7 +130,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			tx := l1Info.PrepareTx(fmt.Sprintf("ReorgSacrifice%v", i/10), "Faucet", 30000, big.NewInt(0), nil)
 			err = l1Client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, _ = arbnode.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
+			_, _ = arbutil.WaitForTx(ctx, l1Client, tx.Hash(), time.Second)
 		} else {
 			state := blockStates[len(blockStates)-1]
 			newBalances := make(map[common.Address]*big.Int)
@@ -209,12 +209,12 @@ func TestSequencerInboxReader(t *testing.T) {
 			seqOpts.Nonce = big.NewInt(int64(seqNonce))
 			var tx *types.Transaction
 			if i%5 == 0 {
-				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates)-1)), batchData, big.NewInt(0), common.Address{})
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), common.Address{})
 			}
 			Require(t, err)
-			txRes, err := arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
+			txRes, err := arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
 			if err != nil {
 				// Geth's clique miner is finicky.
 				// Unfortunately this is so rare that I haven't had an opportunity to test this workaround.
@@ -222,7 +222,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				// if a new tx arrives at the same time as it tries to create a block.
 				// Resubmit the transaction in an attempt to get the miner going again.
 				_ = l1Client.SendTransaction(ctx, tx)
-				txRes, err = arbnode.EnsureTxSucceeded(ctx, l1Client, tx)
+				txRes, err = arbutil.EnsureTxSucceeded(ctx, l1Client, tx)
 				Require(t, err)
 			}
 
@@ -238,7 +238,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			if err != nil {
 				Fail(t, err)
 			}
-			if batchCount.Cmp(big.NewInt(int64(len(blockStates)-1))) == 0 {
+			if batchCount.Cmp(big.NewInt(int64(len(blockStates)))) == 0 {
 				break
 			} else if i >= 100 {
 				Fail(t, "timed out waiting for l1 batch count update; have", batchCount, "want", len(blockStates)-1)
