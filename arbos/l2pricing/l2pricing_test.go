@@ -64,7 +64,7 @@ func TestPricingModel(t *testing.T) {
 	// set the gas pool to the target
 	target, _ := pricing.GasPoolTarget()
 	poolTarget := int64(target) * maxPool / 10000
-	pricing.SetGasPool(poolTarget)
+	Require(t, pricing.SetGasPool(poolTarget))
 	pricing.SetGasPoolLastBlock(poolTarget)
 	pricing.SetRateEstimate(limit)
 
@@ -82,7 +82,7 @@ func TestPricingModel(t *testing.T) {
 	}
 
 	// fill the gas pool
-	pricing.SetGasPool(maxPool)
+	Require(t, pricing.SetGasPool(maxPool))
 	pricing.SetGasPoolLastBlock(maxPool)
 
 	// show that running over the speed limit escalates the price before the pool drains
@@ -103,7 +103,7 @@ func TestPricingModel(t *testing.T) {
 	}
 
 	// empty the pool
-	pricing.SetGasPool(0)
+	Require(t, pricing.SetGasPool(0))
 	pricing.SetGasPoolLastBlock(0)
 	pricing.SetRateEstimate(limit)
 	price = getPrice(t, pricing)
