@@ -105,12 +105,12 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 	return ps.SetL1GasPriceEstimateWei(update)
 }
 
-// Get the approximate time-frame ArbOS looks at for estimating the L1 gas price
+// Get how slowly ArbOS updates its estimate of the L1 gas price
 func (ps *L1PricingState) L1GasPriceEstimateInertia() (uint64, error) {
 	return ps.l1GasPriceEstimateInertia.Get()
 }
 
-// Set the approximate time-frame ArbOS looks at for estimating the L1 gas price
+// Set how slowly ArbOS updates its estimate of the L1 gas price
 func (ps *L1PricingState) SetL1GasPriceEstimateInertia(inertia uint64) error {
 	return ps.l1GasPriceEstimateInertia.Set(inertia)
 }

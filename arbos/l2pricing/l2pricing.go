@@ -77,8 +77,8 @@ func (ps *L2PricingState) GasPool() (int64, error) {
 	return ps.gasPool.Get()
 }
 
-func (ps *L2PricingState) SetGasPool(val int64) {
-	ps.Restrict(ps.gasPool.Set(val))
+func (ps *L2PricingState) SetGasPool(val int64) error {
+	return ps.gasPool.Set(val)
 }
 
 func (ps *L2PricingState) GasPoolLastBlock() (int64, error) {
@@ -94,6 +94,13 @@ func (ps *L2PricingState) GasPoolSeconds() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
+	limit, err := ps.SpeedLimitPerSecond()
+	if err != nil {
+		return err
+	}
+	if err := ps.clipGasPool(seconds, limit); err != nil {
+		return err
+	}
 	return ps.gasPoolSeconds.Set(seconds)
 }
 
@@ -172,6 +179,13 @@ func (ps *L2PricingState) SpeedLimitPerSecond() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetSpeedLimitPerSecond(speedLimit uint64) error {
+	seconds, err := ps.GasPoolSeconds()
+	if err != nil {
+		return err
+	}
+	if err := ps.clipGasPool(seconds, speedLimit); err != nil {
+		return err
+	}
 	return ps.speedLimitPerSecond.Set(speedLimit)
 }
 
@@ -189,15 +203,19 @@ func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
-	maxPerBlock := util.SaturatingCast(limit)
+	return ps.maxPerBlockGasLimit.Set(limit)
+}
+
+// Ensure the gas pool is within the implied maximum capacity
+func (ps *L2PricingState) clipGasPool(seconds, speedLimit uint64) error {
 	pool, err := ps.GasPool()
 	if err != nil {
 		return err
 	}
-	if pool > maxPerBlock {
-		ps.SetGasPool(maxPerBlock)
+	if uint64(pool) < seconds*speedLimit {
+		err = ps.SetGasPool(util.SaturatingCast(seconds * speedLimit))
 	}
-	return ps.maxPerBlockGasLimit.Set(uint64(maxPerBlock))
+	return err
 }
 
 func (ps *L2PricingState) Restrict(err error) {

@@ -23,7 +23,7 @@ const InitialGasPoolVoice = 60 * 100  // 60% in bips
 
 func (ps *L2PricingState) AddToGasPool(gas int64) {
 	gasPool, _ := ps.GasPool()
-	ps.SetGasPool(util.SaturatingAdd(gasPool, gas))
+	ps.Restrict(ps.SetGasPool(util.SaturatingAdd(gasPool, gas)))
 }
 
 // Update the pricing model with a finalized block's header
@@ -112,7 +112,7 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 		price = maxPrice
 	}
 	_ = ps.SetGasPriceWei(price)
-	ps.SetGasPool(newGasPool)
+	_ = ps.SetGasPool(newGasPool)
 	ps.SetGasPoolLastBlock(newGasPool)
 }
 
