@@ -131,14 +131,18 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCount arbutil.M
 		}
 		lockoutUntill := time.Now().Add(c.config.LockoutDuration)
 		pipe := tx.TxPipeline()
+		initialDuration := c.config.LockoutDuration
+		if initialDuration < 2*time.Second {
+			initialDuration = 2 * time.Second
+		}
 		if wasEmpty {
-			pipe.Set(ctx, CHOSENSEQ_KEY, c.config.MyUrl, c.config.LockoutDuration)
+			pipe.Set(ctx, CHOSENSEQ_KEY, c.config.MyUrl, initialDuration)
 		}
 		pipe.Set(ctx, MSG_COUNT_KEY, strconv.FormatUint(uint64(msgCount), 10), c.config.SeqNumDuration)
 		myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
-		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, c.config.LockoutDuration)
-		pipe.ExpireAt(ctx, CHOSENSEQ_KEY, lockoutUntill)
-		pipe.ExpireAt(ctx, myLivelinessKey, lockoutUntill)
+		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
+		pipe.PExpireAt(ctx, CHOSENSEQ_KEY, lockoutUntill)
+		pipe.PExpireAt(ctx, myLivelinessKey, lockoutUntill)
 		_, err = pipe.Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("chosen sequencer failed to update redis: %w", err)
@@ -167,8 +171,12 @@ func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
 	myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
 	aliveTill := time.Now().Add(c.config.LockoutDuration)
 	pipe := c.client.TxPipeline()
-	pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, c.config.LockoutDuration)
-	pipe.ExpireAt(ctx, myLivelinessKey, aliveTill)
+	initialDuration := c.config.LockoutDuration
+	if initialDuration < 2*time.Second {
+		initialDuration = 2 * time.Second
+	}
+	pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
+	pipe.PExpireAt(ctx, myLivelinessKey, aliveTill)
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("liveliness failed to update redis: %w", err)
