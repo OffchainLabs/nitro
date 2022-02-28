@@ -251,7 +251,7 @@ func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
 	}
 	timePassed := timestamp - lastTimestamp
 	if timePassed > 0 {
-		state.Restrict(state.timestamp.Set(timePassed))
+		state.Restrict(state.timestamp.Set(timestamp))
 	}
 	return timePassed
 }
