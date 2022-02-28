@@ -59,6 +59,15 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	AllowedMsgLag:   arbutil.MessageIndex(50),
 }
 
+var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
+	LockoutDuration: time.Millisecond * 100,
+	LockoutSpare:    time.Millisecond * 10,
+	SeqNumDuration:  time.Minute * 10,
+	UpdateInterval:  time.Millisecond * 10,
+	RetryInterval:   time.Millisecond * 3,
+	AllowedMsgLag:   3,
+}
+
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, client redis.UniversalClient, config SeqCoordinatorConfig) *SeqCoordinator {
 	coordinator := &SeqCoordinator{
 		streamer:        streamer,

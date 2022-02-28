@@ -24,14 +24,7 @@ func TestSeqCoordinator(t *testing.T) {
 	redisClient := redis.NewClient(redisOptions)
 	nodeConfig := arbnode.NodeConfigL2Test
 	nodeConfig.SeqCoordinator = true
-	nodeConfig.SeqCoordinatorConfig = arbnode.SeqCoordinatorConfig{
-		LockoutDuration: time.Millisecond * 100,
-		LockoutSpare:    time.Millisecond * 10,
-		SeqNumDuration:  time.Minute * 10,
-		UpdateInterval:  time.Millisecond * 10,
-		RetryInterval:   time.Millisecond * 3,
-		AllowedMsgLag:   3,
-	}
+	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
 
 	l2Info := NewArbTestInfo(t)
 
