@@ -48,19 +48,19 @@ interface ArbOwner {
     function setMinimumGasPrice(uint256 priceInWei) external;
 
     /// @notice Sets the computational speed limit for the chain
-    function setSpeedLimit(uint64 limit) external view;
+    function setSpeedLimit(uint64 limit) external;
 
     /// @notice Sets the number of seconds worth of the speed limit the large gas pool contains
-    function setGasPoolSeconds(uint64 factor) external view;
+    function setGasPoolSeconds(uint64 factor) external;
 
     /// @notice Sets the maximum size a tx (and block) can be
-    function setMaxTxGasLimit(uint64 limit) external view;
+    function setMaxTxGasLimit(uint64 limit) external;
 
     /// @notice Gets the network fee collector
     function getNetworkFeeAccount() external view returns (address);
 
     /// @notice Sets the network fee collector
-    function setNetworkFeeAccount(address newNetworkFeeAccount) external view;
+    function setNetworkFeeAccount(address newNetworkFeeAccount) external;
 
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
