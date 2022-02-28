@@ -478,7 +478,7 @@ describe("ArbRollup", () => {
     const stake = await rollup.currentRequiredStake();
     await rollup.rollup
       .connect(validators[1])
-      .newStakeOnExistingNode(3, validNode.nodeHash, { value: stake });
+      .newStakeOnExistingNode(3, validNode.nodeHash, { value: stake.add(50) });
 
     const { node } = await makeSimpleNode(
       rollup.connect(validators[1]),
