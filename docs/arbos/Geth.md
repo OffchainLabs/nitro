@@ -26,6 +26,7 @@ Below is [`ApplyTransaction`][ApplyTransaction_link]'s callgraph, with additiona
                     * [`PushCaller`](#PushCaller)
                     * [`PopCaller`](#PopCaller)
             * `core.StateTransition.refundGas`
+                * [`ForceRefundGas`](#ForceRefundGas)
                 * [`NonrefundableGas`](#NonrefundableGas)
         * [`EndTxHook`](#EndTxHook)
     * added return parameter: `transactionResult`
@@ -48,11 +49,22 @@ The hook returns `true` for both of these transaction types, signifying that the
 
 This fallible hook ensures the user has enough funds to pay their poster's L1 calldata costs. If not, the tx is reverted and the [`EVM`][EVM_link] does not start. In the common case that the user can pay, the amount paid for calldata is set aside for later reimbursement of the poster. All other fees go to the network account, as they represent the tx's burden on validators and nodes more generally.
 
+If the user attempts to purchase compute gas in excess of ArbOS's per-block gas limit, the difference is [set aside][difference_set_aside_link] and [refunded later][refunded_later_link] via [`ForceRefundGas`](#ForceRefundGas) so that only the gas limit is used. Note that the limit observed may not be the same as that seen [at the start of the block][that_seen_link] if ArbOS's larger gas pool falls below the [`MaxPerBlockGasLimit`][max_perblock_limit_link] while processing the block's previous txes.
+
+[difference_set_aside_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/tx_processor.go#L272
+[refunded_later_link]: https://github.com/OffchainLabs/go-ethereum/blob/f31341b3dfa987719b012bc976a6f4fe3b8a1221/core/state_transition.go#L389
+[that_seen_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/block_processor.go#L146
+[max_perblock_limit_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l2pricing/pools.go#L100
+
 ### [`PushCaller`][PushCaller_link]<a name=PushCaller></a> and [`PopCaller`][PopCaller_link]<a name=PopCaller></a>
 These hooks track the callers within the EVM callstack, pushing and popping as calls are made and complete. This provides [`ArbSys`](Precompiles.md#ArbSys) with info about the callstack, which it uses to implement the methods [`WasMyCallersAddressAliased`](Precompiles.md#ArbSys) and [`MyCallersAddressWithoutAliasing`](Precompiles.md#ArbSys).
 
 ### [`L1BlockHash`][L1BlockHash_link]<a name=L1BlockHash></a> and [`L1BlockNumber`][L1BlockNumber_link]<a name=L1BlockNumber></a>
 In arbitrum, the BlockHash and Number operations return data that relies on underlying L1 blocks intead of L2 blocks, to accomendate the normal use-case of these opcodes, which often assume ethereum-like time passes between different blocks. The L1BlockHash and L1BlockNumber hooks have the required data for these operations.
+
+### [`ForceRefundGas`][ForceRefundGas_link]<a name=ForceRefundGas></a>
+
+This hook allows ArbOS to add additional refunds to the user's tx. This is currently only used to refund any compute gas purchased in excess of ArbOS's per-block gas limit during the [`GasChargingHook`](#GasChargingHook).
 
 ### [`NonrefundableGas`][NonrefundableGas_link]<a name=NonrefundableGas></a>
 
@@ -70,6 +82,7 @@ The [`EndTxHook`][EndTxHook_link] is called after the [`EVM`][EVM_link] has retu
 [GasChargingHook_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L205
 [PushCaller_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L60
 [PopCaller_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L64
+[ForceRefundGas_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/tx_processor.go#L291
 [NonrefundableGas_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L248
 [EndTxHook_link]: https://github.com/OffchainLabs/nitro/blob/fa36a0f138b8a7e684194f9840315d80c390f324/arbos/tx_processor.go#L255
 [L1BlockHash_link]: https://github.com/OffchainLabs/nitro/blob/df5344a48f4a24173b9a3794318079a869aae58b/arbos/tx_processor.go#L407
@@ -168,11 +181,11 @@ A [geth message][geth_message_link] may be processed for various purposes. For e
 
 A message [derived from a transaction][AsMessage_link] will carry that transaction in a field accessible via its [`UnderlyingTransaction`][underlying_link] method. While this is related to the way a given message is used, they are not one-to-one. The table below shows the various run modes and whether each could have an underlying transaction.
 
-| Run Mode                                 | Scope                   | Carries an Underlying Tx?                                                    |
-|:-----------------------------------------|:------------------------|:-----------------------------------------------------------------------------|
-| [`MessageCommitMode`][MC0]               | state transition &nbsp; | always                                                                       |
+| Run Mode                                 | Scope                   | Carries an Underlying Tx?                                                          |
+|:-----------------------------------------|:------------------------|:-----------------------------------------------------------------------------------|
+| [`MessageCommitMode`][MC0]               | state transition &nbsp; | always                                                                             |
 | [`MessageGasEstimationMode`][MC1] &nbsp; | gas estimation          | when created via [`NodeInterface.sol`](Gas.md#NodeInterface.sol) or when scheduled |
-| [`MessageEthcallMode`][MC2]              | eth_calls               | never                                                                        |
+| [`MessageEthcallMode`][MC2]              | eth_calls               | never                                                                              |
 
 [MC0]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L648
 [MC1]: https://github.com/OffchainLabs/go-ethereum/blob/1e9c9b86135dafebf7ab84641a5674e4249ee849/core/types/transaction.go#L649

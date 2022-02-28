@@ -21,10 +21,10 @@ import (
 func TestBlockValidatorSimple(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, true)
+	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, &l2info.ArbInitData, true)
 
 	l2info.GenerateAccount("User2")
 
@@ -67,8 +67,9 @@ func TestBlockValidatorSimple(t *testing.T) {
 	lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 	Require(t, err)
 	testDeadLine, _ := t.Deadline()
+	nodeA.StopAndWait()
 	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
 		Fail(t, "did not validate all blocks")
 	}
-
+	nodeB.StopAndWait()
 }

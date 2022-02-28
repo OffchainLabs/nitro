@@ -1,0 +1,42 @@
+# Gas and Fees
+There are two parties a user pays when submitting a tx:
+
+- the poster, if reimbursable, for L1 resources such as the L1 calldata needed to post the tx
+- the network fee account for L2 resources, which include the computation, storage, and other burdens L2 nodes must bare to service the tx
+
+Though subject to change when batch-compression pricing is fully implemented, [the L1 component](ArbOS.md#l1pricingstate) of a tx's fee consists of the approximate cost of posting the tx's calldata to the L1 inbox. This best-effort estimate is computed using ArbOS's running L1 gas-price estimate and the poster's self-reported compressibility-discount ratio. These [charges are dropped][drop_l1_link] if the poster is not the user's preferred aggregator, which the user may set using [`ArbAggregator`](Precompiles.md#ArbAggregator)'s [`SetPreferredAggregator`](Precompiles.md#ArbAggregator) precompile method.
+
+[The L2 component](ArbOS.md#l2pricingstate) consists of the traditional fees geth would pay to miners in a vanilla L1 chain, such as the computation and storage charges applying the state transition function entails. ArbOS charges additional fees for executing its L2-specific [precompiles](Precompiles.md), whose fees are dynamically priced according to the specific resources used while executing the call.
+
+[drop_l1_link]: https://github.com/OffchainLabs/nitro/blob/2ba6d1aa45abcc46c28f3d4f560691ce5a396af8/arbos/l1pricing/l1pricing.go#L232
+
+## Tips in L2
+While tips are not advised for those using the sequencer, which prioritizes transactions on a first-come first-served basis, 3rd-party aggregators may choose to order txes based on tips. A user specifies a tip by setting a gas price in excess of the basefee and will [pay that difference][pay_difference_link] on the amount of gas the tx uses.
+
+A poster receives the tip only when the user has set them as their [preferred aggregator](Precompiles.md#ArbAggregator). Otherwise the tip [goes to the network fee collector][goes_to_network_link]. This disincentives unpreferred aggregators from racing to post txes with large tips.
+
+[pay_difference_link]: https://github.com/OffchainLabs/go-ethereum/blob/edf6a19157606070b6a6660c8decc513e2408cb7/core/state_transition.go#L358
+[goes_to_network_link]: https://github.com/OffchainLabs/nitro/blob/c93c806a5cfe99f92a534d3c952a83c3c8b3088c/arbos/tx_processor.go#L262
+
+## Gas Estimating Retryables
+When a transaction schedules another, the subsequent tx's execution [will be included][estimation_inclusion_link] when estimating gas via the node's RPC. A tx's gas estimate, then, can only be found if all the txes succeed at a given gas limit. This is especially important when working with retryables and scheduling redeem attempts.
+
+Because a call to [`redeem`](Precompiles.md#ArbRetryableTx) donates all of the call's gas, doing multiple requires limiting the amount of gas provided to each subcall. Otherwise the first will take all of the gas and force the second to necessarily fail irrespective of the estimation's gas limit.
+
+Gas estimation for Retryable submissions is possible via [`NodeInterface.sol`][node_interface_link] and similarly requires the auto-redeem attempt succeed.
+
+[estimation_inclusion_link]: https://github.com/OffchainLabs/go-ethereum/blob/edf6a19157606070b6a6660c8decc513e2408cb7/internal/ethapi/api.go#L955
+[node_interface_link]: https://github.com/OffchainLabs/nitro/blob/master/solgen/src/node_interface/NodeInterface.sol
+
+## NodeInterface.sol<a name=NodeInterface.sol></a>
+To avoid creating new RPC methods for client-side tooling, nitro geth's [`InterceptRPCMessage`][InterceptRPCMessage_link] hook provides an opportunity to swap out the message its handling before deriving a transaction from it. The node [uses this hook][use_hook_link] to detect messages sent to the address `0xc8`, the location of the fictional `NodeInterface` contract specified in [`NodeInterface.sol`][node_interface_link].
+
+`NodeInterface` isn't deployed on L2 and only exists in the RPC, but it contains methods callable via `0xc8`. Doing so requires setting the `To` field to `0xc8` and supplying calldata for the method. Below is the list of methods.
+
+| Method                                                           | Info                                                |
+|:-----------------------------------------------------------------|:----------------------------------------------------|
+| [`estimateRetryableTicket`][estimateRetryableTicket_link] &nbsp; | Estimates the gas needed for a retryable submission |
+
+[InterceptRPCMessage_link]: https://github.com/OffchainLabs/go-ethereum/blob/f31341b3dfa987719b012bc976a6f4fe3b8a1221/internal/ethapi/api.go#L929
+[use_hook_link]: https://github.com/OffchainLabs/nitro/blob/57e03322926f796f75a21f8735cc64ea0a2d11c3/arbstate/node-interface.go#L17
+[estimateRetryableTicket_link]: https://github.com/OffchainLabs/nitro/blob/8ab1d6730164e18d0ca1bd5635ca12aadf36a640/solgen/src/node_interface/NodeInterface.sol#L21

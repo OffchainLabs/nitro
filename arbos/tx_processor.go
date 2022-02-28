@@ -420,3 +420,7 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
 }
+
+func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
+	receipt.L1GasUsed = p.posterGas
+}
