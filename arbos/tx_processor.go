@@ -168,7 +168,6 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -298,6 +297,11 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	gasPrice := p.evm.Context.BaseFee
 	networkFeeAccount, _ := p.state.NetworkFeeAccount()
 
+	if gasLeft > p.msg.Gas() {
+		panic("Tx somehow refunds gas after computation")
+	}
+	gasUsed := p.msg.Gas() - gasLeft
+
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		refund := util.BigMulByUint(gasPrice, gasLeft)
@@ -328,18 +332,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 				panic(err)
 			}
 		}
-		// we've already credited the network fee account and updated the gas pool
-		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(gasLeft))
+		// we've already credited the network fee account, but we didn't charge the gas pool yet
+		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(gasUsed))
 		return
 	}
 
-	if gasLeft > p.msg.Gas() {
-		panic("Tx somehow refunds gas after computation")
-	}
-	gasUsed := util.UintToBig(p.msg.Gas() - gasLeft)
-
-	totalCost := util.BigMul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
-	computeCost := util.BigSub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
+	totalCost := util.BigMul(gasPrice, util.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
+	computeCost := util.BigSub(totalCost, p.PosterFee)          // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
@@ -358,14 +357,14 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		// Hence, we deduct the previously saved poster L2-gas-equivalent to reveal the compute-only gas
 
 		var computeGas uint64
-		if gasUsed.Uint64() > p.posterGas {
+		if gasUsed > p.posterGas {
 			// Don't include posterGas in computeGas as it doesn't represent processing time.
-			computeGas = gasUsed.Uint64() - p.posterGas
+			computeGas = gasUsed - p.posterGas
 		} else {
 			// Somehow, the core message transition succeeded, but we didn't burn the posterGas.
 			// An invariant was violated. To be safe, subtract the entire gas used from the gas pool.
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
-			computeGas = gasUsed.Uint64()
+			computeGas = gasUsed
 		}
 		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
