@@ -12,13 +12,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
-	l1BaseFeeEstimate           storage.StorageBackedBigInt
+	l1GasPriceEstimate          storage.StorageBackedBigInt
+	l1GasPriceEstimateInertia   storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -37,13 +39,19 @@ var (
 )
 
 const (
-	defaultAggregatorAddressOffset uint64 = 0
-	l1GasPriceEstimateOffset       uint64 = 1
+	defaultAggregatorAddressOffset  uint64 = 0
+	l1GasPriceEstimateOffset        uint64 = 1
+	l1GasPriceEstimateInertiaOffset uint64 = 2
 )
+
+const InitialL1GasPriceEstimateInertia = 24
 
 func InitializeL1PricingState(sto *storage.Storage) error {
 	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
 	if err != nil {
+		return err
+	}
+	if err := sto.SetUint64ByUint64(l1GasPriceEstimateInertiaOffset, InitialL1GasPriceEstimateInertia); err != nil {
 		return err
 	}
 	return sto.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
@@ -54,6 +62,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto,
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
 		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
+		sto.OpenStorageBackedUint64(l1GasPriceEstimateInertiaOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
@@ -70,28 +79,40 @@ func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
 	return ps.defaultAggregator.Set(val)
 }
 
-func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
-	return ps.l1BaseFeeEstimate.Get()
+func (ps *L1PricingState) L1GasPriceEstimateWei() (*big.Int, error) {
+	return ps.l1GasPriceEstimate.Get()
 }
 
 func (ps *L1PricingState) SetL1GasPriceEstimateWei(val *big.Int) error {
-	return ps.l1BaseFeeEstimate.Set(val)
+	return ps.l1GasPriceEstimate.Set(val)
 }
 
-const L1GasPriceEstimateMemoryWeight = 24
-
 func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1BaseFeeEstimateWei()
+	curr, err := ps.L1GasPriceEstimateWei()
+	if err != nil {
+		return err
+	}
+	weight, err := ps.L1GasPriceEstimateInertia()
 	if err != nil {
 		return err
 	}
 
 	// new = (alpha * old + observed) / (alpha + 1)
-	memory := new(big.Int).Mul(curr, big.NewInt(L1GasPriceEstimateMemoryWeight))
+	memory := new(big.Int).Mul(curr, util.UintToBig(weight))
 	impact := new(big.Int).Add(memory, baseFeeWei)
-	update := new(big.Int).Div(impact, big.NewInt(L1GasPriceEstimateMemoryWeight+1))
+	update := new(big.Int).Div(impact, util.UintToBig(weight+1))
 
 	return ps.SetL1GasPriceEstimateWei(update)
+}
+
+// Get the approximate time-frame ArbOS looks at for estimating the L1 gas price
+func (ps *L1PricingState) L1GasPriceEstimateInertia() (uint64, error) {
+	return ps.l1GasPriceEstimateInertia.Get()
+}
+
+// Set the approximate time-frame ArbOS looks at for estimating the L1 gas price
+func (ps *L1PricingState) SetL1GasPriceEstimateInertia(inertia uint64) error {
+	return ps.l1GasPriceEstimateInertia.Set(inertia)
 }
 
 func (ps *L1PricingState) userSpecifiedAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
@@ -169,7 +190,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	price, err := ps.L1BaseFeeEstimateWei()
+	price, err := ps.L1GasPriceEstimateWei()
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +224,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 	if ratio < DataWasNotCompressed {
 		val = ratio
 	}
-	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(val))
+	return ps.aggregatorCompressionRatios.Set(arbos_util.AddressToHash(aggregator), arbos_util.UintToHash(val))
 }
 
 // Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
@@ -245,7 +266,7 @@ func (ps *L1PricingState) PosterDataCost(
 	// add 5% to protect the aggregator from bad price fluctuation luck
 	dataGas = dataGas * 21 / 20
 
-	price, err := ps.L1BaseFeeEstimateWei()
+	price, err := ps.L1GasPriceEstimateWei()
 	if err != nil {
 		return nil, false, err
 	}

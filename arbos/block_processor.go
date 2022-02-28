@@ -382,7 +382,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			panic(err)
 		}
 		timePassed := state.SetLastTimestampSeen(header.Time)
-		state.L2PricingState().UpdatePricingModel(header, timePassed)
+		state.L2PricingState().UpdatePricingModel(header, timePassed, false)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
 
 		// Add outbox info to the header for client-side proving

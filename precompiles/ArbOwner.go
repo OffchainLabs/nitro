@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -67,6 +67,26 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 // Sets the number of seconds worth of the speed limit the large gas pool contains
 func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
+}
+
+// Set the target fullness in bips the pricing model will try to keep the pool at
+func (con ArbOwner) SetGasPoolTarget(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetGasPoolTarget(seconds)
+}
+
+// Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
+func (con ArbOwner) SetGasPoolVoice(c ctx, evm mech, seconds uint64) error {
+	return c.state.L2PricingState().SetGasPoolVoice(seconds)
+}
+
+// Sets the number of seconds worth of the speed limit the large gas pool contains
+func (con ArbOwner) SetRateEstimateInertia(c ctx, evm mech, inertia uint64) error {
+	return c.state.L2PricingState().SetRateEstimateInertia(inertia)
+}
+
+// Sets the number of seconds worth of the speed limit the large gas pool contains
+func (con ArbOwner) SetL1GasPriceEstimateInertia(c ctx, evm mech, inertia uint64) error {
+	return c.state.L1PricingState().SetL1GasPriceEstimateInertia(inertia)
 }
 
 // Sets the maximum size a tx (and block) can be

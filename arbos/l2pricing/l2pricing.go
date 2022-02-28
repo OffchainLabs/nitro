@@ -19,7 +19,7 @@ type L2PricingState struct {
 	gasPoolTarget       storage.StorageBackedUint64
 	gasPoolVoice        storage.StorageBackedUint64
 	rateEstimate        storage.StorageBackedUint64
-	rateEstimateSeconds storage.StorageBackedUint64
+	rateEstimateInertia storage.StorageBackedUint64
 	speedLimitPerSecond storage.StorageBackedUint64
 	maxPerBlockGasLimit storage.StorageBackedUint64
 	gasPriceWei         storage.StorageBackedBigInt
@@ -33,7 +33,7 @@ const (
 	gasPoolTargetOffset
 	gasPoolVoiceOffset
 	rateEstimateOffset
-	rateEstimateSecondsOffset
+	rateEstimateInertiaOffset
 	speedLimitPerSecondOffset
 	maxPerBlockGasLimitOffset
 	gasPriceWeiOffset
@@ -49,7 +49,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, InitialGasPoolTarget)
 	_ = sto.SetUint64ByUint64(gasPoolVoiceOffset, InitialGasPoolVoice)
 	_ = sto.SetUint64ByUint64(rateEstimateOffset, 0)
-	_ = sto.SetUint64ByUint64(rateEstimateSecondsOffset, InitialRateEstimateSeconds)
+	_ = sto.SetUint64ByUint64(rateEstimateInertiaOffset, InitialRateEstimateInertia)
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
 	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialBaseFeeWei)
@@ -65,7 +65,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUint64(gasPoolTargetOffset),
 		sto.OpenStorageBackedUint64(gasPoolVoiceOffset),
 		sto.OpenStorageBackedUint64(rateEstimateOffset),
-		sto.OpenStorageBackedUint64(rateEstimateSecondsOffset),
+		sto.OpenStorageBackedUint64(rateEstimateInertiaOffset),
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
 		sto.OpenStorageBackedUint64(maxPerBlockGasLimitOffset),
 		sto.OpenStorageBackedBigInt(gasPriceWeiOffset),
@@ -127,12 +127,12 @@ func (ps *L2PricingState) SetRateEstimate(rate uint64) {
 	ps.Restrict(ps.rateEstimate.Set(rate))
 }
 
-func (ps *L2PricingState) RateEstimateSeconds() (uint64, error) {
-	return ps.rateEstimateSeconds.Get()
+func (ps *L2PricingState) RateEstimateInertia() (uint64, error) {
+	return ps.rateEstimateInertia.Get()
 }
 
-func (ps *L2PricingState) SetRateEstimateSeconds(seconds uint64) error {
-	return ps.rateEstimateSeconds.Set(seconds)
+func (ps *L2PricingState) SetRateEstimateInertia(factor uint64) error {
+	return ps.rateEstimateInertia.Set(factor)
 }
 
 func (ps *L2PricingState) GasPriceWei() (*big.Int, error) {
@@ -189,7 +189,15 @@ func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetMaxPerBlockGasLimit(limit uint64) error {
-	return ps.maxPerBlockGasLimit.Set(limit)
+	maxPerBlock := util.SaturatingCast(limit)
+	pool, err := ps.GasPool()
+	if err != nil {
+		return err
+	}
+	if pool > maxPerBlock {
+		ps.SetGasPool(maxPerBlock)
+	}
+	return ps.maxPerBlockGasLimit.Set(uint64(maxPerBlock))
 }
 
 func (ps *L2PricingState) Restrict(err error) {

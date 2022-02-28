@@ -38,28 +38,40 @@ interface ArbOwner {
     /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns (address[] memory);
 
-    /// @notice Sets the L1 gas price estimate directly, bypassing the autoregression
+    /// @notice Set the L1 gas price estimate directly, bypassing the autoregression
     function setL1GasPriceEstimate(uint256 priceInWei) external;
 
-    /// @notice Sets the L2 gas price directly, bypassing the pool calculus
+    /// @notice Set the L2 gas price directly, bypassing the pool calculus
     function setL2GasPrice(uint256 priceInWei) external;
 
-    /// @notice Sets the minimum gas price needed for a transaction to succeed
+    /// @notice Set the minimum gas price needed for a transaction to succeed
     function setMinimumGasPrice(uint256 priceInWei) external;
 
-    /// @notice Sets the computational speed limit for the chain
+    /// @notice Set the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external;
 
-    /// @notice Sets the number of seconds worth of the speed limit the large gas pool contains
+    /// @notice Set the number of seconds worth of the speed limit the gas pool contains
     function setGasPoolSeconds(uint64 factor) external;
 
-    /// @notice Sets the maximum size a tx (and block) can be
+    /// @notice Set the target fullness in bips the pricing model will try to keep the pool at
+    function setGasPoolTarget(uint64 target) external;
+
+    /// @notice Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
+    function setGasPoolVoice(uint64 factor) external;
+
+    /// @notice Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
+    function setRateEstimateInertia(uint64 inertia) external;
+
+    /// @notice Set how slowly ArbOS updates its estimate of the L1 gas price
+    function setL1GasPriceEstimateInertia(uint64 inertia) external;
+
+    /// @notice Set the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external;
 
-    /// @notice Gets the network fee collector
+    /// @notice Get the network fee collector
     function getNetworkFeeAccount() external view returns (address);
 
-    /// @notice Sets the network fee collector
+    /// @notice Set the network fee collector
     function setNetworkFeeAccount(address newNetworkFeeAccount) external;
 
     // Emitted when a successful call is made to this precompile
