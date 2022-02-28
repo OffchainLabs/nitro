@@ -17,7 +17,7 @@ const InitialPerBlockGasLimit uint64 = 20 * 1000000
 const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
-const InitialRateEstimateSeconds = 60
+const InitialRateEstimateInertia = 60
 const InitialGasPoolTarget = 50 * 100 // 50% in bips
 const InitialGasPoolVoice = 60 * 100  // 60% in bips
 
@@ -27,7 +27,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) {
 }
 
 // Update the pricing model with a finalized block's header
-func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed uint64) {
+func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed uint64, debug bool) {
 
 	// update the rate estimate, which is the weighted average of the past and present
 	//     rate' = weighted average of the historical rate and the current
@@ -37,7 +37,7 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	gasPool, _ := ps.GasPool()
 	gasPoolLastBlock, _ := ps.GasPoolLastBlock()
 	gasUsed := uint64(gasPoolLastBlock - gasPool)
-	rateSeconds, _ := ps.RateEstimateSeconds()
+	rateSeconds, _ := ps.RateEstimateInertia()
 	priorRate, _ := ps.RateEstimate()
 	rate := util.SaturatingUAdd(util.SaturatingUMul(rateSeconds, priorRate), gasUsed) / (rateSeconds + timePassed)
 	ps.SetRateEstimate(rate)
@@ -93,7 +93,6 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	maxPrice := util.BigMulByInt(header.BaseFee, 2)
 	minPrice, _ := ps.MinGasPriceWei()
 
-	debug := true
 	p := func(args ...interface{}) {
 		if debug {
 			colors.PrintGrey(args...)

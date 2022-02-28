@@ -28,7 +28,7 @@ func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timeP
 	header := &types.Header{
 		BaseFee: util.UintToBig(basefee),
 	}
-	pricing.UpdatePricingModel(header, timePassed)
+	pricing.UpdatePricingModel(header, timePassed, true)
 }
 
 func TestPricingModel(t *testing.T) {
