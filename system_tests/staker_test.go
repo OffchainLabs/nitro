@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -78,16 +77,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
 
-	valWalletFactory, tx, _, err := rollupgen.DeployValidatorWalletCreator(&deployAuth, l1client)
-	Require(t, err)
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, time.Second*5)
-	Require(t, err)
-
-	valUtils, tx, _, err := rollupgen.DeployValidatorUtils(&deployAuth, l1client)
-	Require(t, err)
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, time.Second*5)
-	Require(t, err)
-
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	l1info.GenerateAccount("ValidatorA")
@@ -98,20 +87,20 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
 	l1authB := l1info.GetDefaultTransactOpts("ValidatorB")
 
-	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authA, l1client)
+	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l1client)
 	Require(t, err)
-	valWalletAddrCheck, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authA, l1client)
+	valWalletAddrCheck, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l1client)
 	Require(t, err)
 	if valWalletAddrA == valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
 
-	valWalletAddrB, err := validator.CreateValidatorWallet(ctx, valWalletFactory, 0, &l1authB, l1client)
+	valWalletAddrB, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authB, l1client)
 	Require(t, err)
 
 	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
 	Require(t, err)
-	tx, err = rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
+	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
 	Require(t, err)
 	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
@@ -121,12 +110,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
-	valConfig := validator.ValidatorConfig{
-		UtilsAddress:      valUtils.Hex(),
+	valConfig := validator.L1ValidatorConfig{
 		TargetNumMachines: 4,
 	}
 
-	valWalletA, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
+	valWalletA, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
@@ -134,36 +122,38 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfig.Strategy = "MakeNodes"
 	}
 	stakerA, err := validator.NewStaker(
-		ctx,
 		l1client,
 		valWalletA,
 		bind.CallOpts{},
-		&l1authA,
 		valConfig,
 		l2nodeA.ArbInterface.BlockChain(),
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.BlockValidator,
+		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
+	err = stakerA.Initialize(ctx)
+	Require(t, err)
 
-	valWalletB, err := validator.NewValidatorWallet(nil, valWalletFactory, l2nodeB.DeployInfo.Rollup, l1client, &l1authB, 0, func(common.Address) {})
+	valWalletB, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeB.DeployInfo.Rollup, l1client, &l1authB, 0, func(common.Address) {})
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	stakerB, err := validator.NewStaker(
-		ctx,
 		l1client,
 		valWalletB,
 		bind.CallOpts{},
-		&l1authB,
 		valConfig,
 		l2nodeB.ArbInterface.BlockChain(),
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.BlockValidator,
+		l2nodeA.DeployInfo.ValidatorUtils,
 	)
+	Require(t, err)
+	err = stakerB.Initialize(ctx)
 	Require(t, err)
 
 	l2info.GenerateAccount("BackgroundUser")
