@@ -16,10 +16,10 @@ type TxForwarder struct {
 	client *ethclient.Client
 }
 
-func NewForwarder(target string) (*TxForwarder, error) {
+func NewForwarder(target string) *TxForwarder {
 	return &TxForwarder{
 		target: target,
-	}, nil
+	}
 }
 
 func (f *TxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {

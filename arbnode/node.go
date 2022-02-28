@@ -347,7 +347,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	if config.ForwardingTarget != "" {
-		txPublisher, err = NewForwarder(config.ForwardingTarget)
+		txPublisher = NewForwarder(config.ForwardingTarget)
 		if config.SeqCoordinator {
 			return nil, errors.New("sequencer coordinator without sequencer")
 		}

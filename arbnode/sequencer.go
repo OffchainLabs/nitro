@@ -123,8 +123,12 @@ func (s *Sequencer) ForwardTarget() string {
 func (s *Sequencer) ForwardTo(url string) {
 	s.forwarderMutex.Lock()
 	defer s.forwarderMutex.Unlock()
-	s.forwarder, _ = NewForwarder(url)
-	s.forwarder.Initialize(s.GetContext())
+	s.forwarder = NewForwarder(url)
+	err := s.forwarder.Initialize(s.GetContext())
+	if err != nil {
+		log.Error("failed to set forward agent", "err", err)
+		s.forwarder = nil
+	}
 }
 
 func (s *Sequencer) DontForward() {
