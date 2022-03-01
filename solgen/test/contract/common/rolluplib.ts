@@ -7,10 +7,11 @@ import { ContractTransaction, PayableOverrides } from "@ethersproject/contracts"
 import { Provider } from "@ethersproject/providers";
 import { RollupUserLogic, RollupAdminLogic, SequencerInbox } from "../../../build/types";
 import {
-  AssertionStruct,
-  ExecutionStateStruct,
+  RollupLib,
   NodeCreatedEvent,
 } from "../../../build/types/RollupUserLogic";
+type AssertionStruct = RollupLib.AssertionStruct;
+type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
 import { blockStateHash, hashChallengeState } from "./challengeLib";
 import * as globalStateLib from "./globalStateLib";
 import { constants } from "ethers";

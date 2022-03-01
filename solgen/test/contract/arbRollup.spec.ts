@@ -41,7 +41,9 @@ import {
 import { initializeAccounts } from "./utils";
 
 import { Node, RollupContract, forceCreateNode, assertionEquals } from "./common/rolluplib";
-import { AssertionStruct, ExecutionStateStruct } from "../../build/types/RollupUserLogic";
+import { RollupLib } from "../../build/types/RollupUserLogic";
+type AssertionStruct = RollupLib.AssertionStruct;
+type ExecutionStateStruct = RollupLib.ExecutionStateStruct;
 import { keccak256 } from "ethers/lib/utils";
 import { ConfigStruct, RollupCreatedEvent } from "../../build/types/RollupCreator";
 import { constants } from "ethers";
