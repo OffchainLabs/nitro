@@ -295,6 +295,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 type NodeConfig struct {
 	ArbConfig              arbitrum.Config
+	Sequencer              bool
 	L1Reader               bool
 	InboxReaderConfig      InboxReaderConfig
 	DelayedSequencerConfig DelayedSequencerConfig
@@ -313,9 +314,9 @@ type NodeConfig struct {
 	SeqCoordinatorConfig   SeqCoordinatorConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
-var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, false, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
+var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, Sequencer: true, L1Reader: false}
 
 type Node struct {
 	Backend          *arbitrum.Backend
@@ -346,12 +347,10 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
-	if config.ForwardingTarget != "" {
-		txPublisher = NewForwarder(config.ForwardingTarget)
-		if config.SeqCoordinator {
-			return nil, errors.New("sequencer coordinator without sequencer")
+	if config.Sequencer {
+		if config.ForwardingTarget != "" {
+			return nil, errors.New("sequencer and forwarding target both set")
 		}
-	} else {
 		var sequencer *Sequencer
 		if config.L1Reader {
 			if l1client == nil {
@@ -361,13 +360,21 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		} else {
 			sequencer, err = NewSequencer(txStreamer, nil)
 		}
+		if err != nil {
+			return nil, err
+		}
 		txPublisher = sequencer
 		if config.SeqCoordinator {
 			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinatorConfig)
 		}
-	}
-	if err != nil {
-		return nil, err
+	} else {
+		if config.ForwardingTarget == "" {
+			return nil, errors.New("sequencer and forwarding target both unset")
+		}
+		if config.SeqCoordinator {
+			return nil, errors.New("sequencer coordinator without sequencer")
+		}
+		txPublisher = NewForwarder(config.ForwardingTarget)
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
