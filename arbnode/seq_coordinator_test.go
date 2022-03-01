@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbutil"
 )
 
-const messagesPerRound = 50
+const messagesPerRound = 20
 
 type CoordinatorTestData struct {
 	messageCount uint64
@@ -116,7 +116,7 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 		go coordinatorTestThread(ctx, coordinator, &testData)
 	}
 
-	for round := int32(0); round < 50; round++ {
+	for round := int32(0); round < 10; round++ {
 		redisClient.Del(ctx, CHOSENSEQ_KEY, MSG_COUNT_KEY)
 		testData.messageCount = 0
 		for i := 0; i < messagesPerRound; i++ {

@@ -60,7 +60,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	LockoutDuration: time.Millisecond * 100,
+	LockoutDuration: time.Millisecond * 500,
 	LockoutSpare:    time.Millisecond * 10,
 	SeqNumDuration:  time.Minute * 10,
 	UpdateInterval:  time.Millisecond * 10,
