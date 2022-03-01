@@ -57,7 +57,7 @@ interface ArbOwner {
     function setGasPoolTarget(uint64 target) external;
 
     /// @notice Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
-    function setGasPoolVoice(uint64 factor) external;
+    function setGasPoolVoice(uint64 voice) external;
 
     /// @notice Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
     function setRateEstimateInertia(uint64 inertia) external;

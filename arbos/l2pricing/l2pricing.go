@@ -138,8 +138,8 @@ func (ps *L2PricingState) RateEstimateInertia() (uint64, error) {
 	return ps.rateEstimateInertia.Get()
 }
 
-func (ps *L2PricingState) SetRateEstimateInertia(factor uint64) error {
-	return ps.rateEstimateInertia.Set(factor)
+func (ps *L2PricingState) SetRateEstimateInertia(inertia uint64) error {
+	return ps.rateEstimateInertia.Set(inertia)
 }
 
 func (ps *L2PricingState) GasPriceWei() (*big.Int, error) {
