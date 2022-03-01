@@ -6,6 +6,7 @@ package arbtest
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -19,7 +20,11 @@ func TestSeqCoordinator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	redisOptions, err := redis.ParseURL("redis://localhost:6379/0")
+	redisUrl := os.Getenv("TEST_REDIS")
+	if redisUrl == "" {
+		redisUrl = "redis://localhost:6379/0"
+	}
+	redisOptions, err := redis.ParseURL(redisUrl)
 	Require(t, err)
 	redisClient := redis.NewClient(redisOptions)
 	nodeConfig := arbnode.NodeConfigL2Test
@@ -28,7 +33,8 @@ func TestSeqCoordinator(t *testing.T) {
 
 	l2Info := NewArbTestInfo(t)
 
-	nodeNames := []string{"A", "B", "C", "D", "E"}
+	// stdio protocol makes sure forwarder initialization doesn't fail
+	nodeNames := []string{"stdio://A", "stdio://B", "stdio://C", "stdio://D", "stdio://E"}
 	nodes := make([]*arbnode.Node, len(nodeNames))
 
 	// init DB to known state

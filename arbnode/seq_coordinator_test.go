@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -96,7 +97,11 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 		sequencer:      make([]string, messagesPerRound),
 	}
 
-	redisOptions, err := redis.ParseURL("redis://localhost:6379/0")
+	redisUrl := os.Getenv("TEST_REDIS")
+	if redisUrl == "" {
+		redisUrl = "redis://localhost:6379/0"
+	}
+	redisOptions, err := redis.ParseURL(redisUrl)
 	Require(t, err)
 
 	redisClient := redis.NewClient(redisOptions)

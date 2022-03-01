@@ -57,6 +57,14 @@ jobs:
           skip-go-installation: true
           skip-pkg-cache: true
 
+  # Creates a redis container for redis tests
+  container-job:
+    runs-on: ubuntu-latest
+    container: node:10.18-jessie
+    services:
+      redis:
+        image: redis
+  
   test:
     name: Go Tests
     runs-on: ubuntu-latest
@@ -153,11 +161,23 @@ jobs:
         with:
           test-results: test-output.json
 
+      - name: run redis tests
+        if: always()
+        run: gotestsum --format short-verbose --jsonfile test-output-redis.json -- -p 1 -run TestSeqCoordinator -tags redistest ./... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        env:
+          TEST_REDIS: redis://redis:6379/0
+
+      - name: Annotate redis tests
+        if: always()
+        uses: guyarb/golang-test-annotations@v0.5.0
+        with:
+          test-results: test-output-redis.json
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
           fail_ci_if_error: true
-          files: ./coverage.txt
+          files: ./coverage.txt,coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
