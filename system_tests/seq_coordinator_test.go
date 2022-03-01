@@ -197,7 +197,7 @@ func TestSeqCoordinator(t *testing.T) {
 			currentSequencer++
 		}
 
-		// cannot sequence untill up to date with all messages
+		// cannot sequence until up to date with all messages
 		for followerMessages < sequencedMesssages {
 			sequencer := trySequenceingEverywhere()
 			if addNodes && (sequencer == currentSequencer+1) {

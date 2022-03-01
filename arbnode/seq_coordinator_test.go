@@ -46,7 +46,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 				break
 			}
 			coord.remoteMsgCount = arbutil.MessageIndex(messageCount)
-			lockupUntill := atomicTimeRead(&coord.lockoutUntill)
+			lockupUntil := atomicTimeRead(&coord.lockoutUntil)
 			err := coord.chosenOneUpdate(ctx, arbutil.MessageIndex(messageCount+1))
 			timeLaunching := time.Now()
 			if err == nil {
@@ -61,7 +61,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 				continue
 			}
 			// didn't sequence.. should we have succeeded?
-			if timeLaunching.Before(lockupUntill) {
+			if timeLaunching.Before(lockupUntil) {
 				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.MyUrl, err)
 				break
 			}
