@@ -94,7 +94,7 @@ func CreateTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	}
 	l1info.GenerateAccount("Faucet")
 
-	chainConfig := params.ArbitrumTestChainConfig()
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stackConf := node.DefaultConfig
@@ -168,7 +168,7 @@ func createL2BlockChain(t *testing.T, l2info *BlockchainTestInfo) (*BlockchainTe
 	chainDb := rawdb.NewMemoryDatabase()
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
-	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, 0, params.ArbitrumTestChainConfig())
+	blockchain, err := arbnode.WriteOrTestBlockChain(chainDb, nil, initReader, 0, params.ArbitrumDevTestChainConfig())
 	Require(t, err)
 	return l2info, stack, chainDb, blockchain
 }
@@ -228,7 +228,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_SetChainParams,
+				Kind: arbos.L1MessageType_Initialize,
 			},
 			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
 		},
@@ -284,7 +284,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2chainDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
-	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, params.ArbitrumTestChainConfig())
+	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, params.ArbitrumDevTestChainConfig())
 	Require(t, err)
 
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)

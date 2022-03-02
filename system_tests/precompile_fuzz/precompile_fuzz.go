@@ -30,7 +30,7 @@ func Fuzz(input []byte) int {
 	if err != nil {
 		panic(err)
 	}
-	_, err = arbosState.InitializeArbosState(sdb, burn.NewSystemBurner(false))
+	_, err = arbosState.InitializeArbosState(sdb, burn.NewSystemBurner(false), params.ArbitrumDevTestChainConfig())
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func Fuzz(input []byte) int {
 		GasLimit:    fuzzGas,
 		BaseFee:     new(big.Int),
 	}
-	evm := vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumTestChainConfig(), vm.Config{})
+	evm := vm.NewEVM(blockContext, txContext, sdb, params.ArbitrumDevTestChainConfig(), vm.Config{})
 
 	// We require at least two bytes: one for the address selection and the next for the method selection
 	if len(input) < 2 {

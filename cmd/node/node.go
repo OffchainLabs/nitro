@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -26,6 +27,8 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/broadcastclient"
 	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/util"
@@ -44,6 +47,7 @@ func main() {
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
+	l2ChainIdUint := flag.Uint64("l2chainid", 1337, "L2 chain ID (determines Arbitrum network)")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
@@ -269,6 +273,11 @@ func main() {
 		}
 	}
 
+	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(*l2ChainIdUint))
+	if err != nil {
+		panic(err)
+	}
+
 	var l2BlockChain *core.BlockChain
 	if initDataReader != nil {
 		blockReader, err := initDataReader.GetStoredBlockReader()
@@ -279,7 +288,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, params.ArbitrumOneChainConfig())
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -292,9 +301,28 @@ func main() {
 		if blocksInDb == 0 {
 			panic("No initialization mode supplied, no blocks in Db")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), params.ArbitrumOneChainConfig())
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), chainConfig)
 		if err != nil {
 			panic(err)
+		}
+	}
+
+	// Check that this ArbOS state has the correct chain ID
+	{
+		statedb, err := l2BlockChain.State()
+		if err != nil {
+			panic(err)
+		}
+		arbstate, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			panic(err)
+		}
+		chainId, err := arbstate.ChainId()
+		if err != nil {
+			panic(err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
 		}
 	}
 

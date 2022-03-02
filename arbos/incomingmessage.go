@@ -27,7 +27,7 @@ const (
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
-	L1MessageType_SetChainParams        = 11
+	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
 	L1MessageType_Invalid               = 0xFF
 )
@@ -173,7 +173,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
-	case L1MessageType_SetChainParams:
+	case L1MessageType_Initialize:
 		return nil, errors.New("L1 message type SetChainParams is unimplemented")
 	case L1MessageType_EndOfBlock:
 		return nil, nil

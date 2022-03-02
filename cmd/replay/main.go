@@ -5,20 +5,22 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
+	"math/big"
 	"os"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/arbstate/arbos/burn"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
@@ -83,33 +85,6 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-func BuildBlock(
-	statedb *state.StateDB,
-	lastBlockHeader *types.Header,
-	chainContext core.ChainContext,
-	chainConfig *params.ChainConfig,
-	inbox arbstate.InboxBackend,
-) (*types.Block, error) {
-	var delayedMessagesRead uint64
-	if lastBlockHeader != nil {
-		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
-	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
-
-	message, err := inboxMultiplexer.Pop()
-	if err != nil {
-		return nil, err
-	}
-
-	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
-	l1Message := message.Message
-
-	block, _ := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig,
-	)
-	return block, nil
-}
-
 func main() {
 	wavmio.StubInit()
 
@@ -138,11 +113,60 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	chainConfig := params.ArbitrumOneChainConfig()
-	chainContext := WavmChainContext{}
-	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, chainConfig, WavmInbox{})
+	var delayedMessagesRead uint64
+	if lastBlockHeader != nil {
+		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
+	}
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
+	messageWithMetadata, err := inboxMultiplexer.Pop()
 	if err != nil {
-		panic(fmt.Sprintf("Error building block: %v", err.Error()))
+		panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
+	}
+	delayedMessagesRead = inboxMultiplexer.DelayedMessagesRead()
+	message := messageWithMetadata.Message
+
+	var newBlock *types.Block
+	if lastBlockStateRoot != (common.Hash{}) {
+		// ArbOS has already been initialized.
+		// Load the chain config and then produce a block normally.
+
+		initialArbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			panic(fmt.Sprintf("Error opening initial ArbOS state: %v", err.Error()))
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			panic(fmt.Sprintf("Error getting chain ID from initial ArbOS state: %v", err.Error()))
+		}
+		chainConfig, err := arbos.GetChainConfig(chainId)
+		if err != nil {
+			panic(err)
+		}
+
+		chainContext := WavmChainContext{}
+		newBlock, _ = arbos.ProduceBlock(message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig)
+
+	} else {
+		// Initialize ArbOS with this init message and create the genesis block.
+
+		if message.Header.Kind != arbos.L1MessageType_Initialize {
+			panic(fmt.Sprintf("Invalid init message kind %v", message.Header.Kind))
+		}
+		if len(message.L2msg) != 32 {
+			panic(fmt.Sprintf("Invalid init message data %v", hex.EncodeToString(message.L2msg)))
+		}
+		chainId := new(big.Int).SetBytes(message.L2msg)
+		chainConfig, err := arbos.GetChainConfig(chainId)
+		if err != nil {
+			panic(err)
+		}
+		_, err = arbosState.InitializeArbosState(statedb, burn.NewSystemBurner(false), chainConfig)
+		if err != nil {
+			panic(fmt.Sprintf("Error initializing ArbOS: %v", err.Error()))
+		}
+
+		newBlock = arbosState.MakeGenesisBlock(common.Hash{}, 0, 0, statedb.IntermediateRoot(true))
+
 	}
 
 	newBlockHash := newBlock.Hash()
