@@ -110,7 +110,7 @@ interface ArbGasInfo {
     function getGasPoolTarget() external view returns (uint64);
 
     /// @notice Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
-    function getGasPoolVoice() external view returns (uint64);
+    function getGasPoolWeight() external view returns (uint64);
 
     /// @notice Get ArbOS's estimate of the amount of gas being burnt per second
     function getRateEstimate() external view returns (uint64);

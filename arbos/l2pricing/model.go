@@ -19,7 +19,7 @@ const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
 const InitialGasPoolTarget = 80 * 100 // 80% in bips
-const InitialGasPoolVoice = 60 * 100  // 60% in bips
+const InitialGasPoolWeight = 60 * 100 // 60% in bips
 
 func (ps *L2PricingState) AddToGasPool(gas int64) {
 	gasPool, _ := ps.GasPool()
@@ -75,12 +75,12 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	}
 
 	// take the weighted average of the ratios, in basis points
-	//      average = voice * pool + (1 - voice) * rate
+	//      average = weight * pool + (1 - weight) * rate
 	//
-	poolVoice, _ := ps.GasPoolVoice()
+	poolWeight, _ := ps.GasPoolWeight()
 	averageOfRatios, _ := util.BigAddFloat(
-		util.BigMulFloatByUint(poolRatio, poolVoice),
-		util.BigMulFloatByUint(rateRatio, bips-poolVoice),
+		util.BigMulFloatByUint(poolRatio, poolWeight),
+		util.BigMulFloatByUint(rateRatio, bips-poolWeight),
 	).Uint64()
 	averageOfRatiosUnbounded := averageOfRatios
 	if averageOfRatios > 2*bips {

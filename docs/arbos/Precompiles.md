@@ -197,7 +197,7 @@ Provides insight into the cost of using the chain. These methods have been adjus
 | [<img src=e.png height=16>][GIs5] [`GetMinimumGasPrice`][GI5]`()`                        | Get the minimum gas price needed for a transaction to succeed                                    |
 | [<img src=e.png height=16>][GIs6] [`GetGasPoolSeconds`][GI6]`()`                         | Get the number of seconds worth of the speed limit the gas pool contains                         |
 | [<img src=e.png height=16>][GIs7] [`GetGasPoolTarget`][GI7]`()`                          | Get the target fullness in bips the pricing model will try to keep the pool at                   |
-| [<img src=e.png height=16>][GIs8] [`GetGasPoolVoice`][GI8]`()`                           | Get the extent in bips to which the pricing model favors filling the pool over increasing speeds |
+| [<img src=e.png height=16>][GIs8] [`GetGasPoolWeight`][GI8]`()`                          | Get the extent in bips to which the pricing model favors filling the pool over increasing speeds |
 | [<img src=e.png height=16>][GIs9] [`GetRateEstimate`][GI9]`()`                           | Get ArbOS's estimate of the amount of gas being burnt per second                                 |
 | [<img src=e.png height=16>][GIs10] [`GetRateEstimateInertia`][GI10]`()`                  | Get how slowly ArbOS updates its estimate the amount of gas being burnt per second               |
 | [<img src=e.png height=16>][GIs11] [`GetL1GasPriceEstimate`][GI11]`()`                   | Get ArbOS's estimate of the L1 gas price in wei                                                  |
@@ -284,7 +284,7 @@ Most of Arbitrum Classic's owner methods have been removed since they no longer 
 | [<img src=e.png height=16>][Os7] [`SetSpeedLimit`][O7]`(limit)`                    | Set the computational speed limit for the chain                                                  |
 | [<img src=e.png height=16>][Os8] [`SetGasPoolSeconds`][O8]`(seconds)`              | Set the number of seconds worth of the speed limit the gas pool contains                         |
 | [<img src=e.png height=16>][Os9] [`SetGasPoolTarget`][O9]`(target)`                | Set the target fullness in bips the pricing model will try to keep the pool at                   |
-| [<img src=e.png height=16>][Os10] [`SetGasPoolVoice`][O10]`(voice)`                | Set the extent in bips to which the pricing model favors filling the pool over increasing speeds |
+| [<img src=e.png height=16>][Os10] [`SetGasPoolWeight`][O10]`(weight)`              | Set the extent in bips to which the pricing model favors filling the pool over increasing speeds |
 | [<img src=e.png height=16>][Os11] [`SetRateEstimateInertia`][O11]`(inertia)`       | Set how slowly ArbOS updates its estimate the amount of gas being burnt per second               |
 | [<img src=e.png height=16>][Os12] [`SetL1GasPriceEstimateInertia`][O12]`(inertia)` | Set how slowly ArbOS updates its estimate of the L1 gas price                                    |
 | [<img src=e.png height=16>][Os13] [`SetMaxTxGasLimit`][O13]`(limit)`               | Set the maximum size a tx (and block) can be                                                     |
