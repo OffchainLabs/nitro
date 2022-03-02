@@ -13,8 +13,9 @@ import (
 
 	"github.com/offchainlabs/arbstate/arbos/arbosState"
 	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
 	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/arbstate/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -207,20 +208,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			aggregator := &poster
-			txType := tx.Type()
-			if util.DoesTxTypeAlias(&txType) {
-				aggregator = nil
-			}
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				pricing := state.L1PricingState()
-				posterCost, _, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
-				posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+				state.L1PricingState().AddPosterInfo(tx, sender, poster)
+				posterCostInL2Gas := util.BigDiv(tx.PosterCost, gasPrice)
+
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+					log.Error("Could not get poster cost in L2 terms", tx.PosterCost, gasPrice)
 				}
 			}
 
@@ -314,7 +310,7 @@ func ProduceBlockAdvanced(
 			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
 				event := &precompilesgen.ArbSysL2ToL1Transaction{}
-				err := util.ParseL2ToL1TransactionLog(event, txLog)
+				err := arbos_util.ParseL2ToL1TransactionLog(event, txLog)
 				if err != nil {
 					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 				} else {

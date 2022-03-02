@@ -5,11 +5,16 @@
 package l1pricing
 
 import (
+	"bytes"
+	"errors"
 	"math/big"
 
+	"github.com/andybalholm/brotli"
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/storage"
 	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
@@ -210,6 +215,8 @@ func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (com
 	}
 }
 
+const DataWasNotCompressed uint64 = 10000
+
 func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (uint64, error) {
 	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
@@ -220,11 +227,47 @@ func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) 
 }
 
 func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio uint64) error {
-	val := DataWasNotCompressed
-	if ratio < DataWasNotCompressed {
-		val = ratio
+	if ratio > DataWasNotCompressed {
+		return errors.New("compression ratio out of bounds")
 	}
-	return ps.aggregatorCompressionRatios.Set(arbos_util.AddressToHash(aggregator), arbos_util.UintToHash(val))
+	return ps.aggregatorCompressionRatios.Set(arbos_util.AddressToHash(aggregator), arbos_util.UintToHash(ratio))
+}
+
+func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
+
+	tx.PosterCost = big.NewInt(0)
+	tx.PosterIsReimbursable = false
+
+	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
+	txBytes, merr := tx.MarshalBinary()
+	txType := tx.Type()
+	if arbos_util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+		return
+	}
+
+	var buffer bytes.Buffer
+	writer := brotli.NewWriterLevel(&buffer, 0)
+	_, err := writer.Write(txBytes)
+	if err != nil {
+		log.Error("failed to compress tx", "err", err)
+		return
+	}
+	if err := writer.Close(); err != nil {
+		log.Error("failed to compress tx", "err", err)
+		return
+	}
+
+	// Approximate the number of l1 bytes needed for this tx
+	l1Bytes := buffer.Len()
+	l1GasPrice, _ := ps.L1GasPriceEstimateWei()
+	l1Fee := util.BigMulByUint(l1GasPrice, uint64(l1Bytes))
+
+	// Adjust the price paid by the aggregator's reported improvements due to batching
+	ratio, _ := ps.AggregatorCompressionRatio(poster)
+	adjustedL1Fee := util.BigMulByUfrac(l1Fee, ratio, 10000)
+
+	tx.PosterIsReimbursable = true
+	tx.PosterCost = adjustedL1Fee
 }
 
 // Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
@@ -232,14 +275,18 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 // A value of x (for x <= DataWasNotCompressed) corresponds to compression ratio of float(x) / float(DataWasNotCompressed).
 // Values greater than DataWasNotCompressed are treated as equivalent to DataWasNotCompressed.
 
-const DataWasNotCompressed uint64 = 1000000
 const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(
+	message types.Message,
 	sender common.Address,
 	aggregator *common.Address,
-	data []byte,
 ) (*big.Int, bool, error) {
+
+	if tx := message.UnderlyingTransaction(); tx != nil {
+		return tx.PosterCost, tx.PosterIsReimbursable, nil
+	}
+
 	if aggregator == nil {
 		return big.NewInt(0), false, nil
 	}
@@ -253,6 +300,8 @@ func (ps *L1PricingState) PosterDataCost(
 	if *reimbursableAggregator != *aggregator {
 		return big.NewInt(0), false, nil
 	}
+
+	data := message.Data()
 
 	bytesToCharge := uint64(len(data) + TxFixedCost)
 

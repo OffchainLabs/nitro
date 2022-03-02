@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
@@ -225,8 +225,17 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
 	aggregator := p.getReimbursableAggregator()
-	posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
-	p.state.Restrict(err)
+	//posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
+	//p.state.Restrict(err)
+
+	var posterCost *big.Int
+	var reimburse bool
+	if underlyingTx := p.msg.UnderlyingTransaction(); underlyingTx != nil {
+		posterCost = underlyingTx.PosterCost
+		reimburse = underlyingTx.PosterIsReimbursable
+	} else {
+
+	}
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
@@ -245,12 +254,12 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		posterCost = util.BigMulByFrac(posterCost, 110, 100)
 	}
 	if gasPrice.Sign() > 0 {
-		posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice) // the cost as if it were an amount of gas
+		posterCostInL2Gas := util.BigDiv(posterCost, gasPrice) // the cost as if it were an amount of gas
 		if !posterCostInL2Gas.IsUint64() {
-			posterCostInL2Gas = new(big.Int).SetUint64(math.MaxUint64)
+			posterCostInL2Gas = util.UintToBig(math.MaxUint64)
 		}
 		p.posterGas = posterCostInL2Gas.Uint64()
-		p.PosterFee = new(big.Int).Mul(posterCostInL2Gas, gasPrice) // round down
+		p.PosterFee = util.BigMul(posterCostInL2Gas, gasPrice) // round down
 		gasNeededToStartEVM = p.posterGas
 	}
 
