@@ -71,7 +71,7 @@ impl IntoIterator for Bytes32 {
     type IntoIter = std::array::IntoIter<u8, 32>;
 
     fn into_iter(self) -> Self::IntoIter {
-        std::array::IntoIter::new(self.0)
+        IntoIterator::into_iter(self.0)
     }
 }
 
