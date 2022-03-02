@@ -64,7 +64,7 @@ func (con ArbOwner) SetSpeedLimit(c ctx, evm mech, limit uint64) error {
 	return c.state.L2PricingState().SetSpeedLimitPerSecond(limit)
 }
 
-// Sets the number of seconds worth of the speed limit the large gas pool contains
+// Sets the number of seconds worth of the speed limit the gas pool contains
 func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetGasPoolSeconds(seconds)
 }
@@ -79,12 +79,12 @@ func (con ArbOwner) SetGasPoolVoice(c ctx, evm mech, seconds uint64) error {
 	return c.state.L2PricingState().SetGasPoolVoice(seconds)
 }
 
-// Sets the number of seconds worth of the speed limit the large gas pool contains
+// Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
 func (con ArbOwner) SetRateEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.state.L2PricingState().SetRateEstimateInertia(inertia)
 }
 
-// Sets the number of seconds worth of the speed limit the large gas pool contains
+// Set how slowly ArbOS updates its estimate of the L1 gas price
 func (con ArbOwner) SetL1GasPriceEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.state.L1PricingState().SetL1GasPriceEstimateInertia(inertia)
 }

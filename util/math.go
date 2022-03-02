@@ -20,18 +20,18 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
-// clip an int to within (-infinity, bound]
-func UpperBoundInt(value, bound int64) int64 {
-	if value > bound {
-		return bound
+// the minimum of two ints
+func MinInt(value, ceiling int64) int64 {
+	if value > ceiling {
+		return ceiling
 	}
 	return value
 }
 
-// clip an int to within [bound, infinity)
-func LowerBoundInt(value, bound int64) int64 {
-	if value < bound {
-		return bound
+// the maximum of two ints
+func MaxInt(value, floor int64) int64 {
+	if value < floor {
+		return floor
 	}
 	return value
 }
@@ -44,6 +44,17 @@ func UintToBig(value uint64) *big.Int {
 // casts a uint to a big float
 func UintToBigFloat(value uint64) *big.Float {
 	return new(big.Float).SetPrec(53).SetUint64(value)
+}
+
+// casts a huge to a uint, panicking if out of bounds
+func BigToUintOrPanic(value *big.Int) uint64 {
+	if BigLessThan(value, big.NewInt(0)) {
+		panic("big.Int value is less than 0")
+	}
+	if BigGreaterThan(value, UintToBig(math.MaxUint64)) {
+		panic("big.Int value exceeds the max Uint64")
+	}
+	return value.Uint64()
 }
 
 // casts an rational to a big float
@@ -158,8 +169,7 @@ func SaturatingUAdd(augend uint64, addend uint64) uint64 {
 // multiply two uint64's without overflow
 func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
 	product := multiplicand * multiplier
-	root := uint64(math.MaxUint32) // the square root of 2^64 (= 2^32)
-	if multiplicand >= root && multiplier >= root {
+	if multiplier != 0 && product/multiplier != multiplicand {
 		product = math.MaxUint64
 	}
 	return product
@@ -181,17 +191,18 @@ func WordsForBytes(nbytes uint64) uint64 {
 // Return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
 func ApproxExpBasisPoints(value int64) uint64 {
-	x := value
+	input := value
 	negative := value < 0
 	if negative {
-		x = -value
+		input = -value
 	}
+	x := uint64(input)
 
-	bips := int64(10000)
+	bips := uint64(10000)
 	res := bips + x/4
-	res = bips + res*x/(3*bips)
-	res = bips + res*x/(2*bips)
-	res = bips + res*x/(1*bips)
+	res = bips + SaturatingUMul(res, x)/(3*bips)
+	res = bips + SaturatingUMul(res, x)/(2*bips)
+	res = bips + SaturatingUMul(res, x)/(1*bips)
 	if negative {
 		return uint64(bips * bips / res)
 	} else {
