@@ -1666,6 +1666,19 @@ impl Machine {
                         assert!(success, "Failed to write to previously read memory");
                         self.value_stack.push(Value::I32(len as u32));
                     } else {
+                        drop(module);
+                        eprintln!(
+                            "\x1b[31mMissing requested preimage\x1b[0m for hash {}",
+                            hash,
+                        );
+                        eprintln!("Backtrace:");
+                        for (module, func, pc) in self.get_backtrace() {
+                            let func = rustc_demangle::demangle(&func);
+                            eprintln!(
+                                "  {} \x1b[32m{}\x1b[0m @ \x1b[36m{}\x1b[0m",
+                                module, func, pc
+                            );
+                        }
                         panic!("Missing requested preimage for hash {}", hash);
                     }
                 } else {
