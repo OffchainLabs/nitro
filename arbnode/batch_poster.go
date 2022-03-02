@@ -31,27 +31,32 @@ type BatchPoster struct {
 	inboxContract *bridgegen.SequencerInbox
 	gasRefunder   common.Address
 	transactOpts  *bind.TransactOpts
+
+	building *buildingBatch
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize      int
-	BatchPollDelay    time.Duration
-	PostingErrorDelay time.Duration
-	CompressionLevel  int
+	MaxBatchSize         int
+	MaxBatchPostInterval time.Duration
+	BatchPollDelay       time.Duration
+	PostingErrorDelay    time.Duration
+	CompressionLevel     int
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:      500,
-	BatchPollDelay:    time.Second / 10,
-	PostingErrorDelay: time.Second * 5,
-	CompressionLevel:  brotli.DefaultCompression,
+	MaxBatchSize:         500,
+	BatchPollDelay:       time.Second,
+	PostingErrorDelay:    time.Second * 5,
+	MaxBatchPostInterval: time.Minute,
+	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:      10000,
-	BatchPollDelay:    time.Millisecond * 10,
-	PostingErrorDelay: time.Millisecond * 10,
-	CompressionLevel:  2,
+	MaxBatchSize:         10000,
+	BatchPollDelay:       time.Millisecond * 10,
+	PostingErrorDelay:    time.Millisecond * 10,
+	MaxBatchPostInterval: 0,
+	CompressionLevel:     2,
 }
 
 func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
@@ -83,6 +88,12 @@ type batchSegments struct {
 	lastCompressedSize  int
 	trailingHeaders     int // how many trailing segments are headers
 	isDone              bool
+}
+
+type buildingBatch struct {
+	segments    *batchSegments
+	batchSeqNum uint64
+	msgCount    arbutil.MessageIndex
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
@@ -155,7 +166,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 // returns false if segment was too large, error in case of real error
 func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) {
 	if s.isDone {
-		return false, nil
+		return false, errors.New("batch segments already closed")
 	}
 	err := s.addSegmentToCompressed(segment)
 	if err != nil {
@@ -226,7 +237,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 
 func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
 	if s.isDone {
-		return false, nil
+		return false, errors.New("batch segments already closed")
 	}
 	if msg.DelayedMessagesRead > s.delayedMsg {
 		if msg.DelayedMessagesRead != s.delayedMsg+1 {
@@ -270,7 +281,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) postSequencerBatch(ctx context.Context) (*types.Transaction, error) {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatch bool) (*types.Transaction, error) {
 	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -290,57 +301,74 @@ func (b *BatchPoster) postSequencerBatch(ctx context.Context) (*types.Transactio
 			return nil, err
 		}
 	}
-	segments := newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config)
-	msgToPost := prevBatchMeta.MessageCount
+	if b.building == nil || b.building.batchSeqNum != batchSeqNum {
+		b.building = &buildingBatch{
+			segments:    newBatchSegments(prevBatchMeta.DelayedMessageCount, b.config),
+			msgCount:    prevBatchMeta.MessageCount,
+			batchSeqNum: batchSeqNum,
+		}
+	}
 	msgCount, err := b.streamer.GetMessageCount()
 	if err != nil {
 		return nil, err
 	}
-	for msgToPost < msgCount {
-		msg, err := b.streamer.GetMessage(msgToPost)
+	for b.building.msgCount < msgCount {
+		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		success, err := segments.AddMessage(&msg)
+		success, err := b.building.segments.AddMessage(&msg)
 		if err != nil {
 			log.Error("error adding message to batch", "error", err)
 			break
 		}
 		if !success {
+			forcePostBatch = true // this batch is full
 			break
 		}
-		msgToPost++
+		b.building.msgCount++
 	}
-	sequencerMsg, err := segments.CloseAndGetBytes()
+	if !forcePostBatch {
+		// the batch isn't full yet and we've posted a batch recently
+		// don't post anything for now
+		return nil, nil
+	}
+	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
 		return nil, err
 	}
 	if sequencerMsg == nil {
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
+		b.building = nil // a closed batchSegments can't be reused
 		return nil, nil
 	}
 	txOpts := *b.transactOpts
 	txOpts.Context = ctx
-	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(segments.delayedMsg), b.gasRefunder)
+	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
 	if err == nil {
-		log.Info("BatchPoster: batch sent", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", msgToPost, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", segments.delayedMsg, "total segments", len(segments.rawSegments))
+		log.Info("BatchPoster: batch sent", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "to", b.building.msgCount, "prev delayed", prevBatchMeta.DelayedMessageCount, "current delayed", b.building.segments.delayedMsg, "total segments", len(b.building.segments.rawSegments))
 	}
 	return tx, err
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
+	var lastBatchPosted time.Time
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		tx, err := b.postSequencerBatch(ctx)
+		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted) >= b.config.MaxBatchPostInterval)
 		if err != nil {
+			b.building = nil
 			log.Error("error posting batch", "err", err)
 			return b.config.PostingErrorDelay
 		}
 		if tx != nil {
+			b.building = nil
 			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
 			if err != nil {
 				log.Error("failed ensuring batch tx succeeded", "err", err)
+			} else {
+				lastBatchPosted = time.Now()
 			}
 		}
 		return b.config.BatchPollDelay
