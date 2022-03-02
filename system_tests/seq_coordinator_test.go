@@ -83,7 +83,10 @@ func TestSeqCoordinator(t *testing.T) {
 			}
 			if trySequenceing(nodeNum) {
 				if succeeded >= 0 {
-					t.Fatal("sequnced succeeded in parallel")
+					t.Fatal("sequnced succeeded in parallel",
+						"index1:", succeeded, "debug", nodes[succeeded].SeqCoordinator.DebugPrint(),
+						"index2:", nodeNum, "debug", node.SeqCoordinator.DebugPrint(),
+						"now", time.Now().UnixMilli())
 				}
 				succeeded = nodeNum
 			}

@@ -46,7 +46,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			if messageCount >= messagesPerRound {
 				break
 			}
-			coord.remoteMsgCount = arbutil.MessageIndex(messageCount)
+			coord.prevMsgCount = arbutil.MessageIndex(messageCount)
 			lockupUntil := atomicTimeRead(&coord.lockoutUntil)
 			err := coord.chosenOneUpdate(ctx, arbutil.MessageIndex(messageCount+1))
 			timeLaunching := time.Now()

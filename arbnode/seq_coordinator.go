@@ -31,8 +31,8 @@ type SeqCoordinator struct {
 	client    redis.UniversalClient
 	config    SeqCoordinatorConfig
 
-	knownChosenSequencer string
-	remoteMsgCount       arbutil.MessageIndex
+	prevChosenSequencer string
+	prevMsgCount        arbutil.MessageIndex
 
 	lockoutUntil int64 // atomic
 	aliveUntil   int64 // atomic
@@ -80,7 +80,7 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, clie
 	return coordinator
 }
 
-func (c *SeqCoordinator) chooseLiveSequencer(ctx context.Context) (string, error) {
+func (c *SeqCoordinator) recommendLiveSequencer(ctx context.Context) (string, error) {
 	prioritiesString, err := c.client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
@@ -99,7 +99,7 @@ func (c *SeqCoordinator) chooseLiveSequencer(ctx context.Context) (string, error
 		}
 		return url, nil
 	}
-	log.Info("not found sequencer", "priorities", prioritiesString, "self", c.config.MyUrl)
+	log.Info("no sequencer appears live on redis", "priorities", prioritiesString, "self", c.config.MyUrl)
 	return "", nil
 }
 
@@ -134,8 +134,8 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCount arbutil.M
 			if err != nil {
 				return err
 			}
-			if arbutil.MessageIndex(remoteMsgCount) > c.remoteMsgCount {
-				return fmt.Errorf("found message count %d > %d", remoteMsgCount, c.remoteMsgCount)
+			if arbutil.MessageIndex(remoteMsgCount) > c.prevMsgCount {
+				return fmt.Errorf("found message count %d > %d", remoteMsgCount, c.prevMsgCount)
 			}
 		}
 		lockoutUntil := time.Now().Add(c.config.LockoutDuration)
@@ -158,7 +158,7 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCount arbutil.M
 		}
 		atomicTimeWrite(&c.lockoutUntil, lockoutUntil.Add(-c.config.LockoutSpare))
 		atomicTimeWrite(&c.aliveUntil, lockoutUntil.Add(-c.config.LockoutSpare))
-		c.remoteMsgCount = msgCount
+		c.prevMsgCount = msgCount
 		return nil
 	}, CHOSENSEQ_KEY, MSG_COUNT_KEY)
 }
@@ -243,7 +243,7 @@ func (c *SeqCoordinator) livelinessRelease(ctx context.Context) error {
 }
 
 func (c *SeqCoordinator) notifyRedis(ctx context.Context) error {
-	chosenSeq, err := c.chooseLiveSequencer(ctx)
+	chosenSeq, err := c.recommendLiveSequencer(ctx)
 	if err != nil {
 		return err
 	}
@@ -253,7 +253,7 @@ func (c *SeqCoordinator) notifyRedis(ctx context.Context) error {
 		return err
 	}
 	if chosenSeq == c.config.MyUrl {
-		if c.knownChosenSequencer != c.config.MyUrl {
+		if c.prevChosenSequencer != c.config.MyUrl {
 			remoteMsgCount, err := c.GetRemoteMsgCount(ctx)
 			if err != nil {
 				return err
@@ -264,28 +264,27 @@ func (c *SeqCoordinator) notifyRedis(ctx context.Context) error {
 				return nil
 			}
 			// chosenOneUpdate should succeed unless somebody else writes a higher messagecount
-			c.remoteMsgCount = remoteMsgCount
+			c.prevMsgCount = remoteMsgCount
 		}
 		if err := c.chosenOneUpdate(ctx, localMsgCount); err != nil {
 			return err
 		}
-		c.remoteMsgCount = localMsgCount
-		if c.knownChosenSequencer != c.config.MyUrl {
+		if c.prevChosenSequencer != c.config.MyUrl {
 			c.sequencer.DontForward()
-			c.knownChosenSequencer = c.config.MyUrl
+			c.prevChosenSequencer = c.config.MyUrl
 		}
 		return nil
 	}
-	if c.knownChosenSequencer != chosenSeq {
+	if c.prevChosenSequencer != chosenSeq {
 		c.sequencer.ForwardTo(chosenSeq)
-		if c.knownChosenSequencer == c.config.MyUrl {
+		if c.prevChosenSequencer == c.config.MyUrl {
 			atomic.StoreInt64(&c.lockoutUntil, 0)
 			// make sure we updated message count in server to latest value
 			localMsgCount, err = c.streamer.GetMessageCountSync()
 			if err != nil {
 				return err
 			}
-			if c.remoteMsgCount < localMsgCount {
+			if c.prevMsgCount < localMsgCount {
 				err := c.chosenOneUpdate(ctx, localMsgCount)
 				if err != nil {
 					return err
@@ -296,16 +295,25 @@ func (c *SeqCoordinator) notifyRedis(ctx context.Context) error {
 				return err
 			}
 		}
-		c.knownChosenSequencer = chosenSeq
+		c.prevChosenSequencer = chosenSeq
 	}
 	remoteMsgCount, err := c.GetRemoteMsgCount(ctx)
 	if err != nil {
 		return err
 	}
-	if localMsgCount+c.config.AllowedMsgLag < remoteMsgCount {
+	c.prevMsgCount = remoteMsgCount
+	if localMsgCount+c.config.AllowedMsgLag < c.prevMsgCount {
 		return c.livelinessRelease(ctx)
 	}
 	return c.livelinessUpdate(ctx)
+}
+
+func (c *SeqCoordinator) DebugPrint() string {
+	return fmt.Sprint("Url", c.config.MyUrl,
+		"prevChosenSequencer", c.prevChosenSequencer,
+		"prevMsgCount", c.prevMsgCount,
+		"alive until", c.aliveUntil,
+		"lockoutUntil", c.lockoutUntil)
 }
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
@@ -318,12 +326,7 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 				log.Warn("sequencer coordinator error", "err", err)
 				timesFailed++
 			} else {
-				log.Debug("sequencer coordinator no error", "self", c.config.MyUrl,
-					"known chosen", c.knownChosenSequencer,
-					"remoteMsgCount", c.remoteMsgCount,
-					"alive until", c.aliveUntil,
-					"lockoutUntil", c.lockoutUntil,
-					"now", time.Now().UnixMilli())
+				log.Debug("sequencer coordinator no error", "debugPrint", c.DebugPrint(), "now", time.Now().UnixMilli())
 				timesFailed = 0
 			}
 			var nextInterval time.Duration
