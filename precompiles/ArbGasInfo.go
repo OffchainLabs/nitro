@@ -146,12 +146,12 @@ func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
 	return c.state.L2PricingState().RateEstimateInertia()
 }
 
-// Get the current estimate of the L1 gas price
+// Get the current estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
 	return c.state.L1PricingState().L1BaseFeeEstimateWei()
 }
 
-// Get how slowly ArbOS updates its estimate of the L1 gas price
+// Get how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
 	return c.state.L1PricingState().L1BaseFeeEstimateInertia()
 }

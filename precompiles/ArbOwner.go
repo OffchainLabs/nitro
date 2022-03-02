@@ -44,12 +44,12 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 	return c.state.ChainOwners().AllMembers()
 }
 
-// Sets the L1 gas price estimate directly, bypassing the autoregression
+// Sets the L1 basefee estimate directly, bypassing the autoregression
 func (con ArbOwner) SetL1BaseFeeEstimate(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L1PricingState().SetL1BaseFeeEstimateWei(priceInWei)
 }
 
-// Set how slowly ArbOS updates its estimate of the L1 gas price
+// Set how slowly ArbOS updates its estimate of the L1 basefee
 func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.state.L1PricingState().SetL1BaseFeeEstimateInertia(inertia)
 }
