@@ -156,7 +156,7 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 	return c.state.L1PricingState().L1BaseFeeEstimateInertia()
 }
 
-// Depricated -- Same as getL1BaseFeeEstimate()
+// Deprecated -- Same as getL1BaseFeeEstimate()
 func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 	return con.GetL1BaseFeeEstimate(c, evm)
 }

@@ -124,7 +124,7 @@ interface ArbGasInfo {
     /// @notice Get how slowly ArbOS updates its estimate of the L1 basefee
     function getL1BaseFeeEstimateInertia() external view returns (uint64);
 
-    /// @notice Depricated -- Same as getL1BaseFeeEstimate()
+    /// @notice Deprecated -- Same as getL1BaseFeeEstimate()
     function getL1GasPriceEstimate() external view returns (uint256);
 
     /// @notice Get L1 gas fees paid by the current transaction
