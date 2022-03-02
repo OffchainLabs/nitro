@@ -5,6 +5,8 @@
 package l2pricing
 
 import (
+	"errors"
+	"math"
 	"math/big"
 
 	"github.com/offchainlabs/arbstate/arbos/storage"
@@ -98,6 +100,9 @@ func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
 	if err != nil {
 		return err
 	}
+	if seconds == 0 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+		return errors.New("GasPoolSeconds is out of bounds")
+	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
 		return err
 	}
@@ -109,8 +114,8 @@ func (ps *L2PricingState) GasPoolTarget() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetGasPoolTarget(target uint64) error {
-	if target > 10000 {
-		target = 10000
+	if target < 5000 || target > 10000 {
+		return errors.New("GasPoolTarget is out of bounds")
 	}
 	return ps.gasPoolTarget.Set(target)
 }
@@ -178,15 +183,18 @@ func (ps *L2PricingState) SpeedLimitPerSecond() (uint64, error) {
 	return ps.speedLimitPerSecond.Get()
 }
 
-func (ps *L2PricingState) SetSpeedLimitPerSecond(speedLimit uint64) error {
+func (ps *L2PricingState) SetSpeedLimitPerSecond(limit uint64) error {
 	seconds, err := ps.GasPoolSeconds()
 	if err != nil {
 		return err
 	}
-	if err := ps.clipGasPool(seconds, speedLimit); err != nil {
+	if limit == 0 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+		return errors.New("SetSpeedLimitPerSecond is out of bounds")
+	}
+	if err := ps.clipGasPool(seconds, limit); err != nil {
 		return err
 	}
-	return ps.speedLimitPerSecond.Set(speedLimit)
+	return ps.speedLimitPerSecond.Set(limit)
 }
 
 func (ps *L2PricingState) GasPoolMax() (int64, error) {
@@ -212,8 +220,9 @@ func (ps *L2PricingState) clipGasPool(seconds, speedLimit uint64) error {
 	if err != nil {
 		return err
 	}
-	if uint64(pool) < seconds*speedLimit {
-		err = ps.SetGasPool(util.SaturatingCast(seconds * speedLimit))
+	newMax := util.SaturatingCast(util.SaturatingUMul(seconds, speedLimit))
+	if pool > newMax {
+		err = ps.SetGasPool(newMax)
 	}
 	return err
 }

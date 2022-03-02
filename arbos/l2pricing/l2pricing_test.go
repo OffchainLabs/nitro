@@ -139,13 +139,13 @@ func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
 func getPrice(t *testing.T, pricing *L2PricingState) uint64 {
 	value, err := pricing.GasPriceWei()
 	Require(t, err)
-	return value.Uint64()
+	return util.BigToUintOrPanic(value)
 }
 
 func getMinPrice(t *testing.T, pricing *L2PricingState) uint64 {
 	value, err := pricing.MinGasPriceWei()
 	Require(t, err)
-	return value.Uint64()
+	return util.BigToUintOrPanic(value)
 }
 
 func getSpeedLimit(t *testing.T, pricing *L2PricingState) uint64 {

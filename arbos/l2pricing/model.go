@@ -18,7 +18,7 @@ const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
-const InitialGasPoolTarget = 50 * 100 // 50% in bips
+const InitialGasPoolTarget = 80 * 100 // 80% in bips
 const InitialGasPoolVoice = 60 * 100  // 60% in bips
 
 func (ps *L2PricingState) AddToGasPool(gas int64) {
@@ -36,6 +36,9 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//
 	gasPool, _ := ps.GasPool()
 	gasPoolLastBlock, _ := ps.GasPoolLastBlock()
+	poolMax, _ := ps.GasPoolMax()
+	gasPool = util.MinInt(gasPool, poolMax)
+	gasPoolLastBlock = util.MinInt(gasPoolLastBlock, poolMax)
 	gasUsed := uint64(gasPoolLastBlock - gasPool)
 	rateSeconds, _ := ps.RateEstimateInertia()
 	priorRate, _ := ps.RateEstimate()
@@ -52,7 +55,6 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//     ratio = max(0, 2 - (average fullness) / (target fullness))
 	//     pool' = min(maximum, pool + speed * passed)
 	//
-	poolMax, _ := ps.GasPoolMax()
 	timeToFull := (poolMax - gasPool) / int64(speedLimit)
 	bips := uint64(10000)
 	var averagePool uint64
@@ -79,16 +81,16 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	averageOfRatios, _ := util.BigAddFloat(
 		util.BigMulFloatByUint(poolRatio, poolVoice),
 		util.BigMulFloatByUint(rateRatio, bips-poolVoice),
-	).Int64()
+	).Uint64()
 	averageOfRatiosUnbounded := averageOfRatios
-	if averageOfRatios > 20000 {
-		averageOfRatios = 20000
+	if averageOfRatios > 2*bips {
+		averageOfRatios = 2 * bips
 	}
 
 	// update the gas price, adjusting each second by the max allowed by EIP 1559
 	//      price' = price * exp(seconds at intensity) / 2 mins
 	//
-	exp := (averageOfRatios - 10000) * int64(timePassed) / 120 // limit to EIP 1559's max rate
+	exp := int64(averageOfRatios-bips) * int64(timePassed) / 120 // limit to EIP 1559's max rate
 	price := util.BigDivByUint(util.BigMulByUint(header.BaseFee, util.ApproxExpBasisPoints(exp)), bips)
 	maxPrice := util.BigMulByInt(header.BaseFee, 2)
 	minPrice, _ := ps.MinGasPriceWei()
