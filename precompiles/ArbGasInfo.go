@@ -132,8 +132,8 @@ func (con ArbGasInfo) GetGasPoolTarget(c ctx, evm mech) (uint64, error) {
 }
 
 // Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
-func (con ArbGasInfo) GetGasPoolVoice(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolVoice()
+func (con ArbGasInfo) GetGasPoolWeight(c ctx, evm mech) (uint64, error) {
+	return c.state.L2PricingState().GasPoolWeight()
 }
 
 // Get ArbOS's estimate of the amount of gas being burnt per second

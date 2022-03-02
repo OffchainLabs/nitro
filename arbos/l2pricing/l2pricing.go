@@ -19,7 +19,7 @@ type L2PricingState struct {
 	gasPoolLastBlock    storage.StorageBackedInt64
 	gasPoolSeconds      storage.StorageBackedUint64
 	gasPoolTarget       storage.StorageBackedUint64
-	gasPoolVoice        storage.StorageBackedUint64
+	gasPoolWeight       storage.StorageBackedUint64
 	rateEstimate        storage.StorageBackedUint64
 	rateEstimateInertia storage.StorageBackedUint64
 	speedLimitPerSecond storage.StorageBackedUint64
@@ -33,7 +33,7 @@ const (
 	gasPoolLastBlock
 	gasPoolSecondsOffset
 	gasPoolTargetOffset
-	gasPoolVoiceOffset
+	gasPoolWeightOffset
 	rateEstimateOffset
 	rateEstimateInertiaOffset
 	speedLimitPerSecondOffset
@@ -49,8 +49,8 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolLastBlock, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
 	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, InitialGasPoolTarget)
-	_ = sto.SetUint64ByUint64(gasPoolVoiceOffset, InitialGasPoolVoice)
-	_ = sto.SetUint64ByUint64(rateEstimateOffset, 0)
+	_ = sto.SetUint64ByUint64(gasPoolWeightOffset, InitialGasPoolWeight)
+	_ = sto.SetUint64ByUint64(rateEstimateOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(rateEstimateInertiaOffset, InitialRateEstimateInertia)
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
@@ -65,7 +65,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedInt64(gasPoolLastBlock),
 		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
 		sto.OpenStorageBackedUint64(gasPoolTargetOffset),
-		sto.OpenStorageBackedUint64(gasPoolVoiceOffset),
+		sto.OpenStorageBackedUint64(gasPoolWeightOffset),
 		sto.OpenStorageBackedUint64(rateEstimateOffset),
 		sto.OpenStorageBackedUint64(rateEstimateInertiaOffset),
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -120,15 +120,15 @@ func (ps *L2PricingState) SetGasPoolTarget(target uint64) error {
 	return ps.gasPoolTarget.Set(target)
 }
 
-func (ps *L2PricingState) GasPoolVoice() (uint64, error) {
-	return ps.gasPoolVoice.Get()
+func (ps *L2PricingState) GasPoolWeight() (uint64, error) {
+	return ps.gasPoolWeight.Get()
 }
 
-func (ps *L2PricingState) SetGasPoolVoice(voice uint64) error {
-	if voice > 10000 {
-		voice = 10000
+func (ps *L2PricingState) SetGasPoolWeight(weight uint64) error {
+	if weight > 10000 {
+		return errors.New("GasPoolWeight is out of bounds")
 	}
-	return ps.gasPoolVoice.Set(voice)
+	return ps.gasPoolWeight.Set(weight)
 }
 
 func (ps *L2PricingState) RateEstimate() (uint64, error) {
