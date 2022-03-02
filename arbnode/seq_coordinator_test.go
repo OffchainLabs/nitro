@@ -41,21 +41,23 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 		}
 		nextRound++
 		var execError error
+		var lockupUntil time.Time
 		for {
 			messageCount := atomic.LoadUint64(&data.messageCount)
 			if messageCount >= messagesPerRound {
 				break
 			}
 			coord.prevMsgCount = arbutil.MessageIndex(messageCount)
-			lockupUntil := atomicTimeRead(&coord.lockoutUntil)
-			err := coord.chosenOneUpdate(ctx, arbutil.MessageIndex(messageCount+1))
+			maybeLockoutUntil, err := coord.chosenOneUpdate(ctx, arbutil.MessageIndex(messageCount+1))
 			timeLaunching := time.Now()
 			if err == nil {
+				lockupUntil = maybeLockoutUntil
 				sequenced[messageCount] = true
 				atomic.StoreUint64(&data.messageCount, messageCount+1)
 				randNr := rand.Intn(20)
 				if randNr > 15 {
 					coord.chosenOneRelease(ctx)
+					lockupUntil = time.Time{}
 				} else {
 					time.Sleep(coord.config.LockoutDuration * time.Duration(randNr) / 10)
 				}
