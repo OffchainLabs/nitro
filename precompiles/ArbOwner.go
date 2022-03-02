@@ -45,8 +45,13 @@ func (con ArbOwner) GetAllChainOwners(c ctx, evm mech) ([]common.Address, error)
 }
 
 // Sets the L1 gas price estimate directly, bypassing the autoregression
-func (con ArbOwner) SetL1GasPriceEstimate(c ctx, evm mech, priceInWei huge) error {
-	return c.state.L1PricingState().SetL1GasPriceEstimateWei(priceInWei)
+func (con ArbOwner) SetL1BaseFeeEstimate(c ctx, evm mech, priceInWei huge) error {
+	return c.state.L1PricingState().SetL1BaseFeeEstimateWei(priceInWei)
+}
+
+// Set how slowly ArbOS updates its estimate of the L1 gas price
+func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64) error {
+	return c.state.L1PricingState().SetL1BaseFeeEstimateInertia(inertia)
 }
 
 // Sets the L2 gas price directly, bypassing the pool calculus
@@ -82,11 +87,6 @@ func (con ArbOwner) SetGasPoolWeight(c ctx, evm mech, weight uint64) error {
 // Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
 func (con ArbOwner) SetRateEstimateInertia(c ctx, evm mech, inertia uint64) error {
 	return c.state.L2PricingState().SetRateEstimateInertia(inertia)
-}
-
-// Set how slowly ArbOS updates its estimate of the L1 gas price
-func (con ArbOwner) SetL1GasPriceEstimateInertia(c ctx, evm mech, inertia uint64) error {
-	return c.state.L1PricingState().SetL1GasPriceEstimateInertia(inertia)
 }
 
 // Sets the maximum size a tx (and block) can be
