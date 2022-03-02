@@ -293,13 +293,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}, nil
 }
 
-type DataAvailabilityMode uint64
-
-const (
-	OnchainDataAvailability DataAvailabilityMode = iota
-	LocalDataAvailability
-)
-
 type NodeConfig struct {
 	ArbConfig              arbitrum.Config
 	L1Reader               bool
@@ -316,11 +309,12 @@ type NodeConfig struct {
 	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
 	L1Validator            bool
 	L1ValidatorConfig      validator.L1ValidatorConfig
-	DataAvailabilityMode   DataAvailabilityMode
+	DataAvailabilityMode   das.DataAvailabilityMode
+	DataAvailabilityConfig das.DataAvailabilityConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, OnchainDataAvailability}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, OnchainDataAvailability}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
 
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
 
@@ -347,8 +341,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 
 	var dataAvailabilityService das.DataAvailabilityService
-	if config.DataAvailabilityMode == LocalDataAvailability {
-		dataAvailabilityService = das.GetSingletonTestingDAS()
+	if config.DataAvailabilityMode == das.LocalDataAvailability {
+		var err error
+		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)

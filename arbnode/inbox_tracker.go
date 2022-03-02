@@ -17,7 +17,6 @@ import (
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/das"
 	"github.com/offchainlabs/arbstate/validator"
 	"github.com/pkg/errors"
 )
@@ -27,10 +26,10 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *validator.BlockValidator
-	das        das.DataAvailabilityService
+	das        arbstate.DataAvailabilityServiceReader
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das das.DataAvailabilityService) (*InboxTracker, error) {
+func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityServiceReader) (*InboxTracker, error) {
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
@@ -447,7 +446,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		msg, err := multiplexer.Pop()
+		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
 			return err
 		}

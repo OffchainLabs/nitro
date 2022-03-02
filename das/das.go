@@ -5,56 +5,46 @@
 package das
 
 import (
+	"context"
 	"encoding/base32"
-	"io/ioutil"
 	"os"
-	"sync"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbstate"
 	"github.com/offchainlabs/arbstate/blsSignatures"
 )
 
+type DataAvailabilityMode uint64
+
+const (
+	OnchainDataAvailability DataAvailabilityMode = iota
+	LocalDataAvailability
+)
+
+type DataAvailabilityConfig struct {
+	LocalDiskDataDir string
+}
+
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
+
+func SetDASMessageHeaderByte(header *byte) {
+	*header |= arbstate.DASMessageHeaderFlag
+}
+
+type DataAvailabilityServiceWriter interface {
+	Store(ctx context.Context, message []byte) ([]byte, blsSignatures.Signature, error)
+}
+
 type DataAvailabilityService interface {
-	Store(message []byte) ([]byte, blsSignatures.Signature, error)
-	Retrieve(hash []byte) ([]byte, error)
+	arbstate.DataAvailabilityServiceReader
+	DataAvailabilityServiceWriter
 }
 
 type LocalDiskDataAvailabilityService struct {
 	dbPath  string
 	pubKey  *blsSignatures.PublicKey
 	privKey blsSignatures.PrivateKey
-}
-
-var singletonDAS DataAvailabilityService
-var singletonDASMutex sync.Mutex
-
-func GetSingletonTestingDAS() DataAvailabilityService {
-	singletonDASMutex.Lock()
-	defer singletonDASMutex.Unlock()
-	if singletonDAS == nil {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
-		if err != nil {
-			panic(err)
-		}
-
-		singletonDAS, err = NewLocalDiskDataAvailabilityService(dbPath)
-		if err != nil {
-			panic(err)
-		}
-		log.Error("Created the singleton das using", "dbPath", dbPath)
-	} else {
-		log.Error("Getting the singleton das")
-	}
-	return singletonDAS
-}
-
-func CleanupSingletonTestingDAS() {
-	das, ok := GetSingletonTestingDAS().(*LocalDiskDataAvailabilityService)
-	if !ok {
-		panic("Singleton DAS wrong type")
-	}
-	os.RemoveAll(das.dbPath)
 }
 
 func readKeysFromFile(dbPath string) (*blsSignatures.PublicKey, blsSignatures.PrivateKey, error) {
@@ -117,7 +107,7 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsSignatures.Signature, error) {
+func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte) ([]byte, blsSignatures.Signature, error) {
 	h := crypto.Keccak256(message)
 
 	sig, err := blsSignatures.SignMessage(das.privKey, h)
@@ -137,7 +127,7 @@ func (das *LocalDiskDataAvailabilityService) Store(message []byte) ([]byte, blsS
 	return h, sig, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Retrieve(hash []byte) ([]byte, error) {
+func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, hash []byte) ([]byte, error) {
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(hash)
 	log.Debug("Retrieving message from", "path", path)
 	return os.ReadFile(path)

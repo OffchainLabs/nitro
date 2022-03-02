@@ -10,7 +10,9 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -21,25 +23,35 @@ import (
 	"github.com/offchainlabs/arbstate/das"
 )
 
-func testBlockValidatorSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
+func testBlockValidatorSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l1NodeConfigA := arbnode.NodeConfigL1Test
 	l1NodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		if err != nil {
+			panic(err)
+		}
+		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
 	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.NodeConfigL1Test
-	l1NodeConfigB.BatchPoster = false
 	l1NodeConfigB.BlockValidator = true
 	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2client.SendTransaction(ctx, tx)
+	err = l2client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
@@ -84,10 +96,9 @@ func testBlockValidatorSimple(t *testing.T, dasMode arbnode.DataAvailabilityMode
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, arbnode.OnchainDataAvailability)
+	testBlockValidatorSimple(t, das.OnchainDataAvailability)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	defer das.CleanupSingletonTestingDAS()
-	testBlockValidatorSimple(t, arbnode.LocalDataAvailability)
+	testBlockValidatorSimple(t, das.LocalDataAvailability)
 }

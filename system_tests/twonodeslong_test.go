@@ -10,8 +10,10 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -22,7 +24,7 @@ import (
 	"github.com/offchainlabs/arbstate/das"
 )
 
-func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
+func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -42,6 +44,16 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 
 	l1NodeConfigA := arbnode.NodeConfigL1Test
 	l1NodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		if err != nil {
+			panic(err)
+		}
+		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
 	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
@@ -49,6 +61,7 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	l1NodeConfigB.BatchPoster = false
 	l1NodeConfigB.BlockValidator = false
 	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
@@ -188,10 +201,9 @@ func testTwoNodesLong(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 }
 
 func TestTwoNodesLong(t *testing.T) {
-	testTwoNodesLong(t, arbnode.OnchainDataAvailability)
+	testTwoNodesLong(t, das.OnchainDataAvailability)
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	defer das.CleanupSingletonTestingDAS()
-	testTwoNodesLong(t, arbnode.LocalDataAvailability)
+	testTwoNodesLong(t, das.LocalDataAvailability)
 }

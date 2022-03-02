@@ -324,12 +324,12 @@ func (b *BatchPoster) postSequencerBatch(ctx context.Context) (*types.Transactio
 	}
 
 	if b.das != nil {
-		fullMsg := make([]byte, 1, 33)
-		fullMsg[0] = 'd' // Header indicating batch data stored in DAS
-		cert, _, err := b.das.Store(sequencerMsg)
+		cert, _, err := b.das.Store(ctx, sequencerMsg)
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 		} else {
+			fullMsg := make([]byte, 1, 33) // header byte + keccac256 hash
+			das.SetDASMessageHeaderByte(&fullMsg[0])
 			fullMsg = append(fullMsg, cert...)
 			sequencerMsg = fullMsg
 		}

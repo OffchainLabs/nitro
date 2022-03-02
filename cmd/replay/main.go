@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -20,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/blsSignatures"
 	"github.com/offchainlabs/arbstate/wavmio"
 )
 
@@ -84,7 +84,7 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
-func BuildBlock(
+func BuildBlock(ctx context.Context,
 	statedb *state.StateDB,
 	lastBlockHeader *types.Header,
 	chainContext core.ChainContext,
@@ -97,7 +97,7 @@ func BuildBlock(
 	}
 	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, &PreimageDAS{})
 
-	message, err := inboxMultiplexer.Pop()
+	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,11 +114,7 @@ func BuildBlock(
 type PreimageDAS struct {
 }
 
-func (das *PreimageDAS) Store(message []byte) ([]byte, blsSignatures.Signature, error) {
-	panic("erorr")
-}
-
-func (das *PreimageDAS) Retrieve(hash []byte) ([]byte, error) {
+func (das *PreimageDAS) Retrieve(ctx context.Context, hash []byte) ([]byte, error) {
 	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
 }
 
@@ -152,7 +148,8 @@ func main() {
 
 	chainConfig := params.ArbitrumOneChainConfig()
 	chainContext := WavmChainContext{}
-	newBlock, err := BuildBlock(statedb, lastBlockHeader, chainContext, chainConfig, WavmInbox{})
+	ctx := context.Background()
+	newBlock, err := BuildBlock(ctx, statedb, lastBlockHeader, chainContext, chainConfig, WavmInbox{})
 	if err != nil {
 		panic(fmt.Sprintf("Error building block: %v", err.Error()))
 	}

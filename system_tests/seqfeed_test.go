@@ -7,8 +7,10 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -76,7 +78,7 @@ func TestSequencerFeed(t *testing.T) {
 	nodeB.StopAndWait()
 }
 
-func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
+func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -85,6 +87,16 @@ func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	nodeConfigA.BatchPoster = true
 	nodeConfigA.Broadcaster = false
 	nodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		if err != nil {
+			panic(err)
+		}
+		nodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
 	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
 
@@ -93,7 +105,6 @@ func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(0)
-	nodeConfigC.DataAvailabilityMode = dasMode // shouldn't matter
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -105,6 +116,7 @@ func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailabilityMode = dasMode
+	nodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -114,7 +126,7 @@ func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientC.SendTransaction(ctx, fraudTx)
+	err = l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,10 +187,9 @@ func testLyingSequencer(t *testing.T, dasMode arbnode.DataAvailabilityMode) {
 }
 
 func TestLyingSequencer(t *testing.T) {
-	testLyingSequencer(t, arbnode.OnchainDataAvailability)
+	testLyingSequencer(t, das.OnchainDataAvailability)
 }
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
-	defer das.CleanupSingletonTestingDAS()
-	testLyingSequencer(t, arbnode.LocalDataAvailability)
+	testLyingSequencer(t, das.LocalDataAvailability)
 }

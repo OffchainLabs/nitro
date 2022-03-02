@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/broadcastclient"
+	"github.com/offchainlabs/arbstate/das"
 	"github.com/offchainlabs/arbstate/statetransfer"
 	"github.com/offchainlabs/arbstate/util"
 	"github.com/offchainlabs/arbstate/wsbroadcastserver"
@@ -47,7 +48,7 @@ func main() {
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
-	// add more dataAvailability options here
+	dataAvailabilityLocalDiskDirectory := flag.String("dataavailability.localdisk.dir", "", "directory to store data availability files")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
 	importFile := flag.String("importfile", "", "path for json data to import")
@@ -105,9 +106,13 @@ func main() {
 	}
 
 	if *dataAvailabilityMode == "onchain" {
-		nodeConf.DataAvailabilityMode = arbnode.OnchainDataAvailability
+		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
 	} else if *dataAvailabilityMode == "local" {
-		nodeConf.DataAvailabilityMode = arbnode.LocalDataAvailability
+		nodeConf.DataAvailabilityMode = das.LocalDataAvailability
+		if *dataAvailabilityLocalDiskDirectory == "" {
+			flag.Usage()
+			panic("davaavailability.localdisk.dir must be specified if mode is set to local")
+		}
 	} else {
 		flag.Usage()
 		panic("dataavailability.mode not recognized")
