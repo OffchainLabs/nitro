@@ -38,8 +38,11 @@ interface ArbOwner {
     /// @notice Retrieves the list of chain owners
     function getAllChainOwners() external view returns (address[] memory);
 
-    /// @notice Set the L1 gas price estimate directly, bypassing the autoregression
-    function setL1GasPriceEstimate(uint256 priceInWei) external;
+    /// @notice Set the L1 basefee estimate directly, bypassing the autoregression
+    function setL1BaseFeeEstimate(uint256 priceInWei) external;
+
+    /// @notice Set how slowly ArbOS updates its estimate of the L1 basefee
+    function setL1BaseFeeEstimateInertia(uint64 inertia) external;
 
     /// @notice Set the L2 gas price directly, bypassing the pool calculus
     function setL2GasPrice(uint256 priceInWei) external;
@@ -61,9 +64,6 @@ interface ArbOwner {
 
     /// @notice Set how slowly ArbOS updates its estimate the amount of gas being burnt per second
     function setRateEstimateInertia(uint64 inertia) external;
-
-    /// @notice Set how slowly ArbOS updates its estimate of the L1 gas price
-    function setL1GasPriceEstimateInertia(uint64 inertia) external;
 
     /// @notice Set the maximum size a tx (and block) can be
     function setMaxTxGasLimit(uint64 limit) external;

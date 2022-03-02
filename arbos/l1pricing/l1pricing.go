@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package l1pricing
@@ -19,8 +19,8 @@ import (
 type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
-	l1GasPriceEstimate          storage.StorageBackedBigInt
-	l1GasPriceEstimateInertia   storage.StorageBackedUint64
+	l1BaseFeeEstimate           storage.StorageBackedBigInt
+	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -39,30 +39,31 @@ var (
 )
 
 const (
-	defaultAggregatorAddressOffset  uint64 = 0
-	l1GasPriceEstimateOffset        uint64 = 1
-	l1GasPriceEstimateInertiaOffset uint64 = 2
+	defaultAggregatorAddressOffset uint64 = 0
+	l1BaseFeeEstimateOffset        uint64 = 1
+	l1BaseFeeEstimateInertiaOffset uint64 = 2
 )
 
-const InitialL1GasPriceEstimateInertia = 24
+const InitialL1BaseFeeEstimate = 50 * params.GWei
+const InitialL1BaseFeeEstimateInertia = 24
 
 func InitializeL1PricingState(sto *storage.Storage) error {
 	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
 	if err != nil {
 		return err
 	}
-	if err := sto.SetUint64ByUint64(l1GasPriceEstimateInertiaOffset, InitialL1GasPriceEstimateInertia); err != nil {
+	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
 		return err
 	}
-	return sto.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
+	return sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
-		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
-		sto.OpenStorageBackedUint64(l1GasPriceEstimateInertiaOffset),
+		sto.OpenStorageBackedBigInt(l1BaseFeeEstimateOffset),
+		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
@@ -79,20 +80,20 @@ func (ps *L1PricingState) SetDefaultAggregator(val common.Address) error {
 	return ps.defaultAggregator.Set(val)
 }
 
-func (ps *L1PricingState) L1GasPriceEstimateWei() (*big.Int, error) {
-	return ps.l1GasPriceEstimate.Get()
+func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
+	return ps.l1BaseFeeEstimate.Get()
 }
 
-func (ps *L1PricingState) SetL1GasPriceEstimateWei(val *big.Int) error {
-	return ps.l1GasPriceEstimate.Set(val)
+func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
+	return ps.l1BaseFeeEstimate.Set(val)
 }
 
-func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1GasPriceEstimateWei()
+func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
+	curr, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return err
 	}
-	weight, err := ps.L1GasPriceEstimateInertia()
+	weight, err := ps.L1BaseFeeEstimateInertia()
 	if err != nil {
 		return err
 	}
@@ -102,17 +103,17 @@ func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
 	impact := new(big.Int).Add(memory, baseFeeWei)
 	update := new(big.Int).Div(impact, util.UintToBig(weight+1))
 
-	return ps.SetL1GasPriceEstimateWei(update)
+	return ps.SetL1BaseFeeEstimateWei(update)
 }
 
-// Get how slowly ArbOS updates its estimate of the L1 gas price
-func (ps *L1PricingState) L1GasPriceEstimateInertia() (uint64, error) {
-	return ps.l1GasPriceEstimateInertia.Get()
+// Get how slowly ArbOS updates its estimate of the L1 basefee
+func (ps *L1PricingState) L1BaseFeeEstimateInertia() (uint64, error) {
+	return ps.l1BaseFeeEstimateInertia.Get()
 }
 
-// Set how slowly ArbOS updates its estimate of the L1 gas price
-func (ps *L1PricingState) SetL1GasPriceEstimateInertia(inertia uint64) error {
-	return ps.l1GasPriceEstimateInertia.Set(inertia)
+// Set how slowly ArbOS updates its estimate of the L1 basefee
+func (ps *L1PricingState) SetL1BaseFeeEstimateInertia(inertia uint64) error {
+	return ps.l1BaseFeeEstimateInertia.Set(inertia)
 }
 
 func (ps *L1PricingState) userSpecifiedAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
@@ -190,7 +191,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +267,7 @@ func (ps *L1PricingState) PosterDataCost(
 	// add 5% to protect the aggregator from bad price fluctuation luck
 	dataGas = dataGas * 21 / 20
 
-	price, err := ps.L1GasPriceEstimateWei()
+	price, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, false, err
 	}

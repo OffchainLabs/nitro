@@ -118,11 +118,14 @@ interface ArbGasInfo {
     /// @notice Get how slowly ArbOS updates its estimate the amount of gas being burnt per second
     function getRateEstimateInertia() external view returns (uint64);
 
-    /// @notice Get ArbOS's estimate of the L1 gas price in wei
-    function getL1GasPriceEstimate() external view returns (uint256);
+    /// @notice Get ArbOS's estimate of the L1 basefee in wei
+    function getL1BaseFeeEstimate() external view returns (uint256);
 
-    /// @notice Get how slowly ArbOS updates its estimate of the L1 gas price
-    function getL1GasPriceEstimateInertia() external view returns (uint64);
+    /// @notice Get how slowly ArbOS updates its estimate of the L1 basefee
+    function getL1BaseFeeEstimateInertia() external view returns (uint64);
+
+    /// @notice Depricated -- Same as getL1BaseFeeEstimate()
+    function getL1GasPriceEstimate() external view returns (uint256);
 
     /// @notice Get L1 gas fees paid by the current transaction
     function getCurrentTxL1GasFees() external view returns (uint256);
