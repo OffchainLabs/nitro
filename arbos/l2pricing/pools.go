@@ -19,11 +19,11 @@ const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialSmallGasPoolSeconds = 60
 
-func (ps *L2PricingState) AddToGasPools(gas int64) {
+func (ps *L2PricingState) AddToGasPools(gas int64) error {
 	gasPool, _ := ps.GasPool()
 	smallGasPool, _ := ps.SmallGasPool()
-	ps.Restrict(ps.SetGasPool(util.SaturatingAdd(gasPool, gas)))
-	ps.Restrict(ps.SetSmallGasPool(util.SaturatingAdd(smallGasPool, gas)))
+	_ = ps.SetGasPool(util.SaturatingAdd(gasPool, gas))
+	return ps.SetSmallGasPool(util.SaturatingAdd(smallGasPool, gas))
 }
 
 func (ps *L2PricingState) NotifyGasPricerThatTimeElapsed(secondsElapsed uint64) {

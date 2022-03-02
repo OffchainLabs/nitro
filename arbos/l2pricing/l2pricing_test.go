@@ -46,7 +46,7 @@ func TestGasPricingGasPool(t *testing.T) {
 	Require(t, err)
 
 	initialSub := int64(smallGasPoolMax / 2)
-	pricing.AddToGasPools(-initialSub)
+	Require(t, pricing.AddToGasPools(-initialSub))
 
 	expectedSmallGasPool -= initialSub
 	expectedGasPool -= initialSub
@@ -87,7 +87,7 @@ func TestGasPricingPoolPrice(t *testing.T) {
 		Fail(t, "wrong initial gas price")
 	}
 
-	pricing.AddToGasPools(-smallGasPoolMax * 4)
+	Require(t, pricing.AddToGasPools(-smallGasPoolMax*4))
 
 	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
 		Fail(t, "price should not be changed")

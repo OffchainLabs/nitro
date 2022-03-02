@@ -333,7 +333,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(gasUsed))
+		_ = p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(gasUsed))
 		return
 	}
 
@@ -366,7 +366,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
+		_ = p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
 	}
 }
 
