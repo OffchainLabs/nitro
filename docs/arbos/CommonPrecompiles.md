@@ -36,22 +36,22 @@ Provides aggregators and their users methods for configuring how they participat
 # [ArbGasInfo][ArbGasInfo_link]<a name=ArbGasInfo></a>
 Provides insight into the cost of using the chain. These methods have been adjusted to account for Nitro's heavy use of calldata compression. Of note to end-users, we no longer make a distinction between non-zero and zero-valued calldata bytes.
 
-| Methods                                                                |                                                                   |
-|:-----------------------------------------------------------------------|:------------------------------------------------------------------|
-| [<img src=e.png height=16>][GIs1] [`GetPricesInWei`][GI1]`()`          | Get prices in wei when using the caller's preferred aggregator    |
-| [<img src=e.png height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`       | Get prices in ArbGas when using the caller's preferred aggregator |
-| [<img src=e.png height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()`  | Get the chain speed limit, pool size, and tx gas limit            |
-| [<img src=e.png height=16>][GIs11] [`GetL1GasPriceEstimate`][GI11]`()` | Get ArbOS's estimate of the L1 gas price in wei                   |
+| Methods                                                               |                                                                   |
+|:----------------------------------------------------------------------|:------------------------------------------------------------------|
+| [<img src=e.png height=16>][GIs1] [`GetPricesInWei`][GI1]`()`         | Get prices in wei when using the caller's preferred aggregator    |
+| [<img src=e.png height=16>][GIs3] [`GetPricesInArbGas`][GI3]`()`      | Get prices in ArbGas when using the caller's preferred aggregator |
+| [<img src=e.png height=16>][GIs4] [`GetGasAccountingParams`][GI4]`()` | Get the chain speed limit, pool size, and tx gas limit            |
+| [<img src=e.png height=16>][GIs11] [`GetL1BaseFeeEstimate`][GI11]`()` | Get ArbOS's estimate of the L1 basefee in wei                     |
 
-[GI1]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbGasInfo.go#L63
-[GI3]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbGasInfo.go#L99
-[GI4]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbGasInfo.go#L111
-[GI11]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/precompiles/ArbGasInfo.go#L150
+[GI1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L63
+[GI3]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L99
+[GI4]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L111
+[GI11]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/precompiles/ArbGasInfo.go#L150
 
-[GIs1]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/solgen/src/precompiles/ArbGasInfo.sol#L58
-[GIs3]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/solgen/src/precompiles/ArbGasInfo.sol#L83
-[GIs4]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/solgen/src/precompiles/ArbGasInfo.sol#L94
-[GIs11]: https://github.com/OffchainLabs/nitro/blob/704e82bb38ae3ccd70c35e31934c7b45f6c25561/solgen/src/precompiles/ArbGasInfo.sol#L122
+[GIs1]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L58
+[GIs3]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L83
+[GIs4]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L94
+[GIs11]: https://github.com/OffchainLabs/nitro/blob/3f504c57fba8ddf0759b7a55b4108e0bf5a078b3/solgen/src/precompiles/ArbGasInfo.sol#L122
 
 # [ArbRetryableTx][ArbRetryableTx_link]<a name=ArbRetryableTx></a>
 Provides methods for managing retryables. The model has been adjusted for Nitro, most notably in terms of how retry transactions are scheduled. For more information on retryables, please see [the retryable documentation](ArbOS.md#Retryables).
