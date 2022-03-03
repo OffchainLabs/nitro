@@ -69,21 +69,6 @@ func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
 }
 
-func (p *TxProcessor) getReimbursableAggregator() *common.Address {
-	if p.msg.UnderlyingTransaction() == nil {
-		// For the purposes of estimation, guess that this'll be submitted with their preferred aggregator.
-		agg, err := p.state.L1PricingState().ReimbursableAggregatorForSender(p.msg.From())
-		p.state.Burner.Restrict(err)
-		return agg
-	} else if arbos_util.DoesTxTypeAlias(p.TopTxType) {
-		// This is a non-aggregated message.
-		return nil
-	} else {
-		// This is an aggregated message. The poster is in the block's coinbase.
-		return &p.evm.Context.Coinbase
-	}
-}
-
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
 	// This hook is called before gas charging and will end the state transition if endTxNow is set to true
 	// Hence, we must charge for any l2 resources if endTxNow is returned true
@@ -220,24 +205,9 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
-	from := p.msg.From()
-
 	gasPrice := p.evm.Context.BaseFee
-	l1Pricing := p.state.L1PricingState()
-	aggregator := p.getReimbursableAggregator()
-	// posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
-	//p.state.Restrict(err)
-	_ = from
-	_ = l1Pricing
-
-	var posterCost *big.Int
-	var reimburse bool
-	if underlyingTx := p.msg.UnderlyingTransaction(); underlyingTx != nil {
-		posterCost = underlyingTx.PosterCost
-		reimburse = underlyingTx.PosterIsReimbursable
-	} else {
-
-	}
+	coinbase := p.evm.Context.Coinbase
+	posterCost, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase)
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
@@ -266,7 +236,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	}
 
 	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
-	tipRecipient := aggregator
+	tipRecipient := &coinbase
 	if !reimburse {
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
 		tipRecipient = &networkFeeAccount

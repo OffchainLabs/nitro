@@ -44,7 +44,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := util.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	perL1CalldataUnit := util.BigMulByUfrac(weiForL1Calldata, ratio, 16*l1pricing.DataWasNotCompressed)
+	perL1CalldataUnit := util.BigMulByUfrac(weiForL1Calldata, ratio, 16*10000)
 
 	// the cost of a simple tx without calldata
 	perL2Tx := util.BigMulByUint(perL1CalldataUnit, 16*l1pricing.TxFixedCost)
@@ -88,7 +88,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := util.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	compressedCharge := util.BigMulByUfrac(weiForL1Calldata, ratio, l1pricing.DataWasNotCompressed)
+	compressedCharge := util.BigMulByUfrac(weiForL1Calldata, ratio, 10000)
 	gasForL1Calldata := util.BigDiv(compressedCharge, l2GasPrice)
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)

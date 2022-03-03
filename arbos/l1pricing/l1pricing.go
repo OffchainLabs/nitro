@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/arbstate/arbos/addressSet"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -191,6 +192,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Addres
 	value, err := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes()))
 	return value.Big(), err
 }
+
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) (*big.Int, error) {
 	fixed, err := ps.FixedChargeForAggregatorL1Gas(aggregator)
 	if err != nil {
@@ -216,19 +218,17 @@ func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (com
 	}
 }
 
-const DataWasNotCompressed uint64 = 10000
-
 func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (uint64, error) {
 	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
-		return DataWasNotCompressed, err
+		return 10000, err
 	} else {
 		return raw.Big().Uint64(), err
 	}
 }
 
 func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio uint64) error {
-	if ratio > DataWasNotCompressed {
+	if ratio > 20000 {
 		return errors.New("compression ratio out of bounds")
 	}
 	return ps.aggregatorCompressionRatios.Set(arbos_util.AddressToHash(aggregator), arbos_util.UintToHash(ratio))
@@ -271,61 +271,43 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	tx.PosterCost = adjustedL1Fee
 }
 
-// Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
-//    a compression ratio of 1, that is, no compression.
-// A value of x (for x <= DataWasNotCompressed) corresponds to compression ratio of float(x) / float(DataWasNotCompressed).
-// Values greater than DataWasNotCompressed are treated as equivalent to DataWasNotCompressed.
-
 const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(
-	message types.Message,
-	sender common.Address,
-	aggregator *common.Address,
-) (*big.Int, bool, error) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
 
 	if tx := message.UnderlyingTransaction(); tx != nil {
-		return tx.PosterCost, tx.PosterIsReimbursable, nil
+		if tx.PosterCost == nil {
+			ps.AddPosterInfo(tx, sender, poster)
+		}
+		return tx.PosterCost, tx.PosterIsReimbursable
 	}
 
-	if aggregator == nil {
-		return big.NewInt(0), false, nil
+	if message.RunMode() == types.MessageGasEstimationMode {
+		// assume for the purposes of gas estimation that the poster will be the user's preferred aggregator
+		aggregator, _ := ps.ReimbursableAggregatorForSender(sender)
+		if aggregator != nil {
+			poster = *aggregator
+		}
 	}
-	reimbursableAggregator, err := ps.ReimbursableAggregatorForSender(sender)
+
+	var buffer bytes.Buffer
+	writer := brotli.NewWriterLevel(&buffer, 0)
+	_, err := writer.Write(message.Data())
 	if err != nil {
-		return nil, false, err
+		log.Error("failed to compress tx", "err", err)
+		return big.NewInt(0), false
 	}
-	if reimbursableAggregator == nil {
-		return big.NewInt(0), false, nil
-	}
-	if *reimbursableAggregator != *aggregator {
-		return big.NewInt(0), false, nil
-	}
-
-	data := message.Data()
-
-	bytesToCharge := uint64(len(data) + TxFixedCost)
-
-	ratio, err := ps.AggregatorCompressionRatio(*reimbursableAggregator)
-	if err != nil {
-		return nil, false, err
+	if err := writer.Close(); err != nil {
+		log.Error("failed to compress tx", "err", err)
+		return big.NewInt(0), false
 	}
 
-	dataGas := 16 * bytesToCharge * ratio / DataWasNotCompressed
+	// Approximate the number of l1 bytes needed for this tx
+	l1Bytes := buffer.Len() + TxFixedCost
+	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
+	l1Fee := util.BigMulByUint(l1GasPrice, uint64(l1Bytes))
 
-	// add 5% to protect the aggregator from bad price fluctuation luck
-	dataGas = dataGas * 21 / 20
-
-	price, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return nil, false, err
-	}
-
-	baseCharge, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
-	if err != nil {
-		return nil, false, err
-	}
-
-	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), price)
-	return new(big.Int).Add(baseCharge, chargeForBytes), true, nil
+	// Adjust the price paid by the aggregator's reported improvements due to batching
+	ratio, _ := ps.AggregatorCompressionRatio(poster)
+	return util.BigMulByUfrac(l1Fee, ratio, 10000), true
 }
