@@ -48,12 +48,16 @@ func (i *txQueueItem) returnResult(err error) {
 type Sequencer struct {
 	util.StopWaiter
 
-	txStreamer          *TransactionStreamer
-	txQueue             chan txQueueItem
-	l1Client            arbutil.L1Interface
+	txStreamer *TransactionStreamer
+	txQueue    chan txQueueItem
+	l1Client   arbutil.L1Interface
+
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
 	l1Timestamp         uint64
+
+	forwarderMutex sync.Mutex
+	forwarder      *TxForwarder
 }
 
 func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
@@ -97,6 +101,44 @@ func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender co
 		return vm.ErrExecutionReverted
 	}
 	return nil
+}
+
+func (s *Sequencer) ForwardTarget() string {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	if s.forwarder == nil {
+		return ""
+	}
+	return s.forwarder.target
+}
+
+func (s *Sequencer) ForwardTo(url string) {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	s.forwarder = NewForwarder(url)
+	err := s.forwarder.Initialize(s.GetContext())
+	if err != nil {
+		log.Error("failed to set forward agent", "err", err)
+		s.forwarder = nil
+	}
+}
+
+func (s *Sequencer) DontForward() {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	s.forwarder = nil
+}
+
+func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
+	s.forwarderMutex.Lock()
+	defer s.forwarderMutex.Unlock()
+	if s.forwarder == nil {
+		return false
+	}
+	for _, item := range queueItems {
+		item.resultChan <- s.forwarder.PublishTransaction(item.ctx, item.tx)
+	}
+	return true
 }
 
 func int64Abs(a int64) int64 {
@@ -177,6 +219,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		queueItems = append(queueItems, queueItem)
 	}
 
+	if s.forwardIfSet(queueItems) {
+		return
+	}
+
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
 		Poster:      l1pricing.SequencerAddress,
@@ -195,6 +241,22 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	err := s.txStreamer.SequenceTransactions(header, txes, hooks)
 	if err == nil && len(hooks.TxErrors) != len(txes) {
 		err = fmt.Errorf("unexpected number of error results: %v vs number of txes %v", len(hooks.TxErrors), len(txes))
+	}
+	if errors.Is(err, ErrNotMainSequencer) {
+		// we changed roles
+		// forward if we have where to
+		if s.forwardIfSet(queueItems) {
+			return
+		}
+		// try to add back to queue otherwise
+		for _, item := range queueItems {
+			select {
+			case s.txQueue <- item:
+			default:
+				item.resultChan <- errors.New("queue full")
+			}
+		}
+		return
 	}
 	if err != nil {
 		log.Error("error sequencing transactions", "err", err)

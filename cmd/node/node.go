@@ -88,12 +88,15 @@ func main() {
 	nodeConf.ForwardingTarget = *forwardingtarget
 	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *l1role == "none" {
+		nodeConf.Sequencer = false
 		nodeConf.L1Reader = false
 		nodeConf.BatchPoster = false
 	} else if *l1role == "listener" {
+		nodeConf.Sequencer = false
 		nodeConf.L1Reader = true
 		nodeConf.BatchPoster = false
 	} else if *l1role == "sequencer" {
+		nodeConf.Sequencer = true
 		nodeConf.L1Reader = true
 		nodeConf.BatchPoster = true
 	} else {
@@ -298,7 +301,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}

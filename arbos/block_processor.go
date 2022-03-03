@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
@@ -381,11 +381,9 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		if err != nil {
 			panic(err)
 		}
-		state.SetLastTimestampSeen(header.Time)
+		timePassed := state.SetLastTimestampSeen(header.Time)
+		state.L2PricingState().UpdatePricingModel(header, timePassed, false)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
-
-		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()
