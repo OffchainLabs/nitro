@@ -46,7 +46,7 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int,
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
-	chainConfig := params.ArbitrumOneChainConfig()
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var transferGas uint64 = 300_000 // include room for aggregator L1 costs
 	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2), transferGas)
 	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))

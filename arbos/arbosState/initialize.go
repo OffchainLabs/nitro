@@ -7,16 +7,47 @@ package arbosState
 import (
 	"errors"
 	"log"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/arbstate/arbos/l2pricing"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader) (common.Hash, error) {
+func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint64, stateRoot common.Hash) *types.Block {
+	head := &types.Header{
+		Number:     new(big.Int).SetUint64(blockNumber),
+		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
+		Time:       timestamp,
+		ParentHash: parentHash,
+		Extra:      nil,
+		GasLimit:   l2pricing.GethBlockGasLimit,
+		GasUsed:    0,
+		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
+		Difficulty: big.NewInt(1),
+		MixDigest:  common.Hash{},
+		Coinbase:   common.Address{},
+		Root:       stateRoot,
+	}
+
+	genesisHeaderInfo := types.HeaderInfo{
+		SendRoot:      common.Hash{},
+		SendCount:     0,
+		L1BlockNumber: 0,
+	}
+	genesisHeaderInfo.UpdateHeaderWithInfo(head)
+
+	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+}
+
+func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig) (common.Hash, error) {
 	stateDatabase := state.NewDatabase(db)
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
@@ -24,7 +55,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	}
 
 	burner := burn.NewSystemBurner(false)
-	arbosState, err := InitializeArbosState(statedb, burner)
+	arbosState, err := InitializeArbosState(statedb, burner, chainConfig)
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
 	}

@@ -104,7 +104,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func Fuzz(input []byte) int {
 	chainDb := rawdb.NewMemoryDatabase()
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}))
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}), params.ArbitrumTestnetChainConfig())
 	if err != nil {
 		panic(err)
 	}
