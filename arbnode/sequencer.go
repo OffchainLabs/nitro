@@ -158,7 +158,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 
 	if s.l1Client != nil && (l1Block == 0 || int64Abs(int64(l1Timestamp)-timestamp) > maxAcceptableTimestampDeltaSeconds) {
 		log.Error(
-			"cannot sequence: unknown L1 block or L1 timestamp too from local clock time",
+			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", l1Timestamp,
 			"localTimestamp", timestamp,
