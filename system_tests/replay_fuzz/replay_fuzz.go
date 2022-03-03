@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/arbstate/statetransfer"
 )
 
-// Copied from cmd/replay/main.go
 func BuildBlock(
 	statedb *state.StateDB,
 	lastBlockHeader *types.Header,
