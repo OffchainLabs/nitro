@@ -198,7 +198,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			WasmModuleRoot:                 wasmModuleRoot,
 			Owner:                          deployAuth.From,
 			LoserStakeEscrow:               common.Address{},
-			ChainId:                        big.NewInt(1338),
+			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},
 		expectedRollupAddr,

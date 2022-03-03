@@ -47,7 +47,7 @@ func main() {
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
-	l2ChainIdUint := flag.Uint64("l2chainid", 1337, "L2 chain ID (determines Arbitrum network)")
+	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
@@ -87,6 +87,7 @@ func main() {
 	log.Root().SetHandler(glogger)
 
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
+	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
@@ -157,7 +158,7 @@ func main() {
 			if nodeConf.L1Validator {
 				validators++
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, time.Minute*5)
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, l2ChainId, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
