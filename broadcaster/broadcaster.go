@@ -1,18 +1,20 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
 
 import (
 	"context"
+	"net"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
@@ -44,12 +46,12 @@ type BroadcastMessage struct {
 }
 
 type BroadcastFeedMessage struct {
-	SequenceNumber uint64                       `json:"sequenceNumber"`
+	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
 	Message        arbstate.MessageWithMetadata `json:"message"`
 }
 
 type ConfirmedSequenceNumberMessage struct {
-	SequenceNumber uint64 `json:"sequenceNumber"`
+	SequenceNumber arbutil.MessageIndex `json:"sequenceNumber"`
 }
 
 type SequenceNumberCatchupBuffer struct {
@@ -104,7 +106,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		if confirmMsg.SequenceNumber < b.messages[0].SequenceNumber {
 			return nil
 		}
-		confirmedIndex := confirmMsg.SequenceNumber - b.messages[0].SequenceNumber
+		confirmedIndex := uint64(confirmMsg.SequenceNumber - b.messages[0].SequenceNumber)
 
 		if uint64(len(b.messages)) <= confirmedIndex {
 			log.Error("ConfirmedSequenceNumber message ", confirmMsg.SequenceNumber, " is past the end of stored messages. Clearing buffer. Final stored sequence number was ", b.messages[len(b.messages)-1])
@@ -130,11 +132,11 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 		} else if expectedSequenceNumber := b.messages[len(b.messages)-1].SequenceNumber + 1; newMsg.SequenceNumber == expectedSequenceNumber {
 			b.messages = append(b.messages, newMsg)
 		} else if newMsg.SequenceNumber > expectedSequenceNumber {
-			log.Warn("Message with sequence number ",
-				newMsg.SequenceNumber, " requested to be broadcast, ",
-				"expected ", expectedSequenceNumber,
-				", discarding up to ", newMsg.SequenceNumber,
-				" from catchup buffer")
+			log.Warn(
+				"Message requested to be broadcast has unexpected sequence number; discarding to seqNum from catchup buffer",
+				"seqNum", newMsg.SequenceNumber,
+				"expectedSeqNum", expectedSequenceNumber,
+			)
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
 		} else {
@@ -158,7 +160,7 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 	}
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq uint64) {
+func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
 	var broadcastMessages []*BroadcastFeedMessage
 
 	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}
@@ -172,7 +174,7 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq uint
 	b.server.Broadcast(bm)
 }
 
-func (b *Broadcaster) Confirm(seq uint64) {
+func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,
 		ConfirmedSequenceNumberMessage: &ConfirmedSequenceNumberMessage{seq}})
@@ -180,6 +182,10 @@ func (b *Broadcaster) Confirm(seq uint64) {
 
 func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
+}
+
+func (b *Broadcaster) ListenerAddr() net.Addr {
+	return b.server.ListenerAddr()
 }
 
 func (b *Broadcaster) GetCachedMessageCount() int {
@@ -190,6 +196,6 @@ func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
 
-func (b *Broadcaster) Stop() {
-	b.server.Stop()
+func (b *Broadcaster) StopAndWait() {
+	b.server.StopAndWait()
 }

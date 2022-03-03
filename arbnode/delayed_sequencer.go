@@ -9,11 +9,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/arbstate/arbos"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type DelayedSequencer struct {
-	client          L1Interface
+	util.StopWaiter
+	client          arbutil.L1Interface
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
@@ -39,7 +42,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(client L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		client:     client,
 		bridge:     reader.DelayedBridge(),
@@ -125,7 +128,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 			return errors.New("inbox reader db accumulator doesn't match delayed bridge")
 		}
 
-		err = d.txStreamer.SequenceDelayedMessages(messages, startPos)
+		err = d.txStreamer.SequenceDelayedMessages(ctx, messages, startPos)
 		if err != nil {
 			return err
 		}
@@ -136,7 +139,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) error {
-	headerChan, cancel := HeaderSubscribeWithRetry(ctx, d.client)
+	headerChan, cancel := arbutil.HeaderSubscribeWithRetry(ctx, d.client)
 	defer cancel()
 
 	for {
@@ -167,18 +170,13 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 	}
 }
 
-func (d *DelayedSequencer) Start(ctx context.Context) {
-	go (func() {
-		for {
-			err := d.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
+func (d *DelayedSequencer) Start(ctxIn context.Context) {
+	d.StopWaiter.Start(ctxIn)
+	d.CallIteratively(func(ctx context.Context) time.Duration {
+		err := d.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
-	})()
+		return time.Second
+	})
 }

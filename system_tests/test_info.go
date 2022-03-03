@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/statetransfer"
 )
 
 var simulatedChainID = big.NewInt(1337)
@@ -46,7 +46,7 @@ func NewBlockChainTestInfo(t *testing.T, signer types.Signer, gasPrice *big.Int,
 }
 
 func NewArbTestInfo(t *testing.T) *BlockchainTestInfo {
-	chainConfig := params.ArbitrumOneChainConfig()
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var transferGas uint64 = 300_000 // include room for aggregator L1 costs
 	arbinfo := NewBlockChainTestInfo(t, types.NewArbitrumSigner(types.NewLondonSigner(chainConfig.ChainID)), big.NewInt(params.InitialBaseFee*2), transferGas)
 	arbinfo.GenerateGenesysAccount("Owner", new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(9)))
@@ -165,6 +165,14 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%
+	}
+}
+
+func (b *BlockchainTestInfo) GetDefaultCallOpts(name string) *bind.CallOpts {
+	b.T.Helper()
+	auth := b.GetDefaultTransactOpts(name)
+	return &bind.CallOpts{
+		From: auth.From,
 	}
 }
 

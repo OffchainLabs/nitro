@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 mydir=`dirname $0`
 cd "$mydir"
 
@@ -32,6 +34,7 @@ if [[ $# -eq 1 ]]; then
             read -p "are you sure? [y/n]" -n 1 response
             if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
                 force_init=true
+                echo
             else
                 exit 0
             fi
@@ -63,7 +66,7 @@ if $force_init; then
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
 
     echo == Deploying L2
-    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json
+    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -authorizevalidators 10
 fi
 
 echo == Launching Sequencer

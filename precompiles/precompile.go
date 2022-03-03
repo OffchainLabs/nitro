@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -13,10 +13,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	templates "github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -57,18 +57,20 @@ const (
 )
 
 type Precompile struct {
-	methods     map[[4]byte]PrecompileMethod
-	events      map[string]PrecompileEvent
-	implementer reflect.Value
-	address     common.Address
+	methods      map[[4]byte]PrecompileMethod
+	events       map[string]PrecompileEvent
+	implementer  reflect.Value
+	address      common.Address
+	arbosVersion uint64
 }
 
 type PrecompileMethod struct {
-	name        string
-	template    abi.Method
-	purity      purity
-	handler     reflect.Method
-	implementer reflect.Value
+	name         string
+	template     abi.Method
+	purity       purity
+	handler      reflect.Method
+	implementer  reflect.Value
+	arbosVersion uint64
 }
 
 type PrecompileEvent struct {
@@ -167,6 +169,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 			purity,
 			handler,
 			reflect.ValueOf(implementer),
+			0,
 		}
 	}
 
@@ -376,6 +379,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		events,
 		reflect.ValueOf(implementer),
 		address,
+		0,
 	}
 }
 
@@ -456,14 +460,21 @@ func (p Precompile) Call(
 	evm *vm.EVM,
 ) (output []byte, gasLeft uint64, err error) {
 
+	arbosVersion := arbosState.ArbOSVersion(evm.StateDB)
+
+	if arbosVersion < p.arbosVersion {
+		// the precompile isn't yet active, so treat this call as if it were to a contract that doesn't exist
+		return []byte{}, gasSupplied, nil
+	}
+
 	if len(input) < 4 {
 		// ArbOS precompiles always have canonical method selectors
 		return nil, 0, vm.ErrExecutionReverted
 	}
 	id := *(*[4]byte)(input)
 	method, ok := p.methods[id]
-	if !ok {
-		// method does not exist
+	if !ok || arbosVersion < method.arbosVersion {
+		// method does not exist or hasn't yet been activated
 		return nil, 0, vm.ErrExecutionReverted
 	}
 

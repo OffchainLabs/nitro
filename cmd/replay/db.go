@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package main
@@ -8,7 +8,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/offchainlabs/arbstate/wavmio"
+	"github.com/offchainlabs/nitro/wavmio"
 )
 
 type PreimageDb struct{}

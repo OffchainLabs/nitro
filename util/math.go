@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package util
@@ -20,18 +20,18 @@ func Log2ceil(value uint64) uint64 {
 	return uint64(64 - bits.LeadingZeros64(value))
 }
 
-// clip an int to within (-infinity, bound]
-func UpperBoundInt(value, bound int64) int64 {
-	if value > bound {
-		return bound
+// the minimum of two ints
+func MinInt(value, ceiling int64) int64 {
+	if value > ceiling {
+		return ceiling
 	}
 	return value
 }
 
-// clip an int to within [bound, infinity)
-func LowerBoundInt(value, bound int64) int64 {
-	if value < bound {
-		return bound
+// the maximum of two ints
+func MaxInt(value, floor int64) int64 {
+	if value < floor {
+		return floor
 	}
 	return value
 }
@@ -39,6 +39,29 @@ func LowerBoundInt(value, bound int64) int64 {
 // casts an int to a huge
 func UintToBig(value uint64) *big.Int {
 	return new(big.Int).SetUint64(value)
+}
+
+// casts a uint to a big float
+func UintToBigFloat(value uint64) *big.Float {
+	return new(big.Float).SetPrec(53).SetUint64(value)
+}
+
+// casts a huge to a uint, panicking if out of bounds
+func BigToUintOrPanic(value *big.Int) uint64 {
+	if BigLessThan(value, big.NewInt(0)) {
+		panic("big.Int value is less than 0")
+	}
+	if BigGreaterThan(value, UintToBig(math.MaxUint64)) {
+		panic("big.Int value exceeds the max Uint64")
+	}
+	return value.Uint64()
+}
+
+// casts an rational to a big float
+func UfracToBigFloat(numerator, denominator uint64) *big.Float {
+	float := new(big.Float)
+	float.Quo(UintToBigFloat(numerator), UintToBigFloat(denominator))
+	return float
 }
 
 // check huge equality
@@ -73,11 +96,11 @@ func BigMul(multiplicand *big.Int, multiplier *big.Int) *big.Int {
 
 // divide a huge by another
 func BigDiv(dividend *big.Int, divisor *big.Int) *big.Int {
-	return new(big.Int).Mul(dividend, divisor)
+	return new(big.Int).Div(dividend, divisor)
 }
 
 // multiply a huge by a rational
-func BigMulByFrac(value *big.Int, numerator int64, denominator int64) *big.Int {
+func BigMulByFrac(value *big.Int, numerator, denominator int64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, big.NewInt(numerator))
 	value.Div(value, big.NewInt(denominator))
@@ -85,7 +108,7 @@ func BigMulByFrac(value *big.Int, numerator int64, denominator int64) *big.Int {
 }
 
 // multiply a huge by a rational whose components are non-negative
-func BigMulByUfrac(value *big.Int, numerator uint64, denominator uint64) *big.Int {
+func BigMulByUfrac(value *big.Int, numerator, denominator uint64) *big.Int {
 	value = new(big.Int).Set(value)
 	value.Mul(value, new(big.Int).SetUint64(numerator))
 	value.Div(value, new(big.Int).SetUint64(denominator))
@@ -102,8 +125,28 @@ func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }
 
+// divide a huge by an integer
+func BigDivByUint(dividend *big.Int, divisor uint64) *big.Int {
+	return BigDiv(dividend, UintToBig(divisor))
+}
+
+// add two big floats together
+func BigAddFloat(augend, addend *big.Float) *big.Float {
+	return new(big.Float).Add(augend, addend)
+}
+
+// multiply a big float by another
+func BigMulFloat(multiplicand, multiplier *big.Float) *big.Float {
+	return new(big.Float).Mul(multiplicand, multiplier)
+}
+
+// multiply a big float by an unsigned integer
+func BigMulFloatByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
+	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
+}
+
 // add two int64's without overflow
-func SaturatingAdd(augend int64, addend int64) int64 {
+func SaturatingAdd(augend, addend int64) int64 {
 	sum := augend + addend
 	if addend > 0 && sum < augend {
 		sum = math.MaxInt64
@@ -112,6 +155,24 @@ func SaturatingAdd(augend int64, addend int64) int64 {
 		sum = math.MinInt64
 	}
 	return sum
+}
+
+// add two uint64's without overflow
+func SaturatingUAdd(augend uint64, addend uint64) uint64 {
+	sum := augend + addend
+	if sum < augend || sum < addend {
+		sum = math.MaxUint64
+	}
+	return sum
+}
+
+// multiply two uint64's without overflow
+func SaturatingUMul(multiplicand uint64, multiplier uint64) uint64 {
+	product := multiplicand * multiplier
+	if multiplier != 0 && product/multiplier != multiplicand {
+		product = math.MaxUint64
+	}
+	return product
 }
 
 // cast a uint64 to an int64, clipping to [0, 2^63-1]
@@ -125,4 +186,26 @@ func SaturatingCast(value uint64) int64 {
 // the number of eth-words needed to store n bytes
 func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32
+}
+
+// Return the Maclaurin series approximation of e^x, where x is denominated in basis points.
+// This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
+func ApproxExpBasisPoints(value int64) uint64 {
+	input := value
+	negative := value < 0
+	if negative {
+		input = -value
+	}
+	x := uint64(input)
+
+	bips := uint64(10000)
+	res := bips + x/4
+	res = bips + SaturatingUMul(res, x)/(3*bips)
+	res = bips + SaturatingUMul(res, x)/(2*bips)
+	res = bips + SaturatingUMul(res, x)/(1*bips)
+	if negative {
+		return uint64(bips * bips / res)
+	} else {
+		return uint64(res)
+	}
 }

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/merkletree"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 // Provides system-level functionality for interacting with L1 and understanding the call stack.
@@ -53,7 +53,7 @@ func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 
 // Gets the current ArbOS version
 func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
-	version := new(big.Int).SetUint64(52 + c.state.FormatVersion()) // Nitro starts at version 53
+	version := new(big.Int).SetUint64(55 + c.state.FormatVersion()) // Nitro starts at version 56
 	return version, nil
 }
 

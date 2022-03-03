@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -7,40 +7,52 @@ package arbnode
 import (
 	"context"
 	"encoding/binary"
-	"math/big"
-	"strings"
-
+	"fmt"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
+	"math/big"
 
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
+var sequencerBridgeABI *abi.ABI
 var batchDeliveredID common.Hash
-var batchDeliveredFromOriginID common.Hash
 var addSequencerL2BatchFromOriginCallABI abi.Method
+var sequencerBatchDataABI abi.Event
+
+const sequencerBatchDataEvent = "SequencerBatchData"
+
+type batchDataLocation uint8
+
+const (
+	batchDataTxInput batchDataLocation = iota
+	batchDataSeparateEvent
+	batchDataNone
+)
 
 func init() {
-	parsedSequencerBridgeABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	var err error
+	sequencerBridgeABI, err = bridgegen.SequencerInboxMetaData.GetAbi()
 	if err != nil {
 		panic(err)
 	}
-	batchDeliveredID = parsedSequencerBridgeABI.Events["SequencerBatchDelivered"].ID
-	batchDeliveredFromOriginID = parsedSequencerBridgeABI.Events["SequencerBatchDeliveredFromOrigin"].ID
-	addSequencerL2BatchFromOriginCallABI = parsedSequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
+	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
+	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
+	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
 }
 
 type SequencerInbox struct {
 	con       *bridgegen.SequencerInbox
 	address   common.Address
 	fromBlock int64
-	client    bind.ContractBackend
+	client    arbutil.L1Interface
 }
 
-func NewSequencerInbox(client bind.ContractBackend, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
+func NewSequencerInbox(client arbutil.L1Interface, addr common.Address, fromBlock int64) (*SequencerInbox, error) {
 	con, err := bridgegen.NewSequencerInbox(addr, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -89,28 +101,58 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc     common.Hash
 	AfterDelayedAcc   common.Hash
 	AfterDelayedCount uint64
-	TimeBounds        bridgegen.SequencerInboxTimeBounds
-	dataIfAvailable   *[]byte
+	TimeBounds        bridgegen.ISequencerInboxTimeBounds
 	txIndexInBlock    uint
+	dataLocation      batchDataLocation
+	bridgeAddress     common.Address
 }
 
-func (m *SequencerInboxBatch) GetData(ctx context.Context, client ethereum.ChainReader) ([]byte, error) {
-	if m.dataIfAvailable != nil {
-		return *m.dataIfAvailable, nil
+func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+	switch m.dataLocation {
+	case batchDataTxInput:
+		tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		args := make(map[string]interface{})
+		err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		return args["data"].([]byte), nil
+	case batchDataSeparateEvent:
+		var numberAsHash common.Hash
+		binary.BigEndian.PutUint64(numberAsHash[(32-8):], m.SequenceNumber)
+		query := ethereum.FilterQuery{
+			BlockHash: &m.BlockHash,
+			Addresses: []common.Address{m.bridgeAddress},
+			Topics:    [][]common.Hash{{sequencerBatchDataABI.ID}, {numberAsHash}},
+		}
+		logs, err := client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		if len(logs) == 0 {
+			return nil, errors.New("expected to find sequencer batch data")
+		}
+		if len(logs) > 1 {
+			return nil, errors.New("expected to find only one matching sequencer batch data")
+		}
+		event := new(bridgegen.SequencerInboxSequencerBatchData)
+		err = sequencerBridgeABI.UnpackIntoInterface(event, sequencerBatchDataEvent, logs[0].Data)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		return event.Data, nil
+	case batchDataNone:
+		// No data when in a force inclusion batch
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("batch has invalid data location %v", m.dataLocation)
 	}
-	tx, err := client.TransactionInBlock(ctx, m.BlockHash, m.txIndexInBlock)
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	args := make(map[string]interface{})
-	err = addSequencerL2BatchFromOriginCallABI.Inputs.UnpackIntoMap(args, tx.Data()[4:])
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return args["data"].([]byte), nil
 }
 
-func (m *SequencerInboxBatch) Serialize(ctx context.Context, client ethereum.ChainReader) ([]byte, error) {
+func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
 	var fullData []byte
 
 	// Serialize the header
@@ -139,11 +181,10 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client ethereum.Cha
 
 func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big.Int) ([]*SequencerInboxBatch, error) {
 	query := ethereum.FilterQuery{
-		BlockHash: nil,
 		FromBlock: from,
 		ToBlock:   to,
 		Addresses: []common.Address{i.address},
-		Topics:    [][]common.Hash{{batchDeliveredID, batchDeliveredFromOriginID}},
+		Topics:    [][]common.Hash{{batchDeliveredID}},
 	}
 	logs, err := i.client.FilterLogs(ctx, query)
 	if err != nil {
@@ -151,57 +192,34 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 	}
 	messages := make([]*SequencerInboxBatch, 0, len(logs))
 	for _, log := range logs {
-		if log.Topics[0] == batchDeliveredID {
-			parsedLog, err := i.con.ParseSequencerBatchDelivered(log)
-			if err != nil {
-				return nil, errors.WithStack(err)
-			}
-			if !parsedLog.BatchSequenceNumber.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
-			}
-			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
-			}
-			batch := &SequencerInboxBatch{
-				BlockHash:         log.BlockHash,
-				BlockNumber:       log.BlockNumber,
-				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
-				BeforeInboxAcc:    parsedLog.BeforeAcc,
-				AfterInboxAcc:     parsedLog.AfterAcc,
-				AfterDelayedAcc:   parsedLog.DelayedAcc,
-				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
-				dataIfAvailable:   &parsedLog.Data,
-				txIndexInBlock:    log.TxIndex,
-				TimeBounds:        parsedLog.TimeBounds,
-			}
-			messages = append(messages, batch)
-		} else if log.Topics[0] == batchDeliveredFromOriginID {
-			parsedLog, err := i.con.ParseSequencerBatchDeliveredFromOrigin(log)
-			if err != nil {
-				return nil, errors.WithStack(err)
-			}
-			if !parsedLog.BatchSequenceNumber.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
-			}
-			if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
-				return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
-			}
-			batch := &SequencerInboxBatch{
-				BlockHash:         log.BlockHash,
-				BlockNumber:       log.BlockNumber,
-				SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
-				BeforeInboxAcc:    parsedLog.BeforeAcc,
-				AfterInboxAcc:     parsedLog.AfterAcc,
-				AfterDelayedAcc:   parsedLog.DelayedAcc,
-				AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
-				dataIfAvailable:   nil,
-				txIndexInBlock:    log.TxIndex,
-				TimeBounds:        parsedLog.TimeBounds,
-			}
-			messages = append(messages, batch)
-		} else {
+		if log.Topics[0] != batchDeliveredID {
 			return nil, errors.New("unexpected log selector")
 		}
+		parsedLog, err := i.con.ParseSequencerBatchDelivered(log)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		if !parsedLog.BatchSequenceNumber.IsUint64() {
+			return nil, errors.New("sequencer inbox event has non-uint64 sequence number")
+		}
+		if !parsedLog.AfterDelayedMessagesRead.IsUint64() {
+			return nil, errors.New("sequencer inbox event has non-uint64 delayed messages read")
+		}
+
+		batch := &SequencerInboxBatch{
+			BlockHash:         log.BlockHash,
+			BlockNumber:       log.BlockNumber,
+			SequenceNumber:    parsedLog.BatchSequenceNumber.Uint64(),
+			BeforeInboxAcc:    parsedLog.BeforeAcc,
+			AfterInboxAcc:     parsedLog.AfterAcc,
+			AfterDelayedAcc:   parsedLog.DelayedAcc,
+			AfterDelayedCount: parsedLog.AfterDelayedMessagesRead.Uint64(),
+			txIndexInBlock:    log.TxIndex,
+			TimeBounds:        parsedLog.TimeBounds,
+			dataLocation:      batchDataLocation(parsedLog.DataLocation),
+			bridgeAddress:     log.Address,
+		}
+		messages = append(messages, batch)
 	}
 	return messages, nil
 }

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package colors
@@ -40,6 +40,12 @@ func PrintMint(args ...interface{}) {
 
 func PrintRed(args ...interface{}) {
 	print(Red)
+	fmt.Print(args...)
+	println(Clear)
+}
+
+func PrintYellow(args ...interface{}) {
+	print(Yellow)
 	fmt.Print(args...)
 	println(Clear)
 }

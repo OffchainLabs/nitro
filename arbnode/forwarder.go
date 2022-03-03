@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -16,10 +16,10 @@ type TxForwarder struct {
 	client *ethclient.Client
 }
 
-func NewForwarder(target string) (*TxForwarder, error) {
+func NewForwarder(target string) *TxForwarder {
 	return &TxForwarder{
 		target: target,
-	}, nil
+	}
 }
 
 func (f *TxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
@@ -38,3 +38,5 @@ func (f *TxForwarder) Initialize(ctx context.Context) error {
 func (f *TxForwarder) Start(ctx context.Context) error {
 	return nil
 }
+
+func (f *TxForwarder) StopAndWait() {}

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -7,10 +7,13 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type InboxReaderConfig struct {
@@ -32,6 +35,8 @@ var TestInboxReaderConfig = InboxReaderConfig{
 }
 
 type InboxReader struct {
+	util.StopWaiter
+
 	// Only in run thread
 	caughtUp          bool
 	firstMessageBlock *big.Int
@@ -42,10 +47,10 @@ type InboxReader struct {
 	delayedBridge  *DelayedBridge
 	sequencerInbox *SequencerInbox
 	caughtUpChan   chan bool
-	client         L1Interface
+	client         arbutil.L1Interface
 }
 
-func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config *InboxReaderConfig) (*InboxReader, error) {
 	return &InboxReader{
 		tracker:           tracker,
 		delayedBridge:     delayedBridge,
@@ -57,20 +62,15 @@ func NewInboxReader(tracker *InboxTracker, client L1Interface, firstMessageBlock
 	}, nil
 }
 
-func (r *InboxReader) Start(ctx context.Context) error {
-	go (func() {
-		for {
-			err := r.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
+func (r *InboxReader) Start(ctxIn context.Context) error {
+	r.StopWaiter.Start(ctxIn)
+	r.CallIteratively(func(ctx context.Context) time.Duration {
+		err := r.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
-	})()
+		return time.Second
+	})
 
 	// Ensure we read the init message before other things start up
 	for i := 0; ; i++ {
@@ -79,6 +79,19 @@ func (r *InboxReader) Start(ctx context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
+			// Validate the init message matches our L2 blockchain
+			message, err := r.tracker.GetDelayedMessage(0)
+			if err != nil {
+				return err
+			}
+			initChainId, err := message.ParseInitMessage()
+			if err != nil {
+				return err
+			}
+			configChainId := r.tracker.txStreamer.bc.Config().ChainID
+			if initChainId.Cmp(configChainId) != 0 {
+				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
 			break
 		}
 		if i == 30*10 {

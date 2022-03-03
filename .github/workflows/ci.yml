@@ -60,6 +60,14 @@ jobs:
   test:
     name: Go Tests
     runs-on: ubuntu-latest
+
+    # Creates a redis container for redis tests
+    services:
+      redis:
+        image: redis
+        ports:
+            - 6379:6379
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -153,11 +161,21 @@ jobs:
         with:
           test-results: test-output.json
 
+      - name: run redis tests
+        if: always()
+        run: gotestsum --format short-verbose --jsonfile test-output-redis.json -- -p 1 -run TestSeqCoordinator -tags redistest ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+
+      - name: Annotate redis tests
+        if: always()
+        uses: guyarb/golang-test-annotations@v0.5.0
+        with:
+          test-results: test-output-redis.json
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
           fail_ci_if_error: true
-          files: ./coverage.txt
+          files: ./coverage.txt,coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
 

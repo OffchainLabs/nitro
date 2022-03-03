@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
@@ -10,16 +10,16 @@ import (
 	"math"
 	"math/big"
 
-	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util"
+	arbos_util "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -49,7 +49,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	if err != nil {
 		panic(err)
 	}
-	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
@@ -156,7 +155,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
 
-		if util.BigLessThan(tx.GasPrice, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
+		if util.BigLessThan(tx.GasFeeCap, basefee) && p.msg.RunMode() != types.MessageGasEstimationMode {
 			// user's bid was too low
 			return true, 0, nil, underlyingTx.Hash().Bytes()
 		}
@@ -168,7 +167,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(usergas))
+		p.state.L2PricingState().AddToGasPool(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -215,16 +214,18 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	return false, 0, nil, nil
 }
 
-func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
+func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, error) {
 	// Because a user pays a 1-dimensional gas price, we must re-express poster L1 calldata costs
 	// as if the user was buying an equivalent amount of L2 compute gas. This hook determines what
 	// that cost looks like, ensuring the user can pay and saving the result for later reference.
 
 	var gasNeededToStartEVM uint64
+	from := p.msg.From()
 
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
-	posterCost, err := l1Pricing.PosterDataCost(p.msg.From(), p.getReimbursableAggregator(), p.msg.Data())
+	aggregator := p.getReimbursableAggregator()
+	posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
 	p.state.Restrict(err)
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
@@ -253,9 +254,16 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		gasNeededToStartEVM = p.posterGas
 	}
 
+	// Most users shouldn't set a tip, but if specified only give it to the poster if they're reimbursable
+	tipRecipient := aggregator
+	if !reimburse {
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		tipRecipient = &networkFeeAccount
+	}
+
 	if *gasRemaining < gasNeededToStartEVM {
 		// the user couldn't pay for call data, so give up
-		return core.ErrIntrinsicGas
+		return tipRecipient, core.ErrIntrinsicGas
 	}
 	*gasRemaining -= gasNeededToStartEVM
 
@@ -269,7 +277,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) error {
 		}
 	}
 
-	return nil
+	return tipRecipient, nil
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {
@@ -320,17 +328,17 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account and updated the gas pool
-		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(gasLeft))
+		p.state.L2PricingState().AddToGasPool(util.SaturatingCast(gasLeft))
 		return
 	}
 
 	if gasLeft > p.msg.Gas() {
 		panic("Tx somehow refunds gas after computation")
 	}
-	gasUsed := new(big.Int).SetUint64(p.msg.Gas() - gasLeft)
+	gasUsed := util.UintToBig(p.msg.Gas() - gasLeft)
 
-	totalCost := new(big.Int).Mul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
-	computeCost := new(big.Int).Sub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
+	totalCost := util.BigMul(gasPrice, gasUsed)        // total cost = price of gas * gas burnt
+	computeCost := util.BigSub(totalCost, p.PosterFee) // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
 		// Uh oh, there's a bug in our charging code.
 		// Give all funds to the network account and continue.
@@ -358,7 +366,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed.Uint64()
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
+		p.state.L2PricingState().AddToGasPool(-util.SaturatingCast(computeGas))
 	}
 }
 
@@ -410,4 +418,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 		return common.Hash{}, err
 	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
+}
+
+func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
+	receipt.L1GasUsed = p.posterGas
 }

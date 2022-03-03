@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 /*
  * Copyright 2020, Offchain Labs, Inc.
  *
@@ -17,45 +19,45 @@
 pragma solidity >=0.4.21 <0.9.0;
 
 /**
-* @title System level functionality
-* @notice For use by contracts to interact with core L2-specific functionality.
-* Precompiled contract that exists in every Arbitrum chain at address(100), 0x0000000000000000000000000000000000000064.
+ * @title System level functionality
+ * @notice For use by contracts to interact with core L2-specific functionality.
+ * Precompiled contract that exists in every Arbitrum chain at address(100), 0x0000000000000000000000000000000000000064.
  */
 interface ArbSys {
     /**
-    * @notice Get Arbitrum block number (distinct from L1 block number; Arbitrum genesis block has block number 0)
-    * @return block number as int
+     * @notice Get Arbitrum block number (distinct from L1 block number; Arbitrum genesis block has block number 0)
+     * @return block number as int
      */
-    function arbBlockNumber() external view returns (uint);
+    function arbBlockNumber() external view returns (uint256);
 
     /**
-    * @notice Get Arbitrum block hash (reverts unless currentBlockNum-256 <= arbBlockNum < currentBlockNum)
-    * @return block hash
+     * @notice Get Arbitrum block hash (reverts unless currentBlockNum-256 <= arbBlockNum < currentBlockNum)
+     * @return block hash
      */
-    function arbBlockHash(uint arbBlockNum) external view returns (bytes32);
+    function arbBlockHash(uint256 arbBlockNum) external view returns (bytes32);
 
     /**
-    * @notice Gets the rollup's unique chain identifier
-    * @return Chain identifier as int
+     * @notice Gets the rollup's unique chain identifier
+     * @return Chain identifier as int
      */
-    function arbChainID() external view returns(uint);
+    function arbChainID() external view returns (uint256);
 
     /**
-    * @notice Get internal version number identifying an ArbOS build
-    * @return version number as int
+     * @notice Get internal version number identifying an ArbOS build
+     * @return version number as int
      */
-    function arbOSVersion() external view returns (uint);
+    function arbOSVersion() external view returns (uint256);
 
     /**
      * @notice Returns 0 since Nitro has no concept of storage gas
      * @return int 0
      */
-    function getStorageGasAvailable() external returns(uint);
+    function getStorageGasAvailable() external returns (uint256);
 
     /**
-    * @notice check if current call is coming from l1
-    * @return true if the caller of this was called directly from L1
-    */
+     * @notice check if current call is coming from l1
+     * @return true if the caller of this was called directly from L1
+     */
     function isTopLevelCall() external view returns (bool);
 
     /**
@@ -64,7 +66,10 @@ interface ArbSys {
      * @param unused argument no longer used
      * @return aliased sender address
      */
-    function mapL1SenderContractAddressToL2Alias(address sender, address unused) external pure returns(address);
+    function mapL1SenderContractAddressToL2Alias(address sender, address unused)
+        external
+        pure
+        returns (address);
 
     /**
      * @notice check if the caller (of this caller of this) is an aliased L1 contract address
@@ -79,43 +84,53 @@ interface ArbSys {
     function myCallersAddressWithoutAliasing() external view returns (address);
 
     /**
-    * @notice Send given amount of Eth to dest from sender.
-    * This is a convenience function, which is equivalent to calling sendTxToL1 with empty calldataForL1.
-    * @param destination recipient address on L1
-    * @return unique identifier for this L2-to-L1 transaction.
-    */
-    function withdrawEth(address destination) external payable returns(uint);
+     * @notice Send given amount of Eth to dest from sender.
+     * This is a convenience function, which is equivalent to calling sendTxToL1 with empty data.
+     * @param destination recipient address on L1
+     * @return unique identifier for this L2-to-L1 transaction.
+     */
+    function withdrawEth(address destination) external payable returns (uint256);
 
     /**
-    * @notice Send a transaction to L1
-    * @param destination recipient address on L1
-    * @param calldataForL1 (optional) calldata for L1 contract call
-    * @return a unique identifier for this L2-to-L1 transaction.
-    */
-    function sendTxToL1(address destination, bytes calldata calldataForL1) external payable returns(uint);
+     * @notice Send a transaction to L1
+     * @param destination recipient address on L1
+     * @param data (optional) calldata for L1 contract call
+     * @return a unique identifier for this L2-to-L1 transaction.
+     */
+    function sendTxToL1(address destination, bytes calldata data)
+        external
+        payable
+        returns (uint256);
 
     /**
-    * @notice Get send Merkle tree state
-    * @return size number of sends in the history
-    * @return root root hash of the send history
-    * @return partials hashes of partial subtrees in the send history tree
-    */
-    function sendMerkleTreeState() external view returns(uint size, bytes32 root, bytes32[] memory partials);
+     * @notice Get send Merkle tree state
+     * @return size number of sends in the history
+     * @return root root hash of the send history
+     * @return partials hashes of partial subtrees in the send history tree
+     */
+    function sendMerkleTreeState()
+        external
+        view
+        returns (
+            uint256 size,
+            bytes32 root,
+            bytes32[] memory partials
+        );
 
     /**
      * @notice creates a send txn from L2 to L1
      * @param position = (level << 192) + leaf = (0 << 192) + leaf = leaf
-    */
+     */
     event L2ToL1Transaction(
         address caller,
         address indexed destination,
-        uint indexed hash,
-        uint indexed position,
-        uint indexInBatch,
-        uint arbBlockNum,
-        uint ethBlockNum,
-        uint timestamp,
-        uint callvalue,
+        uint256 indexed hash,
+        uint256 indexed position,
+        uint256 indexInBatch,
+        uint256 arbBlockNum,
+        uint256 ethBlockNum,
+        uint256 timestamp,
+        uint256 callvalue,
         bytes data
     );
 
@@ -124,10 +139,10 @@ interface ArbSys {
      * @param reserved an index meant only to align the 4th index with L2ToL1Transaction's 4th event
      * @param hash the merkle hash
      * @param position = (level << 192) + leaf
-    */
+     */
     event SendMerkleUpdate(
-        uint indexed reserved,
+        uint256 indexed reserved,
         bytes32 indexed hash,
-        uint indexed position
+        uint256 indexed position
     );
 }
