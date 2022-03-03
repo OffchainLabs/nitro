@@ -329,22 +329,12 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 		})
 
-		consecutiveHeaderCheckFailures := 0
 		s.CallIteratively(func(ctx context.Context) time.Duration {
 			header, err := s.l1Client.HeaderByNumber(s.GetContext(), nil)
 			if err != nil {
-				log.Warn("failed to get current L1 header", "consecutiveFailures", consecutiveHeaderCheckFailures, "err", err)
-				consecutiveHeaderCheckFailures++
-				if consecutiveHeaderCheckFailures >= 12 {
-					// Disable sequencing for now until we regain our connection to the L1
-					s.L1BlockAndTimeMutex.Lock()
-					s.l1BlockNumber = 0
-					s.l1Timestamp = 0
-					s.L1BlockAndTimeMutex.Unlock()
-				}
+				log.Warn("failed to get current L1 header", "err", err)
 				return time.Second * 5
 			}
-			consecutiveHeaderCheckFailures = 0
 			s.updateLatestL1Block(header)
 			return time.Second
 		})
