@@ -27,7 +27,7 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
 		Time:       timestamp,
 		ParentHash: parentHash,
-		Extra:      []byte("Arbitrum"),
+		Extra:      nil,
 		GasLimit:   l2pricing.GethBlockGasLimit,
 		GasUsed:    0,
 		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
@@ -36,6 +36,13 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 		Coinbase:   common.Address{},
 		Root:       stateRoot,
 	}
+
+	genesisHeaderInfo := types.HeaderInfo{
+		SendRoot:      common.Hash{},
+		SendCount:     0,
+		L1BlockNumber: 0,
+	}
+	genesisHeaderInfo.UpdateHeaderWithInfo(head)
 
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
