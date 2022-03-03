@@ -14,7 +14,7 @@ extern "C" {
 struct MemoryLeaf([u8; 32]);
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_getGlobalStateBytes32(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateBytes32(sp: GoStack) {
     let idx = sp.read_u64(0) as u32;
     let out_ptr = sp.read_u64(1);
     let mut out_len = sp.read_u64(2);
@@ -34,7 +34,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_getGlobalSt
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_setGlobalStateBytes32(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateBytes32(sp: GoStack) {
     let idx = sp.read_u64(0) as u32;
     let src_ptr = sp.read_u64(1);
     let src_len = sp.read_u64(2);
@@ -53,19 +53,19 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_setGlobalSt
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_getGlobalStateU64(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_getGlobalStateU64(sp: GoStack) {
     let idx = sp.read_u64(0) as u32;
     sp.write_u64(1, wavm_get_globalstate_u64(idx));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_setGlobalStateU64(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_setGlobalStateU64(sp: GoStack) {
     let idx = sp.read_u64(0) as u32;
     wavm_set_globalstate_u64(idx, sp.read_u64(1));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readInboxMessage(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readInboxMessage(sp: GoStack) {
     let msg_num = sp.read_u64(0);
     let offset = sp.read_u64(1);
     let out_ptr = sp.read_u64(2);
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readInboxMe
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readDelayedInboxMessage(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_readDelayedInboxMessage(sp: GoStack) {
     let seq_num = sp.read_u64(0);
     let offset = sp.read_u64(1);
     let out_ptr = sp.read_u64(2);
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_readDelayed
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_arbstate_wavmio_resolvePreImage(sp: GoStack) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolvePreImage(sp: GoStack) {
     let hash_ptr = sp.read_u64(0);
     let hash_len = sp.read_u64(1);
     let offset = sp.read_u64(3);

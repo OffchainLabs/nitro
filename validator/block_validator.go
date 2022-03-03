@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -20,10 +20,11 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
 
@@ -189,6 +190,22 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 	}
 
 	chainConfig := blockchain.Config()
+
+	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
+	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
+	if prevHeader != nil {
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, true)
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error opening initial ArbOS state: %w", err)
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error getting chain ID from initial ArbOS state: %w", err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			return common.Hash{}, nil, fmt.Errorf("Unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+		}
+	}
 
 	block, _ := arbos.ProduceBlock(
 		msg.Message,

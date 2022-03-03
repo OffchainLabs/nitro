@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestTwoNodesSimple(t *testing.T) {

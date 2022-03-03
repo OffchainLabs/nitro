@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestTransfer(t *testing.T) {

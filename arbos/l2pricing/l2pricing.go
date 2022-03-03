@@ -9,8 +9,8 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type L2PricingState struct {

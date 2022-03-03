@@ -1,11 +1,11 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package storage
 
 import (
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 )

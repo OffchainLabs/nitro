@@ -11,11 +11,11 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	arbos_util "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"

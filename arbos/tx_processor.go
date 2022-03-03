@@ -10,16 +10,16 @@ import (
 	"math"
 	"math/big"
 
-	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util"
+	arbos_util "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"

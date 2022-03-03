@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package replay_fuzz
@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/statetransfer"
 )
 
 func BuildBlock(
@@ -104,7 +104,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func Fuzz(input []byte) int {
 	chainDb := rawdb.NewMemoryDatabase()
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}))
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}), params.ArbitrumTestnetChainConfig())
 	if err != nil {
 		panic(err)
 	}

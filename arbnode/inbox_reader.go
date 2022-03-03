@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -7,12 +7,13 @@ package arbnode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type InboxReaderConfig struct {
@@ -78,6 +79,19 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
+			// Validate the init message matches our L2 blockchain
+			message, err := r.tracker.GetDelayedMessage(0)
+			if err != nil {
+				return err
+			}
+			initChainId, err := message.ParseInitMessage()
+			if err != nil {
+				return err
+			}
+			configChainId := r.tracker.txStreamer.bc.Config().ChainID
+			if initChainId.Cmp(configChainId) != 0 {
+				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
 			break
 		}
 		if i == 30*10 {

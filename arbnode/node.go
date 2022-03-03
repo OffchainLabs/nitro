@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -25,22 +25,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/validator"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -200,7 +198,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -229,7 +227,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			WasmModuleRoot:                 wasmModuleRoot,
 			Owner:                          deployAuth.From,
 			LoserStakeEscrow:               common.Address{},
-			ChainId:                        big.NewInt(1338),
+			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},
 		expectedRollupAddr,
@@ -630,13 +628,12 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 	return blockNum, initDataReader.Close()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64, chainConfig *params.ChainConfig) error {
 	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
 
 	prevHash := EmptyHash
-	genDifficulty := big.NewInt(1)
 	prevDifficulty := big.NewInt(0)
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
 	timestamp := uint64(0)
@@ -645,28 +642,18 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		if prevHash == EmptyHash {
 			return fmt.Errorf("block number %d not found in database", chainDb)
 		}
-		prevDifficulty = rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
+		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
+		if prevHeader == nil {
+			return fmt.Errorf("block header for block %d not found in database", chainDb)
+		}
+		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig)
 	if err != nil {
 		return err
 	}
-	head := &types.Header{
-		Number:     new(big.Int).SetUint64(blockNumber),
-		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
-		Time:       timestamp,
-		ParentHash: prevHash,
-		Extra:      []byte("ArbitrumMainnet"),
-		GasLimit:   l2pricing.GethBlockGasLimit,
-		GasUsed:    0,
-		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
-		Difficulty: genDifficulty,
-		MixDigest:  EmptyHash,
-		Coinbase:   common.Address{},
-		Root:       stateRoot,
-	}
 
-	genBlock := types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot)
 	blockHash := genBlock.Hash()
 
 	if storedGenHash == EmptyHash {
@@ -718,7 +705,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, blockNumber)
+	err := WriteOrTestGenblock(chainDb, initData, blockNumber, config)
 	if err != nil {
 		return nil, err
 	}

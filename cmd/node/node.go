@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package main
@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -25,11 +26,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func main() {
@@ -44,6 +47,7 @@ func main() {
 	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
+	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
 
@@ -84,6 +88,7 @@ func main() {
 	log.Root().SetHandler(glogger)
 
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
+	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
 	nodeConf.ForwardingTarget = *forwardingtarget
@@ -155,7 +160,7 @@ func main() {
 			if nodeConf.L1Validator {
 				validators++
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, time.Minute*5)
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, l2ChainId, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
@@ -274,6 +279,11 @@ func main() {
 		}
 	}
 
+	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(*l2ChainIdUint))
+	if err != nil {
+		panic(err)
+	}
+
 	var l2BlockChain *core.BlockChain
 	if initDataReader != nil {
 		blockReader, err := initDataReader.GetStoredBlockReader()
@@ -284,7 +294,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, params.ArbitrumOneChainConfig())
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -297,9 +307,28 @@ func main() {
 		if blocksInDb == 0 {
 			panic("No initialization mode supplied, no blocks in Db")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), params.ArbitrumOneChainConfig())
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), chainConfig)
 		if err != nil {
 			panic(err)
+		}
+	}
+
+	// Check that this ArbOS state has the correct chain ID
+	{
+		statedb, err := l2BlockChain.State()
+		if err != nil {
+			panic(err)
+		}
+		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			panic(err)
+		}
+		chainId, err := arbosState.ChainId()
+		if err != nil {
+			panic(err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
 		}
 	}
 

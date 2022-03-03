@@ -9,7 +9,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/storage"
 )
 
 type Blockhashes struct {

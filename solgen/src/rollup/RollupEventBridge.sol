@@ -48,8 +48,8 @@ contract RollupEventBridge is IMessageProvider, DelegateCallAware {
         rollup = _rollup;
     }
 
-    function rollupInitialized(address owner, uint256 chainId) external onlyRollup {
-        bytes memory initMsg = abi.encodePacked(owner, chainId);
+    function rollupInitialized(uint256 chainId) external onlyRollup {
+        bytes memory initMsg = abi.encodePacked(chainId);
         uint256 num = bridge.enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),
