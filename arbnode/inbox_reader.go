@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/arbstate/util"
 )
 
 type InboxReaderConfig struct {
@@ -33,6 +34,8 @@ var TestInboxReaderConfig = InboxReaderConfig{
 }
 
 type InboxReader struct {
+	util.StopWaiter
+
 	// Only in run thread
 	caughtUp          bool
 	firstMessageBlock *big.Int
@@ -58,20 +61,15 @@ func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, firstMess
 	}, nil
 }
 
-func (r *InboxReader) Start(ctx context.Context) error {
-	go (func() {
-		for {
-			err := r.run(ctx)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Error("error reading inbox", "err", err)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
+func (r *InboxReader) Start(ctxIn context.Context) error {
+	r.StopWaiter.Start(ctxIn)
+	r.CallIteratively(func(ctx context.Context) time.Duration {
+		err := r.run(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Error("error reading inbox", "err", err)
 		}
-	})()
+		return time.Second
+	})
 
 	// Ensure we read the init message before other things start up
 	for i := 0; ; i++ {

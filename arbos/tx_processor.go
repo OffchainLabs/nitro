@@ -49,7 +49,6 @@ func NewTxProcessor(evm *vm.EVM, msg core.Message) *TxProcessor {
 	if err != nil {
 		panic(err)
 	}
-	arbosState.SetLastTimestampSeen(evm.Context.Time.Uint64())
 	return &TxProcessor{
 		msg:              msg,
 		state:            arbosState,
@@ -168,7 +167,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(usergas))
+		p.state.L2PricingState().AddToGasPool(-util.SaturatingCast(usergas))
 
 		// emit RedeemScheduled event
 		retryTxInner, err := retryable.MakeTx(
@@ -329,7 +328,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account and updated the gas pool
-		p.state.L2PricingState().AddToGasPools(util.SaturatingCast(gasLeft))
+		p.state.L2PricingState().AddToGasPool(util.SaturatingCast(gasLeft))
 		return
 	}
 
@@ -367,7 +366,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed.Uint64()
 		}
-		p.state.L2PricingState().AddToGasPools(-util.SaturatingCast(computeGas))
+		p.state.L2PricingState().AddToGasPool(-util.SaturatingCast(computeGas))
 	}
 }
 
@@ -419,4 +418,8 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 		return common.Hash{}, err
 	}
 	return state.Blockhashes().BlockHash(l1BlocKNumber)
+}
+
+func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
+	receipt.L1GasUsed = p.posterGas
 }

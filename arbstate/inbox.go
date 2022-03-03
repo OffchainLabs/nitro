@@ -192,7 +192,7 @@ func (r *inboxMultiplexer) advanceSubMsg() {
 
 func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 	seqMsg := r.cachedSequencerMessage
-	// we issue delayed messages untill reaching afterDelayedMessages
+	// we issue delayed messages until reaching afterDelayedMessages
 	if r.delayedMessagesRead < seqMsg.afterDelayedMessages {
 		return false
 	}

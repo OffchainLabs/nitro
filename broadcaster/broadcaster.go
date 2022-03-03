@@ -6,6 +6,7 @@ package broadcaster
 
 import (
 	"context"
+	"net"
 	"sync/atomic"
 	"time"
 
@@ -183,6 +184,10 @@ func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
 }
 
+func (b *Broadcaster) ListenerAddr() net.Addr {
+	return b.server.ListenerAddr()
+}
+
 func (b *Broadcaster) GetCachedMessageCount() int {
 	return b.catchupBuffer.GetMessageCount()
 }
@@ -191,6 +196,6 @@ func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
 
-func (b *Broadcaster) Stop() {
-	b.server.Stop()
+func (b *Broadcaster) StopAndWait() {
+	b.server.StopAndWait()
 }

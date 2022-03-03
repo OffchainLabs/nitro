@@ -49,22 +49,14 @@ type RollupWatcher struct {
 	baseCallOpts bind.CallOpts
 }
 
-func NewRollupWatcher(ctx context.Context, address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
+func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	opts := callOpts
-	opts.Context = ctx
-	firstNode, err := con.GetNode(&opts, 0)
-	if err != nil {
-		return nil, err
-	}
-
 	return &RollupWatcher{
 		address:         address,
-		fromBlock:       firstNode.CreatedAtBlock,
 		client:          client,
 		baseCallOpts:    callOpts,
 		RollupUserLogic: con,
@@ -75,6 +67,15 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	opts := r.baseCallOpts
 	opts.Context = ctx
 	return &opts
+}
+
+func (r *RollupWatcher) Initialize(ctx context.Context) error {
+	firstNode, err := r.GetNode(r.getCallOpts(ctx), 0)
+	if err != nil {
+		return err
+	}
+	r.fromBlock = firstNode.CreatedAtBlock
+	return nil
 }
 
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {
