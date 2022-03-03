@@ -49,6 +49,7 @@ func main() {
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
+	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
 	importFile := flag.String("importfile", "", "path for json data to import")
@@ -108,6 +109,7 @@ func main() {
 		flag.Usage()
 		panic("l1role not recognized")
 	}
+	nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
 
 	if *l1validator {
 		if !nodeConf.L1Reader {
