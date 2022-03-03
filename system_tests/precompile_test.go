@@ -24,7 +24,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
-	if chainId.Uint64() != params.ArbitrumTestChainConfig().ChainID.Uint64() {
+	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fail(t, "Wrong ChainID", chainId.Uint64())
 	}
 }

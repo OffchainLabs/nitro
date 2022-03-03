@@ -31,7 +31,7 @@ import (
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
 	rewrittenOwnerAddress := util.RemapL1Address(ownerAddress)
 
-	chainConfig := params.ArbitrumTestChainConfig()
+	chainConfig := params.ArbitrumDevTestChainConfig()
 
 	initData := statetransfer.ArbosInitializationInfo{
 		Accounts: []statetransfer.AccountInitializationInfo{
@@ -60,7 +60,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_SetChainParams,
+				Kind: arbos.L1MessageType_Initialize,
 			},
 			L2msg: []byte{},
 		},
