@@ -287,6 +287,9 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 		aggregator, _ := ps.ReimbursableAggregatorForSender(sender)
 		if aggregator != nil {
 			poster = *aggregator
+		} else {
+			// assume the user will use the delayed inbox since there's no reimbursable party
+			return big.NewInt(0), false
 		}
 	}
 
