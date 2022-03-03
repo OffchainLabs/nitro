@@ -29,7 +29,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	evm mech,
 	aggregator addr,
 ) (huge, huge, huge, huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -73,7 +73,7 @@ func (con ArbGasInfo) GetPricesInWei(c ctx, evm mech) (huge, huge, huge, huge, h
 
 // Get prices in ArbGas when using the provided aggregator
 func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregator addr) (huge, huge, huge, error) {
-	l1GasPrice, err := c.state.L1PricingState().L1GasPriceEstimateWei()
+	l1GasPrice, err := c.state.L1PricingState().L1BaseFeeEstimateWei()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -146,14 +146,19 @@ func (con ArbGasInfo) GetRateEstimateInertia(c ctx, evm mech) (uint64, error) {
 	return c.state.L2PricingState().RateEstimateInertia()
 }
 
-// Get the current estimate of the L1 gas price
-func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
-	return c.state.L1PricingState().L1GasPriceEstimateWei()
+// Get the current estimate of the L1 basefee
+func (con ArbGasInfo) GetL1BaseFeeEstimate(c ctx, evm mech) (huge, error) {
+	return c.state.L1PricingState().L1BaseFeeEstimateWei()
 }
 
-// Get how slowly ArbOS updates its estimate of the L1 gas price
-func (con ArbGasInfo) GetL1GasPriceEstimateInertia(c ctx, evm mech) (uint64, error) {
-	return c.state.L1PricingState().L1GasPriceEstimateInertia()
+// Get how slowly ArbOS updates its estimate of the L1 basefee
+func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, error) {
+	return c.state.L1PricingState().L1BaseFeeEstimateInertia()
+}
+
+// Deprecated -- Same as getL1BaseFeeEstimate()
+func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
+	return con.GetL1BaseFeeEstimate(c, evm)
 }
 
 // Get the fee paid to the aggregator for posting this tx

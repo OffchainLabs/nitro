@@ -30,7 +30,7 @@ type L2PricingState struct {
 
 const (
 	gasPoolOffset uint64 = iota
-	gasPoolLastBlock
+	gasPoolLastBlockOffset
 	gasPoolSecondsOffset
 	gasPoolTargetOffset
 	gasPoolWeightOffset
@@ -46,7 +46,7 @@ const GethBlockGasLimit = 1 << 63
 
 func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
-	_ = sto.SetUint64ByUint64(gasPoolLastBlock, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
+	_ = sto.SetUint64ByUint64(gasPoolLastBlockOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
 	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, InitialGasPoolTarget)
 	_ = sto.SetUint64ByUint64(gasPoolWeightOffset, InitialGasPoolWeight)
@@ -62,7 +62,7 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 	return &L2PricingState{
 		sto,
 		sto.OpenStorageBackedInt64(gasPoolOffset),
-		sto.OpenStorageBackedInt64(gasPoolLastBlock),
+		sto.OpenStorageBackedInt64(gasPoolLastBlockOffset),
 		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
 		sto.OpenStorageBackedUint64(gasPoolTargetOffset),
 		sto.OpenStorageBackedUint64(gasPoolWeightOffset),
@@ -100,7 +100,7 @@ func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
 	if err != nil {
 		return err
 	}
-	if seconds == 0 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+	if seconds == 0 || seconds > 3*60*60 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
 		return errors.New("GasPoolSeconds is out of bounds")
 	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
@@ -114,7 +114,7 @@ func (ps *L2PricingState) GasPoolTarget() (uint64, error) {
 }
 
 func (ps *L2PricingState) SetGasPoolTarget(target uint64) error {
-	if target < 5000 || target > 10000 {
+	if target > 10000 {
 		return errors.New("GasPoolTarget is out of bounds")
 	}
 	return ps.gasPoolTarget.Set(target)

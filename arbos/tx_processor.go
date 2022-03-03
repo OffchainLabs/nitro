@@ -225,8 +225,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	gasPrice := p.evm.Context.BaseFee
 	l1Pricing := p.state.L1PricingState()
 	aggregator := p.getReimbursableAggregator()
-	//posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
+	// posterCost, reimburse, err := l1Pricing.PosterDataCost(from, aggregator, p.msg.Data())
 	//p.state.Restrict(err)
+	_ = from
+	_ = l1Pricing
 
 	var posterCost *big.Int
 	var reimburse bool
