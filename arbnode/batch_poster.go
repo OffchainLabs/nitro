@@ -75,6 +75,8 @@ func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *T
 	}, nil
 }
 
+var errBatchAlreadyClosed = errors.New("batch segments already closed")
+
 type batchSegments struct {
 	compressedBuffer    *bytes.Buffer
 	compressedWriter    *brotli.Writer
@@ -166,7 +168,7 @@ func (s *batchSegments) addSegmentToCompressed(segment []byte) error {
 // returns false if segment was too large, error in case of real error
 func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) {
 	if s.isDone {
-		return false, errors.New("batch segments already closed")
+		return false, errBatchAlreadyClosed
 	}
 	err := s.addSegmentToCompressed(segment)
 	if err != nil {
@@ -237,7 +239,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 
 func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
 	if s.isDone {
-		return false, errors.New("batch segments already closed")
+		return false, errBatchAlreadyClosed
 	}
 	if msg.DelayedMessagesRead > s.delayedMsg {
 		if msg.DelayedMessagesRead != s.delayedMsg+1 {
