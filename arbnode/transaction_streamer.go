@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -20,12 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
@@ -188,13 +188,13 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error) {
+func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (nitro.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
 	data, err := s.db.Get(key)
 	if err != nil {
-		return arbstate.MessageWithMetadata{}, err
+		return nitro.MessageWithMetadata{}, err
 	}
-	var message arbstate.MessageWithMetadata
+	var message nitro.MessageWithMetadata
 	err = rlp.DecodeBytes(data, &message)
 	return message, err
 }
@@ -213,7 +213,7 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 	return arbutil.MessageIndex(pos), nil
 }
 
-func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []nitro.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
@@ -223,7 +223,7 @@ func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error
 	return s.GetMessageCount()
 }
 
-func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []nitro.MessageWithMetadata, batch ethdb.Batch) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
@@ -265,7 +265,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 			messages = messages[1:]
 			pos++
 		} else {
-			var dbMessageParsed arbstate.MessageWithMetadata
+			var dbMessageParsed nitro.MessageWithMetadata
 			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
 			if err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
@@ -393,7 +393,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return err
 	}
 
-	msgWithMeta := arbstate.MessageWithMetadata{
+	msgWithMeta := nitro.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
 	}
@@ -404,7 +404,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		}
 	}
 
-	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
+	if err := s.writeMessages(pos, []nitro.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
 
@@ -455,9 +455,9 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 		return fmt.Errorf("attempted to insert delayed messages at incorrect position got %d expected %d", firstDelayedSeqNum, delayedMessagesRead)
 	}
 
-	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
+	messagesWithMeta := make([]nitro.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
-		newMessage := arbstate.MessageWithMetadata{
+		newMessage := nitro.MessageWithMetadata{
 			Message:             message,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
 		}
@@ -520,7 +520,7 @@ func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.Messa
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []nitro.MessageWithMetadata, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}

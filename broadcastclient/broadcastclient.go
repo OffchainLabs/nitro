@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcastclient
@@ -18,11 +18,11 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type BroadcastClientConfig struct {
@@ -33,7 +33,7 @@ type BroadcastClientConfig struct {
 var DefaultBroadcastClientConfig BroadcastClientConfig
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
+	AddMessages(pos arbutil.MessageIndex, force bool, messages []nitro.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
@@ -161,7 +161,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						messages := []arbstate.MessageWithMetadata{}
+						messages := []nitro.MessageWithMetadata{}
 						for _, message := range res.Messages {
 							messages = append(messages, message.Message)
 						}

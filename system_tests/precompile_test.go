@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func TestPurePrecompileMethodCalls(t *testing.T) {

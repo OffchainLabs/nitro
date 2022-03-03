@@ -12,9 +12,9 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 )
 
 const CHOSENSEQ_KEY string = "lockout.chosen"              // Never overwritten. Expires or released only
@@ -375,7 +375,7 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 
 var ErrNotMainSequencer = errors.New("not main sequencer")
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *nitro.MessageWithMetadata) error {
 	if time.Now().After(atomicTimeRead(&c.lockoutUntil)) {
 		return ErrNotMainSequencer
 	}

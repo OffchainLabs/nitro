@@ -15,10 +15,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type BatchPoster struct {
@@ -192,7 +192,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 
 func (s *batchSegments) addL2Msg(l2msg []byte) (bool, error) {
 	segment := make([]byte, 1, len(l2msg)+1)
-	segment[0] = arbstate.BatchSegmentKindL2Message
+	segment[0] = nitro.BatchSegmentKindL2Message
 	segment = append(segment, l2msg...)
 	return s.addSegment(segment, false)
 }
@@ -229,7 +229,7 @@ func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, se
 }
 
 func (s *batchSegments) addDelayedMessage() (bool, error) {
-	segment := []byte{arbstate.BatchSegmentKindDelayedMessages}
+	segment := []byte{nitro.BatchSegmentKindDelayedMessages}
 	success, err := s.addSegment(segment, false)
 	if (err == nil) && success {
 		s.delayedMsg += 1
@@ -237,7 +237,7 @@ func (s *batchSegments) addDelayedMessage() (bool, error) {
 	return success, err
 }
 
-func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, error) {
+func (s *batchSegments) AddMessage(msg *nitro.MessageWithMetadata) (bool, error) {
 	if s.isDone {
 		return false, errBatchAlreadyClosed
 	}
@@ -247,11 +247,11 @@ func (s *batchSegments) AddMessage(msg *arbstate.MessageWithMetadata) (bool, err
 		}
 		return s.addDelayedMessage()
 	}
-	success, err := s.maybeAddDiffSegment(&s.timestamp, msg.Message.Header.Timestamp, arbstate.BatchSegmentKindAdvanceTimestamp)
+	success, err := s.maybeAddDiffSegment(&s.timestamp, msg.Message.Header.Timestamp, nitro.BatchSegmentKindAdvanceTimestamp)
 	if !success {
 		return false, err
 	}
-	success, err = s.maybeAddDiffSegment(&s.blockNum, msg.Message.Header.BlockNumber, arbstate.BatchSegmentKindAdvanceL1BlockNumber)
+	success, err = s.maybeAddDiffSegment(&s.blockNum, msg.Message.Header.BlockNumber, nitro.BatchSegmentKindAdvanceL1BlockNumber)
 	if !success {
 		return false, err
 	}

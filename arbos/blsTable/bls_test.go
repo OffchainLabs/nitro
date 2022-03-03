@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package blsTable
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestLegacyBLS(t *testing.T) {

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type predicate interface {
@@ -68,7 +68,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	dummyMessage := arbstate.MessageWithMetadata{}
+	dummyMessage := nitro.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {
 		return &messageCountPredicate{b, count, contextMessage, 0}
 	}

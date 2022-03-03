@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package main
@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/wavmio"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/wavmio"
 )
 
 func getBlockHeaderByHash(hash common.Hash) *types.Header {
@@ -115,7 +115,7 @@ func main() {
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
+	inboxMultiplexer := nitro.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
 	messageWithMetadata, err := inboxMultiplexer.Pop()
 	if err != nil {
 		panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))

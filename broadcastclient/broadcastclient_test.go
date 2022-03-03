@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcastclient
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func TestReceiveMessages(t *testing.T) {
@@ -50,7 +50,7 @@ func TestReceiveMessages(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			b.BroadcastSingle(arbstate.MessageWithMetadata{}, arbutil.MessageIndex(i))
+			b.BroadcastSingle(nitro.MessageWithMetadata{}, arbutil.MessageIndex(i))
 		}
 	}()
 
@@ -68,7 +68,7 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []nitro.MessageWithMetadata) error {
 	for i, message := range messages {
 		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
 			SequenceNumber: pos + arbutil.MessageIndex(i),
@@ -142,7 +142,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient := newTestBroadcastClient(b.ListenerAddr(), 20*time.Second, ts)
 	broadcastClient.Start(ctx)
 
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
+	b.BroadcastSingle(nitro.MessageWithMetadata{}, 0)
 
 	// Wait for client to receive batch to ensure it is connected
 	select {
@@ -225,8 +225,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	}
 	defer b.StopAndWait()
 
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
-	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 1)
+	b.BroadcastSingle(nitro.MessageWithMetadata{}, 0)
+	b.BroadcastSingle(nitro.MessageWithMetadata{}, 1)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

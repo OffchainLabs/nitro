@@ -1,11 +1,11 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
 
 import (
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
 // Provides a registry of BLS public keys for accounts.

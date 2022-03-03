@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package replay_fuzz
@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/statetransfer"
 )
 
 func BuildBlock(
@@ -28,13 +28,13 @@ func BuildBlock(
 	lastBlockHeader *types.Header,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	inbox arbstate.InboxBackend,
+	inbox nitro.InboxBackend,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
+	inboxMultiplexer := nitro.NewInboxMultiplexer(inbox, delayedMessagesRead)
 
 	message, err := inboxMultiplexer.Pop()
 	if err != nil {

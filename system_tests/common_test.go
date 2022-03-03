@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/statetransfer"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -31,10 +31,10 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 type info = *BlockchainTestInfo
@@ -226,7 +226,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	Require(t, err)
 
 	// Give the node an init message
-	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+	err = node.TxStreamer.AddMessages(0, false, []nitro.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,

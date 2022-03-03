@@ -7,13 +7,13 @@ package l1pricing
 import (
 	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	arbos_util "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type L1PricingState struct {

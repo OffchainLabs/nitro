@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -12,20 +12,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/statetransfer"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/statetransfer"
 
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
 )
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
@@ -57,7 +57,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	// Add the init message
-	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+	err = inbox.AddMessages(0, false, []nitro.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,
@@ -120,7 +120,7 @@ func TestTransactionStreamer(t *testing.T) {
 			}
 			state.balances = newBalances
 
-			var messages []arbstate.MessageWithMetadata
+			var messages []nitro.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
@@ -143,7 +143,7 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialBaseFeeWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(value)...)
-				messages = append(messages, arbstate.MessageWithMetadata{
+				messages = append(messages, nitro.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,

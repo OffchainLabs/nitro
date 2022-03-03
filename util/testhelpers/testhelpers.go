@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package testhelpers
@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 // Fail a test should an error occur

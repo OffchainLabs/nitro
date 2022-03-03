@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
@@ -19,7 +19,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 		Messages: []*BroadcastFeedMessage{
 			{
 				SequenceNumber: 12345,
-				Message: arbstate.MessageWithMetadata{
+				Message: nitro.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:        0,

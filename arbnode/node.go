@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -26,19 +26,19 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/validator"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -629,7 +629,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 }
 
 func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64, chainConfig *params.ChainConfig) error {
-	arbstate.RequireHookedGeth()
+	nitro.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
 

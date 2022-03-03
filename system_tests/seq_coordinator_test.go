@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestSeqCoordinator(t *testing.T) {
@@ -53,7 +53,7 @@ func TestSeqCoordinator(t *testing.T) {
 		node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig, blockchain, nil, nil, nil, nil, redis.NewClient(redisOptions))
 		Require(t, err)
 		if msgNum > 0 {
-			messages := make([]arbstate.MessageWithMetadata, msgNum)
+			messages := make([]nitro.MessageWithMetadata, msgNum)
 			node.TxStreamer.AddMessages(0, true, messages)
 		}
 		node.TxPublisher.Start(ctx)
@@ -65,12 +65,12 @@ func TestSeqCoordinator(t *testing.T) {
 		node := nodes[nodeNum]
 		curMsgs, err := node.TxStreamer.GetMessageCountSync()
 		Require(t, err)
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &arbstate.MessageWithMetadata{})
+		err = node.SeqCoordinator.SequencingMessage(curMsgs, &nitro.MessageWithMetadata{})
 		if errors.Is(err, arbnode.ErrNotMainSequencer) {
 			return false
 		}
 		Require(t, err)
-		messages := make([]arbstate.MessageWithMetadata, 1)
+		messages := make([]nitro.MessageWithMetadata, 1)
 		Require(t, node.TxStreamer.AddMessages(curMsgs, true, messages))
 		return true
 	}
@@ -104,7 +104,7 @@ func TestSeqCoordinator(t *testing.T) {
 			if curMsgs >= msgNum {
 				return
 			}
-			messages := make([]arbstate.MessageWithMetadata, msgNum-curMsgs)
+			messages := make([]nitro.MessageWithMetadata, msgNum-curMsgs)
 			Require(t, node.TxStreamer.AddMessages(curMsgs, true, messages))
 		}
 	}

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package addressSet
@@ -10,10 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util/colors"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestEmptyAddressSet(t *testing.T) {

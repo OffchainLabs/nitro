@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package blsTable
@@ -8,12 +8,12 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type BLSTable struct {

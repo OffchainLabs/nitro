@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -14,10 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -427,7 +427,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		pos++
 	}
 
-	var messages []arbstate.MessageWithMetadata
+	var messages []nitro.MessageWithMetadata
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -436,7 +436,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
+	multiplexer := nitro.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

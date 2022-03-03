@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -7,7 +7,7 @@ package precompiles
 import (
 	"testing"
 
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/common"
 )

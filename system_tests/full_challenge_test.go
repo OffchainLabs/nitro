@@ -2,7 +2,7 @@
 // +build fullchallengetest
 
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -24,14 +24,14 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
-	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
@@ -128,7 +128,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 		return err
 	}
 	var segment []byte
-	segment = append(segment, arbstate.BatchSegmentKindL2Message)
+	segment = append(segment, nitro.BatchSegmentKindL2Message)
 	segment = append(segment, arbos.L2MessageKind_SignedTx)
 	segment = append(segment, txData...)
 	err = rlp.Encode(writer, segment)

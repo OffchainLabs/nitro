@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompile_fuzz
@@ -14,16 +14,16 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/precompiles"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/precompiles"
 )
 
 const fuzzGas uint64 = 1200000
 
 func Fuzz(input []byte) int {
-	arbstate.RequireHookedGeth()
+	nitro.RequireHookedGeth()
 
 	// Create a StateDB
 	sdb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
