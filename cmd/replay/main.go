@@ -5,9 +5,7 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
-	"math/big"
 	"os"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -149,13 +147,10 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		if message.Header.Kind != arbos.L1MessageType_Initialize {
-			panic(fmt.Sprintf("Invalid init message kind %v", message.Header.Kind))
+		chainId, err := message.ParseInitMessage()
+		if err != nil {
+			panic(err)
 		}
-		if len(message.L2msg) != 32 {
-			panic(fmt.Sprintf("Invalid init message data %v", hex.EncodeToString(message.L2msg)))
-		}
-		chainId := new(big.Int).SetBytes(message.L2msg)
 		chainConfig, err := arbos.GetChainConfig(chainId)
 		if err != nil {
 			panic(err)

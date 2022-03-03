@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -174,7 +175,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
 	case L1MessageType_Initialize:
-		return nil, errors.New("encounted initialize message (should've been handled explicitly at genesis)")
+		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
 		return nil, nil
 	case L1MessageType_L2FundedByL1:
@@ -217,6 +218,17 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		// invalid message, just ignore it
 		return nil, fmt.Errorf("invalid message type %v", msg.Header.Kind)
 	}
+}
+
+// Returns the chain id on success
+func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
+	if msg.Header.Kind != L1MessageType_Initialize {
+		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+	}
+	if len(msg.L2msg) != 32 {
+		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+	}
+	return new(big.Int).SetBytes(msg.L2msg), nil
 }
 
 const (
