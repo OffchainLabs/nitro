@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbos/retryables"
+	"github.com/offchainlabs/arbstate/arbos/storage"
 	"github.com/offchainlabs/arbstate/util"
 )
 
@@ -81,9 +82,15 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if c.gasLeft < eventCost+gasCostToReturnResult {
 		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
 	}
-	gasToDonate := c.gasLeft - (eventCost + gasCostToReturnResult)
+	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+
+	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	if c.gasLeft < params.TxGas {
+		return hash{}, errors.New("not enough gas to complete redeem process")
+	}
+	gasToDonate := c.gasLeft - futureGasCosts
 	if gasToDonate < params.TxGas {
-		return hash{}, errors.New("Not enough gas to redeem retryable")
+		return hash{}, errors.New("not enough gas to run redeem attempt")
 	}
 
 	// fix up the gas in the retry
