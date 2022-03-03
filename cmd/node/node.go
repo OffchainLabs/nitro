@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package main
@@ -26,13 +26,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func main() {
@@ -319,11 +319,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		arbstate, err := arbosState.OpenSystemArbosState(statedb, true)
+		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
 		if err != nil {
 			panic(err)
 		}
-		chainId, err := arbstate.ChainId()
+		chainId, err := arbosState.ChainId()
 		if err != nil {
 			panic(err)
 		}

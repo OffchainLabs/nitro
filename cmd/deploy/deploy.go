@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/util"
 )
 
 func main() {

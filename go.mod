@@ -1,4 +1,4 @@
-module github.com/offchainlabs/arbstate
+module github.com/offchainlabs/nitro
 
 go 1.17
 
