@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -68,7 +68,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	dummyMessage := nitro.MessageWithMetadata{}
+	dummyMessage := arbstate.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {
 		return &messageCountPredicate{b, count, contextMessage, 0}
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
@@ -427,7 +427,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		pos++
 	}
 
-	var messages []nitro.MessageWithMetadata
+	var messages []arbstate.MessageWithMetadata
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -436,7 +436,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := nitro.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

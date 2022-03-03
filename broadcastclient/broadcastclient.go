@@ -18,7 +18,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/util"
@@ -33,7 +33,7 @@ type BroadcastClientConfig struct {
 var DefaultBroadcastClientConfig BroadcastClientConfig
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos arbutil.MessageIndex, force bool, messages []nitro.MessageWithMetadata) error
+	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
@@ -161,7 +161,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
-						messages := []nitro.MessageWithMetadata{}
+						messages := []arbstate.MessageWithMetadata{}
 						for _, message := range res.Messages {
 							messages = append(messages, message.Message)
 						}

@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*TransactionStreamer, *core.BlockChain) {
@@ -57,7 +57,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 
 	// Add the init message
-	err = inbox.AddMessages(0, false, []nitro.MessageWithMetadata{{
+	err = inbox.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,
@@ -120,7 +120,7 @@ func TestTransactionStreamer(t *testing.T) {
 			}
 			state.balances = newBalances
 
-			var messages []nitro.MessageWithMetadata
+			var messages []arbstate.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
@@ -143,7 +143,7 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, math.U256Bytes(big.NewInt(l2pricing.InitialBaseFeeWei))...)
 				l2Message = append(l2Message, dest.Hash().Bytes()...)
 				l2Message = append(l2Message, math.U256Bytes(value)...)
-				messages = append(messages, nitro.MessageWithMetadata{
+				messages = append(messages, arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:   arbos.L1MessageType_L2Message,

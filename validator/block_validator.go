@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
@@ -79,7 +79,7 @@ type InboxTrackerInterface interface {
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum arbutil.MessageIndex) (nitro.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error)
 	GetGenesisBlockNumber() (uint64, error)
 }
 
@@ -183,7 +183,7 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 	return validator, nil
 }
 
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg nitro.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, err
@@ -221,7 +221,7 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 	return block.Hash(), preimages, err
 }
 
-func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg nitro.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
+func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
 	var prevHash common.Hash
 	if prevHeader != nil {
 		prevHash = prevHeader.Hash()
@@ -249,7 +249,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg nitro.MessageWithMetadata) {
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
@@ -265,7 +265,7 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg nitro.MessageWithMetadata) {
+func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
 }
 

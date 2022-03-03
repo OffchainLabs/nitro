@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
 
@@ -226,7 +226,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	Require(t, err)
 
 	// Give the node an init message
-	err = node.TxStreamer.AddMessages(0, false, []nitro.MessageWithMetadata{{
+	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
 		Message: &arbos.L1IncomingMessage{
 			Header: &arbos.L1IncomingMessageHeader{
 				Kind: arbos.L1MessageType_Initialize,

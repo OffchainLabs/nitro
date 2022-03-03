@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
@@ -28,13 +28,13 @@ func BuildBlock(
 	lastBlockHeader *types.Header,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	inbox nitro.InboxBackend,
+	inbox arbstate.InboxBackend,
 ) (*types.Block, error) {
 	var delayedMessagesRead uint64
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := nitro.NewInboxMultiplexer(inbox, delayedMessagesRead)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
 
 	message, err := inboxMultiplexer.Pop()
 	if err != nil {

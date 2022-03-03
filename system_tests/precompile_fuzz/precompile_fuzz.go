@@ -16,14 +16,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
 const fuzzGas uint64 = 1200000
 
 func Fuzz(input []byte) int {
-	nitro.RequireHookedGeth()
+	arbstate.RequireHookedGeth()
 
 	// Create a StateDB
 	sdb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)

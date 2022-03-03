@@ -12,7 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -47,7 +47,7 @@ type BroadcastMessage struct {
 
 type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex         `json:"sequenceNumber"`
-	Message        nitro.MessageWithMetadata `json:"message"`
+	Message        arbstate.MessageWithMetadata `json:"message"`
 }
 
 type ConfirmedSequenceNumberMessage struct {
@@ -160,7 +160,7 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 	}
 }
 
-func (b *Broadcaster) BroadcastSingle(msg nitro.MessageWithMetadata, seq arbutil.MessageIndex) {
+func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
 	var broadcastMessages []*BroadcastFeedMessage
 
 	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}

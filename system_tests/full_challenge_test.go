@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -128,7 +128,7 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 		return err
 	}
 	var segment []byte
-	segment = append(segment, nitro.BatchSegmentKindL2Message)
+	segment = append(segment, arbstate.BatchSegmentKindL2Message)
 	segment = append(segment, arbos.L2MessageKind_SignedTx)
 	segment = append(segment, txData...)
 	err = rlp.Encode(writer, segment)

@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 )
@@ -375,7 +375,7 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 
 var ErrNotMainSequencer = errors.New("not main sequencer")
 
-func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *nitro.MessageWithMetadata) error {
+func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
 	if time.Now().After(atomicTimeRead(&c.lockoutUntil)) {
 		return ErrNotMainSequencer
 	}

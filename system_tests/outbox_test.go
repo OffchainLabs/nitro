@@ -17,14 +17,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 func TestOutboxProofs(t *testing.T) {
-	nitro.RequireHookedGeth()
+	arbstate.RequireHookedGeth()
 	rand.Seed(time.Now().UTC().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

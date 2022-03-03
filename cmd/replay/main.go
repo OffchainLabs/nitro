@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
@@ -115,7 +115,7 @@ func main() {
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := nitro.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
 	messageWithMetadata, err := inboxMultiplexer.Pop()
 	if err != nil {
 		panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))

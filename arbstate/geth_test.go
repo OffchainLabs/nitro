@@ -2,7 +2,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
-package nitro
+package arbstate
 
 import (
 	"bytes"

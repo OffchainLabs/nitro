@@ -28,7 +28,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -629,7 +629,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 }
 
 func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64, chainConfig *params.ChainConfig) error {
-	nitro.RequireHookedGeth()
+	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
 

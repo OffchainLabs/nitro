@@ -319,11 +319,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		nitro, err := arbosState.OpenSystemArbosState(statedb, true)
+		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
 		if err != nil {
 			panic(err)
 		}
-		chainId, err := nitro.ChainId()
+		chainId, err := arbosState.ChainId()
 		if err != nil {
 			panic(err)
 		}

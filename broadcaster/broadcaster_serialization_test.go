@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/nitro"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
@@ -19,7 +19,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 		Messages: []*BroadcastFeedMessage{
 			{
 				SequenceNumber: 12345,
-				Message: nitro.MessageWithMetadata{
+				Message: arbstate.MessageWithMetadata{
 					Message: &arbos.L1IncomingMessage{
 						Header: &arbos.L1IncomingMessageHeader{
 							Kind:        0,
