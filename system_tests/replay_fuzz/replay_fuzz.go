@@ -118,7 +118,7 @@ func Fuzz(input []byte) int {
 		Time:       0,
 		ParentHash: common.Hash{},
 		Extra:      []byte("Arbitrum"),
-		GasLimit:   l2pricing.L2GasLimit,
+		GasLimit:   l2pricing.GethBlockGasLimit,
 		GasUsed:    0,
 		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
 		Difficulty: big.NewInt(1),
