@@ -158,7 +158,7 @@ func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, 
 	headerSubscription, err := client.SubscribeNewHead(ctx, chanOut)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Error("failed sunscribing to header", "err", err)
+			log.Error("failed subscribing to header", "err", err)
 		}
 		return
 	}
