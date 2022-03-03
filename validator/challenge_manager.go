@@ -73,7 +73,7 @@ type ChallengeManager struct {
 	initialMachine        *ArbitratorMachine
 	initialMachineBlockNr int64
 
-	// nil untill working on execution challenge
+	// nil until working on execution challenge
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 

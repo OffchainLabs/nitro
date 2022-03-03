@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbosState
@@ -252,17 +252,17 @@ func (state *ArbosState) LastTimestampSeen() (uint64, error) {
 	return state.timestamp.Get()
 }
 
-func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	ts, err := state.timestamp.Get()
+func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
+	lastTimestamp, err := state.timestamp.Get()
 	state.Restrict(err)
-	if val < ts {
+	if timestamp < lastTimestamp {
 		panic("timestamp decreased")
 	}
-	if val > ts {
-		delta := val - ts
-		state.Restrict(state.timestamp.Set(val))
-		state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
+	timePassed := timestamp - lastTimestamp
+	if timePassed > 0 {
+		state.Restrict(state.timestamp.Set(timestamp))
 	}
+	return timePassed
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
