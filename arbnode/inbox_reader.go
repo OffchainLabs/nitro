@@ -6,11 +6,14 @@ package arbnode
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/arbstate/arbos"
 	"github.com/offchainlabs/arbstate/arbutil"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -78,6 +81,22 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
+			// Validate the init message matches our L2 blockchain
+			message, err := r.tracker.GetDelayedMessage(0)
+			if err != nil {
+				return err
+			}
+			if message.Header.Kind != arbos.L1MessageType_Initialize {
+				return fmt.Errorf("invalid init message kind %v", message.Header.Kind)
+			}
+			if len(message.L2msg) != 32 {
+				return fmt.Errorf("invalid init message data %v", hex.EncodeToString(message.L2msg))
+			}
+			initChainId := new(big.Int).SetBytes(message.L2msg)
+			configChainId := r.tracker.txStreamer.bc.Config().ChainID
+			if initChainId.Cmp(configChainId) != 0 {
+				return fmt.Errorf("expected L2 chain ID %v but read L2 chain ID %v from init message in L1 inbox", configChainId, initChainId)
+			}
 			break
 		}
 		if i == 30*10 {

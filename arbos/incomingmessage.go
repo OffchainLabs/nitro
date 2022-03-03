@@ -174,7 +174,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	case L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
 	case L1MessageType_Initialize:
-		return nil, errors.New("L1 message type SetChainParams is unimplemented")
+		return nil, errors.New("encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
 		return nil, nil
 	case L1MessageType_L2FundedByL1:
