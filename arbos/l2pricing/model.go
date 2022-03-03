@@ -8,8 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 const InitialSpeedLimitPerSecond = 1000000

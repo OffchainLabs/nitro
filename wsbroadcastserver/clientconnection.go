@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package wsbroadcastserver
@@ -18,7 +18,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 	"github.com/mailru/easygo/netpoll"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/util"
 )
 
 // MaxSendQueue is the maximum number of items in a clients out channel before client gets disconnected.
