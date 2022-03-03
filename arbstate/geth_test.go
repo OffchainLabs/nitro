@@ -50,7 +50,7 @@ var testChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
-	ArbitrumChainParams: params.ArbitrumTestParams(),
+	ArbitrumChainParams: params.ArbitrumDevTestParams(),
 }
 
 func TestEthDepositMessage(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/arbstate/arbnode"
 	"github.com/offchainlabs/arbstate/util"
 )
@@ -31,9 +32,11 @@ func main() {
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase")
 	outfile := flag.String("l1deployment", "deploy.json", "deployment output json file")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
+	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID")
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
+	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	l1TransactionOpts, err := util.GetTransactOptsFromKeystore(*l1keystore, *deployAccount, *l1passphrase, l1ChainId)
 	if err != nil {
@@ -47,7 +50,7 @@ func main() {
 		panic(err)
 	}
 
-	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), time.Minute*5)
+	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, time.Minute*5)
 	if err != nil {
 		flag.Usage()
 		panic(err)
