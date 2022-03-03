@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type predicate interface {

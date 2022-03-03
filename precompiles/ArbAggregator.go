@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -8,7 +8,7 @@ import (
 	"errors"
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
 
 // Provides aggregators and their users methods for configuring how they participate in L1 aggregation.

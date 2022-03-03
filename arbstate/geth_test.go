@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbstate
@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type TestChainContext struct {

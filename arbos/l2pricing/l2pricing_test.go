@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/util/colors"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func PricingForTest(t *testing.T) *L2PricingState {

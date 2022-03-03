@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/util"
 )
 
 type ArbRetryableTx struct {

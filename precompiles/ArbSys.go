@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/merkletree"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 // Provides system-level functionality for interacting with L1 and understanding the call stack.

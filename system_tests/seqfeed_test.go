@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {

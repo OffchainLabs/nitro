@@ -12,9 +12,9 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util"
 )
 
 const CHOSENSEQ_KEY string = "lockout.chosen"              // Never overwritten. Expires or released only

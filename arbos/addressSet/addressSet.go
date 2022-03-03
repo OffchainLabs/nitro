@@ -1,13 +1,13 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package addressSet
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 // Represents a set of addresses

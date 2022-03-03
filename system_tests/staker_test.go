@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 // race detection makes things slow and miss timeouts
@@ -18,9 +18,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface, l2clientB arbutil.L1Interface, faultyStaker bool) error {

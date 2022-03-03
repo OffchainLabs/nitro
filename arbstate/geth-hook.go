@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbstate
@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/precompiles"
-	"github.com/offchainlabs/arbstate/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/precompiles"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
 
 type ArbosPrecompileWrapper struct {

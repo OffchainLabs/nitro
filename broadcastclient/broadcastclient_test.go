@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcastclient
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func TestReceiveMessages(t *testing.T) {
