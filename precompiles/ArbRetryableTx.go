@@ -79,14 +79,10 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 		return hash{}, err
 	}
 	gasCostToReturnResult := 32 * params.CopyGas
-	if c.gasLeft < eventCost+gasCostToReturnResult {
-		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
-	}
 	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
-
 	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
-	if c.gasLeft < params.TxGas {
-		return hash{}, errors.New("not enough gas to complete redeem process")
+	if c.gasLeft < futureGasCosts {
+		return hash{}, c.Burn(futureGasCosts) // this will error
 	}
 	gasToDonate := c.gasLeft - futureGasCosts
 	if gasToDonate < params.TxGas {
