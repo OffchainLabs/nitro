@@ -11,6 +11,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -18,8 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	arbos_util "github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type L1PricingState struct {
@@ -105,9 +105,9 @@ func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
 	}
 
 	// new = (alpha * old + observed) / (alpha + 1)
-	memory := new(big.Int).Mul(curr, util.UintToBig(weight))
+	memory := new(big.Int).Mul(curr, arbmath.UintToBig(weight))
 	impact := new(big.Int).Add(memory, baseFeeWei)
-	update := new(big.Int).Div(impact, util.UintToBig(weight+1))
+	update := new(big.Int).Div(impact, arbmath.UintToBig(weight+1))
 
 	return ps.SetL1BaseFeeEstimateWei(update)
 }
@@ -231,7 +231,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 	if ratio > 20000 {
 		return errors.New("compression ratio out of bounds")
 	}
-	return ps.aggregatorCompressionRatios.Set(arbos_util.AddressToHash(aggregator), arbos_util.UintToHash(ratio))
+	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(ratio))
 }
 
 func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
@@ -242,7 +242,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
-	if arbos_util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+	if util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
 		return
 	}
 
@@ -261,11 +261,11 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	// Approximate the number of l1 bytes needed for this tx
 	l1Bytes := buffer.Len()
 	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1Fee := util.BigMulByUint(l1GasPrice, uint64(l1Bytes))
+	l1Fee := arbmath.BigMulByUint(l1GasPrice, uint64(l1Bytes))
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	adjustedL1Fee := util.BigMulByUfrac(l1Fee, ratio, 10000)
+	adjustedL1Fee := arbmath.BigMulByUfrac(l1Fee, ratio, 10000)
 
 	tx.PosterIsReimbursable = true
 	tx.PosterCost = adjustedL1Fee
@@ -308,9 +308,9 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 	// Approximate the number of l1 bytes needed for this tx
 	l1Bytes := buffer.Len() + TxFixedCost
 	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1Fee := util.BigMulByUint(l1GasPrice, uint64(l1Bytes))
+	l1Fee := arbmath.BigMulByUint(l1GasPrice, uint64(l1Bytes))
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	return util.BigMulByUfrac(l1Fee, ratio, 10000), true
+	return arbmath.BigMulByUfrac(l1Fee, ratio, 10000), true
 }

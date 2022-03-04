@@ -18,7 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxBackend interface {
@@ -286,9 +286,9 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 
 		// L2 message
 		var blockNumberHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(util.UintToBig(blockNumber)))
+		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
 		var timestampHash common.Hash
-		copy(timestampHash[:], math.U256Bytes(util.UintToBig(timestamp)))
+		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
 		var requestId common.Hash
 
 		if kind == BatchSegmentKindL2MessageBrotli {

@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbRetryableTx struct {
@@ -43,7 +43,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err != nil {
 		return hash{}, err
 	}
-	writeBytes := util.WordsForBytes(byteCount)
+	writeBytes := arbmath.WordsForBytes(byteCount)
 	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
 		return hash{}, err
 	}
@@ -109,7 +109,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 
 	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
 	// This ensures that the gas pool has enough gas to run the retryable attempt.
-	return retryTxHash, c.state.L2PricingState().AddToGasPool(util.SaturatingCast(gasToDonate))
+	return retryTxHash, c.state.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
 }
 
 // Gets the default lifetime period a retryable has at creation
@@ -146,7 +146,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	if nbytes == 0 {
 		return nil, ErrNotFound
 	}
-	updateCost := util.WordsForBytes(nbytes) * params.SstoreSetGas / 100
+	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
 	if err := c.Burn(updateCost); err != nil {
 		return big.NewInt(0), err
 	}

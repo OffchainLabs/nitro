@@ -10,7 +10,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L2PricingState struct {
@@ -100,7 +100,7 @@ func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
 	if err != nil {
 		return err
 	}
-	if seconds == 0 || seconds > 3*60*60 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+	if seconds == 0 || seconds > 3*60*60 || arbmath.SaturatingUMul(seconds, limit) > math.MaxInt64 {
 		return errors.New("GasPoolSeconds is out of bounds")
 	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
@@ -170,7 +170,7 @@ func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) error {
 	if err != nil {
 		return err
 	}
-	if util.BigLessThan(curGasPrice, val) {
+	if arbmath.BigLessThan(curGasPrice, val) {
 		// The current gas price is less than the new minimum. Override it.
 		return ps.gasPriceWei.Set(val)
 	} else {
@@ -188,7 +188,7 @@ func (ps *L2PricingState) SetSpeedLimitPerSecond(limit uint64) error {
 	if err != nil {
 		return err
 	}
-	if limit == 0 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+	if limit == 0 || arbmath.SaturatingUMul(seconds, limit) > math.MaxInt64 {
 		return errors.New("SetSpeedLimitPerSecond is out of bounds")
 	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
@@ -203,7 +203,7 @@ func (ps *L2PricingState) GasPoolMax() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return util.SaturatingCast(seconds * speedLimit), nil
+	return arbmath.SaturatingCast(seconds * speedLimit), nil
 }
 
 func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
@@ -220,7 +220,7 @@ func (ps *L2PricingState) clipGasPool(seconds, speedLimit uint64) error {
 	if err != nil {
 		return err
 	}
-	newMax := util.SaturatingCast(util.SaturatingUMul(seconds, speedLimit))
+	newMax := arbmath.SaturatingCast(arbmath.SaturatingUMul(seconds, speedLimit))
 	if pool > newMax {
 		err = ps.SetGasPool(newMax)
 	}

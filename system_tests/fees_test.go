@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -42,8 +42,8 @@ func TestTips(t *testing.T) {
 	Require(t, err)
 
 	basefee := GetBaseFee(t, l2client, ctx)
-	auth.GasFeeCap = util.BigMulByUfrac(basefee, 5, 4) // add room for a 20% tip
-	auth.GasTipCap = util.BigMulByUfrac(basefee, 1, 4) // add a 20% tip
+	auth.GasFeeCap = arbmath.BigMulByUfrac(basefee, 5, 4) // add room for a 20% tip
+	auth.GasTipCap = arbmath.BigMulByUfrac(basefee, 1, 4) // add a 20% tip
 
 	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
 
@@ -62,21 +62,21 @@ func TestTips(t *testing.T) {
 	colors.PrintBlue("pricing: ", l2info.GasPrice, auth.GasFeeCap, auth.GasTipCap)
 	colors.PrintBlue("payment: ", tx.GasPrice(), tx.GasFeeCap(), tx.GasTipCap())
 
-	if !util.BigEquals(tx.GasPrice(), auth.GasFeeCap) {
+	if !arbmath.BigEquals(tx.GasPrice(), auth.GasFeeCap) {
 		Fail(t, "user did not pay the tip")
 	}
 
-	tip := util.BigMulByUint(util.BigSub(tx.GasPrice(), basefee), receipt.GasUsed)
-	full := util.BigMulByUint(tx.GasPrice(), receipt.GasUsed)
-	networkRevenue := util.BigSub(networkAfter, networkBefore)
+	tip := arbmath.BigMulByUint(arbmath.BigSub(tx.GasPrice(), basefee), receipt.GasUsed)
+	full := arbmath.BigMulByUint(tx.GasPrice(), receipt.GasUsed)
+	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
 	colors.PrintMint("tip: ", tip, full, networkRevenue)
 
 	colors.PrintRed("used: ", receipt.GasUsed, basefee)
 
-	if !util.BigEquals(tip, util.BigMulByFrac(networkRevenue, 1, 5)) {
+	if !arbmath.BigEquals(tip, arbmath.BigMulByFrac(networkRevenue, 1, 5)) {
 		Fail(t, "1/5th of the network's revenue should be the tip")
 	}
-	if !util.BigEquals(full, networkRevenue) {
+	if !arbmath.BigEquals(full, networkRevenue) {
 		Fail(t, "the network didn't receive the tip")
 	}
 }

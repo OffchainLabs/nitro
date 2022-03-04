@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	util_math "github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type MerkleAccumulator struct {
@@ -31,7 +31,7 @@ func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 }
 
 func CalcNumPartials(size uint64) uint64 {
-	return util_math.Log2ceil(size)
+	return arbmath.Log2ceil(size)
 }
 
 func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) (*MerkleAccumulator, error) {

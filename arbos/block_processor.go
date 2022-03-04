@@ -13,9 +13,9 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	arbos_util "github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -211,7 +211,7 @@ func ProduceBlockAdvanced(
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
 				state.L1PricingState().AddPosterInfo(tx, sender, poster)
-				posterCostInL2Gas := util.BigDiv(tx.PosterCost, gasPrice)
+				posterCostInL2Gas := arbmath.BigDiv(tx.PosterCost, gasPrice)
 
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
@@ -310,7 +310,7 @@ func ProduceBlockAdvanced(
 			if txLog.Address == ArbSysAddress && txLog.Topics[0] == L2ToL1TransactionEventID {
 				// L2->L1 withdrawals remove eth from the system
 				event := &precompilesgen.ArbSysL2ToL1Transaction{}
-				err := arbos_util.ParseL2ToL1TransactionLog(event, txLog)
+				err := util.ParseL2ToL1TransactionLog(event, txLog)
 				if err != nil {
 					log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 				} else {
