@@ -1,10 +1,11 @@
 package precompiles
 
 import (
-	"github.com/ethereum/go-ethereum/common"
-	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func TestRetryableRedeem(t *testing.T) {
@@ -13,10 +14,10 @@ func TestRetryableRedeem(t *testing.T) {
 
 	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := evm.Context.Time.Uint64() + 10000000
-	from := common.BytesToAddress([]byte{3, 4, 5})
-	to := common.BytesToAddress([]byte{6, 7, 8, 9})
+	from := common.HexToAddress("0x030405")
+	to := common.HexToAddress("0x06070809")
 	callvalue := big.NewInt(0)
-	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
+	beneficiary := common.HexToAddress("0x0301040105090206")
 	calldata := make([]byte, 42)
 	for i := range calldata {
 		calldata[i] = byte(i + 3)
