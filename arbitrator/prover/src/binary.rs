@@ -9,7 +9,7 @@ use nom::{
     combinator::{all_consuming, map, map_res, value},
     error::{context, ParseError, VerboseError},
     error::{Error, ErrorKind, FromExternalError},
-    multi::{count, length_data, many0, many_till},
+    multi::{count, length_data, many0},
     sequence::{preceded, tuple},
     Err, Needed,
 };
@@ -819,23 +819,6 @@ fn block_type(input: &[u8]) -> IResult<BlockType> {
     ))(input)
 }
 
-fn block_instruction(input: &[u8]) -> IResult<HirInstruction> {
-    alt((
-        map(
-            preceded(tag(&[0x02]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Block(t, i),
-        ),
-        map(
-            preceded(tag(&[0x03]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Loop(t, i),
-        ),
-        map(
-            preceded(tag(&[0x04]), tuple((block_type, instructions_with_else))),
-            |(t, (i, e))| HirInstruction::IfElse(t, i, e),
-        ),
-    ))(input)
-}
-
 fn inst_with_idx(opcode: Opcode) -> impl Fn(u32) -> HirInstruction {
     move |i| HirInstruction::WithIdx(opcode, i)
 }
@@ -982,11 +965,28 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
     ))(input)
 }
 
+#[inline(always)] // minimize stack depth
 fn instruction(input: &[u8]) -> IResult<HirInstruction> {
+    // Pull out block instructions early to minimize stack depth
+    if let Some(&opcode @ 0x02..=0x04) = input.get(0) {
+        let (input, block_ty) = block_type(&input[1..])?;
+        if opcode == 0x02 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Block(block_ty, insts)));
+        } else if opcode == 0x03 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Loop(block_ty, insts)));
+        } else if opcode == 0x04 {
+            let (input, insts) = instructions_with_else(input)?;
+            return Ok((input, HirInstruction::IfElse(block_ty, insts.0, insts.1)));
+        } else {
+            unreachable!();
+        }
+    }
+
     alt((
         map(simple_opcode, HirInstruction::Simple),
         map(float_instruction, HirInstruction::FloatingPointOp),
-        block_instruction,
         branch_instruction,
         call_instruction,
         variables_instruction,
@@ -996,23 +996,38 @@ fn instruction(input: &[u8]) -> IResult<HirInstruction> {
     ))(input)
 }
 
-fn instructions(input: &[u8]) -> IResult<Vec<HirInstruction>> {
-    map(
-        many_till(context("instruction", instruction), tag(&[0x0B])),
-        |(x, _)| x,
-    )(input)
+fn instructions(mut input: &[u8]) -> IResult<Vec<HirInstruction>> {
+    let mut insts = Vec::new();
+    loop {
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], insts));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        insts.push(inst);
+    }
 }
 
-fn instructions_with_else(input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
-    let term_parser = alt((tag(&[0x05]), tag(&[0x0B])));
-    let (mut input, (if_instructions, terminator)) = many_till(instruction, term_parser)(input)?;
-    let mut else_instructions = Vec::new();
-    if terminator == &[0x05] {
-        let res = instructions(input)?;
-        input = res.0;
-        else_instructions = res.1;
+fn instructions_with_else(mut input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
+    let mut in_else = false;
+    let mut if_insts = Vec::new();
+    let mut else_insts = Vec::new();
+    loop {
+        if !in_else && input.get(0) == Some(&0x05) {
+            in_else = true;
+            input = &input[1..];
+        }
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], (if_insts, else_insts)));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        if in_else {
+            else_insts.push(inst);
+        } else {
+            if_insts.push(inst);
+        }
     }
-    Ok((input, (if_instructions, else_instructions)))
 }
 
 fn function_type(input: &[u8]) -> IResult<FunctionType> {
