@@ -5,7 +5,6 @@
 package l1pricing
 
 import (
-	"bytes"
 	"errors"
 	"math/big"
 
@@ -246,22 +245,16 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 		return
 	}
 
-	var buffer bytes.Buffer
-	writer := brotli.NewWriterLevel(&buffer, 0)
-	_, err := writer.Write(txBytes)
+	l1Bytes, err := ByteCountAfterBrotli(txBytes, 0)
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return
 	}
-	if err := writer.Close(); err != nil {
-		log.Error("failed to compress tx", "err", err)
-		return
-	}
 
-	// Approximate the number of l1 bytes needed for this tx
-	l1Bytes := buffer.Len()
+	// Approximate the l1 fee charged for posting this tx's calldata
 	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1Fee := arbmath.BigMulByUint(l1GasPrice, uint64(l1Bytes))
+	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
@@ -293,24 +286,41 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 		}
 	}
 
-	var buffer bytes.Buffer
-	writer := brotli.NewWriterLevel(&buffer, 0)
-	_, err := writer.Write(message.Data())
+	byteCount, err := ByteCountAfterBrotli(message.Data(), 0)
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return big.NewInt(0), false
 	}
-	if err := writer.Close(); err != nil {
-		log.Error("failed to compress tx", "err", err)
-		return big.NewInt(0), false
-	}
 
-	// Approximate the number of l1 bytes needed for this tx
-	l1Bytes := buffer.Len() + TxFixedCost
+	// Approximate the l1 fee charged for posting this tx's calldata
+	l1Bytes := byteCount + TxFixedCost
 	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
-	l1Fee := arbmath.BigMulByUint(l1GasPrice, uint64(l1Bytes))
+	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
 	return arbmath.BigMulByBips(l1Fee, ratio), true
+}
+
+type CountWriter struct {
+	counter uint64
+}
+
+func (writer *CountWriter) Write(p []byte) (n int, err error) {
+	writer.counter += uint64(len(p))
+	return len(p), nil
+}
+
+func ByteCountAfterBrotli(input []byte, level int) (uint64, error) {
+	counter := CountWriter{}
+	writer := brotli.NewWriterLevel(&counter, level)
+	_, err := writer.Write(input)
+	if err != nil {
+		return 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return 0, err
+	}
+	return counter.counter, nil
 }
