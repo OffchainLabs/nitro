@@ -44,7 +44,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	perL1CalldataUnit := arbmath.BigMulByUfrac(weiForL1Calldata, ratio, 16*10000)
+	perL1CalldataUnit := arbmath.BigDivByUint(arbmath.BigMulByBips(weiForL1Calldata, ratio), 16)
 
 	// the cost of a simple tx without calldata
 	perL2Tx := arbmath.BigMulByUint(perL1CalldataUnit, 16*l1pricing.TxFixedCost)
@@ -88,7 +88,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	compressedCharge := arbmath.BigMulByUfrac(weiForL1Calldata, ratio, 10000)
+	compressedCharge := arbmath.BigMulByBips(weiForL1Calldata, ratio)
 	gasForL1Calldata := arbmath.BigDiv(compressedCharge, l2GasPrice)
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
@@ -128,12 +128,14 @@ func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (uint64, error) {
 
 // Get the target fullness in bips the pricing model will try to keep the pool at
 func (con ArbGasInfo) GetGasPoolTarget(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolTarget()
+	target, err := c.state.L2PricingState().GasPoolTarget()
+	return uint64(target), err
 }
 
 // Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
 func (con ArbGasInfo) GetGasPoolWeight(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolWeight()
+	weight, err := c.state.L2PricingState().GasPoolWeight()
+	return uint64(weight), err
 }
 
 // Get ArbOS's estimate of the amount of gas being burnt per second

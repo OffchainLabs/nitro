@@ -18,8 +18,9 @@ const InitialMinimumGasPriceWei = 1 * params.GWei
 const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
-const InitialGasPoolTarget = 80 * 100 // 80% in bips
-const InitialGasPoolWeight = 60 * 100 // 60% in bips
+
+var InitialGasPoolTarget = arbmath.PercentToBips(80)
+var InitialGasPoolWeight = arbmath.PercentToBips(60)
 
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	gasPool, err := ps.GasPool()
@@ -59,7 +60,6 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//     pool' = min(maximum, pool + speed * passed)
 	//
 	timeToFull := (poolMax - gasPool) / int64(speedLimit)
-	bips := uint64(10000)
 	var averagePool uint64
 	var newGasPool int64
 	if timePassed > uint64(timeToFull) {
@@ -71,7 +71,7 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 		newGasPool = gasPool + int64(speedLimit*timePassed)
 	}
 	poolTarget, _ := ps.GasPoolTarget()
-	poolTargetGas := poolTarget * uint64(poolMax) / bips
+	poolTargetGas := uint64(arbmath.IntMulByBips(poolMax, poolTarget))
 	poolRatio := arbmath.UfracToBigFloat(0, 1)
 	if averagePool < 2*poolTargetGas {
 		poolRatio = arbmath.UfracToBigFloat(2*poolTargetGas-averagePool, poolTargetGas)
@@ -81,20 +81,22 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//      average = weight * pool + (1 - weight) * rate
 	//
 	poolWeight, _ := ps.GasPoolWeight()
-	averageOfRatios, _ := arbmath.BigAddFloat(
-		arbmath.BigMulFloatByUint(poolRatio, poolWeight),
-		arbmath.BigMulFloatByUint(rateRatio, bips-poolWeight),
+	oneInBips := arbmath.OneInBips
+	averageOfRatiosRaw, _ := arbmath.BigAddFloat(
+		arbmath.BigFloatMulByUint(poolRatio, uint64(poolWeight)),
+		arbmath.BigFloatMulByUint(rateRatio, uint64(oneInBips-poolWeight)),
 	).Uint64()
+	averageOfRatios := arbmath.Bips(averageOfRatiosRaw)
 	averageOfRatiosUnbounded := averageOfRatios
-	if averageOfRatios > 2*bips {
-		averageOfRatios = 2 * bips
+	if averageOfRatios > arbmath.PercentToBips(200) {
+		averageOfRatios = arbmath.PercentToBips(200)
 	}
 
 	// update the gas price, adjusting each second by the max allowed by EIP 1559
 	//      price' = price * exp(seconds at intensity) / 2 mins
 	//
-	exp := int64(averageOfRatios-bips) * int64(timePassed) / 120 // limit to EIP 1559's max rate
-	price := arbmath.BigDivByUint(arbmath.BigMulByUint(header.BaseFee, arbmath.ApproxExpBasisPoints(exp)), bips)
+	exp := (averageOfRatios - arbmath.OneInBips) * arbmath.Bips(timePassed) / 120 // limit to EIP 1559's max rate
+	price := arbmath.BigMulByBips(header.BaseFee, arbmath.ApproxExpBasisPoints(exp))
 	maxPrice := arbmath.BigMulByInt(header.BaseFee, 2)
 	minPrice, _ := ps.MinGasPriceWei()
 

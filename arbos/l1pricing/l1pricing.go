@@ -105,9 +105,9 @@ func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
 	}
 
 	// new = (alpha * old + observed) / (alpha + 1)
-	memory := new(big.Int).Mul(curr, arbmath.UintToBig(weight))
-	impact := new(big.Int).Add(memory, baseFeeWei)
-	update := new(big.Int).Div(impact, arbmath.UintToBig(weight+1))
+	memory := arbmath.BigMul(curr, arbmath.UintToBig(weight))
+	impact := arbmath.BigAdd(memory, baseFeeWei)
+	update := arbmath.BigDiv(impact, arbmath.UintToBig(weight+1))
 
 	return ps.SetL1BaseFeeEstimateWei(update)
 }
@@ -156,7 +156,7 @@ func (ps *L1PricingState) SetRefusesDefaultAggregator(addr common.Address, refus
 	if refuses {
 		val = 1
 	}
-	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(new(big.Int).SetUint64(val)))
+	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(arbmath.UintToBig(val)))
 }
 
 // Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
@@ -202,7 +202,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	return new(big.Int).Mul(fixed, price), nil
+	return arbmath.BigMul(fixed, price), nil
 }
 
 func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) error {
@@ -218,20 +218,20 @@ func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (com
 	}
 }
 
-func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (uint64, error) {
+func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (arbmath.Bips, error) {
 	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
-		return 10000, err
+		return arbmath.OneInBips, err
 	} else {
-		return raw.Big().Uint64(), err
+		return arbmath.BigToBips(raw.Big()), err
 	}
 }
 
-func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio uint64) error {
-	if ratio > 20000 {
+func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio arbmath.Bips) error {
+	if ratio > arbmath.PercentToBips(200) {
 		return errors.New("compression ratio out of bounds")
 	}
-	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(ratio))
+	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(uint64(ratio)))
 }
 
 func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
@@ -265,7 +265,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	adjustedL1Fee := arbmath.BigMulByUfrac(l1Fee, ratio, 10000)
+	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
 
 	tx.PosterIsReimbursable = true
 	tx.PosterCost = adjustedL1Fee
@@ -312,5 +312,5 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 
 	// Adjust the price paid by the aggregator's reported improvements due to batching
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
-	return arbmath.BigMulByUfrac(l1Fee, ratio, 10000), true
+	return arbmath.BigMulByBips(l1Fee, ratio), true
 }

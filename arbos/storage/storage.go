@@ -321,6 +321,24 @@ func (sbu *StorageBackedInt64) Set(value int64) error {
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
 }
 
+// Represents a number of basis points
+type StorageBackedBips struct {
+	backing StorageBackedInt64
+}
+
+func (sto *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
+	return StorageBackedBips{StorageBackedInt64{sto.NewSlot(offset)}}
+}
+
+func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
+	value, err := sbu.backing.Get()
+	return arbmath.Bips(value), err
+}
+
+func (sbu *StorageBackedBips) Set(bips arbmath.Bips) error {
+	return sbu.backing.Set(int64(bips))
+}
+
 type StorageBackedUint64 struct {
 	StorageSlot
 }
