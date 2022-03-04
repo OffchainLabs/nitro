@@ -104,6 +104,8 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	nodeConfigC := arbnode.NodeConfigL1Test
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
+	nodeConfigC.DataAvailabilityMode = dasMode
+	nodeConfigC.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(0)
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 

@@ -386,12 +386,16 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		if v.das == nil {
 			panic("No DAS configured, but sequencer message found with DAS header")
 		}
-		hash := seqMsg[41:]
-		preimages[common.BytesToHash(hash)], err = v.das.Retrieve(ctx, hash)
+		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
 		if err != nil {
-			// There isn't a way to recover from this.
-			// The DAS internally will implement a retry strategy.
-			panic(err)
+			log.Error("Failed to deserialize DAS message", "err", err)
+			return
+		} else {
+			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, cert.DataHash[:])
+			if err != nil {
+				log.Error("Couldn't retrieve message from DAS", "err", err)
+				return
+			}
 		}
 	}
 

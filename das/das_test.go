@@ -25,10 +25,10 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	h, _, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved)
 	Require(t, err, "Error storing message")
 
-	messageRetrieved, err := das.Retrieve(ctx, h)
+	messageRetrieved, err := das.Retrieve(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -38,7 +38,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	das2, err := NewLocalDiskDataAvailabilityService(dbPath)
 	Require(t, err, "no das")
 
-	messageRetrieved2, err := das2.Retrieve(ctx, h)
+	messageRetrieved2, err := das2.Retrieve(ctx, cert.DataHash[:])
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(messageSaved, messageRetrieved2) {
 		Fail(t, "Retrieved message is not the same as stored one.")
@@ -56,13 +56,13 @@ func TestDASMissingMessage(t *testing.T) {
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	h, _, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved)
 	Require(t, err, "Error storing message")
 
 	// Change the hash to look up
-	h[0] += 1
+	cert.DataHash[0] += 1
 
-	_, err = das.Retrieve(ctx, h)
+	_, err = das.Retrieve(ctx, cert.DataHash[:])
 	if err == nil {
 		Fail(t, "Expected an error when retrieving message that is not in the store.")
 	}
