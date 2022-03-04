@@ -67,7 +67,7 @@ interface ISequencerInbox {
     error BadSequencerNumber();
 
     /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
-    error InboxNotAuthenticated();
+    error DataNotAuthenticated();
 
     function inboxAccs(uint256 index) external view returns (bytes32);
 

@@ -30,7 +30,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     uint256 public constant HEADER_LENGTH = 40;
     /// @dev If the first batch data byte after the header has this bit set,
     /// the sequencer inbox has authenticated the data. Currently not used.
-    bytes1 public constant INBOX_AUTHENTICATED_FLAG = 0x40;
+    bytes1 public constant DATA_AUTHENTICATED_FLAG = 0x40;
 
     address public rollup;
     mapping(address => bool) public isBatchPoster;
@@ -214,8 +214,8 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         for (uint256 i = 0; i < HEADER_LENGTH; i++) {
             fullData[i] = header[i];
         }
-        if (data.length > 0 && (data[0] & INBOX_AUTHENTICATED_FLAG) == INBOX_AUTHENTICATED_FLAG) {
-            revert InboxNotAuthenticated();
+        if (data.length > 0 && (data[0] & DATA_AUTHENTICATED_FLAG) == DATA_AUTHENTICATED_FLAG) {
+            revert DataNotAuthenticated();
         }
         // copy data into fullData at offset of HEADER_LENGTH (the extra 32 offset is because solidity puts the array len first)
         assembly {
