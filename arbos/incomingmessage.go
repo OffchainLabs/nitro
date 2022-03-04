@@ -1,11 +1,12 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 	L1MessageType_L2FundedByL1          = 7
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
-	L1MessageType_SetChainParams        = 11
+	L1MessageType_Initialize            = 11
 	L1MessageType_EthDeposit            = 12
 	L1MessageType_Invalid               = 0xFF
 )
@@ -173,8 +174,8 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
 		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
-	case L1MessageType_SetChainParams:
-		return nil, errors.New("L1 message type SetChainParams is unimplemented")
+	case L1MessageType_Initialize:
+		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
 		return nil, nil
 	case L1MessageType_L2FundedByL1:
@@ -217,6 +218,17 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		// invalid message, just ignore it
 		return nil, fmt.Errorf("invalid message type %v", msg.Header.Kind)
 	}
+}
+
+// Returns the chain id on success
+func (msg *L1IncomingMessage) ParseInitMessage() (*big.Int, error) {
+	if msg.Header.Kind != L1MessageType_Initialize {
+		return nil, fmt.Errorf("invalid init message kind %v", msg.Header.Kind)
+	}
+	if len(msg.L2msg) != 32 {
+		return nil, fmt.Errorf("invalid init message data %v", hex.EncodeToString(msg.L2msg))
+	}
+	return new(big.Int).SetBytes(msg.L2msg), nil
 }
 
 const (

@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestDASStoreRetrieveMultipleInstances(t *testing.T) {

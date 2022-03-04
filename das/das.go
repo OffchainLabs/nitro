@@ -9,8 +9,8 @@ import (
 	"encoding/binary"
 	"reflect"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
 type DataAvailabilityServiceWriter interface {

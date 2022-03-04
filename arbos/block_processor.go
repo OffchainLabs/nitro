@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
@@ -11,10 +11,10 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -271,7 +271,7 @@ func ProduceBlockAdvanced(
 		if err != nil {
 			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
-			if gasLeft > params.TxGas {
+			if gasLeft > params.TxGas && isUserTx {
 				gasLeft -= params.TxGas
 			} else {
 				gasLeft = 0
@@ -323,12 +323,14 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		computeUsed := gasUsed - dataGas
-		if computeUsed < params.TxGas {
-			// a tx, even if invalid, must at least reduce the pool by TxGas
-			computeUsed = params.TxGas
+		if isUserTx {
+			computeUsed := gasUsed - dataGas
+			if computeUsed < params.TxGas {
+				// a tx, even if invalid, must at least reduce the pool by TxGas
+				computeUsed = params.TxGas
+			}
+			gasLeft -= computeUsed
 		}
-		gasLeft -= computeUsed
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
@@ -381,11 +383,9 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		if err != nil {
 			panic(err)
 		}
-		state.SetLastTimestampSeen(header.Time)
+		timePassed := state.SetLastTimestampSeen(header.Time)
+		state.L2PricingState().UpdatePricingModel(header, timePassed, false)
 		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
-
-		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()

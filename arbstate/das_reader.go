@@ -10,7 +10,7 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
 type DataAvailabilityServiceReader interface {

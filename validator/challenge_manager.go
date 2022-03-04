@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
 
@@ -73,7 +73,7 @@ type ChallengeManager struct {
 	initialMachine        *ArbitratorMachine
 	initialMachineBlockNr int64
 
-	// nil untill working on execution challenge
+	// nil until working on execution challenge
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 

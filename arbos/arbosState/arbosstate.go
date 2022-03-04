@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbosState
@@ -7,25 +7,27 @@ package arbosState
 import (
 	"errors"
 	"log"
+	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/blockhash"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/blockhash"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
-	"github.com/offchainlabs/arbstate/arbos/blsTable"
-	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/arbos/blsTable"
+	"github.com/offchainlabs/nitro/arbos/burn"
 
-	"github.com/offchainlabs/arbstate/arbos/addressTable"
-	"github.com/offchainlabs/arbstate/arbos/l1pricing"
-	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/addressTable"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -47,6 +49,7 @@ type ArbosState struct {
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
 	timestamp         storage.StorageBackedUint64
 	blockhashes       *blockhash.Blockhashes
+	chainId           storage.StorageBackedBigInt
 	backingStorage    *storage.Storage
 	Burner            burn.Burner
 }
@@ -77,6 +80,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
 		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
+		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage,
 		burner,
 	}, nil
@@ -89,7 +93,7 @@ func OpenSystemArbosState(stateDB vm.StateDB, readOnly bool) (*ArbosState, error
 	return state, err
 }
 
-// Create and initialize a memory-backed ArbOS state
+// Create and initialize a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
 	db := state.NewDatabase(raw)
@@ -98,7 +102,7 @@ func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 		log.Fatal("failed to init empty statedb", err)
 	}
 	burner := burn.NewSystemBurner(false)
-	state, err := InitializeArbosState(statedb, burner)
+	state, err := InitializeArbosState(statedb, burner, params.ArbitrumDevTestChainConfig())
 	if err != nil {
 		log.Fatal("failed to open the ArbOS state", err)
 	}
@@ -123,6 +127,7 @@ const (
 	upgradeTimestampOffset
 	timestampOffset
 	networkFeeAccountOffset
+	chainIdOffset
 )
 
 type ArbosStateSubspaceID []byte
@@ -142,7 +147,7 @@ var (
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
 
-func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error) {
+func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
 	if err != nil {
@@ -157,6 +162,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, 
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
+	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
 	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
 	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
@@ -165,11 +171,14 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, 
 	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
 	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
 
-	// the zero address is the initial chain owner
-	ZeroAddressL2 := util.RemapL1Address(common.Address{})
+	// by default, the remapped zero address is the initial chain owner
+	initialChainOwner := util.RemapL1Address(common.Address{})
+	if chainConfig.ArbitrumChainParams.InitialChainOwner != (common.Address{}) {
+		initialChainOwner = chainConfig.ArbitrumChainParams.InitialChainOwner
+	}
 	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
-	_ = addressSet.OpenAddressSet(ownersStorage).Add(ZeroAddressL2)
+	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 
@@ -243,17 +252,17 @@ func (state *ArbosState) LastTimestampSeen() (uint64, error) {
 	return state.timestamp.Get()
 }
 
-func (state *ArbosState) SetLastTimestampSeen(val uint64) {
-	ts, err := state.timestamp.Get()
+func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
+	lastTimestamp, err := state.timestamp.Get()
 	state.Restrict(err)
-	if val < ts {
+	if timestamp < lastTimestamp {
 		panic("timestamp decreased")
 	}
-	if val > ts {
-		delta := val - ts
-		state.Restrict(state.timestamp.Set(val))
-		state.l2PricingState.NotifyGasPricerThatTimeElapsed(delta)
+	timePassed := timestamp - lastTimestamp
+	if timePassed > 0 {
+		state.Restrict(state.timestamp.Set(timestamp))
 	}
+	return timePassed
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
@@ -270,4 +279,8 @@ func (state *ArbosState) Keccak(data ...[]byte) ([]byte, error) {
 
 func (state *ArbosState) KeccakHash(data ...[]byte) (common.Hash, error) {
 	return state.backingStorage.KeccakHash(data...)
+}
+
+func (state *ArbosState) ChainId() (*big.Int, error) {
+	return state.chainId.Get()
 }

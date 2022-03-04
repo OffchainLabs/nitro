@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbstate
@@ -17,8 +17,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 )
 
 type InboxBackend interface {
@@ -215,7 +215,7 @@ func (r *inboxMultiplexer) advanceSubMsg() {
 
 func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 	seqMsg := r.cachedSequencerMessage
-	// we issue delayed messages untill reaching afterDelayedMessages
+	// we issue delayed messages until reaching afterDelayedMessages
 	if r.delayedMessagesRead < seqMsg.afterDelayedMessages {
 		return false
 	}
@@ -257,6 +257,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			advancing, err := rlp.NewStream(rd, 16).Uint()
 			if err != nil {
 				log.Warn("error parsing sequencer advancing segment", "err", err)
+				segmentNum++
 				continue
 			}
 			if segmentKind == BatchSegmentKindAdvanceTimestamp {

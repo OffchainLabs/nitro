@@ -14,8 +14,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/blsSignatures"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
 var dasMutex sync.Mutex

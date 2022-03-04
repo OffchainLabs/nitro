@@ -5,7 +5,7 @@
 package blsSignatures
 
 import (
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"testing"
 )
 

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/das"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {
@@ -48,14 +48,14 @@ func TestSequencerFeed(t *testing.T) {
 	seqNodeConfig := arbnode.NodeConfigL2Test
 	seqNodeConfig.Broadcaster = true
 	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
 
 	clientNodeConfig := arbnode.NodeConfigL2Test
 	clientNodeConfig.BroadcastClient = true
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, false)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
 
 	l2info1.GenerateAccount("User2")
 
