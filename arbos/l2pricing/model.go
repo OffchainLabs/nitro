@@ -19,8 +19,8 @@ const InitialBaseFeeWei = InitialMinimumGasPriceWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
 
-var InitialGasPoolTarget = arbmath.PercentToBips(80)
-var InitialGasPoolWeight = arbmath.PercentToBips(60)
+var InitialGasPoolTargetBips = arbmath.PercentToBips(80)
+var InitialGasPoolWeightBips = arbmath.PercentToBips(60)
 
 func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	gasPool, err := ps.GasPool()
