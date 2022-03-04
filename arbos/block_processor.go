@@ -267,7 +267,7 @@ func ProduceBlockAdvanced(
 		if err != nil {
 			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
-			if gasLeft > params.TxGas {
+			if gasLeft > params.TxGas && isUserTx {
 				gasLeft -= params.TxGas
 			} else {
 				gasLeft = 0
@@ -319,12 +319,14 @@ func ProduceBlockAdvanced(
 			}
 		}
 
-		computeUsed := gasUsed - dataGas
-		if computeUsed < params.TxGas {
-			// a tx, even if invalid, must at least reduce the pool by TxGas
-			computeUsed = params.TxGas
+		if isUserTx {
+			computeUsed := gasUsed - dataGas
+			if computeUsed < params.TxGas {
+				// a tx, even if invalid, must at least reduce the pool by TxGas
+				computeUsed = params.TxGas
+			}
+			gasLeft -= computeUsed
 		}
-		gasLeft -= computeUsed
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
