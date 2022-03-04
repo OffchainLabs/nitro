@@ -24,7 +24,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
 	basefee := getPrice(t, pricing)
-	pricing.AddToGasPool(-gasUsed)
+	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
 	header := &types.Header{
 		BaseFee: util.UintToBig(basefee),
 	}

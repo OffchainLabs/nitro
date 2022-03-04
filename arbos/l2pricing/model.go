@@ -21,9 +21,12 @@ const InitialRateEstimateInertia = 60
 const InitialGasPoolTarget = 80 * 100 // 80% in bips
 const InitialGasPoolWeight = 60 * 100 // 60% in bips
 
-func (ps *L2PricingState) AddToGasPool(gas int64) {
-	gasPool, _ := ps.GasPool()
-	ps.Restrict(ps.SetGasPool(util.SaturatingAdd(gasPool, gas)))
+func (ps *L2PricingState) AddToGasPool(gas int64) error {
+	gasPool, err := ps.GasPool()
+	if err != nil {
+		return err
+	}
+	return ps.SetGasPool(util.SaturatingAdd(gasPool, gas))
 }
 
 // Update the pricing model with a finalized block's header
