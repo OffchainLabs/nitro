@@ -41,6 +41,7 @@ func testBlockValidatorSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
 	l1NodeConfigB.BlockValidator = true
 	l1NodeConfigB.DataAvailabilityMode = dasMode
 	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
