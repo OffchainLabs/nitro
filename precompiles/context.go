@@ -67,6 +67,10 @@ func testContext(caller addr, evm mech) *context {
 		panic(err)
 	}
 	ctx.state = state
-	ctx.txProcessor = evm.ProcessingHook.(*arbos.TxProcessor)
+	var ok bool
+	ctx.txProcessor, ok = evm.ProcessingHook.(*arbos.TxProcessor)
+	if !ok {
+		panic("must have tx processor")
+	}
 	return ctx
 }
