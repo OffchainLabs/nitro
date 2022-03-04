@@ -8,6 +8,7 @@ import (
 	cryptorand "crypto/rand"
 	"errors"
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
@@ -20,6 +21,7 @@ type blsStateType struct {
 }
 
 var blsState blsStateType
+var stateMutex sync.Mutex
 
 func init() {
 	blsState = blsStateType{
@@ -39,7 +41,9 @@ type PrivateKey *big.Int
 type Signature *bls12381.PointG1
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
+	stateMutex.Lock()
 	seed, err := cryptorand.Int(cryptorand.Reader, blsState.g2.Q())
+	stateMutex.Unlock()
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
@@ -50,7 +54,9 @@ func GenerateKeys() (PublicKey, PrivateKey, error) {
 func internalDeterministicGenerateKeys(seed *big.Int) (PublicKey, PrivateKey, error) {
 	privateKey := seed
 	pubKey := &bls12381.PointG2{}
+	stateMutex.Lock()
 	blsState.g2.MulScalar(pubKey, blsState.g2.One(), privateKey)
+	stateMutex.Unlock()
 	proof, err := KeyValidityProof(pubKey, privateKey)
 	if err != nil {
 		return PublicKey{}, nil, err
@@ -106,7 +112,9 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 		return nil, err
 	}
 	result := &bls12381.PointG1{}
+	stateMutex.Lock()
 	blsState.g1.MulScalar(result, pointOnCurve, priv)
+	stateMutex.Unlock()
 	return Signature(result), nil
 }
 
@@ -120,6 +128,8 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 		return false, err
 	}
 
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	engine := blsState.pairingEngine
 	engine.Reset()
 	engine.AddPair(pointOnCurve, publicKey.key)
@@ -130,14 +140,18 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 }
 
 func AggregatePublicKeys(pubKeys []PublicKey) PublicKey {
+	stateMutex.Lock()
 	ret := blsState.g2.Zero()
 	for _, pk := range pubKeys {
 		blsState.g2.Add(ret, ret, pk.key)
 	}
+	stateMutex.Unlock()
 	return NewTrustedPublicKey(ret)
 }
 
 func AggregateSignatures(sigs []Signature) Signature {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	ret := blsState.g1.Zero()
 	for _, s := range sigs {
 		blsState.g1.Add(ret, ret, s)
@@ -150,18 +164,25 @@ func VerifyAggregatedSignatureSameMessage(sig Signature, message []byte, pubKeys
 }
 
 func VerifyAggregatedSignatureDifferentMessages(sig Signature, messages [][]byte, pubKeys []PublicKey) (bool, error) {
+
 	if len(messages) != len(pubKeys) {
 		return false, errors.New("len(messages) does not match (len(pub keys) in verification")
 	}
+	stateMutex.Lock()
 	engine := blsState.pairingEngine
 	engine.Reset()
+	stateMutex.Unlock()
 	for i, msg := range messages {
 		pointOnCurve, err := hashToG1Curve(msg, false)
 		if err != nil {
 			return false, err
 		}
+		stateMutex.Lock()
 		engine.AddPair(pointOnCurve, pubKeys[i].key)
+		stateMutex.Unlock()
 	}
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	leftSide := engine.Result()
 
 	engine.Reset()
@@ -183,14 +204,20 @@ func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, e
 		// modify padding, for domain separation
 		padding[0] = 1
 	}
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	return blsState.g1.MapToCurve(append(padding[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
 	if pub.validityProof == nil {
+		stateMutex.Lock()
+		defer stateMutex.Unlock()
 		return append([]byte{0}, blsState.g2.ToBytes(pub.key)...)
 	} else {
+		stateMutex.Lock()
 		keyBytes := blsState.g2.ToBytes(pub.key)
+		stateMutex.Unlock()
 		sigBytes := SignatureToBytes(pub.validityProof)
 		if len(sigBytes) > 255 {
 			panic("validity proof too large to serialize")
@@ -208,7 +235,9 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 		if !trustedSource {
 			return PublicKey{}, errors.New("tried to deserialize unvalidated public key from untrusted source")
 		}
+		stateMutex.Lock()
 		key, err := blsState.g2.FromBytes(in[1:])
+		stateMutex.Unlock()
 		if err != nil {
 			return PublicKey{}, err
 		}
@@ -218,12 +247,16 @@ func PublicKeyFromBytes(in []byte, trustedSource bool) (PublicKey, error) {
 			return PublicKey{}, errors.New("invalid serialized public key")
 		}
 		proofBytes := in[1 : 1+proofLen]
+		stateMutex.Lock()
 		validityProof, err := blsState.g1.FromBytes(proofBytes)
+		stateMutex.Unlock()
 		if err != nil {
 			return PublicKey{}, err
 		}
 		keyBytes := in[1+proofLen:]
+		stateMutex.Lock()
 		key, err := blsState.g2.FromBytes(keyBytes)
+		stateMutex.Unlock()
 		if err != nil {
 			return PublicKey{}, err
 		}
@@ -240,9 +273,13 @@ func PrivateKeyFromBytes(in []byte) (PrivateKey, error) {
 }
 
 func SignatureToBytes(sig Signature) []byte {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	return blsState.g1.ToBytes(sig)
 }
 
 func SignatureFromBytes(in []byte) (Signature, error) {
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
 	return blsState.g1.FromBytes(in)
 }
