@@ -67,5 +67,6 @@ func testContext(caller addr, evm mech) *context {
 		panic(err)
 	}
 	ctx.state = state
+	ctx.txProcessor = evm.ProcessingHook.(*arbos.TxProcessor)
 	return ctx
 }
