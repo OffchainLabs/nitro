@@ -75,15 +75,12 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	if err != nil {
 		if os.IsNotExist(err) {
 			pubKey, privKey, err = generateAndStoreKeys(dbPath)
-			log.Error("GENERATING keys", "pubkey", blsSignatures.PublicKeyToBytes(*pubKey))
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			return nil, err
 		}
-	} else {
-		log.Error("READ keys", "pubkey", blsSignatures.PublicKeyToBytes(*pubKey))
 	}
 
 	return &LocalDiskDataAvailabilityService{
@@ -104,7 +101,6 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	c.SignersMask = das.signerMask
 
 	fields := serializeSignableFields(*c)
-	log.Error("SIGNING fields", "blob", fields, "pubkey", blsSignatures.PublicKeyToBytes(*das.pubKey), "privKey", blsSignatures.PrivateKeyToBytes(das.privKey))
 	c.Sig, err = blsSignatures.SignMessage(das.privKey, fields)
 	if err != nil {
 		return nil, err
@@ -121,7 +117,6 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	if err != nil {
 		return nil, err
 	}
-	log.Error("WRITE File and total hash", "path", path, "hash", crypto.Keccak256(toWrite))
 
 	return c, nil
 }
@@ -137,7 +132,6 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, hash 
 	if err != nil {
 		return nil, err
 	}
-	log.Error("READ File and total hash", "path", path, "hash", crypto.Keccak256(fileData))
 
 	cert, bytesRead, err := arbstate.DeserializeDASCertFrom(fileData)
 	if err != nil {
@@ -152,7 +146,6 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, hash 
 	}
 
 	signedBlob := serializeSignableFields(*cert)
-	log.Error("CHECK fields", "blob", signedBlob, "pubkey", blsSignatures.PublicKeyToBytes(*das.pubKey), "privKey", blsSignatures.PrivateKeyToBytes(das.privKey))
 	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, *das.pubKey)
 	if err != nil {
 		return nil, err
