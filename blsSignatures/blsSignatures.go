@@ -23,7 +23,8 @@ type PrivateKey *big.Int
 type Signature *bls12381.PointG1
 
 func GenerateKeys() (PublicKey, PrivateKey, error) {
-	seed, err := cryptorand.Int(cryptorand.Reader, bls12381.NewG2().Q())
+	g2 := bls12381.NewG2()
+	seed, err := cryptorand.Int(cryptorand.Reader, g2.Q())
 	if err != nil {
 		return PublicKey{}, nil, err
 	}
@@ -60,8 +61,9 @@ func KeyValidityProof(pubKey *bls12381.PointG2, privateKey PrivateKey) (Signatur
 }
 
 func NewPublicKey(pubKey *bls12381.PointG2, validityProof *bls12381.PointG1) (PublicKey, error) {
+	g2 := bls12381.NewG2()
 	unverifiedPublicKey := PublicKey{pubKey, validityProof}
-	verified, err := verifySignature2(validityProof, bls12381.NewG2().ToBytes(pubKey), unverifiedPublicKey, true)
+	verified, err := verifySignature2(validityProof, g2.ToBytes(pubKey), unverifiedPublicKey, true)
 	if err != nil {
 		return PublicKey{}, err
 	}
@@ -91,8 +93,9 @@ func signMessage2(priv PrivateKey, message []byte, keyValidationMode bool) (Sign
 	if err != nil {
 		return nil, err
 	}
+	g1 := bls12381.NewG1()
 	result := &bls12381.PointG1{}
-	bls12381.NewG1().MulScalar(result, pointOnCurve, priv)
+	g1.MulScalar(result, pointOnCurve, priv)
 	return Signature(result), nil
 }
 
@@ -172,7 +175,8 @@ func hashToG1Curve(message []byte, keyValidationMode bool) (*bls12381.PointG1, e
 		// modify padding, for domain separation
 		padding[0] = 1
 	}
-	return bls12381.NewG1().MapToCurve(append(padding[:], h...))
+	g1 := bls12381.NewG1()
+	return g1.MapToCurve(append(padding[:], h...))
 }
 
 func PublicKeyToBytes(pub PublicKey) []byte {
