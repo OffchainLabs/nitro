@@ -245,7 +245,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 		return
 	}
 
-	l1Bytes, err := ByteCountAfterBrotli(txBytes, 0)
+	l1Bytes, err := byteCountAfterBrotli(txBytes, 0)
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return
@@ -286,7 +286,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 		}
 	}
 
-	byteCount, err := ByteCountAfterBrotli(message.Data(), 0)
+	byteCount, err := byteCountAfterBrotli(message.Data(), 0)
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return big.NewInt(0), false
@@ -303,17 +303,17 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 	return arbmath.BigMulByBips(l1Fee, ratio), true
 }
 
-type CountWriter struct {
+type countWriter struct {
 	counter uint64
 }
 
-func (writer *CountWriter) Write(p []byte) (n int, err error) {
+func (writer *countWriter) Write(p []byte) (n int, err error) {
 	writer.counter += uint64(len(p))
 	return len(p), nil
 }
 
-func ByteCountAfterBrotli(input []byte, level int) (uint64, error) {
-	counter := CountWriter{}
+func byteCountAfterBrotli(input []byte, level int) (uint64, error) {
+	counter := countWriter{}
 	writer := brotli.NewWriterLevel(&counter, level)
 	_, err := writer.Write(input)
 	if err != nil {
