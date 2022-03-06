@@ -16,7 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -500,7 +500,7 @@ func (p Precompile) Call(
 		readOnly:    method.purity <= view,
 	}
 
-	argsCost := params.CopyGas * util.WordsForBytes(uint64(len(input)-4))
+	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))
 	if err := callerCtx.Burn(argsCost); err != nil {
 		// user cannot afford the argument data supplied
 		return nil, 0, vm.ErrExecutionReverted
@@ -571,7 +571,7 @@ func (p Precompile) Call(
 		log.Fatal("Could not encode precompile result ", err)
 	}
 
-	resultCost := params.CopyGas * util.WordsForBytes(uint64(len(encoded)))
+	resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(encoded)))
 	if err := callerCtx.Burn(resultCost); err != nil {
 		// user cannot afford the result data returned
 		return nil, 0, vm.ErrExecutionReverted

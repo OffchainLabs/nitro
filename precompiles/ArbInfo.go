@@ -6,7 +6,7 @@ package precompiles
 
 import (
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Provides the ability to lookup basic info about accounts and contracts.
@@ -28,7 +28,7 @@ func (con ArbInfo) GetCode(c ctx, evm mech, account addr) ([]byte, error) {
 		return nil, err
 	}
 	code := evm.StateDB.GetCode(account)
-	if err := c.Burn(params.CopyGas * util.WordsForBytes(uint64(len(code)))); err != nil {
+	if err := c.Burn(params.CopyGas * arbmath.WordsForBytes(uint64(len(code)))); err != nil {
 		return nil, err
 	}
 	return code, nil

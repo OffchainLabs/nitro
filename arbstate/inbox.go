@@ -9,15 +9,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"math/big"
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxBackend interface {
@@ -141,9 +142,10 @@ var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 }
 
 const BatchSegmentKindL2Message uint8 = 0
-const BatchSegmentKindDelayedMessages uint8 = 1
-const BatchSegmentKindAdvanceTimestamp uint8 = 2
-const BatchSegmentKindAdvanceL1BlockNumber uint8 = 3
+const BatchSegmentKindL2MessageBrotli uint8 = 1
+const BatchSegmentKindDelayedMessages uint8 = 2
+const BatchSegmentKindAdvanceTimestamp uint8 = 3
+const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
 // This does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
@@ -201,8 +203,11 @@ func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 		if len(segment) == 0 {
 			continue
 		}
-		segmentKind := segment[0]
-		if segmentKind == BatchSegmentKindL2Message || segmentKind == BatchSegmentKindDelayedMessages {
+		kind := segment[0]
+		if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
+			return false
+		}
+		if kind == BatchSegmentKindDelayedMessages {
 			return false
 		}
 	}
@@ -274,17 +279,30 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		log.Error("empty sequencer message segment", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum)
 		return nil, nil
 	}
-	segmentKind := segment[0]
+	kind := segment[0]
+	segment = segment[1:]
 	var msg *MessageWithMetadata
-	if segmentKind == BatchSegmentKindL2Message {
+	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
+
 		// L2 message
 		var blockNumberHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
+		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
 		var timestampHash common.Hash
-		copy(timestampHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
+		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
 		var requestId common.Hash
+
+		if kind == BatchSegmentKindL2MessageBrotli {
+			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(segment[1:])), arbos.MaxL2MessageSize)
+			decompressed, err := io.ReadAll(reader)
+			if err != nil {
+				log.Info("dropping brotli message", "err", err, "delayedMsg", r.delayedMessagesRead)
+				return nil, nil
+			}
+			segment = decompressed
+		}
+
 		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
-		if len(segment) < 2 || (segment[1] != arbos.L2MessageKind_SignedTx && segment[1] != arbos.L2MessageKind_UnsignedUserTx) {
+		if len(segment) == 0 || (segment[0] != arbos.L2MessageKind_SignedTx && segment[0] != arbos.L2MessageKind_UnsignedUserTx) {
 			requestId[0] = 1 << 6
 			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.cachedSequencerMessageNum)
 			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
@@ -299,11 +317,11 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					RequestId:   requestId,
 					BaseFeeL1:   common.Hash{},
 				},
-				L2msg: segment[1:],
+				L2msg: segment,
 			},
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
-	} else if segmentKind == BatchSegmentKindDelayedMessages {
+	} else if kind == BatchSegmentKindDelayedMessages {
 		if r.delayedMessagesRead >= seqMsg.afterDelayedMessages {
 			if segmentNum < uint64(len(seqMsg.segments)) {
 				log.Warn(
@@ -333,7 +351,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			}
 		}
 	} else {
-		log.Error("bad sequencer message segment kind", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum, "kind", segmentKind)
+		log.Error("bad sequencer message segment kind", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum, "kind", kind)
 		return nil, nil
 	}
 	return msg, nil

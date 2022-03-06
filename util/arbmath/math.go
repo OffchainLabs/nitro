@@ -2,7 +2,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
-package util
+package arbmath
 
 import (
 	"math"
@@ -125,9 +125,14 @@ func BigMulByUint(multiplicand *big.Int, multiplier uint64) *big.Int {
 	return new(big.Int).Mul(multiplicand, new(big.Int).SetUint64(multiplier))
 }
 
-// divide a huge by an integer
+// divide a huge by an unsigned integer
 func BigDivByUint(dividend *big.Int, divisor uint64) *big.Int {
 	return BigDiv(dividend, UintToBig(divisor))
+}
+
+// divide a huge by an integer
+func BigDivByInt(dividend *big.Int, divisor int64) *big.Int {
+	return BigDiv(dividend, big.NewInt(divisor))
 }
 
 // add two big floats together
@@ -141,7 +146,7 @@ func BigMulFloat(multiplicand, multiplier *big.Float) *big.Float {
 }
 
 // multiply a big float by an unsigned integer
-func BigMulFloatByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
+func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
@@ -190,7 +195,7 @@ func WordsForBytes(nbytes uint64) uint64 {
 
 // Return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
-func ApproxExpBasisPoints(value int64) uint64 {
+func ApproxExpBasisPoints(value Bips) Bips {
 	input := value
 	negative := value < 0
 	if negative {
@@ -198,14 +203,14 @@ func ApproxExpBasisPoints(value int64) uint64 {
 	}
 	x := uint64(input)
 
-	bips := uint64(10000)
+	bips := uint64(OneInBips)
 	res := bips + x/4
 	res = bips + SaturatingUMul(res, x)/(3*bips)
 	res = bips + SaturatingUMul(res, x)/(2*bips)
 	res = bips + SaturatingUMul(res, x)/(1*bips)
 	if negative {
-		return uint64(bips * bips / res)
+		return Bips(SaturatingCast(bips * bips / res))
 	} else {
-		return uint64(res)
+		return Bips(SaturatingCast(res))
 	}
 }
