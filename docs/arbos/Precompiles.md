@@ -66,7 +66,7 @@ Provides the ability to create short-hands for commonly used accounts.
 # [ArbAggregator][ArbAggregator_link]<a name=ArbAggregator></a>
 Provides aggregators and their users methods for configuring how they participate in L1 aggregation. Arbitrum One's default aggregator is the Sequencer, which a user will prefer unless `SetPreferredAggregator` is invoked to change it.
 
-Compression ratios are measured in ppm. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
+Compression ratios are measured in basis points. Methods that are checkmarked are access-controlled and will revert if not called by the aggregator, its fee collector, or a chain owner.
 
 | Methods                                                                                  |                                                         |  |
 |:-----------------------------------------------------------------------------------------|:--------------------------------------------------------|:------------------|
