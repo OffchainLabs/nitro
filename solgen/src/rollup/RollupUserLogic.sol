@@ -95,14 +95,20 @@ abstract contract AbsRollupUserLogic is
         node.requirePastDeadline();
 
         // Check that prev is latest confirmed
-        require(node.prevNum == latestConfirmed(), "INVALID_PREV");
+        assert(node.prevNum == latestConfirmed());
 
-        getNodeStorage(latestConfirmed()).requirePastChildConfirmDeadline();
+        Node storage prevNode = getNodeStorage(node.prevNum);
+        prevNode.requirePastChildConfirmDeadline();
 
         removeOldZombies(0);
 
-        // All non-zombie stakers are staked on this node
-        require(node.stakerCount == stakerCount() + countStakedZombies(nodeNum), "NOT_ALL_STAKED");
+        // Only zombies are staked on siblings to this node
+        uint256 zombiesStakedOnOtherChildren = countStakedZombies(nodeNum) -
+            countZombiesStakedOnChildren(nodeNum);
+        require(
+            node.stakerCount == prevNode.childStakerCount + zombiesStakedOnOtherChildren,
+            "NOT_ALL_STAKED"
+        );
 
         confirmNode(nodeNum, blockHash, sendRoot);
     }
@@ -132,7 +138,7 @@ abstract contract AbsRollupUserLogic is
         onlyValidator
         whenNotPaused
     {
-        require(isStaked(msg.sender), "NOT_STAKED");
+        require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
 
         require(
             nodeNum >= firstUnresolvedNode() && nodeNum <= latestNodeCreated(),
@@ -154,7 +160,7 @@ abstract contract AbsRollupUserLogic is
         bytes32 expectedNodeHash,
         uint256 prevNodeInboxMaxCount
     ) public onlyValidator whenNotPaused {
-        require(isStaked(msg.sender), "NOT_STAKED");
+        require(isStakedOnLatestConfirmed(msg.sender), "NOT_STAKED");
         // Ensure staker is staked on the previous node
         uint64 prevNode = latestStakedNode(msg.sender);
 
@@ -516,6 +522,32 @@ abstract contract AbsRollupUserLogic is
         uint256 stakedZombieCount = 0;
         for (uint256 i = 0; i < currentZombieCount; i++) {
             if (nodeHasStaker(nodeNum, zombieAddress(i))) {
+                stakedZombieCount++;
+            }
+        }
+        return stakedZombieCount;
+    }
+
+    /**
+     * @notice Calculate the number of zombies staked on a child of the given node
+     *
+     * @dev This function could be uncallable if there are too many zombies. However,
+     * removeZombie and removeOldZombies can be used to remove any zombies that exist
+     * so that this will then be callable
+     *
+     * @param nodeNum The parent node on which to count zombies staked on children
+     * @return The number of zombies staked on children of the node
+     */
+    function countZombiesStakedOnChildren(uint64 nodeNum) public view override returns (uint256) {
+        uint256 currentZombieCount = zombieCount();
+        uint256 stakedZombieCount = 0;
+        for (uint256 i = 0; i < currentZombieCount; i++) {
+            Zombie storage zombie = getZombieStorage(i);
+            // If this zombie is staked on this node, but its _latest_ staked node isn't this node,
+            // then it must be staked on a child of this node.
+            if (
+                zombie.latestStakedNode != nodeNum && nodeHasStaker(nodeNum, zombie.stakerAddress)
+            ) {
                 stakedZombieCount++;
             }
         }

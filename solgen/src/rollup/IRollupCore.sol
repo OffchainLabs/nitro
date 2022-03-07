@@ -73,7 +73,8 @@ interface IRollupCore {
     function getNode(uint64 nodeNum) external view returns (Node memory);
 
     /**
-     * @notice Check if the specified node has been staked on by the provided staker
+     * @notice Check if the specified node has been staked on by the provided staker.
+     * Only accurate at the latest confirmed node and afterwards.
      */
     function nodeHasStaker(uint64 nodeNum, address staker) external view returns (bool);
 

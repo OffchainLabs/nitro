@@ -299,10 +299,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex].isTimedOut();
     }
 
-    function timeUsedSinceLastMove(uint64 challengeIndex) private view returns (uint256) {
-        return challenges[challengeIndex].timeUsedSinceLastMove();
-    }
-
     function requireValidBisection(
         ChallengeLib.SegmentSelection calldata selection,
         bytes32 startHash,
