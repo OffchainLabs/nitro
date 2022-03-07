@@ -555,10 +555,15 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             // Ensure that the assertion doesn't read past the end of the current inbox
             uint64 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
-            require(
-                afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
-                "INBOX_BACKWARDS"
-            );
+            uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
+            require(afterInboxCount >= prevInboxPosition, "INBOX_BACKWARDS");
+            if (afterInboxCount == prevInboxPosition) {
+                require(
+                    assertion.afterState.globalState.getPositionInMessage() >=
+                        assertion.afterState.globalState.getPositionInMessage(),
+                    "INBOX_POS_IN_MSG_BACKWARDS"
+                );
+            }
             // See validator/assertion.go ExecutionState RequiredBatches() for reasoning
             if (
                 assertion.afterState.machineStatus == MachineStatus.ERRORED ||
