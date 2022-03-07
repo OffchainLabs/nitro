@@ -78,6 +78,9 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     mapping(address => uint256) private _withdrawableFunds;
     uint256 public totalWithdrawableFunds;
 
+    // The node number of the initial node
+    uint64 internal constant GENESIS_NODE = 0;
+
     /**
      * @notice Get a storage reference to the Node for the given node index
      * @param nodeNum Index of the node
@@ -95,7 +98,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     }
 
     /**
-     * @notice Check if the specified node has been staked on by the provided staker
+     * @notice Check if the specified node has been staked on by the provided staker.
+     * Only accurate at the latest confirmed node and afterwards.
      */
     function nodeHasStaker(uint64 nodeNum, address staker) public view override returns (bool) {
         return _nodeStakers[nodeNum][staker];
@@ -117,6 +121,16 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function isStaked(address staker) public view override returns (bool) {
         return _stakerMap[staker].isStaked;
+    }
+
+    /**
+     * @notice Check whether the given staker is staked on the latest confirmed node,
+     * which includes if the staker is staked on a descendent of the latest confirmed node.
+     * @param staker Staker address to check
+     * @return True or False for whether the staker was staked
+     */
+    function isStakedOnLatestConfirmed(address staker) public view returns (bool) {
+        return _stakerMap[staker].isStaked && nodeHasStaker(_latestConfirmed, staker);
     }
 
     /**
@@ -171,6 +185,15 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function zombieLatestStakedNode(uint256 zombieNum) public view override returns (uint64) {
         return _zombies[zombieNum].latestStakedNode;
+    }
+
+    /**
+     * @notice Retrieves stored information about a requested zombie
+     * @param zombieNum Index of the zombie to lookup
+     * @return A structure with information about the requested staker
+     */
+    function getZombieStorage(uint256 zombieNum) internal view returns (Zombie storage) {
+        return _zombies[zombieNum];
     }
 
     /// @return Current number of un-removed zombies
@@ -230,8 +253,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function initializeCore(Node memory initialNode) internal {
         __Pausable_init();
-        _nodes[0] = initialNode;
-        _firstUnresolvedNode = 1;
+        _nodes[GENESIS_NODE] = initialNode;
+        _firstUnresolvedNode = GENESIS_NODE + 1;
     }
 
     /**
@@ -282,6 +305,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             NO_CHAL_INDEX, // new staker is not in challenge
             true
         );
+        _nodeStakers[_latestConfirmed][stakerAddress] = true;
         _lastStakeBlock = uint64(block.number);
         emit UserStakeUpdated(stakerAddress, 0, depositAmount);
     }
@@ -390,9 +414,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     /**
      * @notice Mark the given staker as staked on this node
      * @param staker Address of the staker to mark
-     * @return The number of stakers after adding this one
      */
-    function addStaker(uint64 nodeNum, address staker) internal returns (uint256) {
+    function addStaker(uint64 nodeNum, address staker) internal {
         require(!_nodeStakers[nodeNum][staker], "ALREADY_STAKED");
         _nodeStakers[nodeNum][staker] = true;
         Node storage node = getNodeStorage(nodeNum);
@@ -400,7 +423,14 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         uint64 prevCount = node.stakerCount;
         node.stakerCount = prevCount + 1;
-        return prevCount + 1;
+
+        if (nodeNum > GENESIS_NODE) {
+            Node storage parent = getNodeStorage(node.prevNum);
+            parent.childStakerCount++;
+            if (prevCount == 0) {
+                parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
+            }
+        }
     }
 
     /**
@@ -413,14 +443,25 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
         Node storage node = getNodeStorage(nodeNum);
         node.stakerCount--;
+
+        if (nodeNum > GENESIS_NODE) {
+            getNodeStorage(node.prevNum).childStakerCount--;
+        }
     }
 
     /**
      * @notice Remove the given staker and return their stake
+     * This should not be called if the staker is staked on a descendent of the latest confirmed node
      * @param stakerAddress Address of the staker withdrawing their stake
      */
     function withdrawStaker(address stakerAddress) internal {
         Staker storage staker = _stakerMap[stakerAddress];
+        uint64 latestConfirmedNum = latestConfirmed();
+        if (nodeHasStaker(latestConfirmedNum, stakerAddress)) {
+            // Withdrawing a staker whose latest staked node isn't resolved should be impossible
+            assert(staker.latestStakedNode == latestConfirmedNum);
+            removeStaker(latestConfirmedNum, stakerAddress);
+        }
         uint256 initialStaked = staker.amountStaked;
         increaseWithdrawableFunds(stakerAddress, initialStaked);
         deleteStaker(stakerAddress);
@@ -434,12 +475,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
      */
     function stakeOnNode(address stakerAddress, uint64 nodeNum) internal {
         Staker storage staker = _stakerMap[stakerAddress];
-        uint256 newStakerCount = addStaker(nodeNum, stakerAddress);
+        addStaker(nodeNum, stakerAddress);
         staker.latestStakedNode = nodeNum;
-        if (newStakerCount == 1) {
-            Node storage parent = getNodeStorage(nodeNum);
-            parent.newChildConfirmDeadline(uint64(block.number) + confirmPeriodBlocks);
-        }
     }
 
     /**
@@ -480,10 +517,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         delete _stakerMap[stakerAddress];
     }
 
-    function max(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a > b ? a : b;
-    }
-
     struct StakeOnNewNodeFrame {
         uint256 currentInboxSize;
         Node node;
@@ -521,7 +554,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             );
 
             // Ensure that the assertion doesn't read past the end of the current inbox
-            uint256 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
+            uint64 afterInboxCount = assertion.afterState.globalState.getInboxPosition();
             require(
                 afterInboxCount >= assertion.beforeState.globalState.getInboxPosition(),
                 "INBOX_BACKWARDS"

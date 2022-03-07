@@ -59,7 +59,7 @@ contract ValidatorUtils {
         return findNodeConflict(rollup, staker1NodeNum, staker2NodeNum, maxDepth);
     }
 
-    function checkDecidableNextNode(IRollupCore rollup) external view returns (ConfirmType) {
+    function checkDecidableNextNode(IRollupUserAbs rollup) external view returns (ConfirmType) {
         try ValidatorUtils(address(this)).requireConfirmable(rollup) {
             return ConfirmType.VALID;
         } catch {}
@@ -89,8 +89,8 @@ contract ValidatorUtils {
         }
     }
 
-    function requireConfirmable(IRollupCore rollup) external view {
-        IRollupUser(address(rollup)).requireUnresolvedExists();
+    function requireConfirmable(IRollupUserAbs rollup) external view {
+        rollup.requireUnresolvedExists();
 
         uint256 stakerCount = rollup.stakerCount();
         // There is at least one non-zombie staker
@@ -101,13 +101,17 @@ contract ValidatorUtils {
 
         // Verify the block's deadline has passed
         node.requirePastDeadline();
-        rollup.getNode(node.prevNum).requirePastChildConfirmDeadline();
 
         // Check that prev is latest confirmed
-        require(node.prevNum == rollup.latestConfirmed(), "INVALID_PREV");
+        assert(node.prevNum == rollup.latestConfirmed());
+
+        Node memory prevNode = rollup.getNode(node.prevNum);
+        prevNode.requirePastChildConfirmDeadline();
+
+        uint256 zombiesStakedOnOtherChildren = rollup.countStakedZombies(firstUnresolved) -
+            rollup.countZombiesStakedOnChildren(firstUnresolved);
         require(
-            node.stakerCount ==
-                stakerCount + IRollupUser(address(rollup)).countStakedZombies(firstUnresolved),
+            node.stakerCount == prevNode.childStakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
         );
     }

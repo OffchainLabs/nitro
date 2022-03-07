@@ -153,8 +153,4 @@ library Instructions {
     function hash(Instruction memory inst) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
     }
-
-    function newNop() internal pure returns (Instruction memory) {
-        return Instruction({opcode: NOP, argumentData: 0});
-    }
 }
