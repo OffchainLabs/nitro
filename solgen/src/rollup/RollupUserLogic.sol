@@ -102,11 +102,11 @@ abstract contract AbsRollupUserLogic is
 
         removeOldZombies(0);
 
-        // Only zombies are staked on siblings to this node
-        uint256 zombiesStakedOnOtherChildren = countStakedZombies(nodeNum) -
-            countZombiesStakedOnChildren(nodeNum);
+        // Require only zombies are staked on siblings to this node
+        uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(node.prevNum) -
+            countStakedZombies(nodeNum);
         require(
-            node.stakerCount == prevNode.childStakerCount + zombiesStakedOnOtherChildren,
+            prevNode.childStakerCount == node.stakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
         );
 
@@ -384,18 +384,18 @@ abstract contract AbsRollupUserLogic is
         onlyValidator
         whenNotPaused
     {
-        require(zombieNum <= zombieCount(), "NO_SUCH_ZOMBIE");
+        require(zombieNum < zombieCount(), "NO_SUCH_ZOMBIE");
         address zombieStakerAddress = zombieAddress(zombieNum);
         uint64 latestNodeStaked = zombieLatestStakedNode(zombieNum);
         uint256 nodesRemoved = 0;
-        uint256 firstUnresolved = firstUnresolvedNode();
-        while (latestNodeStaked >= firstUnresolved && nodesRemoved < maxNodes) {
+        uint256 latestConfirmedNum = latestConfirmed();
+        while (latestNodeStaked >= latestConfirmedNum && nodesRemoved < maxNodes) {
             Node storage node = getNodeStorage(latestNodeStaked);
             removeStaker(latestNodeStaked, zombieStakerAddress);
             latestNodeStaked = node.prevNum;
             nodesRemoved++;
         }
-        if (latestNodeStaked < firstUnresolved) {
+        if (latestNodeStaked < latestConfirmedNum) {
             removeZombie(zombieNum);
         } else {
             zombieUpdateLatestStakedNode(zombieNum, latestNodeStaked);
@@ -403,14 +403,14 @@ abstract contract AbsRollupUserLogic is
     }
 
     /**
-     * @notice Remove any zombies whose latest stake is earlier than the first unresolved node
+     * @notice Remove any zombies whose latest stake is earlier than the latest confirmed node
      * @param startIndex Index in the zombie list to start removing zombies from (to limit the cost of this transaction)
      */
     function removeOldZombies(uint256 startIndex) public onlyValidator whenNotPaused {
         uint256 currentZombieCount = zombieCount();
-        uint256 firstUnresolved = firstUnresolvedNode();
+        uint256 latestConfirmedNum = latestConfirmed();
         for (uint256 i = startIndex; i < currentZombieCount; i++) {
-            while (zombieLatestStakedNode(i) < firstUnresolved) {
+            while (zombieLatestStakedNode(i) < latestConfirmedNum) {
                 removeZombie(i);
                 currentZombieCount--;
                 if (i >= currentZombieCount) {

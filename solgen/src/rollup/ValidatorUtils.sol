@@ -108,10 +108,10 @@ contract ValidatorUtils {
         Node memory prevNode = rollup.getNode(node.prevNum);
         prevNode.requirePastChildConfirmDeadline();
 
-        uint256 zombiesStakedOnOtherChildren = rollup.countStakedZombies(firstUnresolved) -
-            rollup.countZombiesStakedOnChildren(firstUnresolved);
+        uint256 zombiesStakedOnOtherChildren = rollup.countZombiesStakedOnChildren(node.prevNum) -
+            rollup.countStakedZombies(firstUnresolved);
         require(
-            node.stakerCount == prevNode.childStakerCount + zombiesStakedOnOtherChildren,
+            prevNode.childStakerCount == node.stakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
         );
     }

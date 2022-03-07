@@ -632,6 +632,13 @@ describe("ArbRollup", () => {
     // all stake is now removed
   });
 
+  it("should allow removing zombies", async function () {
+    const zombieCount = (await rollup.rollup.connect(validators[2]).zombieCount()).toNumber();
+    for (let i = 0; i < zombieCount; i++) {
+      await rollup.rollup.connect(validators[2]).removeZombie(0, 1024);
+    }
+  });
+
   it("should pause the contracts then resume", async function () {
     const prevIsPaused = await rollup.rollup.paused();
     expect(prevIsPaused).to.equal(false);
