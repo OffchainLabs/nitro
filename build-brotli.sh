@@ -79,6 +79,7 @@ if $USE_DOCKER; then
     if $BUILD_LOCAL; then
         DOCKER_BUILDKIT=1 docker build --target brotli-library-export -o type=local,dest="$TARGET_DIR_ABS" .
     fi
+    exit 0
 fi
 
 if [ ! -d "$SOURCE_DIR" ]; then
@@ -94,10 +95,9 @@ if $BUILD_WASM; then
     mkdir -p install-wasm
     TEMP_INSTALL_DIR_ABS=`cd -P install-wasm; pwd`
     cd build-wasm
-    cmake ../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS"
+    cmake ../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR=`which emar` -DCMAKE_RANLIB=`which touch`
     make -j
     make install
-    ranlib "$TEMP_INSTALL_DIR_ABS/lib/"*.a
     cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
     cd ..
 fi
