@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // This precompile provides owners with tools for managing the rollup.
@@ -76,12 +77,12 @@ func (con ArbOwner) SetGasPoolSeconds(c ctx, evm mech, seconds uint64) error {
 
 // Set the target fullness in bips the pricing model will try to keep the pool at
 func (con ArbOwner) SetGasPoolTarget(c ctx, evm mech, target uint64) error {
-	return c.state.L2PricingState().SetGasPoolTarget(target)
+	return c.state.L2PricingState().SetGasPoolTarget(arbmath.SaturatingCastToBips(target))
 }
 
 // Set the extent in bips to which the pricing model favors filling the pool over increasing speeds
 func (con ArbOwner) SetGasPoolWeight(c ctx, evm mech, weight uint64) error {
-	return c.state.L2PricingState().SetGasPoolWeight(weight)
+	return c.state.L2PricingState().SetGasPoolWeight(arbmath.SaturatingCastToBips(weight))
 }
 
 // Set how slowly ArbOS updates its estimate the amount of gas being burnt per second

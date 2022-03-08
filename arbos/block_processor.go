@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -207,20 +208,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			aggregator := &poster
-			txType := tx.Type()
-			if util.DoesTxTypeAlias(&txType) {
-				aggregator = nil
-			}
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				pricing := state.L1PricingState()
-				posterCost, _, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
-				posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+				state.L1PricingState().AddPosterInfo(tx, sender, poster)
+				posterCostInL2Gas := arbmath.BigDiv(tx.PosterCost, gasPrice)
+
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+					log.Error("Could not get poster cost in L2 terms", tx.PosterCost, gasPrice)
 				}
 			}
 

@@ -13,12 +13,12 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
@@ -190,7 +190,7 @@ func DoesTxTypeAlias(txType *byte) bool {
 
 func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
 	balance := statedb.GetBalance(from)
-	if util.BigLessThan(balance, amount) {
+	if arbmath.BigLessThan(balance, amount) {
 		return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, from, balance, amount)
 	}
 	statedb.SubBalance(from, amount)

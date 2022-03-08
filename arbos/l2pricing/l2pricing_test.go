@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -26,7 +26,7 @@ func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timeP
 	basefee := getPrice(t, pricing)
 	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
 	header := &types.Header{
-		BaseFee: util.UintToBig(basefee),
+		BaseFee: arbmath.UintToBig(basefee),
 	}
 	pricing.UpdatePricingModel(header, timePassed, true)
 }
@@ -139,13 +139,13 @@ func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
 func getPrice(t *testing.T, pricing *L2PricingState) uint64 {
 	value, err := pricing.GasPriceWei()
 	Require(t, err)
-	return util.BigToUintOrPanic(value)
+	return arbmath.BigToUintOrPanic(value)
 }
 
 func getMinPrice(t *testing.T, pricing *L2PricingState) uint64 {
 	value, err := pricing.MinGasPriceWei()
 	Require(t, err)
-	return util.BigToUintOrPanic(value)
+	return arbmath.BigToUintOrPanic(value)
 }
 
 func getSpeedLimit(t *testing.T, pricing *L2PricingState) uint64 {

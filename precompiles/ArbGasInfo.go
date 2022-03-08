@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Provides insight into the cost of using the rollup.
@@ -43,18 +43,18 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := util.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	perL1CalldataUnit := util.BigMulByUfrac(weiForL1Calldata, ratio, 16*l1pricing.DataWasNotCompressed)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	perL1CalldataUnit := arbmath.BigDivByUint(arbmath.BigMulByBips(weiForL1Calldata, ratio), 16)
 
 	// the cost of a simple tx without calldata
-	perL2Tx := util.BigMulByUint(perL1CalldataUnit, 16*l1pricing.TxFixedCost)
+	perL2Tx := arbmath.BigMulByUint(perL1CalldataUnit, 16*l1pricing.TxFixedCost)
 
 	// nitro's compute-centric l2 gas pricing has no special compute component that rises independently
 	perArbGasBase := l2GasPrice
 	perArbGasCongestion := zero
 	perArbGasTotal := l2GasPrice
 
-	weiForL2Storage := util.BigMul(l2GasPrice, storageArbGas)
+	weiForL2Storage := arbmath.BigMul(l2GasPrice, storageArbGas)
 
 	return perL2Tx, perL1CalldataUnit, weiForL2Storage, perArbGasBase, perArbGasCongestion, perArbGasTotal, nil
 }
@@ -87,9 +87,9 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	}
 
 	// aggregators compress calldata, so we must estimate accordingly
-	weiForL1Calldata := util.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
-	compressedCharge := util.BigMulByUfrac(weiForL1Calldata, ratio, l1pricing.DataWasNotCompressed)
-	gasForL1Calldata := util.BigDiv(compressedCharge, l2GasPrice)
+	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	compressedCharge := arbmath.BigMulByBips(weiForL1Calldata, ratio)
+	gasForL1Calldata := arbmath.BigDiv(compressedCharge, l2GasPrice)
 
 	perL2Tx := big.NewInt(l1pricing.TxFixedCost)
 	return perL2Tx, gasForL1Calldata, storageArbGas, nil
@@ -113,7 +113,7 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 	speedLimit, _ := l2pricing.SpeedLimitPerSecond()
 	gasPoolMax, _ := l2pricing.GasPoolMax()
 	maxTxGasLimit, err := l2pricing.MaxPerBlockGasLimit()
-	return util.UintToBig(speedLimit), big.NewInt(gasPoolMax), util.UintToBig(maxTxGasLimit), err
+	return arbmath.UintToBig(speedLimit), big.NewInt(gasPoolMax), arbmath.UintToBig(maxTxGasLimit), err
 }
 
 // Get the minimum gas price needed for a transaction to succeed
@@ -128,12 +128,14 @@ func (con ArbGasInfo) GetGasPoolSeconds(c ctx, evm mech) (uint64, error) {
 
 // Get the target fullness in bips the pricing model will try to keep the pool at
 func (con ArbGasInfo) GetGasPoolTarget(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolTarget()
+	target, err := c.state.L2PricingState().GasPoolTarget()
+	return uint64(target), err
 }
 
 // Get the extent in bips to which the pricing model favors filling the pool over increasing speeds
 func (con ArbGasInfo) GetGasPoolWeight(c ctx, evm mech) (uint64, error) {
-	return c.state.L2PricingState().GasPoolWeight()
+	weight, err := c.state.L2PricingState().GasPoolWeight()
+	return uint64(weight), err
 }
 
 // Get ArbOS's estimate of the amount of gas being burnt per second
