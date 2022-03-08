@@ -29,9 +29,7 @@ func testTwoNodesSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
 	defer os.RemoveAll(dbPath)
 	if dasMode == das.LocalDataAvailability {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		if err != nil {
-			panic(err)
-		}
+		Require(t, err)
 		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	}
 	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)

@@ -401,7 +401,8 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 
 	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
 		if v.das == nil {
-			panic("No DAS configured, but sequencer message found with DAS header")
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			return
 		}
 		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
 		if err != nil {

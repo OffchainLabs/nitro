@@ -7,7 +7,6 @@ package das
 import (
 	"context"
 	"encoding/binary"
-	"reflect"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -49,7 +48,7 @@ func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
 }
 
 func Serialize(c arbstate.DataAvailabilityCertificate) []byte {
-	buf := make([]byte, 0, 1+reflect.TypeOf(arbstate.DataAvailabilityCertificate{}).Size())
+	buf := make([]byte, 0)
 
 	buf = append(buf, arbstate.DASMessageHeaderFlag)
 

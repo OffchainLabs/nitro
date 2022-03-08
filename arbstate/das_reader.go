@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"reflect"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -31,16 +30,14 @@ type DataAvailabilityCertificate struct {
 }
 
 func DeserializeDASCertFrom(buf []byte) (c *DataAvailabilityCertificate, bytesRead int, err error) {
-	if buf[0] != DASMessageHeaderFlag {
-		panic("Didn't check DAS certificate header before deserializing")
-	}
-	bytesRead += 1
-
 	c = &DataAvailabilityCertificate{}
-	certSize := 1 + reflect.TypeOf(*c).Size()
-	if uintptr(len(buf)) < certSize {
+	if uintptr(len(buf)) < 1+32+8+8+96 {
 		return nil, 0, errors.New("Can't deserialize DAS cert from smaller buffer")
 	}
+	if !IsDASMessageHeaderByte(buf[0]) {
+		return nil, 0, errors.New("Tried to deserialize a message that doesn't have the DAS header.")
+	}
+	bytesRead += 1
 
 	bytesRead += copy(c.DataHash[:], buf[bytesRead:bytesRead+32])
 
@@ -55,5 +52,6 @@ func DeserializeDASCertFrom(buf []byte) (c *DataAvailabilityCertificate, bytesRe
 		return nil, 0, err
 	}
 	bytesRead += 96
+
 	return c, bytesRead, nil
 }

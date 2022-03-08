@@ -92,9 +92,7 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	defer os.RemoveAll(dbPath)
 	if dasMode == das.LocalDataAvailability {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
-		if err != nil {
-			panic(err)
-		}
+		Require(t, err)
 		nodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	}
 	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
