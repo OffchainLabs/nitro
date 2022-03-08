@@ -139,6 +139,38 @@ jobs:
           key: ${{ runner.os }}-cargo-min-${{ hashFiles('arbitrator/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Cache cbrotli
+        uses: actions/cache@v2
+        id: cache-cbrotli
+        with:
+          path: |
+            target/include/brotli/
+            target/lib-wasm/
+            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlicommon-static.a
+          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}
+          restore-keys: ${{ runner.os }}-brotli-
+
+      - name: Build cbrotli-local
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./build-brotli.sh -l
+
+      - name: Setup emsdk
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        uses: mymindstorm/setup-emsdk@v11
+        with:
+          # Make sure to set a version number!
+          version: 1.38.40
+          # This is the name of the cache folder.
+          # The cache folder will be placed in the build directory,
+          #  so make sure it doesn't conflict with anything!
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Build cbrotli-wasm
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./build-brotli.sh -w
+
       - name: Build
         run: make build test-go-deps -j
 
