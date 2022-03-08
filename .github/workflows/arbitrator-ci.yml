@@ -115,8 +115,8 @@ jobs:
             target/include/brotli/
             target/lib-wasm/
             target/lib/libbrotlicommon-static.a
-            target/lib/libbrotlicommon-static.a
-            target/lib/libbrotlicommon-static.a
+            target/lib/libbrotlienc-static.a
+            target/lib/libbrotlidec-static.a
           key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}
           restore-keys: ${{ runner.os }}-brotli-
 
