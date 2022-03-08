@@ -87,8 +87,12 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 type PreimageDAS struct {
 }
 
-func (das *PreimageDAS) Retrieve(ctx context.Context, hash []byte) ([]byte, error) {
-	return wavmio.ResolvePreImage(common.BytesToHash(hash)), nil
+func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	if err != nil {
+		return nil, err
+	}
+	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
 }
 
 func main() {

@@ -13,7 +13,7 @@ import (
 )
 
 type DataAvailabilityServiceReader interface {
-	Retrieve(ctx context.Context, hash []byte) ([]byte, error)
+	Retrieve(ctx context.Context, cert []byte) ([]byte, error)
 }
 
 const DASMessageHeaderFlag byte = 0x80

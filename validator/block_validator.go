@@ -409,7 +409,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 			log.Error("Failed to deserialize DAS message", "err", err)
 			return
 		} else {
-			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, cert.DataHash[:])
+			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
 			if err != nil {
 				log.Error("Couldn't retrieve message from DAS", "err", err)
 				return

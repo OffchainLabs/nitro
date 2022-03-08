@@ -109,11 +109,7 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(c.DataHash[:])
 	log.Debug("Storing message at", "path", path)
 
-	// Store the cert at the beginning of the message so we can validate it.
-	toWrite := Serialize(*c)
-	toWrite = append(toWrite, message...)
-
-	err = os.WriteFile(path, toWrite, 0600)
+	err = os.WriteFile(path, message, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -121,24 +117,23 @@ func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message 
 	return c, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, hash []byte) ([]byte, error) {
+func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
-	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(hash)
+	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	path := das.dbPath + "/" + base32.StdEncoding.EncodeToString(cert.DataHash[:])
 	log.Debug("Retrieving message from", "path", path)
 
-	fileData, err := os.ReadFile(path)
+	originalMessage, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	cert, bytesRead, err := arbstate.DeserializeDASCertFrom(fileData)
-	if err != nil {
-		return nil, err
-	}
-
-	originalMessage := fileData[bytesRead:]
 	var originalMessageHash [32]byte
 	copy(originalMessageHash[:], crypto.Keccak256(originalMessage))
 	if originalMessageHash != cert.DataHash {
@@ -151,7 +146,7 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, hash 
 		return nil, err
 	}
 	if !sigMatch {
-		return nil, errors.New("Signature of DAS stored data doesn't match")
+		return nil, errors.New("Signature of data in cert passed in doesn't match")
 	}
 
 	return originalMessage, nil
