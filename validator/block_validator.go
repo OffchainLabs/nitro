@@ -19,7 +19,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -32,14 +34,15 @@ type BlockValidator struct {
 	util.StopWaiter
 	inboxTracker    InboxTrackerInterface
 	blockchain      *core.BlockChain
+	db              ethdb.Database
 	genesisBlockNum uint64
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
 	preimageCache     preimageCache
 
-	blocksValidated   uint64
-	earliestBatchKept uint64
+	lastBlockValidated uint64
+	earliestBatchKept  uint64
 
 	posNextSend       arbutil.MessageIndex
 	globalPosNextSend GlobalStatePosition
@@ -128,6 +131,8 @@ type validationEntry struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	SeqMsgNr      uint64
+	StartPosition GlobalStatePosition
+	EndPosition   GlobalStatePosition
 	Valid         uint32 // Atomic, either 0 or 1
 }
 
@@ -153,7 +158,8 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) (*BlockValidator, error) {
+// The db passed in should already be prefixed to be local to the block validator
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
@@ -166,21 +172,57 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 	validator := &BlockValidator{
 		inboxTracker:        inbox,
 		blockchain:          blockchain,
+		db:                  db,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
 		genesisBlockNum:     genesisBlockNum,
-		// TODO: this skips validating the genesis block
-		posNextSend: 1,
-		globalPosNextSend: GlobalStatePosition{
-			BatchNumber: 1,
-		},
+	}
+	err = validator.readLastBlockValidatedDbInfo()
+	if err != nil {
+		return nil, err
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator, nil
+}
+
+func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
+	exists, err := v.db.Has(lastBlockValidatedInfoKey)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		// The db contains no validation info; start from the beginning.
+		// TODO: this skips validating the genesis block.
+		v.lastBlockValidated = 0
+		v.posNextSend = 1
+		v.globalPosNextSend = GlobalStatePosition{
+			BatchNumber: 1,
+			PosInBatch:  0,
+		}
+		return nil
+	}
+
+	infoBytes, err := v.db.Get(lastBlockValidatedInfoKey)
+	if err != nil {
+		return err
+	}
+
+	var info lastBlockValidatedDbInfo
+	err = rlp.DecodeBytes(infoBytes, &info)
+	if err != nil {
+		return err
+	}
+
+	v.lastBlockValidated = info.BlockNumber
+	v.posNextSend = arbutil.BlockNumberToMessageCount(v.lastBlockValidated, v.genesisBlockNum)
+	v.globalPosNextSend = info.AfterPosition
+
+	return nil
 }
 
 func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
@@ -370,13 +412,15 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	return nil
 }
 
-func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry, start, end GlobalStatePosition) {
+func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry) {
 	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber)
 	preimages, err := v.preimageCache.FillHashedValues(validationEntry.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
+	start := validationEntry.StartPosition
+	end := validationEntry.EndPosition
 	gsStart := GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
@@ -539,9 +583,11 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationEntry.SeqMsgNr = startPos.BatchNumber
+		validationEntry.StartPosition = startPos
+		validationEntry.EndPosition = endPos
 		// validation can take long time. Don't wait for it when shutting down
-		v.LaunchUntrackedThread(func() { v.validate(v.GetContext(), validationEntry, startPos, endPos) })
-		v.posNextSend += 1
+		v.LaunchUntrackedThread(func() { v.validate(v.GetContext(), validationEntry) })
+		v.posNextSend++
 		v.globalPosNextSend = endPos
 	}
 }
@@ -562,10 +608,26 @@ func (v *BlockValidator) startValidationLoop() {
 	})
 }
 
+func (v *BlockValidator) writeCompletedValidationToDb(entry *validationEntry) error {
+	info := lastBlockValidatedDbInfo{
+		BlockNumber:   entry.BlockNumber,
+		AfterPosition: entry.EndPosition,
+	}
+	encodedInfo, err := rlp.EncodeToBytes(info)
+	if err != nil {
+		return err
+	}
+	err = v.db.Put(lastBlockValidatedInfoKey, encodedInfo)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (v *BlockValidator) progressValidated() {
 	for {
 		// Reads from blocksValidated can be non-atomic as this goroutine is the only writer
-		entry, found := v.validationEntries.Load(v.blocksValidated + 1)
+		entry, found := v.validationEntries.Load(v.lastBlockValidated + 1)
 		if !found {
 			return
 		}
@@ -577,8 +639,8 @@ func (v *BlockValidator) progressValidated() {
 		if atomic.LoadUint32(&validationEntry.Valid) == 0 {
 			return
 		}
-		if validationEntry.BlockNumber != v.blocksValidated+1 {
-			log.Error("bad block number for validation entry", "expected", v.blocksValidated+1, "found", validationEntry.BlockNumber)
+		if validationEntry.BlockNumber != v.lastBlockValidated+1 {
+			log.Error("bad block number for validation entry", "expected", v.lastBlockValidated+1, "found", validationEntry.BlockNumber)
 			return
 		}
 		if v.earliestBatchKept < validationEntry.SeqMsgNr {
@@ -587,11 +649,15 @@ func (v *BlockValidator) progressValidated() {
 			}
 			v.earliestBatchKept = validationEntry.SeqMsgNr
 		}
-		atomic.AddUint64(&v.blocksValidated, 1)
-		v.validationEntries.Delete(v.blocksValidated)
+		v.lastBlockValidated++
+		v.validationEntries.Delete(v.lastBlockValidated)
 		select {
-		case v.progressChan <- v.blocksValidated:
+		case v.progressChan <- v.lastBlockValidated:
 		default:
+		}
+		err := v.writeCompletedValidationToDb(validationEntry)
+		if err != nil {
+			log.Error("failed to write validated entry to database", "err", err)
 		}
 	}
 }
@@ -613,7 +679,7 @@ func (v *BlockValidator) startProgressLoop() {
 }
 
 func (v *BlockValidator) BlocksValidated() uint64 {
-	return atomic.LoadUint64(&v.blocksValidated)
+	return atomic.LoadUint64(&v.lastBlockValidated)
 }
 
 func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
@@ -637,12 +703,12 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
 	timeoutChan := time.After(timeout)
 	for {
-		if atomic.LoadUint64(&v.blocksValidated) >= blockNumber {
+		if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 			return true
 		}
 		select {
 		case <-timeoutChan:
-			if atomic.LoadUint64(&v.blocksValidated) >= blockNumber {
+			if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 				return true
 			}
 			return false
