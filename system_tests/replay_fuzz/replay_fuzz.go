@@ -5,6 +5,7 @@
 package replay_fuzz
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"math/big"
@@ -34,9 +35,10 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil)
 
-	message, err := inboxMultiplexer.Pop()
+	ctx := context.Background()
+	message, err := inboxMultiplexer.Pop(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -7,8 +7,10 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -75,7 +78,7 @@ func TestSequencerFeed(t *testing.T) {
 	nodeB.StopAndWait()
 }
 
-func TestLyingSequencer(t *testing.T) {
+func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -83,6 +86,15 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigA := arbnode.NodeConfigL1Test
 	nodeConfigA.BatchPoster = true
 	nodeConfigA.Broadcaster = false
+	nodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		nodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
 	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
 
@@ -90,6 +102,8 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC := arbnode.NodeConfigL1Test
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
+	nodeConfigC.DataAvailabilityMode = dasMode
+	nodeConfigC.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(0)
 	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
 
@@ -101,6 +115,8 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
+	nodeConfigB.DataAvailabilityMode = dasMode
+	nodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
@@ -110,7 +126,7 @@ func TestLyingSequencer(t *testing.T) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientC.SendTransaction(ctx, fraudTx)
+	err = l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,4 +184,12 @@ func TestLyingSequencer(t *testing.T) {
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
 	nodeC.StopAndWait()
+}
+
+func TestLyingSequencer(t *testing.T) {
+	testLyingSequencer(t, das.OnchainDataAvailability)
+}
+
+func TestLyingSequencerLocalDAS(t *testing.T) {
+	testLyingSequencer(t, das.LocalDataAvailability)
 }
