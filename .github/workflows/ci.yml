@@ -149,7 +149,7 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlicommon-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}
+          key: ${{ runner.os }}-brotli-${{ hashFiles('build-brotli.sh') }}-${{ hashFiles('.github/workflows/ci.yaml') }}
           restore-keys: ${{ runner.os }}-brotli-
 
       - name: Build cbrotli-local
@@ -161,7 +161,7 @@ jobs:
         uses: mymindstorm/setup-emsdk@v11
         with:
           # Make sure to set a version number!
-          version: 1.38.40
+          version: 3.1.6
           # This is the name of the cache folder.
           # The cache folder will be placed in the build directory,
           #  so make sure it doesn't conflict with anything!
