@@ -97,7 +97,8 @@ if $BUILD_WASM; then
     cmake ../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS"
     make -j
     make install
-    cp -r "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
+    ranlib "$TEMP_INSTALL_DIR_ABS/lib/"*.a
+    cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
     cd ..
 fi
 
