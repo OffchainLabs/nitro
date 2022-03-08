@@ -187,7 +187,8 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 	return validator, nil
 }
 
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+// If msg is null, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, err
@@ -211,18 +212,22 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 		}
 	}
 
-	block, _ := arbos.ProduceBlock(
-		msg.Message,
-		msg.DelayedMessagesRead,
-		prevHeader,
-		recordingdb,
-		chaincontext,
-		chainConfig,
-	)
+	var blockHash common.Hash
+	if msg != nil {
+		block, _ := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			prevHeader,
+			recordingdb,
+			chaincontext,
+			chainConfig,
+		)
+		blockHash = block.Hash()
+	}
 
 	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
 
-	return block.Hash(), preimages, err
+	return blockHash, preimages, err
 }
 
 func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
@@ -236,7 +241,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	}
 
 	var blockhash common.Hash
-	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, msg)
+	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
 	if err != nil {
 		return
 	}

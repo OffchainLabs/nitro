@@ -377,7 +377,7 @@ func (m *ChallengeManager) ScanChallengeState(ctx context.Context, backend Chall
 	return 0, errors.Errorf("agreed with entire challenge (start step count %v and end step count %v)", state.Start.String(), state.End.String())
 }
 
-func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum int64) error {
+func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum int64, tooFar bool) error {
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
@@ -401,43 +401,56 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if err != nil {
 		return err
 	}
-	genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return err
-	}
-	message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
-	if err != nil {
-		return err
-	}
-	nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
-	if nextHeader == nil {
-		return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
-	}
-	preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
-	if err != nil {
-		return err
-	}
-	err = machine.AddPreimages(preimages)
-	if err != nil {
-		return err
-	}
-	if hasDelayedMsg {
-		delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+	if tooFar {
+		// Just record the part of block creation before the message is read
+		_, preimages, err := RecordBlockCreation(m.blockchain, blockHeader, nil)
 		if err != nil {
 			return err
 		}
-		err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+		err = machine.AddPreimages(preimages)
 		if err != nil {
 			return err
 		}
-	}
-	batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
-	if err != nil {
-		return err
-	}
-	err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
-	if err != nil {
-		return err
+	} else {
+		// Get the next message and block header, and record the full block creation
+		genesisBlockNum, err := m.txStreamer.GetGenesisBlockNumber()
+		if err != nil {
+			return err
+		}
+		message, err := m.txStreamer.GetMessage(arbutil.SignedBlockNumberToMessageCount(blockNum, genesisBlockNum))
+		if err != nil {
+			return err
+		}
+		nextHeader := m.blockchain.GetHeaderByNumber(uint64(blockNum + 1))
+		if nextHeader == nil {
+			return fmt.Errorf("next block header %v after challenge point unknown", blockNum+1)
+		}
+		preimages, hasDelayedMsg, delayedMsgNr, err := BlockDataForValidation(m.blockchain, nextHeader, blockHeader, message)
+		if err != nil {
+			return err
+		}
+		err = machine.AddPreimages(preimages)
+		if err != nil {
+			return err
+		}
+		if hasDelayedMsg {
+			delayedBytes, err := m.inboxTracker.GetDelayedMessageBytes(delayedMsgNr)
+			if err != nil {
+				return err
+			}
+			err = machine.AddDelayedInboxMessage(delayedMsgNr, delayedBytes)
+			if err != nil {
+				return err
+			}
+		}
+		batchBytes, err := m.inboxReader.GetSequencerMessageBytes(ctx, startGlobalState.Batch)
+		if err != nil {
+			return err
+		}
+		err = machine.AddSequencerInboxMessage(startGlobalState.Batch, batchBytes)
+		if err != nil {
+			return err
+		}
 	}
 	m.initialMachine = machine
 	m.initialMachine.Freeze()
@@ -480,8 +493,8 @@ func (m *ChallengeManager) LoadExecChallengeIfExists(ctx context.Context) error 
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	blockNum := m.blockChallengeBackend.startBlock + ev.BlockSteps.Int64()
-	err = m.createInitialMachine(ctx, blockNum)
+	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(ev.BlockSteps.Uint64())
+	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return err
 	}
@@ -538,8 +551,8 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 			nextMovePos,
 		)
 	}
-	blockNum := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
-	err = m.createInitialMachine(ctx, blockNum)
+	blockNum, tooFar := m.blockChallengeBackend.GetBlockNrAtStep(uint64(nextMovePos))
+	err = m.createInitialMachine(ctx, blockNum, tooFar)
 	if err != nil {
 		return nil, err
 	}
