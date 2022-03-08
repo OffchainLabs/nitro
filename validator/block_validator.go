@@ -187,7 +187,7 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 	return validator, nil
 }
 
-// If msg is null, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
 func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
