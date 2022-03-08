@@ -19,7 +19,7 @@ replay_wasm=$(output_root)/lib/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(output_root)/lib/wasi_stub.wasm $(output_root)/lib/host_io.wasm $(output_root)/lib/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm $(output_root)/lib/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -231,6 +231,11 @@ $(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	mkdir -p $(output_root)/lib
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
+
+$(output_root)/lib/brotli.wasm: arbitrator/wasm-libraries/brotli/src/**
+	mkdir -p $(output_root)/lib
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@

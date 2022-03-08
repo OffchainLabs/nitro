@@ -10,12 +10,12 @@ import (
 	"errors"
 	"io"
 
-	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -52,7 +52,7 @@ type sequencerMessage struct {
 	segments             [][]byte
 }
 
-const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
+const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 
 func parseSequencerMessage(data []byte) *sequencerMessage {
 	if len(data) < 40 {
@@ -66,18 +66,21 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	var segments [][]byte
 	if len(data) >= 41 {
 		if data[40] == 0 {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
-			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
-			for {
-				var segment []byte
-				err := stream.Decode(&segment)
-				if err != nil {
-					if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-						log.Warn("error parsing sequencer message segment", "err", err.Error())
+			decompressed, err := arbcompress.Decompress(data[41:], maxDecompressedLen)
+			if err == nil {
+				reader := bytes.NewReader(decompressed)
+				stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+				for {
+					var segment []byte
+					err := stream.Decode(&segment)
+					if err != nil {
+						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+							log.Warn("error parsing sequencer message segment", "err", err.Error())
+						}
+						break
 					}
-					break
+					segments = append(segments, segment)
 				}
-				segments = append(segments, segment)
 			}
 		} else {
 			log.Warn("unknown sequencer message format")
@@ -91,29 +94,6 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 		afterDelayedMessages: afterDelayedMessages,
 		segments:             segments,
 	}
-}
-
-func (m sequencerMessage) Encode() []byte {
-	var header [40]byte
-	binary.BigEndian.PutUint64(header[:8], m.minTimestamp)
-	binary.BigEndian.PutUint64(header[8:16], m.maxTimestamp)
-	binary.BigEndian.PutUint64(header[16:24], m.minL1Block)
-	binary.BigEndian.PutUint64(header[24:32], m.maxL1Block)
-	binary.BigEndian.PutUint64(header[32:40], m.afterDelayedMessages)
-	buf := new(bytes.Buffer)
-	segmentsEnc, err := rlp.EncodeToBytes(&m.segments)
-	if err != nil {
-		panic("couldn't encode sequencerMessage")
-	}
-
-	writer := brotli.NewWriter(buf)
-	defer writer.Close()
-	_, err = writer.Write(segmentsEnc)
-	if err != nil {
-		panic("Could not write")
-	}
-	writer.Flush()
-	return append(header[:], buf.Bytes()...)
 }
 
 type inboxMultiplexer struct {
@@ -292,10 +272,9 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		var requestId common.Hash
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(segment[1:])), arbos.MaxL2MessageSize)
-			decompressed, err := io.ReadAll(reader)
+			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
 			if err != nil {
-				log.Info("dropping brotli message", "err", err, "delayedMsg", r.delayedMessagesRead)
+				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil
 			}
 			segment = decompressed

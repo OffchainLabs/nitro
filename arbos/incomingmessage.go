@@ -10,15 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/big"
-
-	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -307,8 +307,15 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		if depth > 0 { // ignore compressed messages if not top level
 			return nil, errors.New("can only compress top level batch")
 		}
-		reader := io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize)
-		return parseL2Message(reader, poster, requestId, depth+1)
+		compressed, err := ioutil.ReadAll(rd)
+		if err != nil {
+			return nil, err
+		}
+		decompressed, err := arbcompress.Decompress(compressed, MaxL2MessageSize)
+		if err != nil {
+			return nil, err
+		}
+		return parseL2Message(bytes.NewReader(decompressed), poster, requestId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
