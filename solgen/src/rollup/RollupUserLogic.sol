@@ -45,7 +45,7 @@ abstract contract AbsRollupUserLogic is
             */
 
             // 1.  StakerAddress is indeed a staker
-            require(isStaked(stakerAddress), "NOT_STAKED");
+            require(isStakedOnLatestConfirmed(stakerAddress), "NOT_STAKED");
 
             // 2. Staker's latest staked node hasn't been resolved; this proves that staker's latest staked node can't be a parent of firstUnresolvedNode
             requireUnresolved(latestStakedNode(stakerAddress));
@@ -86,8 +86,6 @@ abstract contract AbsRollupUserLogic is
     {
         requireUnresolvedExists();
 
-        // There is at least one non-zombie staker
-        require(stakerCount() > 0, "NO_STAKERS");
         uint64 nodeNum = firstUnresolvedNode();
         Node storage node = getNodeStorage(nodeNum);
 
@@ -102,9 +100,11 @@ abstract contract AbsRollupUserLogic is
 
         removeOldZombies(0);
 
-        // Require only zombies are staked on siblings to this node
+        // Require only zombies are staked on siblings to this node, and there's at least one non-zombie staked on this node
+        uint256 stakedZombies = countStakedZombies(nodeNum);
         uint256 zombiesStakedOnOtherChildren = countZombiesStakedOnChildren(node.prevNum) -
-            countStakedZombies(nodeNum);
+            stakedZombies;
+        require(node.stakerCount > stakedZombies, "NO_STAKERS");
         require(
             prevNode.childStakerCount == node.stakerCount + zombiesStakedOnOtherChildren,
             "NOT_ALL_STAKED"
