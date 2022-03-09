@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -83,6 +84,17 @@ func (i WavmInbox) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 	return wavmio.ReadDelayedInboxMessage(seqNum), nil
 }
 
+type PreimageDAS struct {
+}
+
+func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte, error) {
+	cert, _, err := arbstate.DeserializeDASCertFrom(certBytes)
+	if err != nil {
+		return nil, err
+	}
+	return wavmio.ResolvePreImage(common.BytesToHash(cert.DataHash[:])), nil
+}
+
 func main() {
 	wavmio.StubInit()
 
@@ -115,8 +127,10 @@ func main() {
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead)
-	messageWithMetadata, err := inboxMultiplexer.Pop()
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(WavmInbox{}, delayedMessagesRead, &PreimageDAS{})
+	ctx := context.Background()
+	messageWithMetadata, err := inboxMultiplexer.Pop(ctx)
+
 	if err != nil {
 		panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 	}

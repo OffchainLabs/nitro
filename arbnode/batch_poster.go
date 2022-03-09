@@ -17,13 +17,13 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
 )
 
 type BatchPoster struct {
 	util.StopWaiter
-
 	client        arbutil.L1Interface
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
@@ -31,8 +31,8 @@ type BatchPoster struct {
 	inboxContract *bridgegen.SequencerInbox
 	gasRefunder   common.Address
 	transactOpts  *bind.TransactOpts
-
-	building *buildingBatch
+	building      *buildingBatch
+	das           das.DataAvailabilityService
 }
 
 type BatchPosterConfig struct {
@@ -59,7 +59,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:     2,
 }
 
-func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts) (*BatchPoster, error) {
+func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
@@ -72,6 +72,7 @@ func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *T
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
 		gasRefunder:   refunder,
+		das:           das,
 	}, nil
 }
 
@@ -345,6 +346,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatc
 		b.building = nil // a closed batchSegments can't be reused
 		return nil, nil
 	}
+
+	if b.das != nil {
+		cert, err := b.das.Store(ctx, sequencerMsg)
+		if err != nil {
+			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
+		} else {
+			sequencerMsg = das.Serialize(*cert)
+		}
+	}
+
 	txOpts := *b.transactOpts
 	txOpts.Context = ctx
 	tx, err := b.inboxContract.AddSequencerL2BatchFromOrigin(&txOpts, new(big.Int).SetUint64(batchSeqNum), sequencerMsg, new(big.Int).SetUint64(b.building.segments.delayedMsg), b.gasRefunder)
