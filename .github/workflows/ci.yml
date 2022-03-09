@@ -82,7 +82,10 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y gotestsum wabt protobuf-compiler
+        run: |
+          sudo apt update && sudo apt install -y gotestsum wabt protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
