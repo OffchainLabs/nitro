@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
@@ -47,6 +48,8 @@ type BlockValidator struct {
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
+
+	das das.DataAvailabilityService
 
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
@@ -153,7 +156,7 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) (*BlockValidator, error) {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
@@ -171,6 +174,7 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		das:                 das,
 		genesisBlockNum:     genesisBlockNum,
 		// TODO: this skips validating the genesis block
 		posNextSend: 1,
@@ -398,6 +402,24 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
+	}
+
+	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
+		if v.das == nil {
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			return
+		}
+		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
+		if err != nil {
+			log.Error("Failed to deserialize DAS message", "err", err)
+			return
+		} else {
+			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+			if err != nil {
+				log.Error("Couldn't retrieve message from DAS", "err", err)
+				return
+			}
+		}
 	}
 
 	basemachine, err := GetHostIoMachine(ctx)

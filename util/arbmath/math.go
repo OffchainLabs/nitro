@@ -46,12 +46,23 @@ func UintToBigFloat(value uint64) *big.Float {
 	return new(big.Float).SetPrec(53).SetUint64(value)
 }
 
+// casts a huge to a uint, saturating if out of bounds
+func BigToUintSaturating(value *big.Int) uint64 {
+	if value.Sign() < 0 {
+		return 0
+	}
+	if !value.IsUint64() {
+		return math.MaxUint64
+	}
+	return value.Uint64()
+}
+
 // casts a huge to a uint, panicking if out of bounds
 func BigToUintOrPanic(value *big.Int) uint64 {
-	if BigLessThan(value, big.NewInt(0)) {
+	if value.Sign() < 0 {
 		panic("big.Int value is less than 0")
 	}
-	if BigGreaterThan(value, UintToBig(math.MaxUint64)) {
+	if !value.IsUint64() {
 		panic("big.Int value exceeds the max Uint64")
 	}
 	return value.Uint64()

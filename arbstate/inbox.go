@@ -6,6 +6,7 @@ package arbstate
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -39,7 +40,7 @@ type MessageWithMetadata struct {
 }
 
 type InboxMultiplexer interface {
-	Pop() (*MessageWithMetadata, error)
+	Pop(context.Context) (*MessageWithMetadata, error)
 	DelayedMessagesRead() uint64
 }
 
@@ -54,7 +55,7 @@ type sequencerMessage struct {
 
 const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
 
-func parseSequencerMessage(data []byte) *sequencerMessage {
+func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -64,9 +65,26 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
+
+	var payload []byte
 	if len(data) >= 41 {
-		if data[40] == 0 {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
+		if IsDASMessageHeaderByte(data[40]) {
+			if das == nil {
+				log.Error("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				var err error
+				payload, err = das.Retrieve(ctx, data[40:])
+				if err != nil {
+					log.Error("Reading from DAS failed", "err", err)
+				}
+
+			}
+		} else if data[40] == 0 {
+			payload = data[40:]
+		}
+
+		if len(payload) > 0 {
+			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
 			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
 			for {
 				var segment []byte
@@ -119,6 +137,7 @@ func (m sequencerMessage) Encode() []byte {
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	das                       DataAvailabilityServiceReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -127,10 +146,11 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das DataAvailabilityServiceReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
+		das:                 das,
 	}
 }
 
@@ -148,14 +168,14 @@ const BatchSegmentKindAdvanceTimestamp uint8 = 3
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
 // This does *not* return parse errors, those are transformed into invalid messages
-func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
+func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		r.cachedSequencerMessage = parseSequencerMessage(bytes)
+		r.cachedSequencerMessage = parseSequencerMessage(ctx, bytes, r.das)
 	}
 	msg, err := r.getNextMsg()
 	// advance even if there was an error
