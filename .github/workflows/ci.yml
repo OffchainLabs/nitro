@@ -76,7 +76,7 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y gotestsum wabt
+        run: sudo apt update && sudo apt install -y gotestsum wabt protobuf-compiler
 
       - name: Setup nodejs
         uses: actions/setup-node@v2
