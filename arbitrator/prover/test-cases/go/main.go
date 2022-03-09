@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"runtime"
 	"time"
 
 	merkletree "github.com/wealdtech/go-merkletree"
+
+	"github.com/offchainlabs/nitro/arbcompress"
 )
 
 // Example using the Merkle tree to generate and verify proofs.
@@ -33,6 +36,20 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 	}
 	return merkletree.VerifyProof(baz, proof, root)
 	// Verify the proof for 'Baz'
+}
+
+func testCompression(data []byte) {
+	compressed, err := arbcompress.CompressFast(data)
+	if err != nil {
+		panic(err)
+	}
+	decompressed, err := arbcompress.Decompress(compressed, len(data)*2+0x100)
+	if err != nil {
+		panic(err)
+	}
+	if !bytes.Equal(decompressed, data) {
+		panic("data differs after compression / decompression")
+	}
 }
 
 func main() {
@@ -70,4 +87,9 @@ func main() {
 	}
 
 	println("verified both proofs!\n")
+
+	testCompression([]byte{})
+	testCompression([]byte("This is a test string la la la la la la la la la la"))
+
+	println("test compression passed!\n")
 }
