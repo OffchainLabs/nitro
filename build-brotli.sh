@@ -103,8 +103,8 @@ if $BUILD_WASM; then
 fi
 
 if $BUILD_LOCAL; then
-    mkdir -p build
-    cd build
+    mkdir -p build-local
+    cd build-local
     cmake ../ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS"
     make -j
     make install
