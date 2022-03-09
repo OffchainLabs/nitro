@@ -188,13 +188,21 @@ func DoesTxTypeAlias(txType *byte) bool {
 	return false
 }
 
-func TransferBalance(from, to common.Address, amount *big.Int, statedb vm.StateDB) error {
-	balance := statedb.GetBalance(from)
-	if arbmath.BigLessThan(balance, amount) {
-		return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, from, balance, amount)
+//
+func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, before bool) error {
+	if from != nil {
+		balance := evm.StateDB.GetBalance(*from)
+		if arbmath.BigLessThan(balance, amount) {
+			return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
+		}
+		evm.StateDB.SubBalance(*from, amount)
 	}
-	statedb.SubBalance(from, amount)
-	statedb.AddBalance(to, amount)
+	if to != nil {
+		evm.StateDB.AddBalance(*to, amount)
+	}
+	if evm.Config.Debug {
+		evm.Config.Tracer.CaptureArbitrumTransfer(evm, from, to, amount, before)
+	}
 	return nil
 }
 
@@ -202,4 +210,11 @@ func TransferEverything(from, to common.Address, statedb vm.StateDB) {
 	amount := statedb.GetBalance(from)
 	statedb.SubBalance(from, amount)
 	statedb.AddBalance(to, amount)
+}
+
+func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, before bool) {
+	err := TransferBalance(nil, to, amount, evm, before)
+	if err != nil {
+		panic(fmt.Sprintf("impossible error: %v", err))
+	}
 }

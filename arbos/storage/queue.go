@@ -41,6 +41,15 @@ func (q *Queue) IsEmpty() (bool, error) {
 	return put == get, err
 }
 
+func (q *Queue) Size() (uint64, error) {
+	put, err := q.nextPutOffset.Get()
+	if err != nil {
+		return 0, err
+	}
+	get, err := q.nextGetOffset.Get()
+	return put - get, err
+}
+
 func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
 	empty, err := q.IsEmpty()
 	if empty || err != nil {

@@ -33,10 +33,7 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
+	l2GasPrice := evm.Context.BaseFee
 	ratio, err := c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
@@ -77,10 +74,7 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	l2GasPrice, err := c.state.L2PricingState().GasPriceWei()
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	l2GasPrice := evm.Context.BaseFee
 	ratio, err := c.state.L1PricingState().AggregatorCompressionRatio(aggregator)
 	if err != nil {
 		return nil, nil, nil, err

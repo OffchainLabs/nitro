@@ -289,6 +289,22 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
 	return nil
 }
 
+// Checks if TryToReapOneRetryable would do meaningful work
+func (rs *RetryableState) ReadyToReap(currentTimestamp uint64) bool {
+	count, _ := rs.timeoutQueue.Size()
+	switch count {
+	case 0:
+		return false
+	case 1:
+		only, _ := rs.timeoutQueue.Peek()
+		slot := rs.retryables.OpenSubStorage(only.Bytes()).OpenStorageBackedUint64(timeoutOffset)
+		timeout, _ := slot.Get()
+		return timeout < currentTimestamp
+	default:
+		return true
+	}
+}
+
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {
 	from, err := retryable.From()
 	if err != nil {

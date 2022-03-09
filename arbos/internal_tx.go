@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,33 +19,56 @@ import (
 // Types of ArbitrumInternalTx, distinguished by the first data byte
 const (
 	// Contains 8 bytes indicating the big endian L1 block number to set
-	arbInternalTxUpdateL1BlockNumber uint8 = 0
+	arbInternalTxStartBlock uint8 = 0
 )
 
-func InternalTxUpdateL1BlockNumber(chainId, l1BlockNumber, l2BlockNumber *big.Int, txIndex uint64) *types.ArbitrumInternalTx {
+type internalTxStartBlockContents struct {
+	Header        *types.Header
+	L1BlockNumber uint64
+}
+
+func InternalTxStartBlock(chainId, l1BlockNumber *big.Int, header *types.Header) *types.ArbitrumInternalTx {
+	data, err := rlp.EncodeToBytes(internalTxStartBlockContents{
+		Header:        header,
+		L1BlockNumber: l1BlockNumber.Uint64(),
+	})
+	if err != nil {
+		panic(fmt.Sprintf("rlp encoding failure %v", err))
+	}
 	return &types.ArbitrumInternalTx{
-		ChainId:     chainId,
-		Type:        arbInternalTxUpdateL1BlockNumber,
-		Data:        rlp.AppendUint64([]byte{}, l1BlockNumber.Uint64()),
-		BlockNumber: l2BlockNumber.Uint64(),
-		TxIndex:     txIndex,
+		ChainId: chainId,
+		Type:    arbInternalTxStartBlock,
+		Data:    data,
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) error {
-	switch tx.Type {
-	case arbInternalTxUpdateL1BlockNumber:
-		var l1BlockNumber uint64
-		err := rlp.DecodeBytes(tx.Data, &l1BlockNumber)
-		if err != nil {
-			return err
-		}
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) {
+
+	var contents internalTxStartBlockContents
+	err := rlp.DecodeBytes(tx.Data, &contents)
+	if err != nil {
+		log.Fatal("internal tx failure", err)
+	}
+
+	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
+	state.Restrict(err)
+
+	if contents.L1BlockNumber >= nextL1BlockNumber {
 		var prevHash common.Hash
 		if blockContext.BlockNumber.Sign() > 0 {
 			prevHash = blockContext.GetHash(blockContext.BlockNumber.Uint64() - 1)
 		}
-		return state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash)
-	default:
-		return fmt.Errorf("unknown ArbitrumInternalTx type %v", tx.Type)
+		state.Restrict(state.Blockhashes().RecordNewL1Block(contents.L1BlockNumber, prevHash))
 	}
+
+	lastBlockHeader := contents.Header
+	if lastBlockHeader == nil {
+		return
+	}
+
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time)
+	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
+	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)
+
+	state.UpgradeArbosVersionIfNecessary(lastBlockHeader.Time)
 }

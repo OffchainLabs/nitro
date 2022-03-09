@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
 
@@ -86,25 +85,22 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		p.evm.StateDB.AddBalance(*p.msg.To(), p.msg.Value())
+		util.MintBalance(p.msg.To(), p.msg.Value(), p.evm, true)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		err := ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
-		if err != nil {
-			panic(fmt.Sprintf("Failed to apply ArbitrumInternalTx: %v", err))
-		}
+		ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		statedb := p.evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 
-		statedb.AddBalance(tx.From, tx.DepositValue)
+		util.MintBalance(&tx.From, tx.DepositValue, p.evm, true)
 
-		err := util.TransferBalance(tx.From, escrow, tx.Value, statedb)
+		err := util.TransferBalance(&tx.From, &escrow, tx.Value, p.evm, true)
 		if err != nil {
 			return true, 0, err, nil
 		}
@@ -147,7 +143,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// pay for the retryable's gas and update the pools
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-		err = util.TransferBalance(tx.From, networkFeeAccount, gascost, statedb)
+		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, p.evm, true)
 		if err != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -184,14 +180,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util.TransferBalance(escrow, tx.From, tx.Value, p.evm.StateDB)
+		err = util.TransferBalance(&escrow, &tx.From, tx.Value, p.evm, true)
 		if err != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
 		basefee := p.evm.Context.BaseFee
-		p.evm.StateDB.AddBalance(tx.From, arbmath.BigMulByUint(basefee, tx.Gas))
+		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), p.evm, true)
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}
@@ -287,9 +283,13 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		refund := arbmath.BigMulByUint(gasPrice, gasLeft)
 
 		// undo Geth's refund to the From address
-		p.evm.StateDB.SubBalance(inner.From, refund)
+		err := util.TransferBalance(&inner.From, nil, refund, p.evm, false)
+		if err != nil {
+			log.Error("Uh oh, Geth didn't refund the user", inner.From, refund)
+		}
+
 		// refund the RefundTo by taking fees back from the network address
-		err := util.TransferBalance(networkFeeAccount, inner.RefundTo, refund, p.evm.StateDB)
+		err = util.TransferBalance(&networkFeeAccount, &inner.RefundTo, refund, p.evm, false)
 		if err != nil {
 			// Normally the network fee address should be holding the gas funds.
 			// However, in theory, they could've been transfered out during the redeem attempt.
@@ -305,7 +305,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)
-			err := util.TransferBalance(inner.From, escrow, inner.Value, p.evm.StateDB)
+			err := util.TransferBalance(&inner.From, &escrow, inner.Value, p.evm, false)
 			if err != nil {
 				// should be impossible because geth credited the inner.Value to inner.From before the transaction
 				// and the transaction reverted
@@ -328,8 +328,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		computeCost = totalCost
 	}
 
-	p.evm.StateDB.AddBalance(networkFeeAccount, computeCost)
-	p.evm.StateDB.AddBalance(p.evm.Context.Coinbase, p.PosterFee)
+	util.MintBalance(&networkFeeAccount, computeCost, p.evm, false)
+	util.MintBalance(&p.evm.Context.Coinbase, p.PosterFee, p.evm, false)
 
 	if p.msg.GasPrice().Sign() > 0 { // in tests, gas price coud be 0
 		// ArbOS's gas pool is meant to enforce the computational speed-limit.
