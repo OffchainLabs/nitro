@@ -8,7 +8,7 @@ import (
 )
 
 func testDecompress(t *testing.T, compressed, decompressed []byte) {
-	res, err := Decompress(compressed, len(decompressed))
+	res, err := Decompress(compressed, len(decompressed)*2+64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,4 +41,7 @@ func TestArbCompress(t *testing.T) {
 	source := testhelpers.NewPseudoRandomDataSource(t, 0)
 	randData := source.GetData(2500)
 	testCompressDecompress(t, randData)
+
+	// test empty data:
+	testCompressDecompress(t, []byte{})
 }

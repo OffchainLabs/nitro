@@ -28,7 +28,7 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 }
 
 func compressLevel(input []byte, level int) ([]byte, error) {
-	maxOutSize := maxCompressedSize(len(input))
+	maxOutSize := compressedBufferSizeFor(len(input))
 	outbuf := make([]byte, maxOutSize)
 	outSize := C.size_t(maxOutSize)
 	var inputPtr *C.uint8_t

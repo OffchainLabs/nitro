@@ -19,7 +19,7 @@ const BROTLI_RES_SUCCESS:u32 = 1;
 
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDecompress(sp: GoStack) {
-    //(inBuf []byte, outBuf []byte)
+    //(inBuf []byte, outBuf []byte) int
     let in_buf_ptr = sp.read_u64(0);
     let in_buf_len = sp.read_u64(1);
     let out_buf_ptr = sp.read_u64(3);
@@ -31,7 +31,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
     let mut output_len = out_buf_len as usize;
     let res = BrotliDecoderDecompress(in_buf_len as usize, in_slice.as_ptr(), &mut output_len, output.as_mut_ptr());
     if (res != BROTLI_RES_SUCCESS) || (output_len as u64 > out_buf_len) {
-        sp.write_u64(OUTPUT_ARG, 0);
+        sp.write_u64(OUTPUT_ARG, u64::MAX);
         return;
     }
     write_slice(&output[..output_len], out_buf_ptr);
@@ -41,7 +41,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
 
 #[no_mangle]
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCompress(sp: GoStack) {
-    //(inBuf []byte, outBuf []byte, level int, windowSize int)
+    //(inBuf []byte, outBuf []byte, level int, windowSize int) int
     let in_buf_ptr = sp.read_u64(0);
     let in_buf_len = sp.read_u64(1);
     let out_buf_ptr = sp.read_u64(3);
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCom
     let mut output_len = out_buf_len as usize;
     let res = BrotliEncoderCompress(level, windowsize, BROTLI_MODE_GENERIC, in_buf_len as usize, in_slice.as_ptr(), &mut output_len, output.as_mut_ptr());
     if (res != BROTLI_RES_SUCCESS) || (output_len as u64 > out_buf_len) {
-        sp.write_u64(OUTPUT_ARG, 0);
+        sp.write_u64(OUTPUT_ARG, u64::MAX);
         return;
     }
     write_slice(&output[..output_len], out_buf_ptr);
