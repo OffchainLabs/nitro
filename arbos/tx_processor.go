@@ -91,7 +91,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, p.evm.Context)
+		ApplyInternalTxUpdate(tx, p.state, p.evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
 		statedb := p.evm.StateDB
@@ -110,7 +110,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// we charge for creating the retryable and reaping the next expired one on L1
 		retryable, err := p.state.RetryableState().CreateRetryable(
-			time,
+			p.evm,
 			ticketId,
 			timeout,
 			tx.From,
@@ -301,7 +301,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			if err != nil {
 				panic(err)
 			}
-			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId)
+			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm)
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)

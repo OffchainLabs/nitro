@@ -23,7 +23,7 @@ func TestRetryableRedeem(t *testing.T) {
 		calldata[i] = byte(i + 3)
 	}
 	_, err := precompileCtx.state.RetryableState().CreateRetryable(
-		evm.Context.Time.Uint64(),
+		evm,
 		id,
 		timeout,
 		from,

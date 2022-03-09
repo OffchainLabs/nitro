@@ -42,7 +42,7 @@ func InternalTxStartBlock(chainId, l1BlockNumber *big.Int, header *types.Header)
 	}
 }
 
-func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, blockContext vm.BlockContext) {
+func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
 
 	var contents internalTxStartBlockContents
 	err := rlp.DecodeBytes(tx.Data, &contents)
@@ -55,8 +55,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 	if contents.L1BlockNumber >= nextL1BlockNumber {
 		var prevHash common.Hash
-		if blockContext.BlockNumber.Sign() > 0 {
-			prevHash = blockContext.GetHash(blockContext.BlockNumber.Uint64() - 1)
+		if evm.Context.BlockNumber.Sign() > 0 {
+			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 		}
 		state.Restrict(state.Blockhashes().RecordNewL1Block(contents.L1BlockNumber, prevHash))
 	}
@@ -66,7 +66,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		return
 	}
 
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time)
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm)
 	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
 	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)
 

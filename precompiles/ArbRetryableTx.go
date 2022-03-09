@@ -209,7 +209,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	}
 
 	// no refunds are given for deleting retryables because they use rented space
-	_, err = retryableState.DeleteRetryable(ticketId)
+	_, err = retryableState.DeleteRetryable(ticketId, evm)
 	if err != nil {
 		return err
 	}

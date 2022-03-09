@@ -188,12 +188,13 @@ func DoesTxTypeAlias(txType *byte) bool {
 	return false
 }
 
-//
+// Represents a balance change occuring outside of EVM execution.
+// While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
 func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, before bool) error {
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
 		if arbmath.BigLessThan(balance, amount) {
-			return fmt.Errorf("%w: address %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
+			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
 		evm.StateDB.SubBalance(*from, amount)
 	}
@@ -206,12 +207,7 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, bef
 	return nil
 }
 
-func TransferEverything(from, to common.Address, statedb vm.StateDB) {
-	amount := statedb.GetBalance(from)
-	statedb.SubBalance(from, amount)
-	statedb.AddBalance(to, amount)
-}
-
+// Mints funds for the user and adds them to their balance
 func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, before bool) {
 	err := TransferBalance(nil, to, amount, evm, before)
 	if err != nil {
