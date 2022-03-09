@@ -7,9 +7,9 @@ import (
 	"fmt"
 )
 
-func brotliCompress(inBuf []byte, outBuf []byte, level int, windowSize int) int
+func brotliCompress(inBuf []byte, outBuf []byte, level int, windowSize int) int64
 
-func brotliDecompress(inBuf []byte, outBuf []byte) int
+func brotliDecompress(inBuf []byte, outBuf []byte) int64
 
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	outBuf := make([]byte, maxSize)
