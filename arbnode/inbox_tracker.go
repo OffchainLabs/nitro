@@ -512,6 +512,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		}
 		t.validator.ProcessBatches(batchMap)
 	}
+
+	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
+		t.txStreamer.broadcastServer.Confirm(prevbatchmeta.MessageCount - 1)
+	}
+
 	return nil
 }
 
