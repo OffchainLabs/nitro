@@ -10,11 +10,15 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/precompiles"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbosPrecompileWrapper struct {
@@ -68,6 +72,22 @@ func init() {
 			return msg, nil
 		}
 		return ApplyNodeInterface(msg, nodeInterface)
+	}
+
+	core.InterceptRPCGasCap = func(gascap *uint64, msg types.Message, header *types.Header, statedb *state.StateDB) {
+		state, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			log.Error("ArbOS is not initialized", "err", err)
+			return
+		}
+		poster, _ := state.L1PricingState().ReimbursableAggregatorForSender(msg.From())
+		if poster == nil || header.BaseFee.Sign() == 0 {
+			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
+			return
+		}
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
+		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
+		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
 }
 

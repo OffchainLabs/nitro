@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 // To avoid creating new RPC methods for client-side tooling, nitro Geth's InterceptRPCMessage() hook provides
@@ -50,7 +51,7 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
 			ChainId:       nil,
 			RequestId:     common.Hash{},
-			From:          sender,
+			From:          util.RemapL1Address(sender),
 			DepositValue:  deposit,
 			GasFeeCap:     msg.GasPrice(),
 			Gas:           msg.Gas(),

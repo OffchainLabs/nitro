@@ -10,6 +10,8 @@ output_root=target
 repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
+das_rpc_files = das/dasrpc/wireFormat.pb.go das/dasrpc/wireFormat_grpc.pb.go
+
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
 
@@ -47,7 +49,7 @@ all: build build-replay-env test-gen-proofs
 build: $(output_root)/bin/node
 	@printf $(done)
 
-build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
+build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -62,6 +64,9 @@ build-prover-lib: $(arbitrator_prover_lib)
 build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
+
+$(das_rpc_files): das/wireFormat.proto
+	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
 
 contracts: .make/solgen
 	@printf $(done)
@@ -100,6 +105,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
+	rm -f $(das_rpc_files)
 	@rm -rf solgen/build solgen/cache solgen/go/
 	@rm -f .make/*
 
