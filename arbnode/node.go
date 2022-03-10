@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -310,10 +311,12 @@ type NodeConfig struct {
 	L1ValidatorConfig      validator.L1ValidatorConfig
 	SeqCoordinator         bool
 	SeqCoordinatorConfig   SeqCoordinatorConfig
+	DataAvailabilityMode   das.DataAvailabilityMode
+	DataAvailabilityConfig das.DataAvailabilityConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, false, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, false, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
 var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, Sequencer: true, L1Reader: false}
 
 type Node struct {
@@ -337,6 +340,15 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
+	}
+
+	var dataAvailabilityService das.DataAvailabilityService
+	if config.DataAvailabilityMode == das.LocalDataAvailability {
+		var err error
+		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
@@ -401,7 +413,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer)
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +424,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
@@ -442,7 +454,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}

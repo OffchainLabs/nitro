@@ -41,13 +41,13 @@ interface ArbAggregator {
 
     /// @notice Get the aggregator's compression ratio
     /// @param aggregator The aggregator to fetch the compression ratio for
-    /// @return The compression ratio, as measured in ppm (100% = 1,000,000)
+    /// @return The compression ratio, measured in basis points
     function getCompressionRatio(address aggregator) external view returns (uint64);
 
     /// @notice Set the aggregator's compression ratio
     /// This reverts unless called by the aggregator, its fee collector, or a chain owner
     /// @param aggregator The aggregator to set the compression ratio for
-    /// @param ratio The compression ratio, as measured in ppm (100% = 1,000,000)
+    /// @param ratio The compression ratio, measured in basis points
     function setCompressionRatio(address aggregator, uint64 ratio) external;
 
     /// @notice Get the address where fees to aggregator are sent.

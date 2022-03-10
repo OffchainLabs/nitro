@@ -6,18 +6,20 @@ package arbstate
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
-	"math/big"
 
 	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxBackend interface {
@@ -38,7 +40,7 @@ type MessageWithMetadata struct {
 }
 
 type InboxMultiplexer interface {
-	Pop() (*MessageWithMetadata, error)
+	Pop(context.Context) (*MessageWithMetadata, error)
 	DelayedMessagesRead() uint64
 }
 
@@ -53,7 +55,7 @@ type sequencerMessage struct {
 
 const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
 
-func parseSequencerMessage(data []byte) *sequencerMessage {
+func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -63,9 +65,26 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
+
+	var payload []byte
 	if len(data) >= 41 {
-		if data[40] == 0 {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
+		if IsDASMessageHeaderByte(data[40]) {
+			if das == nil {
+				log.Error("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				var err error
+				payload, err = das.Retrieve(ctx, data[40:])
+				if err != nil {
+					log.Error("Reading from DAS failed", "err", err)
+				}
+
+			}
+		} else if data[40] == 0 {
+			payload = data[40:]
+		}
+
+		if len(payload) > 0 {
+			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(payload[1:])), maxDecompressedLen)
 			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
 			for {
 				var segment []byte
@@ -118,6 +137,7 @@ func (m sequencerMessage) Encode() []byte {
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	das                       DataAvailabilityServiceReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -126,10 +146,11 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das DataAvailabilityServiceReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
+		das:                 das,
 	}
 }
 
@@ -141,19 +162,20 @@ var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 }
 
 const BatchSegmentKindL2Message uint8 = 0
-const BatchSegmentKindDelayedMessages uint8 = 1
-const BatchSegmentKindAdvanceTimestamp uint8 = 2
-const BatchSegmentKindAdvanceL1BlockNumber uint8 = 3
+const BatchSegmentKindL2MessageBrotli uint8 = 1
+const BatchSegmentKindDelayedMessages uint8 = 2
+const BatchSegmentKindAdvanceTimestamp uint8 = 3
+const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
 // This does *not* return parse errors, those are transformed into invalid messages
-func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
+func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		r.cachedSequencerMessage = parseSequencerMessage(bytes)
+		r.cachedSequencerMessage = parseSequencerMessage(ctx, bytes, r.das)
 	}
 	msg, err := r.getNextMsg()
 	// advance even if there was an error
@@ -201,8 +223,11 @@ func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 		if len(segment) == 0 {
 			continue
 		}
-		segmentKind := segment[0]
-		if segmentKind == BatchSegmentKindL2Message || segmentKind == BatchSegmentKindDelayedMessages {
+		kind := segment[0]
+		if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
+			return false
+		}
+		if kind == BatchSegmentKindDelayedMessages {
 			return false
 		}
 	}
@@ -274,17 +299,30 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		log.Error("empty sequencer message segment", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum)
 		return nil, nil
 	}
-	segmentKind := segment[0]
+	kind := segment[0]
+	segment = segment[1:]
 	var msg *MessageWithMetadata
-	if segmentKind == BatchSegmentKindL2Message {
+	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
+
 		// L2 message
 		var blockNumberHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(new(big.Int).SetUint64(blockNumber)))
+		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
 		var timestampHash common.Hash
-		copy(timestampHash[:], math.U256Bytes(new(big.Int).SetUint64(timestamp)))
+		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
 		var requestId common.Hash
+
+		if kind == BatchSegmentKindL2MessageBrotli {
+			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(segment[1:])), arbos.MaxL2MessageSize)
+			decompressed, err := io.ReadAll(reader)
+			if err != nil {
+				log.Info("dropping brotli message", "err", err, "delayedMsg", r.delayedMessagesRead)
+				return nil, nil
+			}
+			segment = decompressed
+		}
+
 		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
-		if len(segment) < 2 || (segment[1] != arbos.L2MessageKind_SignedTx && segment[1] != arbos.L2MessageKind_UnsignedUserTx) {
+		if len(segment) == 0 || (segment[0] != arbos.L2MessageKind_SignedTx && segment[0] != arbos.L2MessageKind_UnsignedUserTx) {
 			requestId[0] = 1 << 6
 			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.cachedSequencerMessageNum)
 			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
@@ -299,11 +337,11 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					RequestId:   requestId,
 					BaseFeeL1:   common.Hash{},
 				},
-				L2msg: segment[1:],
+				L2msg: segment,
 			},
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
-	} else if segmentKind == BatchSegmentKindDelayedMessages {
+	} else if kind == BatchSegmentKindDelayedMessages {
 		if r.delayedMessagesRead >= seqMsg.afterDelayedMessages {
 			if segmentNum < uint64(len(seqMsg.segments)) {
 				log.Warn(
@@ -333,7 +371,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			}
 		}
 	} else {
-		log.Error("bad sequencer message segment kind", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum, "kind", segmentKind)
+		log.Error("bad sequencer message segment kind", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum, "kind", kind)
 		return nil, nil
 	}
 	return msg, nil

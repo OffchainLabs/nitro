@@ -9,14 +9,13 @@ import (
 	"errors"
 	"math/big"
 
-	arbos_util "github.com/offchainlabs/nitro/arbos/util"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
@@ -39,7 +38,7 @@ func InitializeRetryableState(sto *storage.Storage) error {
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
 	payFromEscrow := func(ticketId common.Hash, destination common.Address) {
 		escrowAddress := RetryableEscrowAddress(ticketId)
-		arbos_util.TransferEverything(escrowAddress, destination, statedb)
+		util.TransferEverything(escrowAddress, destination, statedb)
 	}
 	return &RetryableState{
 		sto,
@@ -137,7 +136,7 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 		return 0, err
 	}
 	size, err := retryable.CalldataSize()
-	calldata := 32 + 32*util.WordsForBytes(size) // length + contents
+	calldata := 32 + 32*arbmath.WordsForBytes(size) // length + contents
 	return 6*32 + calldata, err
 }
 

@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -50,6 +51,9 @@ func main() {
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
 	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
 	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
+
+	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
+	dataAvailabilityLocalDiskDirectory := flag.String("dataavailability.localdisk.dir", "", "directory to store data availability files")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
 	importFile := flag.String("importfile", "", "path for json data to import")
@@ -110,6 +114,19 @@ func main() {
 		panic("l1role not recognized")
 	}
 	nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
+
+	if *dataAvailabilityMode == "onchain" {
+		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
+	} else if *dataAvailabilityMode == "local" {
+		nodeConf.DataAvailabilityMode = das.LocalDataAvailability
+		if *dataAvailabilityLocalDiskDirectory == "" {
+			flag.Usage()
+			panic("davaavailability.localdisk.dir must be specified if mode is set to local")
+		}
+	} else {
+		flag.Usage()
+		panic("dataavailability.mode not recognized")
+	}
 
 	if *l1validator {
 		if !nodeConf.L1Reader {

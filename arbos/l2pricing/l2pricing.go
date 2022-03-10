@@ -10,7 +10,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/storage"
-	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type L2PricingState struct {
@@ -18,8 +18,8 @@ type L2PricingState struct {
 	gasPool             storage.StorageBackedInt64
 	gasPoolLastBlock    storage.StorageBackedInt64
 	gasPoolSeconds      storage.StorageBackedUint64
-	gasPoolTarget       storage.StorageBackedUint64
-	gasPoolWeight       storage.StorageBackedUint64
+	gasPoolTarget       storage.StorageBackedBips
+	gasPoolWeight       storage.StorageBackedBips
 	rateEstimate        storage.StorageBackedUint64
 	rateEstimateInertia storage.StorageBackedUint64
 	speedLimitPerSecond storage.StorageBackedUint64
@@ -48,8 +48,8 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(gasPoolOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolLastBlockOffset, InitialGasPoolSeconds*InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(gasPoolSecondsOffset, InitialGasPoolSeconds)
-	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, InitialGasPoolTarget)
-	_ = sto.SetUint64ByUint64(gasPoolWeightOffset, InitialGasPoolWeight)
+	_ = sto.SetUint64ByUint64(gasPoolTargetOffset, uint64(InitialGasPoolTargetBips))
+	_ = sto.SetUint64ByUint64(gasPoolWeightOffset, uint64(InitialGasPoolWeightBips))
 	_ = sto.SetUint64ByUint64(rateEstimateOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(rateEstimateInertiaOffset, InitialRateEstimateInertia)
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
@@ -64,8 +64,8 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedInt64(gasPoolOffset),
 		sto.OpenStorageBackedInt64(gasPoolLastBlockOffset),
 		sto.OpenStorageBackedUint64(gasPoolSecondsOffset),
-		sto.OpenStorageBackedUint64(gasPoolTargetOffset),
-		sto.OpenStorageBackedUint64(gasPoolWeightOffset),
+		sto.OpenStorageBackedBips(gasPoolTargetOffset),
+		sto.OpenStorageBackedBips(gasPoolWeightOffset),
 		sto.OpenStorageBackedUint64(rateEstimateOffset),
 		sto.OpenStorageBackedUint64(rateEstimateInertiaOffset),
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
@@ -100,7 +100,7 @@ func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
 	if err != nil {
 		return err
 	}
-	if seconds == 0 || seconds > 3*60*60 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+	if seconds == 0 || seconds > 3*60*60 || arbmath.SaturatingUMul(seconds, limit) > math.MaxInt64 {
 		return errors.New("GasPoolSeconds is out of bounds")
 	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
@@ -109,23 +109,24 @@ func (ps *L2PricingState) SetGasPoolSeconds(seconds uint64) error {
 	return ps.gasPoolSeconds.Set(seconds)
 }
 
-func (ps *L2PricingState) GasPoolTarget() (uint64, error) {
-	return ps.gasPoolTarget.Get()
+func (ps *L2PricingState) GasPoolTarget() (arbmath.Bips, error) {
+	target, err := ps.gasPoolTarget.Get()
+	return arbmath.Bips(target), err
 }
 
-func (ps *L2PricingState) SetGasPoolTarget(target uint64) error {
-	if target > 10000 {
+func (ps *L2PricingState) SetGasPoolTarget(target arbmath.Bips) error {
+	if target > arbmath.OneInBips {
 		return errors.New("GasPoolTarget is out of bounds")
 	}
 	return ps.gasPoolTarget.Set(target)
 }
 
-func (ps *L2PricingState) GasPoolWeight() (uint64, error) {
+func (ps *L2PricingState) GasPoolWeight() (arbmath.Bips, error) {
 	return ps.gasPoolWeight.Get()
 }
 
-func (ps *L2PricingState) SetGasPoolWeight(weight uint64) error {
-	if weight > 10000 {
+func (ps *L2PricingState) SetGasPoolWeight(weight arbmath.Bips) error {
+	if weight > arbmath.OneInBips {
 		return errors.New("GasPoolWeight is out of bounds")
 	}
 	return ps.gasPoolWeight.Set(weight)
@@ -170,7 +171,7 @@ func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) error {
 	if err != nil {
 		return err
 	}
-	if util.BigLessThan(curGasPrice, val) {
+	if arbmath.BigLessThan(curGasPrice, val) {
 		// The current gas price is less than the new minimum. Override it.
 		return ps.gasPriceWei.Set(val)
 	} else {
@@ -188,7 +189,7 @@ func (ps *L2PricingState) SetSpeedLimitPerSecond(limit uint64) error {
 	if err != nil {
 		return err
 	}
-	if limit == 0 || util.SaturatingUMul(seconds, limit) > math.MaxInt64 {
+	if limit == 0 || arbmath.SaturatingUMul(seconds, limit) > math.MaxInt64 {
 		return errors.New("SetSpeedLimitPerSecond is out of bounds")
 	}
 	if err := ps.clipGasPool(seconds, limit); err != nil {
@@ -203,7 +204,7 @@ func (ps *L2PricingState) GasPoolMax() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return util.SaturatingCast(seconds * speedLimit), nil
+	return arbmath.SaturatingCast(seconds * speedLimit), nil
 }
 
 func (ps *L2PricingState) MaxPerBlockGasLimit() (uint64, error) {
@@ -220,7 +221,7 @@ func (ps *L2PricingState) clipGasPool(seconds, speedLimit uint64) error {
 	if err != nil {
 		return err
 	}
-	newMax := util.SaturatingCast(util.SaturatingUMul(seconds, speedLimit))
+	newMax := arbmath.SaturatingCast(arbmath.SaturatingUMul(seconds, speedLimit))
 	if pool > newMax {
 		err = ps.SetGasPool(newMax)
 	}
