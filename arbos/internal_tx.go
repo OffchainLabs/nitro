@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 // Types of ArbitrumInternalTx, distinguished by the first data byte
@@ -68,8 +69,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	}
 
 	// Try to reap 2 retryables
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm)
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm)
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingBeforeEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingBeforeEVM)
 
 	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
 	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)

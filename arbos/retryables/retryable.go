@@ -265,7 +265,7 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	return true, err
 }
 
-func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM) error {
+func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) error {
 	id, err := rs.timeoutQueue.Peek()
 	if err != nil || id == nil {
 		return err
@@ -296,7 +296,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
-		_, err = rs.DeleteRetryable(*id, evm, util.TracingBeforeEVM)
+		_, err = rs.DeleteRetryable(*id, evm, scenario)
 		return err
 	}
 
