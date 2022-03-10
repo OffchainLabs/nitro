@@ -144,13 +144,13 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   messageHeader.Timestamp.Big(),
 	}
 
-	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
-	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, lastBlockHeader)
-	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
-
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
+
+	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, lastBlockHeader)
+	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}

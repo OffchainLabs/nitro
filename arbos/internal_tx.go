@@ -27,18 +27,19 @@ type internalTxStartBlockContents struct {
 	L1BlockNumber uint64
 }
 
-func InternalTxStartBlock(chainId, l1BlockNumber *big.Int, header *types.Header) *types.ArbitrumInternalTx {
+func InternalTxStartBlock(chainId, l1BlockNum, l2BlockNum *big.Int, header *types.Header) *types.ArbitrumInternalTx {
 	data, err := rlp.EncodeToBytes(internalTxStartBlockContents{
 		Header:        header,
-		L1BlockNumber: l1BlockNumber.Uint64(),
+		L1BlockNumber: l1BlockNum.Uint64(),
 	})
 	if err != nil {
 		panic(fmt.Sprintf("rlp encoding failure %v", err))
 	}
 	return &types.ArbitrumInternalTx{
-		ChainId: chainId,
-		Type:    arbInternalTxStartBlock,
-		Data:    data,
+		ChainId:       chainId,
+		Type:          arbInternalTxStartBlock,
+		Data:          data,
+		L2BlockNumber: l2BlockNum.Uint64(),
 	}
 }
 
