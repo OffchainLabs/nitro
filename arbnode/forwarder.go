@@ -40,3 +40,17 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 }
 
 func (f *TxForwarder) StopAndWait() {}
+
+type TxDropper struct{}
+
+func NewTxDropper() *TxDropper {
+	return &TxDropper{}
+}
+
+func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction) error { return nil }
+
+func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
+
+func (f *TxDropper) Start(ctx context.Context) error { return nil }
+
+func (f *TxDropper) StopAndWait() {}
