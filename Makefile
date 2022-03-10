@@ -65,8 +65,8 @@ build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
-$(das_rpc_files): das/wireFormat.proto das/generate.go
-	(cd das; go generate)
+$(das_rpc_files): das/wireFormat.proto
+	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
 
 contracts: .make/solgen
 	@printf $(done)
