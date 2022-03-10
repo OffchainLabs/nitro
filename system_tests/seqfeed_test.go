@@ -78,6 +78,61 @@ func TestSequencerFeed(t *testing.T) {
 	nodeB.StopAndWait()
 }
 
+func TestChainedSequencerFeed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seqNodeConfig := arbnode.NodeConfigL2Test
+	seqNodeConfig.Broadcaster = true
+	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
+
+	relayNodeConfig := arbnode.NodeConfigL2Test
+	relayNodeConfig.BroadcastClient = true
+	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	relayNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
+	relayNodeConfig.Broadcaster = true
+	relayNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &relayNodeConfig, nil, false)
+
+	clientNodeConfig := arbnode.NodeConfigL2Test
+	clientNodeConfig.BroadcastClient = true
+	// port = nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port = nodeB.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
+
+	l2info1.GenerateAccount("User2")
+
+	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+
+	err := client1.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	_, err = arbutil.EnsureTxSucceeded(ctx, client1, tx)
+	Require(t, err)
+
+	_, err = arbutil.WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	Require(t, err)
+	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	_, err = arbutil.WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	Require(t, err)
+	l2balance, err = client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+	nodeC.StopAndWait()
+}
+
 func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

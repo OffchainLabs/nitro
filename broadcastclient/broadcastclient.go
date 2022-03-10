@@ -53,9 +53,11 @@ type BroadcastClient struct {
 	ConfirmedSequenceNumberListener chan arbutil.MessageIndex
 	idleTimeout                     time.Duration
 	txStreamer                      TransactionStreamerInterface
+
+	relayServer *broadcaster.Broadcaster
 }
 
-func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeout time.Duration, txStreamer TransactionStreamerInterface) *BroadcastClient {
+func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeout time.Duration, txStreamer TransactionStreamerInterface, relayServer *broadcaster.Broadcaster) *BroadcastClient {
 	var seqNum *big.Int
 	if lastInboxSeqNum == nil {
 		seqNum = big.NewInt(0)
@@ -68,6 +70,7 @@ func NewBroadcastClient(websocketUrl string, lastInboxSeqNum *big.Int, idleTimeo
 		lastInboxSeqNum: seqNum,
 		idleTimeout:     idleTimeout,
 		txStreamer:      txStreamer,
+		relayServer:     relayServer,
 	}
 }
 
@@ -162,8 +165,11 @@ func (bc *BroadcastClient) startBackgroundReader() {
 				if res.Version == 1 {
 					if len(res.Messages) > 0 {
 						messages := []arbstate.MessageWithMetadata{}
-						for _, message := range res.Messages {
+						for i, message := range res.Messages {
 							messages = append(messages, message.Message)
+							if bc.relayServer != nil {
+								bc.relayServer.BroadcastSingle(message.Message, res.Messages[i].SequenceNumber)
+							}
 						}
 						if err := bc.txStreamer.AddMessages(res.Messages[0].SequenceNumber, false, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)

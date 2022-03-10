@@ -396,7 +396,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 	var broadcastClient *broadcastclient.BroadcastClient
 	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
+		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer, broadcastServer)
 	}
 	if !config.L1Reader {
 		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil

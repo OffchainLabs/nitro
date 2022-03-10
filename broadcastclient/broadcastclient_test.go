@@ -80,7 +80,7 @@ func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force 
 
 func newTestBroadcastClient(listenerAddress net.Addr, idleTimeout time.Duration, txStreamer TransactionStreamerInterface) *BroadcastClient {
 	port := listenerAddress.(*net.TCPAddr).Port
-	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), nil, idleTimeout, txStreamer)
+	return NewBroadcastClient(fmt.Sprintf("ws://127.0.0.1:%d/", port), nil, idleTimeout, txStreamer, nil)
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, index int, expectedCount int, wg *sync.WaitGroup) {
