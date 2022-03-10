@@ -231,6 +231,7 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 		if to == nil {
 			to = &common.Address{}
 		}
+		// TODO Review later how this shows up in the trace
 		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
 		tracer.CaptureExit(nil, 0, nil)
 	}
