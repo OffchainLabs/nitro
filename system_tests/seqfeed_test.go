@@ -137,7 +137,7 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}

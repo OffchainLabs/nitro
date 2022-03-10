@@ -65,6 +65,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         }
 
         ChallengeLib.Participant memory current = challenge.current;
+        current.timeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+
         challenge.current = challenge.next;
         challenge.next = current;
 
