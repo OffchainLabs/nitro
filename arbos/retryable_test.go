@@ -41,12 +41,10 @@ func TestOpenExpiredRetryable(t *testing.T) {
 	calldata := []byte{42}
 	retryableState := state.RetryableState()
 
-	timestamp, err := state.LastTimestampSeen()
-	Require(t, err)
-	_, err = retryableState.CreateRetryable(timestamp, id, timeout, from, &to, callvalue, beneficiary, calldata)
+	_, err = retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
 	Require(t, err)
 
-	timestamp, err = state.LastTimestampSeen()
+	timestamp, err := state.LastTimestampSeen()
 	Require(t, err)
 	reread, err := retryableState.OpenRetryable(id, timestamp)
 	Require(t, err)
@@ -71,7 +69,7 @@ func TestRetryableCreate(t *testing.T) {
 		calldata[i] = byte(i + 3)
 	}
 	rstate := state.RetryableState()
-	retryable, err := rstate.CreateRetryable(lastTimestamp, id, timeout, from, &to, callvalue, beneficiary, calldata)
+	retryable, err := rstate.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
 	Require(t, err)
 
 	reread, err := rstate.OpenRetryable(id, lastTimestamp)

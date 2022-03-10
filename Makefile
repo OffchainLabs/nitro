@@ -10,6 +10,8 @@ output_root=target
 repo_dirs = arbos arbnode arbstate cmd precompiles solgen system_tests util validator wavmio
 go_source = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 
+das_rpc_files = das/dasrpc/wireFormat.pb.go das/dasrpc/wireFormat_grpc.pb.go
+
 color_pink = "\e[38;5;161;1m"
 color_reset = "\e[0;0m"
 
@@ -19,7 +21,7 @@ replay_wasm=$(output_root)/lib/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(output_root)/lib/wasi_stub.wasm $(output_root)/lib/host_io.wasm $(output_root)/lib/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm $(output_root)/lib/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -47,7 +49,7 @@ all: build build-replay-env test-gen-proofs
 build: $(output_root)/bin/node
 	@printf $(done)
 
-build-node-deps: $(go_source) build-prover-header build-prover-lib .make/solgen
+build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -62,6 +64,9 @@ build-prover-lib: $(arbitrator_prover_lib)
 build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
+
+$(das_rpc_files): das/wireFormat.proto
+	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
 
 contracts: .make/solgen
 	@printf $(done)
@@ -100,6 +105,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
+	rm -f $(das_rpc_files)
 	@rm -rf solgen/build solgen/cache solgen/go/
 	@rm -f .make/*
 
@@ -232,6 +238,11 @@ $(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
+$(output_root)/lib/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+	mkdir -p $(output_root)/lib
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
@@ -275,6 +286,22 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 
 .make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
+	@touch $@
+
+.make/cbrotli-lib: | .make
+	@printf "%btesting cbrotli local build exists. If this step fails, see ./build-brotli.sh -l -h%b\n" $(color_pink) $(color_reset)
+	test -f target/include/brotli/encode.h
+	test -f target/include/brotli/decode.h
+	test -f target/lib/libbrotlicommon-static.a
+	test -f target/lib/libbrotlienc-static.a
+	test -f target/lib/libbrotlidec-static.a
+	@touch $@
+
+.make/cbrotli-wasm: | .make
+	@printf "%btesting cbrotli wasm build exists. If this step fails, see ./build-brotli.sh -w -h%b\n" $(color_pink) $(color_reset)
+	test -f target/lib-wasm/libbrotlicommon-static.a
+	test -f target/lib-wasm/libbrotlienc-static.a
+	test -f target/lib-wasm/libbrotlidec-static.a
 	@touch $@
 
 .make:

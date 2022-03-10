@@ -231,8 +231,7 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
             );
         }
     } else if class == DATE_ID {
-        let id = DynamicObjectPool::singleton()
-            .insert(DynamicObject::Date);
+        let id = DynamicObjectPool::singleton().insert(DynamicObject::Date);
         sp.write_u64(4, GoValue::Object(id).encode());
         sp.write_u8(5, 1);
         return;
