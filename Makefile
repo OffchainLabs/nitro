@@ -21,7 +21,7 @@ replay_wasm=$(output_root)/lib/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(output_root)/lib/wasi_stub.wasm $(output_root)/lib/host_io.wasm $(output_root)/lib/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm $(output_root)/lib/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -49,7 +49,7 @@ all: build build-replay-env test-gen-proofs
 build: $(output_root)/bin/node
 	@printf $(done)
 
-build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen
+build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -238,6 +238,11 @@ $(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
+$(output_root)/lib/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+	mkdir -p $(output_root)/lib
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
@@ -281,6 +286,22 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 
 .make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
+	@touch $@
+
+.make/cbrotli-lib: | .make
+	@printf "%btesting cbrotli local build exists. If this step fails, see ./build-brotli.sh -l -h%b\n" $(color_pink) $(color_reset)
+	test -f target/include/brotli/encode.h
+	test -f target/include/brotli/decode.h
+	test -f target/lib/libbrotlicommon-static.a
+	test -f target/lib/libbrotlienc-static.a
+	test -f target/lib/libbrotlidec-static.a
+	@touch $@
+
+.make/cbrotli-wasm: | .make
+	@printf "%btesting cbrotli wasm build exists. If this step fails, see ./build-brotli.sh -w -h%b\n" $(color_pink) $(color_reset)
+	test -f target/lib-wasm/libbrotlicommon-static.a
+	test -f target/lib-wasm/libbrotlienc-static.a
+	test -f target/lib-wasm/libbrotlidec-static.a
 	@touch $@
 
 .make:
