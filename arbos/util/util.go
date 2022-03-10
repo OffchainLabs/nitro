@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -197,7 +198,7 @@ const (
 	TracingAfterEVM
 )
 
-// Represents a balance change occuring outside of EVM execution.
+// Represents a balance change occuring aside from a call.
 // While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
 func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) error {
 	if from != nil {
@@ -211,10 +212,27 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 		evm.StateDB.AddBalance(*to, amount)
 	}
 	if evm.Config.Debug {
-		if scenario == TracingDuringEVM { //nolint:staticcheck
+		tracer := evm.Config.Tracer
 
+		if (evm.Depth() != 0) != (scenario == TracingDuringEVM) {
+			// A non-zero depth implies this transfer is occuring inside EVM execution
+			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
+			return errors.New("Tracing scenario mismatch")
 		}
-		evm.Config.Tracer.CaptureArbitrumTransfer(evm, from, to, amount, scenario == TracingBeforeEVM)
+
+		if scenario != TracingDuringEVM {
+			tracer.CaptureArbitrumTransfer(evm, from, to, amount, scenario == TracingBeforeEVM)
+			return nil
+		}
+
+		if from == nil {
+			from = &common.Address{}
+		}
+		if to == nil {
+			to = &common.Address{}
+		}
+		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
+		tracer.CaptureExit(nil, 0, nil)
 	}
 	return nil
 }

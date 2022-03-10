@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -209,7 +210,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	}
 
 	// no refunds are given for deleting retryables because they use rented space
-	_, err = retryableState.DeleteRetryable(ticketId, evm)
+	_, err = retryableState.DeleteRetryable(ticketId, evm, util.TracingDuringEVM)
 	if err != nil {
 		return err
 	}

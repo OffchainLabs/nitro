@@ -300,7 +300,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			if err != nil {
 				panic(err)
 			}
-			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm)
+			_, _ = state.RetryableState().DeleteRetryable(inner.TicketId, p.evm, util.TracingAfterEVM)
 		} else {
 			// return the Callvalue to escrow
 			escrow := retryables.RetryableEscrowAddress(inner.TicketId)

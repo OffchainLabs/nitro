@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -132,7 +133,7 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 	return 6*32 + calldata, err
 }
 
-func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM) (bool, error) {
+func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
 	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeout, err := retStorage.GetByUint64(timeoutOffset)
 	if timeout == (common.Hash{}) || err != nil {
@@ -142,11 +143,11 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM) (bool, er
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
 	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
 	escrowAddress := RetryableEscrowAddress(id)
+	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
 	amount := evm.StateDB.GetBalance(escrowAddress)
-	evm.StateDB.SubBalance(escrowAddress, amount)
-	evm.StateDB.AddBalance(common.BytesToAddress(beneficiary[:]), amount)
-	if evm.Config.Debug { //nolint:staticcheck
-		// TODO: add tracing in a future PR (always happens inside EVM execution)
+	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario)
+	if err != nil {
+		return false, err
 	}
 
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
@@ -295,7 +296,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	if windowsLeft == 0 {
 		// the retryable has expired, time to reap
-		_, err = rs.DeleteRetryable(*id, evm)
+		_, err = rs.DeleteRetryable(*id, evm, util.TracingDuringEVM)
 		return err
 	}
 
