@@ -147,13 +147,10 @@ func ProduceBlockAdvanced(
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
-	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
-		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
-		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
-		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-	}
+
+	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, lastBlockHeader)
+	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -188,9 +185,11 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			if tx.Type() != types.ArbitrumInternalTxType {
-				// the sequencer has the ability to drop this tx
-				hooks = sequencingHooks
+			switch tx := tx.GetInner().(type) {
+			case *types.ArbitrumInternalTx:
+				tx.TxIndex = uint64(len(receipts))
+			default:
+				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}
 		}
@@ -360,7 +359,7 @@ func ProduceBlockAdvanced(
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
-	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
 			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
@@ -375,13 +374,7 @@ func ProduceBlockAdvanced(
 
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
-		state, err := arbosState.OpenSystemArbosState(statedb, false)
-		if err != nil {
-			panic(err)
-		}
-		timePassed := state.SetLastTimestampSeen(header.Time)
-		state.L2PricingState().UpdatePricingModel(header, timePassed, false)
-		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
+		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()
@@ -394,7 +387,5 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			L1BlockNumber: nextL1BlockNumber,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
-
-		state.UpgradeArbosVersionIfNecessary(header.Time)
 	}
 }
