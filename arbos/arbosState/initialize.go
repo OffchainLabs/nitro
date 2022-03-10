@@ -144,7 +144,7 @@ func initializeRetryables(rs *retryables.RetryableState, initData statetransfer.
 		if r.To != (common.Address{}) {
 			to = &r.To
 		}
-		_, err = rs.CreateRetryable(currentTimestampToUse, r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
+		_, err = rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err
 		}

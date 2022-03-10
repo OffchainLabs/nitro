@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -138,20 +138,20 @@ func writeTxToBatch(writer io.Writer, tx *types.Transaction) error {
 func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, isChallenger bool) {
 	ctx := context.Background()
 
-	batchBuffer := bytes.NewBuffer([]byte{0})
-	batchWriter := brotli.NewWriter(batchBuffer)
+	batchBuffer := bytes.NewBuffer([]byte{})
 	for i := int64(0); i < 10; i++ {
 		value := i
 		if i == 5 && isChallenger {
 			value++
 		}
-		err := writeTxToBatch(batchWriter, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
+		err := writeTxToBatch(batchBuffer, l2Info.PrepareTx("Owner", "Destination", 1000000, big.NewInt(value), []byte{}))
 		Require(t, err)
 	}
-	err := batchWriter.Flush()
+	compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
 	Require(t, err)
+	message := append([]byte{0}, compressed...)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), batchBuffer.Bytes(), big.NewInt(0), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(sequencer, big.NewInt(1), message, big.NewInt(0), common.Address{})
 	Require(t, err)
 	receipt, err := arbutil.EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)

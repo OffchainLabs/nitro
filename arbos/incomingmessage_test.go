@@ -6,11 +6,8 @@ package arbos
 
 import (
 	"bytes"
-	"io"
 	"math/big"
 	"testing"
-
-	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -43,31 +40,5 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	}
 	if len(txes) != 0 {
 		Fail(t, "unexpected tx count")
-	}
-}
-
-func TestBrotli(t *testing.T) {
-	orig := []byte("This is a long and repetitive string. Yadda yadda yadda yadda yadda. The quick brown fox jumped over the lazy dog.")
-	outBuf := bytes.Buffer{}
-	bwr := brotli.NewWriter(&outBuf)
-	_, err := bwr.Write(orig)
-	if err != nil {
-		t.Error(err)
-	}
-	err = bwr.Flush()
-	if err != nil {
-		t.Error(err)
-	}
-	compressed := outBuf.Bytes()
-	if len(compressed) >= len(orig) {
-		Fail(t, "compression didn't make it smaller")
-	}
-	decompressor := brotli.NewReader(bytes.NewReader(compressed))
-	result, err := io.ReadAll(decompressor)
-	if err != nil {
-		t.Error(err)
-	}
-	if !bytes.Equal(orig, result) {
-		Fail(t, "decompressed data doesn't match original")
 	}
 }
