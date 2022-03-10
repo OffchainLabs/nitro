@@ -188,9 +188,18 @@ func DoesTxTypeAlias(txType *byte) bool {
 	return false
 }
 
+// represents when
+type TracingScenario uint64
+
+const (
+	TracingBeforeEVM TracingScenario = iota
+	TracingDuringEVM
+	TracingAfterEVM
+)
+
 // Represents a balance change occuring outside of EVM execution.
 // While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
-func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, before bool) error {
+func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) error {
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
 		if arbmath.BigLessThan(balance, amount) {
@@ -202,14 +211,17 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, bef
 		evm.StateDB.AddBalance(*to, amount)
 	}
 	if evm.Config.Debug {
-		evm.Config.Tracer.CaptureArbitrumTransfer(evm, from, to, amount, before)
+		if scenario == TracingDuringEVM { //nolint:staticcheck
+
+		}
+		evm.Config.Tracer.CaptureArbitrumTransfer(evm, from, to, amount, scenario == TracingBeforeEVM)
 	}
 	return nil
 }
 
 // Mints funds for the user and adds them to their balance
-func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, before bool) {
-	err := TransferBalance(nil, to, amount, evm, before)
+func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) {
+	err := TransferBalance(nil, to, amount, evm, scenario)
 	if err != nil {
 		panic(fmt.Sprintf("impossible error: %v", err))
 	}

@@ -64,7 +64,6 @@ const (
 )
 
 func (rs *RetryableState) CreateRetryable(
-	evm *vm.EVM,
 	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,
@@ -73,12 +72,6 @@ func (rs *RetryableState) CreateRetryable(
 	beneficiary common.Address,
 	calldata []byte,
 ) (*Retryable, error) {
-	if evm != nil {
-		err := rs.TryToReapOneRetryable(evm.Context.Time.Uint64(), evm)
-		if err != nil {
-			return nil, err
-		}
-	}
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{
 		id,
