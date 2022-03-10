@@ -4,3 +4,6 @@
 [submodule "fastcache"]
 	path = fastcache
 	url = git@github.com:OffchainLabs/fastcache.git
+[submodule "arbitrator/wasm-libraries/soft-float/SoftFloat"]
+	path = arbitrator/wasm-libraries/soft-float/SoftFloat
+	url = git@github.com:OffchainLabs/SoftFloat.git

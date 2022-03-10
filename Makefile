@@ -103,8 +103,8 @@ clean:
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f $(das_rpc_files)
 	@rm -rf solgen/build solgen/cache solgen/go/
 	@rm -f .make/*
@@ -146,27 +146,27 @@ $(output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
-arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/platform.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
-	cd arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
+arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
+	cd arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
 
 arbitrator/wasm-libraries/soft-float/bindings%.o: arbitrator/wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
+	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
 $(output_root)/lib/soft-float.wasm: \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
 	mkdir -p $(output_root)/lib
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
 		--no-entry -o $@ \
 		--export wavm__f32_abs \
 		--export wavm__f32_neg \
