@@ -115,24 +115,6 @@ func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed 
 	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
 }
 
-func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return err
-	}
-	weight, err := ps.L1BaseFeeEstimateInertia()
-	if err != nil {
-		return err
-	}
-
-	// new = (alpha * old + observed) / (alpha + 1)
-	memory := arbmath.BigMul(curr, arbmath.UintToBig(weight))
-	impact := arbmath.BigAdd(memory, baseFeeWei)
-	update := arbmath.BigDiv(impact, arbmath.UintToBig(weight+1))
-
-	return ps.SetL1BaseFeeEstimateWei(update)
-}
-
 // Get how slowly ArbOS updates its estimate of the L1 basefee
 func (ps *L1PricingState) L1BaseFeeEstimateInertia() (uint64, error) {
 	return ps.l1BaseFeeEstimateInertia.Get()

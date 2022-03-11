@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var messageDeliveredID common.Hash
@@ -114,8 +115,8 @@ func (m *DelayedInboxMessage) AfterInboxAcc() common.Hash {
 	hash := crypto.Keccak256(
 		[]byte{m.Message.Header.Kind},
 		m.Message.Header.Poster.Bytes(),
-		m.Message.Header.BlockNumber.Bytes(),
-		m.Message.Header.Timestamp.Bytes(),
+		arbmath.UintToBytes(m.Message.Header.BlockNumber),
+		arbmath.UintToBytes(m.Message.Header.Timestamp),
 		m.Message.Header.RequestId.Bytes(),
 		math.U256Bytes(m.Message.Header.BaseFeeL1),
 		crypto.Keccak256(m.Message.L2msg),
@@ -201,8 +202,8 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        parsedLog.Kind,
 					Poster:      parsedLog.Sender,
-					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
-					Timestamp:   common.BigToHash(parsedLog.Timestamp),
+					BlockNumber: parsedLog.Raw.BlockNumber,
+					Timestamp:   parsedLog.Timestamp,
 					RequestId:   common.BigToHash(parsedLog.MessageIndex),
 					BaseFeeL1:   parsedLog.BaseFeeL1,
 				},

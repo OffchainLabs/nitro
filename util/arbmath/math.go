@@ -5,6 +5,7 @@
 package arbmath
 
 import (
+	"encoding/binary"
 	"math"
 	"math/big"
 	"math/bits"
@@ -202,6 +203,13 @@ func SaturatingCast(value uint64) int64 {
 // the number of eth-words needed to store n bytes
 func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32
+}
+
+// casts a uint64 to its big-endian representation
+func UintToBytes(value uint64) []byte {
+	result := make([]byte, 8)
+	binary.BigEndian.PutUint64(result, value)
+	return result
 }
 
 // Return the Maclaurin series approximation of e^x, where x is denominated in basis points.

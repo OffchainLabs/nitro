@@ -31,14 +31,14 @@ type internalTxStartBlockContents struct {
 
 func InternalTxStartBlock(
 	chainId,
-	l1BlockNum,
-	l2BlockNum,
 	l1BaseFee *big.Int,
+	l1BlockNum,
+	l2BlockNum uint64,
 	header *types.Header,
 ) *types.ArbitrumInternalTx {
 	data, err := rlp.EncodeToBytes(internalTxStartBlockContents{
 		Header:        header,
-		L1BlockNumber: l1BlockNum.Uint64(),
+		L1BlockNumber: l1BlockNum,
 		L1BaseFee:     l1BaseFee,
 	})
 	if err != nil {
@@ -48,7 +48,7 @@ func InternalTxStartBlock(
 		ChainId:       chainId,
 		Type:          arbInternalTxStartBlock,
 		Data:          data,
-		L2BlockNumber: l2BlockNum.Uint64(),
+		L2BlockNumber: l2BlockNum,
 	}
 }
 

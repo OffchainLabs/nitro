@@ -38,8 +38,8 @@ const MaxL2MessageSize = 256 * 1024
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
 	Poster      common.Address `json:"sender"`
-	BlockNumber common.Hash    `json:"blockNumber"`
-	Timestamp   common.Hash    `json:"timestamp"`
+	BlockNumber uint64         `json:"blockNumber"`
+	Timestamp   uint64         `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
 	BaseFeeL1   *big.Int       `json:"baseFeeL1"`
 }
@@ -59,14 +59,12 @@ type L1IncomingMessage struct {
 
 type L1Info struct {
 	poster        common.Address
-	l1BlockNumber *big.Int
-	l1Timestamp   *big.Int
+	l1BlockNumber uint64
+	l1Timestamp   uint64
 }
 
 func (info *L1Info) Equals(o *L1Info) bool {
-	return info.poster == o.poster &&
-		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
-		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
+	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -79,11 +77,11 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BlockNumber, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.BlockNumber, wr); err != nil {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.Timestamp, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.Timestamp, wr); err != nil {
 		return nil, err
 	}
 
@@ -128,12 +126,12 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	blockNumber, err := util.HashFromReader(rd)
+	blockNumber, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	timestamp, err := util.HashFromReader(rd)
+	timestamp, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}

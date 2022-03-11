@@ -45,7 +45,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
-		timestamp = l1info.l1Timestamp.Uint64()
+		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
@@ -140,16 +140,18 @@ func ProduceBlockAdvanced(
 
 	l1Info := &L1Info{
 		poster:        poster,
-		l1BlockNumber: l1Header.BlockNumber.Big(),
-		l1Timestamp:   l1Header.Timestamp.Big(),
+		l1BlockNumber: l1Header.BlockNumber,
+		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	l1BlockNum := l1Info.l1BlockNumber
+	l2BlockNum := header.Number.Uint64()
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
-	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, l1Header.BaseFeeL1, header.Number, lastBlockHeader)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.BaseFeeL1, l2BlockNum, l1BlockNum, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
