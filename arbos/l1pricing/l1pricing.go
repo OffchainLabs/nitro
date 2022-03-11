@@ -96,6 +96,11 @@ func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 // Update the pricing model with a finalized block's header
 func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed uint64) {
 
+	if baseFeeSample.Sign() == 0 {
+		// The sequencer's normal messages do not include the l1 basefee, so ignore them
+		return
+	}
+
 	// update the l1 basefee estimate, which is the weighted average of the past and present
 	//     basefee' = weighted average of the historical rate and the current
 	//     basefee' = (memory * basefee + passed * sample) / (memory + passed)
