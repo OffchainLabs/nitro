@@ -60,7 +60,7 @@ COPY . ./
 COPY --from=prover-header-builder /workspace/target/ target/
 COPY --from=prover-lib-builder /workspace/target/ target/
 RUN mkdir -p target/bin && \
-    go build -v -o target/bin ./cmd/node ./cmd/deploy && \
+    go build -v -o target/bin ./cmd/node ./cmd/deploy ./cmd/relay && \
     GOOS=js GOARCH=wasm go build -o res/target/lib/replay.wasm ./cmd/replay/...
 
 FROM debian:bullseye-slim as nitro-node

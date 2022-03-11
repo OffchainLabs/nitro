@@ -16,13 +16,23 @@ services:
     ports:
       - "7545:7545"
       - "7546:7546"
+      - "9642:9642"
     volumes:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes -stakerinterval 10s
+    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -feed.output.enabled -feed.output.port 9642
     depends_on:
       - geth
+  relay:
+    pid: host
+    build: .
+    ports:
+      - "9652:9652"
+    entrypoint: target/bin/relay
+    command: -feed.output.port 9652 -feed.input.url ws://sequencer:9642/feed
+    depends_on:
+      - sequencer
 volumes:
   l1data:
   l1keystore:
