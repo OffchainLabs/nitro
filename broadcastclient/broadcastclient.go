@@ -25,13 +25,6 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type BroadcastClientConfig struct {
-	Timeout time.Duration
-	URL     string // TODO should this be an array for multiple clients?
-}
-
-var DefaultBroadcastClientConfig BroadcastClientConfig
-
 type TransactionStreamerInterface interface {
 	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
 }

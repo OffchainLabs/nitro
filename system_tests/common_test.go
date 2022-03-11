@@ -192,7 +192,7 @@ func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (l2
 	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
 }
 
-func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.ArbNodeConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
 	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client)
@@ -220,7 +220,7 @@ func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbn
 	return CreateTestL2WithConfig(t, ctx, nil, &arbnode.NodeConfigL2Test, nil, true)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.NodeConfig, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.ArbNodeConfig, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, nil)
 	Require(t, err)
@@ -274,7 +274,7 @@ func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1sta
 	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, &nodeConf)
 }
 
-func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.ArbNodeConfig) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		t.Fatal(err)

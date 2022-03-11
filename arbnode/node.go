@@ -39,7 +39,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
@@ -292,33 +291,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}, nil
 }
 
-type NodeConfig struct {
-	ArbConfig              arbitrum.Config
-	Sequencer              bool
-	L1Reader               bool
-	InboxReaderConfig      InboxReaderConfig
-	DelayedSequencerConfig DelayedSequencerConfig
-	BatchPoster            bool
-	BatchPosterConfig      BatchPosterConfig
-	ForwardingTarget       string // "" if not forwarding
-	BlockValidator         bool
-	BlockValidatorConfig   validator.BlockValidatorConfig
-	Broadcaster            bool
-	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
-	BroadcastClient        bool
-	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
-	L1Validator            bool
-	L1ValidatorConfig      validator.L1ValidatorConfig
-	SeqCoordinator         bool
-	SeqCoordinatorConfig   SeqCoordinatorConfig
-	DataAvailabilityMode   das.DataAvailabilityMode
-	DataAvailabilityConfig das.DataAvailabilityConfig
-}
-
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, false, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
-var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, Sequencer: true, L1Reader: false}
-
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
@@ -336,7 +308,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
@@ -397,7 +369,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	}
 	var broadcastClient *broadcastclient.BroadcastClient
 	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
+		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URLs[0], nil, config.BroadcastClientConfig.Timeout, txStreamer)
 	}
 	if !config.L1Reader {
 		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil

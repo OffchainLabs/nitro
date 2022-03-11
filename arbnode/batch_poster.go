@@ -35,30 +35,6 @@ type BatchPoster struct {
 	das           das.DataAvailabilityService
 }
 
-type BatchPosterConfig struct {
-	MaxBatchSize         int
-	MaxBatchPostInterval time.Duration
-	BatchPollDelay       time.Duration
-	PostingErrorDelay    time.Duration
-	CompressionLevel     int
-}
-
-var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
-	CompressionLevel:     brotli.DefaultCompression,
-}
-
-var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         10000,
-	BatchPollDelay:       time.Millisecond * 10,
-	PostingErrorDelay:    time.Millisecond * 10,
-	MaxBatchPostInterval: 0,
-	CompressionLevel:     2,
-}
-
 func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {

@@ -31,18 +31,6 @@ import (
 	"github.com/mailru/easygo/netpoll"
 )
 
-type BroadcasterConfig struct {
-	Addr          string
-	IOTimeout     time.Duration
-	Port          string
-	Ping          time.Duration
-	ClientTimeout time.Duration
-	Queue         int
-	Workers       int
-}
-
-var DefaultBroadcasterConfig BroadcasterConfig
-
 type WSBroadcastServer struct {
 	startMutex    *sync.Mutex
 	poller        netpoll.Poller

@@ -16,24 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 )
 
-type InboxReaderConfig struct {
-	DelayBlocks int64
-	CheckDelay  time.Duration
-	HardReorg   bool // erase future transactions in addition to overwriting existing ones
-}
-
-var DefaultInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 4,
-	CheckDelay:  2 * time.Second,
-	HardReorg:   true,
-}
-
-var TestInboxReaderConfig = InboxReaderConfig{
-	DelayBlocks: 0,
-	CheckDelay:  time.Millisecond * 10,
-	HardReorg:   true,
-}
-
 type InboxReader struct {
 	util.StopWaiter
 

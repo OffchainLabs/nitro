@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -26,6 +25,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -90,6 +91,9 @@ func main() {
 
 	flag.Parse()
 
+	// TODO
+	_, _, _ = ParseNode(context.Background())
+
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(*loglevel))
 	log.Root().SetHandler(glogger)
@@ -97,24 +101,24 @@ func main() {
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
-	nodeConf := arbnode.NodeConfigDefault
+	arbNodeConf := arbnode.ArbNodeConfigDefault
 	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *nol1Listener {
-		nodeConf.L1Reader = false
-		nodeConf.Sequencer = true // we sequence messages, but not to l1
-		nodeConf.BatchPoster = false
+		arbNodeConf.L1Reader = false
+		arbNodeConf.Sequencer = true // we sequence messages, but not to l1
+		arbNodeConf.BatchPoster = false
 		if *l1sequencer || *l1validator {
 			flag.Usage()
 			panic("nol1listener cannot be used with l1sequencer or l1validator")
 		}
 	} else {
-		nodeConf.L1Reader = true
+		arbNodeConf.L1Reader = true
 	}
 
 	if *l1sequencer {
-		nodeConf.Sequencer = true
-		nodeConf.BatchPoster = true
-		nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
+		arbNodeConf.Sequencer = true
+		arbNodeConf.BatchPoster = true
+		arbNodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
 
 		if *forwardingtarget != "" && *forwardingtarget != "null" {
 			flag.Usage()
@@ -126,16 +130,16 @@ func main() {
 			panic("forwardingtarget unset, and not l1sequencer (can set to \"null\" to disable forwarding)")
 		}
 		if *forwardingtarget == "null" {
-			nodeConf.ForwardingTarget = ""
+			arbNodeConf.ForwardingTarget = ""
 		} else {
-			nodeConf.ForwardingTarget = *forwardingtarget
+			arbNodeConf.ForwardingTarget = *forwardingtarget
 		}
 	}
 
 	if *dataAvailabilityMode == "onchain" {
-		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
+		arbNodeConf.DataAvailabilityMode = das.OnchainDataAvailability
 	} else if *dataAvailabilityMode == "local" {
-		nodeConf.DataAvailabilityMode = das.LocalDataAvailability
+		arbNodeConf.DataAvailabilityMode = das.LocalDataAvailability
 		if *dataAvailabilityLocalDiskDirectory == "" {
 			flag.Usage()
 			panic("davaavailability.localdisk.dir must be specified if mode is set to local")
@@ -146,14 +150,14 @@ func main() {
 	}
 
 	if *l1validator {
-		if !nodeConf.L1Reader {
+		if !arbNodeConf.L1Reader {
 			flag.Usage()
 			panic("l1validator requires l1role other than \"none\"")
 		}
-		nodeConf.L1Validator = true
-		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
-		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
-		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
+		arbNodeConf.L1Validator = true
+		arbNodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
+		arbNodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
+		if !arbNodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
 			flag.Usage()
 			panic("L1 validator requires block validator to safely function")
 		}
@@ -164,7 +168,7 @@ func main() {
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	if nodeConf.L1Reader {
+	if arbNodeConf.L1Reader {
 		var err error
 		var l1Addr common.Address
 
@@ -173,7 +177,7 @@ func main() {
 			flag.Usage()
 			panic(err)
 		}
-		if nodeConf.BatchPoster || nodeConf.L1Validator {
+		if arbNodeConf.BatchPoster || arbNodeConf.L1Validator {
 			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *l1Account, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
@@ -181,17 +185,17 @@ func main() {
 			l1Addr = l1TransactionOpts.From
 		}
 		if *l1deploy {
-			if !nodeConf.BatchPoster {
+			if !arbNodeConf.BatchPoster {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
 			var wasmModuleRoot common.Hash
-			if nodeConf.BlockValidator {
+			if arbNodeConf.BlockValidator {
 				// TODO actually figure out the wasmModuleRoot
 				panic("deploy as validator not yet supported")
 			}
 			var validators uint64
-			if nodeConf.L1Validator {
+			if arbNodeConf.L1Validator {
 				validators++
 			}
 			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, l2ChainId, time.Minute*5)
@@ -268,8 +272,8 @@ func main() {
 		}
 	}
 
-	nodeConf.Broadcaster = *broadcasterEnabled
-	nodeConf.BroadcasterConfig = wsbroadcastserver.BroadcasterConfig{
+	arbNodeConf.Broadcaster = *broadcasterEnabled
+	arbNodeConf.BroadcasterConfig = wsbroadcastserver.BroadcasterConfig{
 		Addr:          *broadcasterAddr,
 		IOTimeout:     *broadcasterIOTimeout,
 		Port:          strconv.Itoa(*broadcasterPort),
@@ -279,10 +283,10 @@ func main() {
 		Workers:       *broadcasterWorkers,
 	}
 
-	nodeConf.BroadcastClient = *feedInputUrl != ""
-	nodeConf.BroadcastClientConfig = broadcastclient.BroadcastClientConfig{
+	arbNodeConf.BroadcastClient = *feedInputUrl != ""
+	arbNodeConf.BroadcastClientConfig = broadcastclient.BroadcastClientConfig{
 		Timeout: *feedInputTimeout,
-		URL:     *feedInputUrl,
+		URLs:    []string{*feedInputUrl},
 	}
 
 	var initDataReader statetransfer.InitDataReader = nil
@@ -366,7 +370,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	node, err := arbnode.CreateNode(stack, chainDb, &arbNodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}

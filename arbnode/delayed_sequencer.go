@@ -24,24 +24,6 @@ type DelayedSequencer struct {
 	config          *DelayedSequencerConfig
 }
 
-type DelayedSequencerConfig struct {
-	FinalizeDistance *big.Int      // how many blocks in the past L1 block is considered final
-	BlocksAggregate  *big.Int      // how many blocks we aggregate looking for delayedMessage
-	TimeAggregate    time.Duration // how many blocks we aggregate looking for delayedMessages
-}
-
-var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	FinalizeDistance: big.NewInt(12),
-	BlocksAggregate:  big.NewInt(5),
-	TimeAggregate:    time.Minute,
-}
-
-var TestDelayedSequencerConfig = DelayedSequencerConfig{
-	FinalizeDistance: big.NewInt(12),
-	BlocksAggregate:  big.NewInt(5),
-	TimeAggregate:    time.Second,
-}
-
 func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
 		client:     client,

@@ -56,18 +56,6 @@ type BlockValidator struct {
 	progressChan        chan uint64
 }
 
-type BlockValidatorConfig struct {
-	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU#)
-	BlocksToRecord      []uint64
-}
-
-var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	OutputPath:          "./target/output",
-	ConcurrentRunsLimit: 0,
-	BlocksToRecord:      []uint64{},
-}
-
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
