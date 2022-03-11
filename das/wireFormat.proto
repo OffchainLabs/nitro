@@ -1,0 +1,29 @@
+
+syntax = "proto3";
+package das;
+
+option go_package = "das/dasrpc";
+
+service DASServiceImpl {
+  rpc Store(StoreRequest) returns (StoreResponse) {}
+  rpc Retrieve(RetrieveRequest) returns (RetrieveResponse) {}
+}
+
+message StoreRequest {
+  bytes message = 1;
+}
+
+message StoreResponse {
+  bytes dataHash = 1;
+  uint64 timeout = 2;
+  uint64 signersMask = 3;
+  bytes sig = 4;
+}
+
+message RetrieveRequest {
+  bytes cert = 1;
+}
+
+message RetrieveResponse {
+  bytes result = 1;
+}

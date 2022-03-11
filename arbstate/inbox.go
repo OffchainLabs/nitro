@@ -6,16 +6,17 @@ package arbstate
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
 
-	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -39,7 +40,7 @@ type MessageWithMetadata struct {
 }
 
 type InboxMultiplexer interface {
-	Pop() (*MessageWithMetadata, error)
+	Pop(context.Context) (*MessageWithMetadata, error)
 	DelayedMessagesRead() uint64
 }
 
@@ -52,9 +53,9 @@ type sequencerMessage struct {
 	segments             [][]byte
 }
 
-const maxDecompressedLen int64 = 1024 * 1024 * 16 // 16 MiB
+const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 
-func parseSequencerMessage(data []byte) *sequencerMessage {
+func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
 		panic("sequencer message missing L1 header")
 	}
@@ -64,20 +65,42 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	maxL1Block := binary.BigEndian.Uint64(data[24:32])
 	afterDelayedMessages := binary.BigEndian.Uint64(data[32:40])
 	var segments [][]byte
+
+	var payload []byte
 	if len(data) >= 41 {
-		if data[40] == 0 {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(data[41:])), maxDecompressedLen)
-			stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
-			for {
-				var segment []byte
-				err := stream.Decode(&segment)
+		if IsDASMessageHeaderByte(data[40]) {
+			if das == nil {
+				log.Error("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				var err error
+				payload, err = das.Retrieve(ctx, data[40:])
 				if err != nil {
-					if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
-						log.Warn("error parsing sequencer message segment", "err", err.Error())
-					}
-					break
+					log.Error("Reading from DAS failed", "err", err)
 				}
-				segments = append(segments, segment)
+
+			}
+		} else if data[40] == 0 {
+			payload = data[40:]
+		}
+
+		if len(payload) > 0 {
+			decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
+			if err == nil {
+				reader := bytes.NewReader(decompressed)
+				stream := rlp.NewStream(reader, uint64(maxDecompressedLen))
+				for {
+					var segment []byte
+					err := stream.Decode(&segment)
+					if err != nil {
+						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+							log.Warn("error parsing sequencer message segment", "err", err.Error())
+						}
+						break
+					}
+					segments = append(segments, segment)
+				}
+			} else {
+				log.Warn("sequencer msg decompression failed", "err", err)
 			}
 		} else {
 			log.Warn("unknown sequencer message format")
@@ -93,32 +116,10 @@ func parseSequencerMessage(data []byte) *sequencerMessage {
 	}
 }
 
-func (m sequencerMessage) Encode() []byte {
-	var header [40]byte
-	binary.BigEndian.PutUint64(header[:8], m.minTimestamp)
-	binary.BigEndian.PutUint64(header[8:16], m.maxTimestamp)
-	binary.BigEndian.PutUint64(header[16:24], m.minL1Block)
-	binary.BigEndian.PutUint64(header[24:32], m.maxL1Block)
-	binary.BigEndian.PutUint64(header[32:40], m.afterDelayedMessages)
-	buf := new(bytes.Buffer)
-	segmentsEnc, err := rlp.EncodeToBytes(&m.segments)
-	if err != nil {
-		panic("couldn't encode sequencerMessage")
-	}
-
-	writer := brotli.NewWriter(buf)
-	defer writer.Close()
-	_, err = writer.Write(segmentsEnc)
-	if err != nil {
-		panic("Could not write")
-	}
-	writer.Flush()
-	return append(header[:], buf.Bytes()...)
-}
-
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
+	das                       DataAvailabilityServiceReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -127,10 +128,11 @@ type inboxMultiplexer struct {
 	cachedSubMessageNumber    uint64
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64) InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das DataAvailabilityServiceReader) InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:             backend,
 		delayedMessagesRead: delayedMessagesRead,
+		das:                 das,
 	}
 }
 
@@ -148,14 +150,14 @@ const BatchSegmentKindAdvanceTimestamp uint8 = 3
 const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 
 // This does *not* return parse errors, those are transformed into invalid messages
-func (r *inboxMultiplexer) Pop() (*MessageWithMetadata, error) {
+func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
 		bytes, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
-		r.cachedSequencerMessage = parseSequencerMessage(bytes)
+		r.cachedSequencerMessage = parseSequencerMessage(ctx, bytes, r.das)
 	}
 	msg, err := r.getNextMsg()
 	// advance even if there was an error
@@ -292,10 +294,9 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		var requestId common.Hash
 
 		if kind == BatchSegmentKindL2MessageBrotli {
-			reader := io.LimitReader(brotli.NewReader(bytes.NewReader(segment[1:])), arbos.MaxL2MessageSize)
-			decompressed, err := io.ReadAll(reader)
+			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
 			if err != nil {
-				log.Info("dropping brotli message", "err", err, "delayedMsg", r.delayedMessagesRead)
+				log.Info("dropping compressed message", "err", err, "delayedMsg", r.delayedMessagesRead)
 				return nil, nil
 			}
 			segment = decompressed

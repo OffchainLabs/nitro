@@ -10,15 +10,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/big"
-
-	"github.com/andybalholm/brotli"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -173,7 +173,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 	}
 	switch msg.Header.Kind {
 	case L1MessageType_L2Message:
-		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, 0)
+		return parseL2Message(bytes.NewReader(msg.L2msg), msg.Header.Poster, msg.Header.RequestId, chainId, 0)
 	case L1MessageType_Initialize:
 		return nil, errors.New("ParseL2Transactions encounted initialize message (should've been handled explicitly at genesis)")
 	case L1MessageType_EndOfBlock:
@@ -185,7 +185,7 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 		kind := msg.L2msg[0]
 		depositRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big0))
 		unsignedRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big1))
-		tx, err := parseUnsignedTx(bytes.NewReader(msg.L2msg[1:]), msg.Header.Poster, unsignedRequestId, kind)
+		tx, err := parseUnsignedTx(bytes.NewReader(msg.L2msg[1:]), msg.Header.Poster, unsignedRequestId, chainId, kind)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +244,7 @@ const (
 	L2MessageKind_BrotliCompressed = 9
 )
 
-func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, depth int) (types.Transactions, error) {
+func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
 	var l2KindBuf [1]byte
 	if _, err := rd.Read(l2KindBuf[:]); err != nil {
 		return nil, err
@@ -252,13 +252,13 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 
 	switch l2KindBuf[0] {
 	case L2MessageKind_UnsignedUserTx:
-		tx, err := parseUnsignedTx(rd, poster, requestId, L2MessageKind_UnsignedUserTx)
+		tx, err := parseUnsignedTx(rd, poster, requestId, chainId, L2MessageKind_UnsignedUserTx)
 		if err != nil {
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
 	case L2MessageKind_ContractTx:
-		tx, err := parseUnsignedTx(rd, poster, requestId, L2MessageKind_ContractTx)
+		tx, err := parseUnsignedTx(rd, poster, requestId, chainId, L2MessageKind_ContractTx)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +280,7 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 			}
 
 			nextRequestId := crypto.Keccak256Hash(requestId[:], math.U256Bytes(index))
-			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, nextRequestId, depth+1)
+			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, nextRequestId, chainId, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -307,15 +307,22 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId common.Hash, 
 		if depth > 0 { // ignore compressed messages if not top level
 			return nil, errors.New("can only compress top level batch")
 		}
-		reader := io.LimitReader(brotli.NewReader(rd), MaxL2MessageSize)
-		return parseL2Message(reader, poster, requestId, depth+1)
+		compressed, err := ioutil.ReadAll(rd)
+		if err != nil {
+			return nil, err
+		}
+		decompressed, err := arbcompress.Decompress(compressed, MaxL2MessageSize)
+		if err != nil {
+			return nil, err
+		}
+		return parseL2Message(bytes.NewReader(decompressed), poster, requestId, chainId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
 	}
 }
 
-func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash, txKind byte) (*types.Transaction, error) {
+func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash, chainId *big.Int, txKind byte) (*types.Transaction, error) {
 	gasLimit, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
@@ -363,7 +370,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 	switch txKind {
 	case L2MessageKind_UnsignedUserTx:
 		inner = &types.ArbitrumUnsignedTx{
-			ChainId:   nil,
+			ChainId:   chainId,
 			From:      util.RemapL1Address(poster),
 			Nonce:     nonce,
 			GasFeeCap: maxFeePerGas.Big(),
@@ -374,7 +381,7 @@ func parseUnsignedTx(rd io.Reader, poster common.Address, requestId common.Hash,
 		}
 	case L2MessageKind_ContractTx:
 		inner = &types.ArbitrumContractTx{
-			ChainId:   nil,
+			ChainId:   chainId,
 			RequestId: requestId,
 			From:      util.RemapL1Address(poster),
 			GasFeeCap: maxFeePerGas.Big(),

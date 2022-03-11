@@ -8,7 +8,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/andybalholm/brotli"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
@@ -245,7 +245,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 		return
 	}
 
-	l1Bytes, err := byteCountAfterBrotli(txBytes, 0)
+	l1Bytes, err := byteCountAfterBrotli0(txBytes)
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return
@@ -286,7 +286,7 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 		}
 	}
 
-	byteCount, err := byteCountAfterBrotli(message.Data(), 0)
+	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
 		log.Error("failed to compress tx", "err", err)
 		return big.NewInt(0), false
@@ -303,24 +303,10 @@ func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster co
 	return arbmath.BigMulByBips(l1Fee, ratio), true
 }
 
-type countWriter struct {
-	counter uint64
-}
-
-func (writer *countWriter) Write(p []byte) (n int, err error) {
-	writer.counter += uint64(len(p))
-	return len(p), nil
-}
-
-func byteCountAfterBrotli(input []byte, level int) (uint64, error) {
-	counter := countWriter{}
-	writer := brotli.NewWriterLevel(&counter, level)
-	_, err := writer.Write(input)
+func byteCountAfterBrotli0(input []byte) (uint64, error) {
+	compressed, err := arbcompress.CompressFast(input)
 	if err != nil {
 		return 0, err
 	}
-	if err := writer.Close(); err != nil {
-		return 0, err
-	}
-	return counter.counter, nil
+	return uint64(len(compressed)), nil
 }
