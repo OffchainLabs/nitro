@@ -1,6 +1,7 @@
 FROM emscripten/emsdk:3.1.7 as brotli-wasm-builder
 WORKDIR /workspace
 COPY build-brotli.sh .
+COPY brotli brotli
 RUN apt-get update && \
     apt-get install -y cmake make git && \
     ./build-brotli.sh -w -t install/
@@ -11,6 +12,7 @@ COPY --from=brotli-wasm-builder /workspace/install/ /
 FROM debian:bullseye-slim as brotli-library-builder
 WORKDIR /workspace
 COPY build-brotli.sh .
+COPY brotli brotli
 RUN apt-get update && \
     apt-get install -y cmake make gcc git && \
     ./build-brotli.sh -l -t install/
