@@ -4,3 +4,6 @@
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
+[submodule "brotli"]
+	path = brotli
+	url = https://github.com/google/brotli.git
