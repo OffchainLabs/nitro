@@ -15,7 +15,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using MachineLib for Machine;
     using ChallengeLib for ChallengeLib.Challenge;
 
-    string private constant NO_TURN = "NO_TURN";
+    string private constant NO_CHAL = "NO_CHAL";
     uint256 private constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
@@ -46,7 +46,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         require(!isTimedOut(challengeIndex), "CHAL_DEADLINE");
 
         if (expectedMode == ChallengeLib.ChallengeMode.NONE) {
-            require(challenge.mode != ChallengeLib.ChallengeMode.NONE, "NO_CHAL");
+            require(challenge.mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
         } else {
             require(challenge.mode == expectedMode, "CHAL_WRONG_MODE");
         }
@@ -259,14 +259,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function timeout(uint64 challengeIndex) external override {
-        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, "NO_CHAL");
+        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
         require(isTimedOut(challengeIndex), "TIMEOUT_DEADLINE");
         _nextWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
     }
 
     function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
-        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, "NO_CHAL");
+        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
         delete challenges[challengeIndex];
         emit ChallengeEnded(challengeIndex, ChallengeTerminationType.CLEARED);
     }
