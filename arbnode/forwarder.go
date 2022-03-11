@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/pkg/errors"
 )
 
 type TxForwarder struct {
@@ -40,3 +41,19 @@ func (f *TxForwarder) Start(ctx context.Context) error {
 }
 
 func (f *TxForwarder) StopAndWait() {}
+
+type TxDropper struct{}
+
+func NewTxDropper() *TxDropper {
+	return &TxDropper{}
+}
+
+func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	return errors.New("transactions not supported by this endpoint")
+}
+
+func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
+
+func (f *TxDropper) Start(ctx context.Context) error { return nil }
+
+func (f *TxDropper) StopAndWait() {}
