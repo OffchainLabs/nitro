@@ -7,3 +7,6 @@
 [submodule "arbitrator/wasm-libraries/soft-float/SoftFloat"]
 	path = arbitrator/wasm-libraries/soft-float/SoftFloat
 	url = https://github.com/OffchainLabs/SoftFloat.git
+[submodule "brotli"]
+	path = brotli
+	url = https://github.com/google/brotli.git
