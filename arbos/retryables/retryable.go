@@ -23,7 +23,7 @@ const RetryableReapPrice = 32200
 
 type RetryableState struct {
 	retryables   *storage.Storage
-	timeoutQueue *storage.Queue
+	TimeoutQueue *storage.Queue
 }
 
 var (
@@ -97,7 +97,7 @@ func (rs *RetryableState) CreateRetryable(
 	_ = ret.timeoutWindowsLeft.Set(0)
 
 	// insert the new retryable into the queue so it can be reaped later
-	return ret, rs.timeoutQueue.Put(id)
+	return ret, rs.TimeoutQueue.Put(id)
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
@@ -122,10 +122,6 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		timeout:            timeoutStorage,
 		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}, nil
-}
-
-func (rs *RetryableState) TimeoutQueueSize() (uint64, error) {
-	return rs.timeoutQueue.Size()
 }
 
 func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64) (uint64, error) {
@@ -155,12 +151,13 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 		return false, err
 	}
 
-	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
-	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
-	_ = retStorage.SetByUint64(fromOffset, common.Hash{})
-	_ = retStorage.SetByUint64(toOffset, common.Hash{})
-	_ = retStorage.SetByUint64(callvalueOffset, common.Hash{})
-	_ = retStorage.SetByUint64(beneficiaryOffset, common.Hash{})
+	_ = retStorage.ClearByUint64(numTriesOffset)
+	_ = retStorage.ClearByUint64(fromOffset)
+	_ = retStorage.ClearByUint64(toOffset)
+	_ = retStorage.ClearByUint64(callvalueOffset)
+	_ = retStorage.ClearByUint64(beneficiaryOffset)
+	_ = retStorage.ClearByUint64(timeoutOffset)
+	_ = retStorage.ClearByUint64(timeoutWindowsLeftOffset)
 	err = retStorage.OpenSubStorage(calldataKey).ClearBytes()
 	return true, err
 }
@@ -223,7 +220,7 @@ func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limi
 	}
 
 	// Add a duplicate entry to the end of the queue (only the last one deletes the retryable)
-	err = rs.timeoutQueue.Put(retryable.id)
+	err = rs.TimeoutQueue.Put(retryable.id)
 	if err != nil {
 		return err
 	}
@@ -277,7 +274,7 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 }
 
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) error {
-	id, err := rs.timeoutQueue.Peek()
+	id, err := rs.TimeoutQueue.Peek()
 	if err != nil || id == nil {
 		return err
 	}
@@ -289,7 +286,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	}
 	if timeout == 0 {
 		// The retryable has already been deleted, so discard the peeked entry
-		_, err = rs.timeoutQueue.Get()
+		_, err = rs.TimeoutQueue.Get()
 		return err
 	}
 
@@ -300,7 +297,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 	}
 
 	// Either the retryable has expired, or it's lost a lifetime's worth of time
-	_, err = rs.timeoutQueue.Get()
+	_, err = rs.TimeoutQueue.Get()
 	if err != nil {
 		return err
 	}

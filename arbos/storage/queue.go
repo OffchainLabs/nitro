@@ -83,3 +83,18 @@ func (q *Queue) Put(val common.Hash) error {
 	}
 	return q.storage.SetByUint64(newOffset-1, val)
 }
+
+func (q *Queue) Shift() (bool, error) {
+	put, err := q.nextPutOffset.Get()
+	if err != nil {
+		return false, err
+	}
+	get, err := q.nextGetOffset.Get()
+	if err != nil || put != get {
+		return false, err
+	}
+	if err := q.nextGetOffset.Set(2); err != nil {
+		return false, err
+	}
+	return true, q.nextPutOffset.Set(2)
+}

@@ -6,12 +6,16 @@ package arbos
 
 import (
 	"math/big"
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -31,47 +35,66 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
+	rand.Seed(time.Now().UTC().UnixNano())
 	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	originalTimestamp, err := state.LastTimestampSeen()
 	Require(t, err)
 	newTimestamp := originalTimestamp + 42
 	state.SetLastTimestampSeen(newTimestamp)
-
-	id := common.BigToHash(big.NewInt(978645611142))
 	timeout := originalTimestamp // in the past
-	from := common.BytesToAddress([]byte{3, 4, 5})
-	to := common.BytesToAddress([]byte{6, 7, 8, 9})
-	callvalue := big.NewInt(0)
-	beneficiary := common.BytesToAddress([]byte{3, 1, 4, 1, 5, 9, 2, 6})
-	calldata := []byte{42}
+
 	retryableState := state.RetryableState()
+	timeoutQueue := retryableState.TimeoutQueue
+	stateBefore := statedb.IntermediateRoot(false)
 
-	_, err = retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
-	Require(t, err)
+	for i := 0; i < 8; i++ {
+		id := common.BigToHash(big.NewInt(rand.Int63n(1 << 32)))
+		from := testhelpers.RandomAddress()
+		to := testhelpers.RandomAddress()
+		beneficiary := testhelpers.RandomAddress()
 
-	timestamp, err := state.LastTimestampSeen()
-	Require(t, err)
-	reread, err := retryableState.OpenRetryable(id, timestamp)
-	Require(t, err)
-	if reread != nil {
-		Fail(t)
+		callvalue := big.NewInt(rand.Int63n(1 << 32))
+		calldata := testhelpers.RandomizeSlice(make([]byte, rand.Intn(1<<12)))
+
+		_, err = retryableState.CreateRetryable(id, timeout, from, &to, callvalue, beneficiary, calldata)
+		Require(t, err)
+
+		timestamp, err := state.LastTimestampSeen()
+		Require(t, err)
+		reread, err := retryableState.OpenRetryable(id, timestamp)
+		Require(t, err)
+		if reread != nil {
+			Fail(t)
+		}
+
+		colors.PrintBlue("retryable ", len(calldata))
+
+		// check that our reap pricing is reflective of the true cost
+		burner, _ := state.Burner.(*burn.SystemBurner)
+		gasBefore := burner.Burned()
+		evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+		Require(t, retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM))
+		gasBurnedToReap := burner.Burned() - gasBefore
+		if gasBurnedToReap != retryables.RetryableReapPrice {
+			Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPrice)
+		}
+
+		// ensure the retryable is gone
+		queueSize, err := timeoutQueue.Size()
+		Require(t, err)
+		if queueSize != 0 {
+			Fail(t, "failed to reap", queueSize)
+		}
 	}
 
-	// check that our reap pricing is reflective of the true cost
-	burner, _ := state.Burner.(*burn.SystemBurner)
-	gasBefore := burner.Burned()
-	evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
-	Require(t, retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM))
-	gasBurnedToReap := burner.Burned() - gasBefore
-	if gasBurnedToReap != retryables.RetryableReapPrice {
-		Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPrice)
+	cleared, err := timeoutQueue.Shift()
+	Require(t, err)
+	if !cleared {
+		Fail(t, "failed to shift after reaps")
 	}
 
-	// ensure the retryable is gone
-	queueSize, err := retryableState.TimeoutQueueSize()
-	Require(t, err)
-	if queueSize != 0 {
-		Fail(t, "failed to reap", queueSize)
+	if stateBefore != statedb.IntermediateRoot(false) {
+		Fail(t, "reaping didn't clean things up")
 	}
 }
 

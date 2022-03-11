@@ -233,3 +233,22 @@ func ApproxExpBasisPoints(value Bips) Bips {
 		return Bips(SaturatingCast(res))
 	}
 }
+
+// Return the Newton's method approximation of sqrt(x).
+func ApproxSquareRoot(value uint64) uint64 {
+
+	if value == 0 {
+		return 0
+	}
+
+	// ensure our starting approximation's square exceeds the value
+	approx := value
+	for approx*approx/2 > value {
+		approx /= 2
+	}
+
+	for i := 0; i < 4; i++ {
+		approx = (approx + value/approx) / 2
+	}
+	return approx
+}

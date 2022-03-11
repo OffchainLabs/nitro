@@ -102,13 +102,14 @@ func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed 
 	}
 
 	// update the l1 basefee estimate, which is the weighted average of the past and present
-	//     basefee' = weighted average of the historical rate and the current
-	//     basefee' = (memory * basefee + passed * sample) / (memory + passed)
+	//     basefee' = weighted average of the historical rate and the current, discounting time passed
+	//     basefee' = (memory * basefee + sqrt(passed) * sample) / (memory + sqrt(passed))
 	//
 	baseFee, _ := ps.L1BaseFeeEstimateWei()
 	inertia, _ := ps.L1BaseFeeEstimateInertia()
+	passedSqrt := arbmath.ApproxSquareRoot(timePassed)
 	newBaseFee := arbmath.BigDivByUint(
-		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, timePassed)),
+		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
 		inertia+timePassed,
 	)
 
