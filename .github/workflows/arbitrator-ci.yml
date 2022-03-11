@@ -47,6 +47,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v1
+        with:
+          token: ${{ secrets.PRIVATE_CHECKOUT }}
+          submodules: recursive
 
       - name: Install Ubuntu dependencies
         run: |
