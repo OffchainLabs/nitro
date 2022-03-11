@@ -93,6 +93,23 @@ func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 	return ps.l1BaseFeeEstimate.Set(val)
 }
 
+// Update the pricing model with a finalized block's header
+func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed uint64) {
+
+	// update the l1 basefee estimate, which is the weighted average of the past and present
+	//     basefee' = weighted average of the historical rate and the current
+	//     basefee' = (memory * basefee + passed * sample) / (memory + passed)
+	//
+	baseFee, _ := ps.L1BaseFeeEstimateWei()
+	inertia, _ := ps.L1BaseFeeEstimateInertia()
+	newBaseFee := arbmath.BigDivByUint(
+		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, timePassed)),
+		inertia+timePassed,
+	)
+
+	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
+}
+
 func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
 	curr, err := ps.L1BaseFeeEstimateWei()
 	if err != nil {

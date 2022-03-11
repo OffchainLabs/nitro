@@ -117,7 +117,7 @@ func ProduceBlock(
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
-	messageHeader *L1IncomingMessageHeader,
+	l1Header *L1IncomingMessageHeader,
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
@@ -136,12 +136,12 @@ func ProduceBlockAdvanced(
 		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
-	poster := messageHeader.Poster
+	poster := l1Header.Poster
 
 	l1Info := &L1Info{
 		poster:        poster,
-		l1BlockNumber: messageHeader.BlockNumber.Big(),
-		l1Timestamp:   messageHeader.Timestamp.Big(),
+		l1BlockNumber: l1Header.BlockNumber.Big(),
+		l1Timestamp:   l1Header.Timestamp.Big(),
 	}
 
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
@@ -149,7 +149,7 @@ func ProduceBlockAdvanced(
 	signer := types.MakeSigner(chainConfig, header.Number)
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
-	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, lastBlockHeader)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, l1Header.BaseFeeL1, header.Number, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}

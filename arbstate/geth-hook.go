@@ -75,9 +75,14 @@ func init() {
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg types.Message, header *types.Header, statedb *state.StateDB) {
+		arbosVersion := arbosState.ArbOSVersion(statedb)
+		if arbosVersion == 0 {
+			// ArbOS hasn't been installed, so use the vanilla gas cap
+			return
+		}
 		state, err := arbosState.OpenSystemArbosState(statedb, true)
 		if err != nil {
-			log.Error("ArbOS is not initialized", "err", err)
+			log.Error("failed to open ArbOS state", "err", err)
 			return
 		}
 		poster, _ := state.L1PricingState().ReimbursableAggregatorForSender(msg.From())

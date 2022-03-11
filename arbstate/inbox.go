@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -316,7 +317,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
 					RequestId:   requestId,
-					BaseFeeL1:   common.Hash{},
+					BaseFeeL1:   big.NewInt(0),
 				},
 				L2msg: segment,
 			},

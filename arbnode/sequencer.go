@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/pkg/errors"
 )
 
@@ -226,10 +227,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
 		Poster:      l1pricing.SequencerAddress,
-		BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
-		Timestamp:   common.BigToHash(new(big.Int).SetInt64(timestamp)),
+		BlockNumber: common.BigToHash(arbmath.UintToBig(l1Block)),
+		Timestamp:   common.BigToHash(big.NewInt(timestamp)),
 		RequestId:   common.Hash{},
-		BaseFeeL1:   common.Hash{},
+		BaseFeeL1:   big.NewInt(0),
 	}
 
 	hooks := &arbos.SequencingHooks{

@@ -19,6 +19,7 @@ import (
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
+const RetryableReapPrice = 32200
 
 type RetryableState struct {
 	retryables   *storage.Storage
@@ -123,6 +124,10 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 	}, nil
 }
 
+func (rs *RetryableState) TimeoutQueueSize() (uint64, error) {
+	return rs.timeoutQueue.Size()
+}
+
 func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64) (uint64, error) {
 	retryable, err := rs.OpenRetryable(id, currentTime)
 	if retryable == nil || err != nil {
@@ -225,6 +230,12 @@ func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limi
 	if _, err := retryable.timeoutWindowsLeft.Increment(); err != nil {
 		return err
 	}
+
+	// Pay in advance for the work needed to reap the duplicate from the timeout queue
+	if err := rs.retryables.Burner().Burn(RetryableReapPrice); err != nil {
+		return err
+	}
+
 	return retryable.SetTimeout(timeout + timeToAdd)
 }
 

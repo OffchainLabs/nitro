@@ -26,12 +26,20 @@ const (
 type internalTxStartBlockContents struct {
 	Header        *types.Header
 	L1BlockNumber uint64
+	L1BaseFee     *big.Int
 }
 
-func InternalTxStartBlock(chainId, l1BlockNum, l2BlockNum *big.Int, header *types.Header) *types.ArbitrumInternalTx {
+func InternalTxStartBlock(
+	chainId,
+	l1BlockNum,
+	l2BlockNum,
+	l1BaseFee *big.Int,
+	header *types.Header,
+) *types.ArbitrumInternalTx {
 	data, err := rlp.EncodeToBytes(internalTxStartBlockContents{
 		Header:        header,
 		L1BlockNumber: l1BlockNum.Uint64(),
+		L1BaseFee:     l1BaseFee,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("rlp encoding failure %v", err))
@@ -74,6 +82,7 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 
 	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
 	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)
+	state.L1PricingState().UpdatePricingModel(contents.L1BaseFee, timePassed)
 
 	state.UpgradeArbosVersionIfNecessary(lastBlockHeader.Time)
 }

@@ -9,8 +9,13 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestOpenNonexistentRetryable(t *testing.T) {
@@ -26,7 +31,7 @@ func TestOpenNonexistentRetryable(t *testing.T) {
 }
 
 func TestOpenExpiredRetryable(t *testing.T) {
-	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
+	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	originalTimestamp, err := state.LastTimestampSeen()
 	Require(t, err)
 	newTimestamp := originalTimestamp + 42
@@ -50,6 +55,23 @@ func TestOpenExpiredRetryable(t *testing.T) {
 	Require(t, err)
 	if reread != nil {
 		Fail(t)
+	}
+
+	// check that our reap pricing is reflective of the true cost
+	burner, _ := state.Burner.(*burn.SystemBurner)
+	gasBefore := burner.Burned()
+	evm := vm.NewEVM(vm.BlockContext{}, vm.TxContext{}, statedb, &params.ChainConfig{}, vm.Config{})
+	Require(t, retryableState.TryToReapOneRetryable(timestamp, evm, util.TracingDuringEVM))
+	gasBurnedToReap := burner.Burned() - gasBefore
+	if gasBurnedToReap != retryables.RetryableReapPrice {
+		Fail(t, "reaping has been mispriced", gasBurnedToReap, retryables.RetryableReapPrice)
+	}
+
+	// ensure the retryable is gone
+	queueSize, err := retryableState.TimeoutQueueSize()
+	Require(t, err)
+	if queueSize != 0 {
+		Fail(t, "failed to reap", queueSize)
 	}
 }
 

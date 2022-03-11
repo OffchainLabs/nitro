@@ -20,7 +20,7 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 		common.BigToHash(big.NewInt(864513)),
 		common.BigToHash(big.NewInt(8794561564)),
 		common.BigToHash(big.NewInt(3)),
-		common.BigToHash(big.NewInt(10000000000000)),
+		big.NewInt(10000000000000),
 	}
 	msg := L1IncomingMessage{
 		&header,

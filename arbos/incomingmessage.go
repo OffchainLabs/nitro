@@ -41,7 +41,7 @@ type L1IncomingMessageHeader struct {
 	BlockNumber common.Hash    `json:"blockNumber"`
 	Timestamp   common.Hash    `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
-	BaseFeeL1   common.Hash    `json:"baseFeeL1"`
+	BaseFeeL1   *big.Int       `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -91,7 +91,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BaseFeeL1, wr); err != nil {
+	if err := util.HashToWriter(common.BigToHash(msg.Header.BaseFeeL1), wr); err != nil {
 		return nil, err
 	}
 
@@ -160,7 +160,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			blockNumber,
 			timestamp,
 			requestId,
-			baseFeeL1,
+			baseFeeL1.Big(),
 		},
 		data,
 	}, nil
