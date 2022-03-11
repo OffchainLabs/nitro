@@ -41,7 +41,7 @@ type L1IncomingMessageHeader struct {
 	BlockNumber uint64         `json:"blockNumber"`
 	Timestamp   uint64         `json:"timestamp"`
 	RequestId   common.Hash    `json:"requestId"`
-	BaseFeeL1   *big.Int       `json:"baseFeeL1"`
+	L1BaseFee   *big.Int       `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -89,7 +89,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(common.BigToHash(msg.Header.BaseFeeL1), wr); err != nil {
+	if err := util.HashToWriter(common.BigToHash(msg.Header.L1BaseFee), wr); err != nil {
 		return nil, err
 	}
 
@@ -111,7 +111,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		header.BlockNumber == other.BlockNumber &&
 		header.Timestamp == other.Timestamp &&
 		header.RequestId == other.RequestId &&
-		header.BaseFeeL1 == other.BaseFeeL1
+		header.L1BaseFee == other.L1BaseFee
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -472,6 +472,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		ChainId:           chainId,
 		RequestId:         header.RequestId,
 		From:              util.RemapL1Address(header.Poster),
+		L1BaseFee:         header.L1BaseFee,
 		DepositValue:      depositValue.Big(),
 		GasFeeCap:         maxFeePerGas.Big(),
 		Gas:               gasLimitBig.Uint64(),

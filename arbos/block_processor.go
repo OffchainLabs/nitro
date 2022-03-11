@@ -151,7 +151,7 @@ func ProduceBlockAdvanced(
 	l2BlockNum := header.Number.Uint64()
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
-	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.BaseFeeL1, l2BlockNum, l1BlockNum, lastBlockHeader)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l2BlockNum, l1BlockNum, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}

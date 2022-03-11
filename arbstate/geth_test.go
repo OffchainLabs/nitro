@@ -70,7 +70,7 @@ func TestEthDepositMessage(t *testing.T) {
 		BlockNumber: 864513,
 		Timestamp:   8794561564,
 		RequestId:   common.BigToHash(big.NewInt(3)),
-		BaseFeeL1:   big.NewInt(10000000000000),
+		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {

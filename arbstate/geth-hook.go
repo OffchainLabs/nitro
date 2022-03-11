@@ -66,12 +66,13 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	core.InterceptRPCMessage = func(msg types.Message) (types.Message, error) {
+	core.InterceptRPCMessage = func(msg types.Message, statedb *state.StateDB) (types.Message, error) {
 		to := msg.To()
-		if to == nil || *to != common.HexToAddress("0xc8") {
+		arbosVersion := arbosState.ArbOSVersion(statedb)
+		if to == nil || *to != common.HexToAddress("0xc8") || arbosVersion == 0 {
 			return msg, nil
 		}
-		return ApplyNodeInterface(msg, nodeInterface)
+		return ApplyNodeInterface(msg, statedb, nodeInterface)
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg types.Message, header *types.Header, statedb *state.StateDB) {

@@ -311,7 +311,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					BlockNumber: blockNumber,
 					Timestamp:   timestamp,
 					RequestId:   requestId,
-					BaseFeeL1:   big.NewInt(0),
+					L1BaseFee:   big.NewInt(0),
 				},
 				L2msg: segment,
 			},

@@ -11,7 +11,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -21,7 +23,7 @@ import (
 // This function handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
 //
-func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message, error) {
+func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface abi.ABI) (types.Message, error) {
 
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 
@@ -48,10 +50,14 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			pTo = &to
 		}
 
+		state, _ := arbosState.OpenSystemArbosState(statedb, true)
+		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
+
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
 			ChainId:       nil,
 			RequestId:     common.Hash{},
 			From:          util.RemapL1Address(sender),
+			L1BaseFee:     l1BaseFee,
 			DepositValue:  deposit,
 			GasFeeCap:     msg.GasPrice(),
 			Gas:           msg.Gas(),

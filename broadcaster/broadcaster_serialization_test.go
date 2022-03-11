@@ -28,7 +28,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 							BlockNumber: 0,
 							Timestamp:   0,
 							RequestId:   [32]byte{},
-							BaseFeeL1:   big.NewInt(0),
+							L1BaseFee:   big.NewInt(0),
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},
 					},

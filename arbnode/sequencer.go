@@ -229,7 +229,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
 		RequestId:   common.Hash{},
-		BaseFeeL1:   big.NewInt(0),
+		L1BaseFee:   big.NewInt(0),
 	}
 
 	hooks := &arbos.SequencingHooks{
