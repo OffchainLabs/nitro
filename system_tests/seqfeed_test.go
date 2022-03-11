@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -76,6 +77,53 @@ func TestSequencerFeed(t *testing.T) {
 	}
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
+}
+
+func TestRelayedSequencerFeed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	seqNodeConfig := arbnode.NodeConfigL2Test
+	seqNodeConfig.Broadcaster = true
+	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
+
+	relayServerConf := *newBroadcasterConfigTest(0)
+	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	relayClientConf := *newBroadcastClientConfigTest(port)
+
+	relay := relay.NewRelay(relayServerConf, relayClientConf)
+	_, err := relay.Start(ctx)
+	Require(t, err)
+
+	clientNodeConfig := arbnode.NodeConfigL2Test
+	clientNodeConfig.BroadcastClient = true
+	// port = nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	port = relay.GetListenerAddr().(*net.TCPAddr).Port
+	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
+
+	l2info1.GenerateAccount("User2")
+
+	tx := l2info1.PrepareTx("Owner", "User2", l2info1.TransferGas, big.NewInt(1e12), nil)
+
+	err = client1.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	_, err = arbutil.EnsureTxSucceeded(ctx, client1, tx)
+	Require(t, err)
+
+	_, err = arbutil.WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	Require(t, err)
+	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	nodeA.StopAndWait()
+	relay.Stop()
+	nodeC.StopAndWait()
 }
 
 func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {

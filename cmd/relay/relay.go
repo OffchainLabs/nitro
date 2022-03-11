@@ -6,170 +6,77 @@ package main
 
 import (
 	"context"
-	"fmt"
-	golog "log"
+	"flag"
 	"net/http"
 	"os"
-	"strings"
+	"os/signal"
+	"strconv"
+	"syscall"
 	"time"
 
-	gethlog "github.com/ethereum/go-ethereum/log"
-	"github.com/pkg/errors"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-var logger zerolog.Logger
-var pprofMux *http.ServeMux
-
-type ArbRelay struct {
-	broadcastClients         []*broadcastclient.BroadcastClient
-	broadcaster              *broadcaster.Broadcaster
-	confirmedAccumulatorChan chan common.Hash
-}
-
 func init() {
-	pprofMux = http.DefaultServeMux
 	http.DefaultServeMux = http.NewServeMux()
 }
 
 func main() {
-	// Enable line numbers in logging
-	golog.SetFlags(golog.LstdFlags | golog.Lshortfile)
-
-	// Print stack trace when `.Error().Stack().Err(err).` is added to zerolog call
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
-
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
-
-	// Print line number that log was created on
-	logger = arblog.Logger.With().Str("component", "arb-relay").Logger()
-
 	if err := startup(); err != nil {
-		logger.Error().Err(err).Msg("Error running relay")
+		log.Error("Error running relay", "err", err)
 	}
 }
 
 func startup() error {
-	ctx, cancelFunc, cancelChan := cmdhelp.CreateLaunchContext()
+	ctx, cancelFunc := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancelFunc()
 
-	config, err := configuration.ParseRelay()
-	if err != nil || len(config.Feed.Input.URLs) == 0 {
-		fmt.Printf("\n")
-		fmt.Printf("Sample usage: arb-relay --conf=<filename> \n")
-		fmt.Printf("          or: arb-relay --feed.input.url=<feed websocket>\n\n")
-		if err != nil && !strings.Contains(err.Error(), "help requested") {
-			fmt.Printf("%s\n", err.Error())
-		}
+	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
-		return nil
+	broadcasterAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
+	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
+	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
+	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
+	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
+	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+
+	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
+	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
+
+	flag.Parse()
+
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(*loglevel))
+	log.Root().SetHandler(glogger)
+
+	serverConf := wsbroadcastserver.BroadcasterConfig{
+		Addr:          *broadcasterAddr,
+		IOTimeout:     *broadcasterIOTimeout,
+		Port:          strconv.Itoa(*broadcasterPort),
+		Ping:          *broadcasterPing,
+		ClientTimeout: *broadcasterClientTimeout,
+		Queue:         100,
+		Workers:       *broadcasterWorkers,
 	}
 
-	if err := cmdhelp.ParseLogFlags(&config.Log.RPC, &config.Log.Core, gethlog.StreamHandler(os.Stderr, gethlog.JSONFormat())); err != nil {
-		return err
+	clientConf := broadcastclient.BroadcastClientConfig{
+		Timeout: *feedInputTimeout,
+		URL:     *feedInputUrl,
 	}
 
-	defer logger.Info().Msg("Cleanly shutting down relay")
-
-	if config.PProfEnable {
-		go func() {
-			err := http.ListenAndServe("localhost:8081", pprofMux)
-			log.Error().Err(err).Msg("profiling server failed")
-		}()
-	}
+	defer log.Info("Cleanly shutting down relay")
 
 	// Start up an arbitrum sequencer relay
-	arbRelay := NewArbRelay(config.Feed)
-	relayDone, err := arbRelay.Start(ctx)
+	relay := relay.NewRelay(serverConf, clientConf)
+	relayDone, err := relay.Start(ctx)
 	if err != nil {
 		return err
 	}
-	defer arbRelay.Stop()
+	defer relay.Stop()
 
-	select {
-	case <-cancelChan:
-		return nil
-	case <-relayDone:
-		return nil
-	}
-}
-
-func NewArbRelay(settings configuration.Feed) *ArbRelay {
-	var broadcastClients []*broadcastclient.BroadcastClient
-	confirmedAccumulatorChan := make(chan common.Hash, 1)
-	for _, address := range settings.Input.URLs {
-		client := broadcastclient.NewBroadcastClient(address, nil, settings.Input.Timeout)
-		client.ConfirmedAccumulatorListener = confirmedAccumulatorChan
-		broadcastClients = append(broadcastClients, client)
-	}
-	return &ArbRelay{
-		broadcaster:              broadcaster.NewBroadcaster(settings.Output),
-		broadcastClients:         broadcastClients,
-		confirmedAccumulatorChan: confirmedAccumulatorChan,
-	}
-}
-
-const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10
-
-func (ar *ArbRelay) Start(ctx context.Context) (chan bool, error) {
-	done := make(chan bool)
-
-	err := ar.broadcaster.Start(ctx)
-	if err != nil {
-		return nil, errors.New("broadcast unable to start")
-	}
-
-	// connect returns
-	messages := make(chan broadcaster.BroadcastFeedMessage)
-	for _, client := range ar.broadcastClients {
-		client.ConnectInBackground(ctx, messages)
-	}
-
-	recentFeedItems := make(map[common.Hash]time.Time)
-	go func() {
-		defer func() {
-			done <- true
-		}()
-		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
-		defer recentFeedItemsCleanup.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-messages:
-				newAcc := msg.FeedItem.BatchItem.Accumulator
-				if recentFeedItems[newAcc] != (time.Time{}) {
-					continue
-				}
-				recentFeedItems[newAcc] = time.Now()
-				err = ar.broadcaster.BroadcastSingle(msg.FeedItem.PrevAcc, msg.FeedItem.BatchItem, msg.Signature)
-				if err != nil {
-					logger.
-						Error().
-						Err(err).
-						Hex("PrevAcc", msg.FeedItem.PrevAcc.Bytes()).
-						Hex("BatchItem", msg.FeedItem.BatchItem.ToBytesWithSeqNum()).
-						Msg("unable to broadcast batch item")
-				}
-			case ca := <-ar.confirmedAccumulatorChan:
-				ar.broadcaster.ConfirmedAccumulator(ca)
-			case <-recentFeedItemsCleanup.C:
-				// Clear expired items from recentFeedItems
-				recentFeedItemExpiry := time.Now().Add(-RECENT_FEED_ITEM_TTL)
-				for acc, created := range recentFeedItems {
-					if created.Before(recentFeedItemExpiry) {
-						delete(recentFeedItems, acc)
-					}
-				}
-			}
-		}
-	}()
-
-	return done, nil
-}
-
-func (ar *ArbRelay) Stop() {
-	for _, client := range ar.broadcastClients {
-		client.Close()
-	}
-	ar.broadcaster.Stop()
+	<-relayDone
+	return nil
 }
