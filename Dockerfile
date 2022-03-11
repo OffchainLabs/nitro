@@ -3,6 +3,7 @@ WORKDIR /workspace
 COPY build-brotli.sh .
 RUN apt-get update && \
     apt-get install -y cmake make git && \
+    # pinned emsdk 3.1.7 (in docker image)
     ./build-brotli.sh -w -t install/
 
 FROM scratch as brotli-wasm-export
@@ -27,17 +28,49 @@ RUN cd solgen && yarn
 COPY solgen solgen/
 RUN cd solgen && yarn build
 
-FROM rust:1.57-slim-bullseye as wasm-lib-builder
+FROM debian:bullseye-20211220 as wasm-base
 WORKDIR /workspace
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y make clang lld && \
-    rustup target add wasm32-unknown-unknown && \
-    rustup target add wasm32-wasi
+RUN apt-get update && apt-get install -y curl build-essential=12.9
+
+FROM wasm-base as wasm-libs-builder
+	# clang / lld used by soft-float wasm
+RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5 
+    # pinned rust 1.58.1
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.58.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 COPY ./Makefile ./
-COPY arbitrator/wasm-libraries arbitrator/wasm-libraries/
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
-RUN make build-wasm-libs
+RUN . ~/.cargo/env && make build-wasm-libs
+
+FROM wasm-base as wasm-bin-builder
+    # pinned go version
+RUN curl -L https://golang.org/dl/go1.17.8.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+COPY ./Makefile ./
+COPY ./go.* ./
+COPY ./arbcompress ./arbcompress
+COPY ./arbos ./arbos
+COPY ./arbstate ./arbstate
+COPY ./blsSignatures ./blsSignatures
+COPY ./cmd/replay ./cmd/replay
+COPY ./das ./das
+COPY ./precompiles ./precompiles
+COPY ./statetransfer ./statetransfer
+COPY ./util ./util
+COPY ./wavmio ./wavmio
+COPY ./solgen ./solgen
+COPY ./fastcache ./fastcache
+COPY ./go-ethereum ./go-ethereum
+COPY --from=brotli-wasm-export / target/
+COPY --from=contracts-builder app/solgen/build solgen/build/
+RUN mkdir -p solgen/go
+RUN PATH="$PATH:/usr/local/go/bin" go run solgen/gen.go
+RUN PATH="$PATH:/usr/local/go/bin" make build-wasm-bin
+
+FROM scratch as machine-exporter
+COPY --from=wasm-libs-builder /workspace/target/machine/ machine/
+COPY --from=wasm-bin-builder /workspace/target/machine/ machine/
+
 
 FROM rust:1.57-slim-bullseye as prover-header-builder
 WORKDIR /workspace
@@ -93,5 +126,5 @@ RUN mkdir -p target/bin && \
 
 FROM debian:bullseye-slim as nitro-node
 COPY --from=node-builder /workspace/target/ target/
-COPY --from=wasm-lib-builder /workspace/target/ target/
+COPY --from=machine-exporter / target/
 ENTRYPOINT [ "./target/bin/node" ]

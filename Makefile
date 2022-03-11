@@ -17,11 +17,13 @@ color_reset = "\e[0;0m"
 
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
-replay_wasm=$(output_root)/lib/replay.wasm
+replay_deps=arbos wavmio arbstate arbcompress solgen/go/node_interfacegen blsSignatures cmd/replay
+
+replay_wasm=$(output_root)/machine/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs_nogo=$(output_root)/lib/wasi_stub.wasm $(output_root)/lib/host_io.wasm $(output_root)/lib/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm $(output_root)/lib/brotli.wasm
+arbitrator_wasm_libs_nogo=$(output_root)/machine/wasi_stub.wasm $(output_root)/machine/host_io.wasm $(output_root)/machine/soft-float.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/machine/go_stub.wasm $(output_root)/machine/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -64,6 +66,8 @@ build-prover-lib: $(arbitrator_prover_lib)
 build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
 
 build-wasm-libs: $(arbitrator_wasm_libs)
+
+build-wasm-bin: $(replay_wasm)
 
 $(das_rpc_files): das/wireFormat.proto
 	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
@@ -117,7 +121,7 @@ docker:
 $(output_root)/bin/node: build-node-deps
 	go build -o $@ ./cmd/node
 
-$(replay_wasm): build-node-deps
+$(replay_wasm): $(go_source) $(das_rpc_files)
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
@@ -141,8 +145,8 @@ $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/s
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
 
-$(output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
-	mkdir -p $(output_root)/lib
+$(output_root)/machine/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
@@ -158,11 +162,11 @@ arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: 
 arbitrator/wasm-libraries/soft-float/bindings%.o: arbitrator/wasm-libraries/soft-float/bindings%.c
 	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-$(output_root)/lib/soft-float.wasm: \
+$(output_root)/machine/soft-float.wasm: \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
-	mkdir -p $(output_root)/lib
+	mkdir -p $(output_root)/machine
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
@@ -228,18 +232,18 @@ $(output_root)/lib/soft-float.wasm: \
 		--export wavm__f64_promote_f32
 
 
-$(output_root)/lib/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
-	mkdir -p $(output_root)/lib
+$(output_root)/machine/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
-$(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
-	mkdir -p $(output_root)/lib
+$(output_root)/machine/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
-$(output_root)/lib/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
-	mkdir -p $(output_root)/lib
+$(output_root)/machine/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
