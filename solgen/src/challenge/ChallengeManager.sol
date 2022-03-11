@@ -36,7 +36,11 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex];
     }
 
-    modifier takeTurn(uint64 challengeIndex, ChallengeLib.SegmentSelection calldata selection, ChallengeLib.ChallengeMode expectedMode) {
+    modifier takeTurn(
+        uint64 challengeIndex,
+        ChallengeLib.SegmentSelection calldata selection,
+        ChallengeLib.ChallengeMode expectedMode
+    ) {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
         require(!isTimedOut(challengeIndex), "CHAL_DEADLINE");
@@ -228,10 +232,12 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes calldata proof
     ) external takeTurn(challengeIndex, selection, ChallengeLib.ChallengeMode.EXECUTION) {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
-            selection
-        );
-        require(challengeLength == 1, "TOO_LONG");
+        uint256 challengeStart;
+        {
+            uint256 challengeLength;
+            (challengeStart, challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+            require(challengeLength == 1, "TOO_LONG");
+        }
 
         bytes32 afterHash = osp.proveOneStep(
             ExecutionContext({
