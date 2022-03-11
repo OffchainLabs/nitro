@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -32,7 +33,7 @@ func retryableSetup(t *testing.T) (
 	*ethclient.Client,
 	*ethclient.Client,
 	*bridgegen.Inbox,
-	*bridgegen.InboxFilterer,
+	func(*types.Receipt) common.Hash,
 	context.Context,
 	func(),
 ) {
@@ -44,8 +45,23 @@ func retryableSetup(t *testing.T) (
 
 	delayedInbox, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
-	inboxFilterer, err := bridgegen.NewInboxFilterer(l1info.GetAddress("Inbox"), l1client)
+	delayedBridge, err := arbnode.NewDelayedBridge(l1client, l1info.GetAddress("Bridge"), 0)
 	Require(t, err)
+
+	lookupSubmitRetryableL2TxHash := func(l1Receipt *types.Receipt) common.Hash {
+		messages, err := delayedBridge.LookupMessagesInRange(ctx, l1Receipt.BlockNumber, l1Receipt.BlockNumber)
+		Require(t, err)
+		if len(messages) != 1 {
+			Fail(t, "expected 1 message from retryable submission, found", len(messages))
+		}
+		txs, err := messages[0].Message.ParseL2Transactions(params.ArbitrumDevTestChainConfig().ChainID)
+		Require(t, err)
+		if len(txs) != 1 {
+			Fail(t, "expected 1 tx from retryable submission, found", len(txs))
+		}
+
+		return txs[0].Hash()
+	}
 
 	// burn some gas so that the faucet's Callvalue + Balance never exceeds a uint256
 	discard := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
@@ -55,11 +71,11 @@ func retryableSetup(t *testing.T) (
 		cancel()
 		stack.Close()
 	}
-	return l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown
+	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	user2Address := l2info.GetAddress("User2")
@@ -111,21 +127,9 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	var l2TxId *common.Hash
-	for _, log := range l1receipt.Logs {
-		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
-		if msg != nil {
-			id := common.BigToHash(msg.MessageNum)
-			l2TxId = &id
-		}
-	}
-	if l2TxId == nil {
-		Fail(t)
-	}
-
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbutil.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
+	receipt, err := arbutil.WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -140,7 +144,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
-	l2info, l1info, l2client, l1client, delayedInbox, inboxFilterer, ctx, teardown := retryableSetup(t)
+	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
 	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner")
@@ -173,21 +177,9 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fail(t, "l1receipt indicated failure")
 	}
 
-	var l2TxId *common.Hash
-	for _, log := range l1receipt.Logs {
-		msg, _ := inboxFilterer.ParseInboxMessageDelivered(*log)
-		if msg != nil {
-			id := common.BigToHash(msg.MessageNum)
-			l2TxId = &id
-		}
-	}
-	if l2TxId == nil {
-		Fail(t)
-	}
-
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbutil.WaitForTx(ctx, l2client, *l2TxId, time.Second*5)
+	receipt, err := arbutil.WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
