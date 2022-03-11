@@ -21,7 +21,7 @@ replay_wasm=$(output_root)/lib/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs_nogo=$(output_root)/lib/wasi_stub.wasm $(output_root)/lib/host_io.wasm $(output_root)/lib/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/lib/go_stub.wasm $(output_root)/lib/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -49,7 +49,7 @@ all: build build-replay-env test-gen-proofs
 build: $(output_root)/bin/node
 	@printf $(done)
 
-build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen
+build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
 
 test-go-deps: \
 	build-replay-env \
@@ -103,8 +103,8 @@ clean:
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
 	rm -f arbitrator/wasm-libraries/soft-float/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o
-	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.a
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
+	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f $(das_rpc_files)
 	@rm -rf solgen/build solgen/cache solgen/go/
 	@rm -f .make/*
@@ -146,27 +146,27 @@ $(output_root)/lib/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
-arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a: \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/Makefile \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/platform.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include/*.h \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.c \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/8086/*.h
-	cd arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang && make $(MAKEFLAGS)
+arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/include/*.h \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.c \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
+	cd arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
 
 arbitrator/wasm-libraries/soft-float/bindings%.o: arbitrator/wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat-3e/source/include -target wasm32-wasi -Wconversion -c -o $@
+	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
 $(output_root)/lib/soft-float.wasm: \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/softfloat.a
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
 	mkdir -p $(output_root)/lib
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
-		arbitrator/wasm-libraries/soft-float/SoftFloat-3e/build/Wasm-Clang/*.o \
+		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o \
 		--no-entry -o $@ \
 		--export wavm__f32_abs \
 		--export wavm__f32_neg \
@@ -238,6 +238,11 @@ $(output_root)/lib/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
+$(output_root)/lib/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+	mkdir -p $(output_root)/lib
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
+	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
@@ -281,6 +286,22 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 
 .make/yarndeps: solgen/package.json solgen/yarn.lock | .make
 	yarn --cwd solgen install
+	@touch $@
+
+.make/cbrotli-lib: brotli/c/** | .make
+	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
+	test -f target/include/brotli/encode.h
+	test -f target/include/brotli/decode.h
+	test -f target/lib/libbrotlicommon-static.a
+	test -f target/lib/libbrotlienc-static.a
+	test -f target/lib/libbrotlidec-static.a
+	@touch $@
+
+.make/cbrotli-wasm: brotli/c/** | .make
+	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
+	test -f target/lib-wasm/libbrotlicommon-static.a
+	test -f target/lib-wasm/libbrotlienc-static.a
+	test -f target/lib-wasm/libbrotlidec-static.a
 	@touch $@
 
 .make:
