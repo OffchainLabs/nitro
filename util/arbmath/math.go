@@ -234,7 +234,8 @@ func ApproxExpBasisPoints(value Bips) Bips {
 	}
 }
 
-// Return the Newton's method approximation of sqrt(x).
+// Return the Newton's method approximation of sqrt(x)
+// The error should be no more than 1 for values up to 2^63
 func ApproxSquareRoot(value uint64) uint64 {
 
 	if value == 0 {
@@ -243,12 +244,18 @@ func ApproxSquareRoot(value uint64) uint64 {
 
 	// ensure our starting approximation's square exceeds the value
 	approx := value
-	for approx*approx/2 > value {
+	for SaturatingUMul(approx, approx)/2 > value {
 		approx /= 2
 	}
 
 	for i := 0; i < 4; i++ {
-		approx = (approx + value/approx) / 2
+		if approx > value/approx {
+			diff := approx - value/approx
+			approx = SaturatingUAdd(value/approx, diff/2)
+		} else {
+			diff := value/approx - approx
+			approx = SaturatingUAdd(approx, diff/2)
+		}
 	}
 	return approx
 }

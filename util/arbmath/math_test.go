@@ -29,7 +29,7 @@ func TestMath(t *testing.T) {
 	}
 
 	// try large random sqrts
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 100000; i++ {
 		input := uint64(rand.Intn(1000000000000))
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
@@ -47,6 +47,17 @@ func TestMath(t *testing.T) {
 		diff := int(approx) - int(correct)
 		if diff < 0 || diff > 1 {
 			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
+		}
+	}
+
+	// try powers of 2
+	for i := 0; i < 63; i++ {
+		input := uint64(1 << i)
+		approx := ApproxSquareRoot(input)
+		correct := math.Sqrt(float64(input))
+		diff := int(approx) - int(correct)
+		if diff != 0 {
+			Fail(t, "incorrect", "2^", i, diff, approx, correct)
 		}
 	}
 }
