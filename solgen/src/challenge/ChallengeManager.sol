@@ -194,6 +194,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
     ) external takeTurn(challengeIndex, selection, ChallengeModeRequirement.BLOCK) {
+        require(numSteps >= 1, "CHALLENGE_TOO_SHORT");
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
         requireValidBisection(
             selection,
@@ -313,6 +314,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint256 challengeLength,
         bytes32[] memory newSegments
     ) private {
+        assert(challengeLength >= 1);
+        assert(newSegments.length >= 2);
+
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
             challengeLength,
