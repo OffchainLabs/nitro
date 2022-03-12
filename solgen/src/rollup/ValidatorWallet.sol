@@ -72,22 +72,6 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware {
         }
     }
 
-    function returnOldDeposits(IRollupUser rollup, address payable[] calldata stakers)
-        external
-        onlyOwner
-    {
-        uint256 stakerCount = stakers.length;
-        for (uint256 i = 0; i < stakerCount; i++) {
-            try rollup.returnOldDeposit(stakers[i]) {} catch (bytes memory error) {
-                if (error.length == 0) {
-                    // Assume out of gas
-                    // We need to revert here so gas estimation works
-                    require(false, "GAS");
-                }
-            }
-        }
-    }
-
     function timeoutChallenges(IChallengeManager manager, uint64[] calldata challenges)
         external
         onlyOwner
