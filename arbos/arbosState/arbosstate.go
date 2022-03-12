@@ -143,6 +143,27 @@ var (
 	blockhashesSubspace  ArbosStateSubspaceID = []byte{7}
 )
 
+// Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
+func getArbitrumOnlyPrecompiles(chainConfig *params.ChainConfig) []common.Address {
+	rules := chainConfig.Rules(big.NewInt(0), false)
+	arbPrecompiles := vm.ActivePrecompiles(rules)
+	rules.IsArbitrum = false
+	ethPrecompiles := vm.ActivePrecompiles(rules)
+
+	ethPrecompilesSet := make(map[common.Address]bool)
+	for _, addr := range ethPrecompiles {
+		ethPrecompilesSet[addr] = true
+	}
+
+	var arbOnlyPrecompiles []common.Address
+	for _, addr := range arbPrecompiles {
+		if !ethPrecompilesSet[addr] {
+			arbOnlyPrecompiles = append(arbOnlyPrecompiles, addr)
+		}
+	}
+	return arbOnlyPrecompiles
+}
+
 // During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
 // start running long-lived chains, every change to the storage format will require defining a new version and
 // providing upgrade code.
@@ -155,6 +176,12 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	}
 	if arbosVersion != 0 {
 		return nil, ErrAlreadyInitialized
+	}
+
+	// Solidity requires call targets have code, but precompiles don't.
+	// To work around this, we give precompiles fake code.
+	for _, precompile := range getArbitrumOnlyPrecompiles(chainConfig) {
+		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
 	}
 
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)

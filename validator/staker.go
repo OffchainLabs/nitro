@@ -269,6 +269,36 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
 	}
 
+	latestConfirmedNode, err := s.rollup.LatestConfirmed(callOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we have an old stake, remove it
+	if rawInfo != nil && rawInfo.LatestStakedNode <= latestConfirmedNode {
+		// At this point it'd be better to just create a new stake on the latest confirmed node
+		stakeIsTooOutdated := rawInfo.LatestStakedNode < latestConfirmedNode
+		// We're not trying to stake anyways
+		stakeIsUnwanted := effectiveStrategy < StakeLatestStrategy
+		if stakeIsTooOutdated || stakeIsUnwanted {
+			// Note: we must have an address if rawInfo != nil
+			_, err = s.rollup.ReturnOldDeposit(s.builder.Auth(ctx), *walletAddress)
+			if err != nil {
+				return nil, err
+			}
+			if stakeIsUnwanted {
+				_, err = s.rollup.WithdrawStakerFunds(s.builder.Auth(ctx), s.withdrawDestination)
+				if err != nil {
+					return nil, err
+				}
+				log.Info("removing old stake and withdrawing funds")
+			} else {
+				log.Info("removing old stake to re-place stake on latest confirmed node")
+			}
+			return s.wallet.ExecuteTransactions(ctx, s.builder)
+		}
+	}
+
 	// Resolve nodes if either we're on the make nodes strategy,
 	// or we're on the stake latest strategy but don't have a stake
 	// (attempt to reduce the current required stake).
@@ -281,12 +311,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	}
 	resolvingNode := false
 	if shouldResolveNodes {
-		// Keep the stake of this validator placed if we plan on staking further
-		arbTx, err := s.removeOldStakers(ctx, effectiveStrategy >= StakeLatestStrategy)
-		if err != nil || arbTx != nil {
-			return arbTx, err
-		}
-		arbTx, err = s.resolveTimedOutChallenges(ctx)
+		arbTx, err := s.resolveTimedOutChallenges(ctx)
 		if err != nil || arbTx != nil {
 			return arbTx, err
 		}
@@ -296,9 +321,8 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		}
 	}
 
-	addr := s.wallet.Address()
-	if addr != nil {
-		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *addr)
+	if walletAddress != nil {
+		withdrawable, err := s.rollup.WithdrawableFunds(callOpts, *walletAddress)
 		if err != nil {
 			return nil, err
 		}
@@ -528,7 +552,7 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 			conflictInfo.Node1, conflictInfo.Node2 = conflictInfo.Node2, conflictInfo.Node1
 		}
 		if conflictInfo.Node1 <= latestNode {
-			// removeOldStakers will take care of them
+			// Immaterial as this is past the confirmation point; this must be a zombie
 			continue
 		}
 
