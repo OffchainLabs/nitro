@@ -30,7 +30,7 @@ func TestMath(t *testing.T) {
 
 	// try large random sqrts
 	for i := 0; i < 100000; i++ {
-		input := uint64(rand.Intn(1000000000000))
+		input := rand.Uint64() / 2
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
 		diff := int(approx) - int(correct)
