@@ -41,6 +41,7 @@ RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.58.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 COPY ./Makefile ./
+COPY ./brotli/Makefile ./brotli/Makefile
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && make build-wasm-libs
