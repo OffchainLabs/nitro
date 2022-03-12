@@ -114,31 +114,6 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 	return err
 }
 
-// removeOldStakers removes the stakes of all validators staked on the latest confirmed node (aka "refundable" or "old" stakers),
-// except its own if dontRemoveSelf is true
-func (v *L1Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
-	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
-	if err != nil {
-		return nil, err
-	}
-	walletAddr := v.wallet.Address()
-	if dontRemoveSelf && walletAddr != nil {
-		for i, staker := range stakersToEliminate {
-			if staker == *walletAddr {
-				stakersToEliminate[i] = stakersToEliminate[len(stakersToEliminate)-1]
-				stakersToEliminate = stakersToEliminate[:len(stakersToEliminate)-1]
-				break
-			}
-		}
-	}
-
-	if len(stakersToEliminate) == 0 {
-		return nil, nil
-	}
-	log.Info("removing old stakers", "count", len(stakersToEliminate))
-	return v.wallet.ReturnOldDeposits(ctx, stakersToEliminate)
-}
-
 func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
 	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, 0, 10)
 	if err != nil {
