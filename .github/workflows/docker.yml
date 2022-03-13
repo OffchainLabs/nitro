@@ -12,6 +12,13 @@ jobs:
   docker:
     name: build docker
     runs-on: ubuntu-latest
+    services:
+      # local registery
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -21,6 +28,8 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
+        with:
+          driver-opts: network=host
 
       - name: Cache Docker layers
         uses: actions/cache@v2
@@ -32,15 +41,15 @@ jobs:
       - name: Build docker
         uses: docker/build-push-action@v2
         with:
-          push: false
+          push: true
           context: .
-          tags: nitro-node:latest
+          tags: localhost:5000/nitro-node:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
       - name: print module root
         run: |
-          docker run --entrypoint cat nitro-node target/machine/module_root
+          docker run --entrypoint cat localhost:5000/nitro-node:latest target/machine/module_root
 
       - name: Move cache
         # Temp fix
