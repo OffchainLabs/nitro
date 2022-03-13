@@ -260,8 +260,8 @@ $(output_root)/machine/module_root: $(arbitrator_prover_bin) $(arbitrator_wasm_l
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
-solgen/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/lib/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(output_root)/lib/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+solgen/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machine/soft-float.wasm
+	$(arbitrator_prover_bin) $< -l $(output_root)/machine/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 solgen/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin
