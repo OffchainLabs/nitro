@@ -292,7 +292,7 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 	yarn --cwd solgen install
 	@touch $@
 
-.make/cbrotli-lib: brotli/c/** | .make
+.make/cbrotli-lib: | .make
 	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
 	test -f target/include/brotli/encode.h
 	test -f target/include/brotli/decode.h
@@ -301,7 +301,7 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 	test -f target/lib/libbrotlidec-static.a
 	@touch $@
 
-.make/cbrotli-wasm: brotli/c/** | .make
+.make/cbrotli-wasm: | .make
 	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
 	test -f target/lib-wasm/libbrotlicommon-static.a
 	test -f target/lib-wasm/libbrotlienc-static.a

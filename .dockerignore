@@ -14,6 +14,7 @@ solgen/go
 /reproducible-wasm
 
 target/**/*
+brotli/buildfiles/**/*
 
 # Arbitrator ignores
 
