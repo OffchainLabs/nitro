@@ -121,7 +121,7 @@ docker:
 $(output_root)/bin/node: build-node-deps
 	go build -o $@ ./cmd/node
 
-$(replay_wasm): $(go_source) $(das_rpc_files)
+$(replay_wasm): $(go_source) $(das_rpc_files) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
