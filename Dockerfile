@@ -24,11 +24,12 @@ COPY --from=brotli-library-builder /workspace/install/ /
 FROM node:17-bullseye-slim as contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++
-WORKDIR /app
+WORKDIR /workspace
 COPY solgen/package.json solgen/yarn.lock solgen/
 RUN cd solgen && yarn
 COPY solgen solgen/
-RUN cd solgen && yarn build
+COPY Makefile .
+RUN make build-solidity
 
 FROM debian:bullseye-20211220 as wasm-base
 WORKDIR /workspace
@@ -41,7 +42,6 @@ RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.58.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 COPY ./Makefile ./
-COPY ./brotli/Makefile ./brotli/Makefile
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && make build-wasm-libs
@@ -49,25 +49,23 @@ RUN . ~/.cargo/env && make build-wasm-libs
 FROM wasm-base as wasm-bin-builder
     # pinned go version
 RUN curl -L https://golang.org/dl/go1.17.8.linux-amd64.tar.gz | tar -C /usr/local -xzf -
-COPY ./Makefile ./
-COPY ./go.* ./
+COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
 COPY ./blsSignatures ./blsSignatures
 COPY ./cmd/replay ./cmd/replay
-COPY ./das ./das
 COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
-COPY ./solgen ./solgen
+COPY ./solgen/src/precompiles/ ./solgen/src/precompiles/
+COPY ./solgen/gen.go ./solgen/package.json ./solgen/yarn.lock ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY --from=brotli-wasm-export / target/
-COPY --from=contracts-builder app/solgen/build solgen/build/
-RUN mkdir -p solgen/go
-RUN PATH="$PATH:/usr/local/go/bin" go run solgen/gen.go
+COPY --from=contracts-builder workspace/solgen/build/contracts/src/precompiles/ solgen/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" make build-wasm-bin
 
 FROM scratch as machine-exporter
@@ -89,7 +87,7 @@ RUN make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.57-slim-bullseye as prover-lib-builder
+FROM rust:1.57-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -102,32 +100,44 @@ RUN mkdir arbitrator/prover/src && \
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 RUN touch -a -m arbitrator/prover/src/lib.rs && \
-    make build-prover-lib
+    make build-prover-lib && make build-prover-bin
 
-FROM scratch as prover-lib-export
-COPY --from=prover-lib-builder /workspace/target/ /
+FROM scratch as prover-export
+COPY --from=prover-builder /workspace/target/ /
 
-FROM golang:1.17-bullseye as node-builder
-COPY go.mod go.sum /workspace/
+FROM golang:1.17-bullseye as replay-env-builder
 WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt
 COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
-COPY --from=contracts-builder app/solgen/build/ solgen/build/
-COPY solgen/gen.go solgen/
-COPY go-ethereum go-ethereum/
-RUN mkdir -p solgen/go/ && \
-	go run -v solgen/gen.go
-COPY . ./
+COPY . ./ 
+COPY --from=prover-export / target/
+COPY --from=wasm-bin-builder /workspace/target/ target/
+COPY --from=wasm-bin-builder /workspace/.make/ .make/
+COPY --from=wasm-libs-builder /workspace/target/ target/
+COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/.make/ .make/
+RUN target/bin/prover target/machine/replay.wasm --output-module-root -l target/machine/wasi_stub.wasm -l target/machine/host_io.wasm -l target/machine/soft-float.wasm -l target/machine/go_stub.wasm -l target/machine/brotli.wasm  > target/machine/module_root
+
+FROM replay-env-builder as node-builder
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y protobuf-compiler
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
+# solgen was executed for just prcompiles previously.
+RUN rm .make/solgen
+COPY --from=contracts-builder workspace/solgen/build/ solgen/build/
+COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
-COPY --from=prover-lib-export / target/
 COPY --from=brotli-library-export / target/
-RUN mkdir -p target/bin && \
-    go build -v -o target/bin ./cmd/node ./cmd/deploy && \
-    GOOS=js GOARCH=wasm go build -o res/target/lib/replay.wasm ./cmd/replay/...
+COPY --from=prover-export / target/
+RUN make build
 
 FROM debian:bullseye-slim as nitro-node
 COPY --from=node-builder /workspace/target/ target/
-COPY --from=machine-exporter / target/
 ENTRYPOINT [ "./target/bin/node" ]

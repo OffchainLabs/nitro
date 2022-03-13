@@ -39,7 +39,7 @@ arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 # user targets
 
 .DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-replay-env build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-replay-env build-solidity build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
 
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -48,7 +48,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node
+build: $(output_root)/bin/node $(output_root)/bin/deploy
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -63,11 +63,15 @@ build-prover-header: $(arbitrator_generated_header)
 
 build-prover-lib: $(arbitrator_prover_lib)
 
-build-replay-env: $(arbitrator_prover_bin) build-wasm-libs $(replay_wasm)
+build-prover-bin: $(arbitrator_prover_bin)
+
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machine/module_root
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
 build-wasm-bin: $(replay_wasm)
+
+build-solidity: .make/solidity
 
 $(das_rpc_files): das/wireFormat.proto
 	cd das && protoc -I=. --go_out=.. --go-grpc_out=.. ./wireFormat.proto
@@ -121,7 +125,10 @@ docker:
 $(output_root)/bin/node: build-node-deps
 	go build -o $@ ./cmd/node
 
-$(replay_wasm): $(go_source) $(das_rpc_files) .make/solgen
+$(output_root)/bin/deploy: build-node-deps
+	go build -o $@ ./cmd/deploy
+
+$(replay_wasm): $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
 $(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
@@ -246,6 +253,9 @@ $(output_root)/machine/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .mak
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
+
+$(output_root)/machine/module_root: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/brotli.wasm  > $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
