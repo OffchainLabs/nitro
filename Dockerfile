@@ -48,7 +48,7 @@ RUN . ~/.cargo/env && make build-wasm-libs
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
-RUN curl -L https://golang.org/dl/go1.17.8.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.17.8.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
