@@ -37,14 +37,14 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5 
+RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
     # pinned rust 1.58.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.58.1 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.59.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
-RUN . ~/.cargo/env && make build-wasm-libs
+RUN . ~/.cargo/env && RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
@@ -114,7 +114,7 @@ COPY go.mod go.sum ./
 COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
-COPY . ./ 
+COPY . ./
 COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
