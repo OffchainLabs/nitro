@@ -40,7 +40,6 @@ FROM wasm-base as wasm-libs-builder
 RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
     # pinned rust 1.58.1
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.59.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
-RUN . ~/.cargo/env && cargo install cbindgen --version =0.20.0
 COPY ./Makefile ./
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -129,14 +128,16 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y protobuf-compiler
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26 && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
-# solgen was executed for just prcompiles previously.
-RUN rm .make/solgen
 COPY --from=contracts-builder workspace/solgen/build/ solgen/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
-RUN make build
+RUN mkdir -p target/bin
+# solgen was executed for just prcompiles previously.
+RUN rm .make/solgen && make .make/solgen
+RUN go build -o ./target/bin/node ./cmd/node
+RUN go build -o ./target/bin/deploy ./cmd/deploy
 
 FROM debian:bullseye-slim as nitro-node
 COPY --from=node-builder /workspace/target/ target/
