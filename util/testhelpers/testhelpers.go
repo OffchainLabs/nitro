@@ -25,6 +25,11 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 	t.Fatal(colors.Red, printables, colors.Clear)
 }
 
+func LogImpl(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	t.Log(colors.Mint, printables, colors.Clear)
+}
+
 func RandomizeSlice(slice []byte) {
 	_, err := rand.Read(slice)
 	if err != nil {

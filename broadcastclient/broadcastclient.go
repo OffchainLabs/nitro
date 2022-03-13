@@ -163,6 +163,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 					if len(res.Messages) > 0 {
 						messages := []arbstate.MessageWithMetadata{}
 						for _, message := range res.Messages {
+							log.Info("Received message from feed", "seq", uint64(message.SequenceNumber))
 							messages = append(messages, message.Message)
 						}
 						if err := bc.txStreamer.AddMessages(res.Messages[0].SequenceNumber, false, messages); err != nil {

@@ -161,6 +161,7 @@ func NewBroadcaster(settings wsbroadcastserver.BroadcasterConfig) *Broadcaster {
 }
 
 func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbutil.MessageIndex) {
+	log.Info("Broadcasting message", "seq", uint64(seq))
 	var broadcastMessages []*BroadcastFeedMessage
 
 	bfm := BroadcastFeedMessage{SequenceNumber: seq, Message: msg}

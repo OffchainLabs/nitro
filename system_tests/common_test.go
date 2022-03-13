@@ -267,6 +267,11 @@ func Fail(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
+func Log(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.LogImpl(t, printables...)
+}
+
 func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
 	nodeConf := arbnode.NodeConfigL1Test
 	nodeConf.BatchPoster = false

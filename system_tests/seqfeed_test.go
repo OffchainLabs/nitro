@@ -126,6 +126,8 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	nodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
 	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
+	Log(t, "Nodes configured")
+
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
 
@@ -139,6 +141,8 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	Require(t, err)
 
+	Log(t, "Lying tx sent")
+
 	// Node B should get the transaction immediately from the sequencer feed
 	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	Require(t, err)
@@ -147,6 +151,8 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		Fail(t, "Unexpected balance:", l2balance)
 	}
+
+	Log(t, "Lying tx received")
 
 	// Send the real transaction to client A
 	err = l2clientA.SendTransaction(ctx, realTx)
