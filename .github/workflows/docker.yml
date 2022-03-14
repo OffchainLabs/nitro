@@ -10,7 +10,7 @@ on:
 
 jobs:
   docker:
-    name: build docker
+    name: Docker build
     runs-on: ubuntu-latest
     services:
       # local registery
