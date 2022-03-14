@@ -67,11 +67,6 @@ COPY --from=contracts-builder workspace/solgen/build/contracts/src/precompiles/ 
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" make build-wasm-bin
 
-FROM scratch as machine-exporter
-COPY --from=wasm-libs-builder /workspace/target/machine/ machine/
-COPY --from=wasm-bin-builder /workspace/target/machine/ machine/
-
-
 FROM rust:1.57-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
