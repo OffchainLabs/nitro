@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -9,15 +9,15 @@ import (
 	"context"
 	"sync"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -26,12 +26,14 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *validator.BlockValidator
+	das        arbstate.DataAvailabilityServiceReader
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*InboxTracker, error) {
+func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityServiceReader) (*InboxTracker, error) {
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
+		das:        das,
 	}
 	return db, nil
 }
@@ -115,7 +117,7 @@ func (t *InboxTracker) GetDelayedCount() (uint64, error) {
 
 type BatchMetadata struct {
 	Accumulator         common.Hash
-	MessageCount        uint64
+	MessageCount        arbutil.MessageIndex
 	DelayedMessageCount uint64
 	L1Block             uint64
 }
@@ -138,7 +140,7 @@ func (t *InboxTracker) GetBatchMetadata(seqNum uint64) (BatchMetadata, error) {
 	return metadata, err
 }
 
-func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (uint64, error) {
+func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.MessageCount, err
 }
@@ -298,6 +300,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 			// meaning that the last and only batch is at sequence number 0.
 			reorgSeqBatchesToCount = &batchSeqNum
 		}
+		seqBatchIter.Next()
 	}
 	// Release the iterator early.
 	// It's fine to call Release multiple times,
@@ -314,7 +317,7 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 		if err != nil {
 			return err
 		}
-		var prevMesssageCount uint64
+		var prevMesssageCount arbutil.MessageIndex
 		if count > 0 {
 			prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
 			if err != nil {
@@ -334,7 +337,7 @@ type multiplexerBackend struct {
 	positionWithinMessage uint64
 
 	ctx    context.Context
-	client ethereum.ChainReader
+	client arbutil.L1Interface
 	inbox  *InboxTracker
 }
 
@@ -374,7 +377,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) ([]byte, error) {
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
-func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.ChainReader, batches []*SequencerInboxBatch) error {
+func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch) error {
 	if len(batches) == 0 {
 		return nil
 	}
@@ -435,15 +438,15 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
-	batchMessageCounts := make(map[uint64]uint64)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das)
+	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
 		if len(backend.batches) == 0 {
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		msg, err := multiplexer.Pop()
+		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
 			return err
 		}
@@ -509,6 +512,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client ethereum.
 		}
 		t.validator.ProcessBatches(batchMap)
 	}
+
+	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
+		t.txStreamer.broadcastServer.Confirm(prevbatchmeta.MessageCount - 1)
+	}
+
 	return nil
 }
 

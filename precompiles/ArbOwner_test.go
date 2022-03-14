@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -7,18 +7,18 @@ package precompiles
 import (
 	"testing"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/burn"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 func TestAddressSet(t *testing.T) {
 	evm := newMockEVMForTesting()
 	caller := common.BytesToAddress(crypto.Keccak256([]byte{})[:20])
-	state, err := arbosState.OpenArbosState(evm.StateDB, &burn.SystemBurner{})
+	state, err := arbosState.OpenArbosState(evm.StateDB, burn.NewSystemBurner(false))
 	Require(t, err)
 	Require(t, state.ChainOwners().Add(caller))
 

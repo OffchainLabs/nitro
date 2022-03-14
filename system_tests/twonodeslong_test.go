@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 // race detection makes things slow and miss timeouts
@@ -10,17 +10,21 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 )
 
-func TestTwoNodesLong(t *testing.T) {
+func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -37,10 +41,26 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l1info, l1backend, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
+	l1NodeConfigA := arbnode.NodeConfigL1Test
+	l1NodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, false)
+	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
+	l1NodeConfigB.BlockValidator = false
+	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -48,16 +68,16 @@ func TestTwoNodesLong(t *testing.T) {
 
 	l2info.GenerateAccount("ErrorTxSender")
 
-	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", 30000, big.NewInt(params.InitialBaseFee*30000), nil),
+	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
+		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(params.InitialBaseFee*int64(l2info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
 	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
-	SendWaitTestTransactions(t, ctx, l2info.Client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "DelayedFaucet", 30000, delayedFaucetNeeds, nil),
+	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
+		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
 	})
-	delayedFaucetBalance, err := l2info.Client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
+	delayedFaucetBalance, err := l2client.BalanceAt(ctx, l2info.GetAddress("DelayedFaucet"), nil)
 	Require(t, err)
 
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
@@ -80,7 +100,7 @@ func TestTwoNodesLong(t *testing.T) {
 				delayedTxs = append(delayedTxs, delayedTx)
 				delayedTransfers++
 			} else {
-				l1tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
@@ -94,26 +114,26 @@ func TestTwoNodesLong(t *testing.T) {
 		l2TxsThisTime := rand.Int() % (avgL2MsgsPerLoop * 2)
 		l2Txs := make([]*types.Transaction, 0, l2TxsThisTime)
 		for len(l2Txs) < l2TxsThisTime {
-			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", 30000, fundsPerDirect, nil))
+			l2Txs = append(l2Txs, l2info.PrepareTx("Faucet", "DirectReceiver", l2info.TransferGas, fundsPerDirect, nil))
 		}
-		SendWaitTestTransactions(t, ctx, l2info.Client, l2Txs)
+		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, l1Txs[len(l1Txs)-1])
+			_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				Fail(t, err)
 			}
 		}
 		// create bad tx on delayed inbox
 		l2info.GetInfoWithPrivKey("ErrorTxSender").Nonce = 10
-		SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 			WrapL2ForDelayed(t, l2info.PrepareTx("ErrorTxSender", "DelayedReceiver", 30002, delayedFaucetNeeds, nil), l1info, "User", 100000),
 		})
 
 		extrBlocksThisTime := rand.Int() % (avgExtraBlocksPerLoop * 2)
 		for i := 0; i < extrBlocksThisTime; i++ {
-			SendWaitTestTransactions(t, ctx, l1info.Client, []*types.Transaction{
-				l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+				l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 			})
 		}
 	}
@@ -127,21 +147,21 @@ func TestTwoNodesLong(t *testing.T) {
 	for i := 0; i < finalPropagateLoops; i++ {
 		var tx *types.Transaction
 		for j := 0; j < 30; j++ {
-			tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
-			err := l1info.Client.SendTransaction(ctx, tx)
+			tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
+			err := l1client.SendTransaction(ctx, tx)
 			if err != nil {
 				Fail(t, err)
 			}
 		}
-		_, err := arbnode.EnsureTxSucceeded(ctx, l1info.Client, tx)
+		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, tx)
 		if err != nil {
 			Fail(t, err)
 		}
 	}
 
-	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2info.Client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = arbnode.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)
@@ -157,6 +177,9 @@ func TestTwoNodesLong(t *testing.T) {
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		Fail(t, "Unexpected balance")
 	}
+
+	nodeA.StopAndWait()
+
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
@@ -171,4 +194,14 @@ func TestTwoNodesLong(t *testing.T) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+
+	nodeB.StopAndWait()
+}
+
+func TestTwoNodesLong(t *testing.T) {
+	testTwoNodesLong(t, das.OnchainDataAvailability)
+}
+
+func TestTwoNodesLongLocalDAS(t *testing.T) {
+	testTwoNodesLong(t, das.LocalDataAvailability)
 }

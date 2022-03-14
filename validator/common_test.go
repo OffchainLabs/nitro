@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -7,7 +7,7 @@ package validator
 import (
 	"testing"
 
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func Require(t *testing.T, err error, text ...string) {

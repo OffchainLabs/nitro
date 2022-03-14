@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -20,14 +20,20 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
-	inboxTracker InboxTrackerInterface
-	blockchain   *core.BlockChain
+	util.StopWaiter
+	inboxTracker    InboxTrackerInterface
+	blockchain      *core.BlockChain
+	genesisBlockNum uint64
 
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
@@ -36,12 +42,14 @@ type BlockValidator struct {
 	blocksValidated   uint64
 	earliestBatchKept uint64
 
-	posNextSend       uint64
+	posNextSend       arbutil.MessageIndex
 	globalPosNextSend GlobalStatePosition
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
+
+	das das.DataAvailabilityService
 
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
@@ -55,7 +63,7 @@ type BlockValidatorConfig struct {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	OutputPath:          "./arbitrator/target/env/output",
+	OutputPath:          "./target/output",
 	ConcurrentRunsLimit: 0,
 	BlocksToRecord:      []uint64{},
 }
@@ -67,13 +75,15 @@ type BlockValidatorRegistrer interface {
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
 	GetDelayedMessageBytes(uint64) ([]byte, error)
-	GetBatchMessageCount(seqNum uint64) (uint64, error)
+	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
+	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
 }
 
 type TransactionStreamerInterface interface {
 	BlockValidatorRegistrer
-	GetMessage(seqNum uint64) (arbstate.MessageWithMetadata, error)
+	GetMessage(seqNum arbutil.MessageIndex) (arbstate.MessageWithMetadata, error)
+	GetGenesisBlockNumber() (uint64, error)
 }
 
 type InboxReaderInterface interface {
@@ -85,12 +95,12 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
-func GlobalStatePoisionsFor(reader InboxTrackerInterface, pos uint64, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+func GlobalStatePositionsFor(reader InboxTrackerInterface, pos arbutil.MessageIndex, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
 	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
-	var firstInBatch uint64
+	var firstInBatch arbutil.MessageIndex
 	if batch > 0 {
 		firstInBatch, err = reader.GetBatchMessageCount(batch - 1)
 		if err != nil {
@@ -103,17 +113,19 @@ func GlobalStatePoisionsFor(reader InboxTrackerInterface, pos uint64, batch uint
 	if firstInBatch > pos {
 		return GlobalStatePosition{}, GlobalStatePosition{}, fmt.Errorf("batch %d starts from %d, failed getting for %d", batch, firstInBatch, pos)
 	}
-	startPos := GlobalStatePosition{batch, pos - firstInBatch}
+	startPos := GlobalStatePosition{batch, uint64(pos - firstInBatch)}
 	if msgCountInBatch == pos+1 {
 		return startPos, GlobalStatePosition{batch + 1, 0}, nil
 	}
-	return startPos, GlobalStatePosition{batch, pos + 1 - firstInBatch}, nil
+	return startPos, GlobalStatePosition{batch, uint64(pos + 1 - firstInBatch)}, nil
 }
 
 type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
 	BlockHash     common.Hash
+	SendRoot      common.Hash
+	PrevSendRoot  common.Hash
 	BlockHeader   *types.Header
 	Preimages     []common.Hash
 	HasDelayedMsg bool
@@ -122,40 +134,61 @@ type validationEntry struct {
 	Valid         uint32 // Atomic, either 0 or 1
 }
 
-func newValidationEntry(header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) *validationEntry {
+func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
+	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
+	if err != nil {
+		return nil, err
+	}
+	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(prevHeader)
+	if err != nil {
+		return nil, err
+	}
 	return &validationEntry{
 		BlockNumber:   header.Number.Uint64(),
 		BlockHash:     header.Hash(),
+		SendRoot:      extraInfo.SendRoot,
+		PrevSendRoot:  prevExtraInfo.SendRoot,
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
 		Preimages:     preimages,
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
-	}
+	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) *BlockValidator {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
+	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
+	if err != nil {
+		return nil, err
+	}
 	validator := &BlockValidator{
 		inboxTracker:        inbox,
 		blockchain:          blockchain,
-		posNextSend:         0,
 		sendValidationsChan: make(chan interface{}),
 		checkProgressChan:   make(chan interface{}),
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		das:                 das,
+		genesisBlockNum:     genesisBlockNum,
+		// TODO: this skips validating the genesis block
+		posNextSend: 1,
+		globalPosNextSend: GlobalStatePosition{
+			BatchNumber: 1,
+		},
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
-	return validator
+	return validator, nil
 }
 
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, err
@@ -163,28 +196,52 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 
 	chainConfig := blockchain.Config()
 
-	block, _ := arbos.ProduceBlock(
-		msg.Message,
-		msg.DelayedMessagesRead,
-		prevHeader,
-		recordingdb,
-		chaincontext,
-		chainConfig,
-	)
+	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
+	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
+	if prevHeader != nil {
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, true)
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error opening initial ArbOS state: %w", err)
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error getting chain ID from initial ArbOS state: %w", err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			return common.Hash{}, nil, fmt.Errorf("Unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+		}
+	}
+
+	var blockHash common.Hash
+	if msg != nil {
+		block, _ := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			prevHeader,
+			recordingdb,
+			chaincontext,
+			chainConfig,
+		)
+		blockHash = block.Hash()
+	}
 
 	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
 
-	return block.Hash(), preimages, err
+	return blockHash, preimages, err
 }
 
 func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
-	if header.ParentHash != prevHeader.Hash() {
+	var prevHash common.Hash
+	if prevHeader != nil {
+		prevHash = prevHeader.Hash()
+	}
+	if header.ParentHash != prevHash {
 		err = fmt.Errorf("bad arguments: prev does not match")
 		return
 	}
 
 	var blockhash common.Hash
-	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, msg)
+	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
 	if err != nil {
 		return
 	}
@@ -192,9 +249,11 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 		err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
 		return
 	}
-	if header.Nonce != prevHeader.Nonce {
+	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
-		delayedMsgNr = prevHeader.Nonce.Uint64()
+		if prevHeader != nil {
+			delayedMsgNr = prevHeader.Nonce.Uint64()
+		}
 	}
 	return
 }
@@ -202,15 +261,21 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
-		log.Error("failed to set up validation", "err", err, "header", header)
+		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
+		return
 	}
 	hashlist := v.preimageCache.PourToCache(preimages)
-	v.validationEntries.Store(header.Number.Uint64(), newValidationEntry(header, hasDelayedMessage, delayedMsgToRead, hashlist))
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, hashlist)
+	if err != nil {
+		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
+		return
+	}
+	v.validationEntries.Store(header.Number.Uint64(), validationEntry)
 	v.sendValidationsChan <- struct{}{}
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
-	go v.prepareBlock(block.Header(), prevHeader, msg)
+	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -325,6 +390,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
 		BlockHash:  validationEntry.PrevBlockHash,
+		SendRoot:   validationEntry.PrevSendRoot,
 	}
 
 	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
@@ -336,6 +402,24 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
+	}
+
+	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
+		if v.das == nil {
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			return
+		}
+		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
+		if err != nil {
+			log.Error("Failed to deserialize DAS message", "err", err)
+			return
+		} else {
+			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+			if err != nil {
+				log.Error("Couldn't retrieve message from DAS", "err", err)
+				return
+			}
+		}
 	}
 
 	basemachine, err := GetHostIoMachine(ctx)
@@ -394,7 +478,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	gsEnd := mach.GetGlobalState()
 
-	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash}
+	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash, SendRoot: validationEntry.SendRoot}
 
 	writeThisBlock := false
 
@@ -460,8 +544,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		if !haveBatch {
 			return
 		}
-		// valdationEntries is By blockNumber, which is one more than pos
-		entry, found := v.validationEntries.Load(v.posNextSend + 1)
+		// valdationEntries is By blockNumber
+		nextBlockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum) + 1)
+		entry, found := v.validationEntries.Load(nextBlockNum)
 		if !found {
 			return
 		}
@@ -470,9 +555,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		startPos, endPos, err := GlobalStatePoisionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
+		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
+			return
 		}
 		if startPos != v.globalPosNextSend {
 			log.Error("inconsistent pos mapping", "uint_pos", v.posNextSend, "expected", v.globalPosNextSend, "found", startPos)
@@ -480,14 +566,15 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationEntry.SeqMsgNr = startPos.BatchNumber
-		go v.validate(ctx, validationEntry, startPos, endPos)
+		// validation can take long time. Don't wait for it when shutting down
+		v.LaunchUntrackedThread(func() { v.validate(v.GetContext(), validationEntry, startPos, endPos) })
 		v.posNextSend += 1
 		v.globalPosNextSend = endPos
 	}
 }
 
-func (v *BlockValidator) startValidationLoop(ctx context.Context) {
-	go (func() {
+func (v *BlockValidator) startValidationLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.sendValidationsChan:
@@ -499,7 +586,7 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 			}
 			v.sendValidations(ctx)
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) progressValidated() {
@@ -536,8 +623,8 @@ func (v *BlockValidator) progressValidated() {
 	}
 }
 
-func (v *BlockValidator) startProgressLoop(ctx context.Context) {
-	go (func() {
+func (v *BlockValidator) startProgressLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -549,7 +636,7 @@ func (v *BlockValidator) startProgressLoop(ctx context.Context) {
 			}
 			v.progressValidated()
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) BlocksValidated() uint64 {
@@ -566,9 +653,10 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 	}
 }
 
-func (v *BlockValidator) Start(ctx context.Context) error {
-	v.startProgressLoop(ctx)
-	v.startValidationLoop(ctx)
+func (v *BlockValidator) Start(ctxIn context.Context) error {
+	v.StopWaiter.Start(ctxIn)
+	v.startProgressLoop()
+	v.startValidationLoop()
 	return nil
 }
 

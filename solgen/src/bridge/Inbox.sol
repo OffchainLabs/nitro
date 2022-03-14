@@ -3,38 +3,67 @@
 // SPDX-License-Identifier: UNLICENSED
 //
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.4;
 
 import "./IInbox.sol";
 import "./IBridge.sol";
 
 import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
+import "../libraries/DelegateCallAware.sol";
+import {
+    L2_MSG,
+    L1MessageType_L2FundedByL1,
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedEOATx,
+    L2MessageType_unsignedContractTx
+} from "../libraries/MessageTypes.sol";
+import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
-import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Bridge.sol";
 
-contract Inbox is IInbox {
-    uint8 internal constant ETH_TRANSFER = 0;
-    uint8 internal constant L2_MSG = 3;
-    uint8 internal constant L1MessageType_L2FundedByL1 = 7;
-    uint8 internal constant L1MessageType_submitRetryableTx = 9;
-
-    uint8 internal constant L2MessageType_unsignedEOATx = 0;
-    uint8 internal constant L2MessageType_unsignedContractTx = 1;
-
-    // 90% of Geth's 128KB tx size limit, leaving ~13KB for proving
-    uint256 public constant MAX_DATA_SIZE = 117964;
-
-    string internal constant TOO_LARGE = "TOO_LARGE";
-
+/**
+ * @title Inbox for user and contract originated messages
+ * @notice Messages created via this inbox are enqueued in the delayed accumulator
+ * to await inclusion in the SequencerInbox
+ */
+contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
 
-    bool public isCreateRetryablePaused;
-    bool public shouldRewriteSender;
+    modifier onlyOwner() {
+        // whoevever owns the Bridge, also owns the Inbox. this is usually the rollup contract
+        address bridgeOwner = Bridge(address(bridge)).owner();
+        if (msg.sender != bridgeOwner) revert NotOwner(msg.sender, bridgeOwner);
+        _;
+    }
 
-    function initialize(IBridge _bridge) external {
-        require(address(bridge) == address(0), "ALREADY_INIT");
+    /// @notice pauses all inbox functionality
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice unpauses all inbox functionality
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function initialize(IBridge _bridge) external initializer onlyDelegated {
+        if (address(bridge) != address(0)) revert AlreadyInit();
+        bridge = _bridge;
+        __Pausable_init();
+    }
+
+    /// @dev function to be called one time during the inbox upgrade process
+    /// this is used to fix the storage slots
+    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
+        uint8 slotsToWipe = 3;
+        for (uint8 i = 0; i < slotsToWipe; i++) {
+            assembly {
+                sstore(i, 0)
+            }
+        }
         bridge = _bridge;
     }
 
@@ -45,11 +74,13 @@ contract Inbox is IInbox {
      */
     function sendL2MessageFromOrigin(bytes calldata messageData)
         external
+        whenNotPaused
         returns (uint256)
     {
         // solhint-disable-next-line avoid-tx-origin
-        require(msg.sender == tx.origin, "origin only");
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if (msg.sender != tx.origin) revert NotOrigin();
+        if (messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDeliveredFromOrigin(msgNum);
         return msgNum;
@@ -63,31 +94,33 @@ contract Inbox is IInbox {
     function sendL2Message(bytes calldata messageData)
         external
         override
+        whenNotPaused
         returns (uint256)
     {
-        require(messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if (messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
         emit InboxMessageDelivered(msgNum, messageData);
         return msgNum;
     }
 
     function sendL1FundedUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
+        address to,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
-                    maxGas,
-                    gasPriceBid,
+                    gasLimit,
+                    maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(destAddr))),
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -95,20 +128,20 @@ contract Inbox is IInbox {
     }
 
     function sendL1FundedContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
-                    maxGas,
-                    gasPriceBid,
-                    uint256(uint160(bytes20(destAddr))),
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
                     msg.value,
                     data
                 )
@@ -116,90 +149,49 @@ contract Inbox is IInbox {
     }
 
     function sendUnsignedTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         uint256 nonce,
-        address destAddr,
-        uint256 amount,
+        address to,
+        uint256 value,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedEOATx,
-                    maxGas,
-                    gasPriceBid,
+                    gasLimit,
+                    maxFeePerGas,
                     nonce,
-                    uint256(uint160(bytes20(destAddr))),
-                    amount,
+                    uint256(uint160(to)),
+                    value,
                     data
                 )
             );
     }
 
     function sendContractTransaction(
-        uint256 maxGas,
-        uint256 gasPriceBid,
-        address destAddr,
-        uint256 amount,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        address to,
+        uint256 value,
         bytes calldata data
-    ) external virtual override returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
                 msg.sender,
                 abi.encodePacked(
                     L2MessageType_unsignedContractTx,
-                    maxGas,
-                    gasPriceBid,
-                    uint256(uint160(bytes20(destAddr))),
-                    amount,
+                    gasLimit,
+                    maxFeePerGas,
+                    uint256(uint160(to)),
+                    value,
                     data
                 )
             );
-    }
-
-    modifier onlyOwner() {
-        // the rollup contract owns the bridge
-        address bridgeowner = Bridge(address(bridge)).owner();
-        // we want to validate the owner of the rollup
-        //address owner = RollupBase(rollup).owner();
-        require(msg.sender == bridgeowner, "NOT_OWNER");
-        _;
-    }
-
-    event PauseToggled(bool enabled);
-
-    /// @notice pauses creating retryables
-    function pauseCreateRetryables() external onlyOwner {
-        require(!isCreateRetryablePaused, "ALREADY_PAUSED");
-        isCreateRetryablePaused = true;
-        emit PauseToggled(true);
-    }
-
-    /// @notice unpauses creating retryables
-    function unpauseCreateRetryables() external onlyOwner {
-        require(isCreateRetryablePaused, "NOT_PAUSED");
-        isCreateRetryablePaused = false;
-        emit PauseToggled(false);
-    }
-
-    event RewriteToggled(bool enabled);
-
-    /// @notice start rewriting addresses in eth deposits
-    function startRewriteAddress() external onlyOwner {
-        require(!shouldRewriteSender, "ALREADY_REWRITING");
-        shouldRewriteSender = true;
-        emit RewriteToggled(true);
-    }
-
-    /// @notice stop rewriting addresses in eth deposits
-    function stopRewriteAddress() external onlyOwner {
-        require(shouldRewriteSender, "NOT_REWRITING");
-        shouldRewriteSender = false;
-        emit RewriteToggled(false);
     }
 
     /// @notice deposit eth from L1 to L2
@@ -209,24 +201,23 @@ contract Inbox is IInbox {
         payable
         virtual
         override
+        whenNotPaused
         returns (uint256)
     {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        if (shouldRewriteSender) {
-            if (!Address.isContract(sender) && tx.origin == msg.sender) {
-                // isContract check fails if this function is called during a contract's constructor.
-                // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
-                // If the caller is an EOA, we adjust the address.
-                // This is needed because unsigned messages to the L2 (such as retryables)
-                // have the L1 sender address mapped.
-                // Here we preemptively reverse the mapping for EOAs so deposits work as expected
-                sender = AddressAliasHelper.undoL1ToL2Alias(sender);
-            } else {
-                destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
-            }
+        // solhint-disable-next-line avoid-tx-origin
+        if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
+            // isContract check fails if this function is called during a contract's constructor.
+            // We don't adjust the address for calls coming from L1 contracts since their addresses get remapped
+            // If the caller is an EOA, we adjust the address.
+            // This is needed because unsigned messages to the L2 (such as retryables)
+            // have the L1 sender address mapped.
+            // Here we preemptively reverse the mapping for EOAs so deposits work as expected
+            sender = AddressAliasHelper.undoL1ToL2Alias(sender);
+        } else {
+            destinationAddress = AddressAliasHelper.applyL1ToL2Alias(destinationAddress);
         }
 
         return
@@ -253,41 +244,39 @@ contract Inbox is IInbox {
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
      * @dev Advanced usage only (does not rewrite aliases for excessFeeRefundAddress and callValueRefundAddress). createRetryableTicket method is the recommended standard.
-     * @param destAddr destination L2 contract address
+     * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress maxgas x gasprice - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param maxGas Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasPriceBid price bid for L2 execution
+     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
     function createRetryableTicketNoRefundAliasRewrite(
-        address destAddr,
+        address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
         address excessFeeRefundAddress,
         address callValueRefundAddress,
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         bytes calldata data
-    ) public payable virtual returns (uint256) {
-        require(!isCreateRetryablePaused, "CREATE_RETRYABLES_PAUSED");
-
+    ) public payable virtual whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
                 msg.sender,
                 abi.encodePacked(
-                    uint256(uint160(bytes20(destAddr))),
+                    uint256(uint160(to)),
                     l2CallValue,
                     msg.value,
                     maxSubmissionCost,
-                    uint256(uint160(bytes20(excessFeeRefundAddress))),
-                    uint256(uint160(bytes20(callValueRefundAddress))),
-                    maxGas,
-                    gasPriceBid,
+                    uint256(uint160(excessFeeRefundAddress)),
+                    uint256(uint160(callValueRefundAddress)),
+                    gasLimit,
+                    maxFeePerGas,
                     data.length,
                     data
                 )
@@ -297,46 +286,46 @@ contract Inbox is IInbox {
     /**
      * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
      * @dev all msg.value will deposited to callValueRefundAddress on L2
-     * @param destAddr destination L2 contract address
+     * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
      * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
-     * @param excessFeeRefundAddress maxgas x gasprice - execution cost gets credited here on L2 balance
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
-     * @param maxGas Max gas deducted from user's L2 balance to cover L2 execution
-     * @param gasPriceBid price bid for L2 execution
+     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
+     * @param maxFeePerGas price bid for L2 execution
      * @param data ABI encoded data of L2 message
      * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
      */
     function createRetryableTicket(
-        address destAddr,
+        address to,
         uint256 l2CallValue,
         uint256 maxSubmissionCost,
         address excessFeeRefundAddress,
         address callValueRefundAddress,
-        uint256 maxGas,
-        uint256 gasPriceBid,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual override returns (uint256) {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
-        if (shouldRewriteSender && Address.isContract(excessFeeRefundAddress)) {
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
             excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
         }
-        if (shouldRewriteSender && Address.isContract(callValueRefundAddress)) {
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
             // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
             callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
         }
 
         return
             createRetryableTicketNoRefundAliasRewrite(
-                destAddr,
+                to,
                 l2CallValue,
                 maxSubmissionCost,
                 excessFeeRefundAddress,
                 callValueRefundAddress,
-                maxGas,
-                gasPriceBid,
+                gasLimit,
+                maxFeePerGas,
                 data
             );
     }
@@ -346,7 +335,8 @@ contract Inbox is IInbox {
         address _sender,
         bytes memory _messageData
     ) internal returns (uint256) {
-        require(_messageData.length <= MAX_DATA_SIZE, TOO_LARGE);
+        if (_messageData.length > MAX_DATA_SIZE)
+            revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
         emit InboxMessageDelivered(msgNum, _messageData);
         return msgNum;
@@ -357,6 +347,6 @@ contract Inbox is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.deliverMessageToInbox{ value: msg.value }(kind, sender, messageDataHash);
+        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
     }
 }

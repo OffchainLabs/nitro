@@ -1,8 +1,10 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package colors
+
+import "fmt"
 
 var Red = "\033[31;1m"
 var Blue = "\033[34;1m"
@@ -17,3 +19,33 @@ var Maroon = "\033[38;5;124;1m"
 var Orange = "\033[38;5;202;1m"
 
 var Clear = "\033[0;0m"
+
+func PrintBlue(args ...interface{}) {
+	print(Blue)
+	fmt.Print(args...)
+	println(Clear)
+}
+
+func PrintGrey(args ...interface{}) {
+	print(Grey)
+	fmt.Print(args...)
+	println(Clear)
+}
+
+func PrintMint(args ...interface{}) {
+	print(Mint)
+	fmt.Print(args...)
+	println(Clear)
+}
+
+func PrintRed(args ...interface{}) {
+	print(Red)
+	fmt.Print(args...)
+	println(Clear)
+}
+
+func PrintYellow(args ...interface{}) {
+	print(Yellow)
+	fmt.Print(args...)
+	println(Clear)
+}

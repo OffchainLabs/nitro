@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package merkleAccumulator
@@ -7,8 +7,8 @@ package merkleAccumulator
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	util_math "github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type MerkleAccumulator struct {
@@ -31,7 +31,7 @@ func NewNonpersistentMerkleAccumulator() *MerkleAccumulator {
 }
 
 func CalcNumPartials(size uint64) uint64 {
-	return util_math.Log2ceil(size)
+	return arbmath.Log2ceil(size)
 }
 
 func NewNonpersistentMerkleAccumulatorFromPartials(partials []*common.Hash) (*MerkleAccumulator, error) {
@@ -63,6 +63,22 @@ func (acc *MerkleAccumulator) NonPersistentClone() (*MerkleAccumulator, error) {
 	}
 	mbu := &storage.MemoryBackedUint64{}
 	return &MerkleAccumulator{nil, mbu, partials}, mbu.Set(size)
+}
+
+func (acc *MerkleAccumulator) Keccak(data ...[]byte) ([]byte, error) {
+	if acc.backingStorage != nil {
+		return acc.backingStorage.Keccak(data...)
+	} else {
+		return crypto.Keccak256(data...), nil
+	}
+}
+
+func (acc *MerkleAccumulator) KeccakHash(data ...[]byte) (common.Hash, error) {
+	if acc.backingStorage != nil {
+		return acc.backingStorage.KeccakHash(data...)
+	} else {
+		return crypto.Keccak256Hash(data...), nil
+	}
 }
 
 func (acc *MerkleAccumulator) getPartial(level uint64) (*common.Hash, error) {
@@ -132,7 +148,10 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 			err := acc.setPartial(level, &h)
 			return events, err
 		}
-		soFar = crypto.Keccak256(thisLevel.Bytes(), soFar)
+		soFar, err = acc.Keccak(thisLevel.Bytes(), soFar)
+		if err != nil {
+			return nil, err
+		}
 		h := common.Hash{}
 		err = acc.setPartial(level, &h)
 		if err != nil {
@@ -167,11 +186,17 @@ func (acc *MerkleAccumulator) Root() (common.Hash, error) {
 				capacityInHash = capacity
 			} else {
 				for capacityInHash < capacity {
-					h := crypto.Keccak256Hash(hashSoFar.Bytes(), make([]byte, 32))
+					h, err := acc.KeccakHash(hashSoFar.Bytes(), make([]byte, 32))
+					if err != nil {
+						return common.Hash{}, err
+					}
 					hashSoFar = &h
 					capacityInHash *= 2
 				}
-				h := crypto.Keccak256Hash(partial.Bytes(), hashSoFar.Bytes())
+				h, err := acc.KeccakHash(partial.Bytes(), hashSoFar.Bytes())
+				if err != nil {
+					return common.Hash{}, err
+				}
 				hashSoFar = &h
 				capacityInHash = 2 * capacity
 			}

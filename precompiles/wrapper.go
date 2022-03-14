@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -8,10 +8,11 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // A precompile wrapper for those not allowed in production
@@ -52,11 +53,15 @@ func (wrapper *DebugPrecompile) Precompile() Precompile {
 
 // A precompile wrapper for those only chain owners may use
 type OwnerPrecompile struct {
-	precompile ArbosPrecompile
+	precompile  ArbosPrecompile
+	emitSuccess func(mech, bytes4, addr, []byte) error
 }
 
-func ownerOnly(address addr, impl ArbosPrecompile) (addr, ArbosPrecompile) {
-	return address, &OwnerPrecompile{impl}
+func ownerOnly(address addr, impl ArbosPrecompile, emit func(mech, bytes4, addr, []byte) error) (addr, ArbosPrecompile) {
+	return address, &OwnerPrecompile{
+		precompile:  impl,
+		emitSuccess: emit,
+	}
 }
 
 func (wrapper *OwnerPrecompile) Call(
@@ -91,8 +96,17 @@ func (wrapper *OwnerPrecompile) Call(
 	}
 
 	output, _, err := con.Call(input, precompileAddress, actingAsAddress, caller, value, readOnly, gasSupplied, evm)
-	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 
+	if err != nil {
+		return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
+	}
+
+	// log that the owner operation succeeded
+	if err := wrapper.emitSuccess(evm, *(*[4]byte)(input[:4]), caller, input); err != nil {
+		log.Error("failed to emit OwnerActs event", "err", err)
+	}
+
+	return output, gasSupplied, err // we don't deduct gas since we don't want to charge the owner
 }
 
 func (wrapper *OwnerPrecompile) Precompile() Precompile {

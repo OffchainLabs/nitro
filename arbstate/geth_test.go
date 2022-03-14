@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbstate
@@ -12,15 +12,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type TestChainContext struct {
@@ -50,17 +50,12 @@ var testChainConfig = &params.ChainConfig{
 	MuirGlacierBlock:    big.NewInt(0),
 	BerlinBlock:         big.NewInt(0),
 	LondonBlock:         big.NewInt(0),
-	ArbitrumChainParams: params.ArbitrumTestParams(),
+	ArbitrumChainParams: params.ArbitrumDevTestParams(),
 }
 
 func TestEthDepositMessage(t *testing.T) {
-	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
-	statedb, err := state.New(common.Hash{}, db, nil)
-	if err != nil {
-		panic("failed to init empty statedb")
-	}
 
+	_, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	addr := common.HexToAddress("0x32abcdeffffff")
 	balance := common.BigToHash(big.NewInt(789789897789798))
 	balance2 := common.BigToHash(big.NewInt(98))
@@ -69,13 +64,14 @@ func TestEthDepositMessage(t *testing.T) {
 		Fail(t)
 	}
 
+	firstRequestId := common.BigToHash(big.NewInt(3))
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
 		Poster:      addr,
 		BlockNumber: common.BigToHash(big.NewInt(864513)),
 		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
-		RequestId:   common.BigToHash(big.NewInt(3)),
-		GasPriceL1:  common.BigToHash(big.NewInt(10000000000000)),
+		RequestId:   &firstRequestId,
+		BaseFeeL1:   common.BigToHash(big.NewInt(10000000000000)),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {
@@ -91,7 +87,8 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	header.RequestId = common.BigToHash(big.NewInt(4))
+	secondRequestId := common.BigToHash(big.NewInt(4))
+	header.RequestId = &secondRequestId
 	msgBuf2 := bytes.Buffer{}
 	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)
@@ -107,7 +104,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
-	balanceAfter := statedb.GetBalance(addr)
+	balanceAfter := statedb.GetBalance(util.RemapL1Address(addr))
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		Fail(t)
 	}
@@ -131,13 +128,13 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		}
 		gasPool := core.GasPool(100000)
 		for _, tx := range txes {
-			_, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
+			_, _, err := core.ApplyTransaction(testChainConfig, chainContext, nil, &gasPool, statedb, header, tx, &header.GasUsed, vm.Config{})
 			if err != nil {
 				Fail(t, err)
 			}
 		}
 
-		arbos.FinalizeBlock(nil, nil, nil, statedb)
+		arbos.FinalizeBlock(nil, nil, statedb)
 	}
 }
 

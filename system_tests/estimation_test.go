@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -12,9 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/solgen/go/mocksgen"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func TestDeploy(t *testing.T) {
@@ -23,15 +23,16 @@ func TestDeploy(t *testing.T) {
 
 	l2info, _, client := CreateTestL2(t, ctx)
 	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})
@@ -48,17 +49,20 @@ func TestEstimate(t *testing.T) {
 
 	l2info, _, client := CreateTestL2(t, ctx)
 	auth := l2info.GetDefaultTransactOpts("Owner")
-	precompileAuth := l2info.GetDefaultTransactOpts("Owner")
+	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
 	gasPrice := big.NewInt(2 * params.GWei)
 
 	// set the gas price
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err := arbOwner.SetL2GasPrice(&precompileAuth, gasPrice)
+	tx, err := arbOwner.SetMinimumGasPrice(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
+
+	// make an empty block to let the gas price update
+	TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
 
 	// get the gas price
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)
@@ -75,7 +79,7 @@ func TestEstimate(t *testing.T) {
 	// deploy a test contract
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
 	Require(t, err, "could not deploy contract")
-	receipt, err := arbnode.EnsureTxSucceeded(ctx, client, tx)
+	receipt, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	header, err := client.HeaderByNumber(ctx, receipt.BlockNumber)
@@ -94,7 +98,7 @@ func TestEstimate(t *testing.T) {
 
 	tx, err = simple.Increment(&auth)
 	Require(t, err, "failed to call Increment()")
-	_, err = arbnode.EnsureTxSucceeded(ctx, client, tx)
+	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	counter, err := simple.Counter(&bind.CallOpts{})

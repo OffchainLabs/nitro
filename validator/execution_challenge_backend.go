@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -8,10 +8,9 @@ import (
 	"context"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/pkg/errors"
 )
 
@@ -28,7 +27,11 @@ type ExecutionChallengeBackend struct {
 var _ ChallengeBackend = (*ExecutionChallengeBackend)(nil)
 
 // machineCache may be nil, but if present, it must not have a restricted range
-func NewExecutionChallengeBackend(initialMachine MachineInterface, targetNumMachines int, machineCache *MachineCache) (*ExecutionChallengeBackend, error) {
+func NewExecutionChallengeBackend(
+	initialMachine MachineInterface,
+	targetNumMachines int,
+	machineCache *MachineCache,
+) (*ExecutionChallengeBackend, error) {
 	if initialMachine.GetStepCount() != 0 {
 		return nil, errors.New("initialMachine not at step count 0")
 	}
@@ -83,22 +86,26 @@ func (b *ExecutionChallengeBackend) GetHashAtStep(ctx context.Context, position 
 	return mach.Hash(), nil
 }
 
-func (b *ExecutionChallengeBackend) IssueOneStepProof(ctx context.Context, client bind.ContractBackend, auth *bind.TransactOpts, challenge common.Address, oldState *ChallengeState, startSegment int) (*types.Transaction, error) {
-	con, err := challengegen.NewExecutionChallenge(challenge, client)
-	if err != nil {
-		return nil, err
-	}
+func (b *ExecutionChallengeBackend) IssueOneStepProof(
+	ctx context.Context,
+	core *challengeCore,
+	oldState *ChallengeState,
+	startSegment int,
+) (*types.Transaction, error) {
 	mach, err := b.getMachineAt(ctx, oldState.Segments[startSegment].Position)
 	if err != nil {
 		return nil, err
 	}
 	proof := mach.ProveNextStep()
-	return con.OneStepProveExecution(
-		auth,
-		oldState.Start,
-		new(big.Int).Sub(oldState.End, oldState.Start),
-		oldState.RawSegments,
-		big.NewInt(int64(startSegment)),
+	return core.con.OneStepProveExecution(
+		core.auth,
+		core.challengeIndex,
+		challengegen.ChallengeLibSegmentSelection{
+			OldSegmentsStart:  oldState.Start,
+			OldSegmentsLength: new(big.Int).Sub(oldState.End, oldState.Start),
+			OldSegments:       oldState.RawSegments,
+			ChallengePosition: big.NewInt(int64(startSegment)),
+		},
 		proof,
 	)
 }

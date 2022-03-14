@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type predicate interface {
@@ -57,7 +57,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 	broadcasterSettings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
-		Port:          "9642",
+		Port:          "0",
 		Ping:          5 * time.Second,
 		ClientTimeout: 30 * time.Second,
 		Queue:         1,
@@ -66,7 +66,7 @@ func TestBroadcasterMessagesRemovedOnConfirmation(t *testing.T) {
 
 	b := NewBroadcaster(broadcasterSettings)
 	Require(t, b.Start(ctx))
-	defer b.Stop()
+	defer b.StopAndWait()
 
 	dummyMessage := arbstate.MessageWithMetadata{}
 	expectMessageCount := func(count int, contextMessage string) predicate {

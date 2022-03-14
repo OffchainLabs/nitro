@@ -1,12 +1,12 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package merkletree
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 )
 
 func NewMerkleTreeFromAccumulator(acc *merkleAccumulator.MerkleAccumulator) (MerkleTree, error) {
@@ -71,35 +71,4 @@ func NewNonPersistentMerkleAccumulatorFromEvents(
 		}
 	}
 	return merkleAccumulator.NewNonpersistentMerkleAccumulatorFromPartials(partials)
-}
-
-func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash common.Hash) (*MerkleProof, error) {
-	origPartials, err := acc.GetPartials()
-	if err != nil {
-		return nil, err
-	}
-	partials := make([]common.Hash, len(origPartials))
-	for i, orig := range origPartials {
-		partials[i] = *orig
-	}
-	clone, err := acc.NonPersistentClone()
-	if err != nil {
-		return nil, err
-	}
-	_, err = clone.Append(nextHash)
-	if err != nil {
-		return nil, err
-	}
-	root, _ := clone.Root()
-	size, err := acc.Size()
-	if err != nil {
-		return nil, err
-	}
-
-	return &MerkleProof{
-		RootHash:  root,
-		LeafHash:  nextHash,
-		LeafIndex: size,
-		Proof:     partials,
-	}, nil
 }

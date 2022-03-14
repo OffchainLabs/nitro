@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 //go:build !js
@@ -145,6 +145,9 @@ func ResolvePreImage(hash common.Hash) []byte {
 
 func SetLastBlockHash(hash [32]byte) {
 	lastBlockHash = hash
+}
+
+func SetSendRoot(hash [32]byte) {
 }
 
 func GetPositionWithinMessage() uint64 {

@@ -9,9 +9,9 @@ use nom::{
     combinator::{all_consuming, map, map_res, value},
     error::{context, ParseError, VerboseError},
     error::{Error, ErrorKind, FromExternalError},
-    multi::{count, length_data, many0, many_till},
+    multi::{count, length_data, many0},
     sequence::{preceded, tuple},
-    Err, Finish, Needed,
+    Err, Needed,
 };
 use nom_leb128::{leb128_i32, leb128_i64, leb128_u32};
 use std::{hash::Hash, str::FromStr};
@@ -252,7 +252,6 @@ impl HirInstruction {
             HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
             HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
             HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
-            HirInstruction::WithIdx(Opcode::FuncRefConst, x) => Some(LirValue::FuncRef(x)),
             _ => None,
         }
     }
@@ -349,7 +348,7 @@ pub enum ElementMode {
 #[derive(Clone, Debug)]
 pub struct ElementSegment {
     pub ty: RefType,
-    pub init: Vec<Vec<HirInstruction>>,
+    pub values: Vec<LirValue>,
     pub mode: ElementMode,
 }
 
@@ -820,23 +819,6 @@ fn block_type(input: &[u8]) -> IResult<BlockType> {
     ))(input)
 }
 
-fn block_instruction(input: &[u8]) -> IResult<HirInstruction> {
-    alt((
-        map(
-            preceded(tag(&[0x02]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Block(t, i),
-        ),
-        map(
-            preceded(tag(&[0x03]), tuple((block_type, instructions))),
-            |(t, i)| HirInstruction::Loop(t, i),
-        ),
-        map(
-            preceded(tag(&[0x04]), tuple((block_type, instructions_with_else))),
-            |(t, (i, e))| HirInstruction::IfElse(t, i, e),
-        ),
-    ))(input)
-}
-
 fn inst_with_idx(opcode: Opcode) -> impl Fn(u32) -> HirInstruction {
     move |i| HirInstruction::WithIdx(opcode, i)
 }
@@ -969,25 +951,42 @@ fn const_instruction(input: &[u8]) -> IResult<HirInstruction> {
         preceded(
             tag(&[0x43]),
             map(
-                map(nom::number::streaming::le_u32, f32::from_bits),
+                map(nom::number::complete::le_u32, f32::from_bits),
                 HirInstruction::F32Const,
             ),
         ),
         preceded(
             tag(&[0x44]),
             map(
-                map(nom::number::streaming::le_u64, f64::from_bits),
+                map(nom::number::complete::le_u64, f64::from_bits),
                 HirInstruction::F64Const,
             ),
         ),
     ))(input)
 }
 
+#[inline(always)] // minimize stack depth
 fn instruction(input: &[u8]) -> IResult<HirInstruction> {
+    // Pull out block instructions early to minimize stack depth
+    if let Some(&opcode @ 0x02..=0x04) = input.get(0) {
+        let (input, block_ty) = block_type(&input[1..])?;
+        if opcode == 0x02 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Block(block_ty, insts)));
+        } else if opcode == 0x03 {
+            let (input, insts) = instructions(input)?;
+            return Ok((input, HirInstruction::Loop(block_ty, insts)));
+        } else if opcode == 0x04 {
+            let (input, insts) = instructions_with_else(input)?;
+            return Ok((input, HirInstruction::IfElse(block_ty, insts.0, insts.1)));
+        } else {
+            unreachable!();
+        }
+    }
+
     alt((
         map(simple_opcode, HirInstruction::Simple),
         map(float_instruction, HirInstruction::FloatingPointOp),
-        block_instruction,
         branch_instruction,
         call_instruction,
         variables_instruction,
@@ -997,23 +996,38 @@ fn instruction(input: &[u8]) -> IResult<HirInstruction> {
     ))(input)
 }
 
-fn instructions(input: &[u8]) -> IResult<Vec<HirInstruction>> {
-    map(
-        many_till(context("instruction", instruction), tag(&[0x0B])),
-        |(x, _)| x,
-    )(input)
+fn instructions(mut input: &[u8]) -> IResult<Vec<HirInstruction>> {
+    let mut insts = Vec::new();
+    loop {
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], insts));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        insts.push(inst);
+    }
 }
 
-fn instructions_with_else(input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
-    let term_parser = alt((tag(&[0x05]), tag(&[0x0B])));
-    let (mut input, (if_instructions, terminator)) = many_till(instruction, term_parser)(input)?;
-    let mut else_instructions = Vec::new();
-    if terminator == &[0x05] {
-        let res = instructions(input)?;
-        input = res.0;
-        else_instructions = res.1;
+fn instructions_with_else(mut input: &[u8]) -> IResult<(Vec<HirInstruction>, Vec<HirInstruction>)> {
+    let mut in_else = false;
+    let mut if_insts = Vec::new();
+    let mut else_insts = Vec::new();
+    loop {
+        if !in_else && input.get(0) == Some(&0x05) {
+            in_else = true;
+            input = &input[1..];
+        }
+        if input.get(0) == Some(&0x0B) {
+            return Ok((&input[1..], (if_insts, else_insts)));
+        }
+        let (new_input, inst) = instruction(input)?;
+        input = new_input;
+        if in_else {
+            else_insts.push(inst);
+        } else {
+            if_insts.push(inst);
+        }
     }
-    Ok((input, (if_instructions, else_instructions)))
 }
 
 fn function_type(input: &[u8]) -> IResult<FunctionType> {
@@ -1106,23 +1120,19 @@ fn element_segment(mut input: &[u8]) -> IResult<ElementSegment> {
         _ => unreachable!(),
     }?;
     let ref_general = format & 4 != 0;
+    if ref_general {
+        return Err(Err::Error(VerboseError::from_error_kind(
+            input,
+            ErrorKind::Verify,
+        )));
+    }
     let (input, ty) = if format & 3 == 0 {
-        Ok((input, RefType::FuncRef))
-    } else if ref_general {
-        ref_type(input)
+        (input, RefType::FuncRef)
     } else {
-        value(RefType::FuncRef, tag(&[0x00]))(input)
-    }?;
-    let (input, init) = wasm_vec(|input| {
-        if ref_general {
-            instructions(input)
-        } else {
-            map(leb128_u32, |i| {
-                vec![HirInstruction::WithIdx(Opcode::FuncRefConst, i)]
-            })(input)
-        }
-    })(input)?;
-    Ok((input, ElementSegment { ty, mode, init }))
+        value(RefType::FuncRef, tag(&[0x00]))(input)?
+    };
+    let (input, values) = wasm_vec(map(leb128_u32, LirValue::FuncRef))(input)?;
+    Ok((input, ElementSegment { ty, mode, values }))
 }
 
 fn data_segment(input: &[u8]) -> IResult<Data> {
@@ -1313,5 +1323,11 @@ fn module(mut input: &[u8]) -> IResult<WasmBinary> {
 }
 
 pub fn parse(input: &[u8]) -> Result<WasmBinary, nom::error::VerboseError<&[u8]>> {
-    all_consuming(module)(input).finish().map(|(_, x)| x)
+    match all_consuming(module)(input) {
+        Ok(res) => Ok(res.1),
+        Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(e),
+        Err(Err::Incomplete(_)) => {
+            return Err(VerboseError::from_error_kind(&[], ErrorKind::Complete));
+        }
+    }
 }

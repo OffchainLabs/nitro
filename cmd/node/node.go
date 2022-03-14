@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package main
@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -25,29 +26,44 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func main() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
-	log.Info("running node")
 
+	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
+
+	nol1Listener := flag.Bool("UNSAFEnol1listener", false, "DANGEROUS! disables listening to L1. To be used in test nodes only")
+	l1conn := flag.String("l1conn", "", "l1 connection (required unless no l1 listener)")
+
+	l1sequencer := flag.Bool("l1sequencer", false, "act and post to l1 as sequencer")
 	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
-	l1conn := flag.String("l1conn", "", "l1 connection (required if l1role != none)")
-	l1keyfile := flag.String("l1keyfile", "", "l1 private key file (required if l1role == sequencer)")
+	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
+	l1Account := flag.String("l1Account", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
-	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
+	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
-	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
+	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
+	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
+
+	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
+	dataAvailabilityLocalDiskDirectory := flag.String("dataavailability.localdisk.dir", "", "directory to store data availability files")
 
 	datadir := flag.String("datadir", "", "directory to store chain state")
+	importFile := flag.String("importfile", "", "path for json data to import")
+	devInit := flag.Bool("dev", false, "init with dev data (1 account with balance) instead of file import")
 	keystorepath := flag.String("keystore", "", "dir for keystore")
 	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
+
 	httphost := flag.String("httphost", "localhost", "http host")
 	httpPort := flag.Int("httpport", 7545, "http port")
 	httpvhosts := flag.String("httpvhosts", "localhost", "list of virtual hosts to accept requests from")
@@ -61,31 +77,86 @@ func main() {
 	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
 	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
 	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duraction to wait before timing out connections to client")
+	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
 	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
 	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
 
+	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
+	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
+	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
+	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+
 	flag.Parse()
 
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.Lvl(*loglevel))
+	log.Root().SetHandler(glogger)
+
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
+	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
-	nodeConf.ForwardingTarget = *forwardingtarget
-	log.Info("Running with", "role", *l1role)
-	if *l1role == "none" {
+	log.Info("Running Arbitrum node with", "role", *l1role)
+	if *nol1Listener {
 		nodeConf.L1Reader = false
+		nodeConf.Sequencer = true // we sequence messages, but not to l1
 		nodeConf.BatchPoster = false
-	} else if *l1role == "listener" {
+		if *l1sequencer || *l1validator {
+			flag.Usage()
+			panic("nol1listener cannot be used with l1sequencer or l1validator")
+		}
+	} else {
 		nodeConf.L1Reader = true
-		nodeConf.BatchPoster = false
-	} else if *l1role == "sequencer" {
-		nodeConf.L1Reader = true
+	}
+
+	if *l1sequencer {
+		nodeConf.Sequencer = true
 		nodeConf.BatchPoster = true
+		nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
+
+		if *forwardingtarget != "" && *forwardingtarget != "null" {
+			flag.Usage()
+			panic("forwardingtarget set with l1sequencer")
+		}
+	} else {
+		if *forwardingtarget == "" {
+			flag.Usage()
+			panic("forwardingtarget unset, and not l1sequencer (can set to \"null\" to disable forwarding)")
+		}
+		if *forwardingtarget == "null" {
+			nodeConf.ForwardingTarget = ""
+		} else {
+			nodeConf.ForwardingTarget = *forwardingtarget
+		}
+	}
+
+	if *dataAvailabilityMode == "onchain" {
+		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
+	} else if *dataAvailabilityMode == "local" {
+		nodeConf.DataAvailabilityMode = das.LocalDataAvailability
+		if *dataAvailabilityLocalDiskDirectory == "" {
+			flag.Usage()
+			panic("davaavailability.localdisk.dir must be specified if mode is set to local")
+		}
 	} else {
 		flag.Usage()
-		panic("l1role not recognized")
+		panic("dataavailability.mode not recognized")
+	}
+
+	if *l1validator {
+		if !nodeConf.L1Reader {
+			flag.Usage()
+			panic("l1validator requires l1role other than \"none\"")
+		}
+		nodeConf.L1Validator = true
+		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
+		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
+		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
+			flag.Usage()
+			panic("L1 validator requires block validator to safely function")
+		}
 	}
 
 	ctx := context.Background()
@@ -102,17 +173,8 @@ func main() {
 			flag.Usage()
 			panic(err)
 		}
-		if nodeConf.BatchPoster {
-			if *l1keyfile == "" {
-				flag.Usage()
-				panic("sequencer requires l1 keyfile")
-			}
-			fileReader, err := os.Open(*l1keyfile)
-			if err != nil {
-				flag.Usage()
-				panic("sequencer without valid l1priv key")
-			}
-			l1TransactionOpts, err = bind.NewTransactorWithChainID(fileReader, *l1passphrase, l1ChainId)
+		if nodeConf.BatchPoster || nodeConf.L1Validator {
+			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *l1Account, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
 			}
@@ -123,7 +185,16 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, time.Minute*5)
+			var wasmModuleRoot common.Hash
+			if nodeConf.BlockValidator {
+				// TODO actually figure out the wasmModuleRoot
+				panic("deploy as validator not yet supported")
+			}
+			var validators uint64
+			if nodeConf.L1Validator {
+				validators++
+			}
+			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, l2ChainId, time.Minute*5)
 			if err != nil {
 				flag.Usage()
 				panic(err)
@@ -152,10 +223,14 @@ func main() {
 	stackConf.HTTPPort = *httpPort
 	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "debug")
 	stackConf.WSHost = *wshost
 	stackConf.WSPort = *wsport
 	stackConf.WSOrigins = utils.SplitAndTrim(*wsorigins)
 	stackConf.WSModules = append(stackConf.WSModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.WSModules = append(stackConf.WSModules, "debug")
 	stackConf.WSExposeAll = *wsexposeall
 	if *wsexposeall {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
@@ -214,33 +289,88 @@ func main() {
 		URL:     *feedInputUrl,
 	}
 
-	genesisAlloc := make(core.GenesisAlloc)
-	genesisAlloc[devAddr] = core.GenesisAccount{
-		Balance:    new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-		Nonce:      0,
-		PrivateKey: nil,
-	}
-	l2Genesys := &core.Genesis{
-		Config:     params.ArbitrumOneChainConfig(),
-		Nonce:      0,
-		Timestamp:  1633932474,
-		ExtraData:  []byte("ArbitrumMainnet"),
-		GasLimit:   0,
-		Difficulty: big.NewInt(1),
-		Mixhash:    common.Hash{},
-		Coinbase:   common.Address{},
-		Alloc:      genesisAlloc,
-		Number:     0,
-		GasUsed:    0,
-		ParentHash: common.Hash{},
-		BaseFee:    big.NewInt(params.InitialBaseFee / 100),
+	var initDataReader statetransfer.InitDataReader = nil
+
+	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
+	if err != nil {
+		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	chainDb, l2blockchain, err := arbnode.CreateDefaultBlockChain(stack, l2Genesys)
+	if *importFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(*importFile)
+		if err != nil {
+			panic(err)
+		}
+	} else if *devInit {
+		initData := statetransfer.ArbosInitializationInfo{
+			Accounts: []statetransfer.AccountInitializationInfo{
+				{
+					Addr:       devAddr,
+					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+					Nonce:      0,
+				},
+			},
+		}
+		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(*l2ChainIdUint))
 	if err != nil {
 		panic(err)
 	}
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2blockchain, l1client, &deployInfo, l1TransactionOpts)
+
+	var l2BlockChain *core.BlockChain
+	if initDataReader != nil {
+		blockReader, err := initDataReader.GetStoredBlockReader()
+		if err != nil {
+			panic(err)
+		}
+		blockNum, err := arbnode.ImportBlocksToChainDb(chainDb, blockReader)
+		if err != nil {
+			panic(err)
+		}
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, chainConfig)
+		if err != nil {
+			panic(err)
+		}
+
+	} else {
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if blocksInDb == 0 {
+			panic("No initialization mode supplied, no blocks in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Check that this ArbOS state has the correct chain ID
+	{
+		statedb, err := l2BlockChain.State()
+		if err != nil {
+			panic(err)
+		}
+		arbosState, err := arbosState.OpenSystemArbosState(statedb, true)
+		if err != nil {
+			panic(err)
+		}
+		chainId, err := arbosState.ChainId()
+		if err != nil {
+			panic(err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			panic(fmt.Sprintf("attempted to launch node with chain ID %v on ArbOS state with chain ID %v", chainConfig.ChainID, chainId))
+		}
+	}
+
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -253,4 +383,5 @@ func main() {
 	}
 
 	stack.Wait()
+	node.StopAndWait()
 }

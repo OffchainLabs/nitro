@@ -1,11 +1,11 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
+#cgo CFLAGS: -g -Wall -I../target/include/
 #include "arbitrator.h"
 */
 import "C"

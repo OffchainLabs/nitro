@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -15,6 +15,7 @@ type TransactionPublisher interface {
 	PublishTransaction(ctx context.Context, tx *types.Transaction) error
 	Initialize(context.Context) error
 	Start(context.Context) error
+	StopAndWait()
 }
 
 type ArbInterface struct {

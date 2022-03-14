@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 // race detection makes things slow and miss timeouts
@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/arbstate/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestDelayInboxLong(t *testing.T) {
@@ -26,11 +26,9 @@ func TestDelayInboxLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, _, l1info, l1backend, stack := CreateTestNodeOnL1(t, ctx, true)
+	l2info, _, l2client, l1info, l1backend, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	l2client := l2info.Client
-	l1client := l1info.Client
 	l2info.GenerateAccount("User2")
 
 	fundsPerDelayed := int64(1000000)
@@ -49,7 +47,7 @@ func TestDelayInboxLong(t *testing.T) {
 				lastDelayedMessage = delayedTx
 				delayedMessages++
 			} else {
-				l1tx = l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil)
+				l1tx = l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil)
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
@@ -59,7 +57,7 @@ func TestDelayInboxLong(t *testing.T) {
 			Require(t, err)
 		}
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
-		_, err := arbnode.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 		Require(t, err)
 	}
 
@@ -71,11 +69,11 @@ func TestDelayInboxLong(t *testing.T) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 100; i++ {
 		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("faucet", "User", 30000, big.NewInt(1e12), nil),
+			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 	}
 
-	_, err := arbnode.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
+	_, err := arbutil.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)

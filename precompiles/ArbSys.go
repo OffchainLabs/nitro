@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -9,67 +9,120 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/merkletree"
+	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
+// Provides system-level functionality for interacting with L1 and understanding the call stack.
 type ArbSys struct {
 	Address                  addr
 	L2ToL1Transaction        func(ctx, mech, addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) error
 	L2ToL1TransactionGasCost func(addr, addr, huge, huge, huge, huge, huge, huge, huge, []byte) (uint64, error)
-	SendMerkleUpdate         func(ctx, mech, huge, [32]byte, huge) error
-	SendMerkleUpdateGasCost  func(huge, [32]byte, huge) (uint64, error)
+	SendMerkleUpdate         func(ctx, mech, huge, bytes32, huge) error
+	SendMerkleUpdateGasCost  func(huge, bytes32, huge) (uint64, error)
 }
 
+var InvalidBlockNum = errors.New("Invalid block number")
+
+// Gets the current L2 block number
 func (con *ArbSys) ArbBlockNumber(c ctx, evm mech) (huge, error) {
 	return evm.Context.BlockNumber, nil
 }
 
+// Gets the L2 block hash, if sufficiently recent
+func (con *ArbSys) ArbBlockHash(c ctx, evm mech, arbBlockNumber *big.Int) (bytes32, error) {
+	if !arbBlockNumber.IsUint64() {
+		return bytes32{}, InvalidBlockNum
+	}
+	requestedBlockNum := arbBlockNumber.Uint64()
+
+	currentNumber := evm.Context.BlockNumber.Uint64()
+	if requestedBlockNum >= currentNumber || requestedBlockNum+256 < currentNumber {
+		return common.Hash{}, errors.New("invalid block number for ArbBlockHAsh")
+	}
+
+	return evm.Context.GetHash(requestedBlockNum), nil
+}
+
+// Gets the rollup's unique chain identifier
 func (con *ArbSys) ArbChainID(c ctx, evm mech) (huge, error) {
 	return evm.ChainConfig().ChainID, nil
 }
 
-func (con *ArbSys) ArbOSVersion(c ctx) (huge, error) {
-	return big.NewInt(1000), nil
+// Gets the current ArbOS version
+func (con *ArbSys) ArbOSVersion(c ctx, evm mech) (huge, error) {
+	version := new(big.Int).SetUint64(55 + c.state.FormatVersion()) // Nitro starts at version 56
+	return version, nil
 }
 
-func (con *ArbSys) GetStorageAt(c ctx, evm mech, address addr, index huge) (huge, error) {
-	if err := c.Burn(storage.StorageReadCost); err != nil {
-		return nil, err
-	}
-	return evm.StateDB.GetState(address, common.BigToHash(index)).Big(), nil
-}
-
+// Returns 0 since Nitro has no concept of storage gas
 func (con *ArbSys) GetStorageGasAvailable(c ctx, evm mech) (huge, error) {
 	return big.NewInt(0), nil
 }
 
-func (con *ArbSys) GetTransactionCount(c ctx, evm mech, account addr) (huge, error) {
-	return big.NewInt(int64(evm.StateDB.GetNonce(account))), nil
-}
-
+// Checks if the call is top-level
 func (con *ArbSys) IsTopLevelCall(c ctx, evm mech) (bool, error) {
-	// need to modify EVM to add a getter for its depth field
-	return false, errors.New("unimplemented")
+	return evm.Depth() <= 2, nil
 }
 
+// Gets the contract's L2 alias
 func (con *ArbSys) MapL1SenderContractAddressToL2Alias(c ctx, sender addr, dest addr) (addr, error) {
 	return util.RemapL1Address(sender), nil
 }
 
-func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
-	// need special support to enable this
-	return addr{}, errors.New("unimplemented")
+// Checks if the caller's caller was aliased
+func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
+	aliased := evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType)
+	return aliased, nil
 }
 
-func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (*big.Int, error) {
+// Gets the caller's caller without any potential aliasing
+func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error) {
 
-	sendHash := crypto.Keccak256Hash(c.caller.Bytes(), common.BigToHash(value).Bytes(), destination.Bytes(), calldataForL1)
+	address := addr{}
+
+	if evm.Depth() > 1 {
+		address = c.txProcessor.Callers[evm.Depth()-2]
+	}
+
+	if evm.Depth() == 2 && util.DoesTxTypeAlias(c.txProcessor.TopTxType) {
+		address = util.InverseRemapL1Address(address)
+	}
+
+	return address, nil
+}
+
+// Sends a transaction to L1, adding it to the outbox
+func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
+	timestamp, _ := c.state.LastTimestampSeen()
+	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
+	if err != nil {
+		return nil, err
+	}
+	bigL1BlockNum := new(big.Int).SetUint64(l1BlockNum)
+
 	arbosState := c.state
+	sendHash, err := arbosState.KeccakHash(
+		c.caller.Bytes(),
+		destination.Bytes(),
+		math.U256Bytes(evm.Context.BlockNumber),
+		math.U256Bytes(bigL1BlockNum),
+		math.U256Bytes(evm.Context.Time),
+		common.BigToHash(value).Bytes(),
+		calldataForL1,
+	)
+	if err != nil {
+		return nil, err
+	}
 	merkleAcc := arbosState.SendMerkleAccumulator()
 	merkleUpdateEvents, err := merkleAcc.Append(sendHash)
+	if err != nil {
+		return nil, err
+	}
+
+	size, err := merkleAcc.Size()
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +147,6 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		}
 	}
 
-	size, _ := merkleAcc.Size()
-	timestamp, err := arbosState.LastTimestampSeen()
-	if err != nil {
-		return nil, err
-	}
-
 	leafNum := big.NewInt(int64(size - 1))
 
 	err = con.L2ToL1Transaction(
@@ -111,8 +158,8 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		leafNum,
 		big.NewInt(0),
 		evm.Context.BlockNumber,
-		evm.Context.BlockNumber, // TODO: should use Ethereum block number here; currently using Arb block number
-		big.NewInt(int64(timestamp)),
+		bigL1BlockNum,
+		new(big.Int).SetUint64(timestamp),
 		value,
 		calldataForL1,
 	)
@@ -120,25 +167,23 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 	return sendHash.Big(), err
 }
 
-func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (*big.Int, [32]byte, [][32]byte, error) {
-	if c.caller != (common.Address{}) {
-		return nil, [32]byte{}, nil, errors.New("method can only be called by address zero")
+// Gets the root, size, and partials of the outbox Merkle tree state (caller must be the 0 address)
+func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32, error) {
+	if c.caller != (addr{}) {
+		return nil, bytes32{}, nil, errors.New("method can only be called by address zero")
 	}
 
 	// OK to not charge gas, because method is only callable by address zero
 
 	size, rootHash, rawPartials, _ := c.state.SendMerkleAccumulator().StateForExport()
-	partials := make([][32]byte, len(rawPartials))
+	partials := make([]bytes32, len(rawPartials))
 	for i, par := range rawPartials {
-		partials[i] = [32]byte(par)
+		partials[i] = bytes32(par)
 	}
-	return big.NewInt(int64(size)), [32]byte(rootHash), partials, nil
+	return big.NewInt(int64(size)), bytes32(rootHash), partials, nil
 }
 
-func (con *ArbSys) WasMyCallersAddressAliased(c ctx, evm mech) (bool, error) {
-	return false, errors.New("unimplemented")
-}
-
-func (con ArbSys) WithdrawEth(c ctx, evm mech, value *big.Int, destination common.Address) (*big.Int, error) {
+// Send paid eth to the destination on L1
+func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (huge, error) {
 	return con.SendTxToL1(c, evm, value, destination, []byte{})
 }

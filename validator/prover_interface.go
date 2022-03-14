@@ -1,8 +1,8 @@
 package validator
 
 /*
-#cgo CFLAGS: -g -Wall -I../arbitrator/target/env/include/
-#cgo LDFLAGS: ${SRCDIR}/../arbitrator/target/env/lib/libprover.a -ldl -lm
+#cgo CFLAGS: -g -Wall -I../target/include/
+#cgo LDFLAGS: ${SRCDIR}/../target/lib/libprover.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
 
@@ -44,6 +44,9 @@ func GlobalStateToC(gsIn GoGlobalState) C.GlobalState {
 	for i, b := range gsIn.BlockHash {
 		gs.bytes32_vals[0].bytes[i] = C.uint8_t(b)
 	}
+	for i, b := range gsIn.SendRoot {
+		gs.bytes32_vals[1].bytes[i] = C.uint8_t(b)
+	}
 	return gs
 }
 
@@ -52,10 +55,15 @@ func GlobalStateFromC(gs C.GlobalState) GoGlobalState {
 	for i := range blockHash {
 		blockHash[i] = byte(gs.bytes32_vals[0].bytes[i])
 	}
+	var sendRoot common.Hash
+	for i := range sendRoot {
+		sendRoot[i] = byte(gs.bytes32_vals[1].bytes[i])
+	}
 	return GoGlobalState{
 		Batch:      uint64(gs.u64_vals[0]),
 		PosInBatch: uint64(gs.u64_vals[1]),
 		BlockHash:  blockHash,
+		SendRoot:   sendRoot,
 	}
 }
 

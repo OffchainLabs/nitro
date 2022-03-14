@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbosState
@@ -9,19 +9,18 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/util/colors"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/colors"
 )
 
 func TestStorageOpenFromEmpty(t *testing.T) {
-	storage := OpenArbosStateForTesting(t)
-	_ = storage
+	NewArbosMemoryBackedArbOSState()
 }
 
 func TestMemoryBackingEvmStorage(t *testing.T) {
-	sto := storage.NewMemoryBacked(&burn.SystemBurner{})
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	value, err := sto.Get(common.Hash{})
 	Require(t, err)
 	if value != (common.Hash{}) {
@@ -46,7 +45,7 @@ func TestMemoryBackingEvmStorage(t *testing.T) {
 }
 
 func TestStorageBackedInt64(t *testing.T) {
-	state := OpenArbosStateForTesting(t)
+	state, _ := NewArbosMemoryBackedArbOSState()
 	storage := state.backingStorage
 	offset := uint64(7895463)
 
@@ -65,7 +64,7 @@ func TestStorageBackedInt64(t *testing.T) {
 }
 
 func TestStorageSlots(t *testing.T) {
-	state := OpenArbosStateForTesting(t)
+	state, _ := NewArbosMemoryBackedArbOSState()
 	sto := state.BackingStorage().OpenSubStorage([]byte{})
 
 	println("nil address", colors.Blue, storage.NilAddressRepresentation.String(), colors.Clear)

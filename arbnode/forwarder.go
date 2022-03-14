@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/pkg/errors"
 )
 
 type TxForwarder struct {
@@ -16,10 +17,10 @@ type TxForwarder struct {
 	client *ethclient.Client
 }
 
-func NewForwarder(target string) (*TxForwarder, error) {
+func NewForwarder(target string) *TxForwarder {
 	return &TxForwarder{
 		target: target,
-	}, nil
+	}
 }
 
 func (f *TxForwarder) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
@@ -38,3 +39,21 @@ func (f *TxForwarder) Initialize(ctx context.Context) error {
 func (f *TxForwarder) Start(ctx context.Context) error {
 	return nil
 }
+
+func (f *TxForwarder) StopAndWait() {}
+
+type TxDropper struct{}
+
+func NewTxDropper() *TxDropper {
+	return &TxDropper{}
+}
+
+func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
+	return errors.New("transactions not supported by this endpoint")
+}
+
+func (f *TxDropper) Initialize(ctx context.Context) error { return nil }
+
+func (f *TxDropper) Start(ctx context.Context) error { return nil }
+
+func (f *TxDropper) StopAndWait() {}

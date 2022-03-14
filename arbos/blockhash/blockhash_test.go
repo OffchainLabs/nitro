@@ -1,0 +1,87 @@
+//
+// Copyright 2022, Offchain Labs, Inc. All rights reserved.
+//
+
+package blockhash
+
+import (
+	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/testhelpers"
+)
+
+func TestBlockhash(t *testing.T) {
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	InitializeBlockhashes(sto)
+
+	bh := OpenBlockhashes(sto)
+	bnum, err := bh.NextBlockNumber()
+	Require(t, err, "failed to read blocknum in new Blockhashes")
+	if bnum != 0 {
+		Fail(t, "incorrect blocknum in new Blockhashes")
+	}
+	_, err = bh.BlockHash(0)
+	if err == nil {
+		Fail(t, "should have generated error on Blockhash(0) in new Blockhashes")
+	}
+	_, err = bh.BlockHash(4242)
+	if err == nil {
+		Fail(t, "should have generated error on Blockhash(4242) in new Blockhashes")
+	}
+
+	hash0 := common.BytesToHash(crypto.Keccak256([]byte{0}))
+	err = bh.RecordNewL1Block(0, hash0)
+	Require(t, err)
+	bnum, err = bh.NextBlockNumber()
+	Require(t, err)
+	if bnum != 1 {
+		Fail(t, "incorrect NextBlockNumber after initial Blockhash(0)")
+	}
+	h, err := bh.BlockHash(0)
+	Require(t, err)
+	if h != hash0 {
+		Fail(t, "incorrect hash return for initial Blockhash(0)")
+	}
+
+	hash4242 := common.BytesToHash(crypto.Keccak256([]byte{42, 42}))
+	err = bh.RecordNewL1Block(4242, hash4242)
+	Require(t, err)
+	bnum, err = bh.NextBlockNumber()
+	Require(t, err)
+	if bnum != 4243 {
+		Fail(t, "incorrect NextBlockNumber after big jump")
+	}
+	_, err = bh.BlockHash(4243)
+	if err == nil {
+		Fail(t, "BlockHash for future block should generate error")
+	}
+	h, err = bh.BlockHash(4242)
+	Require(t, err)
+	if h != hash4242 {
+		Fail(t, "incorrect BlockHash(4242)")
+	}
+	h2, err := bh.BlockHash(4241)
+	Require(t, err)
+	if h2 == h {
+		Fail(t, "same blockhash at different blocknums")
+	}
+	_, err = bh.BlockHash(4242 - 257)
+	if err == nil {
+		Fail(t, "old blockhash should give error")
+	}
+
+}
+
+func Require(t *testing.T, err error, text ...string) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, text...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
+}
