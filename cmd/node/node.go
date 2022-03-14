@@ -223,10 +223,14 @@ func main() {
 	stackConf.HTTPPort = *httpPort
 	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "debug")
 	stackConf.WSHost = *wshost
 	stackConf.WSPort = *wsport
 	stackConf.WSOrigins = utils.SplitAndTrim(*wsorigins)
 	stackConf.WSModules = append(stackConf.WSModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.WSModules = append(stackConf.WSModules, "debug")
 	stackConf.WSExposeAll = *wsexposeall
 	if *wsexposeall {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
