@@ -19,7 +19,7 @@ import (
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
-const RetryableReapPrice = 32200
+const RetryableReapPrice = 58000
 
 type RetryableState struct {
 	retryables   *storage.Storage
@@ -174,8 +174,13 @@ func (retryable *Retryable) Beneficiary() (common.Address, error) {
 	return retryable.beneficiary.Get()
 }
 
-func (retryable *Retryable) Timeout() (uint64, error) {
-	return retryable.timeout.Get()
+func (retryable *Retryable) CalculateTimeout() (uint64, error) {
+	timeout, err := retryable.timeout.Get()
+	if err != nil {
+		return 0, err
+	}
+	windows, err := retryable.timeoutWindowsLeft.Get()
+	return timeout + windows*RetryableLifetimeSeconds, err
 }
 
 func (retryable *Retryable) SetTimeout(val uint64) error {
@@ -203,37 +208,39 @@ func (retryable *Retryable) CalldataSize() (uint64, error) {
 	return retryable.calldata.Size()
 }
 
-func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) error {
+func (rs *RetryableState) Keepalive(
+	ticketId common.Hash,
+	currentTimestamp,
+	limitBeforeAdd,
+	timeToAdd uint64,
+) (uint64, error) {
 	retryable, err := rs.OpenRetryable(ticketId, currentTimestamp)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if retryable == nil {
-		return errors.New("ticketId not found")
+		return 0, errors.New("ticketId not found")
 	}
-	timeout, err := retryable.Timeout()
+	timeout, err := retryable.CalculateTimeout()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if timeout > limitBeforeAdd {
-		return errors.New("timeout too far into the future")
+		return 0, errors.New("timeout too far into the future")
 	}
 
 	// Add a duplicate entry to the end of the queue (only the last one deletes the retryable)
 	err = rs.TimeoutQueue.Put(retryable.id)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := retryable.timeoutWindowsLeft.Increment(); err != nil {
-		return err
+		return 0, err
 	}
+	newTimeout := timeout + RetryableLifetimeSeconds
 
 	// Pay in advance for the work needed to reap the duplicate from the timeout queue
-	if err := rs.retryables.Burner().Burn(RetryableReapPrice); err != nil {
-		return err
-	}
-
-	return retryable.SetTimeout(timeout + timeToAdd)
+	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
 }
 
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing
@@ -242,8 +249,10 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	}
 	rTries, _ := retryable.NumTries()
 	oTries, _ := other.NumTries()
-	rTimeout, _ := retryable.Timeout()
-	oTimeout, _ := other.Timeout()
+	rTimeout, _ := retryable.timeout.Get()
+	oTimeout, _ := other.timeout.Get()
+	rWindows, _ := retryable.timeoutWindowsLeft.Get()
+	oWindows, _ := other.timeoutWindowsLeft.Get()
 	rFrom, _ := retryable.From()
 	oFrom, _ := other.From()
 	rTo, _ := retryable.To()
@@ -255,7 +264,8 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	rBytes, _ := retryable.Calldata()
 	oBytes, err := other.Calldata()
 
-	diff := rTries != oTries || rTimeout != oTimeout || rFrom != oFrom || rBeneficiary != oBeneficiary
+	diff := rTries != oTries || rTimeout != oTimeout || rWindows != oWindows
+	diff = diff || rFrom != oFrom || rBeneficiary != oBeneficiary
 	diff = diff || rCallvalue.Cmp(oCallvalue) != 0 || !bytes.Equal(rBytes, oBytes)
 	if diff {
 		return false, err
@@ -279,8 +289,8 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return err
 	}
 	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
-	slot := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
-	timeout, err := slot.Get()
+	timeoutStorage := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
+	timeout, err := timeoutStorage.Get()
 	if err != nil {
 		return err
 	}
@@ -292,7 +302,7 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 
 	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	windowsLeft, err := windowsLeftStorage.Get()
-	if err != nil || (windowsLeft == 0 && timeout > currentTimestamp) {
+	if err != nil || timeout >= currentTimestamp {
 		return err
 	}
 
@@ -308,6 +318,10 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return err
 	}
 
+	// Consume a window, delaying the timeout one lifetime period
+	if err := timeoutStorage.Set(timeout + RetryableLifetimeSeconds); err != nil {
+		return err
+	}
 	return windowsLeftStorage.Set(windowsLeft - 1)
 }
 

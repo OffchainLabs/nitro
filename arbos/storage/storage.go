@@ -230,7 +230,7 @@ func (store *Storage) ClearBytes() error {
 	}
 	offset := uint64(1)
 	for bytesLeft > 0 {
-		err := store.SetByUint64(offset, common.Hash{})
+		err := store.ClearByUint64(offset)
 		if err != nil {
 			return err
 		}
@@ -241,7 +241,7 @@ func (store *Storage) ClearBytes() error {
 			bytesLeft -= 32
 		}
 	}
-	return store.SetByUint64(0, common.Hash{})
+	return store.ClearByUint64(0)
 }
 
 func (sto *Storage) Burner() burn.Burner {

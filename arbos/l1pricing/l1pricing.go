@@ -110,7 +110,7 @@ func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed 
 	passedSqrt := arbmath.ApproxSquareRoot(timePassed)
 	newBaseFee := arbmath.BigDivByUint(
 		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
-		inertia+timePassed,
+		inertia+passedSqrt,
 	)
 
 	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
