@@ -16,7 +16,12 @@ type DataAvailabilityServiceReader interface {
 	Retrieve(ctx context.Context, cert []byte) ([]byte, error)
 }
 
+// Indicates that this data is a certificate for the data availability service,
+// which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
+
+// Indicates that this message was authenticated by L1. Currently unused.
+const L1AuthenticatedMessageHeaderFlag byte = 0x40
 
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0

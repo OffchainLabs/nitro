@@ -33,16 +33,4 @@ library ValueStackLib {
     function push(ValueStack memory stack, Value memory val) internal pure {
         return stack.proved.push(val);
     }
-
-    function isEmpty(ValueStack memory stack) internal pure returns (bool) {
-        return stack.proved.length() == 0 && stack.remainingHash == bytes32(0);
-    }
-
-    function hasProvenDepthLessThan(ValueStack memory stack, uint256 bound)
-        internal
-        pure
-        returns (bool)
-    {
-        return stack.proved.length() < bound && stack.remainingHash == bytes32(0);
-    }
 }
