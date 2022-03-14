@@ -88,7 +88,7 @@ func init() {
 	}
 	core.InterceptRPCMessage = func(msg types.Message, statedb *state.StateDB) (types.Message, error) {
 		to := msg.To()
-		arbosVersion := arbosState.ArbOSVersion(statedb)
+		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
 		if to == nil || *to != common.HexToAddress("0xc8") || arbosVersion == 0 {
 			return msg, nil
 		}
