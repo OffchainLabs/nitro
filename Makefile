@@ -2,6 +2,18 @@
 # Copyright 2020, Offchain Labs, Inc. All rights reserved.
 #
 
+# Docker builds mess up file timestamps. Then again, in docker builds we never
+# have to update an existing file. So - for docker, convert all dependencies
+# to order-only dependencies (timestamps ignored).
+# WARNING: when using this trick, you cannot use the $< automatic variable
+ifeq ($(origin NITRO_BUILD_IGNORE_TIMESTAMPS),undefined)
+ DEP_PREDICATE:=
+ ORDER_ONLY_PREDICATE:=|
+else
+ DEP_PREDICATE:=|
+ ORDER_ONLY_PREDICATE:=
+endif
+
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
@@ -122,21 +134,21 @@ docker:
 
 # regular build rules
 
-$(output_root)/bin/node: build-node-deps
+$(output_root)/bin/node: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/node
 
-$(output_root)/bin/deploy: build-node-deps
+$(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/deploy
 
-$(replay_wasm): $(go_source) .make/solgen
+$(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
 
-$(arbitrator_prover_bin): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_bin)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover
 	install arbitrator/target/release/prover $@
 
-$(arbitrator_prover_lib): arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
+$(arbitrator_prover_lib): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib
 	install arbitrator/target/release/libprover.a $@
@@ -147,17 +159,17 @@ arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm: arbitrator/
 arbitrator/prover/test-cases/go/main: arbitrator/prover/test-cases/go/main.go arbitrator/prover/test-cases/go/go.mod arbitrator/prover/test-cases/go/go.sum
 	cd arbitrator/prover/test-cases/go && GOOS=js GOARCH=wasm go build main.go
 
-$(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
+$(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs arbitrator/prover/src/utils.rs
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
 
-$(output_root)/machine/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+$(output_root)/machine/wasi_stub.wasm: $(DEP_PREDICATE) arbitrator/wasm-libraries/wasi-stub/src/**
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
-arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: \
+arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/Makefile \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/platform.h \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/source/*.c \
@@ -166,10 +178,13 @@ arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a: \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/source/8086/*.h
 	cd arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang && make $(MAKEFLAGS)
 
-arbitrator/wasm-libraries/soft-float/bindings%.o: arbitrator/wasm-libraries/soft-float/bindings%.c
-	clang $< --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
+arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings32.c
+	clang arbitrator/wasm-libraries/soft-float/bindings32.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-$(output_root)/machine/soft-float.wasm: \
+arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
+	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
+
+$(output_root)/machine/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
@@ -239,22 +254,22 @@ $(output_root)/machine/soft-float.wasm: \
 		--export wavm__f64_promote_f32
 
 
-$(output_root)/machine/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+$(output_root)/machine/go_stub.wasm: $(DEP_PREDICATE) arbitrator/wasm-libraries/go-stub/src/**
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
-$(output_root)/machine/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+$(output_root)/machine/host_io.wasm: $(DEP_PREDICATE) arbitrator/wasm-libraries/host-io/src/**
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
-$(output_root)/machine/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+$(output_root)/machine/brotli.wasm: $(DEP_PREDICATE) arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
-$(output_root)/machine/module_root: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+$(output_root)/machine/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/brotli.wasm  > $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
@@ -274,35 +289,35 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 
 # strategic rules to minimize dependency building
 
-.make/lint: build-node-deps | .make
+.make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --fix
 	yarn --cwd solgen solhint
 	@touch $@
 
-.make/fmt: build-node-deps .make/yarndeps | .make
+.make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
 	yarn --cwd solgen prettier:solidity
 	@touch $@
 
-.make/test-go: $(go_source) build-node-deps test-go-deps | .make
+.make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
 	gotestsum --format short-verbose
 	@touch $@
 
-.make/solgen: solgen/gen.go .make/solidity | .make
+.make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
 	mkdir -p solgen/go/
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: solgen/src/*/*.sol .make/yarndeps | .make
+.make/solidity: $(DEP_PREDICATE) solgen/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd solgen build
 	@touch $@
 
-.make/yarndeps: solgen/package.json solgen/yarn.lock | .make
+.make/yarndeps: $(DEP_PREDICATE) solgen/package.json solgen/yarn.lock $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd solgen install
 	@touch $@
 
-.make/cbrotli-lib: | .make
+.make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	@printf "%btesting cbrotli local build exists. If this step fails, run ./build-brotli.sh -l%b\n" $(color_pink) $(color_reset)
 	test -f target/include/brotli/encode.h
 	test -f target/include/brotli/decode.h
@@ -311,7 +326,7 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 	test -f target/lib/libbrotlidec-static.a
 	@touch $@
 
-.make/cbrotli-wasm: | .make
+.make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	@printf "%btesting cbrotli wasm build exists. If this step fails, run ./build-brotli.sh -w%b\n" $(color_pink) $(color_reset)
 	test -f target/lib-wasm/libbrotlicommon-static.a
 	test -f target/lib-wasm/libbrotlienc-static.a
