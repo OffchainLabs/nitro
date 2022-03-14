@@ -12,7 +12,10 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -33,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -44,7 +48,6 @@ func main() {
 	l1conn := flag.String("l1conn", "", "l1 connection (required unless no l1 listener)")
 
 	l1sequencer := flag.Bool("l1sequencer", false, "act and post to l1 as sequencer")
-	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
 	l1Account := flag.String("l1Account", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
@@ -87,8 +90,12 @@ func main() {
 	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
 	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
 	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+	wasmrootpath := flag.String("wasmrootpath", "", "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm)")
+	wasmmoduleroot := flag.String("wasmmoduleroot", "", "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	wasmcachepath := flag.String("wasmcachepath", "", "path for cache of wasm machines")
 
 	flag.Parse()
+	ctx := context.Background()
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(*loglevel))
@@ -98,7 +105,6 @@ func main() {
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
-	log.Info("Running Arbitrum node with", "role", *l1role)
 	if *nol1Listener {
 		nodeConf.L1Reader = false
 		nodeConf.Sequencer = true // we sequence messages, but not to l1
@@ -145,21 +151,56 @@ func main() {
 		panic("dataavailability.mode not recognized")
 	}
 
-	if *l1validator {
-		if !nodeConf.L1Reader {
-			flag.Usage()
-			panic("l1validator requires l1role other than \"none\"")
+	if *wasmrootpath != "" {
+		validator.StaticNitroMachineConfig.RootPath = *wasmrootpath
+	} else {
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
 		}
+		targetDir := filepath.Dir(filepath.Dir(execfile))
+		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
+	}
+
+	wasmModuleRootString := *wasmmoduleroot
+	if wasmModuleRootString == "" {
+		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
+		fileBytes, err := ioutil.ReadFile(fileToRead)
+		if err != nil {
+			if *l1deploy || (*l1validator && !*l1validatorwithoutblockvalidator) {
+				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
+			}
+		}
+		wasmModuleRootString = strings.TrimSpace(string(fileBytes))
+		if len(wasmModuleRootString) > 64 {
+			wasmModuleRootString = wasmModuleRootString[0:64]
+		}
+	}
+	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
+
+	if *l1validator {
 		nodeConf.L1Validator = true
 		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
 		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
-		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
-			flag.Usage()
-			panic("L1 validator requires block validator to safely function")
+		if !*l1validatorwithoutblockvalidator {
+			nodeConf.BlockValidator = true
+			if *wasmcachepath != "" {
+				validator.StaticNitroMachineConfig.InitialMachineCachePath = *wasmcachepath
+			}
+			go func() {
+				expectedRoot := wasmModuleRoot
+				foundRoot, err := validator.GetInitialModuleRoot(ctx)
+				if err != nil {
+					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
+				}
+				if foundRoot != expectedRoot {
+					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
+				} else {
+					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
+				}
+			}()
 		}
 	}
-
-	ctx := context.Background()
 
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
@@ -185,7 +226,6 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			var wasmModuleRoot common.Hash
 			if nodeConf.BlockValidator {
 				// TODO actually figure out the wasmModuleRoot
 				panic("deploy as validator not yet supported")
