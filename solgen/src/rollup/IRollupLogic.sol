@@ -19,10 +19,11 @@
 pragma solidity ^0.8.0;
 
 import "./RollupLib.sol";
+import "./IRollupCore.sol";
 import "../bridge/ISequencerInbox.sol";
 import "../bridge/IOutbox.sol";
 
-interface IRollupUserAbs {
+interface IRollupUserAbs is IRollupCore {
     /// @dev the user logic just validated configuration and shouldn't write to state during init
     /// this allows the admin logic to ensure consistency on parameters.
     function initialize(address stakeToken) external view;
@@ -36,6 +37,8 @@ interface IRollupUserAbs {
     function requireUnresolvedExists() external view;
 
     function countStakedZombies(uint64 nodeNum) external view returns (uint256);
+
+    function countZombiesStakedOnChildren(uint64 nodeNum) external view returns (uint256);
 }
 
 interface IRollupUser is IRollupUserAbs {

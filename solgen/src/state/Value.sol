@@ -26,18 +26,6 @@ library ValueLib {
         return ValueType.STACK_BOUNDARY;
     }
 
-    function isNumeric(ValueType val) internal pure returns (bool) {
-        return
-            val == ValueType.I32 ||
-            val == ValueType.I64 ||
-            val == ValueType.F32 ||
-            val == ValueType.F64;
-    }
-
-    function isNumeric(Value memory val) internal pure returns (bool) {
-        return isNumeric(val.valueType);
-    }
-
     function assumeI32(Value memory val) internal pure returns (uint32) {
         uint256 uintval = uint256(val.contents);
         require(val.valueType == ValueType.I32, "NOT_I32");

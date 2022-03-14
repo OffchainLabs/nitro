@@ -14,12 +14,13 @@ import (
 
 func TestSerializeAndParseL1Message(t *testing.T) {
 	chainId := big.NewInt(6345634)
+	requestId := common.BigToHash(big.NewInt(3))
 	header := L1IncomingMessageHeader{
 		L1MessageType_EndOfBlock,
 		common.BigToAddress(big.NewInt(4684)),
 		864513,
 		8794561564,
-		common.BigToHash(big.NewInt(3)),
+		&requestId,
 		big.NewInt(10000000000000),
 	}
 	msg := L1IncomingMessage{

@@ -64,12 +64,13 @@ func TestEthDepositMessage(t *testing.T) {
 		Fail(t)
 	}
 
+	firstRequestId := common.BigToHash(big.NewInt(3))
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
 		Poster:      addr,
 		BlockNumber: 864513,
 		Timestamp:   8794561564,
-		RequestId:   common.BigToHash(big.NewInt(3)),
+		RequestId:   &firstRequestId,
 		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msgBuf := bytes.Buffer{}
@@ -86,7 +87,8 @@ func TestEthDepositMessage(t *testing.T) {
 		t.Error(err)
 	}
 
-	header.RequestId = common.BigToHash(big.NewInt(4))
+	secondRequestId := common.BigToHash(big.NewInt(4))
+	header.RequestId = &secondRequestId
 	msgBuf2 := bytes.Buffer{}
 	if err := util.HashToWriter(balance2, &msgBuf2); err != nil {
 		t.Error(err)

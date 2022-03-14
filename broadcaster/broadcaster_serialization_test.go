@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
+	var requestId common.Hash
 	msg := BroadcastMessage{
 		Version: 1,
 		Messages: []*BroadcastFeedMessage{
@@ -27,7 +29,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 							Poster:      [20]byte{},
 							BlockNumber: 0,
 							Timestamp:   0,
-							RequestId:   [32]byte{},
+							RequestId:   &requestId,
 							L1BaseFee:   big.NewInt(0),
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},

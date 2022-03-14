@@ -12,7 +12,6 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -285,9 +284,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	var msg *MessageWithMetadata
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
 
-		// L2 message
-		var requestId common.Hash
-
 		if kind == BatchSegmentKindL2MessageBrotli {
 			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
 			if err != nil {
@@ -297,12 +293,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			segment = decompressed
 		}
 
-		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
-		if len(segment) == 0 || (segment[0] != arbos.L2MessageKind_SignedTx && segment[0] != arbos.L2MessageKind_UnsignedUserTx) {
-			requestId[0] = 1 << 6
-			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.cachedSequencerMessageNum)
-			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
-		}
 		msg = &MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
@@ -310,7 +300,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					Poster:      l1pricing.SequencerAddress,
 					BlockNumber: blockNumber,
 					Timestamp:   timestamp,
-					RequestId:   requestId,
+					RequestId:   nil,
 					L1BaseFee:   big.NewInt(0),
 				},
 				L2msg: segment,

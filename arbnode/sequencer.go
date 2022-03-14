@@ -228,7 +228,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 		Poster:      l1pricing.SequencerAddress,
 		BlockNumber: l1Block,
 		Timestamp:   uint64(timestamp),
-		RequestId:   common.Hash{},
+		RequestId:   nil,
 		L1BaseFee:   big.NewInt(0),
 	}
 

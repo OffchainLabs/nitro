@@ -195,6 +195,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			return nil, errors.New("found message data with mismatched hash")
 		}
 
+		requestId := common.BigToHash(parsedLog.MessageIndex)
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -204,7 +205,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					Poster:      parsedLog.Sender,
 					BlockNumber: parsedLog.Raw.BlockNumber,
 					Timestamp:   parsedLog.Timestamp,
-					RequestId:   common.BigToHash(parsedLog.MessageIndex),
+					RequestId:   &requestId,
 					L1BaseFee:   parsedLog.BaseFeeL1,
 				},
 				L2msg: data,
