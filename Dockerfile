@@ -135,7 +135,7 @@ COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 # solgen was executed for just prcompiles previously.
-RUN rm .make/solgen && make .make/solgen
+RUN go run solgen/gen.go
 RUN go build -o ./target/bin/node ./cmd/node
 RUN go build -o ./target/bin/deploy ./cmd/deploy
 
