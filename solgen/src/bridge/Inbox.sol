@@ -194,6 +194,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
+    /**
+     * @notice Get the L1 fee for submitting a retryable
+     * @dev This fee is only payable by via the deposit
+     * @param dataLength The length of the retryable's calldata, in bytes
+     */
+    function retryableSubmissionFee(uint256 dataLength) public view returns (uint256) {
+        return (1400 + 6 * dataLength) * block.basefee;
+    }
+
     /// @notice deposit eth from L1 to L2
     /// @dev this function should not be called inside contract constructors
     function depositEth(uint256 maxSubmissionCost)
@@ -206,6 +215,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
+
+        require(msg.value >= retryableSubmissionFee(0), "insufficient submission fee");
 
         // solhint-disable-next-line avoid-tx-origin
         if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
@@ -264,6 +275,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
+        require(msg.value >= retryableSubmissionFee(data.length), "insufficient submission fee");
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
