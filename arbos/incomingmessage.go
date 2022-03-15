@@ -445,7 +445,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if err != nil {
 		return nil, err
 	}
-	submissionFeePaid, err := util.HashFromReader(rd)
+	maxSubmissionFee, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -491,19 +491,19 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		return nil, errors.New("cannot issue submit retryable tx without L1 request id")
 	}
 	tx := &types.ArbitrumSubmitRetryableTx{
-		ChainId:           chainId,
-		RequestId:         *header.RequestId,
-		From:              util.RemapL1Address(header.Poster),
-		L1BaseFee:         header.L1BaseFee,
-		DepositValue:      depositValue.Big(),
-		GasFeeCap:         maxFeePerGas.Big(),
-		Gas:               gasLimitBig.Uint64(),
-		To:                pTo,
-		Value:             callvalue.Big(),
-		Beneficiary:       callvalueRefundAddress,
-		SubmissionFeePaid: submissionFeePaid.Big(),
-		FeeRefundAddr:     feeRefundAddress,
-		Data:              data,
+		ChainId:          chainId,
+		RequestId:        *header.RequestId,
+		From:             util.RemapL1Address(header.Poster),
+		L1BaseFee:        header.L1BaseFee,
+		DepositValue:     depositValue.Big(),
+		GasFeeCap:        maxFeePerGas.Big(),
+		Gas:              gasLimitBig.Uint64(),
+		To:               pTo,
+		Value:            callvalue.Big(),
+		Beneficiary:      callvalueRefundAddress,
+		MaxSubmissionFee: maxSubmissionFee.Big(),
+		FeeRefundAddr:    feeRefundAddress,
+		Data:             data,
 	}
 	return types.NewTx(tx), nil
 }

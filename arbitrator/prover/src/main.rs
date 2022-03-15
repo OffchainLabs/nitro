@@ -121,6 +121,9 @@ struct SimpleProfile {
     local_cycles: u64,
 }
 
+const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & solgen's OneStepProverHostIo.sol
+const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & solgen's OneStepProverHostIo.sol
+
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -136,8 +139,8 @@ fn main() -> Result<()> {
     let inbox_header_len;
     let delayed_header_len;
     if opts.inbox_add_stub_headers {
-        inbox_header_len = 40;
-        delayed_header_len = 113;
+        inbox_header_len = INBOX_HEADER_LEN;
+        delayed_header_len = DELAYED_HEADER_LEN + 1;
     } else {
         inbox_header_len = 0;
         delayed_header_len = 0;

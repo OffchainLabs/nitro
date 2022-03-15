@@ -84,6 +84,7 @@ func (q *Queue) Put(val common.Hash) error {
 	return q.storage.SetByUint64(newOffset-1, val)
 }
 
+// Reset the queue to its starting state, if empty, which is useful in testing
 func (q *Queue) Shift() (bool, error) {
 	put, err := q.nextPutOffset.Get()
 	if err != nil {

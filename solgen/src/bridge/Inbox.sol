@@ -216,7 +216,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        require(msg.value >= retryableSubmissionFee(0), "insufficient submission fee");
+        require(maxSubmissionCost >= retryableSubmissionFee(0), "insufficient submission fee");
 
         // solhint-disable-next-line avoid-tx-origin
         if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
@@ -275,7 +275,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
-        require(msg.value >= retryableSubmissionFee(data.length), "insufficient submission fee");
+        require(
+            maxSubmissionCost >= retryableSubmissionFee(data.length),
+            "insufficient submission fee"
+        );
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,

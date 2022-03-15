@@ -18,6 +18,8 @@ contract OneStepProverHostIo is IOneStepProver {
 
     uint256 private constant LEAF_SIZE = 32;
     uint256 private constant INBOX_NUM = 2;
+    uint64 private constant INBOX_HEADER_LEN = 40;
+    uint64 private constant DELAYED_HEADER_LEN = 112 + 1;
 
     function setLeafByte(
         bytes32 oldLeaf,
@@ -151,7 +153,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint64 msgIndex,
         bytes calldata message
     ) internal view returns (bool) {
-        require(message.length >= 40, "BAD_SEQINBOX_PROOF");
+        require(message.length >= INBOX_HEADER_LEN, "BAD_SEQINBOX_PROOF");
 
         uint64 afterDelayedMsg;
         (afterDelayedMsg, ) = Deserialize.u64(message, 32);
@@ -175,7 +177,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint64 msgIndex,
         bytes calldata message
     ) internal view returns (bool) {
-        require(message.length >= 113, "BAD_DELAYED_PROOF");
+        require(message.length >= DELAYED_HEADER_LEN, "BAD_DELAYED_PROOF");
 
         bytes32 beforeAcc;
 
@@ -183,13 +185,13 @@ contract OneStepProverHostIo is IOneStepProver {
             beforeAcc = execCtx.delayedBridge.inboxAccs(msgIndex - 1);
         }
 
-        bytes32 messageDataHash = keccak256(message[113:]);
+        bytes32 messageDataHash = keccak256(message[DELAYED_HEADER_LEN:]);
         bytes1 kind = message[0];
         uint256 sender;
         (sender, ) = Deserialize.u256(message, 1);
 
         bytes32 messageHash = keccak256(
-            abi.encodePacked(kind, uint160(sender), message[33:113], messageDataHash)
+            abi.encodePacked(kind, uint160(sender), message[33:DELAYED_HEADER_LEN], messageDataHash)
         );
         bytes32 acc = Messages.accumulateInboxMessage(beforeAcc, messageHash);
 
