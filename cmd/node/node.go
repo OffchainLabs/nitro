@@ -12,7 +12,10 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -33,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -40,16 +44,18 @@ func main() {
 
 	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
-	l1role := flag.String("l1role", "none", "either sequencer, listener, or none")
-	l1conn := flag.String("l1conn", "", "l1 connection (required if l1role != none)")
+	nol1Listener := flag.Bool("UNSAFEnol1listener", false, "DANGEROUS! disables listening to L1. To be used in test nodes only")
+	l1conn := flag.String("l1conn", "", "l1 connection (required unless no l1 listener)")
+
+	l1sequencer := flag.Bool("l1sequencer", false, "act and post to l1 as sequencer")
 	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
-	seqAccount := flag.String("l1SeqAccount", "", "l1 seq account to use (default is first account in keystore)")
+	l1Account := flag.String("l1Account", "", "l1 seq account to use (default is first account in keystore)")
 	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
-	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (if role == sequencer)")
+	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (sequencer)")
 	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
 	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
 	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
-	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL (empty if sequencer)")
+	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
 
 	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
@@ -84,8 +90,12 @@ func main() {
 	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
 	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
 	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+	wasmrootpath := flag.String("wasmrootpath", "", "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm)")
+	wasmmoduleroot := flag.String("wasmmoduleroot", "", "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	wasmcachepath := flag.String("wasmcachepath", "", "path for cache of wasm machines")
 
 	flag.Parse()
+	ctx := context.Background()
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(*loglevel))
@@ -95,25 +105,38 @@ func main() {
 	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
 
 	nodeConf := arbnode.NodeConfigDefault
-	nodeConf.ForwardingTarget = *forwardingtarget
-	log.Info("Running Arbitrum node with", "role", *l1role)
-	if *l1role == "none" {
-		nodeConf.Sequencer = false
+	if *nol1Listener {
 		nodeConf.L1Reader = false
+		nodeConf.Sequencer = true // we sequence messages, but not to l1
 		nodeConf.BatchPoster = false
-	} else if *l1role == "listener" {
-		nodeConf.Sequencer = false
-		nodeConf.L1Reader = true
-		nodeConf.BatchPoster = false
-	} else if *l1role == "sequencer" {
-		nodeConf.Sequencer = true
-		nodeConf.L1Reader = true
-		nodeConf.BatchPoster = true
+		if *l1sequencer || *l1validator {
+			flag.Usage()
+			panic("nol1listener cannot be used with l1sequencer or l1validator")
+		}
 	} else {
-		flag.Usage()
-		panic("l1role not recognized")
+		nodeConf.L1Reader = true
 	}
-	nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
+
+	if *l1sequencer {
+		nodeConf.Sequencer = true
+		nodeConf.BatchPoster = true
+		nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
+
+		if *forwardingtarget != "" && *forwardingtarget != "null" {
+			flag.Usage()
+			panic("forwardingtarget set with l1sequencer")
+		}
+	} else {
+		if *forwardingtarget == "" {
+			flag.Usage()
+			panic("forwardingtarget unset, and not l1sequencer (can set to \"null\" to disable forwarding)")
+		}
+		if *forwardingtarget == "null" {
+			nodeConf.ForwardingTarget = ""
+		} else {
+			nodeConf.ForwardingTarget = *forwardingtarget
+		}
+	}
 
 	if *dataAvailabilityMode == "onchain" {
 		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
@@ -128,21 +151,56 @@ func main() {
 		panic("dataavailability.mode not recognized")
 	}
 
-	if *l1validator {
-		if !nodeConf.L1Reader {
-			flag.Usage()
-			panic("l1validator requires l1role other than \"none\"")
+	if *wasmrootpath != "" {
+		validator.StaticNitroMachineConfig.RootPath = *wasmrootpath
+	} else {
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
 		}
+		targetDir := filepath.Dir(filepath.Dir(execfile))
+		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
+	}
+
+	wasmModuleRootString := *wasmmoduleroot
+	if wasmModuleRootString == "" {
+		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
+		fileBytes, err := ioutil.ReadFile(fileToRead)
+		if err != nil {
+			if *l1deploy || (*l1validator && !*l1validatorwithoutblockvalidator) {
+				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
+			}
+		}
+		wasmModuleRootString = strings.TrimSpace(string(fileBytes))
+		if len(wasmModuleRootString) > 64 {
+			wasmModuleRootString = wasmModuleRootString[0:64]
+		}
+	}
+	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
+
+	if *l1validator {
 		nodeConf.L1Validator = true
 		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
 		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
-		if !nodeConf.BlockValidator && !*l1validatorwithoutblockvalidator {
-			flag.Usage()
-			panic("L1 validator requires block validator to safely function")
+		if !*l1validatorwithoutblockvalidator {
+			nodeConf.BlockValidator = true
+			if *wasmcachepath != "" {
+				validator.StaticNitroMachineConfig.InitialMachineCachePath = *wasmcachepath
+			}
+			go func() {
+				expectedRoot := wasmModuleRoot
+				foundRoot, err := validator.GetInitialModuleRoot(ctx)
+				if err != nil {
+					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
+				}
+				if foundRoot != expectedRoot {
+					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
+				} else {
+					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
+				}
+			}()
 		}
 	}
-
-	ctx := context.Background()
 
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
@@ -157,7 +215,7 @@ func main() {
 			panic(err)
 		}
 		if nodeConf.BatchPoster || nodeConf.L1Validator {
-			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *seqAccount, *l1passphrase, l1ChainId)
+			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *l1Account, *l1passphrase, l1ChainId)
 			if err != nil {
 				panic(err)
 			}
@@ -168,7 +226,6 @@ func main() {
 				flag.Usage()
 				panic("deploy but not sequencer")
 			}
-			var wasmModuleRoot common.Hash
 			if nodeConf.BlockValidator {
 				// TODO actually figure out the wasmModuleRoot
 				panic("deploy as validator not yet supported")
@@ -206,10 +263,14 @@ func main() {
 	stackConf.HTTPPort = *httpPort
 	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "debug")
 	stackConf.WSHost = *wshost
 	stackConf.WSPort = *wsport
 	stackConf.WSOrigins = utils.SplitAndTrim(*wsorigins)
 	stackConf.WSModules = append(stackConf.WSModules, "eth")
+	// TODO: Add CLI option for this
+	stackConf.WSModules = append(stackConf.WSModules, "debug")
 	stackConf.WSExposeAll = *wsexposeall
 	if *wsexposeall {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")

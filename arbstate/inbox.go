@@ -291,7 +291,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
 		var timestampHash common.Hash
 		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
-		var requestId common.Hash
 
 		if kind == BatchSegmentKindL2MessageBrotli {
 			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
@@ -302,12 +301,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 			segment = decompressed
 		}
 
-		// TODO: a consistent request id. Right now we just don't set the request id when it isn't needed.
-		if len(segment) == 0 || (segment[0] != arbos.L2MessageKind_SignedTx && segment[0] != arbos.L2MessageKind_UnsignedUserTx) {
-			requestId[0] = 1 << 6
-			binary.BigEndian.PutUint64(requestId[(32-16):(32-8)], r.cachedSequencerMessageNum)
-			binary.BigEndian.PutUint64(requestId[(32-8):], segmentNum)
-		}
 		msg = &MessageWithMetadata{
 			Message: &arbos.L1IncomingMessage{
 				Header: &arbos.L1IncomingMessageHeader{
@@ -315,7 +308,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 					Poster:      l1pricing.SequencerAddress,
 					BlockNumber: blockNumberHash,
 					Timestamp:   timestampHash,
-					RequestId:   requestId,
+					RequestId:   nil,
 					BaseFeeL1:   common.Hash{},
 				},
 				L2msg: segment,

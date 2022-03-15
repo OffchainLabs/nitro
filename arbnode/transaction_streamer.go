@@ -388,6 +388,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return nil
 	}
 
+	allTxsErrored := true
+	for _, err := range hooks.TxErrors {
+		if err == nil {
+			allTxsErrored = false
+			break
+		}
+	}
+	if allTxsErrored {
+		return nil
+	}
+
 	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
 		return err

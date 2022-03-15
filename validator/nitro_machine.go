@@ -43,10 +43,10 @@ type NitroMachineConfig struct {
 }
 
 var StaticNitroMachineConfig = NitroMachineConfig{
-	RootPath:                "./target/",
-	ProverBinPath:           "lib/replay.wasm",
-	ModulePaths:             []string{"lib/wasi_stub.wasm", "lib/soft-float.wasm", "lib/go_stub.wasm", "lib/host_io.wasm", "lib/brotli.wasm"},
-	InitialMachineCachePath: "etc/initial-machine-cache",
+	RootPath:                "./target/machine/",
+	ProverBinPath:           "replay.wasm",
+	ModulePaths:             []string{"wasi_stub.wasm", "soft-float.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
+	InitialMachineCachePath: "./target/etc/initial-machine-cache",
 }
 
 var zeroStepMachine staticMachineData
@@ -55,7 +55,7 @@ var hostIoMachine staticMachineData
 func init() {
 	_, thisfile, _, _ := runtime.Caller(0)
 	projectDir := filepath.Dir(filepath.Dir(thisfile))
-	StaticNitroMachineConfig.RootPath = filepath.Join(projectDir, "target")
+	StaticNitroMachineConfig.RootPath = filepath.Join(projectDir, "target/machine")
 
 	zeroStepMachine.chanSignal = make(chan struct{})
 	hostIoMachine.chanSignal = make(chan struct{})
@@ -66,10 +66,14 @@ func createZeroStepMachineInternal() {
 	for _, module := range StaticNitroMachineConfig.ModulePaths {
 		moduleList = append(moduleList, filepath.Join(StaticNitroMachineConfig.RootPath, module))
 	}
+	binPath := filepath.Join(StaticNitroMachineConfig.RootPath, StaticNitroMachineConfig.ProverBinPath)
 	cModuleList := CreateCStringList(moduleList)
-	cBinPath := C.CString(filepath.Join(StaticNitroMachineConfig.RootPath, StaticNitroMachineConfig.ProverBinPath))
-
+	cBinPath := C.CString(binPath)
+	log.Info("creating nitro machine", "binpath", binPath, "moduleList", moduleList)
 	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)))
+	if baseMachine == nil {
+		panic("failed to create base machine")
+	}
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
 	zeroStepMachine.machine = machineFromPointer(baseMachine)
@@ -90,7 +94,7 @@ func createHostIoMachineInternal() {
 	machine := zerostep.Clone()
 	hash := machine.Hash()
 	expectedName := hash.String() + ".bin"
-	cacheDir := path.Join(StaticNitroMachineConfig.RootPath, StaticNitroMachineConfig.InitialMachineCachePath)
+	cacheDir := StaticNitroMachineConfig.InitialMachineCachePath
 	foundInCache := false
 	saveStateToFile := true
 	err = os.MkdirAll(cacheDir, 0o755)
@@ -195,11 +199,14 @@ func waitForMachine(ctx context.Context, machine *staticMachineData) (*Arbitrato
 	if machine.err != nil {
 		return nil, machine.err
 	}
-	if machine.ready {
-		return machine.machine, nil
-	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if machine.machine == nil {
+		return nil, errors.New("machine is nill")
+	}
+	if machine.ready {
+		return machine.machine, nil
 	}
 	return nil, errors.New("failed to get machine")
 }

@@ -42,6 +42,9 @@ func freeMachine(mach *ArbitratorMachine) {
 }
 
 func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
+	if ptr == nil {
+		return nil
+	}
 	mach := &ArbitratorMachine{ptr: ptr}
 	runtime.SetFinalizer(mach, freeMachine)
 	return mach

@@ -378,13 +378,14 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinatorConfig)
 		}
 	} else {
-		if config.ForwardingTarget == "" {
-			return nil, errors.New("sequencer and forwarding target both unset")
-		}
 		if config.SeqCoordinator {
 			return nil, errors.New("sequencer coordinator without sequencer")
 		}
-		txPublisher = NewForwarder(config.ForwardingTarget)
+		if config.ForwardingTarget == "" {
+			txPublisher = NewTxDropper()
+		} else {
+			txPublisher = NewForwarder(config.ForwardingTarget)
+		}
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
