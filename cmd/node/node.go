@@ -12,10 +12,12 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -96,6 +98,9 @@ func main() {
 
 	flag.Parse()
 	ctx := context.Background()
+
+	signalChan := make(chan os.Signal)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(*loglevel))
@@ -421,7 +426,6 @@ func main() {
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
 	}
-
-	stack.Wait()
+	<-signalChan
 	node.StopAndWait()
 }
