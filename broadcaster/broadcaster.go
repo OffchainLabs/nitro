@@ -65,12 +65,14 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 
 func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
 	start := time.Now()
+	var messagesSent int
 	if len(b.messages) > 0 {
 		// send the newly connected client all the messages we've got...
 		bm := BroadcastMessage{
 			Version:  1,
 			Messages: b.messages,
 		}
+		messagesSent = len(b.messages)
 
 		// There is an unknown race in gobwas between the server reporting
 		// handshake complete and the client actually being ready to receive.
@@ -84,7 +86,7 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 		}
 	}
 
-	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start))
+	log.Info("client registered", "client", clientConnection.Name, "elapsed", time.Since(start), "messageSent", messagesSent)
 
 	return nil
 }
