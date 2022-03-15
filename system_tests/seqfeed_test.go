@@ -93,12 +93,11 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	relayClientConf := *newBroadcastClientConfigTest(port)
 
 	relay := relay.NewRelay(relayServerConf, relayClientConf)
-	_, err := relay.Start(ctx)
+	err := relay.Start(ctx)
 	Require(t, err)
 
 	clientNodeConfig := arbnode.NodeConfigL2Test
 	clientNodeConfig.BroadcastClient = true
-	// port = nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	port = relay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
@@ -122,7 +121,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	}
 
 	nodeA.StopAndWait()
-	relay.Stop()
+	relay.StopAndWait()
 	nodeC.StopAndWait()
 }
 

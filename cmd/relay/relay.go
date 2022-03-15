@@ -71,12 +71,10 @@ func startup() error {
 
 	// Start up an arbitrum sequencer relay
 	relay := relay.NewRelay(serverConf, clientConf)
-	relayDone, err := relay.Start(ctx)
+	err := relay.Start(ctx)
 	if err != nil {
 		return err
 	}
-	defer relay.Stop()
-
-	<-relayDone
+	relay.StopAndWait()
 	return nil
 }

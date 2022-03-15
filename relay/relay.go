@@ -14,10 +14,12 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Relay struct {
+	util.StopWaiter
 	broadcastClients            []*broadcastclient.BroadcastClient
 	broadcaster                 *broadcaster.Broadcaster
 	confirmedSequenceNumberChan chan arbutil.MessageIndex
@@ -34,17 +36,6 @@ type RelayMessageQueue struct {
 }
 
 func (q *RelayMessageQueue) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
-	/*
-		var broadcastFeedMessages []*broadcaster.BroadcastFeedMessage
-		for i, message := range messages {
-			broadcastFeedMessages = append(broadcastFeedMessages, &broadcaster.BroadcastFeedMessage{
-				SequenceNumber: pos + arbutil.MessageIndex(i),
-				Message:        message,
-			})
-		}
-
-		q.queue <- broadcaster.BroadcastMessage{1, broadcastFeedMessages, nil}
-	*/
 	for i, message := range messages {
 		q.queue <- broadcastFeedMessage{
 			sequenceNumber: pos + arbutil.MessageIndex(i),
@@ -57,8 +48,6 @@ func (q *RelayMessageQueue) AddMessages(pos arbutil.MessageIndex, force bool, me
 
 func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadcastclient.BroadcastClientConfig) *Relay {
 	var broadcastClients []*broadcastclient.BroadcastClient
-	// confirmedAccumulatorChan := make(chan common.Hash, 1)
-	// for _, address := range settings.Input.URLs {
 
 	q := RelayMessageQueue{make(chan broadcastFeedMessage, 100)}
 
@@ -66,7 +55,6 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 	client.ConfirmedSequenceNumberListener = make(chan arbutil.MessageIndex, 10)
 
 	broadcastClients = append(broadcastClients, client)
-	// }
 	return &Relay{
 		broadcaster:                 broadcaster.NewBroadcaster(serverConf),
 		broadcastClients:            broadcastClients,
@@ -77,12 +65,11 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 
 const RECENT_FEED_ITEM_TTL time.Duration = time.Second * 10
 
-func (r *Relay) Start(ctx context.Context) (chan bool, error) {
-	done := make(chan bool)
-
+func (r *Relay) Start(ctx context.Context) error {
+	r.StopWaiter.Start(ctx)
 	err := r.broadcaster.Start(ctx)
 	if err != nil {
-		return nil, errors.New("broadcast unable to start")
+		return errors.New("broadcast unable to start")
 	}
 
 	for _, client := range r.broadcastClients {
@@ -90,10 +77,7 @@ func (r *Relay) Start(ctx context.Context) (chan bool, error) {
 	}
 
 	recentFeedItems := make(map[arbutil.MessageIndex]time.Time)
-	go func() {
-		defer func() {
-			done <- true
-		}()
+	r.LaunchThread(func(ctx context.Context) {
 		recentFeedItemsCleanup := time.NewTicker(RECENT_FEED_ITEM_TTL)
 		defer recentFeedItemsCleanup.Stop()
 		for {
@@ -118,18 +102,19 @@ func (r *Relay) Start(ctx context.Context) (chan bool, error) {
 				}
 			}
 		}
-	}()
+	})
 
-	return done, nil
+	return nil
 }
 
 func (r *Relay) GetListenerAddr() net.Addr {
 	return r.broadcaster.ListenerAddr()
 }
 
-func (r *Relay) Stop() {
+func (r *Relay) StopAndWait() {
+	r.StopWaiter.StopAndWait()
 	for _, client := range r.broadcastClients {
-		client.Close()
+		client.StopAndWait()
 	}
 	r.broadcaster.StopAndWait()
 }
