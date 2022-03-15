@@ -45,7 +45,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: 'llvm-tools-preview', rustfmt
+          components: 'llvm-tools-preview, rustfmt'
 
       - name: Install grcov
         uses: actions-rs/install@v0.1
