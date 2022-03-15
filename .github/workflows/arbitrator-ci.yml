@@ -20,27 +20,6 @@ env:
   WABT_VERSION: 1.0.24
 
 jobs:
-  rustfmt:
-    name: Rust formatting check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          components: rustfmt
-
-      - name: Rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all --manifest-path arbitrator/Cargo.toml -- --check
-
   coverage:
     name: Run Arbitrator tests
     runs-on: ubuntu-20.04
@@ -160,6 +139,12 @@ jobs:
         with:
           command: test
           args: --all --manifest-path arbitrator/Cargo.toml
+
+      - name: Rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
