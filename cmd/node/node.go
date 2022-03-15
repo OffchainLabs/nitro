@@ -427,5 +427,7 @@ func main() {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
 	}
 	<-signalChan
+	log.Info("Shutting down node")
 	node.StopAndWait()
+	log.Info("Node shutdown complete")
 }
