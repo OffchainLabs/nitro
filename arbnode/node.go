@@ -336,26 +336,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-type arbNodeLifecycle struct {
-	n *Node
-}
-
-func (l arbNodeLifecycle) Start() error {
-	return l.n.Start(context.Background())
-}
-
-func (l arbNodeLifecycle) Stop() error {
-	l.n.StopAndWait()
-	return nil
-}
-
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
-	defer (func() {
-		if err == nil {
-			stack.RegisterLifecycle(arbNodeLifecycle{n: newNode})
-		}
-	})()
-
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
@@ -363,6 +344,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var dataAvailabilityService das.DataAvailabilityService
 	if config.DataAvailabilityMode == das.LocalDataAvailability {
+		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
 		if err != nil {
 			return nil, err
@@ -478,6 +460,28 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		return nil, err
 	}
 	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
+}
+
+type arbNodeLifecycle struct {
+	node *Node
+}
+
+func (l arbNodeLifecycle) Start() error {
+	return l.node.Start(context.Background())
+}
+
+func (l arbNodeLifecycle) Stop() error {
+	l.node.StopAndWait()
+	return nil
+}
+
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
+	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
+	if err != nil {
+		return nil, err
+	}
+	stack.RegisterLifecycle(arbNodeLifecycle{node})
+	return node, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
