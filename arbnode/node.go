@@ -336,7 +336,26 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+type arbNodeLifecycle struct {
+	n *Node
+}
+
+func (l arbNodeLifecycle) Start() error {
+	return l.n.Start(context.Background())
+}
+
+func (l arbNodeLifecycle) Stop() error {
+	l.n.StopAndWait()
+	return nil
+}
+
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
+	defer (func() {
+		if err == nil {
+			stack.RegisterLifecycle(arbNodeLifecycle{n: newNode})
+		}
+	})()
+
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
@@ -344,7 +363,6 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var dataAvailabilityService das.DataAvailabilityService
 	if config.DataAvailabilityMode == das.LocalDataAvailability {
-		var err error
 		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
 		if err != nil {
 			return nil, err
@@ -546,6 +564,7 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
+	n.ArbInterface.BlockChain().Stop()
 }
 
 func CreateDefaultStack() (*node.Node, error) {
