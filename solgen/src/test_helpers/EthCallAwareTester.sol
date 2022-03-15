@@ -8,10 +8,13 @@ pragma solidity ^0.8.4;
 import "../libraries/EthCallAware.sol";
 
 contract EthCallAwareTester is EthCallAware {
-
     event TxSuccess(uint256 num, bytes data);
 
-    function testFunction(uint256 num, bytes calldata data, bool skip) revertOnCall(skip) public {
+    function testFunction(
+        uint256 num,
+        bytes calldata data,
+        bool skip
+    ) public revertOnCall(skip) {
         emit TxSuccess(num, data);
     }
 }

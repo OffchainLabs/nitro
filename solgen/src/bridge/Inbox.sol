@@ -12,12 +12,12 @@ import "./Messages.sol";
 import "../libraries/AddressAliasHelper.sol";
 import "../libraries/DelegateCallAware.sol";
 import "../libraries/EthCallAware.sol";
-import { 
-    L2_MSG, 
-    L1MessageType_L2FundedByL1, 
-    L1MessageType_submitRetryableTx, 
-    L2MessageType_unsignedEOATx, 
-    L2MessageType_unsignedContractTx 
+import {
+    L2_MSG,
+    L1MessageType_L2FundedByL1,
+    L1MessageType_submitRetryableTx,
+    L2MessageType_unsignedEOATx,
+    L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 import {MAX_DATA_SIZE} from "../libraries/Constants.sol";
 
@@ -26,10 +26,10 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./Bridge.sol";
 
 /**
-* @title Inbox for user and contract originated messages
-* @notice Messages created via this inbox are enqueued in the delayed accumulator
-* to await inclusion in the SequencerInbox
-*/
+ * @title Inbox for user and contract originated messages
+ * @notice Messages created via this inbox are enqueued in the delayed accumulator
+ * to await inclusion in the SequencerInbox
+ */
 contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
     IBridge public override bridge;
 
@@ -112,7 +112,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 nonce,
         address to,
         bytes calldata data
-    ) external payable virtual override revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    )
+        external
+        payable
+        virtual
+        override
+        revertOnCall(gasLimit == 0)
+        whenNotPaused
+        returns (uint256)
+    {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -134,7 +142,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    ) external payable virtual override revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    )
+        external
+        payable
+        virtual
+        override
+        revertOnCall(gasLimit == 0)
+        whenNotPaused
+        returns (uint256)
+    {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -308,7 +324,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual override revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    )
+        external
+        payable
+        virtual
+        override
+        revertOnCall(gasLimit == 0)
+        whenNotPaused
+        returns (uint256)
+    {
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os
