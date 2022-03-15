@@ -66,6 +66,9 @@ interface ISequencerInbox {
     /// @dev The sequence number provided to this message was inconsistent with the number of batches already included
     error BadSequencerNumber();
 
+    /// @dev The batch data has the inbox authenticated bit set, but the batch data was not authenticated by the inbox
+    error DataNotAuthenticated();
+
     function inboxAccs(uint256 index) external view returns (bytes32);
 
     function batchCount() external view returns (uint256);

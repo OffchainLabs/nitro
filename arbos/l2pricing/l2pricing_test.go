@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package l2pricing
@@ -7,9 +7,12 @@ package l2pricing
 import (
 	"testing"
 
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func PricingForTest(t *testing.T) *L2PricingState {
@@ -19,112 +22,142 @@ func PricingForTest(t *testing.T) *L2PricingState {
 	return OpenL2PricingState(storage)
 }
 
-func TestGasPricingGasPool(t *testing.T) {
+func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
+	basefee := getPrice(t, pricing)
+	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
+	header := &types.Header{
+		BaseFee: arbmath.UintToBig(basefee),
+	}
+	pricing.UpdatePricingModel(header, timePassed, true)
+}
+
+func TestPricingModel(t *testing.T) {
 	pricing := PricingForTest(t)
-	expectedSmallGasPool, err := pricing.SmallGasPoolMax()
-	Require(t, err)
-	expectedGasPool, err := pricing.GasPoolMax()
-	Require(t, err)
+	maxPool := maxGasPool(t, pricing)
+	gasPool := getGasPool(t, pricing)
+	minPrice := getMinPrice(t, pricing)
+	price := getPrice(t, pricing)
+	limit := getSpeedLimit(t, pricing)
 
-	checkGasPools := func() {
-		t.Helper()
-		smallGasPool := smallGasPool(t, pricing)
-		if smallGasPool != expectedSmallGasPool {
-			Fail(t, "wrong small gas pool, expected", expectedSmallGasPool, "but got", smallGasPool)
+	if gasPool != maxPool {
+		Fail(t, "pool not filled", gasPool, maxPool)
+	}
+	if price != minPrice {
+		Fail(t, "price not minimal", price, minPrice)
+	}
+
+	// declare that we've been running at the speed limit
+	pricing.SetRateEstimate(limit)
+
+	// show that running at the speed limit with a full pool is a steady-state
+	colors.PrintBlue("full pool & speed limit")
+	for seconds := 0; seconds < 4; seconds++ {
+		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		if getPrice(t, pricing) != minPrice {
+			Fail(t, "price changed when it shouldn't have")
 		}
-		gasPool := gasPool(t, pricing)
-		if gasPool != expectedGasPool {
-			Fail(t, "wrong gas pool, expected", expectedGasPool, "but got", gasPool)
+		if getGasPool(t, pricing) != maxPool {
+			Fail(t, "pool changed when it shouldn't have")
 		}
 	}
 
-	checkGasPools()
+	// set the gas pool to the target
+	target, _ := pricing.GasPoolTarget()
+	poolTarget := int64(target) * maxPool / 10000
+	Require(t, pricing.SetGasPool(poolTarget))
+	pricing.SetGasPoolLastBlock(poolTarget)
+	pricing.SetRateEstimate(limit)
 
-	gasPoolMax, err := pricing.GasPoolMax()
-	Require(t, err)
-	smallGasPoolMax, err := pricing.SmallGasPoolMax()
-	Require(t, err)
-
-	initialSub := int64(smallGasPoolMax / 2)
-	pricing.AddToGasPools(-initialSub)
-
-	expectedSmallGasPool -= initialSub
-	expectedGasPool -= initialSub
-
-	checkGasPools()
-
-	elapseTimesToCheck := []int64{1, 2, 4, 10}
-	totalTime := int64(0)
-	for _, t := range elapseTimesToCheck {
-		totalTime += t
-	}
-	if totalTime > (smallGasPoolMax-expectedSmallGasPool)/InitialSpeedLimitPerSecond {
-		Fail(t, "should only test within small gas pool size")
+	// show that running at the speed limit with a target pool is close to a steady-state
+	// note that for large enough spans of time the price will rise a miniscule amount due to the pool's avg
+	colors.PrintBlue("pool target & speed limit")
+	for seconds := 0; seconds < 4; seconds++ {
+		fakeBlockUpdate(t, pricing, int64(seconds)*int64(limit), uint64(seconds))
+		if getPrice(t, pricing) != minPrice {
+			Fail(t, "price changed when it shouldn't have")
+		}
+		if getGasPool(t, pricing) != poolTarget {
+			Fail(t, "pool changed when it shouldn't have")
+		}
 	}
 
-	for _, t := range elapseTimesToCheck {
-		pricing.NotifyGasPricerThatTimeElapsed(uint64(t))
-		expectedSmallGasPool += InitialSpeedLimitPerSecond * t
-		expectedGasPool += InitialSpeedLimitPerSecond * t
+	// fill the gas pool
+	Require(t, pricing.SetGasPool(maxPool))
+	pricing.SetGasPoolLastBlock(maxPool)
 
-		checkGasPools()
+	// show that running over the speed limit escalates the price before the pool drains
+	colors.PrintBlue("exceeding the speed limit")
+	for {
+		fakeBlockUpdate(t, pricing, 8*int64(limit), 1)
+		if getGasPool(t, pricing) < poolTarget {
+			Fail(t, "the price failed to rise before the pool drained")
+		}
+		newPrice := getPrice(t, pricing)
+		if newPrice < price {
+			Fail(t, "the price shouldn't have fallen")
+		}
+		if newPrice > price {
+			break
+		}
+		price = newPrice
 	}
 
-	pricing.NotifyGasPricerThatTimeElapsed(10000000)
+	// empty the pool
+	Require(t, pricing.SetGasPool(0))
+	pricing.SetGasPoolLastBlock(0)
+	pricing.SetRateEstimate(limit)
+	price = getPrice(t, pricing)
+	rate := rateEstimate(t, pricing)
 
-	expectedSmallGasPool = smallGasPoolMax
-	expectedGasPool = gasPoolMax
-
-	checkGasPools()
-}
-
-func TestGasPricingPoolPrice(t *testing.T) {
-	pricing := PricingForTest(t)
-	smallGasPoolMax, err := pricing.SmallGasPoolMax()
-	Require(t, err)
-
-	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
-		Fail(t, "wrong initial gas price")
+	// show that nothing happens when no time has passed and no gas has been burnt
+	colors.PrintBlue("nothing should happen")
+	fakeBlockUpdate(t, pricing, 0, 0)
+	if getPrice(t, pricing) != price || getGasPool(t, pricing) != 0 || rateEstimate(t, pricing) != rate {
+		Fail(t, "state shouldn't have changed")
 	}
 
-	pricing.AddToGasPools(-smallGasPoolMax * 4)
-
-	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
-		Fail(t, "price should not be changed")
-	}
-
-	pricing.NotifyGasPricerThatTimeElapsed(20)
-
-	if gasPriceWei(t, pricing) <= InitialMinimumGasPriceWei {
-		Fail(t, "price should be above minimum")
-	}
-
-	pricing.NotifyGasPricerThatTimeElapsed(500)
-
-	if gasPriceWei(t, pricing) != InitialMinimumGasPriceWei {
-		Fail(t, "price should return to minimum")
+	// show that the pool will escalate the price
+	colors.PrintBlue("gas pool is empty")
+	fakeBlockUpdate(t, pricing, 0, 1)
+	if getPrice(t, pricing) <= price {
+		Fail(t, "price should have risen")
 	}
 }
 
-func gasPriceWei(t *testing.T, state *L2PricingState) uint64 {
-	t.Helper()
-	price, err := state.GasPriceWei()
+func maxGasPool(t *testing.T, pricing *L2PricingState) int64 {
+	value, err := pricing.GasPoolMax()
 	Require(t, err)
-	return price.Uint64()
+	return value
 }
 
-func gasPool(t *testing.T, state *L2PricingState) int64 {
-	t.Helper()
-	pool, err := state.GasPool()
+func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
+	value, err := pricing.GasPool()
 	Require(t, err)
-	return pool
+	return value
 }
 
-func smallGasPool(t *testing.T, state *L2PricingState) int64 {
-	t.Helper()
-	pool, err := state.SmallGasPool()
+func getPrice(t *testing.T, pricing *L2PricingState) uint64 {
+	value, err := pricing.GasPriceWei()
 	Require(t, err)
-	return pool
+	return arbmath.BigToUintOrPanic(value)
+}
+
+func getMinPrice(t *testing.T, pricing *L2PricingState) uint64 {
+	value, err := pricing.MinGasPriceWei()
+	Require(t, err)
+	return arbmath.BigToUintOrPanic(value)
+}
+
+func getSpeedLimit(t *testing.T, pricing *L2PricingState) uint64 {
+	value, err := pricing.SpeedLimitPerSecond()
+	Require(t, err)
+	return value
+}
+
+func rateEstimate(t *testing.T, pricing *L2PricingState) uint64 {
+	value, err := pricing.RateEstimate()
+	Require(t, err)
+	return value
 }
 
 func Require(t *testing.T, err error, text ...string) {

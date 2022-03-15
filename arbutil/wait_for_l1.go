@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbutil
@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 type L1Interface interface {
@@ -139,17 +139,17 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 		// Re-execute the transaction as a call to get a better error
 		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
 		if err != nil {
-			return txRes, fmt.Errorf("TransactionSender got: %w", err)
+			return txRes, fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
 		}
 		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
 		if err == nil {
-			return txRes, errors.New("tx failed but call succeeded")
+			return txRes, fmt.Errorf("tx failed but call succeeded for tx hash %v", tx.Hash())
 		}
 		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
 		if err == nil {
-			return txRes, core.ErrGasLimitReached
+			return txRes, fmt.Errorf("%w for tx hash %v", core.ErrGasLimitReached, tx.Hash())
 		}
-		return txRes, fmt.Errorf("SendTxAsCall got: %w", err)
+		return txRes, fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
 	}
 	return txRes, nil
 }
@@ -158,7 +158,7 @@ func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, 
 	headerSubscription, err := client.SubscribeNewHead(ctx, chanOut)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Error("failed sunscribing to header", "err", err)
+			log.Error("failed subscribing to header", "err", err)
 		}
 		return
 	}

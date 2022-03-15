@@ -1,24 +1,31 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package l1pricing
 
 import (
+	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/addressSet"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/arbos/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type L1PricingState struct {
 	storage                     *storage.Storage
 	defaultAggregator           storage.StorageBackedAddress
 	l1BaseFeeEstimate           storage.StorageBackedBigInt
+	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFixedCharges      *storage.Storage
@@ -38,22 +45,30 @@ var (
 
 const (
 	defaultAggregatorAddressOffset uint64 = 0
-	l1GasPriceEstimateOffset       uint64 = 1
+	l1BaseFeeEstimateOffset        uint64 = 1
+	l1BaseFeeEstimateInertiaOffset uint64 = 2
 )
+
+const InitialL1BaseFeeEstimate = 50 * params.GWei
+const InitialL1BaseFeeEstimateInertia = 24
 
 func InitializeL1PricingState(sto *storage.Storage) error {
 	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
 	if err != nil {
 		return err
 	}
-	return sto.SetByUint64(l1GasPriceEstimateOffset, common.BigToHash(big.NewInt(50*params.GWei)))
+	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
+		return err
+	}
+	return sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
-		sto.OpenStorageBackedBigInt(l1GasPriceEstimateOffset),
+		sto.OpenStorageBackedBigInt(l1BaseFeeEstimateOffset),
+		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
 		sto.OpenSubStorage(aggregatorFixedChargeKey),
@@ -74,24 +89,36 @@ func (ps *L1PricingState) L1BaseFeeEstimateWei() (*big.Int, error) {
 	return ps.l1BaseFeeEstimate.Get()
 }
 
-func (ps *L1PricingState) SetL1GasPriceEstimateWei(val *big.Int) error {
+func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 	return ps.l1BaseFeeEstimate.Set(val)
 }
 
-const L1GasPriceEstimateMemoryWeight = 24
-
-func (ps *L1PricingState) UpdateL1GasPriceEstimate(baseFeeWei *big.Int) error {
+func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
 	curr, err := ps.L1BaseFeeEstimateWei()
+	if err != nil {
+		return err
+	}
+	weight, err := ps.L1BaseFeeEstimateInertia()
 	if err != nil {
 		return err
 	}
 
 	// new = (alpha * old + observed) / (alpha + 1)
-	memory := new(big.Int).Mul(curr, big.NewInt(L1GasPriceEstimateMemoryWeight))
-	impact := new(big.Int).Add(memory, baseFeeWei)
-	update := new(big.Int).Div(impact, big.NewInt(L1GasPriceEstimateMemoryWeight+1))
+	memory := arbmath.BigMul(curr, arbmath.UintToBig(weight))
+	impact := arbmath.BigAdd(memory, baseFeeWei)
+	update := arbmath.BigDiv(impact, arbmath.UintToBig(weight+1))
 
-	return ps.SetL1GasPriceEstimateWei(update)
+	return ps.SetL1BaseFeeEstimateWei(update)
+}
+
+// Get how slowly ArbOS updates its estimate of the L1 basefee
+func (ps *L1PricingState) L1BaseFeeEstimateInertia() (uint64, error) {
+	return ps.l1BaseFeeEstimateInertia.Get()
+}
+
+// Set how slowly ArbOS updates its estimate of the L1 basefee
+func (ps *L1PricingState) SetL1BaseFeeEstimateInertia(inertia uint64) error {
+	return ps.l1BaseFeeEstimateInertia.Set(inertia)
 }
 
 func (ps *L1PricingState) userSpecifiedAggregatorsForAddress(sender common.Address) *addressSet.AddressSet {
@@ -128,7 +155,7 @@ func (ps *L1PricingState) SetRefusesDefaultAggregator(addr common.Address, refus
 	if refuses {
 		val = 1
 	}
-	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(new(big.Int).SetUint64(val)))
+	return ps.refuseDefaultAggregator.Set(common.BytesToHash(addr.Bytes()), common.BigToHash(arbmath.UintToBig(val)))
 }
 
 // Get the aggregator who is eligible to be reimbursed for L1 costs of txs from sender, or nil if there is none.
@@ -164,6 +191,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Addres
 	value, err := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes()))
 	return value.Big(), err
 }
+
 func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) (*big.Int, error) {
 	fixed, err := ps.FixedChargeForAggregatorL1Gas(aggregator)
 	if err != nil {
@@ -173,7 +201,7 @@ func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address)
 	if err != nil {
 		return nil, err
 	}
-	return new(big.Int).Mul(fixed, price), nil
+	return arbmath.BigMul(fixed, price), nil
 }
 
 func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) error {
@@ -189,72 +217,96 @@ func (ps *L1PricingState) AggregatorFeeCollector(aggregator common.Address) (com
 	}
 }
 
-func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (uint64, error) {
+func (ps *L1PricingState) AggregatorCompressionRatio(aggregator common.Address) (arbmath.Bips, error) {
 	raw, err := ps.aggregatorCompressionRatios.Get(common.BytesToHash(aggregator.Bytes()))
 	if raw == (common.Hash{}) {
-		return DataWasNotCompressed, err
+		return arbmath.OneInBips, err
 	} else {
-		return raw.Big().Uint64(), err
+		return arbmath.BigToBips(raw.Big()), err
 	}
 }
 
-func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio uint64) error {
-	val := DataWasNotCompressed
-	if ratio < DataWasNotCompressed {
-		val = ratio
+func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Address, ratio arbmath.Bips) error {
+	if ratio > arbmath.PercentToBips(200) {
+		return errors.New("compression ratio out of bounds")
 	}
-	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(val))
+	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(uint64(ratio)))
 }
 
-// Compression ratio is expressed in fixed-point representation.  A value of DataWasNotCompressed corresponds to
-//    a compression ratio of 1, that is, no compression.
-// A value of x (for x <= DataWasNotCompressed) corresponds to compression ratio of float(x) / float(DataWasNotCompressed).
-// Values greater than DataWasNotCompressed are treated as equivalent to DataWasNotCompressed.
+func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
 
-const DataWasNotCompressed uint64 = 1000000
+	tx.PosterCost = big.NewInt(0)
+	tx.PosterIsReimbursable = false
+
+	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
+	txBytes, merr := tx.MarshalBinary()
+	txType := tx.Type()
+	if util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+		return
+	}
+
+	l1Bytes, err := byteCountAfterBrotli0(txBytes)
+	if err != nil {
+		log.Error("failed to compress tx", "err", err)
+		return
+	}
+
+	// Approximate the l1 fee charged for posting this tx's calldata
+	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
+	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
+
+	// Adjust the price paid by the aggregator's reported improvements due to batching
+	ratio, _ := ps.AggregatorCompressionRatio(poster)
+	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
+
+	tx.PosterIsReimbursable = true
+	tx.PosterCost = adjustedL1Fee
+}
+
 const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(
-	sender common.Address,
-	aggregator *common.Address,
-	data []byte,
-) (*big.Int, bool, error) {
-	if aggregator == nil {
-		return big.NewInt(0), false, nil
+func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
+
+	if tx := message.UnderlyingTransaction(); tx != nil {
+		if tx.PosterCost == nil {
+			ps.AddPosterInfo(tx, sender, poster)
+		}
+		return tx.PosterCost, tx.PosterIsReimbursable
 	}
-	reimbursableAggregator, err := ps.ReimbursableAggregatorForSender(sender)
+
+	if message.RunMode() == types.MessageGasEstimationMode {
+		// assume for the purposes of gas estimation that the poster will be the user's preferred aggregator
+		aggregator, _ := ps.ReimbursableAggregatorForSender(sender)
+		if aggregator != nil {
+			poster = *aggregator
+		} else {
+			// assume the user will use the delayed inbox since there's no reimbursable party
+			return big.NewInt(0), false
+		}
+	}
+
+	byteCount, err := byteCountAfterBrotli0(message.Data())
 	if err != nil {
-		return nil, false, err
-	}
-	if reimbursableAggregator == nil {
-		return big.NewInt(0), false, nil
-	}
-	if *reimbursableAggregator != *aggregator {
-		return big.NewInt(0), false, nil
+		log.Error("failed to compress tx", "err", err)
+		return big.NewInt(0), false
 	}
 
-	bytesToCharge := uint64(len(data) + TxFixedCost)
+	// Approximate the l1 fee charged for posting this tx's calldata
+	l1Bytes := byteCount + TxFixedCost
+	l1GasPrice, _ := ps.L1BaseFeeEstimateWei()
+	l1BytePrice := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
+	l1Fee := arbmath.BigMulByUint(l1BytePrice, uint64(l1Bytes))
 
-	ratio, err := ps.AggregatorCompressionRatio(*reimbursableAggregator)
+	// Adjust the price paid by the aggregator's reported improvements due to batching
+	ratio, _ := ps.AggregatorCompressionRatio(poster)
+	return arbmath.BigMulByBips(l1Fee, ratio), true
+}
+
+func byteCountAfterBrotli0(input []byte) (uint64, error) {
+	compressed, err := arbcompress.CompressFast(input)
 	if err != nil {
-		return nil, false, err
+		return 0, err
 	}
-
-	dataGas := 16 * bytesToCharge * ratio / DataWasNotCompressed
-
-	// add 5% to protect the aggregator from bad price fluctuation luck
-	dataGas = dataGas * 21 / 20
-
-	price, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return nil, false, err
-	}
-
-	baseCharge, err := ps.FixedChargeForAggregatorWei(*reimbursableAggregator)
-	if err != nil {
-		return nil, false, err
-	}
-
-	chargeForBytes := new(big.Int).Mul(big.NewInt(int64(dataGas)), price)
-	return new(big.Int).Add(baseCharge, chargeForBytes), true, nil
+	return uint64(len(compressed)), nil
 }

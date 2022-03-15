@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbos
@@ -11,10 +11,11 @@ import (
 	"math/big"
 	"strconv"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -64,7 +65,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		Bloom:       [256]byte{}, // Filled in later
 		Difficulty:  big.NewInt(1),
 		Number:      blockNumber,
-		GasLimit:    l2pricing.L2GasLimit,
+		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
@@ -146,13 +147,10 @@ func ProduceBlockAdvanced(
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	header := createNewHeader(lastBlockHeader, l1Info, state)
 	signer := types.MakeSigner(chainConfig, header.Number)
-	nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
-	if l1Info.l1BlockNumber.Uint64() >= nextL1BlockNumber {
-		// Make an ArbitrumInternalTx the first tx to update the L1 block number
-		// Note: 0 is the TxIndex. If this transaction is ever not the first, that needs updated.
-		tx := InternalTxUpdateL1BlockNumber(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, 0)
-		txes = append([]*types.Transaction{types.NewTx(tx)}, txes...)
-	}
+
+	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, lastBlockHeader)
+	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}
 	receipts := types.Receipts{}
@@ -163,7 +161,7 @@ func ProduceBlockAdvanced(
 	userTxsCompleted := 0
 
 	// We'll check that the block can fit each message, so this pool is set to not run out
-	gethGas := core.GasPool(1 << 63)
+	gethGas := core.GasPool(l2pricing.GethBlockGasLimit)
 
 	for len(txes) > 0 || len(redeems) > 0 {
 		// repeatedly process the next tx, doing redeems created along the way in FIFO order
@@ -187,9 +185,11 @@ func ProduceBlockAdvanced(
 		} else {
 			tx = txes[0]
 			txes = txes[1:]
-			if tx.Type() != types.ArbitrumInternalTxType {
-				// the sequencer has the ability to drop this tx
-				hooks = sequencingHooks
+			switch tx := tx.GetInner().(type) {
+			case *types.ArbitrumInternalTx:
+				tx.TxIndex = uint64(len(receipts))
+			default:
+				hooks = sequencingHooks // the sequencer has the ability to drop this tx
 				isUserTx = true
 			}
 		}
@@ -207,20 +207,15 @@ func ProduceBlockAdvanced(
 				return nil, nil, err
 			}
 
-			aggregator := &poster
-			txType := tx.Type()
-			if util.DoesTxTypeAlias(&txType) {
-				aggregator = nil
-			}
 			if gasPrice.Sign() > 0 {
 				dataGas = math.MaxUint64
-				pricing := state.L1PricingState()
-				posterCost, _, _ := pricing.PosterDataCost(sender, aggregator, tx.Data())
-				posterCostInL2Gas := new(big.Int).Div(posterCost, gasPrice)
+				state.L1PricingState().AddPosterInfo(tx, sender, poster)
+				posterCostInL2Gas := arbmath.BigDiv(tx.PosterCost, gasPrice)
+
 				if posterCostInL2Gas.IsUint64() {
 					dataGas = posterCostInL2Gas.Uint64()
 				} else {
-					log.Error("Could not get poster cost in L2 terms", posterCost, gasPrice)
+					log.Error("Could not get poster cost in L2 terms", tx.PosterCost, gasPrice)
 				}
 			}
 
@@ -233,6 +228,10 @@ func ProduceBlockAdvanced(
 			}
 
 			computeGas := tx.Gas() - dataGas
+			if computeGas < params.TxGas {
+				// ensure at least TxGas is left in the pool before trying a state transition
+				computeGas = params.TxGas
+			}
 
 			if computeGas > gasLeft && isUserTx && userTxsCompleted > 0 {
 				return nil, nil, core.ErrGasLimitReached
@@ -240,8 +239,6 @@ func ProduceBlockAdvanced(
 
 			snap := statedb.Snapshot()
 			statedb.Prepare(tx.Hash(), len(receipts)) // the number of successful state transitions
-
-			gasLeft -= computeGas
 
 			receipt, result, err := core.ApplyTransaction(
 				chainConfig,
@@ -267,7 +264,13 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
+			// we'll still deduct a TxGas's worth from the block even if the tx was invalid
 			log.Debug("error applying transaction", "tx", tx, "err", err)
+			if gasLeft > params.TxGas && isUserTx {
+				gasLeft -= params.TxGas
+			} else {
+				gasLeft = 0
+			}
 			continue
 		}
 
@@ -315,9 +318,18 @@ func ProduceBlockAdvanced(
 			}
 		}
 
+		if isUserTx {
+			computeUsed := gasUsed - dataGas
+			if computeUsed < params.TxGas {
+				// a tx, even if invalid, must at least reduce the pool by TxGas
+				computeUsed = params.TxGas
+			}
+			gasLeft -= computeUsed
+		}
+
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)
-		gasLeft -= gasUsed - dataGas
+
 		if isUserTx {
 			userTxsCompleted++
 		}
@@ -347,7 +359,7 @@ func ProduceBlockAdvanced(
 	}
 
 	balanceDelta := statedb.GetUnexpectedBalanceDelta()
-	if balanceDelta.Cmp(expectedBalanceDelta) != 0 {
+	if !arbmath.BigEquals(balanceDelta, expectedBalanceDelta) {
 		// Panic if funds have been minted or debug mode is enabled (i.e. this is a test)
 		if balanceDelta.Cmp(expectedBalanceDelta) > 0 || chainConfig.DebugMode() {
 			panic(fmt.Sprintf("Unexpected total balance delta %v (expected %v)", balanceDelta, expectedBalanceDelta))
@@ -360,55 +372,20 @@ func ProduceBlockAdvanced(
 	return block, receipts
 }
 
-type ArbitrumHeaderInfo struct {
-	SendRoot  common.Hash
-	SendCount uint64
-}
-
-func (info ArbitrumHeaderInfo) Extra() []byte {
-	return info.SendRoot[:]
-}
-
-func (info ArbitrumHeaderInfo) MixDigest() [32]byte {
-	mixDigest := common.Hash{}
-	binary.BigEndian.PutUint64(mixDigest[:8], info.SendCount)
-	return mixDigest
-}
-
-func DeserializeHeaderExtraInformation(header *types.Header) (ArbitrumHeaderInfo, error) {
-	if header.Number.Sign() == 0 || len(header.Extra) == 0 {
-		// The genesis block doesn't have an ArbOS encoded extra field
-		return ArbitrumHeaderInfo{}, nil
-	}
-	if len(header.Extra) != 32 {
-		return ArbitrumHeaderInfo{}, fmt.Errorf("unexpected header extra field length %v", len(header.Extra))
-	}
-	extra := ArbitrumHeaderInfo{}
-	copy(extra.SendRoot[:], header.Extra)
-	extra.SendCount = binary.BigEndian.Uint64(header.MixDigest[:8])
-	return extra, nil
-}
-
 func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.StateDB) {
 	if header != nil {
-		state, err := arbosState.OpenSystemArbosState(statedb, false)
-		if err != nil {
-			panic(err)
-		}
-		state.SetLastTimestampSeen(header.Time)
-		_ = state.RetryableState().TryToReapOneRetryable(header.Time)
-
-		maxSafePrice := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
-		state.L2PricingState().SetMaxGasPriceWei(maxSafePrice)
+		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 
 		// Add outbox info to the header for client-side proving
 		acc := state.SendMerkleAccumulator()
 		root, _ := acc.Root()
 		size, _ := acc.Size()
-		arbitrumHeader := ArbitrumHeaderInfo{root, size}
-		header.Extra = arbitrumHeader.Extra()
-		header.MixDigest = arbitrumHeader.MixDigest()
-
-		state.UpgradeArbosVersionIfNecessary(header.Time)
+		nextL1BlockNumber, _ := state.Blockhashes().NextBlockNumber()
+		arbitrumHeader := types.HeaderInfo{
+			SendRoot:      root,
+			SendCount:     size,
+			L1BlockNumber: nextL1BlockNumber,
+		}
+		arbitrumHeader.UpdateHeaderWithInfo(header)
 	}
 }

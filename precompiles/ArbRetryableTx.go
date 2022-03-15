@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -11,8 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/retryables"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type ArbRetryableTx struct {
@@ -42,7 +44,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err != nil {
 		return hash{}, err
 	}
-	writeBytes := util.WordsForBytes(byteCount)
+	writeBytes := arbmath.WordsForBytes(byteCount)
 	if err := c.Burn(params.SloadGas * writeBytes); err != nil {
 		return hash{}, err
 	}
@@ -77,13 +79,16 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err != nil {
 		return hash{}, err
 	}
-	gasCostToReturnResult := 32 * params.CopyGas
-	if c.gasLeft < eventCost+gasCostToReturnResult {
-		return hash{}, c.Burn(eventCost) // Burn will use all gas and generate an out-of-gas error
+	// Result is 32 bytes long which is 1 word
+	gasCostToReturnResult := params.CopyGas
+	gasPoolUpdateCost := storage.StorageReadCost + storage.StorageWriteCost
+	futureGasCosts := eventCost + gasCostToReturnResult + gasPoolUpdateCost
+	if c.gasLeft < futureGasCosts {
+		return hash{}, c.Burn(futureGasCosts) // this will error
 	}
-	gasToDonate := c.gasLeft - (eventCost + gasCostToReturnResult)
+	gasToDonate := c.gasLeft - futureGasCosts
 	if gasToDonate < params.TxGas {
-		return hash{}, errors.New("Not enough gas to redeem retryable")
+		return hash{}, errors.New("not enough gas to run redeem attempt")
 	}
 
 	// fix up the gas in the retry
@@ -103,7 +108,10 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if err := c.Burn(gasToDonate); err != nil {
 		return hash{}, err
 	}
-	return retryTxHash, nil
+
+	// Add the gasToDonate back to the gas pool: the retryable attempt will then consume it.
+	// This ensures that the gas pool has enough gas to run the retryable attempt.
+	return retryTxHash, c.state.L2PricingState().AddToGasPool(arbmath.SaturatingCast(gasToDonate))
 }
 
 // Gets the default lifetime period a retryable has at creation
@@ -140,7 +148,7 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 	if nbytes == 0 {
 		return nil, ErrNotFound
 	}
-	updateCost := util.WordsForBytes(nbytes) * params.SstoreSetGas / 100
+	updateCost := arbmath.WordsForBytes(nbytes) * params.SstoreSetGas / 100
 	if err := c.Burn(updateCost); err != nil {
 		return big.NewInt(0), err
 	}
@@ -202,7 +210,7 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 	}
 
 	// no refunds are given for deleting retryables because they use rented space
-	_, err = retryableState.DeleteRetryable(ticketId)
+	_, err = retryableState.DeleteRetryable(ticketId, evm, util.TracingDuringEVM)
 	if err != nil {
 		return err
 	}

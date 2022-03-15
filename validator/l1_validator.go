@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -15,9 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
 
@@ -38,7 +37,7 @@ const (
 	CONFLICT_TYPE_INCOMPLETE
 )
 
-type Validator struct {
+type L1Validator struct {
 	rollup                  *RollupWatcher
 	rollupAddress           common.Address
 	challengeManagerAddress common.Address
@@ -55,8 +54,7 @@ type Validator struct {
 	blockValidator *BlockValidator
 }
 
-func NewValidator(
-	ctx context.Context,
+func NewL1Validator(
 	client arbutil.L1Interface,
 	wallet *ValidatorWallet,
 	validatorUtilsAddress common.Address,
@@ -65,18 +63,12 @@ func NewValidator(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-) (*Validator, error) {
+) (*L1Validator, error) {
 	builder, err := NewValidatorTxBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
-	rollup, err := NewRollupWatcher(ctx, wallet.RollupAddress(), builder, callOpts)
-	if err != nil {
-		return nil, err
-	}
-	localCallOpts := callOpts
-	localCallOpts.Context = ctx
-	challengeManagerAddress, err := rollup.ChallengeManager(&localCallOpts)
+	rollup, err := NewRollupWatcher(wallet.RollupAddress(), builder, callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -91,55 +83,38 @@ func NewValidator(
 	if err != nil {
 		return nil, err
 	}
-	return &Validator{
-		rollup:                  rollup,
-		rollupAddress:           wallet.RollupAddress(),
-		challengeManagerAddress: challengeManagerAddress,
-		validatorUtils:          validatorUtils,
-		client:                  client,
-		builder:                 builder,
-		wallet:                  wallet,
-		callOpts:                callOpts,
-		genesisBlockNumber:      genesisBlockNumber,
-		l2Blockchain:            l2Blockchain,
-		inboxTracker:            inboxTracker,
-		txStreamer:              txStreamer,
-		blockValidator:          blockValidator,
+	return &L1Validator{
+		rollup:             rollup,
+		rollupAddress:      wallet.RollupAddress(),
+		validatorUtils:     validatorUtils,
+		client:             client,
+		builder:            builder,
+		wallet:             wallet,
+		callOpts:           callOpts,
+		genesisBlockNumber: genesisBlockNumber,
+		l2Blockchain:       l2Blockchain,
+		inboxTracker:       inboxTracker,
+		txStreamer:         txStreamer,
+		blockValidator:     blockValidator,
 	}, nil
 }
 
-func (v *Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
+func (v *L1Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
 	opts := v.callOpts
 	opts.Context = ctx
 	return &opts
 }
 
-// removeOldStakers removes the stakes of all validators staked on the latest confirmed node (aka "refundable" or "old" stakers),
-// except its own if dontRemoveSelf is true
-func (v *Validator) removeOldStakers(ctx context.Context, dontRemoveSelf bool) (*types.Transaction, error) {
-	stakersToEliminate, err := v.validatorUtils.RefundableStakers(v.getCallOpts(ctx), v.rollupAddress)
+func (v *L1Validator) Initialize(ctx context.Context) error {
+	err := v.rollup.Initialize(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	walletAddr := v.wallet.Address()
-	if dontRemoveSelf && walletAddr != nil {
-		for i, staker := range stakersToEliminate {
-			if staker == *walletAddr {
-				stakersToEliminate[i] = stakersToEliminate[len(stakersToEliminate)-1]
-				stakersToEliminate = stakersToEliminate[:len(stakersToEliminate)-1]
-				break
-			}
-		}
-	}
-
-	if len(stakersToEliminate) == 0 {
-		return nil, nil
-	}
-	log.Info("removing old stakers", "count", len(stakersToEliminate))
-	return v.wallet.ReturnOldDeposits(ctx, stakersToEliminate)
+	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
+	return err
 }
 
-func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
+func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
 	challengesToEliminate, _, err := v.validatorUtils.TimedOutChallenges(v.getCallOpts(ctx), v.rollupAddress, 0, 10)
 	if err != nil {
 		return nil, err
@@ -151,7 +126,7 @@ func (v *Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Trans
 	return v.wallet.TimeoutChallenges(ctx, v.challengeManagerAddress, challengesToEliminate)
 }
 
-func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
+func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	confirmType, err := v.validatorUtils.CheckDecidableNextNode(callOpts, v.rollupAddress)
 	if err != nil {
@@ -184,7 +159,7 @@ func (v *Validator) resolveNextNode(ctx context.Context, info *StakerInfo) (bool
 	}
 }
 
-func (v *Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
+func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
 	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
@@ -220,7 +195,7 @@ type OurStakerInfo struct {
 
 // Returns (block number, global state inbox position is invalid, error).
 // If global state is invalid, block number is set to the last of the batch.
-func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
+func (v *L1Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, error) {
 	var batchHeight arbutil.MessageIndex
 	if gs.Batch > 0 {
 		var err error
@@ -230,21 +205,24 @@ func (v *Validator) blockNumberFromGlobalState(gs GoGlobalState) (int64, bool, e
 		}
 	}
 
-	nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
-	if err != nil {
-		return 0, false, err
-	}
+	// Validate the PosInBatch if it's non-zero
+	if gs.PosInBatch > 0 {
+		nextBatchHeight, err := v.inboxTracker.GetBatchMessageCount(gs.Batch)
+		if err != nil {
+			return 0, false, err
+		}
 
-	if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
-		// This PosInBatch would enter the next batch. Return the last block before the next batch.
-		// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
-		return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
+		if gs.PosInBatch >= uint64(nextBatchHeight-batchHeight) {
+			// This PosInBatch would enter the next batch. Return the last block before the next batch.
+			// We can be sure that MessageCountToBlockNumber will return a non-negative number as nextBatchHeight must be nonzero.
+			return arbutil.MessageCountToBlockNumber(nextBatchHeight, v.genesisBlockNumber), true, nil
+		}
 	}
 
 	return arbutil.MessageCountToBlockNumber(batchHeight+arbutil.MessageIndex(gs.PosInBatch), v.genesisBlockNumber), false, nil
 }
 
-func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
+func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStakerInfo, strategy StakerStrategy) (nodeAction, bool, error) {
 	startState, prevInboxMaxCount, startStateProposed, err := lookupNodeStartState(ctx, v.rollup, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, err
@@ -279,11 +257,11 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		}
 	}
 
-	var blocksValidated uint64
+	var lastBlockValidated uint64
 	if v.blockValidator != nil {
-		blocksValidated = v.blockValidator.BlocksValidated()
+		lastBlockValidated = v.blockValidator.BlocksValidated()
 	} else {
-		blocksValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+		lastBlockValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
 
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)
@@ -292,11 +270,11 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			}
 			// Must be non-negative as a batch must contain at least one message
 			lastBatchBlock := uint64(arbutil.MessageCountToBlockNumber(messageCount, v.genesisBlockNumber))
-			if blocksValidated > lastBatchBlock {
-				blocksValidated = lastBatchBlock
+			if lastBlockValidated > lastBatchBlock {
+				lastBlockValidated = lastBatchBlock
 			}
 		} else {
-			blocksValidated = 0
+			lastBlockValidated = 0
 		}
 	}
 
@@ -350,8 +328,8 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 			if err != nil {
 				return nil, false, err
 			}
-			if int64(blocksValidated) < lastBlockNum {
-				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", blocksValidated, lastBlockNum)
+			if int64(lastBlockValidated) < lastBlockNum {
+				return nil, false, fmt.Errorf("waiting for validator to catch up to assertion blocks: %v/%v", lastBlockValidated, lastBlockNum)
 			}
 			var expectedBlockHash common.Hash
 			var expectedSendRoot common.Hash
@@ -360,7 +338,7 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 				if lastBlock == nil {
 					return nil, false, fmt.Errorf("block %v not in database despite being validated", lastBlockNum)
 				}
-				lastBlockExtra, err := arbos.DeserializeHeaderExtraInformation(lastBlock.Header())
+				lastBlockExtra, err := types.DeserializeHeaderExtraInformation(lastBlock.Header())
 				if err != nil {
 					return nil, false, err
 				}
@@ -417,17 +395,17 @@ func (v *Validator) generateNodeAction(ctx context.Context, stakerInfo *OurStake
 		if len(successorNodes) > 0 {
 			lastNodeHashIfExists = &successorNodes[len(successorNodes)-1].NodeHash
 		}
-		action, err := v.createNewNodeAction(ctx, stakerInfo, blocksValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
+		action, err := v.createNewNodeAction(ctx, stakerInfo, lastBlockValidated, localBatchCount, prevInboxMaxCount, startBlock, startState, lastNodeHashIfExists)
 		return action, wrongNodesExist, err
 	}
 
 	return correctNode, wrongNodesExist, nil
 }
 
-func (v *Validator) createNewNodeAction(
+func (v *L1Validator) createNewNodeAction(
 	ctx context.Context,
 	stakerInfo *OurStakerInfo,
-	blocksValidated uint64,
+	lastBlockValidated uint64,
 	localBatchCount uint64,
 	prevInboxMaxCount *big.Int,
 	startBlock *types.Block,
@@ -443,11 +421,10 @@ func (v *Validator) createNewNodeAction(
 		return nil, nil
 	}
 
-	if blocksValidated == 0 || localBatchCount == 0 {
+	if localBatchCount == 0 {
 		// we haven't validated anything
 		return nil, nil
 	}
-	lastBlockValidated := blocksValidated - 1
 	if startBlock != nil && lastBlockValidated <= startBlock.NumberU64() {
 		// we haven't validated any new blocks
 		return nil, nil
@@ -500,7 +477,7 @@ func (v *Validator) createNewNodeAction(
 	if assertingBlock == nil {
 		return nil, fmt.Errorf("missing validated block %v", lastBlockValidated)
 	}
-	assertingBlockExtra, err := arbos.DeserializeHeaderExtraInformation(assertingBlock.Header())
+	assertingBlockExtra, err := types.DeserializeHeaderExtraInformation(assertingBlock.Header())
 	if err != nil {
 		return nil, err
 	}

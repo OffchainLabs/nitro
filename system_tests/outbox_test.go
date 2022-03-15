@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -17,10 +17,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/util/merkletree"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/merkletree"
 )
 
 func TestOutboxProofs(t *testing.T) {
@@ -113,10 +113,10 @@ func TestOutboxProofs(t *testing.T) {
 		rootHash := root.root
 		treeSize := root.size
 
-		balanced := treeSize == util.NextPowerOf2(treeSize)/2
-		treeLevels := int(util.Log2ceil(treeSize)) // the # of levels in the tree
-		proofLevels := treeLevels - 1              // the # of levels where a hash is needed (all but root)
-		walkLevels := treeLevels                   // the # of levels we need to consider when building walks
+		balanced := treeSize == arbmath.NextPowerOf2(treeSize)/2
+		treeLevels := int(arbmath.Log2ceil(treeSize)) // the # of levels in the tree
+		proofLevels := treeLevels - 1                 // the # of levels where a hash is needed (all but root)
+		walkLevels := treeLevels                      // the # of levels we need to consider when building walks
 		if balanced {
 			walkLevels -= 1 // skip the root
 		}

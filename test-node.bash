@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 mydir=`dirname $0`
 cd "$mydir"
 
@@ -7,11 +9,6 @@ if ! which docker-compose > /dev/null; then
     echo == Error! docker-compose not installed
     echo please install docker-compose and have it in PATH
     echo see https://docs.docker.com/compose/install/
-    exit 1
-fi
-
-if [[ $# -gt 1 ]]; then
-    echo Error! One parameter max!
     exit 1
 fi
 
@@ -24,6 +21,40 @@ else
 fi
 
 force_build=false
+validate=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --init)
+            if ! $force_init; then
+                echo == Warning! this will remove all previous data
+                read -p "are you sure? [y/n]" -n 1 response
+                if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
+                    force_init=true
+                    echo
+                else
+                    exit 0
+                fi
+            fi
+            shift
+            ;;
+        --build)
+            force_build=true
+            shift
+            ;;
+        --validate)
+            validate=true
+            shift
+            ;;
+        *)
+            echo Usage: $0 \[OPTIONS..]
+            echo
+            echo OPTIONS:
+            echo --build:           rebuild docker image
+            echo --init:            remove all data, rebuild, deploy new rollup
+            echo --validate:        heavy computation, validating all blocks in WASM
+            exit 0
+    esac
+done
 
 if [[ $# -eq 1 ]]; then
     if [[ $1 == "--init" ]]; then
@@ -32,6 +63,7 @@ if [[ $# -eq 1 ]]; then
             read -p "are you sure? [y/n]" -n 1 response
             if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
                 force_init=true
+                echo
             else
                 exit 0
             fi
@@ -63,10 +95,15 @@ if $force_init; then
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
 
     echo == Deploying L2
-    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json
+    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -authorizevalidators 10
 fi
 
 echo == Launching Sequencer
 echo if things go wrong - use --init to create a new chain
 echo
-docker-compose up sequencer
+if $validate; then
+    STAKER_NODE="validator"
+else
+    STAKER_NODE="staker-unsafe"
+fi
+docker-compose up sequencer $STAKER_NODE

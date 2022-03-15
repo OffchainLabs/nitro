@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -20,13 +20,17 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
+	util.StopWaiter
 	inboxTracker    InboxTrackerInterface
 	blockchain      *core.BlockChain
 	genesisBlockNum uint64
@@ -44,6 +48,8 @@ type BlockValidator struct {
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
 	concurrentRunsLimit      int32
+
+	das das.DataAvailabilityService
 
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
@@ -129,11 +135,11 @@ type validationEntry struct {
 }
 
 func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
-	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
 		return nil, err
 	}
-	prevExtraInfo, err := arbos.DeserializeHeaderExtraInformation(prevHeader)
+	prevExtraInfo, err := types.DeserializeHeaderExtraInformation(prevHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +156,7 @@ func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelay
 	}, nil
 }
 
-func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig) (*BlockValidator, error) {
+func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
 	CreateHostIoMachine()
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
@@ -168,6 +174,7 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 		progressChan:        make(chan uint64),
 		concurrentRunsLimit: int32(concurrent),
 		config:              config,
+		das:                 das,
 		genesisBlockNum:     genesisBlockNum,
 		// TODO: this skips validating the genesis block
 		posNextSend: 1,
@@ -180,7 +187,8 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 	return validator, nil
 }
 
-func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
+// If msg is nil, this will record block creation up to the point where message would be accessed (for a "too far" proof)
+func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, msg *arbstate.MessageWithMetadata) (common.Hash, map[common.Hash][]byte, error) {
 	recordingdb, chaincontext, recordingKV, err := arbitrum.PrepareRecording(blockchain, prevHeader)
 	if err != nil {
 		return common.Hash{}, nil, err
@@ -188,18 +196,38 @@ func RecordBlockCreation(blockchain *core.BlockChain, prevHeader *types.Header, 
 
 	chainConfig := blockchain.Config()
 
-	block, _ := arbos.ProduceBlock(
-		msg.Message,
-		msg.DelayedMessagesRead,
-		prevHeader,
-		recordingdb,
-		chaincontext,
-		chainConfig,
-	)
+	// Get the chain ID, both to validate and because the replay binary also gets the chain ID,
+	// so we need to populate the recordingdb with preimages for retrieving the chain ID.
+	if prevHeader != nil {
+		initialArbosState, err := arbosState.OpenSystemArbosState(recordingdb, true)
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error opening initial ArbOS state: %w", err)
+		}
+		chainId, err := initialArbosState.ChainId()
+		if err != nil {
+			return common.Hash{}, nil, fmt.Errorf("Error getting chain ID from initial ArbOS state: %w", err)
+		}
+		if chainId.Cmp(chainConfig.ChainID) != 0 {
+			return common.Hash{}, nil, fmt.Errorf("Unexpected chain ID %v in ArbOS state, expected %v", chainId, chainConfig.ChainID)
+		}
+	}
+
+	var blockHash common.Hash
+	if msg != nil {
+		block, _ := arbos.ProduceBlock(
+			msg.Message,
+			msg.DelayedMessagesRead,
+			prevHeader,
+			recordingdb,
+			chaincontext,
+			chainConfig,
+		)
+		blockHash = block.Hash()
+	}
 
 	preimages, err := arbitrum.PreimagesFromRecording(chaincontext, recordingKV)
 
-	return block.Hash(), preimages, err
+	return blockHash, preimages, err
 }
 
 func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) (preimages map[common.Hash][]byte, hasDelayedMessage bool, delayedMsgNr uint64, err error) {
@@ -213,7 +241,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	}
 
 	var blockhash common.Hash
-	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, msg)
+	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
 	if err != nil {
 		return
 	}
@@ -247,7 +275,7 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
-	go v.prepareBlock(block.Header(), prevHeader, msg)
+	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -374,6 +402,24 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	if !ok {
 		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
 		return
+	}
+
+	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
+		if v.das == nil {
+			log.Error("No DAS configured, but sequencer message found with DAS header")
+			return
+		}
+		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
+		if err != nil {
+			log.Error("Failed to deserialize DAS message", "err", err)
+			return
+		} else {
+			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+			if err != nil {
+				log.Error("Couldn't retrieve message from DAS", "err", err)
+				return
+			}
+		}
 	}
 
 	basemachine, err := GetHostIoMachine(ctx)
@@ -520,14 +566,15 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
 		validationEntry.SeqMsgNr = startPos.BatchNumber
-		go v.validate(ctx, validationEntry, startPos, endPos)
+		// validation can take long time. Don't wait for it when shutting down
+		v.LaunchUntrackedThread(func() { v.validate(v.GetContext(), validationEntry, startPos, endPos) })
 		v.posNextSend += 1
 		v.globalPosNextSend = endPos
 	}
 }
 
-func (v *BlockValidator) startValidationLoop(ctx context.Context) {
-	go (func() {
+func (v *BlockValidator) startValidationLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.sendValidationsChan:
@@ -539,7 +586,7 @@ func (v *BlockValidator) startValidationLoop(ctx context.Context) {
 			}
 			v.sendValidations(ctx)
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) progressValidated() {
@@ -576,8 +623,8 @@ func (v *BlockValidator) progressValidated() {
 	}
 }
 
-func (v *BlockValidator) startProgressLoop(ctx context.Context) {
-	go (func() {
+func (v *BlockValidator) startProgressLoop() {
+	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:
@@ -589,7 +636,7 @@ func (v *BlockValidator) startProgressLoop(ctx context.Context) {
 			}
 			v.progressValidated()
 		}
-	})()
+	})
 }
 
 func (v *BlockValidator) BlocksValidated() uint64 {
@@ -606,9 +653,10 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
 	}
 }
 
-func (v *BlockValidator) Start(ctx context.Context) error {
-	v.startProgressLoop(ctx)
-	v.startValidationLoop(ctx)
+func (v *BlockValidator) Start(ctxIn context.Context) error {
+	v.StopWaiter.Start(ctxIn)
+	v.startProgressLoop()
+	v.startValidationLoop()
 	return nil
 }
 

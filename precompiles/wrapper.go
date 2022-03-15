@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package precompiles
@@ -8,7 +8,7 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"

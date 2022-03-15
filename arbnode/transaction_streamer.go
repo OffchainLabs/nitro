@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -20,16 +20,19 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 // Produces blocks from a node's L1 messages, storing the results in the blockchain and recording their positions
 // The streamer is notified when there's new batches to process
 type TransactionStreamer struct {
+	util.StopWaiter
+
 	db ethdb.Database
 	bc *core.BlockChain
 
@@ -38,6 +41,7 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
+	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
 }
@@ -62,7 +66,23 @@ func uint64ToBytes(x uint64) []byte {
 }
 
 func (s *TransactionStreamer) SetBlockValidator(validator *validator.BlockValidator) {
+	if s.Started() {
+		panic("trying to set block validator after start")
+	}
+	if s.validator != nil {
+		panic("trying to set block validator when already set")
+	}
 	s.validator = validator
+}
+
+func (s *TransactionStreamer) SetSeqCoordinator(coordinator *SeqCoordinator) {
+	if s.Started() {
+		panic("trying to set coordinator after start")
+	}
+	if s.coordinator != nil {
+		panic("trying to set coordinator when already set")
+	}
+	s.coordinator = coordinator
 }
 
 func (s *TransactionStreamer) cleanupInconsistentState() error {
@@ -195,6 +215,12 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
+}
+
+func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	return s.GetMessageCount()
 }
 
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
@@ -362,6 +388,17 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return nil
 	}
 
+	allTxsErrored := true
+	for _, err := range hooks.TxErrors {
+		if err == nil {
+			allTxsErrored = false
+			break
+		}
+	}
+	if allTxsErrored {
+		return nil
+	}
+
 	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
 		return err
@@ -370,6 +407,12 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 	msgWithMeta := arbstate.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
+	}
+
+	if s.coordinator != nil {
+		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta); err != nil {
+			return err
+		}
 	}
 
 	if err := s.writeMessages(pos, []arbstate.MessageWithMetadata{msgWithMeta}, nil); err != nil {
@@ -425,11 +468,18 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 
 	messagesWithMeta := make([]arbstate.MessageWithMetadata, 0, len(messages))
 	for i, message := range messages {
-		messagesWithMeta = append(messagesWithMeta, arbstate.MessageWithMetadata{
+		newMessage := arbstate.MessageWithMetadata{
 			Message:             message,
 			DelayedMessagesRead: delayedMessagesRead + uint64(i) + 1,
-		})
+		}
+		messagesWithMeta = append(messagesWithMeta, newMessage)
+		if s.coordinator != nil {
+			if err := s.coordinator.SequencingMessage(pos+arbutil.MessageIndex(i), &newMessage); err != nil {
+				return err
+			}
+		}
 	}
+
 	log.Info("TransactionStreamer: Added DelayedMessages", "pos", pos, "length", len(messages))
 	err = s.writeMessages(pos, messagesWithMeta, nil)
 	if err != nil {
@@ -594,8 +644,9 @@ func (s *TransactionStreamer) Initialize() error {
 	return s.cleanupInconsistentState()
 }
 
-func (s *TransactionStreamer) Start(ctx context.Context) {
-	go (func() {
+func (s *TransactionStreamer) Start(ctxIn context.Context) {
+	s.StopWaiter.Start(ctxIn)
+	s.LaunchThread(func(ctx context.Context) {
 		for {
 			err := s.createBlocks(ctx)
 			if err != nil && !errors.Is(err, context.Canceled) {
@@ -608,5 +659,5 @@ func (s *TransactionStreamer) Start(ctx context.Context) {
 			case <-time.After(10 * time.Second):
 			}
 		}
-	})()
+	})
 }

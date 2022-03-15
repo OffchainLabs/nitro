@@ -15,7 +15,13 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     using MachineLib for Machine;
     using ChallengeLib for ChallengeLib.Challenge;
 
-    string private constant NO_TURN = "NO_TURN";
+    enum ChallengeModeRequirement {
+        ANY,
+        BLOCK,
+        EXECUTION
+    }
+
+    string private constant NO_CHAL = "NO_CHAL";
     uint256 private constant MAX_CHALLENGE_DEGREE = 40;
 
     uint64 public totalChallengesCreated;
@@ -36,10 +42,24 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex];
     }
 
-    modifier takeTurn(uint64 challengeIndex, ChallengeLib.SegmentSelection calldata selection) {
+    modifier takeTurn(
+        uint64 challengeIndex,
+        ChallengeLib.SegmentSelection calldata selection,
+        ChallengeModeRequirement expectedMode
+    ) {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
         require(msg.sender == currentResponder(challengeIndex), "CHAL_SENDER");
         require(!isTimedOut(challengeIndex), "CHAL_DEADLINE");
+
+        if (expectedMode == ChallengeModeRequirement.ANY) {
+            require(challenge.mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
+        } else if (expectedMode == ChallengeModeRequirement.BLOCK) {
+            require(challenge.mode == ChallengeLib.ChallengeMode.BLOCK, "CHAL_NOT_BLOCK");
+        } else if (expectedMode == ChallengeModeRequirement.EXECUTION) {
+            require(challenge.mode == ChallengeLib.ChallengeMode.EXECUTION, "CHAL_NOT_EXECUTION");
+        } else {
+            assert(false);
+        }
 
         require(
             challenge.challengeStateHash ==
@@ -65,6 +85,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         }
 
         ChallengeLib.Participant memory current = challenge.current;
+        current.timeLeft -= block.timestamp - challenge.lastMoveTimestamp;
+
         challenge.current = challenge.next;
         challenge.next = current;
 
@@ -147,7 +169,7 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint64 challengeIndex,
         ChallengeLib.SegmentSelection calldata selection,
         bytes32[] calldata newSegments
-    ) external takeTurn(challengeIndex, selection) {
+    ) external takeTurn(challengeIndex, selection, ChallengeModeRequirement.ANY) {
         (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
             selection
         );
@@ -171,7 +193,8 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         MachineStatus[2] calldata machineStatuses,
         bytes32[2] calldata globalStateHashes,
         uint256 numSteps
-    ) external takeTurn(challengeIndex, selection) {
+    ) external takeTurn(challengeIndex, selection, ChallengeModeRequirement.BLOCK) {
+        require(numSteps >= 1, "CHALLENGE_TOO_SHORT");
         require(numSteps <= OneStepProofEntryLib.MAX_STEPS, "CHALLENGE_TOO_LONG");
         requireValidBisection(
             selection,
@@ -218,12 +241,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint64 challengeIndex,
         ChallengeLib.SegmentSelection calldata selection,
         bytes calldata proof
-    ) external takeTurn(challengeIndex, selection) {
+    ) external takeTurn(challengeIndex, selection, ChallengeModeRequirement.EXECUTION) {
         ChallengeLib.Challenge storage challenge = challenges[challengeIndex];
-        (uint256 challengeStart, uint256 challengeLength) = ChallengeLib.extractChallengeSegment(
-            selection
-        );
-        require(challengeLength == 1, "TOO_LONG");
+        uint256 challengeStart;
+        {
+            uint256 challengeLength;
+            (challengeStart, challengeLength) = ChallengeLib.extractChallengeSegment(selection);
+            require(challengeLength == 1, "TOO_LONG");
+        }
 
         bytes32 afterHash = osp.proveOneStep(
             ExecutionContext({
@@ -245,12 +270,14 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
     }
 
     function timeout(uint64 challengeIndex) external override {
+        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
         require(isTimedOut(challengeIndex), "TIMEOUT_DEADLINE");
         _nextWin(challengeIndex, ChallengeTerminationType.TIMEOUT);
     }
 
     function clearChallenge(uint64 challengeIndex) external override {
         require(msg.sender == address(resultReceiver), "NOT_RES_RECEIVER");
+        require(challenges[challengeIndex].mode != ChallengeLib.ChallengeMode.NONE, NO_CHAL);
         delete challenges[challengeIndex];
         emit ChallengeEnded(challengeIndex, ChallengeTerminationType.CLEARED);
     }
@@ -272,10 +299,6 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         return challenges[challengeIndex].isTimedOut();
     }
 
-    function timeUsedSinceLastMove(uint64 challengeIndex) private view returns (uint256) {
-        return challenges[challengeIndex].timeUsedSinceLastMove();
-    }
-
     function requireValidBisection(
         ChallengeLib.SegmentSelection calldata selection,
         bytes32 startHash,
@@ -291,6 +314,9 @@ contract ChallengeManager is DelegateCallAware, IChallengeManager {
         uint256 challengeLength,
         bytes32[] memory newSegments
     ) private {
+        assert(challengeLength >= 1);
+        assert(newSegments.length >= 2);
+
         bytes32 challengeStateHash = ChallengeLib.hashChallengeState(
             challengeStart,
             challengeLength,

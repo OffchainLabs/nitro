@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -14,10 +14,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/validator"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/pkg/errors"
 )
 
@@ -26,12 +26,14 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *validator.BlockValidator
+	das        arbstate.DataAvailabilityServiceReader
 }
 
-func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer) (*InboxTracker, error) {
+func NewInboxTracker(raw ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityServiceReader) (*InboxTracker, error) {
 	db := &InboxTracker{
 		db:         rawdb.NewTable(raw, arbitrumPrefix),
 		txStreamer: txStreamer,
+		das:        das,
 	}
 	return db, nil
 }
@@ -436,7 +438,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
@@ -444,7 +446,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			break
 		}
 		batchSeqNum := backend.batches[0].SequenceNumber
-		msg, err := multiplexer.Pop()
+		msg, err := multiplexer.Pop(ctx)
 		if err != nil {
 			return err
 		}
@@ -510,6 +512,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		}
 		t.validator.ProcessBatches(batchMap)
 	}
+
+	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
+		t.txStreamer.broadcastServer.Confirm(prevbatchmeta.MessageCount - 1)
+	}
+
 	return nil
 }
 

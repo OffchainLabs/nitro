@@ -7,9 +7,9 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 // Each contract gets a set of storage cells with values, and code that returns a sum of their cell
@@ -58,7 +58,7 @@ func TestInitContract(t *testing.T) {
 		l2info.ArbInitData.Accounts = append(l2info.ArbInitData.Accounts, accountInfo)
 		expectedSums[accountAddress] = sum
 	}
-	_, _, client := CreateTestL2WithConfig(t, ctx, l2info, &arbnode.NodeConfigL2Test, true)
+	_, _, client := CreateTestL2WithConfig(t, ctx, l2info, &arbnode.NodeConfigL2Test, nil, true)
 
 	for accountAddress, sum := range expectedSums {
 		msg := ethereum.CallMsg{

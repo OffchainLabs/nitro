@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
 func TestPurePrecompileMethodCalls(t *testing.T) {
@@ -24,7 +24,7 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
-	if chainId.Uint64() != params.ArbitrumTestChainConfig().ChainID.Uint64() {
+	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fail(t, "Wrong ChainID", chainId.Uint64())
 	}
 }

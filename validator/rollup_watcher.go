@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -12,8 +12,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 
 	"github.com/ethereum/go-ethereum"
@@ -49,22 +49,14 @@ type RollupWatcher struct {
 	baseCallOpts bind.CallOpts
 }
 
-func NewRollupWatcher(ctx context.Context, address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
+func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOpts bind.CallOpts) (*RollupWatcher, error) {
 	con, err := rollupgen.NewRollupUserLogic(address, client)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	opts := callOpts
-	opts.Context = ctx
-	firstNode, err := con.GetNode(&opts, 0)
-	if err != nil {
-		return nil, err
-	}
-
 	return &RollupWatcher{
 		address:         address,
-		fromBlock:       firstNode.CreatedAtBlock,
 		client:          client,
 		baseCallOpts:    callOpts,
 		RollupUserLogic: con,
@@ -75,6 +67,15 @@ func (r *RollupWatcher) getCallOpts(ctx context.Context) *bind.CallOpts {
 	opts := r.baseCallOpts
 	opts.Context = ctx
 	return &opts
+}
+
+func (r *RollupWatcher) Initialize(ctx context.Context) error {
+	firstNode, err := r.GetNode(r.getCallOpts(ctx), 0)
+	if err != nil {
+		return err
+	}
+	r.fromBlock = firstNode.CreatedAtBlock
+	return nil
 }
 
 func (r *RollupWatcher) LookupCreation(ctx context.Context) (*rollupgen.RollupUserLogicRollupInitialized, error) {

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package blsTable
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util"
-	"github.com/offchainlabs/arbstate/util/testhelpers"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestLegacyBLS(t *testing.T) {
@@ -29,7 +29,7 @@ func TestLegacyBLS(t *testing.T) {
 	cases := [][]*big.Int{
 		{big.NewInt(0), big.NewInt(16), big.NewInt(615), big.NewInt(1024)},
 		{big.NewInt(32), big.NewInt(0), big.NewInt(808), big.NewInt(9364)},
-		{maxInt64, util.BigMulByFrac(maxInt64, math.MaxInt64, 2), big.NewInt(2), big.NewInt(0)},
+		{maxInt64, arbmath.BigMulByFrac(maxInt64, math.MaxInt64, 2), big.NewInt(2), big.NewInt(0)},
 	}
 
 	for index, test := range cases {

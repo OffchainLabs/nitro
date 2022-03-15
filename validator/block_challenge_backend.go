@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package validator
@@ -15,9 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 
 	"github.com/pkg/errors"
 )
@@ -181,7 +180,7 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 			return GoGlobalState{}, errors.New("findBatchFromMessageCount returned bad batch")
 		}
 	}
-	extraInfo, err := arbos.DeserializeHeaderExtraInformation(header)
+	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
 		return GoGlobalState{}, err
 	}
@@ -191,15 +190,15 @@ func (b *BlockChallengeBackend) FindGlobalStateFromHeader(header *types.Header) 
 const StatusFinished uint8 = 1
 const StatusTooFar uint8 = 3
 
-func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) int64 {
-	return b.startBlock + int64(step)
+func (b *BlockChallengeBackend) GetBlockNrAtStep(step uint64) (int64, bool) {
+	return b.startBlock + int64(step), step >= b.tooFarStartsAtPosition
 }
 
 func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (GoGlobalState, uint8, error) {
-	if step >= b.tooFarStartsAtPosition {
+	blockNum, tooFar := b.GetBlockNrAtStep(step)
+	if tooFar {
 		return GoGlobalState{}, StatusTooFar, nil
 	}
-	blockNum := b.GetBlockNrAtStep(step)
 	var header *types.Header
 	if blockNum != -1 {
 		header = b.bc.GetHeaderByNumber(uint64(blockNum))

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -7,15 +7,19 @@ package arbtest
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/big"
+	"net"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/arbstate/arbnode"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 func newBroadcasterConfigTest(port int) *wsbroadcastserver.BroadcasterConfig {
@@ -38,19 +42,20 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.BroadcastClientConf
 }
 
 func TestSequencerFeed(t *testing.T) {
-	port := 9642
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	seqNodeConfig := arbnode.NodeConfigL2Test
 	seqNodeConfig.Broadcaster = true
-	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(port)
+	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
 
 	clientNodeConfig := arbnode.NodeConfigL2Test
 	clientNodeConfig.BroadcastClient = true
+	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	l2info1, _, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, true)
-	_, _, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, false)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
 
 	l2info1.GenerateAccount("User2")
 
@@ -69,18 +74,27 @@ func TestSequencerFeed(t *testing.T) {
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
 }
 
-func TestLyingSequencer(t *testing.T) {
+func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	port := 9643
 
 	// The truthful sequencer
 	nodeConfigA := arbnode.NodeConfigL1Test
 	nodeConfigA.BatchPoster = true
 	nodeConfigA.Broadcaster = false
+	nodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		nodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
 	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
 	defer l1stack.Close()
 
@@ -88,8 +102,12 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigC := arbnode.NodeConfigL1Test
 	nodeConfigC.BatchPoster = false
 	nodeConfigC.Broadcaster = true
-	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(port)
-	l2clientC, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
+	nodeConfigC.DataAvailabilityMode = dasMode
+	nodeConfigC.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	nodeConfigC.BroadcasterConfig = *newBroadcasterConfigTest(0)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
+
+	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
 	nodeConfigB := arbnode.NodeConfigL1Test
@@ -97,7 +115,9 @@ func TestLyingSequencer(t *testing.T) {
 	nodeConfigB.BatchPoster = false
 	nodeConfigB.BroadcastClient = true
 	nodeConfigB.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
-	l2clientB, _ := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
+	nodeConfigB.DataAvailabilityMode = dasMode
+	nodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")
@@ -106,7 +126,7 @@ func TestLyingSequencer(t *testing.T) {
 	l2infoA.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
 	realTx := l2infoA.PrepareTx("Owner", "RealUser", l2infoA.TransferGas, big.NewInt(1e12), nil)
 
-	err := l2clientC.SendTransaction(ctx, fraudTx)
+	err = l2clientC.SendTransaction(ctx, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +137,7 @@ func TestLyingSequencer(t *testing.T) {
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*5)
+	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,4 +180,16 @@ func TestLyingSequencer(t *testing.T) {
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balanceRealAcct)
 	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+	nodeC.StopAndWait()
+}
+
+func TestLyingSequencer(t *testing.T) {
+	testLyingSequencer(t, das.OnchainDataAvailability)
+}
+
+func TestLyingSequencerLocalDAS(t *testing.T) {
+	testLyingSequencer(t, das.LocalDataAvailability)
 }

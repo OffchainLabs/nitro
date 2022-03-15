@@ -4,6 +4,8 @@
 /cmd/replay/replay
 /*.bin
 /*.test
+/system_tests/*_fuzz/*
+!/system_tests/*_fuzz/*_fuzz.go
 .idea
 .vscode
 cmd/node/data
@@ -21,3 +23,5 @@ solgen/test/prover/proofs/*.json
 /reproducible-wasm/*.wasm
 target/
 yarn-error.log
+das/dasrpc/wireFormat.pb.go
+das/dasrpc/wireFormat_grpc.pb.go

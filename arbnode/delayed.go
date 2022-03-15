@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -20,9 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 var messageDeliveredID common.Hash
@@ -194,6 +194,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 			return nil, errors.New("found message data with mismatched hash")
 		}
 
+		requestId := common.BigToHash(parsedLog.MessageIndex)
 		msg := &DelayedInboxMessage{
 			BlockHash:      parsedLog.Raw.BlockHash,
 			BeforeInboxAcc: parsedLog.BeforeInboxAcc,
@@ -203,7 +204,7 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 					Poster:      parsedLog.Sender,
 					BlockNumber: common.BigToHash(new(big.Int).SetUint64(parsedLog.Raw.BlockNumber)),
 					Timestamp:   common.BigToHash(parsedLog.Timestamp),
-					RequestId:   common.BigToHash(parsedLog.MessageIndex),
+					RequestId:   &requestId,
 					BaseFeeL1:   common.BigToHash(parsedLog.BaseFeeL1),
 				},
 				L2msg: data,

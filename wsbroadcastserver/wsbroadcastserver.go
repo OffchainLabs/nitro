@@ -1,5 +1,5 @@
 /*
- * Copyright 2021, Offchain Labs, Inc.
+ * Copyright 2021-2022, Offchain Labs, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -221,7 +221,11 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *WSBroadcastServer) Stop() {
+func (s *WSBroadcastServer) ListenerAddr() net.Addr {
+	return s.listener.Addr()
+}
+
+func (s *WSBroadcastServer) StopAndWait() {
 	err := s.listener.Close()
 	if err != nil {
 		log.Warn("error in listener.Close", "err", err)
@@ -237,7 +241,7 @@ func (s *WSBroadcastServer) Stop() {
 		log.Warn("error in acceptDesc.Close", "err", err)
 	}
 
-	s.clientManager.Stop()
+	s.clientManager.StopAndWait()
 	s.started = false
 }
 

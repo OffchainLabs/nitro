@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package wsbroadcastserver
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 
 	"github.com/gobwas/ws"
@@ -30,7 +31,8 @@ type CatchupBuffer interface {
 
 // ClientManager manages client connections
 type ClientManager struct {
-	cancelFunc    context.CancelFunc
+	util.StopWaiter
+
 	clientPtrMap  map[*ClientConnection]bool
 	clientCount   int32
 	pool          *gopool.Pool
@@ -91,7 +93,7 @@ func (cm *ClientManager) removeAll() {
 }
 
 func (cm *ClientManager) removeClientImpl(clientConnection *ClientConnection) {
-	clientConnection.Stop()
+	clientConnection.StopAndWait()
 
 	err := cm.poller.Stop(clientConnection.desc)
 	if err != nil {
@@ -193,16 +195,10 @@ func (cm *ClientManager) verifyClients() {
 	}
 }
 
-func (cm *ClientManager) Stop() {
-	cm.cancelFunc()
-}
-
 func (cm *ClientManager) Start(parentCtx context.Context) {
-	ctx, cancelFunc := context.WithCancel(parentCtx)
-	cm.cancelFunc = cancelFunc
+	cm.StopWaiter.Start(parentCtx)
 
-	go func() {
-		defer cancelFunc()
+	cm.LaunchThread(func(ctx context.Context) {
 		defer cm.removeAll()
 
 		pingInterval := time.NewTicker(cm.settings.Ping)
@@ -230,5 +226,5 @@ func (cm *ClientManager) Start(parentCtx context.Context) {
 				cm.verifyClients()
 			}
 		}
-	}()
+	})
 }

@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 // race detection makes things slow and miss timeouts
@@ -10,17 +10,21 @@ package arbtest
 
 import (
 	"context"
+	"io/ioutil"
 	"math/big"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbutil"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das"
 )
 
-func TestTwoNodesLong(t *testing.T) {
+func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -37,10 +41,26 @@ func TestTwoNodesLong(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2info, node1, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1(t, ctx, true)
+
+	l1NodeConfigA := arbnode.NodeConfigL1Test
+	l1NodeConfigA.DataAvailabilityMode = dasMode
+	var dbPath string
+	var err error
+	defer os.RemoveAll(dbPath)
+	if dasMode == das.LocalDataAvailability {
+		dbPath, err = ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	}
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
 	defer l1stack.Close()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, node1, l1stack, &l2info.ArbInitData, false)
+	l1NodeConfigB := arbnode.NodeConfigL1Test
+	l1NodeConfigB.BatchPoster = false
+	l1NodeConfigB.BlockValidator = false
+	l1NodeConfigB.DataAvailabilityMode = dasMode
+	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -157,6 +177,9 @@ func TestTwoNodesLong(t *testing.T) {
 		t.Error("owner balance", ownerBalance, "delayed faucet", delayedFaucetBalance)
 		Fail(t, "Unexpected balance")
 	}
+
+	nodeA.StopAndWait()
+
 	if nodeB.BlockValidator != nil {
 		lastBlockHeader, err := l2clientB.HeaderByNumber(ctx, nil)
 		Require(t, err)
@@ -171,4 +194,14 @@ func TestTwoNodesLong(t *testing.T) {
 			Fail(t, "did not validate all blocks")
 		}
 	}
+
+	nodeB.StopAndWait()
+}
+
+func TestTwoNodesLong(t *testing.T) {
+	testTwoNodesLong(t, das.OnchainDataAvailability)
+}
+
+func TestTwoNodesLongLocalDAS(t *testing.T) {
+	testTwoNodesLong(t, das.LocalDataAvailability)
 }

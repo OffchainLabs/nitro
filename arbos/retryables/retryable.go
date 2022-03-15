@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package retryables
@@ -9,22 +9,20 @@ import (
 	"errors"
 	"math/big"
 
-	arbos_util "github.com/offchainlabs/arbstate/arbos/util"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/arbstate/arbos/storage"
-	"github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
 
 type RetryableState struct {
-	retryables    *storage.Storage
-	timeoutQueue  *storage.Queue
-	payFromEscrow func(common.Hash, common.Address)
+	retryables   *storage.Storage
+	timeoutQueue *storage.Queue
 }
 
 var (
@@ -37,40 +35,36 @@ func InitializeRetryableState(sto *storage.Storage) error {
 }
 
 func OpenRetryableState(sto *storage.Storage, statedb vm.StateDB) *RetryableState {
-	payFromEscrow := func(ticketId common.Hash, destination common.Address) {
-		escrowAddress := RetryableEscrowAddress(ticketId)
-		arbos_util.TransferEverything(escrowAddress, destination, statedb)
-	}
 	return &RetryableState{
 		sto,
 		storage.OpenQueue(sto.OpenSubStorage(timeoutQueueKey)),
-		payFromEscrow,
 	}
 }
 
 type Retryable struct {
-	id             common.Hash // not backed by storage; this is the key that determines where it lives in storage
-	backingStorage *storage.Storage
-	numTries       storage.StorageBackedUint64
-	timeout        storage.StorageBackedUint64
-	from           storage.StorageBackedAddress
-	to             storage.StorageBackedAddressOrNil
-	callvalue      storage.StorageBackedBigInt
-	beneficiary    storage.StorageBackedAddress
-	calldata       storage.StorageBackedBytes
+	id                 common.Hash // not backed by storage; this key determines where it lives in storage
+	backingStorage     *storage.Storage
+	numTries           storage.StorageBackedUint64
+	from               storage.StorageBackedAddress
+	to                 storage.StorageBackedAddressOrNil
+	callvalue          storage.StorageBackedBigInt
+	beneficiary        storage.StorageBackedAddress
+	calldata           storage.StorageBackedBytes
+	timeout            storage.StorageBackedUint64
+	timeoutWindowsLeft storage.StorageBackedUint64
 }
 
 const (
 	numTriesOffset uint64 = iota
-	timeoutOffset
 	fromOffset
 	toOffset
 	callvalueOffset
 	beneficiaryOffset
+	timeoutOffset
+	timeoutWindowsLeftOffset
 )
 
 func (rs *RetryableState) CreateRetryable(
-	currentTimestamp uint64,
 	id common.Hash, // we assume that the id is unique and hasn't been used before
 	timeout uint64,
 	from common.Address,
@@ -79,33 +73,30 @@ func (rs *RetryableState) CreateRetryable(
 	beneficiary common.Address,
 	calldata []byte,
 ) (*Retryable, error) {
-	err := rs.TryToReapOneRetryable(currentTimestamp)
-	if err != nil {
-		return nil, err
-	}
 	sto := rs.retryables.OpenSubStorage(id.Bytes())
 	ret := &Retryable{
 		id,
 		sto,
 		sto.OpenStorageBackedUint64(numTriesOffset),
-		sto.OpenStorageBackedUint64(timeoutOffset),
 		sto.OpenStorageBackedAddress(fromOffset),
 		sto.OpenStorageBackedAddressOrNil(toOffset),
 		sto.OpenStorageBackedBigInt(callvalueOffset),
 		sto.OpenStorageBackedAddress(beneficiaryOffset),
 		sto.OpenStorageBackedBytes(calldataKey),
+		sto.OpenStorageBackedUint64(timeoutOffset),
+		sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}
 	_ = ret.numTries.Set(0)
-	_ = ret.timeout.Set(timeout)
 	_ = ret.from.Set(from)
 	_ = ret.to.Set(to)
 	_ = ret.callvalue.Set(callvalue)
 	_ = ret.beneficiary.Set(beneficiary)
 	_ = ret.calldata.Set(calldata)
+	_ = ret.timeout.Set(timeout)
+	_ = ret.timeoutWindowsLeft.Set(0)
 
 	// insert the new retryable into the queue so it can be reaped later
-	err = rs.timeoutQueue.Put(id)
-	return ret, err
+	return ret, rs.timeoutQueue.Put(id)
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
@@ -119,15 +110,16 @@ func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64)
 		return nil, err
 	}
 	return &Retryable{
-		id:             id,
-		backingStorage: sto,
-		numTries:       sto.OpenStorageBackedUint64(numTriesOffset),
-		timeout:        timeoutStorage,
-		from:           sto.OpenStorageBackedAddress(fromOffset),
-		to:             sto.OpenStorageBackedAddressOrNil(toOffset),
-		callvalue:      sto.OpenStorageBackedBigInt(callvalueOffset),
-		beneficiary:    sto.OpenStorageBackedAddress(beneficiaryOffset),
-		calldata:       sto.OpenStorageBackedBytes(calldataKey),
+		id:                 id,
+		backingStorage:     sto,
+		numTries:           sto.OpenStorageBackedUint64(numTriesOffset),
+		from:               sto.OpenStorageBackedAddress(fromOffset),
+		to:                 sto.OpenStorageBackedAddressOrNil(toOffset),
+		callvalue:          sto.OpenStorageBackedBigInt(callvalueOffset),
+		beneficiary:        sto.OpenStorageBackedAddress(beneficiaryOffset),
+		calldata:           sto.OpenStorageBackedBytes(calldataKey),
+		timeout:            timeoutStorage,
+		timeoutWindowsLeft: sto.OpenStorageBackedUint64(timeoutWindowsLeftOffset),
 	}, nil
 }
 
@@ -137,11 +129,11 @@ func (rs *RetryableState) RetryableSizeBytes(id common.Hash, currentTime uint64)
 		return 0, err
 	}
 	size, err := retryable.CalldataSize()
-	calldata := 32 + 32*util.WordsForBytes(size) // length + contents
+	calldata := 32 + 32*arbmath.WordsForBytes(size) // length + contents
 	return 6*32 + calldata, err
 }
 
-func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
+func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario util.TracingScenario) (bool, error) {
 	retStorage := rs.retryables.OpenSubStorage(id.Bytes())
 	timeout, err := retStorage.GetByUint64(timeoutOffset)
 	if timeout == (common.Hash{}) || err != nil {
@@ -150,7 +142,13 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash) (bool, error) {
 
 	// move any funds in escrow to the beneficiary (should be none if the retry succeeded -- see EndTxHook)
 	beneficiary, _ := retStorage.GetByUint64(beneficiaryOffset)
-	rs.payFromEscrow(id, common.BytesToAddress(beneficiary[:]))
+	escrowAddress := RetryableEscrowAddress(id)
+	beneficiaryAddress := common.BytesToAddress(beneficiary[:])
+	amount := evm.StateDB.GetBalance(escrowAddress)
+	err = util.TransferBalance(&escrowAddress, &beneficiaryAddress, amount, evm, scenario)
+	if err != nil {
+		return false, err
+	}
 
 	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
 	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
@@ -218,6 +216,15 @@ func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limi
 	if timeout > limitBeforeAdd {
 		return errors.New("timeout too far into the future")
 	}
+
+	// Add a duplicate entry to the end of the queue (only the last one deletes the retryable)
+	err = rs.timeoutQueue.Put(retryable.id)
+	if err != nil {
+		return err
+	}
+	if _, err := retryable.timeoutWindowsLeft.Increment(); err != nil {
+		return err
+	}
 	return retryable.SetTimeout(timeout + timeToAdd)
 }
 
@@ -258,36 +265,42 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	return true, err
 }
 
-func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64) error {
-	empty, err := rs.timeoutQueue.IsEmpty()
+func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) error {
+	id, err := rs.timeoutQueue.Peek()
+	if err != nil || id == nil {
+		return err
+	}
+	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
+	slot := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
+	timeout, err := slot.Get()
 	if err != nil {
 		return err
 	}
-	if !empty {
-		id, err := rs.timeoutQueue.Get()
-		if err != nil {
-			return err
-		}
-		slot := rs.retryables.OpenSubStorage(id.Bytes()).OpenStorageBackedUint64(timeoutOffset)
-		timeout, err := slot.Get()
-		if err != nil {
-			return err
-		}
-		if timeout != 0 {
-			// retryables always have a non-zero timeout, so we know one exists here
-
-			if timeout < currentTimestamp {
-				// the retryable has expired, time to reap
-				_, err = rs.DeleteRetryable(*id)
-				return err
-			} else {
-				// the retryable has not expired, but we'll check back later
-				// to preserve round-robin ordering, we put this at the end
-				return rs.timeoutQueue.Put(*id)
-			}
-		}
+	if timeout == 0 {
+		// The retryable has already been deleted, so discard the peeked entry
+		_, err = rs.timeoutQueue.Get()
+		return err
 	}
-	return nil
+
+	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
+	windowsLeft, err := windowsLeftStorage.Get()
+	if err != nil || (windowsLeft == 0 && timeout > currentTimestamp) {
+		return err
+	}
+
+	// Either the retryable has expired, or it's lost a lifetime's worth of time
+	_, err = rs.timeoutQueue.Get()
+	if err != nil {
+		return err
+	}
+
+	if windowsLeft == 0 {
+		// the retryable has expired, time to reap
+		_, err = rs.DeleteRetryable(*id, evm, scenario)
+		return err
+	}
+
+	return windowsLeftStorage.Set(windowsLeft - 1)
 }
 
 func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *big.Int, gas uint64, ticketId common.Hash, refundTo common.Address) (*types.ArbitrumRetryTx, error) {

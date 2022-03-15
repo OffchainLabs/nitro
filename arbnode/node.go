@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbnode
@@ -25,29 +25,31 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbos/arbosState"
-	"github.com/offchainlabs/arbstate/arbos/l2pricing"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/broadcastclient"
-	"github.com/offchainlabs/arbstate/broadcaster"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
-	"github.com/offchainlabs/arbstate/solgen/go/challengegen"
-	"github.com/offchainlabs/arbstate/solgen/go/ospgen"
-	"github.com/offchainlabs/arbstate/solgen/go/rollupgen"
-	"github.com/offchainlabs/arbstate/statetransfer"
-	"github.com/offchainlabs/arbstate/validator"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcaster"
+	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type RollupAddresses struct {
-	Bridge         common.Address
-	Inbox          common.Address
-	SequencerInbox common.Address
-	Rollup         common.Address
-	DeployedAt     uint64
+	Bridge                 common.Address
+	Inbox                  common.Address
+	SequencerInbox         common.Address
+	Rollup                 common.Address
+	ValidatorUtils         common.Address
+	ValidatorWalletCreator common.Address
+	DeployedAt             uint64
 }
 
 func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
@@ -197,7 +199,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, wasmModuleRoot common.Hash, txTimeout time.Duration) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
 		return nil, err
@@ -226,7 +228,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 			WasmModuleRoot:                 wasmModuleRoot,
 			Owner:                          deployAuth.From,
 			LoserStakeEscrow:               common.Address{},
-			ChainId:                        big.NewInt(1338),
+			ChainId:                        chainId,
 			SequencerInboxMaxTimeVariation: seqInboxParams,
 		},
 		expectedRollupAddr,
@@ -253,17 +255,46 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
 	}
 
+	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(deployAuth, l1client)
+	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(deployAuth, l1client)
+	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	if err != nil {
+		return nil, fmt.Errorf("validator utils deploy error: %w", err)
+	}
+
+	var allowValidators []bool
+	var validatorAddrs []common.Address
+	for i := uint64(1); i <= authorizeValidators; i++ {
+		validatorAddrs = append(validatorAddrs, crypto.CreateAddress(validatorWalletCreator, i))
+		allowValidators = append(allowValidators, true)
+	}
+	if len(validatorAddrs) > 0 {
+		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
+		err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+		if err != nil {
+			return nil, fmt.Errorf("error setting validator: %w", err)
+		}
+	}
+
 	return &RollupAddresses{
-		Bridge:         info.DelayedBridge,
-		Inbox:          info.InboxAddress,
-		SequencerInbox: info.SequencerInbox,
-		DeployedAt:     receipt.BlockNumber.Uint64(),
-		Rollup:         info.RollupAddress,
+		Bridge:                 info.DelayedBridge,
+		Inbox:                  info.InboxAddress,
+		SequencerInbox:         info.SequencerInbox,
+		DeployedAt:             receipt.BlockNumber.Uint64(),
+		Rollup:                 info.RollupAddress,
+		ValidatorUtils:         validatorUtils,
+		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
 }
 
 type NodeConfig struct {
 	ArbConfig              arbitrum.Config
+	Sequencer              bool
 	L1Reader               bool
 	InboxReaderConfig      InboxReaderConfig
 	DelayedSequencerConfig DelayedSequencerConfig
@@ -276,11 +307,17 @@ type NodeConfig struct {
 	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
 	BroadcastClient        bool
 	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
+	L1Validator            bool
+	L1ValidatorConfig      validator.L1ValidatorConfig
+	SeqCoordinator         bool
+	SeqCoordinatorConfig   SeqCoordinatorConfig
+	DataAvailabilityMode   das.DataAvailabilityMode
+	DataAvailabilityConfig das.DataAvailabilityConfig
 }
 
-var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
-var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig}
-var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, L1Reader: false}
+var NodeConfigDefault = NodeConfig{arbitrum.DefaultConfig, false, true, DefaultInboxReaderConfig, DefaultDelayedSequencerConfig, true, DefaultBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
+var NodeConfigL1Test = NodeConfig{arbitrum.DefaultConfig, true, true, TestInboxReaderConfig, TestDelayedSequencerConfig, true, TestBatchPosterConfig, "", false, validator.DefaultBlockValidatorConfig, false, wsbroadcastserver.DefaultBroadcasterConfig, false, broadcastclient.DefaultBroadcastClientConfig, false, validator.DefaultL1ValidatorConfig, false, DefaultSeqCoordinatorConfig, das.OnchainDataAvailability, das.DefaultDataAvailabilityConfig}
+var NodeConfigL2Test = NodeConfig{ArbConfig: arbitrum.DefaultConfig, Sequencer: true, L1Reader: false}
 
 type Node struct {
 	Backend          *arbitrum.Backend
@@ -293,14 +330,25 @@ type Node struct {
 	DelayedSequencer *DelayedSequencer
 	BatchPoster      *BatchPoster
 	BlockValidator   *validator.BlockValidator
+	Staker           *validator.Staker
 	BroadcastServer  *broadcaster.Broadcaster
 	BroadcastClient  *broadcastclient.BroadcastClient
+	SeqCoordinator   *SeqCoordinator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Broadcaster {
 		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
+	}
+
+	var dataAvailabilityService das.DataAvailabilityService
+	if config.DataAvailabilityMode == das.LocalDataAvailability {
+		var err error
+		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
@@ -308,18 +356,36 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		return nil, err
 	}
 	var txPublisher TransactionPublisher
-	if config.ForwardingTarget != "" {
-		txPublisher, err = NewForwarder(config.ForwardingTarget)
-	} else if config.L1Reader {
-		if l1client == nil {
-			return nil, errors.New("l1client is nil")
+	var coordinator *SeqCoordinator
+	if config.Sequencer {
+		if config.ForwardingTarget != "" {
+			return nil, errors.New("sequencer and forwarding target both set")
 		}
-		txPublisher, err = NewSequencer(txStreamer, l1client)
+		var sequencer *Sequencer
+		if config.L1Reader {
+			if l1client == nil {
+				return nil, errors.New("l1client is nil")
+			}
+			sequencer, err = NewSequencer(txStreamer, l1client)
+		} else {
+			sequencer, err = NewSequencer(txStreamer, nil)
+		}
+		if err != nil {
+			return nil, err
+		}
+		txPublisher = sequencer
+		if config.SeqCoordinator {
+			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinatorConfig)
+		}
 	} else {
-		txPublisher, err = NewSequencer(txStreamer, nil)
-	}
-	if err != nil {
-		return nil, err
+		if config.SeqCoordinator {
+			return nil, errors.New("sequencer coordinator without sequencer")
+		}
+		if config.ForwardingTarget == "" {
+			txPublisher = NewTxDropper()
+		} else {
+			txPublisher = NewForwarder(config.ForwardingTarget)
+		}
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
 	if err != nil {
@@ -334,7 +400,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
 	}
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -348,7 +414,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	inboxTracker, err := NewInboxTracker(chainDb, txStreamer)
+	inboxTracker, err := NewInboxTracker(chainDb, txStreamer, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}
@@ -359,14 +425,27 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig, dataAvailabilityService)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var staker *validator.Staker
+	if config.L1Validator {
+		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
+		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, validatorTxOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		if err != nil {
+			return nil, err
+		}
+		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.L1ValidatorConfig, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, broadcastServer, broadcastClient}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -376,11 +455,11 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2
 	if err != nil {
 		return nil, err
 	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt)
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, broadcastServer, broadcastClient}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -409,6 +488,9 @@ func (n *Node) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if n.SeqCoordinator != nil {
+		n.SeqCoordinator.Start(ctx)
+	}
 	if n.DelayedSequencer != nil {
 		n.DelayedSequencer.Start(ctx)
 	}
@@ -421,6 +503,13 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	if n.Staker != nil {
+		err = n.Staker.Initialize(ctx)
+		if err != nil {
+			return err
+		}
+		n.Staker.Start(ctx)
+	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
@@ -431,6 +520,32 @@ func (n *Node) Start(ctx context.Context) error {
 		n.BroadcastClient.Start(ctx)
 	}
 	return nil
+}
+
+func (n *Node) StopAndWait() {
+	if n.BroadcastClient != nil {
+		n.BroadcastClient.StopAndWait()
+	}
+	if n.BroadcastServer != nil {
+		n.BroadcastServer.StopAndWait()
+	}
+	if n.BlockValidator != nil {
+		n.BlockValidator.StopAndWait()
+	}
+	if n.BatchPoster != nil {
+		n.BatchPoster.StopAndWait()
+	}
+	if n.DelayedSequencer != nil {
+		n.DelayedSequencer.StopAndWait()
+	}
+	if n.InboxReader != nil {
+		n.InboxReader.StopAndWait()
+	}
+	n.TxPublisher.StopAndWait()
+	if n.SeqCoordinator != nil {
+		n.SeqCoordinator.StopAndWait()
+	}
+	n.TxStreamer.StopAndWait()
 }
 
 func CreateDefaultStack() (*node.Node, error) {
@@ -526,13 +641,12 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 	return blockNum, initDataReader.Close()
 }
 
-func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64) error {
+func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, blockNumber uint64, chainConfig *params.ChainConfig) error {
 	arbstate.RequireHookedGeth()
 
 	EmptyHash := common.Hash{}
 
 	prevHash := EmptyHash
-	genDifficulty := big.NewInt(1)
 	prevDifficulty := big.NewInt(0)
 	storedGenHash := rawdb.ReadCanonicalHash(chainDb, blockNumber)
 	timestamp := uint64(0)
@@ -541,28 +655,18 @@ func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitData
 		if prevHash == EmptyHash {
 			return fmt.Errorf("block number %d not found in database", chainDb)
 		}
-		prevDifficulty = rawdb.ReadTd(chainDb, prevHash, blockNumber-1)
+		prevHeader := rawdb.ReadHeader(chainDb, prevHash, blockNumber-1)
+		if prevHeader == nil {
+			return fmt.Errorf("block header for block %d not found in database", chainDb)
+		}
+		timestamp = prevHeader.Time
 	}
-	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData)
+	stateRoot, err := arbosState.InitializeArbosInDatabase(chainDb, initData, chainConfig)
 	if err != nil {
 		return err
 	}
-	head := &types.Header{
-		Number:     new(big.Int).SetUint64(blockNumber),
-		Nonce:      types.EncodeNonce(1), // the genesis block reads the init message
-		Time:       timestamp,
-		ParentHash: prevHash,
-		Extra:      []byte("ArbitrumMainnet"),
-		GasLimit:   l2pricing.L2GasLimit,
-		GasUsed:    0,
-		BaseFee:    big.NewInt(l2pricing.InitialBaseFeeWei),
-		Difficulty: genDifficulty,
-		MixDigest:  EmptyHash,
-		Coinbase:   common.Address{},
-		Root:       stateRoot,
-	}
 
-	genBlock := types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
+	genBlock := arbosState.MakeGenesisBlock(prevHash, blockNumber, timestamp, stateRoot)
 	blockHash := genBlock.Hash()
 
 	if storedGenHash == EmptyHash {
@@ -614,7 +718,7 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, config
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, blockNumber uint64, config *params.ChainConfig) (*core.BlockChain, error) {
-	err := WriteOrTestGenblock(chainDb, initData, blockNumber)
+	err := WriteOrTestGenblock(chainDb, initData, blockNumber, config)
 	if err != nil {
 		return nil, err
 	}

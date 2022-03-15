@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
@@ -9,11 +9,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func ExampleBroadcastMessage_broadcastfeedmessage() {
+	var requestId common.Hash
 	msg := BroadcastMessage{
 		Version: 1,
 		Messages: []*BroadcastFeedMessage{
@@ -26,7 +28,7 @@ func ExampleBroadcastMessage_broadcastfeedmessage() {
 							Poster:      [20]byte{},
 							BlockNumber: [32]byte{},
 							Timestamp:   [32]byte{},
-							RequestId:   [32]byte{},
+							RequestId:   &requestId,
 							BaseFeeL1:   [32]byte{},
 						},
 						L2msg: []byte{0xde, 0xad, 0xbe, 0xef},

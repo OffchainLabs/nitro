@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package arbtest
@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/arbstate/arbos"
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
 
 type blockTestState struct {
@@ -144,8 +144,7 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 			state.nonces = newNonces
 
-			batchBuffer := bytes.NewBuffer([]byte{0})
-			batchWriter := brotli.NewWriter(batchBuffer)
+			batchBuffer := bytes.NewBuffer([]byte{})
 			numMessages := 1 + rand.Int()%5
 			for j := 0; j < numMessages; j++ {
 				sourceNum := rand.Int() % len(state.accounts)
@@ -184,15 +183,16 @@ func TestSequencerInboxReader(t *testing.T) {
 				segment = append(segment, arbstate.BatchSegmentKindL2Message)
 				segment = append(segment, arbos.L2MessageKind_SignedTx)
 				segment = append(segment, txData...)
-				err = rlp.Encode(batchWriter, segment)
+				err = rlp.Encode(batchBuffer, segment)
 				Require(t, err)
 
 				state.balances[source].Sub(state.balances[source], amount)
 				state.balances[dest].Add(state.balances[dest], amount)
 			}
 
-			Require(t, batchWriter.Close())
-			batchData := batchBuffer.Bytes()
+			compressed, err := arbcompress.CompressWell(batchBuffer.Bytes())
+			Require(t, err)
+			batchData := append([]byte{0}, compressed...)
 
 			seqNonce := len(blockStates) - 1
 			for j := 0; ; j++ {

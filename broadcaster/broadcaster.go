@@ -1,19 +1,20 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package broadcaster
 
 import (
 	"context"
+	"net"
 	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/arbstate/arbstate"
-	"github.com/offchainlabs/arbstate/arbutil"
-	"github.com/offchainlabs/arbstate/wsbroadcastserver"
+	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
 type Broadcaster struct {
@@ -183,6 +184,10 @@ func (b *Broadcaster) ClientCount() int32 {
 	return b.server.ClientCount()
 }
 
+func (b *Broadcaster) ListenerAddr() net.Addr {
+	return b.server.ListenerAddr()
+}
+
 func (b *Broadcaster) GetCachedMessageCount() int {
 	return b.catchupBuffer.GetMessageCount()
 }
@@ -191,6 +196,6 @@ func (b *Broadcaster) Start(ctx context.Context) error {
 	return b.server.Start(ctx)
 }
 
-func (b *Broadcaster) Stop() {
-	b.server.Stop()
+func (b *Broadcaster) StopAndWait() {
+	b.server.StopAndWait()
 }

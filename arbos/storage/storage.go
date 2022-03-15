@@ -1,5 +1,5 @@
 //
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
+// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
 //
 
 package storage
@@ -14,9 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/arbstate/arbos/burn"
-	"github.com/offchainlabs/arbstate/arbos/util"
-	nitro_util "github.com/offchainlabs/arbstate/util"
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -253,7 +253,7 @@ func (sto *Storage) Keccak(data ...[]byte) ([]byte, error) {
 	for _, part := range data {
 		byteCount += len(part)
 	}
-	cost := 30 + 6*nitro_util.WordsForBytes(uint64(byteCount))
+	cost := 30 + 6*arbmath.WordsForBytes(uint64(byteCount))
 	if err := sto.burner.Burn(cost); err != nil {
 		return nil, err
 	}
@@ -319,6 +319,24 @@ func (sbu *StorageBackedInt64) Get() (int64, error) {
 
 func (sbu *StorageBackedInt64) Set(value int64) error {
 	return sbu.StorageSlot.Set(util.UintToHash(uint64(value))) // see implementation note above
+}
+
+// Represents a number of basis points
+type StorageBackedBips struct {
+	backing StorageBackedInt64
+}
+
+func (sto *Storage) OpenStorageBackedBips(offset uint64) StorageBackedBips {
+	return StorageBackedBips{StorageBackedInt64{sto.NewSlot(offset)}}
+}
+
+func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
+	value, err := sbu.backing.Get()
+	return arbmath.Bips(value), err
+}
+
+func (sbu *StorageBackedBips) Set(bips arbmath.Bips) error {
+	return sbu.backing.Set(int64(bips))
 }
 
 type StorageBackedUint64 struct {
