@@ -9,6 +9,7 @@ on:
       - 'solgen/src/mock/**'
       - 'solgen/test/**'
       - 'solgen/hardhat.config.ts'
+      - '.github/workflows/arbitrator-ci.yml'
       - 'Makefile'
   push:
     branches:
@@ -44,7 +45,7 @@ jobs:
           profile: minimal
           toolchain: nightly
           override: true
-          components: 'llvm-tools-preview'
+          components: 'llvm-tools-preview', rustfmt
 
       - name: Install grcov
         uses: actions-rs/install@v0.1
