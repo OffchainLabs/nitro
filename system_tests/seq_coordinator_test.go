@@ -27,7 +27,7 @@ func TestSeqCoordinator(t *testing.T) {
 	redisOptions, err := redis.ParseURL(redisUrl)
 	Require(t, err)
 	redisClient := redis.NewClient(redisOptions)
-	nodeConfig := arbnode.NodeConfigL2Test
+	nodeConfig := arbnode.ConfigDefaultL2Test
 	nodeConfig.SeqCoordinator = true
 	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
 

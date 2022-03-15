@@ -76,11 +76,11 @@ type buildingBatch struct {
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
-	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
+	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxSize*2))
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
-		sizeLimit:        config.MaxBatchSize - 40, // TODO
+		sizeLimit:        config.MaxSize - 40, // TODO
 		compressionLevel: config.CompressionLevel,
 		rawSegments:      make([][]byte, 0, 128),
 		delayedMsg:       firstDelayed,
@@ -345,11 +345,11 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
 	var lastBatchPosted time.Time
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted) >= b.config.MaxBatchPostInterval)
+		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted) >= b.config.MaxInterval)
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)
-			return b.config.PostingErrorDelay
+			return b.config.ErrorDelay
 		}
 		if tx != nil {
 			b.building = nil
@@ -360,6 +360,6 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 				lastBatchPosted = time.Now()
 			}
 		}
-		return b.config.BatchPollDelay
+		return b.config.PollDelay
 	})
 }

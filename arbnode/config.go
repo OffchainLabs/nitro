@@ -11,103 +11,78 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type ArbNodeConfig struct {
-	ArbConfig              arbitrum.Config
-	Sequencer              bool
-	L1Reader               bool
-	InboxReaderConfig      InboxReaderConfig
-	DelayedSequencerConfig DelayedSequencerConfig
-	BatchPoster            bool
-	BatchPosterConfig      BatchPosterConfig
-	ForwardingTarget       string // "" if not forwarding
-	BlockValidator         bool
-	BlockValidatorConfig   validator.BlockValidatorConfig
-	Broadcaster            bool
-	BroadcasterConfig      wsbroadcastserver.BroadcasterConfig
-	BroadcastClient        bool
-	BroadcastClientConfig  broadcastclient.BroadcastClientConfig
-	L1Validator            bool
-	L1ValidatorConfig      validator.L1ValidatorConfig
-	SeqCoordinator         bool
-	SeqCoordinatorConfig   SeqCoordinatorConfig
-	DataAvailabilityMode   das.DataAvailabilityMode
-	DataAvailabilityConfig das.DataAvailabilityConfig
+type Config struct {
+	RPC              arbitrum.Config                `koanf:"rpc"`
+	Sequencer        SequencerConfig                `koanf:"sequencer"`
+	EnableL1Reader   bool                           `koanf:"enable-l1-reader"`
+	InboxReader      InboxReaderConfig              `koanf:"inbox-reader"`
+	DelayedSequencer DelayedSequencerConfig         `koanf:"delayed-sequencer"`
+	BatchPoster      BatchPosterConfig              `koanf:"batch-poster"`
+	ForwardingTarget string                         `koanf:"forwarding-target"`
+	BlockValidator   validator.BlockValidatorConfig `koanf:"block-validator"`
+	Feed             broadcastclient.FeedConfig     `koanf:"feed"`
+	Validator        validator.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator   SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability das.DataAvailabilityConfig     `koanf:"data-availability"`
 }
 
-func ArbNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
-	arbitrum.ConfigAddOptions(prefix+".arbconfig", f)
-	f.Bool(prefix+".sequencer", ArbNodeConfigDefault.Sequencer, "enable sequencer")
-	f.Bool(prefix+".l1-reader", ArbNodeConfigDefault.Sequencer, "enable l1 reader")
+func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+	arbitrum.ConfigAddOptions(prefix+".rpc", f)
+	SequencerConfigAddOptions("sequencer", f)
+	f.Bool(prefix+".enable-l1-reader", ConfigDefault.EnableL1Reader, "enable l1 reader")
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
-	f.Bool(prefix+".batch-poster", ArbNodeConfigDefault.Sequencer, "enable batch poster")
-	BatchPosterConfigAddOptions(prefix+".batch_poster", f)
-	f.String(prefix+".forwarding-target", ArbNodeConfigDefault.ForwardingTarget, "forwarding target")
-	f.Bool(prefix+".block-validator", ArbNodeConfigDefault.BlockValidator, "enable block validator")
+	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
+	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
-	broadcastclient.FeedConfigAddOptions(prefix+".feed", f)
+	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
+	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
+	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
+	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	// TODO
 }
 
-var ArbNodeConfigDefault = ArbNodeConfig{
-	ArbConfig:              arbitrum.DefaultConfig,
-	Sequencer:              false,
-	L1Reader:               true,
-	InboxReaderConfig:      DefaultInboxReaderConfig,
-	DelayedSequencerConfig: DefaultDelayedSequencerConfig,
-	BatchPoster:            true,
-	BatchPosterConfig:      DefaultBatchPosterConfig,
-	ForwardingTarget:       "",
-	BlockValidator:         false,
-	BlockValidatorConfig:   validator.DefaultBlockValidatorConfig,
-	Broadcaster:            false,
-	BroadcasterConfig:      wsbroadcastserver.DefaultBroadcasterConfig,
-	BroadcastClient:        false,
-	BroadcastClientConfig:  broadcastclient.DefaultBroadcastClientConfig,
-	L1Validator:            false,
-	L1ValidatorConfig:      validator.DefaultL1ValidatorConfig,
-	SeqCoordinator:         false,
-	SeqCoordinatorConfig:   DefaultSeqCoordinatorConfig,
-	DataAvailabilityMode:   das.OnchainDataAvailability,
-	DataAvailabilityConfig: das.DefaultDataAvailabilityConfig,
+var ConfigDefault = Config{
+	RPC:              arbitrum.DefaultConfig,
+	Sequencer:        DefaultSequencerConfig,
+	EnableL1Reader:   true,
+	InboxReader:      DefaultInboxReaderConfig,
+	DelayedSequencer: DefaultDelayedSequencerConfig,
+	BatchPoster:      DefaultBatchPosterConfig,
+	ForwardingTarget: "",
+	BlockValidator:   validator.DefaultBlockValidatorConfig,
+	Feed:             broadcastclient.FeedConfigDefault,
+	Validator:        validator.DefaultL1ValidatorConfig,
+	SeqCoordinator:   DefaultSeqCoordinatorConfig,
+	DataAvailability: das.DefaultDataAvailabilityConfig,
 }
 
-var NodeConfigL1Test = ArbNodeConfig{
-	ArbConfig:              arbitrum.DefaultConfig,
-	Sequencer:              true,
-	L1Reader:               true,
-	InboxReaderConfig:      TestInboxReaderConfig,
-	DelayedSequencerConfig: TestDelayedSequencerConfig,
-	BatchPoster:            true,
-	BatchPosterConfig:      TestBatchPosterConfig,
-	ForwardingTarget:       "",
-	BlockValidator:         false,
-	BlockValidatorConfig:   validator.DefaultBlockValidatorConfig,
-	Broadcaster:            false,
-	BroadcasterConfig:      wsbroadcastserver.DefaultBroadcasterConfig,
-	BroadcastClient:        false,
-	BroadcastClientConfig:  broadcastclient.DefaultBroadcastClientConfig,
-	L1Validator:            false,
-	L1ValidatorConfig:      validator.DefaultL1ValidatorConfig,
-	SeqCoordinator:         false,
-	SeqCoordinatorConfig:   DefaultSeqCoordinatorConfig,
-	DataAvailabilityMode:   das.OnchainDataAvailability,
-	DataAvailabilityConfig: das.DefaultDataAvailabilityConfig,
+var ConfigDefaultL1Test = Config{
+	RPC:              arbitrum.DefaultConfig,
+	Sequencer:        DefaultSequencerConfig,
+	EnableL1Reader:   true,
+	InboxReader:      TestInboxReaderConfig,
+	DelayedSequencer: TestDelayedSequencerConfig,
+	ForwardingTarget: "",
+	BlockValidator:   validator.DefaultBlockValidatorConfig,
+	Feed:             broadcastclient.FeedConfigDefault,
+	Validator:        validator.DefaultL1ValidatorConfig,
+	SeqCoordinator:   DefaultSeqCoordinatorConfig,
+	DataAvailability: das.DefaultDataAvailabilityConfig,
 }
 
-var NodeConfigL2Test = ArbNodeConfig{
-	ArbConfig: arbitrum.DefaultConfig,
-	Sequencer: true,
-	L1Reader:  false,
+var ConfigDefaultL2Test = Config{
+	RPC:            arbitrum.DefaultConfig,
+	Sequencer:      DefaultSequencerConfigL2Test,
+	EnableL1Reader: false,
 }
 
 type InboxReaderConfig struct {
-	DelayBlocks int64
-	CheckDelay  time.Duration
-	HardReorg   bool // erase future transactions in addition to overwriting existing ones
+	DelayBlocks int64         `koanf:"delay-blocks"`
+	CheckDelay  time.Duration `koanf:"check-delay"`
+	HardReorg   bool          `koanf:"hard-reorg"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -152,34 +127,53 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
+type SequencerConfig struct {
+	Enable bool `koanf:"enable"`
+}
+
+var DefaultSequencerConfig = SequencerConfig{
+	Enable: false,
+}
+
+var DefaultSequencerConfigL2Test = SequencerConfig{
+	Enable: true,
+}
+
+func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+}
+
 type BatchPosterConfig struct {
-	MaxBatchSize         int           `koanf:"max-batch-size"`
-	MaxBatchPostInterval time.Duration `koanf:"max-batch-post-interval"`
-	BatchPollDelay       time.Duration `koanf:"batch-poll-delay"`
-	PostingErrorDelay    time.Duration `koanf:"posting-error-delay"`
-	CompressionLevel     int           `koanf:"compression-level"`
+	Enable           bool          `koanf:"enable"`
+	MaxSize          int           `koanf:"max-size"`
+	MaxInterval      time.Duration `koanf:"max-interval"`
+	PollDelay        time.Duration `koanf:"poll-delay"`
+	ErrorDelay       time.Duration `koanf:"error-delay"`
+	CompressionLevel int           `koanf:"compression-level"`
 }
 
 func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-batch-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
-	f.Duration(prefix+".max-batch-post-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
-	f.Duration(prefix+".batch-poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
-	f.Duration(prefix+".posting-error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
+	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
+	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxInterval, "maximum batch posting interval")
+	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.PollDelay, "how long to delay after successfully posting batch")
+	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.ErrorDelay, "how long to delay after error posting batch")
 	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
-	CompressionLevel:     brotli.DefaultCompression,
+	Enable:           false,
+	MaxSize:          500,
+	PollDelay:        time.Second,
+	ErrorDelay:       time.Second * 5,
+	MaxInterval:      time.Minute,
+	CompressionLevel: brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         10000,
-	BatchPollDelay:       time.Millisecond * 10,
-	PostingErrorDelay:    time.Millisecond * 10,
-	MaxBatchPostInterval: 0,
-	CompressionLevel:     2,
+	MaxSize:          10000,
+	PollDelay:        time.Millisecond * 10,
+	ErrorDelay:       time.Millisecond * 10,
+	MaxInterval:      0,
+	CompressionLevel: 2,
 }

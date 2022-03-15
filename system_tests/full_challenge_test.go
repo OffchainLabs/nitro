@@ -193,10 +193,10 @@ func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	l1Info.GenerateGenesysAccount("sequencer", initialBalance)
 
 	l1Info, l1Backend, _, _ := CreateTestL1BlockChain(t, l1Info)
-	conf := arbnode.NodeConfigL1Test
+	conf := arbnode.ConfigDefaultL1Test
 	conf.BlockValidator = false
 	conf.BatchPoster = false
-	conf.InboxReaderConfig.CheckDelay = time.Second
+	conf.InboxReader.CheckDelay = time.Second
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")

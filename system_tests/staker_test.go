@@ -111,7 +111,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 
 	valConfig := validator.L1ValidatorConfig{
-		TargetNumMachines: 4,
+		TargetMachineCount: 4,
 	}
 
 	valWalletA, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})

@@ -13,12 +13,16 @@ type FeedConfig struct {
 	Input  BroadcastClientConfig               `koanf:"input"`
 }
 
-func FeedConfigAddOptions(prefix string, f *flag.FlagSet) {
-	wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
-	BroadcastClientConfigAddOptions(prefix+".input", f)
+func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+	if feedInputEnable {
+		BroadcastClientConfigAddOptions(prefix+".input", f)
+	}
+	if feedOutputEnable {
+		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
+	}
 }
 
-var DefaultFeedConfig = FeedConfig{
+var FeedConfigDefault = FeedConfig{
 	Output: wsbroadcastserver.DefaultBroadcasterConfig,
 	Input:  DefaultBroadcastClientConfig,
 }
@@ -26,6 +30,10 @@ var DefaultFeedConfig = FeedConfig{
 type BroadcastClientConfig struct {
 	URLs    []string      `koanf:"url"`
 	Timeout time.Duration `koanf:"timeout"`
+}
+
+func (c *BroadcastClientConfig) Enable() bool {
+	return len(c.URLs) > 0 && c.URLs[0] != ""
 }
 
 func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {

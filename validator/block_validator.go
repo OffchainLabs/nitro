@@ -15,6 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -26,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
@@ -54,6 +56,27 @@ type BlockValidator struct {
 	sendValidationsChan chan interface{}
 	checkProgressChan   chan interface{}
 	progressChan        chan uint64
+}
+
+type BlockValidatorConfig struct {
+	Enable              bool   `koanf:"enable"`
+	OutputPath          string `koanf:"output-path"`
+	ConcurrentRunsLimit int    `koanf:"concurrent-runs-limit"`
+	BlockToRecord       uint64 `koanf:"block-to-record"`
+}
+
+func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "")
+	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
+	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.Uint64(prefix+".block-to-record", DefaultBlockValidatorConfig.BlockToRecord, "")
+}
+
+var DefaultBlockValidatorConfig = BlockValidatorConfig{
+	Enable:              true,
+	OutputPath:          "./target/output",
+	ConcurrentRunsLimit: 0,
+	BlockToRecord:       0,
 }
 
 type BlockValidatorRegistrer interface {
@@ -476,13 +499,14 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		writeThisBlock = true
 	}
 	// stupid search for now, assuming the list will always be empty or very mall
-	for _, blockNr := range v.config.BlocksToRecord {
-		if blockNr > validationEntry.BlockNumber {
-			break
-		}
-		if blockNr == validationEntry.BlockNumber {
-			writeThisBlock = true
-			break
+	if v.config.BlockToRecord != 0 {
+		for _, blockNr := range []uint64{v.config.BlockToRecord} {
+			if blockNr > validationEntry.BlockNumber {
+				break
+			} else if blockNr == validationEntry.BlockNumber {
+				writeThisBlock = true
+				break
+			}
 		}
 	}
 

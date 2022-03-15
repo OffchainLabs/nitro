@@ -308,16 +308,20 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
-	if config.Broadcaster {
-		broadcastServer = broadcaster.NewBroadcaster(config.BroadcasterConfig)
+	if config.Feed.Output.Enable {
+		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
 	}
 
+	dataAvailabilityMode, err := config.DataAvailability.Mode()
+	if err != nil {
+		return nil, err
+	}
 	var dataAvailabilityService das.DataAvailabilityService
-	if config.DataAvailabilityMode == das.LocalDataAvailability {
+	if dataAvailabilityMode == das.LocalDataAvailability {
 		var err error
-		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailabilityConfig.LocalDiskDataDir)
+		dataAvailabilityService, err = das.NewLocalDiskDataAvailabilityService(config.DataAvailability.LocalDiskDataDir)
 		if err != nil {
 			return nil, err
 		}
@@ -329,12 +333,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig,
 	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
-	if config.Sequencer {
+	if config.Sequencer.Enable {
 		if config.ForwardingTarget != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
 		}
 		var sequencer *Sequencer
-		if config.L1Reader {
+		if config.EnableL1Reader {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
@@ -346,14 +350,14 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig,
 			return nil, err
 		}
 		txPublisher = sequencer
-		if config.SeqCoordinator {
-			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinatorConfig)
+		if !config.SeqCoordinator.Disable {
+			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinator)
 		}
 	} else {
-		if config.SeqCoordinator {
+		if !config.SeqCoordinator.Disable {
 			return nil, errors.New("sequencer coordinator without sequencer")
 		}
-		if config.ForwardingTarget == "" {
+		if config.ForwardingTarget == "" || config.ForwardingTarget == "null" {
 			txPublisher = NewTxDropper()
 		} else {
 			txPublisher = NewForwarder(config.ForwardingTarget)
@@ -363,15 +367,15 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig,
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.ArbConfig, chainDb, l2BlockChain, arbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, l2BlockChain, arbInterface)
 	if err != nil {
 		return nil, err
 	}
 	var broadcastClient *broadcastclient.BroadcastClient
-	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URLs[0], nil, config.BroadcastClientConfig.Timeout, txStreamer)
+	if config.Feed.Input.Enable() {
+		broadcastClient = broadcastclient.NewBroadcastClient(config.Feed.Input.URLs[0], nil, config.Feed.Input.Timeout, txStreamer)
 	}
-	if !config.L1Reader {
+	if !config.EnableL1Reader {
 		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil
 	}
 
@@ -390,44 +394,44 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *ArbNodeConfig,
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReaderConfig))
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, &(config.InboxReader))
 	if err != nil {
 		return nil, err
 	}
 
 	var blockValidator *validator.BlockValidator
-	if config.BlockValidator {
-		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig, dataAvailabilityService)
+	if config.BlockValidator.Enable {
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidator, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	var staker *validator.Staker
-	if config.L1Validator {
+	if config.Validator.Enable {
 		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
 		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, validatorTxOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.L1ValidatorConfig, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if !config.BatchPoster {
+	if !config.BatchPoster.Enable {
 		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
 		return nil, errors.New("sequencerTxOpts is nil")
 	}
-	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, &(config.DelayedSequencerConfig))
+	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, &(config.DelayedSequencer))
 	if err != nil {
 		return nil, err
 	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPosterConfig, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}
