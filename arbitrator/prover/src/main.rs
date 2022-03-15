@@ -137,7 +137,7 @@ fn main() -> Result<()> {
     let delayed_header_len;
     if opts.inbox_add_stub_headers {
         inbox_header_len = 40;
-        delayed_header_len = 161;
+        delayed_header_len = 113;
     } else {
         inbox_header_len = 0;
         delayed_header_len = 0;

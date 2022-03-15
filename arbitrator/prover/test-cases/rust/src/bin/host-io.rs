@@ -16,11 +16,11 @@ fn main() {
         let mut bytebuffer = Bytes32([0x0; 32]);
         // in delayed inbox - we're skipping the "kind" byte
         println!("delayed inbox message 0");
-        let len = wavm_read_delayed_inbox_message(0, bytebuffer.0.as_mut_ptr(), 160);
+        let len = wavm_read_delayed_inbox_message(0, bytebuffer.0.as_mut_ptr(), 112);
         assert_eq!(len, 2);
         assert_eq!(bytebuffer.0[1], 0xaa);
         println!("delayed inbox message 1");
-        let len = wavm_read_delayed_inbox_message(1, bytebuffer.0.as_mut_ptr(), 160);
+        let len = wavm_read_delayed_inbox_message(1, bytebuffer.0.as_mut_ptr(), 112);
         assert_eq!(len, 32);
         for j in 1..31 {
             assert_eq!(bytebuffer.0[j], (j as u8));

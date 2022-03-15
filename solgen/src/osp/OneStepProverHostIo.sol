@@ -175,7 +175,7 @@ contract OneStepProverHostIo is IOneStepProver {
         uint64 msgIndex,
         bytes calldata message
     ) internal view returns (bool) {
-        require(message.length >= 161, "BAD_DELAYED_PROOF");
+        require(message.length >= 113, "BAD_DELAYED_PROOF");
 
         bytes32 beforeAcc;
 
@@ -183,13 +183,13 @@ contract OneStepProverHostIo is IOneStepProver {
             beforeAcc = execCtx.delayedBridge.inboxAccs(msgIndex - 1);
         }
 
-        bytes32 messageDataHash = keccak256(message[161:]);
+        bytes32 messageDataHash = keccak256(message[113:]);
         bytes1 kind = message[0];
         uint256 sender;
         (sender, ) = Deserialize.u256(message, 1);
 
         bytes32 messageHash = keccak256(
-            abi.encodePacked(kind, uint160(sender), message[33:161], messageDataHash)
+            abi.encodePacked(kind, uint160(sender), message[33:113], messageDataHash)
         );
         bytes32 acc = Messages.accumulateInboxMessage(beforeAcc, messageHash);
 
