@@ -429,5 +429,8 @@ func main() {
 	<-signalChan
 	log.Info("Shutting down node")
 	node.StopAndWait()
+	if err := stack.Close(); err != nil {
+		utils.Fatalf("Error shutting down protocol stack: %v\n", err)
+	}
 	log.Info("Node shutdown complete")
 }
