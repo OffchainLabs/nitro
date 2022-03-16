@@ -271,6 +271,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	}
 	if segmentNum >= uint64(len(seqMsg.segments)) {
 		// after end of batch there might be "virtual" delayedMsgSegments
+		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.afterDelayedMessages)
 		segment = []byte{BatchSegmentKindDelayedMessages}
 	} else {
 		segment = seqMsg.segments[int(segmentNum)]
