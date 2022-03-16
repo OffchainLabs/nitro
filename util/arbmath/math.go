@@ -5,6 +5,7 @@
 package arbmath
 
 import (
+	"encoding/binary"
 	"math"
 	"math/big"
 	"math/bits"
@@ -204,6 +205,13 @@ func WordsForBytes(nbytes uint64) uint64 {
 	return (nbytes + 31) / 32
 }
 
+// casts a uint64 to its big-endian representation
+func UintToBytes(value uint64) []byte {
+	result := make([]byte, 8)
+	binary.BigEndian.PutUint64(result, value)
+	return result
+}
+
 // Return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // This quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
 func ApproxExpBasisPoints(value Bips) Bips {
@@ -224,4 +232,30 @@ func ApproxExpBasisPoints(value Bips) Bips {
 	} else {
 		return Bips(SaturatingCast(res))
 	}
+}
+
+// Return the Newton's method approximation of sqrt(x)
+// The error should be no more than 1 for values up to 2^63
+func ApproxSquareRoot(value uint64) uint64 {
+
+	if value == 0 {
+		return 0
+	}
+
+	// ensure our starting approximation's square exceeds the value
+	approx := value
+	for SaturatingUMul(approx, approx)/2 > value {
+		approx /= 2
+	}
+
+	for i := 0; i < 4; i++ {
+		if approx > value/approx {
+			diff := approx - value/approx
+			approx = SaturatingUAdd(value/approx, diff/2)
+		} else {
+			diff := value/approx - approx
+			approx = SaturatingUAdd(approx, diff/2)
+		}
+	}
+	return approx
 }

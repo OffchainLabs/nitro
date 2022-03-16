@@ -45,9 +45,9 @@ type Storage struct {
 	burner     burn.Burner
 }
 
-var StorageReadCost = params.SloadGasEIP2200
-var StorageWriteCost = params.SstoreSetGasEIP2200
-var StorageWriteZeroCost = params.SstoreResetGasEIP2200
+const StorageReadCost = params.SloadGasEIP2200
+const StorageWriteCost = params.SstoreSetGasEIP2200
+const StorageWriteZeroCost = params.SstoreResetGasEIP2200
 
 // Use a Geth database to create an evm key-value store
 func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
@@ -230,7 +230,7 @@ func (store *Storage) ClearBytes() error {
 	}
 	offset := uint64(1)
 	for bytesLeft > 0 {
-		err := store.SetByUint64(offset, common.Hash{})
+		err := store.ClearByUint64(offset)
 		if err != nil {
 			return err
 		}
@@ -241,7 +241,7 @@ func (store *Storage) ClearBytes() error {
 			bytesLeft -= 32
 		}
 	}
-	return store.SetByUint64(0, common.Hash{})
+	return store.ClearByUint64(0)
 }
 
 func (sto *Storage) Burner() burn.Burner {
