@@ -109,13 +109,21 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			panic("L1 failed to verify the deposit was large enough")
 		}
 
+		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, l1FeePayableOnlyByDeposit)
+		if excessDeposit.Sign() < 0 {
+			panic("L1 failed to verify that the deposit was large enough")
+		}
+
 		// mint funds with the deposit, then charge the fee
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 		err := util.TransferBalance(&from, &networkFeeAccount, l1FeePayableOnlyByDeposit, evm, scenario)
 		if err != nil {
 			return true, 0, err, nil
 		}
-
+		err = util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario)
+		if err != nil {
+			return true, 0, err, nil
+		}
 		err = util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario)
 		if err != nil {
 			return true, 0, err, nil
