@@ -58,7 +58,7 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
-		maxSubmissionFee := retryables.RetryableSubmissionFee(data, l1BaseFee)
+		maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
 
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
 			ChainId:          nil,
