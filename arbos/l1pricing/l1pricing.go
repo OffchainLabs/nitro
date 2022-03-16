@@ -93,22 +93,27 @@ func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 	return ps.l1BaseFeeEstimate.Set(val)
 }
 
-func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return err
-	}
-	weight, err := ps.L1BaseFeeEstimateInertia()
-	if err != nil {
-		return err
+// Update the pricing model with a finalized block's header
+func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed uint64) {
+
+	if baseFeeSample.Sign() == 0 {
+		// The sequencer's normal messages do not include the l1 basefee, so ignore them
+		return
 	}
 
-	// new = (alpha * old + observed) / (alpha + 1)
-	memory := arbmath.BigMul(curr, arbmath.UintToBig(weight))
-	impact := arbmath.BigAdd(memory, baseFeeWei)
-	update := arbmath.BigDiv(impact, arbmath.UintToBig(weight+1))
+	// update the l1 basefee estimate, which is the weighted average of the past and present
+	//     basefee' = weighted average of the historical rate and the current, discounting time passed
+	//     basefee' = (memory * basefee + sqrt(passed) * sample) / (memory + sqrt(passed))
+	//
+	baseFee, _ := ps.L1BaseFeeEstimateWei()
+	inertia, _ := ps.L1BaseFeeEstimateInertia()
+	passedSqrt := arbmath.ApproxSquareRoot(timePassed)
+	newBaseFee := arbmath.BigDivByUint(
+		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
+		inertia+passedSqrt,
+	)
 
-	return ps.SetL1BaseFeeEstimateWei(update)
+	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
