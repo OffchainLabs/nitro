@@ -86,9 +86,14 @@ WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make
-COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
+COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+RUN mkdir arbitrator/prover/src && \
+    echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    cargo build --manifest-path arbitrator/Cargo.toml --release --lib
+COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 
