@@ -12,10 +12,12 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -410,18 +412,22 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	_, err = arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}
-	if err := node.Start(ctx); err != nil {
-		utils.Fatalf("Error starting node: %v\n", err)
-	}
-
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
 	}
 
-	stack.Wait()
-	node.StopAndWait()
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
+	<-sigint
+	// cause future ctrl+c's to panic
+	close(sigint)
+
+	if err := stack.Close(); err != nil {
+		utils.Fatalf("Error closing stack: %v\n", err)
+	}
 }

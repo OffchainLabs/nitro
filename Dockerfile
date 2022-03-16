@@ -138,6 +138,7 @@ RUN mkdir -p target/bin
 RUN go run solgen/gen.go
 RUN go build -o ./target/bin/node ./cmd/node
 RUN go build -o ./target/bin/deploy ./cmd/deploy
+RUN go build -o ./target/bin/relay ./cmd/relay
 
 FROM debian:bullseye-slim as nitro-node
 WORKDIR /workspace

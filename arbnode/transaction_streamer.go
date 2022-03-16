@@ -584,12 +584,15 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
-	if err != nil {
-		return err
-	}
 
 	for pos < msgCount {
+
+		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+		if err != nil {
+			return err
+		}
+
+		statedb.StartPrefetcher("TransactionStreamer")
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg

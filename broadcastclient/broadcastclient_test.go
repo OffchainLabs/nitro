@@ -93,7 +93,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.Close()
+		defer broadcastClient.StopAndWait()
 		for {
 			gotMsg := false
 			select {
@@ -152,7 +152,7 @@ func TestServerClientDisconnect(t *testing.T) {
 		t.Fatal("Client did not receive batch item")
 	}
 
-	broadcastClient.Close()
+	broadcastClient.StopAndWait()
 
 	disconnectTimeout := time.After(5 * time.Second)
 	for {
@@ -279,7 +279,7 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.Close()
+		defer broadcastClient.StopAndWait()
 
 		gotMsg := false
 		// Wait for client to receive first item
