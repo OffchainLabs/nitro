@@ -177,6 +177,10 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbu
 	b.server.Broadcast(bm)
 }
 
+func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
+	b.server.Broadcast(msg)
+}
+
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {
 	b.server.Broadcast(BroadcastMessage{
 		Version:                        1,

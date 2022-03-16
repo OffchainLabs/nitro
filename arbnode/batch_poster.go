@@ -208,23 +208,18 @@ func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byt
 	return append(segment, enc...), nil
 }
 
-func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, segmentHeader byte) (bool, error) {
-	asBig := newVal.Big()
-	if !asBig.IsUint64() {
-		return false, errors.New("number not uint64")
-	}
-	asUint := asBig.Uint64()
-	if asUint == *base {
+func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segmentHeader byte) (bool, error) {
+	if newVal == *base {
 		return true, nil
 	}
-	diff := asUint - *base
+	diff := newVal - *base
 	seg, err := s.prepareIntSegment(diff, segmentHeader)
 	if err != nil {
 		return false, err
 	}
 	success, err := s.addSegment(seg, true)
 	if success {
-		*base = asUint
+		*base = newVal
 	}
 	return success, err
 }

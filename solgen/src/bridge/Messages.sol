@@ -9,8 +9,8 @@ library Messages {
     function messageHash(
         uint8 kind,
         address sender,
-        uint256 blockNumber,
-        uint256 timestamp,
+        uint64 blockNumber,
+        uint64 timestamp,
         uint256 inboxSeqNum,
         uint256 baseFeeL1,
         bytes32 messageDataHash

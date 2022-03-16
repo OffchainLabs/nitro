@@ -67,11 +67,6 @@ COPY --from=contracts-builder workspace/solgen/build/contracts/src/precompiles/ 
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" make build-wasm-bin
 
-FROM scratch as machine-exporter
-COPY --from=wasm-libs-builder /workspace/target/machine/ machine/
-COPY --from=wasm-bin-builder /workspace/target/machine/ machine/
-
-
 FROM rust:1.57-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
@@ -104,30 +99,35 @@ RUN touch -a -m arbitrator/prover/src/lib.rs && \
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
 
-FROM golang:1.17-bullseye as replay-env-builder
+FROM debian:bullseye-slim as module-root-calc
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
-COPY go.mod go.sum ./
-COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
-COPY fastcache/go.mod fastcache/go.sum fastcache/
-RUN go mod download
-COPY . ./
 COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
-RUN target/bin/prover target/machine/replay.wasm --output-module-root -l target/machine/wasi_stub.wasm -l target/machine/host_io.wasm -l target/machine/soft-float.wasm -l target/machine/go_stub.wasm -l target/machine/brotli.wasm  > target/machine/module_root
+RUN target/bin/prover target/machine/replay.wasm --output-module-root -l target/machine/wasi_stub.wasm -l target/machine/soft-float.wasm -l target/machine/go_stub.wasm -l target/machine/host_io.wasm -l target/machine/brotli.wasm  > target/machine/module_root
 
-FROM replay-env-builder as node-builder
+FROM scratch as machine-export
+COPY --from=module-root-calc /workspace/target/machine/ /machine
+
+
+FROM golang:1.17-bullseye as node-builder
+WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y protobuf-compiler
+    apt-get install -y protobuf-compiler wabt
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26 && \
     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
+COPY go.mod go.sum ./
+COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
+COPY fastcache/go.mod fastcache/go.sum fastcache/
+RUN go mod download
+COPY . ./
 COPY --from=contracts-builder workspace/solgen/build/ solgen/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
@@ -135,10 +135,16 @@ COPY --from=brotli-library-export / target/
 COPY --from=prover-export / target/
 RUN mkdir -p target/bin
 # solgen was executed for just prcompiles previously.
-RUN rm .make/solgen && make .make/solgen
+RUN go run solgen/gen.go
 RUN go build -o ./target/bin/node ./cmd/node
 RUN go build -o ./target/bin/deploy ./cmd/deploy
+RUN go build -o ./target/bin/relay ./cmd/relay
 
 FROM debian:bullseye-slim as nitro-node
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y wabt
 COPY --from=node-builder /workspace/target/ target/
+COPY --from=machine-export / target/
 ENTRYPOINT [ "./target/bin/node" ]

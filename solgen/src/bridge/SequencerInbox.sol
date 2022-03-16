@@ -75,7 +75,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
     function forceInclusion(
         uint256 _totalDelayedMessagesRead,
         uint8 kind,
-        uint256[2] calldata l1BlockAndTime,
+        uint64[2] calldata l1BlockAndTime,
         uint256 baseFeeL1,
         address sender,
         bytes32 messageDataHash
