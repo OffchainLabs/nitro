@@ -229,14 +229,17 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
+	l2info.GenerateAccount("Refund")
 	l2info.GenerateAccount("Recieve")
 	faucetAddress := util.RemapL1Address(l1info.GetAddress("Faucet"))
 	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	feeRefundAddress := l2info.GetAddress("Refund")
 	receiveAddress := l2info.GetAddress("Recieve")
 
 	colors.PrintBlue("Faucet      ", faucetAddress)
 	colors.PrintBlue("Receive     ", receiveAddress)
 	colors.PrintBlue("Beneficiary ", beneficiaryAddress)
+	colors.PrintBlue("Fee Refund  ", feeRefundAddress)
 
 	fundsBeforeSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
@@ -244,6 +247,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usefulGas := params.TxGas
 	excessGas := uint64(808)
 
+	maxSubmissionFee := big.NewInt(1e13)
 	retryableGas := arbmath.UintToBig(usefulGas + excessGas) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
 	retryableCallData := []byte{}
@@ -251,8 +255,8 @@ func TestSubmissionGasCosts(t *testing.T) {
 		&usertxopts,
 		receiveAddress,
 		retryableL2CallValue,
-		big.NewInt(1e16),
-		beneficiaryAddress,
+		maxSubmissionFee,
+		feeRefundAddress,
 		beneficiaryAddress,
 		retryableGas,
 		big.NewInt(params.InitialBaseFee*2),
@@ -274,13 +278,20 @@ func TestSubmissionGasCosts(t *testing.T) {
 	Require(t, err)
 	l1BaseFee := l1HeaderAfterSubmit.BaseFee
 	submitFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(retryableCallData)))
+	submissionFeeRefund := arbmath.BigSub(maxSubmissionFee, submitFee)
 
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
 	beneficiaryFunds, err := l2client.BalanceAt(ctx, beneficiaryAddress, nil)
 	Require(t, err)
+	refundFunds, err := l2client.BalanceAt(ctx, feeRefundAddress, nil)
+	Require(t, err)
 	receiveFunds, err := l2client.BalanceAt(ctx, receiveAddress, nil)
 	Require(t, err)
+
+	colors.PrintBlue("CallGas    ", retryableGas)
+	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
+	colors.PrintBlue("Payment    ", usertxopts.Value)
 
 	colors.PrintMint("Faucet before ", fundsBeforeSubmit)
 	colors.PrintMint("Faucet after  ", fundsAfterSubmit)
@@ -292,24 +303,26 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fail(t, "Recipient didn't receive the right funds")
 	}
 
-	// the beneficiary should recieve the excess gas
+	// the beneficiary should receive nothing
+	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
+	if beneficiaryFunds.Sign() != 0 {
+		Fail(t, "The beneficiary shouldn't have received funds")
+	}
+
+	// the fee refund address should recieve the excess gas
 	colors.PrintBlue("Base Fee      ", l2BaseFee)
 	colors.PrintBlue("Excess Gas    ", excessGas)
 	colors.PrintBlue("Excess Wei    ", excessWei)
-	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
-	if !arbmath.BigEquals(beneficiaryFunds, excessWei) {
-		Fail(t, "Beneficiary didn't receive the right funds")
+	colors.PrintMint("Fee Refund    ", refundFunds)
+	if !arbmath.BigEquals(refundFunds, arbmath.BigAdd(excessWei, submissionFeeRefund)) {
+		Fail(t, "The Fee Refund Address didn't receive the right funds")
 	}
 
 	// the faucet must pay for both the gas used and the call value supplied
 	expectedGasChange := arbmath.BigMul(l2BaseFee, retryableGas)
 	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
-	expectedGasChange = arbmath.BigAdd(expectedGasChange, submitFee)
+	expectedGasChange = arbmath.BigAdd(expectedGasChange, maxSubmissionFee)
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
-
-	colors.PrintBlue("CallGas    ", retryableGas)
-	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
-	colors.PrintBlue("Payment    ", usertxopts.Value)
 
 	if !arbmath.BigEquals(fundsBeforeSubmit, arbmath.BigAdd(fundsAfterSubmit, expectedGasChange)) {
 		diff := arbmath.BigSub(fundsBeforeSubmit, fundsAfterSubmit)
