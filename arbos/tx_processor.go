@@ -106,12 +106,12 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		l1GasRequired := uint64(1400 + 6*len(tx.Data))
 		l1FeePayableOnlyByDeposit := arbmath.BigMulByUint(tx.L1BaseFee, l1GasRequired)
 		if arbmath.BigLessThan(tx.DepositValue, l1FeePayableOnlyByDeposit) {
-			panic("L1 failed to verify the deposit was large enough")
+			return true, 0, errors.New("deposit doesn't cover the submission fee"), nil
 		}
 
 		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, l1FeePayableOnlyByDeposit)
 		if excessDeposit.Sign() < 0 {
-			panic("L1 failed to verify that the deposit was large enough")
+			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
 
 		// mint funds with the deposit, then charge the fee

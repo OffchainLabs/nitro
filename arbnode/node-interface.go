@@ -57,20 +57,22 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
+		maxSubmissionFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(data)))
 
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
-			ChainId:       nil,
-			RequestId:     common.Hash{},
-			From:          util.RemapL1Address(sender),
-			L1BaseFee:     l1BaseFee,
-			DepositValue:  deposit,
-			GasFeeCap:     msg.GasPrice(),
-			Gas:           msg.Gas(),
-			To:            pTo,
-			Value:         l2CallValue,
-			Beneficiary:   callValueRefundAddress,
-			FeeRefundAddr: excessFeeRefundAddress,
-			Data:          data,
+			ChainId:          nil,
+			RequestId:        common.Hash{},
+			From:             util.RemapL1Address(sender),
+			L1BaseFee:        l1BaseFee,
+			DepositValue:     deposit,
+			GasFeeCap:        msg.GasPrice(),
+			Gas:              msg.Gas(),
+			To:               pTo,
+			Value:            l2CallValue,
+			Beneficiary:      callValueRefundAddress,
+			MaxSubmissionFee: maxSubmissionFee,
+			FeeRefundAddr:    excessFeeRefundAddress,
+			Data:             data,
 		})
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
