@@ -14,10 +14,12 @@ import (
 )
 
 func TestQueue(t *testing.T) {
-	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
+	state, statedb := arbosState.NewArbosMemoryBackedArbOSState()
 	sto := state.BackingStorage().OpenSubStorage([]byte{})
 	Require(t, storage.InitializeQueue(sto))
 	q := storage.OpenQueue(sto)
+
+	stateBefore := statedb.IntermediateRoot(false)
 
 	empty := func() bool {
 		empty, err := q.IsEmpty()
@@ -49,5 +51,10 @@ func TestQueue(t *testing.T) {
 
 	if !empty() {
 		Fail(t)
+	}
+	cleared, err := q.Shift()
+	Require(t, err)
+	if !cleared || stateBefore != statedb.IntermediateRoot(false) {
+		Fail(t, "Emptying & shifting didn't clear the state")
 	}
 }

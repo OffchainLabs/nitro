@@ -61,7 +61,8 @@ if ! $BUILD_WASM && ! $BUILD_LOCAL; then
 fi
 
 if [ ! -d "$TARGET_DIR" ]; then
-    mkdir -p "$TARGET_DIR"
+    mkdir -p "${TARGET_DIR}lib"
+    ln -s "lib" "${TARGET_DIR}lib64" # Fedora build
 fi
 TARGET_DIR_ABS=`cd -P "$TARGET_DIR"; pwd`
 

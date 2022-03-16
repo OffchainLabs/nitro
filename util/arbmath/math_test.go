@@ -5,6 +5,8 @@
 package arbmath
 
 import (
+	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -26,6 +28,38 @@ func TestMath(t *testing.T) {
 		}
 	}
 
+	// try large random sqrts
+	for i := 0; i < 100000; i++ {
+		input := rand.Uint64() / 2
+		approx := ApproxSquareRoot(input)
+		correct := math.Sqrt(float64(input))
+		diff := int(approx) - int(correct)
+		if diff < 0 || diff > 1 {
+			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
+		}
+	}
+
+	// try the first million sqrts
+	for i := 0; i < 1000000; i++ {
+		input := uint64(i)
+		approx := ApproxSquareRoot(input)
+		correct := math.Sqrt(float64(input))
+		diff := int(approx) - int(correct)
+		if diff < 0 || diff > 1 {
+			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
+		}
+	}
+
+	// try powers of 2
+	for i := 0; i < 63; i++ {
+		input := uint64(1 << i)
+		approx := ApproxSquareRoot(input)
+		correct := math.Sqrt(float64(input))
+		diff := int(approx) - int(correct)
+		if diff != 0 {
+			Fail(t, "incorrect", "2^", i, diff, approx, correct)
+		}
+	}
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

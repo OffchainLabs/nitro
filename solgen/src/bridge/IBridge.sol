@@ -24,7 +24,7 @@ interface IBridge {
         address sender,
         bytes32 messageDataHash,
         uint256 baseFeeL1,
-        uint256 timestamp
+        uint64 timestamp
     );
 
     event BridgeCallTriggered(

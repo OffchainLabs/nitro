@@ -24,8 +24,8 @@ contract MessageTester {
     function messageHash(
         uint8 messageType,
         address sender,
-        uint256 blockNumber,
-        uint256 timestamp,
+        uint64 blockNumber,
+        uint64 timestamp,
         uint256 inboxSeqNum,
         uint256 gasPriceL1,
         bytes32 messageDataHash

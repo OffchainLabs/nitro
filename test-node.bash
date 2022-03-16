@@ -12,11 +12,6 @@ if ! which docker-compose > /dev/null; then
     exit 1
 fi
 
-if [[ $# -gt 1 ]]; then
-    echo Error! One parameter max!
-    exit 1
-fi
-
 num_volumes=`docker volume ls --filter label=com.docker.compose.project=nitro -q | wc -l`
 
 if [[ $num_volumes -eq 0 ]]; then

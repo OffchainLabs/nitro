@@ -213,8 +213,9 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 	}
 }
 
-func (bc *BroadcastClient) Close() {
+func (bc *BroadcastClient) StopAndWait() {
 	log.Debug("closing broadcaster client connection")
+	bc.StopWaiter.StopAndWait()
 	bc.connMutex.Lock()
 	defer bc.connMutex.Unlock()
 
