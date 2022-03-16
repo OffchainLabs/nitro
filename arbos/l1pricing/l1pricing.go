@@ -269,7 +269,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	tx.PosterCost = adjustedL1Fee
 }
 
-const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
+const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
 
