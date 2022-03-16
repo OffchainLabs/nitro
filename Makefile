@@ -36,10 +36,12 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags_nogo=$(patsubst %, -l %, $(arbitrator_wasm_libs_nogo))
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
-# user targets
 
-.DELETE_ON_ERROR: # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-replay-env build-solidity build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker
+arbitrator_wasm_wasistub_files = $(wildcard arbitrator/wasm-libraries/wasi-stub/src/*/*)
+arbitrator_wasm_gostub_files = $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
+arbitrator_wasm_hostio_files = $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
+
+# user targets
 
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
@@ -152,7 +154,7 @@ $(arbitrator_generated_header): arbitrator/prover/src/lib.rs arbitrator/prover/s
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
 
-$(output_root)/machine/wasi_stub.wasm: arbitrator/wasm-libraries/wasi-stub/src/**
+$(output_root)/machine/wasi_stub.wasm: $(arbitrator_wasm_wasistub_files)
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
@@ -238,18 +240,17 @@ $(output_root)/machine/soft-float.wasm: \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-
-$(output_root)/machine/go_stub.wasm: arbitrator/wasm-libraries/go-stub/src/**
+$(output_root)/machine/go_stub.wasm: $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
-$(output_root)/machine/host_io.wasm: arbitrator/wasm-libraries/host-io/src/**
+$(output_root)/machine/host_io.wasm: $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
-$(output_root)/machine/brotli.wasm: arbitrator/wasm-libraries/brotli/src/** .make/cbrotli-wasm
+$(output_root)/machine/brotli.wasm: $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm
 	mkdir -p $(output_root)/machine
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
@@ -326,3 +327,4 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
+.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-replay-env build-solidity build-wasm-libs contracts format fmt lint test-go test-gen-proofs push clean docker

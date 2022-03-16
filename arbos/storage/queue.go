@@ -41,6 +41,15 @@ func (q *Queue) IsEmpty() (bool, error) {
 	return put == get, err
 }
 
+func (q *Queue) Size() (uint64, error) {
+	put, err := q.nextPutOffset.Get()
+	if err != nil {
+		return 0, err
+	}
+	get, err := q.nextGetOffset.Get()
+	return put - get, err
+}
+
 func (q *Queue) Peek() (*common.Hash, error) { // returns nil iff queue is empty
 	empty, err := q.IsEmpty()
 	if empty || err != nil {
@@ -73,4 +82,20 @@ func (q *Queue) Put(val common.Hash) error {
 		return err
 	}
 	return q.storage.SetByUint64(newOffset-1, val)
+}
+
+// Reset the queue to its starting state, if empty, which is useful in testing
+func (q *Queue) Shift() (bool, error) {
+	put, err := q.nextPutOffset.Get()
+	if err != nil {
+		return false, err
+	}
+	get, err := q.nextGetOffset.Get()
+	if err != nil || put != get {
+		return false, err
+	}
+	if err := q.nextGetOffset.Set(2); err != nil {
+		return false, err
+	}
+	return true, q.nextPutOffset.Set(2)
 }

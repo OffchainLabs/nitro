@@ -112,7 +112,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		&usertxoptsL1,
 		user2Address,
 		callValue,
-		big.NewInt(1e6),
+		big.NewInt(1e16),
 		beneficiaryAddress,
 		beneficiaryAddress,
 		arbmath.UintToBig(estimate),
@@ -161,7 +161,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		&usertxopts,
 		simpleAddr,
 		common.Big0,
-		big.NewInt(1e6),
+		big.NewInt(1e16),
 		beneficiaryAddress,
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
@@ -244,18 +244,19 @@ func TestSubmissionGasCosts(t *testing.T) {
 	usefulGas := params.TxGas
 	excessGas := uint64(808)
 
-	retryableGas := new(big.Int).SetUint64(usefulGas + excessGas) // will only burn the intrinsic cost
+	retryableGas := arbmath.UintToBig(usefulGas + excessGas) // will only burn the intrinsic cost
 	retryableL2CallValue := big.NewInt(1e4)
+	retryableCallData := []byte{}
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxopts,
 		receiveAddress,
 		retryableL2CallValue,
-		big.NewInt(1e6),
+		big.NewInt(1e16),
 		beneficiaryAddress,
 		beneficiaryAddress,
 		retryableGas,
 		big.NewInt(params.InitialBaseFee*2),
-		[]byte{},
+		retryableCallData,
 	)
 	Require(t, err)
 
@@ -266,8 +267,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
-	l2GasPrice := GetBaseFee(t, l2client, ctx)
-	excessWei := arbmath.BigMulByUint(l2GasPrice, excessGas)
+	l2BaseFee := GetBaseFee(t, l2client, ctx)
+	excessWei := arbmath.BigMulByUint(l2BaseFee, excessGas)
+
+	l1HeaderAfterSubmit, err := l1client.HeaderByHash(ctx, l1receipt.BlockHash)
+	Require(t, err)
+	l1BaseFee := l1HeaderAfterSubmit.BaseFee
+	submitFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(retryableCallData)))
 
 	fundsAfterSubmit, err := l2client.BalanceAt(ctx, faucetAddress, nil)
 	Require(t, err)
@@ -287,7 +293,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	// the beneficiary should recieve the excess gas
-	colors.PrintBlue("Base Fee      ", l2GasPrice)
+	colors.PrintBlue("Base Fee      ", l2BaseFee)
 	colors.PrintBlue("Excess Gas    ", excessGas)
 	colors.PrintBlue("Excess Wei    ", excessWei)
 	colors.PrintMint("Beneficiary   ", beneficiaryFunds)
@@ -296,12 +302,13 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 
 	// the faucet must pay for both the gas used and the call value supplied
-	expectedGasChange := arbmath.BigMul(l2GasPrice, retryableGas)
+	expectedGasChange := arbmath.BigMul(l2BaseFee, retryableGas)
 	expectedGasChange = arbmath.BigSub(expectedGasChange, usertxopts.Value) // the user is credited this
+	expectedGasChange = arbmath.BigAdd(expectedGasChange, submitFee)
 	expectedGasChange = arbmath.BigAdd(expectedGasChange, retryableL2CallValue)
 
 	colors.PrintBlue("CallGas    ", retryableGas)
-	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2GasPrice))
+	colors.PrintMint("Gas cost   ", arbmath.BigMul(retryableGas, l2BaseFee))
 	colors.PrintBlue("Payment    ", usertxopts.Value)
 
 	if !arbmath.BigEquals(fundsBeforeSubmit, arbmath.BigAdd(fundsAfterSubmit, expectedGasChange)) {

@@ -65,8 +65,8 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
             addMessageToAccumulator(
                 kind,
                 sender,
-                block.number,
-                block.timestamp, // solhint-disable-line not-rely-on-time
+                uint64(block.number),
+                uint64(block.timestamp), // solhint-disable-line not-rely-on-time
                 block.basefee,
                 messageDataHash
             );
@@ -75,8 +75,8 @@ contract Bridge is OwnableUpgradeable, DelegateCallAware, IBridge {
     function addMessageToAccumulator(
         uint8 kind,
         address sender,
-        uint256 blockNumber,
-        uint256 blockTimestamp,
+        uint64 blockNumber,
+        uint64 blockTimestamp,
         uint256 baseFeeL1,
         bytes32 messageDataHash
     ) internal returns (uint256) {
