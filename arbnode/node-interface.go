@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -57,7 +58,7 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
-		maxSubmissionFee := arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*len(data)))
+		maxSubmissionFee := retryables.RetryableSubmissionFee(data, l1BaseFee)
 
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
 			ChainId:          nil,
