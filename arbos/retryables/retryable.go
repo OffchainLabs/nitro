@@ -359,3 +359,7 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
 	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
 }
+
+func RetryableSubmissionFee(calldataLengthInBytes int, l1BaseFee *big.Int) *big.Int {
+	return arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*calldataLengthInBytes))
+}
