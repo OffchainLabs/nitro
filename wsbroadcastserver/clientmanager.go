@@ -135,6 +135,7 @@ func (cm *ClientManager) Broadcast(bm interface{}) {
 }
 
 func (cm *ClientManager) doBroadcast(bm interface{}) error {
+	log.Info("doBroadcast")
 	if err := cm.catchupBuffer.OnDoBroadcast(bm); err != nil {
 		return err
 	}
@@ -158,6 +159,7 @@ func (cm *ClientManager) doBroadcast(bm interface{}) error {
 			client.out <- buf.Bytes()
 		}
 	}
+	log.Info("doBroadcast sent")
 
 	for _, client := range clientDeleteList {
 		log.Warn("disconnecting client, queue too large", "client", client.Name)

@@ -128,7 +128,9 @@ func (bc *BroadcastClient) startBackgroundReader() {
 			default:
 			}
 
+			log.Info("Waiting to read data")
 			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, bc.idleTimeout, ws.StateClientSide)
+			log.Info("Read data from server")
 			if err != nil {
 				if bc.isShuttingDown() {
 					return

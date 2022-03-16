@@ -127,10 +127,13 @@ func (cc *ClientConnection) Write(x interface{}) error {
 }
 
 func (cc *ClientConnection) writeRaw(p []byte) error {
+	log.Info("writeRaw before mutex")
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
+	log.Info("writeRaw after mutex")
 	_, err := cc.conn.Write(p)
+	log.Info("writeRaw after write")
 
 	return err
 }
