@@ -129,7 +129,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 	if retryable == nil {
 		return nil, ErrNotFound
 	}
-	timeout, err := retryable.Timeout()
+	timeout, err := retryable.CalculateTimeout()
 	if err != nil {
 		return nil, err
 	}
@@ -155,24 +155,13 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	currentTime := evm.Context.Time.Uint64()
 	window := currentTime + retryables.RetryableLifetimeSeconds
-	err = retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
+	newTimeout, err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
 	if err != nil {
 		return big.NewInt(0), err
 	}
 
-	retryable, err := retryableState.OpenRetryable(ticketId, currentTime)
-	if err != nil {
-		return nil, err
-	}
-	newTimeout, err := retryable.Timeout()
-	if err != nil {
-		return nil, err
-	}
 	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
-	if err != nil {
-		return nil, err
-	}
-	return big.NewInt(int64(newTimeout)), nil
+	return big.NewInt(int64(newTimeout)), err
 }
 
 // Gets the beneficiary of the ticket
