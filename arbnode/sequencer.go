@@ -7,7 +7,6 @@ package arbnode
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -226,10 +225,10 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	header := &arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_L2Message,
 		Poster:      l1pricing.SequencerAddress,
-		BlockNumber: common.BigToHash(new(big.Int).SetUint64(l1Block)),
-		Timestamp:   common.BigToHash(new(big.Int).SetInt64(timestamp)),
+		BlockNumber: l1Block,
+		Timestamp:   uint64(timestamp),
 		RequestId:   nil,
-		BaseFeeL1:   common.Hash{},
+		L1BaseFee:   nil,
 	}
 
 	hooks := &arbos.SequencingHooks{

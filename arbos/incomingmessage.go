@@ -38,10 +38,10 @@ const MaxL2MessageSize = 256 * 1024
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
 	Poster      common.Address `json:"sender"`
-	BlockNumber common.Hash    `json:"blockNumber"`
-	Timestamp   common.Hash    `json:"timestamp"`
+	BlockNumber uint64         `json:"blockNumber"`
+	Timestamp   uint64         `json:"timestamp"`
 	RequestId   *common.Hash   `json:"requestId" rlp:"nilList"`
-	BaseFeeL1   common.Hash    `json:"baseFeeL1"`
+	L1BaseFee   *big.Int       `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -62,14 +62,12 @@ type L1IncomingMessage struct {
 
 type L1Info struct {
 	poster        common.Address
-	l1BlockNumber *big.Int
-	l1Timestamp   *big.Int
+	l1BlockNumber uint64
+	l1Timestamp   uint64
 }
 
 func (info *L1Info) Equals(o *L1Info) bool {
-	return info.poster == o.poster &&
-		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
-		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
+	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -82,11 +80,11 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BlockNumber, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.BlockNumber, wr); err != nil {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.Timestamp, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.Timestamp, wr); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +95,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BaseFeeL1, wr); err != nil {
+	if err := util.HashToWriter(common.BigToHash(msg.Header.L1BaseFee), wr); err != nil {
 		return nil, err
 	}
 
@@ -119,7 +117,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		header.BlockNumber == other.BlockNumber &&
 		header.Timestamp == other.Timestamp &&
 		header.RequestId == other.RequestId &&
-		header.BaseFeeL1 == other.BaseFeeL1
+		header.L1BaseFee == other.L1BaseFee
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -134,12 +132,12 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	blockNumber, err := util.HashFromReader(rd)
+	blockNumber, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	timestamp, err := util.HashFromReader(rd)
+	timestamp, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +164,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			blockNumber,
 			timestamp,
 			&requestId,
-			baseFeeL1,
+			baseFeeL1.Big(),
 		},
 		data,
 	}, nil
@@ -447,7 +445,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if err != nil {
 		return nil, err
 	}
-	submissionFeePaid, err := util.HashFromReader(rd)
+	maxSubmissionFee, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -493,18 +491,19 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		return nil, errors.New("cannot issue submit retryable tx without L1 request id")
 	}
 	tx := &types.ArbitrumSubmitRetryableTx{
-		ChainId:           chainId,
-		RequestId:         *header.RequestId,
-		From:              util.RemapL1Address(header.Poster),
-		DepositValue:      depositValue.Big(),
-		GasFeeCap:         maxFeePerGas.Big(),
-		Gas:               gasLimitBig.Uint64(),
-		To:                pTo,
-		Value:             callvalue.Big(),
-		Beneficiary:       callvalueRefundAddress,
-		SubmissionFeePaid: submissionFeePaid.Big(),
-		FeeRefundAddr:     feeRefundAddress,
-		Data:              data,
+		ChainId:          chainId,
+		RequestId:        *header.RequestId,
+		From:             util.RemapL1Address(header.Poster),
+		L1BaseFee:        header.L1BaseFee,
+		DepositValue:     depositValue.Big(),
+		GasFeeCap:        maxFeePerGas.Big(),
+		Gas:              gasLimitBig.Uint64(),
+		To:               pTo,
+		Value:            callvalue.Big(),
+		Beneficiary:      callvalueRefundAddress,
+		MaxSubmissionFee: maxSubmissionFee.Big(),
+		FeeRefundAddr:    feeRefundAddress,
+		Data:             data,
 	}
 	return types.NewTx(tx), nil
 }
