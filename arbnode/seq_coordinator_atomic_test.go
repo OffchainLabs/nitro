@@ -1,6 +1,3 @@
-//go:build redistest
-// +build redistest
-
 package arbnode
 
 import (
@@ -14,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -39,32 +37,35 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 				return
 			}
 		}
+		atomicTimeWrite(&coord.lockoutUntil, time.Time{})
 		nextRound++
 		var execError error
-		var lockupUntil time.Time
 		for {
 			messageCount := atomic.LoadUint64(&data.messageCount)
 			if messageCount >= messagesPerRound {
 				break
 			}
-			coord.prevMsgCount = arbutil.MessageIndex(messageCount)
-			maybeLockoutUntil, err := coord.chosenOneUpdate(ctx, arbutil.MessageIndex(messageCount+1))
-			timeLaunching := time.Now()
+			asIndex := arbutil.MessageIndex(messageCount)
+			holdingLockout := atomicTimeRead(&coord.lockoutUntil)
+			err := coord.chosenOneUpdate(ctx, asIndex, asIndex+1, &arbstate.MessageWithMetadata{})
 			if err == nil {
-				lockupUntil = maybeLockoutUntil
 				sequenced[messageCount] = true
 				atomic.StoreUint64(&data.messageCount, messageCount+1)
 				randNr := rand.Intn(20)
 				if randNr > 15 {
-					coord.chosenOneRelease(ctx)
-					lockupUntil = time.Time{}
+					execError = coord.chosenOneRelease(ctx)
+					if execError != nil {
+						break
+					}
+					atomicTimeWrite(&coord.lockoutUntil, time.Time{})
 				} else {
 					time.Sleep(coord.config.LockoutDuration * time.Duration(randNr) / 10)
 				}
 				continue
 			}
+			timeLaunching := time.Now()
 			// didn't sequence.. should we have succeeded?
-			if timeLaunching.Before(lockupUntil) {
+			if timeLaunching.Before(holdingLockout) {
 				execError = fmt.Errorf("failed while holding lock %s err %w", coord.config.MyUrl, err)
 				break
 			}
@@ -93,7 +94,8 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 	defer cancel()
 
 	coordConfig := TestSeqCoordinatorConfig
-	coordConfig.LockoutDuration = time.Millisecond * 10
+	coordConfig.LockoutDuration = time.Millisecond * 100
+	coordConfig.LockoutSpare = time.Millisecond * 10
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
