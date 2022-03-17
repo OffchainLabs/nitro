@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -26,6 +27,7 @@ const (
 	L1MessageType_L2Message             = 3
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
+	L1MessageType_RollupEvent           = 8
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_Initialize            = 11
@@ -218,6 +220,9 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
+	case L1MessageType_RollupEvent:
+		log.Debug("ignoring rollup event message")
+		return types.Transactions{}, nil
 	case L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
