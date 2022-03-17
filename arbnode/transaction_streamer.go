@@ -159,13 +159,16 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		return errors.New("reorg target block not found")
 	}
 
+	if s.validator != nil {
+		err = s.validator.ReorgToBlock(targetBlock.NumberU64())
+		if err != nil {
+			return err
+		}
+	}
+
 	err = s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
 		return err
-	}
-
-	if s.validator != nil {
-		s.validator.ReorgToBlock(targetBlock.NumberU64())
 	}
 
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))

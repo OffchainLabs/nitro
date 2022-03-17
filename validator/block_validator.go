@@ -42,6 +42,8 @@ type BlockValidator struct {
 	sequencerBatches  sync.Map
 	preimageCache     preimageCache
 	blockMutex        sync.Mutex
+	reorgMutex        sync.Mutex
+	reorgsPending     int32 // atomic
 
 	lastBlockValidated uint64
 	earliestBatchKept  uint64
@@ -57,11 +59,9 @@ type BlockValidator struct {
 
 	das das.DataAvailabilityService
 
-	sendValidationsChan     chan struct{}
-	checkProgressChan       chan struct{}
-	reorgToBlockChan        chan uint64
-	blockReorgCompletedChan chan struct{}
-	progressChan            chan uint64
+	sendValidationsChan chan struct{}
+	checkProgressChan   chan struct{}
+	progressChan        chan uint64
 }
 
 type BlockValidatorConfig struct {
@@ -180,7 +180,7 @@ const validationStatusValid uint32 = 2      // validation succeeded
 
 type validationStatus struct {
 	Status uint32           // atomic: value is one of validationStatus*
-	Cancel func()           // non-atomic: only read/written to by main block validator thread
+	Cancel func()           // non-atomic: only read/written to with reorg mutex
 	Entry  *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
 }
 
@@ -217,18 +217,16 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 		return nil, err
 	}
 	validator := &BlockValidator{
-		inboxTracker:            inbox,
-		blockchain:              blockchain,
-		db:                      db,
-		sendValidationsChan:     make(chan struct{}, 1),
-		checkProgressChan:       make(chan struct{}, 1),
-		progressChan:            make(chan uint64, 1),
-		reorgToBlockChan:        make(chan uint64, 1),
-		blockReorgCompletedChan: make(chan struct{}),
-		concurrentRunsLimit:     int32(concurrent),
-		config:                  config,
-		das:                     das,
-		genesisBlockNum:         genesisBlockNum,
+		inboxTracker:        inbox,
+		blockchain:          blockchain,
+		db:                  db,
+		sendValidationsChan: make(chan struct{}, 1),
+		checkProgressChan:   make(chan struct{}, 1),
+		progressChan:        make(chan uint64, 1),
+		concurrentRunsLimit: int32(concurrent),
+		config:              config,
+		das:                 das,
+		genesisBlockNum:     genesisBlockNum,
 	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
@@ -620,8 +618,10 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
 	var batchCount uint64
-	for len(v.reorgToBlockChan) == 0 {
+	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
 			return
 		}
@@ -688,10 +688,10 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 	}
 }
 
-func (v *BlockValidator) writeCompletedValidationToDb(entry *validationEntry) error {
+func (v *BlockValidator) writeLastValidatedToDb(blockNumber uint64, endPos GlobalStatePosition) error {
 	info := lastBlockValidatedDbInfo{
-		BlockNumber:   entry.BlockNumber,
-		AfterPosition: entry.EndPosition,
+		BlockNumber:   blockNumber,
+		AfterPosition: endPos,
 	}
 	encodedInfo, err := rlp.EncodeToBytes(info)
 	if err != nil {
@@ -705,7 +705,9 @@ func (v *BlockValidator) writeCompletedValidationToDb(entry *validationEntry) er
 }
 
 func (v *BlockValidator) progressValidated() {
-	for len(v.reorgToBlockChan) == 0 {
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	for atomic.LoadInt32(&v.reorgsPending) == 0 {
 		// Reads from blocksValidated can be non-atomic as this goroutine is the only writer
 		checkingBlock := v.lastBlockValidated + 1
 		entry, found := v.validationEntries.Load(checkingBlock)
@@ -738,7 +740,7 @@ func (v *BlockValidator) progressValidated() {
 		case v.progressChan <- checkingBlock:
 		default:
 		}
-		err := v.writeCompletedValidationToDb(validationEntry)
+		err := v.writeLastValidatedToDb(validationEntry.BlockNumber, validationEntry.EndPosition)
 		if err != nil {
 			log.Error("failed to write validated entry to database", "err", err)
 		}
@@ -779,14 +781,26 @@ func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, first uint64,
 	}
 }
 
-func (v *BlockValidator) ReorgToBlock(blockNum uint64) {
+func (v *BlockValidator) ReorgToBlock(blockNum uint64) error {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
-	v.reorgToBlockChan <- blockNum
-	<-v.blockReorgCompletedChan
+
+	atomic.AddInt32(&v.reorgsPending, 1)
+	v.reorgMutex.Lock()
+	defer v.reorgMutex.Unlock()
+	atomic.AddInt32(&v.reorgsPending, -1)
+
+	if blockNum+1 < v.nextValidationEntryBlock {
+		log.Warn("block validator processing reorg", "blockNum", blockNum)
+		err := v.reorgToBlockImpl(blockNum)
+		if err != nil {
+			return fmt.Errorf("block validator reorg failed: %w", err)
+		}
+	}
+
+	return nil
 }
 
-// This function implicitly has blockMutex as there must be a ReorgToBlock call blocked on this finishing
 func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 	for b := blockNum + 1; b < v.nextValidationEntryBlock; b++ {
 		entry, found := v.validationEntries.Load(b)
@@ -846,6 +860,10 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 	}
 	if v.lastBlockValidated > blockNum {
 		v.lastBlockValidated = blockNum
+		err = v.writeLastValidatedToDb(blockNum, v.globalPosNextSend)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -865,22 +883,6 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 					return
 				}
 				v.sendValidations(ctx)
-			case blockNum, ok := <-v.reorgToBlockChan:
-				if !ok {
-					return
-				}
-				if blockNum+1 < v.nextValidationEntryBlock {
-					log.Warn("block validator processing reorg", "blockNum", blockNum)
-					for {
-						err := v.reorgToBlockImpl(blockNum)
-						if err != nil {
-							log.Error("block validator reorg failed", "err", err)
-						} else {
-							break
-						}
-					}
-				}
-				v.blockReorgCompletedChan <- struct{}{}
 			case <-ctx.Done():
 				return
 			}
