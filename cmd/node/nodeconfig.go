@@ -77,6 +77,7 @@ func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 type HTTPConfig struct {
 	Addr       string   `koanf:"addr"`
 	Port       int      `koanf:"port"`
+	API        []string `koanf:"api"`
 	RPCPrefix  string   `koanf:"rpcprefix"`
 	CORSDomain []string `koanf:"corsdomain"`
 	VHosts     []string `koanf:"vhosts"`
@@ -85,6 +86,7 @@ type HTTPConfig struct {
 var HTTPConfigDefault = HTTPConfig{
 	Addr:       node.DefaultConfig.HTTPHost,
 	Port:       node.DefaultConfig.HTTPPort,
+	API:        append(node.DefaultConfig.HTTPModules, "eth"),
 	RPCPrefix:  node.DefaultConfig.HTTPPathPrefix,
 	CORSDomain: node.DefaultConfig.HTTPCors,
 	VHosts:     node.DefaultConfig.HTTPVirtualHosts,
@@ -93,6 +95,7 @@ var HTTPConfigDefault = HTTPConfig{
 func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", HTTPConfigDefault.Addr, "HTTP-RPC server listening interface")
 	f.Int(prefix+".port", HTTPConfigDefault.Port, "HTTP-RPC server listening port")
+	f.StringSlice(prefix+".api", HTTPConfigDefault.API, "APIs offered over the HTTP-RPC interface")
 	f.String(prefix+".rpc-prefix", HTTPConfigDefault.RPCPrefix, "HTTP path path prefix on which JSON-RPC is served. Use '/' to serve on all paths")
 	f.StringSlice(prefix+".cors-domain", HTTPConfigDefault.CORSDomain, "Comma separated list of domains from which to accept cross origin requests (browser enforced)")
 	f.StringSlice(prefix+".vhosts", HTTPConfigDefault.VHosts, "Comma separated list of virtual hostnames from which to accept requests (server enforced). Accepts '*' wildcard")
@@ -101,6 +104,7 @@ func HTTPConfigAddOptions(prefix string, f *flag.FlagSet) {
 type WSConfig struct {
 	Addr      string   `koanf:"addr"`
 	Port      int      `koanf:"port"`
+	API       []string `koanf:"api"`
 	RPCPrefix string   `koanf:"rpc-prefix"`
 	Origins   []string `koanf:"origins"`
 	ExposeAll bool     `koanf:"expose-all"`
@@ -109,6 +113,7 @@ type WSConfig struct {
 var WSConfigDefault = WSConfig{
 	Addr:      node.DefaultConfig.WSHost,
 	Port:      node.DefaultConfig.WSPort,
+	API:       append(node.DefaultConfig.WSModules, "eth"),
 	RPCPrefix: node.DefaultConfig.WSPathPrefix,
 	Origins:   node.DefaultConfig.WSOrigins,
 	ExposeAll: node.DefaultConfig.WSExposeAll,
@@ -117,6 +122,7 @@ var WSConfigDefault = WSConfig{
 func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".addr", WSConfigDefault.Addr, "WS-RPC server listening interface")
 	f.Int(prefix+".port", WSConfigDefault.Port, "WS-RPC server listening port")
+	f.StringSlice(prefix+".api", WSConfigDefault.API, "APIs offered over the WS-RPC interface")
 	f.String(prefix+".rpc-prefix", WSConfigDefault.RPCPrefix, "WS path path prefix on which JSON-RPC is served. Use '/' to serve on all paths")
 	f.StringSlice(prefix+".origins", WSConfigDefault.Origins, "Origins from which to accept websockets requests")
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")

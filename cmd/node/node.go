@@ -8,10 +8,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/validator"
 	flag "github.com/spf13/pflag"
 	"io/ioutil"
 	"math/big"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -39,8 +43,9 @@ func printSampleUsage() {
 }
 
 func main() {
+	ctx := context.Background()
 
-	nodeConfig, l1wallet, l2wallet, err := ParseNode(context.Background())
+	nodeConfig, l1wallet, l2wallet, err := ParseNode(ctx)
 	if err != nil {
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
@@ -68,6 +73,33 @@ func main() {
 		}
 	}
 
+	if nodeConfig.Node.Wasm.RootPath != "" {
+		validator.StaticNitroMachineConfig.RootPath = nodeConfig.Node.Wasm.RootPath
+	} else {
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		targetDir := filepath.Dir(filepath.Dir(execfile))
+		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
+	}
+
+	wasmModuleRootString := nodeConfig.Node.Wasm.ModuleRoot
+	if wasmModuleRootString == "" {
+		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
+		fileBytes, err := ioutil.ReadFile(fileToRead)
+		if err != nil {
+			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.WithoutBlockValidator {
+				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
+			}
+		}
+		wasmModuleRootString = strings.TrimSpace(string(fileBytes))
+		if len(wasmModuleRootString) > 64 {
+			wasmModuleRootString = wasmModuleRootString[0:64]
+		}
+	}
+	nodeConfig.Node.Wasm.ModuleRoot = common.HexToHash(wasmModuleRootString)
+
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.EnableL1Reader {
 			flag.Usage()
@@ -78,8 +110,6 @@ func main() {
 			panic("L1 validator requires block validator to safely function")
 		}
 	}
-
-	ctx := context.Background()
 
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
@@ -122,11 +152,11 @@ func main() {
 	stackConf.HTTPHost = nodeConfig.HTTP.Addr
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.HTTPModules = nodeConfig.HTTP.API
 	stackConf.WSHost = nodeConfig.WS.Addr
 	stackConf.WSPort = nodeConfig.WS.Port
 	stackConf.WSOrigins = nodeConfig.WS.Origins
-	stackConf.WSModules = append(stackConf.WSModules, "eth")
+	stackConf.WSModules = nodeConfig.WS.API
 	stackConf.WSExposeAll = nodeConfig.WS.ExposeAll
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")

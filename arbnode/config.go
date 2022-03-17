@@ -26,6 +26,7 @@ type Config struct {
 	Validator        validator.L1ValidatorConfig    `koanf:"validator"`
 	SeqCoordinator   SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability das.DataAvailabilityConfig     `koanf:"data-availability"`
+	Wasm             WasmConfig                     `koanf:"wasm"`
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
@@ -41,7 +42,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
-	// TODO
+	WasmConfigAddOptions(prefix+".wasm", f)
 }
 
 var ConfigDefault = Config{
@@ -57,6 +58,7 @@ var ConfigDefault = Config{
 	Validator:        validator.DefaultL1ValidatorConfig,
 	SeqCoordinator:   DefaultSeqCoordinatorConfig,
 	DataAvailability: das.DefaultDataAvailabilityConfig,
+	Wasm:             DefaultWasmConfig,
 }
 
 var ConfigDefaultL1Test = Config{
@@ -176,4 +178,22 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	ErrorDelay:       time.Millisecond * 10,
 	MaxInterval:      0,
 	CompressionLevel: 2,
+}
+
+type WasmConfig struct {
+	RootPath   string `koanf:"root-path"`
+	ModuleRoot string `koanf:"module-root"`
+	CachePath  string `koanf:"cache-path"`
+}
+
+func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".module-root", DefaultWasmConfig.RootPath, "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
+}
+
+var DefaultWasmConfig = WasmConfig{
+	RootPath:   "",
+	ModuleRoot: "",
+	CachePath:  "",
 }

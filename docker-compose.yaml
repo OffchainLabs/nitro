@@ -20,11 +20,39 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1role sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -UNSAFEl1validatorwithoutblockvalidator -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -l1sequencer
+    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1sequencer
     depends_on:
       - geth
+  staker-unsafe:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "unsafestaker-data:/data"
+      - "l1keystore:/l1keystore"
+      - "deploydata:/deploydata"
+    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -forwardingtarget null -UNSAFEl1validatorwithoutblockvalidator
+    depends_on:
+      - sequencer
+  validator:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "validator-data:/data"
+      - "l1keystore:/l1keystore"
+      - "deploydata:/deploydata"
+    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -forwardingtarget null
+    depends_on:
+      - sequencer
 volumes:
   l1data:
   l1keystore:
   seqdata:
+  unsafestaker-data:
+  validator-data:
   deploydata:
