@@ -1,5 +1,41 @@
 version: "3.9"
 services:
+  blockscout:
+    depends_on:
+      - postgres
+      - sequencer
+    image: blockscout/blockscout:${DOCKER_TAG:-latest}
+    restart: always
+    container_name: 'blockscout'
+    links:
+      - postgres:database
+    command: 'mix do ecto.create, ecto.migrate, phx.server'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    env_file:
+      -  ./.blockscout.env
+    environment:
+        ETHEREUM_JSONRPC_VARIANT: 'geth'
+        BLOCK_TRANSFORMER: 'clique'
+        ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:7545/
+        DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
+        ECTO_USE_SSL: false
+    ports:
+      - 4000:4000
+
+  postgres:
+    image: postgres:13.6
+    restart: always
+    container_name: 'postgres'
+    environment:
+        POSTGRES_PASSWORD: ''
+        POSTGRES_USER: 'postgres'
+        POSTGRES_HOST_AUTH_METHOD: 'trust'
+    volumes:
+      - "postgres-data:/var/lib/postgresql/data"
+    ports:
+      - 7432:5432
+
   geth:
     image: ethereum/client-go:stable
     ports:
@@ -9,7 +45,8 @@ services:
     volumes:
       - "l1data:/root/.ethereum"
       - "l1keystore:/keystore"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3 --dev --dev.period 1 --password /root/.ethereum/passphrase
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase
+
   sequencer:
     pid: host # allow debugging
     build: .
@@ -21,9 +58,10 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1sequencer -feed.output.enabled -feed.output.port 9642
+    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1sequencer -feed.output.enabled -feed.output.port 9642 -httpvhosts *
     depends_on:
       - geth
+
   staker-unsafe:
     pid: host # allow debugging
     build: .
@@ -37,6 +75,7 @@ services:
     command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -forwardingtarget null -UNSAFEl1validatorwithoutblockvalidator
     depends_on:
       - sequencer
+
   validator:
     pid: host # allow debugging
     build: .
@@ -50,6 +89,7 @@ services:
     command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -forwardingtarget null
     depends_on:
       - sequencer
+
   relay:
     pid: host
     build: .
@@ -57,6 +97,7 @@ services:
       - "9652:9652"
     entrypoint: target/bin/relay
     command: -feed.output.port 9652 -feed.input.url ws://sequencer:9642/feed
+
 volumes:
   l1data:
   l1keystore:
@@ -64,3 +105,5 @@ volumes:
   unsafestaker-data:
   validator-data:
   deploydata:
+  postgres-data:
+

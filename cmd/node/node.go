@@ -265,6 +265,7 @@ func main() {
 	stackConf.HTTPPort = *httpPort
 	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
+	stackConf.HTTPModules = append(stackConf.HTTPModules, "txpool")
 	// TODO: Add CLI option for this
 	stackConf.HTTPModules = append(stackConf.HTTPModules, "debug")
 	stackConf.WSHost = *wshost

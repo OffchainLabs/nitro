@@ -106,4 +106,4 @@ if $validate; then
 else
     STAKER_NODE="staker-unsafe"
 fi
-docker-compose up sequencer $STAKER_NODE
+docker-compose up sequencer $STAKER_NODE blockscout
