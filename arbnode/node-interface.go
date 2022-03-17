@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -57,20 +58,22 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
+		maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
 
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
-			ChainId:       nil,
-			RequestId:     common.Hash{},
-			From:          util.RemapL1Address(sender),
-			L1BaseFee:     l1BaseFee,
-			DepositValue:  deposit,
-			GasFeeCap:     msg.GasPrice(),
-			Gas:           msg.Gas(),
-			To:            pTo,
-			Value:         l2CallValue,
-			Beneficiary:   callValueRefundAddress,
-			FeeRefundAddr: excessFeeRefundAddress,
-			Data:          data,
+			ChainId:          nil,
+			RequestId:        common.Hash{},
+			From:             util.RemapL1Address(sender),
+			L1BaseFee:        l1BaseFee,
+			DepositValue:     deposit,
+			GasFeeCap:        msg.GasPrice(),
+			Gas:              msg.Gas(),
+			To:               pTo,
+			Value:            l2CallValue,
+			Beneficiary:      callValueRefundAddress,
+			MaxSubmissionFee: maxSubmissionFee,
+			FeeRefundAddr:    excessFeeRefundAddress,
+			Data:             data,
 		})
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic

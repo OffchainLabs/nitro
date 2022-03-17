@@ -140,7 +140,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
 		} else {
-			log.Info("Skipping already seen message with sequence number: ", newMsg.SequenceNumber)
+			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
 	}
 

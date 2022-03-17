@@ -494,7 +494,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if err != nil {
 		return err
 	}
-	log.Info("InboxTracker", "SequencerBatchCount", pos)
+	log.Info("InboxTracker", "sequencerBatchCount", pos, "prevMessageCount", prevbatchmeta.MessageCount, "newMessageCount", int(prevbatchmeta.MessageCount)+len(messages))
 
 	if t.validator != nil {
 		t.validator.ReorgToBatchCount(startPos)
