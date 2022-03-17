@@ -332,7 +332,7 @@ type Node struct {
 	BlockValidator   *validator.BlockValidator
 	Staker           *validator.Staker
 	BroadcastServer  *broadcaster.Broadcaster
-	BroadcastClient  *broadcastclient.BroadcastClient
+	BroadcastClients []*broadcastclient.BroadcastClient
 	SeqCoordinator   *SeqCoordinator
 }
 
@@ -395,12 +395,15 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig
 	if err != nil {
 		return nil, err
 	}
-	var broadcastClient *broadcastclient.BroadcastClient
+
+	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.BroadcastClient {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.BroadcastClientConfig.URL, nil, config.BroadcastClientConfig.Timeout, txStreamer)
+		for _, address := range config.BroadcastClientConfig.URLs {
+			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.BroadcastClientConfig.Timeout, txStreamer))
+		}
 	}
 	if !config.L1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -445,7 +448,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig
 	}
 
 	if !config.BatchPoster {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -459,7 +462,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -538,15 +541,15 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	if n.BroadcastClient != nil {
-		n.BroadcastClient.Start(ctx)
+	for _, client := range n.BroadcastClients {
+		client.Start(ctx)
 	}
 	return nil
 }
 
 func (n *Node) StopAndWait() {
-	if n.BroadcastClient != nil {
-		n.BroadcastClient.StopAndWait()
+	for _, client := range n.BroadcastClients {
+		client.StopAndWait()
 	}
 	if n.BroadcastServer != nil {
 		n.BroadcastServer.StopAndWait()

@@ -51,14 +51,18 @@ func NewRelay(serverConf wsbroadcastserver.BroadcasterConfig, clientConf broadca
 
 	q := RelayMessageQueue{make(chan broadcastFeedMessage, 100)}
 
-	client := broadcastclient.NewBroadcastClient(clientConf.URL, nil, clientConf.Timeout, &q)
-	client.ConfirmedSequenceNumberListener = make(chan arbutil.MessageIndex, 10)
+	confirmedSequenceNumberListener := make(chan arbutil.MessageIndex, 10)
 
-	broadcastClients = append(broadcastClients, client)
+	for _, address := range clientConf.URLs {
+		client := broadcastclient.NewBroadcastClient(address, nil, clientConf.Timeout, &q)
+		client.ConfirmedSequenceNumberListener = confirmedSequenceNumberListener
+		broadcastClients = append(broadcastClients, client)
+	}
+
 	return &Relay{
 		broadcaster:                 broadcaster.NewBroadcaster(serverConf),
 		broadcastClients:            broadcastClients,
-		confirmedSequenceNumberChan: client.ConfirmedSequenceNumberListener,
+		confirmedSequenceNumberChan: confirmedSequenceNumberListener,
 		messageChan:                 q.queue,
 	}
 }
