@@ -865,13 +865,15 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				if !ok {
 					return
 				}
-				log.Warn("block validator processing reorg", "blockNum", blockNum)
-				for {
-					err := v.reorgToBlockImpl(blockNum)
-					if err != nil {
-						log.Error("block validator reorg failed", "err", err)
-					} else {
-						break
+				if blockNum+1 < v.nextValidationEntryBlock {
+					log.Warn("block validator processing reorg", "blockNum", blockNum)
+					for {
+						err := v.reorgToBlockImpl(blockNum)
+						if err != nil {
+							log.Error("block validator reorg failed", "err", err)
+						} else {
+							break
+						}
 					}
 				}
 				v.blockReorgCompletedChan <- struct{}{}
