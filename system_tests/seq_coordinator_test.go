@@ -1,3 +1,6 @@
+//go:build redistest
+// +build redistest
+
 package arbtest
 
 import (
