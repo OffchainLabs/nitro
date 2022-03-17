@@ -47,8 +47,9 @@ type BlockValidator struct {
 	earliestBatchKept  uint64
 	nextBatchKept      uint64 // 1 + the last batch number kept
 
-	nextBlockToValidate uint64
-	globalPosNextSend   GlobalStatePosition
+	nextBlockToValidate      uint64
+	nextValidationEntryBlock uint64
+	globalPosNextSend        GlobalStatePosition
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -369,7 +370,11 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		Status: validationStatusUnprepared,
 		Entry:  nil,
 	}
-	v.validationEntries.Store(block.NumberU64(), status)
+	blockNum := block.NumberU64()
+	v.validationEntries.Store(blockNum, status)
+	if v.nextValidationEntryBlock <= blockNum {
+		v.nextValidationEntryBlock = blockNum + 1
+	}
 	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg, status) })
 }
 
@@ -781,8 +786,9 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64) {
 	<-v.blockReorgCompletedChan
 }
 
+// This function implicitly has blockMutex as there must be a ReorgToBlock call blocked on this finishing
 func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
-	for b := blockNum + 1; b < v.nextBlockToValidate; b++ {
+	for b := blockNum + 1; b < v.nextValidationEntryBlock; b++ {
 		entry, found := v.validationEntries.Load(b)
 		if !found {
 			continue
@@ -794,9 +800,11 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 			log.Error("bad entry trying to reorg block validator")
 			continue
 		}
-		validationStatus.Cancel()
+		log.Debug("canceling validation due to reorg", "block", b)
+		if validationStatus.Cancel != nil {
+			validationStatus.Cancel()
+		}
 	}
-	v.nextBlockToValidate = blockNum + 1
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
@@ -807,6 +815,8 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 		return err
 	}
 	if batch == batchCount {
+		// This reorg is past the latest batch.
+		// Attempt to recover by loading a next validation state at the start of the next batch.
 		v.globalPosNextSend = GlobalStatePosition{
 			BatchNumber: batch,
 			PosInBatch:  0,
@@ -815,19 +825,20 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 		if err != nil {
 			return err
 		}
-		nextBlockSigned := arbutil.MessageCountToBlockNumber(msgCount, v.genesisBlockNum)
+		nextBlockSigned := arbutil.MessageCountToBlockNumber(msgCount, v.genesisBlockNum) + 1
 		if nextBlockSigned <= 0 {
-			return fmt.Errorf("reorg to impossible block to validate %v", nextBlockSigned)
+			return errors.New("reorg past genesis block")
 		}
-		v.nextBlockToValidate = uint64(nextBlockSigned)
-		if v.lastBlockValidated >= v.nextBlockToValidate {
-			v.lastBlockValidated = v.nextBlockToValidate - 1
-		}
+		blockNum = uint64(nextBlockSigned) - 1
 	} else {
 		_, v.globalPosNextSend, err = GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
 		if err != nil {
 			return err
 		}
+	}
+	v.nextValidationEntryBlock = blockNum + 1
+	if v.nextBlockToValidate > blockNum+1 {
+		v.nextBlockToValidate = blockNum + 1
 	}
 	if v.lastBlockValidated > blockNum {
 		v.lastBlockValidated = blockNum
@@ -854,15 +865,13 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 				if !ok {
 					return
 				}
-				if blockNum+1 < v.nextBlockToValidate {
-					log.Warn("block validator canceling validations to reorg", "blockNum", blockNum)
-					for {
-						err := v.reorgToBlockImpl(blockNum)
-						if err != nil {
-							log.Error("block validator reorg failed", "err", err)
-						} else {
-							break
-						}
+				log.Warn("block validator processing reorg", "blockNum", blockNum)
+				for {
+					err := v.reorgToBlockImpl(blockNum)
+					if err != nil {
+						log.Error("block validator reorg failed", "err", err)
+					} else {
+						break
 					}
 				}
 				v.blockReorgCompletedChan <- struct{}{}
