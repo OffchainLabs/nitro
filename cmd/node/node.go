@@ -40,6 +40,9 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
+
+	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 )
 
 func main() {
@@ -85,7 +88,7 @@ func main() {
 	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
 	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
-	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
+	feedInputUrls := flag.String("feed.input.url", "", "URLs of sequencer feed source, comma separated")
 	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
 
 	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
@@ -326,10 +329,10 @@ func main() {
 		Workers:       *broadcasterWorkers,
 	}
 
-	nodeConf.BroadcastClient = *feedInputUrl != ""
+	nodeConf.BroadcastClient = *feedInputUrls != ""
 	nodeConf.BroadcastClientConfig = broadcastclient.BroadcastClientConfig{
 		Timeout: *feedInputTimeout,
-		URL:     *feedInputUrl,
+		URLs:    strings.Split(*feedInputUrls, ","),
 	}
 
 	var initDataReader statetransfer.InitDataReader = nil
