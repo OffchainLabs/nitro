@@ -42,6 +42,7 @@ type BlockValidator struct {
 	sequencerBatches  sync.Map
 	preimageCache     preimageCache
 	blockMutex        sync.Mutex
+	batchMutex        sync.Mutex
 	reorgMutex        sync.Mutex
 	reorgsPending     int32 // atomic
 
@@ -479,7 +480,8 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
 	if atomic.LoadUint32(&validationStatus.Status) < validationStatusPrepared {
-		panic("attempted to validate unprepared validation entry")
+		log.Error("attempted to validate unprepared validation entry")
+		return
 	}
 	entry := validationStatus.Entry
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
@@ -489,6 +491,8 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	defer (func() {
+		atomic.AddInt32(&v.atomicValidationsRunning, -1)
+		v.sendValidationsChan <- struct{}{}
 		err := v.preimageCache.RemoveFromCache(entry.Preimages)
 		if err != nil {
 			log.Error("validator failed to remove from cache", "err", err)
@@ -506,6 +510,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
 		if v.das == nil {
 			log.Error("No DAS configured, but sequencer message found with DAS header")
+			if v.blockchain.Config().ArbitrumChainParams.DataAvailabilityCommittee {
+				return
+			}
 		} else {
 			cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
 			if err != nil {
@@ -603,9 +610,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	}
 
-	atomic.AddInt32(&v.atomicValidationsRunning, -1)
-	entry.Preimages = nil
-
 	if !resultValid {
 		log.Error("validation failed", "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
 		return
@@ -614,7 +618,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
 	log.Info("validation succeeded", "blockNr", entry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
-	v.sendValidationsChan <- struct{}{}
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
@@ -751,10 +754,18 @@ func (v *BlockValidator) LastBlockValidated() uint64 {
 	return atomic.LoadUint64(&v.lastBlockValidated)
 }
 
-// Must not be called concurrently with ProcessBatches
+// Because batches and blocks are handled at separate layers in the node,
+// and because block generation from messages is asynchronous,
+// this call is different than ReorgToBlock, which is currently called later.
 func (v *BlockValidator) ReorgToBatchCount(count uint64) {
+	v.batchMutex.Lock()
+	defer v.batchMutex.Unlock()
+	v.reorgToBatchCountImpl(count)
+}
+
+func (v *BlockValidator) reorgToBatchCountImpl(count uint64) {
 	localBatchCount := v.nextBatchKept
-	if localBatchCount >= count {
+	if localBatchCount < count {
 		return
 	}
 	for i := count; i < localBatchCount; i++ {
@@ -763,17 +774,19 @@ func (v *BlockValidator) ReorgToBatchCount(count uint64) {
 	v.nextBatchKept = count
 }
 
-// Must not be called concurrently with ReorgToBatchCount
-func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, first uint64, next uint64) {
-	v.ReorgToBatchCount(first)
+func (v *BlockValidator) ProcessBatches(pos uint64, batches [][]byte) {
+	v.batchMutex.Lock()
+	defer v.batchMutex.Unlock()
+
+	v.reorgToBatchCountImpl(pos)
 
 	// Attempt to fill in earliestBatchKept if it's empty
-	atomic.CompareAndSwapUint64(&v.earliestBatchKept, 0, first)
+	atomic.CompareAndSwapUint64(&v.earliestBatchKept, 0, pos)
 
-	for batchNr, msg := range batches {
-		v.sequencerBatches.Store(batchNr, msg)
+	for i, msg := range batches {
+		v.sequencerBatches.Store(pos+uint64(i), msg)
 	}
-	v.nextBatchKept = next
+	v.nextBatchKept = pos + uint64(len(batches))
 
 	select {
 	case v.sendValidationsChan <- struct{}{}:
@@ -832,7 +845,7 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 	if err != nil {
 		return err
 	}
-	if batch == batchCount {
+	if batch >= batchCount {
 		// This reorg is past the latest batch.
 		// Attempt to recover by loading a next validation state at the start of the next batch.
 		v.globalPosNextSend = GlobalStatePosition{
@@ -871,6 +884,8 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn)
 	v.LaunchThread(func(ctx context.Context) {
+		// `progressValidated` and `sendValidations` should both only do `concurrentRunsLimit` iterations of work,
+		// so they won't stomp on each other and prevent the other from running.
 		for {
 			select {
 			case _, ok := <-v.checkProgressChan:

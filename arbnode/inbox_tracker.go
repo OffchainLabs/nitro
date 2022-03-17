@@ -507,15 +507,15 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	if t.validator != nil {
-		batchMap := make(map[uint64][]byte, len(batches))
+		batchBytes := make([][]byte, 0, len(batches))
 		for _, batch := range batches {
 			msg, err := batch.Serialize(ctx, client)
 			if err != nil {
 				return err
 			}
-			batchMap[batch.SequenceNumber] = msg
+			batchBytes = append(batchBytes, msg)
 		}
-		t.validator.ProcessBatches(batchMap, startPos, pos)
+		t.validator.ProcessBatches(startPos, batchBytes)
 	}
 
 	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
