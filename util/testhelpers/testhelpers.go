@@ -25,11 +25,12 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 	t.Fatal(colors.Red, printables, colors.Clear)
 }
 
-func RandomizeSlice(slice []byte) {
+func RandomizeSlice(slice []byte) []byte {
 	_, err := rand.Read(slice)
 	if err != nil {
 		panic(err)
 	}
+	return slice
 }
 
 func RandomAddress() common.Address {

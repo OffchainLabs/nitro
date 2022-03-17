@@ -10,16 +10,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxBackend interface {
@@ -273,6 +271,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	}
 	if segmentNum >= uint64(len(seqMsg.segments)) {
 		// after end of batch there might be "virtual" delayedMsgSegments
+		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.afterDelayedMessages)
 		segment = []byte{BatchSegmentKindDelayedMessages}
 	} else {
 		segment = seqMsg.segments[int(segmentNum)]
@@ -285,12 +284,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	segment = segment[1:]
 	var msg *MessageWithMetadata
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
-
-		// L2 message
-		var blockNumberHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
-		var timestampHash common.Hash
-		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
 
 		if kind == BatchSegmentKindL2MessageBrotli {
 			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
@@ -306,10 +299,10 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
 					Poster:      l1pricing.SequencerAddress,
-					BlockNumber: blockNumberHash,
-					Timestamp:   timestampHash,
+					BlockNumber: blockNumber,
+					Timestamp:   timestamp,
 					RequestId:   nil,
-					BaseFeeL1:   common.Hash{},
+					L1BaseFee:   big.NewInt(0),
 				},
 				L2msg: segment,
 			},

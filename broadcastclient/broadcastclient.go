@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
-
 type TransactionStreamerInterface interface {
 	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
 }
@@ -206,8 +205,9 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 	}
 }
 
-func (bc *BroadcastClient) Close() {
+func (bc *BroadcastClient) StopAndWait() {
 	log.Debug("closing broadcaster client connection")
+	bc.StopWaiter.StopAndWait()
 	bc.connMutex.Lock()
 	defer bc.connMutex.Unlock()
 

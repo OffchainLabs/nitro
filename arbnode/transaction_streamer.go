@@ -270,7 +270,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 			if err != nil {
 				log.Warn("TransactionStreamer: Reorg detected! (failed parsing db message)", "pos", pos, "err", err)
 			} else {
-				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-read", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-read", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
+				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
 			reorg = true
 			break
@@ -584,12 +584,15 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	statedb, err := s.bc.StateAt(lastBlockHeader.Root)
-	if err != nil {
-		return err
-	}
 
 	for pos < msgCount {
+
+		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
+		if err != nil {
+			return err
+		}
+
+		statedb.StartPrefetcher("TransactionStreamer")
 
 		if atomic.LoadUint32(&s.reorgPending) > 0 {
 			// stop block creation as we need to reorg

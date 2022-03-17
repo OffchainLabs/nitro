@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type DelayedSequencer struct {
@@ -78,7 +79,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		blockNumber := msg.Header.BlockNumber.Big()
+		blockNumber := arbmath.UintToBig(msg.Header.BlockNumber)
 		if blockNumber.Cmp(finalized) > 0 {
 			// Message isn't finalized yet; stop here
 			d.waitingForBlock = new(big.Int).Add(blockNumber, d.config.FinalizeDistance)

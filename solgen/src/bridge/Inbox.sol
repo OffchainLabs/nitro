@@ -194,6 +194,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
+    /**
+     * @notice Get the L1 fee for submitting a retryable
+     * @dev This fee is only payable by via the deposit
+     * @param dataLength The length of the retryable's calldata, in bytes
+     */
+    function retryableSubmissionFee(uint256 dataLength) public view returns (uint256) {
+        return (1400 + 6 * dataLength) * block.basefee;
+    }
+
     /// @notice deposit eth from L1 to L2
     /// @dev this function should not be called inside contract constructors
     function depositEth(uint256 maxSubmissionCost)
@@ -206,6 +215,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
+
+        uint256 submissionFee = retryableSubmissionFee(0);
+        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
 
         // solhint-disable-next-line avoid-tx-origin
         if (!AddressUpgradeable.isContract(sender) && tx.origin == msg.sender) {
@@ -246,7 +258,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @dev Advanced usage only (does not rewrite aliases for excessFeeRefundAddress and callValueRefundAddress). createRetryableTicket method is the recommended standard.
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
-     * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
+     * @param maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
      * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
@@ -264,6 +276,9 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
+        uint256 submissionFee = retryableSubmissionFee(data.length);
+        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
+
         return
             _deliverMessage(
                 L1MessageType_submitRetryableTx,
@@ -288,7 +303,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @dev all msg.value will deposited to callValueRefundAddress on L2
      * @param to destination L2 contract address
      * @param l2CallValue call value for retryable L2 message
-     * @param  maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
+     * @param maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
      * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
      * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
      * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
@@ -306,6 +321,57 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) external payable virtual override whenNotPaused returns (uint256) {
+        // if a refund address is a contract, we apply the alias to it
+        // so that it can access its funds on the L2
+        // since the beneficiary and other refund addresses don't get rewritten by arb-os
+        if (AddressUpgradeable.isContract(excessFeeRefundAddress)) {
+            excessFeeRefundAddress = AddressAliasHelper.applyL1ToL2Alias(excessFeeRefundAddress);
+        }
+        if (AddressUpgradeable.isContract(callValueRefundAddress)) {
+            // this is the beneficiary. be careful since this is the address that can cancel the retryable in the L2
+            callValueRefundAddress = AddressAliasHelper.applyL1ToL2Alias(callValueRefundAddress);
+        }
+
+        return
+            createRetryableTicketNoRefundAliasRewrite(
+                to,
+                l2CallValue,
+                maxSubmissionCost,
+                excessFeeRefundAddress,
+                callValueRefundAddress,
+                gasLimit,
+                maxFeePerGas,
+                data
+            );
+    }
+
+    /**
+     * @notice Put a message in the L2 inbox that can be reexecuted for some fixed amount of time if it reverts
+     * @dev Same as createRetryableTicket, but guarantees that submission will succeed by requiring the needed funds
+     * come from the deposit alone, rather than falling back on the user's L2 balance
+     * @param to destination L2 contract address
+     * @param l2CallValue call value for retryable L2 message
+     * @param maxSubmissionCost Max gas deducted from user's L2 balance to cover base submission fee
+     * @param excessFeeRefundAddress gasLimit x maxFeePerGas - execution cost gets credited here on L2 balance
+     * @param callValueRefundAddress l2Callvalue gets credited here on L2 if retryable txn times out or gets cancelled
+     * @param gasLimit Max gas deducted from user's L2 balance to cover L2 execution
+     * @param maxFeePerGas price bid for L2 execution
+     * @param data ABI encoded data of L2 message
+     * @return unique id for retryable transaction (keccak256(requestID, uint(0) )
+     */
+    function safeCreateRetryableTicket(
+        address to,
+        uint256 l2CallValue,
+        uint256 maxSubmissionCost,
+        address excessFeeRefundAddress,
+        address callValueRefundAddress,
+        uint256 gasLimit,
+        uint256 maxFeePerGas,
+        bytes calldata data
+    ) external payable virtual override whenNotPaused returns (uint256) {
+        // unlike createRetryableTicket, ensure the user's deposit alone will make submission succeed
+        require(msg.value >= maxSubmissionCost + l2CallValue, "insufficient value");
+
         // if a refund address is a contract, we apply the alias to it
         // so that it can access its funds on the L2
         // since the beneficiary and other refund addresses don't get rewritten by arb-os

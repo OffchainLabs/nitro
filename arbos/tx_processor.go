@@ -77,6 +77,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return false, 0, nil, nil
 	}
 
+	scenario := util.TracingBeforeEVM
+	evm := p.evm
+
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 
@@ -85,27 +88,42 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		util.MintBalance(p.msg.To(), p.msg.Value(), p.evm, util.TracingBeforeEVM)
+		util.MintBalance(p.msg.To(), p.msg.Value(), evm, scenario)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, p.evm)
+		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		statedb := p.evm.StateDB
+		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		from := tx.From
 
-		util.MintBalance(&tx.From, tx.DepositValue, p.evm, util.TracingBeforeEVM)
+		// mint funds with the deposit, then charge fees later
+		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 
-		err := util.TransferBalance(&tx.From, &escrow, tx.Value, p.evm, util.TracingBeforeEVM)
-		if err != nil {
+		submissionFee := retryables.RetryableSubmissionFee(len(tx.Data), tx.L1BaseFee)
+		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
+		if excessDeposit.Sign() < 0 {
+			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
+		}
+
+		// move balance to the relevant parties
+		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
 
-		time := p.evm.Context.Time.Uint64()
+		time := evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
 		// we charge for creating the retryable and reaping the next expired one on L1
@@ -120,13 +138,13 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		)
 		p.state.Restrict(err)
 
-		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
+		err = EmitTicketCreatedEvent(evm, underlyingTx.Hash())
 		if err != nil {
 			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
-		basefee := p.evm.Context.BaseFee
+		basefee := evm.Context.BaseFee
 		usergas := p.msg.Gas()
 		gascost := arbmath.BigMulByUint(basefee, usergas)
 
@@ -141,8 +159,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, p.evm, util.TracingBeforeEVM)
+		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, evm, scenario)
 		if err != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -163,7 +180,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.state.Restrict(err)
 
 		err = EmitReedeemScheduledEvent(
-			p.evm,
+			evm,
 			usergas,
 			retryTxInner.Nonce,
 			ticketId,
@@ -179,14 +196,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util.TransferBalance(&escrow, &tx.From, tx.Value, p.evm, util.TracingBeforeEVM)
+		err = util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario)
 		if err != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
-		basefee := p.evm.Context.BaseFee
-		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), p.evm, util.TracingBeforeEVM)
+		basefee := evm.Context.BaseFee
+		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), evm, scenario)
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}

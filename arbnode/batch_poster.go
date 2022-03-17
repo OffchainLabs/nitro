@@ -20,6 +20,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type BatchPoster struct {
@@ -184,23 +185,18 @@ func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byt
 	return append(segment, enc...), nil
 }
 
-func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, segmentHeader byte) (bool, error) {
-	asBig := newVal.Big()
-	if !asBig.IsUint64() {
-		return false, errors.New("number not uint64")
-	}
-	asUint := asBig.Uint64()
-	if asUint == *base {
+func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segmentHeader byte) (bool, error) {
+	if newVal == *base {
 		return true, nil
 	}
-	diff := asUint - *base
+	diff := newVal - *base
 	seg, err := s.prepareIntSegment(diff, segmentHeader)
 	if err != nil {
 		return false, err
 	}
 	success, err := s.addSegment(seg, true)
 	if success {
-		*base = asUint
+		*base = newVal
 	}
 	return success, err
 }
@@ -260,7 +256,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatch bool) (*types.Transaction, error) {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatchPosted time.Duration) (*types.Transaction, error) {
 	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -269,7 +265,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatc
 	if err != nil {
 		return nil, err
 	}
-	if inboxContractCount.Cmp(new(big.Int).SetUint64(batchSeqNum)) != 0 {
+	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
+		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
+		// then there isn't an error. We're just waiting for the inbox tracker to read the most recently posted batch.
+		if timeSinceBatchPosted <= time.Minute && arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum+1)) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("inbox tracker not synced: contract has %v batches but inbox tracker has %v", inboxContractCount, batchSeqNum)
 	}
 	var prevBatchMeta BatchMetadata
@@ -291,6 +292,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatc
 	if err != nil {
 		return nil, err
 	}
+	forcePostBatch := timeSinceBatchPosted >= b.config.MaxBatchPostInterval
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -345,7 +347,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
 	var lastBatchPosted time.Time
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted) >= b.config.MaxInterval)
+		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted))
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)

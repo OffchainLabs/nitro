@@ -14,9 +14,11 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -54,7 +56,6 @@ func main() {
 
 		return
 	}
-
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
 	log.Root().SetHandler(glogger)
@@ -197,7 +198,6 @@ func main() {
 			panic(err)
 		}
 	}
-
 	var initDataReader statetransfer.InitDataReader = nil
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
@@ -279,18 +279,22 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	_, err = arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}
-	if err := node.Start(ctx); err != nil {
-		utils.Fatalf("Error starting node: %v\n", err)
-	}
-
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
 	}
 
-	stack.Wait()
-	node.StopAndWait()
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
+	<-sigint
+	// cause future ctrl+c's to panic
+	close(sigint)
+
+	if err := stack.Close(); err != nil {
+		utils.Fatalf("Error closing stack: %v\n", err)
+	}
 }

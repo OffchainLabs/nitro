@@ -140,7 +140,7 @@ func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
 			b.messages = nil
 			b.messages = append(b.messages, newMsg)
 		} else {
-			log.Info("Skipping already seen message with sequence number: ", newMsg.SequenceNumber)
+			log.Info("Skipping already seen message", "seqNum", newMsg.SequenceNumber)
 		}
 	}
 
@@ -172,6 +172,10 @@ func (b *Broadcaster) BroadcastSingle(msg arbstate.MessageWithMetadata, seq arbu
 	}
 
 	b.server.Broadcast(bm)
+}
+
+func (b *Broadcaster) Broadcast(msg BroadcastMessage) {
+	b.server.Broadcast(msg)
 }
 
 func (b *Broadcaster) Confirm(seq arbutil.MessageIndex) {

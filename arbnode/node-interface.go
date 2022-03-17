@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -28,7 +29,7 @@ import (
 // This function handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
 //
-func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message, error) {
+func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface abi.ABI) (types.Message, error) {
 
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 
@@ -55,18 +56,24 @@ func ApplyNodeInterface(msg types.Message, nodeInterface abi.ABI) (types.Message
 			pTo = &to
 		}
 
+		state, _ := arbosState.OpenSystemArbosState(statedb, true)
+		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
+		maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
+
 		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
-			ChainId:       nil,
-			RequestId:     common.Hash{},
-			From:          util.RemapL1Address(sender),
-			DepositValue:  deposit,
-			GasFeeCap:     msg.GasPrice(),
-			Gas:           msg.Gas(),
-			To:            pTo,
-			Value:         l2CallValue,
-			Beneficiary:   callValueRefundAddress,
-			FeeRefundAddr: excessFeeRefundAddress,
-			Data:          data,
+			ChainId:          nil,
+			RequestId:        common.Hash{},
+			From:             util.RemapL1Address(sender),
+			L1BaseFee:        l1BaseFee,
+			DepositValue:     deposit,
+			GasFeeCap:        msg.GasPrice(),
+			Gas:              msg.Gas(),
+			To:               pTo,
+			Value:            l2CallValue,
+			Beneficiary:      callValueRefundAddress,
+			MaxSubmissionFee: maxSubmissionFee,
+			FeeRefundAddr:    excessFeeRefundAddress,
+			Data:             data,
 		})
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
@@ -82,18 +89,24 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	core.InterceptRPCMessage = func(msg types.Message) (types.Message, error) {
+	core.InterceptRPCMessage = func(msg types.Message, statedb *state.StateDB) (types.Message, error) {
 		to := msg.To()
-		if to == nil || *to != common.HexToAddress("0xc8") {
+		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
+		if to == nil || *to != common.HexToAddress("0xc8") || arbosVersion == 0 {
 			return msg, nil
 		}
-		return ApplyNodeInterface(msg, nodeInterface)
+		return ApplyNodeInterface(msg, statedb, nodeInterface)
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg types.Message, header *types.Header, statedb *state.StateDB) {
+		arbosVersion := arbosState.ArbOSVersion(statedb)
+		if arbosVersion == 0 {
+			// ArbOS hasn't been installed, so use the vanilla gas cap
+			return
+		}
 		state, err := arbosState.OpenSystemArbosState(statedb, true)
 		if err != nil {
-			log.Error("ArbOS is not initialized", "err", err)
+			log.Error("failed to open ArbOS state", "err", err)
 			return
 		}
 		poster, _ := state.L1PricingState().ReimbursableAggregatorForSender(msg.From())

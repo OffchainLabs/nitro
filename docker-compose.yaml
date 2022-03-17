@@ -16,11 +16,12 @@ services:
     ports:
       - "7545:7545"
       - "7546:7546"
+      - "9642:9642"
     volumes:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1sequencer
+    command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1sequencer -feed.output.enabled -feed.output.port 9642
     depends_on:
       - geth
   staker-unsafe:
@@ -49,6 +50,13 @@ services:
     command: -datadir /data -dev -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -httphost 0.0.0.0 -wshost 0.0.0.0 -l1validator -validatorstrategy MakeNodes -stakerinterval 10s -forwardingtarget null
     depends_on:
       - sequencer
+  relay:
+    pid: host
+    build: .
+    ports:
+      - "9652:9652"
+    entrypoint: target/bin/relay
+    command: -feed.output.port 9652 -feed.input.url ws://sequencer:9642/feed
 volumes:
   l1data:
   l1keystore:

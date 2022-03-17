@@ -290,7 +290,6 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
 }
-
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
@@ -304,11 +303,11 @@ type Node struct {
 	BlockValidator   *validator.BlockValidator
 	Staker           *validator.Staker
 	BroadcastServer  *broadcaster.Broadcaster
-	BroadcastClient  *broadcastclient.BroadcastClient
+	BroadcastClients []*broadcastclient.BroadcastClient
 	SeqCoordinator   *SeqCoordinator
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -373,10 +372,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 	}
 	var broadcastClient *broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
-		broadcastClient = broadcastclient.NewBroadcastClient(config.Feed.Input.URLs[0], nil, config.Feed.Input.Timeout, txStreamer)
+		for _, address := range config.BroadcastClientConfig.URLs {
+			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.BroadcastClientConfig.Timeout, txStreamer))
+		}
 	}
 	if !config.EnableL1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClient, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -421,7 +422,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 	}
 
 	if !config.BatchPoster.Enable {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -435,7 +436,29 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClient, coordinator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+}
+
+type arbNodeLifecycle struct {
+	node *Node
+}
+
+func (l arbNodeLifecycle) Start() error {
+	return l.node.Start(context.Background())
+}
+
+func (l arbNodeLifecycle) Stop() error {
+	l.node.StopAndWait()
+	return nil
+}
+
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
+	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
+	if err != nil {
+		return nil, err
+	}
+	stack.RegisterLifecycle(arbNodeLifecycle{node})
+	return node, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
@@ -492,15 +515,15 @@ func (n *Node) Start(ctx context.Context) error {
 			return err
 		}
 	}
-	if n.BroadcastClient != nil {
-		n.BroadcastClient.Start(ctx)
+	for _, client := range n.BroadcastClients {
+		client.Start(ctx)
 	}
 	return nil
 }
 
 func (n *Node) StopAndWait() {
-	if n.BroadcastClient != nil {
-		n.BroadcastClient.StopAndWait()
+	for _, client := range n.BroadcastClients {
+		client.StopAndWait()
 	}
 	if n.BroadcastServer != nil {
 		n.BroadcastServer.StopAndWait()
@@ -522,6 +545,7 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.TxStreamer.StopAndWait()
+	n.ArbInterface.BlockChain().Stop()
 }
 
 func CreateDefaultStack() (*node.Node, error) {
