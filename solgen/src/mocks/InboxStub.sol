@@ -113,6 +113,19 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
+    function safeCreateRetryableTicket(
+        address,
+        uint256,
+        uint256,
+        address,
+        address,
+        uint256,
+        uint256,
+        bytes calldata
+    ) external payable override returns (uint256) {
+        revert("NOT_IMPLEMENTED");
+    }
+
     function depositEth(uint256) external payable override returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }

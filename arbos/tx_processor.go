@@ -101,23 +101,25 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-
 		from := tx.From
-		l1GasRequired := uint64(1400 + 6*len(tx.Data))
-		l1FeePayableOnlyByDeposit := arbmath.BigMulByUint(tx.L1BaseFee, l1GasRequired)
-		if arbmath.BigLessThan(tx.DepositValue, l1FeePayableOnlyByDeposit) {
-			panic("L1 failed to verify the deposit was large enough")
+
+		// mint funds with the deposit, then charge fees later
+		util.MintBalance(&from, tx.DepositValue, evm, scenario)
+
+		submissionFee := retryables.RetryableSubmissionFee(len(tx.Data), tx.L1BaseFee)
+		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
+		if excessDeposit.Sign() < 0 {
+			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
 		}
 
-		// mint funds with the deposit, then charge the fee
-		util.MintBalance(&from, tx.DepositValue, evm, scenario)
-		err := util.TransferBalance(&from, &networkFeeAccount, l1FeePayableOnlyByDeposit, evm, scenario)
-		if err != nil {
+		// move balance to the relevant parties
+		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
-
-		err = util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario)
-		if err != nil {
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
 
