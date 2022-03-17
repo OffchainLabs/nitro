@@ -805,6 +805,10 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 			validationStatus.Cancel()
 		}
 	}
+	v.nextValidationEntryBlock = blockNum + 1
+	if v.nextBlockToValidate <= blockNum+1 {
+		return nil
+	}
 	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
@@ -830,13 +834,13 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
 			return errors.New("reorg past genesis block")
 		}
 		blockNum = uint64(nextBlockSigned) - 1
+		v.nextValidationEntryBlock = blockNum + 1
 	} else {
 		_, v.globalPosNextSend, err = GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
 		if err != nil {
 			return err
 		}
 	}
-	v.nextValidationEntryBlock = blockNum + 1
 	if v.nextBlockToValidate > blockNum+1 {
 		v.nextBlockToValidate = blockNum + 1
 	}
