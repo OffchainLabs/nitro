@@ -385,6 +385,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	defer t.mutex.Unlock()
 
 	pos := batches[0].SequenceNumber
+	startPos := pos
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	if pos > 0 {
@@ -495,6 +496,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", pos)
 
+	if t.validator != nil {
+		t.validator.ReorgToBatchCount(startPos)
+	}
+
 	// This also writes the batch
 	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, dbBatch)
 	if err != nil {
@@ -510,7 +515,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			}
 			batchMap[batch.SequenceNumber] = msg
 		}
-		t.validator.ProcessBatches(batchMap)
+		t.validator.ProcessBatches(batchMap, startPos, pos)
 	}
 
 	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {

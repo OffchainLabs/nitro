@@ -164,6 +164,10 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 		return err
 	}
 
+	if s.validator != nil {
+		s.validator.ReorgToBlock(targetBlock.NumberU64())
+	}
+
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToBytes(uint64(count)))
 	if err != nil {
 		return err

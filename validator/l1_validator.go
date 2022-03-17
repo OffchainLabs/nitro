@@ -259,7 +259,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	var lastBlockValidated uint64
 	if v.blockValidator != nil {
-		lastBlockValidated = v.blockValidator.BlocksValidated()
+		lastBlockValidated = v.blockValidator.LastBlockValidated()
 	} else {
 		lastBlockValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
 

@@ -41,12 +41,14 @@ type BlockValidator struct {
 	validationEntries sync.Map
 	sequencerBatches  sync.Map
 	preimageCache     preimageCache
+	blockMutex        sync.Mutex
 
 	lastBlockValidated uint64
 	earliestBatchKept  uint64
+	nextBatchKept      uint64 // 1 + the last batch number kept
 
-	posNextSend       arbutil.MessageIndex
-	globalPosNextSend GlobalStatePosition
+	nextBlockToValidate uint64
+	globalPosNextSend   GlobalStatePosition
 
 	config                   *BlockValidatorConfig
 	atomicValidationsRunning int32
@@ -54,9 +56,11 @@ type BlockValidator struct {
 
 	das das.DataAvailabilityService
 
-	sendValidationsChan chan interface{}
-	checkProgressChan   chan interface{}
-	progressChan        chan uint64
+	sendValidationsChan     chan struct{}
+	checkProgressChan       chan struct{}
+	reorgToBlockChan        chan uint64
+	blockReorgCompletedChan chan struct{}
+	progressChan            chan uint64
 }
 
 type BlockValidatorConfig struct {
@@ -98,14 +102,14 @@ type GlobalStatePosition struct {
 	PosInBatch  uint64
 }
 
-func GlobalStatePositionsFor(reader InboxTrackerInterface, pos arbutil.MessageIndex, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
-	msgCountInBatch, err := reader.GetBatchMessageCount(batch)
+func GlobalStatePositionsFor(tracker InboxTrackerInterface, pos arbutil.MessageIndex, batch uint64) (GlobalStatePosition, GlobalStatePosition, error) {
+	msgCountInBatch, err := tracker.GetBatchMessageCount(batch)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
 	var firstInBatch arbutil.MessageIndex
 	if batch > 0 {
-		firstInBatch, err = reader.GetBatchMessageCount(batch - 1)
+		firstInBatch, err = tracker.GetBatchMessageCount(batch - 1)
 		if err != nil {
 			return GlobalStatePosition{}, GlobalStatePosition{}, err
 		}
@@ -123,6 +127,37 @@ func GlobalStatePositionsFor(reader InboxTrackerInterface, pos arbutil.MessageIn
 	return startPos, GlobalStatePosition{batch, uint64(pos + 1 - firstInBatch)}, nil
 }
 
+func FindBatchContainingMessageIndex(tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64) (uint64, error) {
+	var low uint64
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for high > low {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := tracker.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, nil
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, nil
+		} else { // implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < lowHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+	}
+	return low, nil
+}
+
 type validationEntry struct {
 	BlockNumber   uint64
 	PrevBlockHash common.Hash
@@ -136,7 +171,16 @@ type validationEntry struct {
 	SeqMsgNr      uint64
 	StartPosition GlobalStatePosition
 	EndPosition   GlobalStatePosition
-	Valid         uint32 // Atomic, either 0 or 1
+}
+
+const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
+const validationStatusPrepared uint32 = 1   // ready to undergo validation
+const validationStatusValid uint32 = 2      // validation succeeded
+
+type validationStatus struct {
+	Status uint32           // atomic: value is one of validationStatus*
+	Cancel func()           // non-atomic: only read/written to by main block validator thread
+	Entry  *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
 }
 
 func newValidationEntry(prevHeader *types.Header, header *types.Header, hasDelayed bool, delayedMsgNr uint64, preimages []common.Hash) (*validationEntry, error) {
@@ -172,16 +216,18 @@ func NewBlockValidator(inbox InboxTrackerInterface, streamer TransactionStreamer
 		return nil, err
 	}
 	validator := &BlockValidator{
-		inboxTracker:        inbox,
-		blockchain:          blockchain,
-		db:                  db,
-		sendValidationsChan: make(chan interface{}),
-		checkProgressChan:   make(chan interface{}),
-		progressChan:        make(chan uint64),
-		concurrentRunsLimit: int32(concurrent),
-		config:              config,
-		das:                 das,
-		genesisBlockNum:     genesisBlockNum,
+		inboxTracker:            inbox,
+		blockchain:              blockchain,
+		db:                      db,
+		sendValidationsChan:     make(chan struct{}, 1),
+		checkProgressChan:       make(chan struct{}, 1),
+		progressChan:            make(chan uint64, 1),
+		reorgToBlockChan:        make(chan uint64, 1),
+		blockReorgCompletedChan: make(chan struct{}),
+		concurrentRunsLimit:     int32(concurrent),
+		config:                  config,
+		das:                     das,
+		genesisBlockNum:         genesisBlockNum,
 	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
@@ -201,8 +247,8 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 	if !exists {
 		// The db contains no validation info; start from the beginning.
 		// TODO: this skips validating the genesis block.
-		v.lastBlockValidated = 0
-		v.posNextSend = 1
+		v.lastBlockValidated = v.genesisBlockNum
+		v.nextBlockToValidate = v.genesisBlockNum + 1
 		v.globalPosNextSend = GlobalStatePosition{
 			BatchNumber: 1,
 			PosInBatch:  0,
@@ -222,7 +268,7 @@ func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
 	}
 
 	v.lastBlockValidated = info.BlockNumber
-	v.posNextSend = arbutil.BlockNumberToMessageCount(v.lastBlockValidated, v.genesisBlockNum)
+	v.nextBlockToValidate = v.lastBlockValidated + 1
 	v.globalPosNextSend = info.AfterPosition
 
 	return nil
@@ -299,7 +345,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
+func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.Header, msg arbstate.MessageWithMetadata, validationStatus *validationStatus) {
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
 		log.Error("failed to set up validation", "err", err, "header", header, "prevHeader", prevHeader)
@@ -311,12 +357,20 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
-	v.validationEntries.Store(header.Number.Uint64(), validationEntry)
+	validationStatus.Entry = validationEntry
+	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
 	v.sendValidationsChan <- struct{}{}
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
-	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg) })
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+	status := &validationStatus{
+		Status: validationStatusUnprepared,
+		Entry:  nil,
+	}
+	v.validationEntries.Store(block.NumberU64(), status)
+	v.LaunchUntrackedThread(func() { v.prepareBlock(block.Header(), prevHeader, msg, status) })
 }
 
 var launchTime = time.Now().Format("2006_01_02__15_04")
@@ -420,47 +474,45 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	return nil
 }
 
-func (v *BlockValidator) validate(ctx context.Context, validationEntry *validationEntry) {
-	log.Info("starting validation for block", "blockNr", validationEntry.BlockNumber)
-	preimages, err := v.preimageCache.FillHashedValues(validationEntry.Preimages)
+func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
+	if atomic.LoadUint32(&validationStatus.Status) < validationStatusPrepared {
+		panic("attempted to validate unprepared validation entry")
+	}
+	entry := validationStatus.Entry
+	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
+	preimages, err := v.preimageCache.FillHashedValues(entry.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
 	}
-	start := validationEntry.StartPosition
-	end := validationEntry.EndPosition
+	defer (func() {
+		err := v.preimageCache.RemoveFromCache(entry.Preimages)
+		if err != nil {
+			log.Error("validator failed to remove from cache", "err", err)
+		}
+	})()
+	start := entry.StartPosition
+	end := entry.EndPosition
 	gsStart := GoGlobalState{
 		Batch:      start.BatchNumber,
 		PosInBatch: start.PosInBatch,
-		BlockHash:  validationEntry.PrevBlockHash,
-		SendRoot:   validationEntry.PrevSendRoot,
-	}
-
-	seqEntry, found := v.sequencerBatches.Load(start.BatchNumber)
-	if !found {
-		log.Error("didn't find sequencer message", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
-		return
-	}
-	seqMsg, ok := seqEntry.([]byte)
-	if !ok {
-		log.Error("sequencer message bad format", "blockNr", validationEntry.BlockNumber, "msgNum", start.BatchNumber)
-		return
+		BlockHash:  entry.PrevBlockHash,
+		SendRoot:   entry.PrevSendRoot,
 	}
 
 	if arbstate.IsDASMessageHeaderByte(seqMsg[40]) {
 		if v.das == nil {
 			log.Error("No DAS configured, but sequencer message found with DAS header")
-			return
-		}
-		cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
-		if err != nil {
-			log.Error("Failed to deserialize DAS message", "err", err)
-			return
 		} else {
-			preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+			cert, _, err := arbstate.DeserializeDASCertFrom(seqMsg[40:])
 			if err != nil {
-				log.Error("Couldn't retrieve message from DAS", "err", err)
-				return
+				log.Error("Failed to deserialize DAS message", "err", err)
+			} else {
+				preimages[common.BytesToHash(cert.DataHash[:])], err = v.das.Retrieve(ctx, seqMsg[40:])
+				if err != nil {
+					log.Error("Couldn't retrieve message from DAS", "err", err)
+					return
+				}
 			}
 		}
 	}
@@ -482,19 +534,19 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	err = mach.AddSequencerInboxMessage(start.BatchNumber, seqMsg)
 	if err != nil {
-		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", start.BatchNumber, "blockNr", validationEntry.BlockNumber)
+		log.Error("error while trying to add sequencer msg for proving", "err", err, "seq", start.BatchNumber, "blockNr", entry.BlockNumber)
 		return
 	}
 	var delayedMsg []byte
-	if validationEntry.HasDelayedMsg {
-		delayedMsg, err = v.inboxTracker.GetDelayedMessageBytes(validationEntry.DelayedMsgNr)
+	if entry.HasDelayedMsg {
+		delayedMsg, err = v.inboxTracker.GetDelayedMessageBytes(entry.DelayedMsgNr)
 		if err != nil {
-			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
+			log.Error("error while trying to read delayed msg for proving", "err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber)
 			return
 		}
-		err = mach.AddDelayedInboxMessage(validationEntry.DelayedMsgNr, delayedMsg)
+		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, delayedMsg)
 		if err != nil {
-			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", validationEntry.DelayedMsgNr, "blockNr", validationEntry.BlockNumber)
+			log.Error("error while trying to add delayed msg for proving", "err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.BlockNumber)
 			return
 		}
 	}
@@ -504,7 +556,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
 		if steps > 0 {
-			log.Info("validation", "block", validationEntry.BlockNumber, "steps", steps)
+			log.Info("validation", "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
@@ -516,12 +568,12 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 		steps += count
 	}
 	if mach.IsErrored() {
-		// TODO: remove this panic by making this function fallible
-		panic("Machine entered errored state during attempted validation")
+		log.Error("machine entered errored state during attempted validation", "block", entry.BlockNumber)
+		return
 	}
 	gsEnd := mach.GetGlobalState()
 
-	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: validationEntry.BlockHash, SendRoot: validationEntry.SendRoot}
+	gsExpected := GoGlobalState{Batch: end.BatchNumber, PosInBatch: end.PosInBatch, BlockHash: entry.BlockHash, SendRoot: entry.SendRoot}
 
 	writeThisBlock := false
 
@@ -532,43 +584,39 @@ func (v *BlockValidator) validate(ctx context.Context, validationEntry *validati
 	}
 	// stupid search for now, assuming the list will always be empty or very mall
 	for _, blockNr := range v.config.BlocksToRecord {
-		if blockNr > validationEntry.BlockNumber {
+		if blockNr > entry.BlockNumber {
 			break
 		}
-		if blockNr == validationEntry.BlockNumber {
+		if blockNr == entry.BlockNumber {
 			writeThisBlock = true
 			break
 		}
 	}
 
 	if writeThisBlock {
-		err = v.writeToFile(validationEntry, start, end, preimages, seqMsg, delayedMsg)
+		err = v.writeToFile(entry, start, end, preimages, seqMsg, delayedMsg)
 		if err != nil {
 			log.Error("failed to write file", "err", err)
 		}
 	}
 
-	err = v.preimageCache.RemoveFromCache(validationEntry.Preimages)
-	if err != nil {
-		log.Error("validator failed to remove from cache", "err", err)
-	}
 	atomic.AddInt32(&v.atomicValidationsRunning, -1)
-	validationEntry.Preimages = nil
+	entry.Preimages = nil
 
 	if !resultValid {
-		log.Error("validation failed", "got", gsEnd, "expected", gsExpected, "expHeader", validationEntry.BlockHeader)
+		log.Error("validation failed", "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
 		return
 	}
 
-	atomic.StoreUint32(&validationEntry.Valid, 1) // after that - validation entry could be deleted from map
-	log.Info("validation succeeded", "blockNr", validationEntry.BlockNumber)
+	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
+	log.Info("validation succeeded", "blockNr", entry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
 	v.sendValidationsChan <- struct{}{}
 }
 
 func (v *BlockValidator) sendValidations(ctx context.Context) {
 	var batchCount uint64
-	for {
+	for len(v.reorgToBlockChan) == 0 {
 		if atomic.LoadInt32(&v.atomicValidationsRunning) >= v.concurrentRunsLimit {
 			return
 		}
@@ -583,55 +631,56 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 				return
 			}
 		}
-		_, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
+		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch {
 			return
 		}
 		// valdationEntries is By blockNumber
-		nextBlockNum := uint64(arbutil.MessageCountToBlockNumber(v.posNextSend, v.genesisBlockNum) + 1)
-		entry, found := v.validationEntries.Load(nextBlockNum)
+		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
 		if !found {
 			return
 		}
-		validationEntry, ok := entry.(*validationEntry)
-		if !ok || (validationEntry == nil) {
+		validationStatus, ok := entry.(*validationStatus)
+		if !ok || (validationStatus == nil) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, v.posNextSend, v.globalPosNextSend.BatchNumber)
+		if atomic.LoadUint32(&validationStatus.Status) == 0 {
+			return
+		}
+		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
+		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
 		if err != nil {
-			log.Error("failed calculating position for validation", "err", err, "pos", v.posNextSend, "batch", v.globalPosNextSend.BatchNumber)
+			log.Error("failed calculating position for validation", "err", err, "msg", nextMsg, "batch", v.globalPosNextSend.BatchNumber)
 			return
 		}
 		if startPos != v.globalPosNextSend {
-			log.Error("inconsistent pos mapping", "uint_pos", v.posNextSend, "expected", v.globalPosNextSend, "found", startPos)
+			log.Error("inconsistent pos mapping", "msg", nextMsg, "expected", v.globalPosNextSend, "found", startPos)
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		validationEntry.SeqMsgNr = startPos.BatchNumber
-		validationEntry.StartPosition = startPos
-		validationEntry.EndPosition = endPos
+		validationStatus.Entry.SeqMsgNr = startPos.BatchNumber
+		validationStatus.Entry.StartPosition = startPos
+		validationStatus.Entry.EndPosition = endPos
+		validationCtx, cancel := context.WithCancel(ctx)
+		validationStatus.Cancel = cancel
+
+		batchNum := validationStatus.Entry.StartPosition.BatchNumber
+		seqMsg, ok := seqBatchEntry.([]byte)
+		if !ok {
+			log.Error("sequencer message bad format", "blockNr", v.nextBlockToValidate, "msgNum", batchNum)
+			return
+		}
+
 		// validation can take long time. Don't wait for it when shutting down
-		v.LaunchUntrackedThread(func() { v.validate(v.GetContext(), validationEntry) })
-		v.posNextSend++
+		v.LaunchUntrackedThread(func() {
+			v.validate(validationCtx, validationStatus, seqMsg)
+			cancel()
+		})
+
+		v.nextBlockToValidate++
 		v.globalPosNextSend = endPos
 	}
-}
-
-func (v *BlockValidator) startValidationLoop() {
-	v.LaunchThread(func(ctx context.Context) {
-		for {
-			select {
-			case _, ok := <-v.sendValidationsChan:
-				if !ok {
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-			v.sendValidations(ctx)
-		}
-	})
 }
 
 func (v *BlockValidator) writeCompletedValidationToDb(entry *validationEntry) error {
@@ -651,34 +700,37 @@ func (v *BlockValidator) writeCompletedValidationToDb(entry *validationEntry) er
 }
 
 func (v *BlockValidator) progressValidated() {
-	for {
+	for len(v.reorgToBlockChan) == 0 {
 		// Reads from blocksValidated can be non-atomic as this goroutine is the only writer
-		entry, found := v.validationEntries.Load(v.lastBlockValidated + 1)
+		checkingBlock := v.lastBlockValidated + 1
+		entry, found := v.validationEntries.Load(checkingBlock)
 		if !found {
 			return
 		}
-		validationEntry, ok := entry.(*validationEntry)
-		if !ok || (validationEntry == nil) {
+		validationStatus, ok := entry.(*validationStatus)
+		if !ok || (validationStatus == nil) {
 			log.Error("bad entry trying to advance validated counter")
 			return
 		}
-		if atomic.LoadUint32(&validationEntry.Valid) == 0 {
+		if atomic.LoadUint32(&validationStatus.Status) < validationStatusValid {
 			return
 		}
-		if validationEntry.BlockNumber != v.lastBlockValidated+1 {
-			log.Error("bad block number for validation entry", "expected", v.lastBlockValidated+1, "found", validationEntry.BlockNumber)
+		validationEntry := validationStatus.Entry
+		if validationEntry.BlockNumber != checkingBlock {
+			log.Error("bad block number for validation entry", "expected", checkingBlock, "found", validationEntry.BlockNumber)
 			return
 		}
-		if v.earliestBatchKept < validationEntry.SeqMsgNr {
-			for batch := v.earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
+		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
+		if earliestBatchKept < validationEntry.SeqMsgNr {
+			for batch := earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
 				v.sequencerBatches.Delete(batch)
 			}
-			v.earliestBatchKept = validationEntry.SeqMsgNr
+			atomic.StoreUint64(&v.earliestBatchKept, validationEntry.SeqMsgNr)
 		}
-		v.lastBlockValidated++
-		v.validationEntries.Delete(v.lastBlockValidated)
+		v.lastBlockValidated = checkingBlock
+		v.validationEntries.Delete(checkingBlock)
 		select {
-		case v.progressChan <- v.lastBlockValidated:
+		case v.progressChan <- checkingBlock:
 		default:
 		}
 		err := v.writeCompletedValidationToDb(validationEntry)
@@ -688,7 +740,103 @@ func (v *BlockValidator) progressValidated() {
 	}
 }
 
-func (v *BlockValidator) startProgressLoop() {
+func (v *BlockValidator) LastBlockValidated() uint64 {
+	return atomic.LoadUint64(&v.lastBlockValidated)
+}
+
+// Must not be called concurrently with ProcessBatches
+func (v *BlockValidator) ReorgToBatchCount(count uint64) {
+	localBatchCount := v.nextBatchKept
+	if localBatchCount >= count {
+		return
+	}
+	for i := count; i < localBatchCount; i++ {
+		v.sequencerBatches.Delete(i)
+	}
+	v.nextBatchKept = count
+}
+
+// Must not be called concurrently with ReorgToBatchCount
+func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte, first uint64, next uint64) {
+	v.ReorgToBatchCount(first)
+
+	// Attempt to fill in earliestBatchKept if it's empty
+	atomic.CompareAndSwapUint64(&v.earliestBatchKept, 0, first)
+
+	for batchNr, msg := range batches {
+		v.sequencerBatches.Store(batchNr, msg)
+	}
+	v.nextBatchKept = next
+
+	select {
+	case v.sendValidationsChan <- struct{}{}:
+	default:
+	}
+}
+
+func (v *BlockValidator) ReorgToBlock(blockNum uint64) {
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+	v.reorgToBlockChan <- blockNum
+	<-v.blockReorgCompletedChan
+}
+
+func (v *BlockValidator) reorgToBlockImpl(blockNum uint64) error {
+	for b := blockNum + 1; b < v.nextBlockToValidate; b++ {
+		entry, found := v.validationEntries.Load(b)
+		if !found {
+			continue
+		}
+		v.validationEntries.Delete(b)
+
+		validationStatus, ok := entry.(*validationStatus)
+		if !ok || (validationStatus == nil) {
+			log.Error("bad entry trying to reorg block validator")
+			continue
+		}
+		validationStatus.Cancel()
+	}
+	v.nextBlockToValidate = blockNum + 1
+	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return err
+	}
+	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, msgIndex, batchCount)
+	if err != nil {
+		return err
+	}
+	if batch == batchCount {
+		v.globalPosNextSend = GlobalStatePosition{
+			BatchNumber: batch,
+			PosInBatch:  0,
+		}
+		msgCount, err := v.inboxTracker.GetBatchMessageCount(batch - 1)
+		if err != nil {
+			return err
+		}
+		nextBlockSigned := arbutil.MessageCountToBlockNumber(msgCount, v.genesisBlockNum)
+		if nextBlockSigned <= 0 {
+			return fmt.Errorf("reorg to impossible block to validate %v", nextBlockSigned)
+		}
+		v.nextBlockToValidate = uint64(nextBlockSigned)
+		if v.lastBlockValidated >= v.nextBlockToValidate {
+			v.lastBlockValidated = v.nextBlockToValidate - 1
+		}
+	} else {
+		_, v.globalPosNextSend, err = GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
+		if err != nil {
+			return err
+		}
+	}
+	if v.lastBlockValidated > blockNum {
+		v.lastBlockValidated = blockNum
+	}
+	return nil
+}
+
+func (v *BlockValidator) Start(ctxIn context.Context) error {
+	v.StopWaiter.Start(ctxIn)
 	v.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
@@ -696,32 +844,33 @@ func (v *BlockValidator) startProgressLoop() {
 				if !ok {
 					return
 				}
+				v.progressValidated()
+			case _, ok := <-v.sendValidationsChan:
+				if !ok {
+					return
+				}
+				v.sendValidations(ctx)
+			case blockNum, ok := <-v.reorgToBlockChan:
+				if !ok {
+					return
+				}
+				if blockNum+1 < v.nextBlockToValidate {
+					log.Warn("block validator canceling validations to reorg", "blockNum", blockNum)
+					for {
+						err := v.reorgToBlockImpl(blockNum)
+						if err != nil {
+							log.Error("block validator reorg failed", "err", err)
+						} else {
+							break
+						}
+					}
+				}
+				v.blockReorgCompletedChan <- struct{}{}
 			case <-ctx.Done():
 				return
 			}
-			v.progressValidated()
 		}
 	})
-}
-
-func (v *BlockValidator) BlocksValidated() uint64 {
-	return atomic.LoadUint64(&v.lastBlockValidated)
-}
-
-func (v *BlockValidator) ProcessBatches(batches map[uint64][]byte) {
-	for batchNr, msg := range batches {
-		v.sequencerBatches.Store(batchNr, msg)
-	}
-	select {
-	case v.sendValidationsChan <- struct{}{}:
-	default:
-	}
-}
-
-func (v *BlockValidator) Start(ctxIn context.Context) error {
-	v.StopWaiter.Start(ctxIn)
-	v.startProgressLoop()
-	v.startValidationLoop()
 	return nil
 }
 
