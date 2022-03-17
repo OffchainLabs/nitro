@@ -18,18 +18,24 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
-	"strings"
+	"net/http"
+	"nhooyr.io/websocket/wsjson"
 	"sync"
 	"time"
 
+	"nhooyr.io/websocket"
+
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/gobwas/ws"
-	"github.com/gobwas/ws-examples/src/gopool"
-	"github.com/mailru/easygo/netpoll"
+
+	"github.com/offchainlabs/nitro/util"
 )
+
+// MaxSendQueue is the maximum number of items in a clients out channel before client gets disconnected.
+// If set too low, a burst of items will cause all clients to be disconnected
+const MaxSendQueue = 1000
 
 type BroadcasterConfig struct {
 	Addr          string
@@ -44,237 +50,221 @@ type BroadcasterConfig struct {
 var DefaultBroadcasterConfig BroadcasterConfig
 
 type WSBroadcastServer struct {
-	startMutex    *sync.Mutex
-	poller        netpoll.Poller
-	acceptDesc    *netpoll.Desc
-	listener      net.Listener
-	settings      BroadcasterConfig
-	started       bool
-	clientManager *ClientManager
+	util.StopWaiter
+	mux      http.ServeMux
+	srv      *http.Server
+	listener net.Listener
+	settings BroadcasterConfig
+
+	subscribersMu sync.Mutex
+	subscribers   map[*ClientConnection]struct{}
+
 	catchupBuffer CatchupBuffer
 }
 
+// ClientConnection represents a subscriber.
+// Messages are sent on the msgs channel and if the client
+// cannot keep up with the messages, closeSlow is called.
+type ClientConnection struct {
+	util.StopWaiter
+
+	conn *websocket.Conn
+	Name string
+
+	pingTimeout time.Duration
+	msgs        chan []byte
+	closeSlow   func()
+}
+
+func (cc *ClientConnection) Start(ctx context.Context) {
+	cancelableContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cc.StopWaiter.Start(cancelableContext)
+	cc.CallIteratively(func(ctx context.Context) time.Duration {
+		pingContext, pingContextCancel := context.WithTimeout(ctx, cc.pingTimeout)
+		defer pingContextCancel()
+		err := cc.conn.Ping(pingContext)
+		if err != nil {
+			cc.closeSlow()
+			cancel()
+		}
+		return cc.pingTimeout
+	})
+}
+
+func (cc *ClientConnection) Write(x interface{}) error {
+	return wsjson.Write(context.Background(), cc.conn, x)
+}
+
+// CatchupBuffer implemented protocol-specific client catch-up logic
+type CatchupBuffer interface {
+	OnRegisterClient(context.Context, *ClientConnection) error
+	OnDoBroadcast(interface{}) error
+}
+
 func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer) *WSBroadcastServer {
-	return &WSBroadcastServer{
-		startMutex:    &sync.Mutex{},
+	s := &WSBroadcastServer{
 		settings:      settings,
-		started:       false,
 		catchupBuffer: catchupBuffer,
+		subscribers:   make(map[*ClientConnection]struct{}),
+	}
+	s.mux.HandleFunc("/feed", s.clientHandler)
+	return s
+}
+
+func (s *WSBroadcastServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
+}
+
+func (s *WSBroadcastServer) clientHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		log.Warn("failed initiating websocket connection", "err", err)
+		return
+	}
+	defer func() {
+		// Ignore errors when closing the websocket
+		_ = conn.Close(websocket.StatusInternalError, "")
+	}()
+
+	client := &ClientConnection{
+		conn: conn,
+		Name: r.RemoteAddr,
+		msgs: make(chan []byte, MaxSendQueue),
+		closeSlow: func() {
+			// Ignore errors when closing the websocket
+			_ = conn.Close(websocket.StatusPolicyViolation, "connection too slow to keep up with messages")
+		},
+	}
+
+	err = s.subscribe(r.Context(), client)
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	if websocket.CloseStatus(err) == websocket.StatusNormalClosure ||
+		websocket.CloseStatus(err) == websocket.StatusGoingAway {
+		return
+	}
+	if err != nil {
+		log.Warn("websocket connection closed with error", "err", err)
+		return
 	}
 }
 
-func (s *WSBroadcastServer) Start(ctx context.Context) error {
-	s.startMutex.Lock()
-	defer s.startMutex.Unlock()
-	if s.started {
-		return nil
-	}
-
-	var err error
-	s.poller, err = netpoll.New(nil)
-	if err != nil {
-		log.Error("unable to initialize netpoll for monitoring client connection events", "err", err)
+// subscribe subscribes the given WebSocket to all broadcast messages.
+// It creates a subscriber with a buffered msgs chan to give some room to slower
+// connections and then registers the subscriber. It then listens for all messages
+// and writes them to the WebSocket. If the context is cancelled or
+// an error occurs, it returns and deletes the subscription.
+//
+// It uses CloseRead to keep reading from the connection to process control
+// messages and cancel the context if the connection drops.
+func (s *WSBroadcastServer) subscribe(ctx context.Context, c *ClientConnection) error {
+	registerCtx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
+	defer cancel()
+	if err := s.catchupBuffer.OnRegisterClient(registerCtx, c); err != nil {
 		return err
 	}
 
-	// Make pool of X size, Y sized work queue and one pre-spawned
-	// goroutine.
-	var clientManager = NewClientManager(s.poller, s.settings, s.catchupBuffer)
-	clientManager.Start(ctx)
+	ctx = c.conn.CloseRead(ctx)
+	s.addSubscriber(c)
+	defer s.deleteSubscriber(c)
 
-	s.clientManager = clientManager // maintain the pointer in this instance... used for testing
-
-	// handle incoming connection requests.
-	// It upgrades TCP connection to WebSocket, registers netpoll listener on
-	// it and stores it as a Client connection in ClientManager instance.
-	//
-	// Called below in accept() loop.
-	handle := func(conn net.Conn) {
-
-		safeConn := deadliner{conn, s.settings.IOTimeout}
-
-		// Zero-copy upgrade to WebSocket connection.
-		hs, err := ws.Upgrade(safeConn)
-		if err != nil {
-			log.Warn("websocket upgrade error", "connection_name", nameConn(safeConn), "err", err)
-			_ = safeConn.Close()
-			return
-		}
-
-		log.Info(fmt.Sprintf("established websocket connection: %+v", hs), "connection-name", nameConn(safeConn))
-
-		// Create netpoll event descriptor to handle only read events.
-		desc, err := netpoll.HandleRead(conn)
-		if err != nil {
-			log.Warn("error in HandleRead", "connection-name", nameConn(safeConn), "err", err)
-			_ = conn.Close()
-			return
-		}
-
-		// Register incoming client in clientManager.
-		client := clientManager.Register(safeConn, desc)
-
-		// Subscribe to events about conn.
-		err = s.poller.Start(desc, func(ev netpoll.Event) {
-			if ev&(netpoll.EventReadHup|netpoll.EventHup) != 0 {
-				// ReadHup or Hup received, means the client has close the connection
-				// remove it from the clientManager registry.
-				log.Info("Hup received", "connection_name", nameConn(safeConn))
-				clientManager.Remove(client)
-				return
+	for {
+		select {
+		case msg := <-c.msgs:
+			err := func() error {
+				ctx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
+				defer cancel()
+				return c.conn.Write(ctx, websocket.MessageText, msg)
+			}()
+			if err != nil {
+				return err
 			}
-
-			if ev > 1 {
-				log.Info("event greater than 1 received", "connection_name", nameConn(safeConn), "event", int(ev))
-			}
-
-			// receive client messages, close on error
-			clientManager.pool.Schedule(func() {
-				// Ignore any messages sent from client
-				if _, _, err := client.Receive(ctx, s.settings.ClientTimeout); err != nil {
-					log.Warn("receive error", "connection_name", nameConn(safeConn), "err", err)
-					clientManager.Remove(client)
-					return
-				}
-			})
-		})
-
-		if err != nil {
-			log.Warn("error starting client connection poller", "err", err)
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
+}
 
-	// Create tcp server for relay connections
+// addSubscriber registers a subscriber.
+func (s *WSBroadcastServer) addSubscriber(c *ClientConnection) {
+	s.subscribersMu.Lock()
+	s.subscribers[c] = struct{}{}
+	s.subscribersMu.Unlock()
+}
+
+// deleteSubscriber deletes the given subscriber.
+func (s *WSBroadcastServer) deleteSubscriber(c *ClientConnection) {
+	s.subscribersMu.Lock()
+	delete(s.subscribers, c)
+	s.subscribersMu.Unlock()
+}
+
+func (s *WSBroadcastServer) Start(ctx context.Context) error {
+	s.StopWaiter.Start(ctx)
 	ln, err := net.Listen("tcp", s.settings.Addr+":"+s.settings.Port)
 	if err != nil {
-		log.Error("error calling net.Listen", "err", err)
 		return err
 	}
-
+	s.srv = &http.Server{
+		Handler:      s,
+		ReadTimeout:  time.Second * 10,
+		WriteTimeout: time.Second * 10,
+	}
 	s.listener = ln
-
-	log.Info("arbitrum websocket broadcast server is listening", "address", ln.Addr().String())
-
-	// Create netpoll descriptor for the listener.
-	// We use OneShot here to manually resume events stream when we want to.
-	acceptDesc, err := netpoll.HandleListener(ln, netpoll.EventRead|netpoll.EventOneShot)
-	if err != nil {
-		log.Error("error calling HandleListener", "err", err)
-		return err
-	}
-	s.acceptDesc = acceptDesc
-
-	// accept is a channel to signal about next incoming connection Accept()
-	// results.
-	accept := make(chan error, 1)
-
-	// Subscribe to events about listener.
-	err = s.poller.Start(acceptDesc, func(e netpoll.Event) {
-		// We do not want to accept incoming connection when goroutine pool is
-		// busy. So if there are no free goroutines during 1ms we want to
-		// cooldown the server and do not receive connection for some short
-		// time.
-		err := clientManager.pool.ScheduleTimeout(time.Millisecond, func() {
-			conn, err := ln.Accept()
-			if err != nil {
-				accept <- err
-				return
-			}
-
-			accept <- nil
-			handle(conn)
-		})
-		if err == nil {
-			err = <-accept
+	s.LaunchThread(func(ctx context.Context) {
+		s.srv.BaseContext = func(net.Listener) context.Context {
+			return ctx
 		}
-		if err != nil {
-			if errors.Is(err, gopool.ErrScheduleTimeout) {
-				var netError net.Error
-				success := errors.As(err, &netError)
-				if !success || !netError.Temporary() {
-					log.Error("error in poller.Start", "err", err)
-					return
-				}
-				if strings.Contains(err.Error(), "file descriptor was not registered") {
-					log.Info("poller exiting", "err", err)
-					return
-				}
-			}
-
-			// cooldown
-			delay := 5 * time.Millisecond
-			log.Info("accept error", "delay", delay.String(), "err", err)
-			time.Sleep(delay)
-		}
-
-		err = s.poller.Resume(acceptDesc)
-		if err != nil {
-			log.Warn("error in poller.Resume", "err", err)
+		if err := s.srv.Serve(ln); err != nil {
+			log.Error("shutting down broadcaster with error", "err", err)
 		}
 	})
-	if err != nil {
-		log.Warn("error in poller.Start", "err", err)
-	}
-
-	s.started = true
-
 	return nil
+}
+
+func (s *WSBroadcastServer) StopAndWait() {
+	s.subscribersMu.Lock()
+	for client := range s.subscribers {
+		client.StopAndWait()
+	}
+	s.subscribersMu.Unlock()
+	if err := s.srv.Shutdown(context.Background()); err != nil {
+		log.Warn("error shutting down broadcaster", "err", err)
+	}
+	s.StopWaiter.StopAndWait()
+}
+
+// Broadcast sends batch item to all subscribers.
+// It never blocks and so messages to slow subscribers
+// are dropped.
+func (s *WSBroadcastServer) Broadcast(bm interface{}) {
+	if err := s.catchupBuffer.OnDoBroadcast(bm); err != nil {
+		log.Error("error executing broadcast handler", "err", err)
+		return
+	}
+	msg, err := json.Marshal(bm)
+	if err != nil {
+		log.Error("error to marshaling message for broadcast", "err", err)
+		return
+	}
+	s.subscribersMu.Lock()
+	defer s.subscribersMu.Unlock()
+
+	for s := range s.subscribers {
+		select {
+		case s.msgs <- msg:
+		default:
+			go s.closeSlow()
+		}
+	}
+}
+
+func (s *WSBroadcastServer) ClientCount() int {
+	return len(s.subscribers)
 }
 
 func (s *WSBroadcastServer) ListenerAddr() net.Addr {
 	return s.listener.Addr()
-}
-
-func (s *WSBroadcastServer) StopAndWait() {
-	err := s.listener.Close()
-	if err != nil {
-		log.Warn("error in listener.Close", "err", err)
-	}
-
-	err = s.poller.Stop(s.acceptDesc)
-	if err != nil {
-		log.Warn("error in poller.Stop", "err", err)
-	}
-
-	err = s.acceptDesc.Close()
-	if err != nil {
-		log.Warn("error in acceptDesc.Close", "err", err)
-	}
-
-	s.clientManager.StopAndWait()
-	s.started = false
-}
-
-// Broadcast sends batch item to all clients.
-func (s *WSBroadcastServer) Broadcast(bm interface{}) {
-	s.clientManager.Broadcast(bm)
-}
-
-func (s *WSBroadcastServer) ClientCount() int32 {
-	return s.clientManager.ClientCount()
-}
-
-// deadliner is a wrapper around net.Conn that sets read/write deadlines before
-// every Read() or Write() call.
-type deadliner struct {
-	net.Conn
-	t time.Duration
-}
-
-func (d deadliner) Write(p []byte) (int, error) {
-	if err := d.Conn.SetWriteDeadline(time.Now().Add(d.t)); err != nil {
-		return 0, err
-	}
-	return d.Conn.Write(p)
-}
-
-func (d deadliner) Read(p []byte) (int, error) {
-	if err := d.Conn.SetReadDeadline(time.Now().Add(d.t)); err != nil {
-		return 0, err
-	}
-	return d.Conn.Read(p)
-}
-
-func nameConn(conn net.Conn) string {
-	return conn.LocalAddr().String() + " > " + conn.RemoteAddr().String()
 }

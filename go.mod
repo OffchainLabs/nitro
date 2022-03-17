@@ -13,21 +13,19 @@ require (
 	github.com/pkg/errors v0.9.1
 	google.golang.org/grpc v1.44.0
 	google.golang.org/protobuf v1.27.1
+	nhooyr.io/websocket v1.8.7
 )
 
 require (
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/klauspost/compress v1.10.3 // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
 )
 
 require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/gobwas/httphead v0.1.0 // indirect
-	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gobwas/ws v1.1.0
-	github.com/gobwas/ws-examples v0.0.0-20190625122829-a9e8908d9484
-	github.com/mailru/easygo v0.0.0-20190618140210-3c14a0dc985f
+	github.com/gobwas/ws v1.1.0 // indirect
 )
 
 require (

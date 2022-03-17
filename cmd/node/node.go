@@ -86,7 +86,7 @@ func main() {
 	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
 
 	feedInputUrl := flag.String("feed.input.url", "", "URL of sequence feed source")
-	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
+	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out connection to server")
 
 	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
 	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")

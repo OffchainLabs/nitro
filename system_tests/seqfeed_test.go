@@ -233,7 +233,7 @@ func testLyingSequencer(t *testing.T, dasMode das.DataAvailabilityMode) {
 	nodeC.StopAndWait()
 }
 
-func TestLyingSequencer(t *testing.T) {
+func TestLyingSequencerRollup(t *testing.T) {
 	testLyingSequencer(t, das.OnchainDataAvailability)
 }
 
