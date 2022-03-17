@@ -4,8 +4,11 @@
 
 package validator
 
+import "github.com/ethereum/go-ethereum/common"
+
 type lastBlockValidatedDbInfo struct {
 	BlockNumber   uint64
+	BlockHash     common.Hash
 	AfterPosition GlobalStatePosition
 }
 

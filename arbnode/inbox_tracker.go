@@ -308,6 +308,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
 		count := *reorgSeqBatchesToCount
+		if t.validator != nil {
+			t.validator.ReorgToBatchCount(count)
+		}
 		err = batch.Put(sequencerBatchCountKey, uint64ToBytes(count))
 		if err != nil {
 			return err
@@ -555,6 +558,10 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		} else if err != nil {
 			return err
 		}
+	}
+
+	if t.validator != nil {
+		t.validator.ReorgToBatchCount(count)
 	}
 
 	dbBatch := t.db.NewBatch()
