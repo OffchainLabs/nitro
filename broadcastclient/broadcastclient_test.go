@@ -204,9 +204,13 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 }
 
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
+	/* Uncomment to enable logging
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,

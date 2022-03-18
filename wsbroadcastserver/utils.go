@@ -2,6 +2,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"io"
 	"io/ioutil"
 	"net"
 	"strings"
@@ -12,10 +13,33 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
-func ReadData(ctx context.Context, conn net.Conn, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
+type chainedReader struct {
+	readers []io.Reader
+}
+
+func (cr *chainedReader) Read(b []byte) (n int, err error) {
+	for _, r := range cr.readers {
+		n, err = r.Read(b)
+		if err == io.EOF || n == 0 {
+			continue
+		}
+		break
+	}
+	return
+}
+
+func (cr *chainedReader) add(r io.Reader) *chainedReader {
+	if r != nil {
+		cr.readers = append(cr.readers, r)
+	}
+	return cr
+}
+
+func ReadData(ctx context.Context, conn net.Conn, earlyFrameData io.Reader, idleTimeout time.Duration, state ws.State) ([]byte, ws.OpCode, error) {
+
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
 	reader := wsutil.Reader{
-		Source:          conn,
+		Source:          (&chainedReader{}).add(earlyFrameData).add(conn),
 		State:           state,
 		CheckUTF8:       true,
 		SkipHeaderCheck: false,

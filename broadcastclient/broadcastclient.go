@@ -5,8 +5,10 @@
 package broadcastclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"strings"
@@ -75,9 +77,9 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	bc.StopWaiter.Start(ctxIn)
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
-			err := bc.connect(ctx)
+			earlyFrameData, err := bc.connect(ctx)
 			if err == nil {
-				bc.startBackgroundReader()
+				bc.startBackgroundReader(earlyFrameData)
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
@@ -90,10 +92,10 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 	})
 }
 
-func (bc *BroadcastClient) connect(ctx context.Context) error {
+func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reader, err error) {
 	if len(bc.websocketUrl) == 0 {
 		// Nothing to do
-		return nil
+		return
 	}
 
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
@@ -102,12 +104,31 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 	}
 
 	if bc.isShuttingDown() {
-		return nil
+		return
 	}
 
-	conn, _, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
+	conn, br, _, err := timeoutDialer.Dial(ctx, bc.websocketUrl)
 	if err != nil {
-		return errors.Wrap(err, "broadcast client unable to connect")
+		return nil, errors.Wrap(err, "broadcast client unable to connect")
+	}
+
+	if br != nil {
+		// Depending on how long the client takes to read the response, there may be
+		// data after the WebSocket upgrade response in a single read from the socket,
+		// ie WebSocket frames sent by the server. If this happens, Dial returns
+		// a non-nil bufio.Reader so that data isn't lost. But beware, this buffered
+		// reader is still hooked up to the socket; trying to read past what had already
+		// been buffered will do a blocking read on the socket, so we have to extract
+		// only the data already buffered.
+		bs := make([]byte, br.Buffered())
+		_, err = br.Read(bs)
+		if err != nil {
+			log.Error("logic error: Read of already buffered data from buffer failed", "err", err)
+			// Don't fail here. In effect this just discards the data.
+		} else {
+			// Create a new reader that only has the early frame data.
+			earlyFrameData = bytes.NewReader(bs)
+		}
 	}
 
 	bc.connMutex.Lock()
@@ -116,10 +137,10 @@ func (bc *BroadcastClient) connect(ctx context.Context) error {
 
 	log.Info("Connected")
 
-	return nil
+	return
 }
 
-func (bc *BroadcastClient) startBackgroundReader() {
+func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 	bc.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
@@ -128,7 +149,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 			default:
 			}
 
-			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, bc.idleTimeout, ws.StateClientSide)
+			msg, op, err := wsbroadcastserver.ReadData(ctx, bc.conn, earlyFrameData, bc.idleTimeout, ws.StateClientSide)
 			if err != nil {
 				if bc.isShuttingDown() {
 					return
@@ -139,7 +160,7 @@ func (bc *BroadcastClient) startBackgroundReader() {
 					log.Error("error calling readData", "url", bc.websocketUrl, "opcode", int(op), "err", err)
 				}
 				_ = bc.conn.Close()
-				bc.retryConnect(ctx)
+				earlyFrameData = bc.retryConnect(ctx)
 				continue
 			}
 
@@ -188,7 +209,7 @@ func (bc *BroadcastClient) isShuttingDown() bool {
 	return bc.shuttingDown
 }
 
-func (bc *BroadcastClient) retryConnect(ctx context.Context) {
+func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	maxWaitDuration := 15 * time.Second
 	waitDuration := 500 * time.Millisecond
 	bc.retrying = true
@@ -196,21 +217,22 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) {
 	for !bc.isShuttingDown() {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-time.After(waitDuration):
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)
-		err := bc.connect(ctx)
+		earlyFrameData, err := bc.connect(ctx)
 		if err == nil {
 			bc.retrying = false
-			return
+			return earlyFrameData
 		}
 
 		if waitDuration < maxWaitDuration {
 			waitDuration += 500 * time.Millisecond
 		}
 	}
+	return nil
 }
 
 func (bc *BroadcastClient) StopAndWait() {
