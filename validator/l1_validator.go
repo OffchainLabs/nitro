@@ -228,6 +228,9 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 		return nil, false, err
 	}
 
+	v.txStreamer.PauseReorgs()
+	defer v.txStreamer.ResumeReorgs()
+
 	localBatchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
 		return nil, false, err
@@ -259,7 +262,12 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 
 	var lastBlockValidated uint64
 	if v.blockValidator != nil {
-		lastBlockValidated = v.blockValidator.BlocksValidated()
+		var expectedHash common.Hash
+		lastBlockValidated, expectedHash = v.blockValidator.LastBlockValidatedAndHash()
+		haveHash := v.l2Blockchain.GetCanonicalHash(lastBlockValidated)
+		if haveHash != expectedHash {
+			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
+		}
 	} else {
 		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()
 
