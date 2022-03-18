@@ -74,15 +74,14 @@ func main() {
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
+		nodeConfig.Node.BatchPoster.Enable = true
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwardingtarget set when sequencer enabled")
 		}
-	} else {
-		if nodeConfig.Node.ForwardingTargetImpl == "" {
-			flag.Usage()
-			panic("forwardingtarget unset, and not sequencer (can set to \"null\" to disable forwarding)")
-		}
+	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
+		flag.Usage()
+		panic("forwardingtarget unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
 	// Perform sanity check on mode
@@ -128,6 +127,7 @@ func main() {
 			panic("L1 validator requires block validator to safely function")
 		}
 		if !nodeConfig.Node.Validator.WithoutBlockValidator {
+			nodeConfig.Node.BlockValidator.Enable = true
 			if nodeConfig.Node.Wasm.CachePath != "" {
 				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
 			}
