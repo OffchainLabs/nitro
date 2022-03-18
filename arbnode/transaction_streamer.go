@@ -36,7 +36,8 @@ type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
+	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
+	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
@@ -347,6 +348,8 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()
 	defer s.reorgMutex.RUnlock()
 
@@ -585,6 +588,8 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 
 // Produce and record blocks for all available messages
 func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
 	s.reorgMutex.RLock()
 	defer s.reorgMutex.RUnlock()
 
