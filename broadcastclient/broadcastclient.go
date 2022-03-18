@@ -5,7 +5,6 @@
 package broadcastclient
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -118,17 +117,9 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 		// ie WebSocket frames sent by the server. If this happens, Dial returns
 		// a non-nil bufio.Reader so that data isn't lost. But beware, this buffered
 		// reader is still hooked up to the socket; trying to read past what had already
-		// been buffered will do a blocking read on the socket, so we have to extract
-		// only the data already buffered.
-		bs := make([]byte, br.Buffered())
-		_, err = br.Read(bs)
-		if err != nil {
-			log.Error("logic error: Read of already buffered data from buffer failed", "err", err)
-			// Don't fail here. In effect this just discards the data.
-		} else {
-			// Create a new reader that only has the early frame data.
-			earlyFrameData = bytes.NewReader(bs)
-		}
+		// been buffered will do a blocking read on the socket, so we have to wrap it
+		// in a LimitedReader.
+		earlyFrameData = io.LimitReader(br, int64(br.Buffered()))
 	}
 
 	bc.connMutex.Lock()
