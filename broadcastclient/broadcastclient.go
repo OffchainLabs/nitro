@@ -22,7 +22,7 @@ import (
 
 type BroadcastClientConfig struct {
 	Timeout time.Duration
-	URL     string // TODO should this be an array for multiple clients?
+	URLs    []string
 }
 
 var DefaultBroadcastClientConfig BroadcastClientConfig

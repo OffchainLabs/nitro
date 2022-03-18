@@ -21,6 +21,7 @@ require (
 	github.com/klauspost/compress v1.10.3 // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013 // indirect
+	gopkg.in/olebedev/go-duktape.v3 v3.0.0-20200619000410-60c24ae608a6 // indirect
 )
 
 require (
