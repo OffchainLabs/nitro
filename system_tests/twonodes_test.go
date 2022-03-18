@@ -15,33 +15,33 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.ConfigDefaultL1Test
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	dasMode, err := l1NodeConfigA.DataAvailability.Mode()
-	Require(t, err)
 	var dbPath string
 	defer os.RemoveAll(dbPath)
-	if dasMode == das.LocalDataAvailability {
+	if dasModeStr == "local" {
+		var err error
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
+	_, err := l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA)
 	defer l1stack.Close()
 
-	l1NodeConfigB := arbnode.ConfigDefaultL1Test
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigB.BatchPoster.Enable = false
 	l1NodeConfigB.BlockValidator.Enable = false
 	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
 	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 

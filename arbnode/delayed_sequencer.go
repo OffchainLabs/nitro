@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -23,6 +24,30 @@ type DelayedSequencer struct {
 	txStreamer      *TransactionStreamer
 	waitingForBlock *big.Int
 	config          *DelayedSequencerConfig
+}
+
+type DelayedSequencerConfig struct {
+	FinalizeDistance *big.Int      `koanf:"finalize-distance"`
+	BlocksAggregate  *big.Int      `koanf:"blocks-aggregate"`
+	TimeAggregate    time.Duration `koanf:"time-aggregate"`
+}
+
+func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance.Int64(), "how many blocks in the past L1 block is considered final")
+	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate.Int64(), "how many blocks we aggregate looking for delayedMessage")
+	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "how many blocks we aggregate looking for delayedMessages")
+}
+
+var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
+	FinalizeDistance: big.NewInt(12),
+	BlocksAggregate:  big.NewInt(5),
+	TimeAggregate:    time.Minute,
+}
+
+var TestDelayedSequencerConfig = DelayedSequencerConfig{
+	FinalizeDistance: big.NewInt(12),
+	BlocksAggregate:  big.NewInt(5),
+	TimeAggregate:    time.Second,
 }
 
 func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {

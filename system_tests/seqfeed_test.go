@@ -18,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
@@ -47,15 +46,15 @@ func TestSequencerFeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	seqNodeConfig := arbnode.ConfigDefaultL2Test
+	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
 
-	clientNodeConfig := arbnode.ConfigDefaultL2Test
+	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
 
 	l2info1.GenerateAccount("User2")
 
@@ -82,10 +81,9 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	seqNodeConfig := arbnode.NodeConfigL2Test
-	seqNodeConfig.Broadcaster = true
-	seqNodeConfig.BroadcasterConfig = *newBroadcasterConfigTest(0)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, &seqNodeConfig, nil, true)
+	seqNodeConfig := arbnode.ConfigDefaultL2Test()
+	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
 
 	relayServerConf := *newBroadcasterConfigTest(0)
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -95,11 +93,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	err := relay.Start(ctx)
 	Require(t, err)
 
-	clientNodeConfig := arbnode.NodeConfigL2Test
-	clientNodeConfig.BroadcastClient = true
+	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = relay.GetListenerAddr().(*net.TCPAddr).Port
-	clientNodeConfig.BroadcastClientConfig = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, &clientNodeConfig, nil, false)
+	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
 
 	l2info1.GenerateAccount("User2")
 
@@ -129,41 +126,42 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	// The truthful sequencer
-	nodeConfigA := arbnode.ConfigDefaultL1Test
+	nodeConfigA := arbnode.ConfigDefaultL1Test()
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	nodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	dasMode, err := nodeConfigA.DataAvailability.Mode()
-	Require(t, err)
 
 	var dbPath string
 	defer os.RemoveAll(dbPath)
-	if dasMode == das.LocalDataAvailability {
+	if dasModeStr == "local" {
+		var err error
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		nodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &nodeConfigA)
+	_, err := nodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA)
 	defer l1stack.Close()
 
 	// The lying sequencer
-	nodeConfigC := arbnode.ConfigDefaultL1Test
+	nodeConfigC := arbnode.ConfigDefaultL1Test()
 	nodeConfigC.BatchPoster.Enable = false
 	nodeConfigC.DataAvailability.ModeImpl = dasModeStr
 	nodeConfigC.DataAvailability.LocalDiskDataDir = dbPath
 	nodeConfigC.Feed.Output = *newBroadcasterConfigTest(0)
-	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigC)
+	l2clientC, nodeC := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigC)
 
 	port := nodeC.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
 	// The client node, connects to lying sequencer's feed
-	nodeConfigB := arbnode.ConfigDefaultL1Test
+	nodeConfigB := arbnode.ConfigDefaultL1Test()
 	nodeConfigB.Feed.Output.Enable = false
 	nodeConfigB.BatchPoster.Enable = false
 	nodeConfigB.Feed.Input = *newBroadcastClientConfigTest(port)
 	nodeConfigB.DataAvailability.ModeImpl = dasModeStr
 	nodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, &nodeConfigB)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2infoA.ArbInitData, nodeConfigB)
 
 	l2infoA.GenerateAccount("FraudUser")
 	l2infoA.GenerateAccount("RealUser")

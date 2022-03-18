@@ -167,8 +167,8 @@ func ParseNode(_ context.Context) (*NodeConfig, *util.WalletConfig, *util.Wallet
 	// Don't pass around wallet contents with normal configuration
 	l1wallet := nodeConfig.L1.Wallet
 	l2wallet := nodeConfig.L2.Wallet
-	nodeConfig.L1.Wallet = util.WalletConfig{}
-	nodeConfig.L2.Wallet = util.WalletConfig{}
+	nodeConfig.L1.Wallet = util.WalletConfigDefault
+	nodeConfig.L2.Wallet = util.WalletConfigDefault
 
 	return &nodeConfig, &l1wallet, &l2wallet, nil
 }

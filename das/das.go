@@ -42,18 +42,24 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 }
 
 func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
+	if c.ModeImpl == "" {
+		return 0, errors.New("--data-availability.mode missing")
+	}
+
 	if c.ModeImpl == "onchain" {
 		return OnchainDataAvailability, nil
-	} else if c.ModeImpl == "local" {
+	}
+
+	if c.ModeImpl == "local" {
 		if c.LocalDiskDataDir == "" {
 			flag.Usage()
 			return 0, errors.New("--data-availability.local-disk-data-dir must be specified if mode is set to local")
 		}
 		return LocalDataAvailability, nil
-	} else {
-		flag.Usage()
-		return 0, errors.New("--data-availability.mode not recognized")
 	}
+
+	flag.Usage()
+	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
 }
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {

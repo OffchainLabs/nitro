@@ -188,8 +188,8 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
-	conf := arbnode.ConfigDefaultL1Test
-	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf)
+	conf := arbnode.ConfigDefaultL1Test()
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, conf)
 }
 
 func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.Config) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
@@ -217,7 +217,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, &arbnode.ConfigDefaultL2Test, nil, true)
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), nil, true)
 }
 
 func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
@@ -268,10 +268,10 @@ func Fail(t *testing.T, printables ...interface{}) {
 }
 
 func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.ConfigDefaultL1Test
+	nodeConf := arbnode.ConfigDefaultL1Test()
 	nodeConf.BatchPoster.Enable = false
 	nodeConf.BlockValidator.Enable = blockValidator
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, &nodeConf)
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
 }
 
 func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.Config) (*ethclient.Client, *arbnode.Node) {

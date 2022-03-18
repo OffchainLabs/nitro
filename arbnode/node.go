@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
+	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -292,6 +293,117 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}, nil
 }
 
+type Config struct {
+	RPC                  arbitrum.Config                `koanf:"rpc"`
+	Sequencer            SequencerConfig                `koanf:"sequencer"`
+	EnableL1Reader       bool                           `koanf:"enable-l1-reader"`
+	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
+	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
+	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
+	ForwardingTargetImpl string                         `koanf:"forwarding-target"`
+	BlockValidator       validator.BlockValidatorConfig `koanf:"block-validator"`
+	Feed                 broadcastclient.FeedConfig     `koanf:"feed"`
+	Validator            validator.L1ValidatorConfig    `koanf:"validator"`
+	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
+	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
+	Wasm                 WasmConfig                     `koanf:"wasm"`
+	NoL1Listener         bool                           `koanf:"no-l1-listener"`
+}
+
+func (c *Config) ForwardingTarget() string {
+	if c.ForwardingTargetImpl == "null" {
+		return ""
+	}
+
+	return c.ForwardingTargetImpl
+}
+
+func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+	arbitrum.ConfigAddOptions(prefix+".rpc", f)
+	SequencerConfigAddOptions(prefix+"sequencer", f)
+	f.Bool(prefix+".enable-l1-reader", ConfigDefault.EnableL1Reader, "enable l1 reader")
+	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
+	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
+	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
+	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTargetImpl, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	validator.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
+	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
+	validator.L1ValidatorConfigAddOptions(prefix+".validator", f)
+	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
+	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
+	WasmConfigAddOptions(prefix+".wasm", f)
+	f.Bool(prefix+".dangerous-no-l1-listener", ConfigDefault.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
+}
+
+var ConfigDefault = Config{
+	RPC:                  arbitrum.DefaultConfig,
+	Sequencer:            DefaultSequencerConfig,
+	EnableL1Reader:       true,
+	InboxReader:          DefaultInboxReaderConfig,
+	DelayedSequencer:     DefaultDelayedSequencerConfig,
+	BatchPoster:          DefaultBatchPosterConfig,
+	ForwardingTargetImpl: "",
+	BlockValidator:       validator.DefaultBlockValidatorConfig,
+	Feed:                 broadcastclient.FeedConfigDefault,
+	Validator:            validator.DefaultL1ValidatorConfig,
+	SeqCoordinator:       DefaultSeqCoordinatorConfig,
+	DataAvailability:     das.DefaultDataAvailabilityConfig,
+	Wasm:                 DefaultWasmConfig,
+	NoL1Listener:         false,
+}
+
+func ConfigDefaultL1Test() *Config {
+	config := ConfigDefault
+	config.Sequencer = TestSequencerConfig
+	config.InboxReader = TestInboxReaderConfig
+	config.DelayedSequencer = TestDelayedSequencerConfig
+	config.BatchPoster = TestBatchPosterConfig
+
+	return &config
+}
+
+func ConfigDefaultL2Test() *Config {
+	config := ConfigDefault
+	config.Sequencer = TestSequencerConfig
+	config.EnableL1Reader = false
+
+	return &config
+}
+
+type SequencerConfig struct {
+	Enable bool `koanf:"enable"`
+}
+
+var DefaultSequencerConfig = SequencerConfig{
+	Enable: false,
+}
+
+var TestSequencerConfig = SequencerConfig{
+	Enable: true,
+}
+
+func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+}
+
+type WasmConfig struct {
+	RootPath   string `koanf:"root-path"`
+	ModuleRoot string `koanf:"module-root"`
+	CachePath  string `koanf:"cache-path"`
+}
+
+func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".module-root", DefaultWasmConfig.RootPath, "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
+}
+
+var DefaultWasmConfig = WasmConfig{
+	RootPath:   "",
+	ModuleRoot: "",
+	CachePath:  "",
+}
+
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
@@ -335,7 +447,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
 	if config.Sequencer.Enable {
-		if config.ForwardingTarget != "" {
+		if config.ForwardingTarget() != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
 		}
 		var sequencer *Sequencer
@@ -351,17 +463,17 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			return nil, err
 		}
 		txPublisher = sequencer
-		if !config.SeqCoordinator.Disable {
+		if config.SeqCoordinator.Enable {
 			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinator)
 		}
 	} else {
-		if !config.SeqCoordinator.Disable {
+		if config.SeqCoordinator.Enable {
 			return nil, errors.New("sequencer coordinator without sequencer")
 		}
-		if config.ForwardingTarget == "" || config.ForwardingTarget == "null" {
+		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.ForwardingTarget)
+			txPublisher = NewForwarder(config.ForwardingTarget())
 		}
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
@@ -372,6 +484,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
+
 	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
 		for _, address := range config.Feed.Input.URLs {

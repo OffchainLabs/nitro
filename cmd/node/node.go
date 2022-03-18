@@ -66,18 +66,20 @@ func main() {
 	log.Info("Running Arbitrum nitro node")
 
 	if nodeConfig.Node.NoL1Listener {
-		nodeConfig.Node.InboxReader.Disable = true
+		nodeConfig.Node.EnableL1Reader = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
+	} else {
+		nodeConfig.Node.EnableL1Reader = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
-		if nodeConfig.Node.ForwardingTarget != "" && nodeConfig.Node.ForwardingTarget != "null" {
+		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwardingtarget set when sequencer enabled")
 		}
 	} else {
-		if nodeConfig.Node.ForwardingTarget == "" {
+		if nodeConfig.Node.ForwardingTargetImpl == "" {
 			flag.Usage()
 			panic("forwardingtarget unset, and not sequencer (can set to \"null\" to disable forwarding)")
 		}
@@ -125,9 +127,6 @@ func main() {
 			flag.Usage()
 			panic("L1 validator requires block validator to safely function")
 		}
-	}
-
-	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.Validator.WithoutBlockValidator {
 			if nodeConfig.Node.Wasm.CachePath != "" {
 				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath

@@ -27,7 +27,7 @@ func TestSeqCoordinator(t *testing.T) {
 	redisOptions, err := redis.ParseURL(redisUrl)
 	Require(t, err)
 	redisClient := redis.NewClient(redisOptions)
-	nodeConfig := arbnode.ConfigDefaultL2Test
+	nodeConfig := arbnode.ConfigDefaultL2Test()
 	nodeConfig.SeqCoordinator = true
 	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
 
@@ -50,7 +50,7 @@ func TestSeqCoordinator(t *testing.T) {
 	createStartNode := func(nodeNum int, msgNum arbutil.MessageIndex) {
 		nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[nodeNum]
 		_, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
-		node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig, blockchain, nil, nil, nil, nil, redis.NewClient(redisOptions))
+		node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, redis.NewClient(redisOptions))
 		Require(t, err)
 		if msgNum > 0 {
 			messages := make([]arbstate.MessageWithMetadata, msgNum)

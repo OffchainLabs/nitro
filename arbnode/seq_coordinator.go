@@ -42,7 +42,7 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	Disable         bool                 `koanf:"disable"`
+	Enable          bool                 `koanf:"enable"`
 	LockoutDuration time.Duration        `koanf:"lockout-duration"`
 	LockoutSpare    time.Duration        `koanf:"lockout-spare"`
 	SeqNumDuration  time.Duration        `koanf:"seq-num-duration"`
@@ -53,7 +53,7 @@ type SeqCoordinatorConfig struct {
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".disable", DefaultSequencerConfig.Enable, "disable sequence coordinator")
+	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
 	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
@@ -64,7 +64,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Disable:         false,
+	Enable:          false,
 	LockoutDuration: time.Duration(5) * time.Minute,
 	LockoutSpare:    time.Duration(30) * time.Second,
 	SeqNumDuration:  time.Duration(24) * time.Hour,
@@ -75,13 +75,14 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Disable:         false,
+	Enable:          false,
 	LockoutDuration: time.Millisecond * 500,
 	LockoutSpare:    time.Millisecond * 10,
 	SeqNumDuration:  time.Minute * 10,
 	UpdateInterval:  time.Millisecond * 10,
 	RetryInterval:   time.Millisecond * 3,
 	AllowedMsgLag:   3,
+	MyUrl:           "",
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, client redis.UniversalClient, config SeqCoordinatorConfig) *SeqCoordinator {
