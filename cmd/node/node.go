@@ -8,9 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/validator"
-	flag "github.com/spf13/pflag"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -24,18 +21,21 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 func printSampleUsage() {
@@ -62,6 +62,12 @@ func main() {
 
 	log.Info("Running Arbitrum nitro node")
 
+	if nodeConfig.Node.NoL1Listener {
+		nodeConfig.Node.InboxReader.Disable = true
+		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
+		nodeConfig.Node.BatchPoster.Enable = false
+	}
+
 	if nodeConfig.Node.Sequencer.Enable {
 		if nodeConfig.Node.ForwardingTarget != "" && nodeConfig.Node.ForwardingTarget != "null" {
 			flag.Usage()
@@ -72,6 +78,12 @@ func main() {
 			flag.Usage()
 			panic("forwardingtarget unset, and not sequencer (can set to \"null\" to disable forwarding)")
 		}
+	}
+
+	// Perform sanity check on mode
+	_, err = nodeConfig.Node.DataAvailability.Mode()
+	if err != nil {
+		panic(err.Error())
 	}
 
 	if nodeConfig.Node.Wasm.RootPath != "" {
@@ -99,16 +111,36 @@ func main() {
 			wasmModuleRootString = wasmModuleRootString[0:64]
 		}
 	}
-	nodeConfig.Node.Wasm.ModuleRoot = common.HexToHash(wasmModuleRootString)
+	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
 
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.EnableL1Reader {
 			flag.Usage()
-			panic("l1validator requires l1role other than \"none\"")
+			panic("validator must read from L1")
 		}
 		if !nodeConfig.Node.BlockValidator.Enable && !nodeConfig.Node.Validator.WithoutBlockValidator {
 			flag.Usage()
 			panic("L1 validator requires block validator to safely function")
+		}
+	}
+
+	if nodeConfig.Node.Validator.Enable {
+		if !nodeConfig.Node.Validator.WithoutBlockValidator {
+			if nodeConfig.Node.Wasm.CachePath != "" {
+				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
+			}
+			go func() {
+				expectedRoot := wasmModuleRoot
+				foundRoot, err := validator.GetInitialModuleRoot(ctx)
+				if err != nil {
+					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
+				}
+				if foundRoot != expectedRoot {
+					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
+				} else {
+					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
+				}
+			}()
 		}
 	}
 
@@ -137,7 +169,7 @@ func main() {
 
 		if nodeConfig.L1.Deployment == "" {
 			flag.Usage()
-			panic("not deploying, but no deployment specified")
+			panic("no deployment specified")
 		}
 		rawDeployment, err := ioutil.ReadFile(nodeConfig.L1.Deployment)
 		if err != nil {

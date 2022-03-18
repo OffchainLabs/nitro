@@ -27,6 +27,7 @@ type Config struct {
 	SeqCoordinator   SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm             WasmConfig                     `koanf:"wasm"`
+	NoL1Listener     bool                           `koanf:"no-l1-listener"`
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
@@ -43,6 +44,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
+	f.Bool(prefix+".dangerous-no-l1-listener", ConfigDefault.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 }
 
 var ConfigDefault = Config{
@@ -59,6 +61,7 @@ var ConfigDefault = Config{
 	SeqCoordinator:   DefaultSeqCoordinatorConfig,
 	DataAvailability: das.DefaultDataAvailabilityConfig,
 	Wasm:             DefaultWasmConfig,
+	NoL1Listener:     false,
 }
 
 var ConfigDefaultL1Test = Config{
@@ -82,18 +85,21 @@ var ConfigDefaultL2Test = Config{
 }
 
 type InboxReaderConfig struct {
+	Disable     bool          `koanf:"disable"`
 	DelayBlocks int64         `koanf:"delay-blocks"`
 	CheckDelay  time.Duration `koanf:"check-delay"`
 	HardReorg   bool          `koanf:"hard-reorg"`
 }
 
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".disable", DefaultInboxReaderConfig.Disable, "disable inbox reader")
 	f.Int64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
 	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
+	Disable:     false,
 	DelayBlocks: 4,
 	CheckDelay:  2 * time.Second,
 	HardReorg:   true,

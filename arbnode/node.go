@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -290,6 +291,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		ValidatorWalletCreator: validatorWalletCreator,
 	}, nil
 }
+
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
@@ -307,7 +309,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -370,10 +372,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig
 	if err != nil {
 		return nil, err
 	}
-	var broadcastClient *broadcastclient.BroadcastClient
+	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
-		for _, address := range config.BroadcastClientConfig.URLs {
-			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.BroadcastClientConfig.Timeout, txStreamer))
+		for _, address := range config.Feed.Input.URLs {
+			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.Feed.Input.Timeout, txStreamer))
 		}
 	}
 	if !config.EnableL1Reader {
@@ -452,7 +454,7 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *NodeConfig, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
 	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
 	if err != nil {
 		return nil, err

@@ -13,29 +13,26 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/cmd/util"
 )
 
 type NodeConfig struct {
-	Conf       util.ConfConfig            `koanf:"conf"`
-	Node       arbnode.Config             `koanf:"node"`
-	Feed       broadcastclient.FeedConfig `koanf:"feed"`
-	L1         util.L1Config              `koanf:"l1"`
-	L2         util.L2Config              `koanf:"l2"`
-	LogLevel   int                        `koanf:"log-level"`
-	DataDir    string                     `koanf:"data-dir"`
-	Persistent PersistentConfig           `koanf:"persistent"`
-	HTTP       HTTPConfig                 `koanf:"http"`
-	WS         WSConfig                   `koanf:"ws"`
-	DevInit    bool                       `koanf:"dev-init"`
-	ImportFile string                     `koanf:"import-file"`
+	Conf       util.ConfConfig  `koanf:"conf"`
+	Node       arbnode.Config   `koanf:"node"`
+	L1         util.L1Config    `koanf:"l1"`
+	L2         util.L2Config    `koanf:"l2"`
+	LogLevel   int              `koanf:"log-level"`
+	DataDir    string           `koanf:"data-dir"`
+	Persistent PersistentConfig `koanf:"persistent"`
+	HTTP       HTTPConfig       `koanf:"http"`
+	WS         WSConfig         `koanf:"ws"`
+	DevInit    bool             `koanf:"dev-init"`
+	ImportFile string           `koanf:"import-file"`
 }
 
 var NodeConfigDefault = NodeConfig{
 	Conf:       util.ConfConfigDefault,
 	Node:       arbnode.ConfigDefault,
-	Feed:       broadcastclient.FeedConfigDefault,
 	L1:         util.L1ConfigDefault,
 	L2:         util.L2ConfigDefault,
 	LogLevel:   int(log.LvlInfo),
@@ -48,7 +45,7 @@ var NodeConfigDefault = NodeConfig{
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
 	util.ConfConfigAddOptions("conf", f)
-	broadcastclient.FeedConfigAddOptions("feed", f, true, true)
+	arbnode.ConfigAddOptions("node", f, true, true)
 	util.L1ConfigAddOptions("l1", f)
 	util.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
@@ -70,8 +67,8 @@ var PersistentConfigDefault = PersistentConfig{
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String("chain", PersistentConfigDefault.Chain, "directory to store chain state")
-	f.String("global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
+	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
+	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
 }
 
 type HTTPConfig struct {
@@ -128,7 +125,7 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")
 }
 
-func ParseNode(ctx context.Context) (*NodeConfig, *util.WalletConfig, *util.WalletConfig, error) {
+func ParseNode(_ context.Context) (*NodeConfig, *util.WalletConfig, *util.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
