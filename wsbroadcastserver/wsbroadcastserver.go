@@ -267,6 +267,8 @@ func (s *WSBroadcastServer) Broadcast(bm interface{}) {
 }
 
 func (s *WSBroadcastServer) ClientCount() int {
+	s.subscribersMu.Lock()
+	defer s.subscribersMu.Unlock()
 	return len(s.subscribers)
 }
 
