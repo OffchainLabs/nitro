@@ -35,7 +35,7 @@ type SeqCoordinator struct {
 	config    SeqCoordinatorConfig
 
 	prevChosenSequencer string
-	prevAlive           bool
+	reportedAlive       bool
 
 	lockoutUntil int64 // atomic
 
@@ -60,7 +60,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	SeqNumDuration:  time.Duration(24) * time.Hour,
 	UpdateInterval:  time.Duration(10) * time.Second,
 	RetryInterval:   time.Second,
-	AllowedMsgLag:   arbutil.MessageIndex(200),
+	AllowedMsgLag:   200,
 	MaxMsgPerPoll:   120,
 }
 
@@ -113,7 +113,7 @@ func atomicTimeWrite(addr *int64, t time.Time) {
 	atomic.StoreInt64(addr, asint64)
 }
 
-// notice: It is possible for two consecutive reads to get decreasing values. That shhouldn't matter.
+// notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
 func atomicTimeRead(addr *int64) time.Time {
 	asint64 := atomic.LoadInt64(addr)
 	return time.UnixMilli(asint64)
@@ -327,7 +327,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 		log.Warn("coordinator failed chosen-one keepalive", "err", err)
 		return c.retryAfterRedisError()
 	}
-	c.prevAlive = true
+	c.reportedAlive = true
 	return c.noRedisError()
 }
 
@@ -374,7 +374,25 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		rsBytes := []byte(resString)
 		err = json.Unmarshal(rsBytes, &message)
 		if err != nil {
-			message = arbstate.MessageWithMetadata{}
+			log.Warn("coordinator failed to parse message from resis", "pos", msgToRead, "err", err)
+			msgReadErr = fmt.Errorf("failed to parse message: %w", err)
+			// make progress in case of parse failures - but only progress one bad message at a time
+			if len(messages) > 0 {
+				break
+			}
+			lastDelayedMsg := uint64(0)
+			if msgToRead > 0 {
+				prevMsg, err := c.streamer.GetMessage(msgToRead - 1)
+				if err != nil {
+					log.Error("coordinator failed to get msg", "pos", msgToRead-1)
+					break
+				}
+				lastDelayedMsg = prevMsg.DelayedMessagesRead
+			}
+			message = arbstate.MessageWithMetadata{
+				Message:             arbstate.InvalidL1Message,
+				DelayedMessagesRead: lastDelayedMsg,
+			}
 		}
 		messages = append(messages, message)
 		msgToRead++
@@ -389,7 +407,6 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// can take over as main sequencer?
 	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
-		c.sequencer.DontForward()
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -400,6 +417,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			return c.retryAfterRedisError()
 		}
+		c.sequencer.DontForward()
 		c.prevChosenSequencer = c.config.MyUrl
 		return c.noRedisError()
 	}
@@ -407,16 +425,16 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	// update liveliness
 	var livelinessErr error
 	if localMsgCount+c.config.AllowedMsgLag < remoteMsgCount {
-		if c.prevAlive {
+		if c.reportedAlive {
 			livelinessErr = c.livelinessRelease(ctx)
 			if livelinessErr == nil {
-				c.prevAlive = false
+				c.reportedAlive = false
 			}
 		}
 	} else {
 		livelinessErr = c.livelinessUpdate(ctx)
 		if livelinessErr == nil {
-			c.prevAlive = true
+			c.reportedAlive = true
 		}
 	}
 	if livelinessErr != nil {
@@ -432,8 +450,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 func (c *SeqCoordinator) DebugPrint() string {
 	return fmt.Sprint("Url:", c.config.MyUrl,
 		" prevChosenSequencer:", c.prevChosenSequencer,
-		" prevAlive:", c.prevAlive,
-		" lockoutUntil:", c.lockoutUntil)
+		" reportedAlive:", c.reportedAlive,
+		" lockoutUntil:", c.lockoutUntil,
+		" redisErrors:", c.redisErrors)
 }
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {

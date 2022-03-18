@@ -106,6 +106,10 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
 	@printf $(done)
 
+test-go-redis: test-go-deps
+	go test -p 1 -run TestSeqCoordinator -tags redistest ./system_tests/... ./arbnode/...
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
