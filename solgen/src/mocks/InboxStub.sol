@@ -113,7 +113,7 @@ contract InboxStub is IInbox {
         revert("NOT_IMPLEMENTED");
     }
 
-    function safeCreateRetryableTicket(
+    function unsafeCreateRetryableTicket(
         address,
         uint256,
         uint256,
