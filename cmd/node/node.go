@@ -36,6 +36,9 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator"
+
+	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
+	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 )
 
 func printSampleUsage() {
@@ -311,7 +314,7 @@ func main() {
 		}
 	}
 
-	_, err = arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}
