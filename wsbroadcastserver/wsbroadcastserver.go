@@ -91,13 +91,9 @@ func (cc *ClientConnection) Start(ctx context.Context) {
 	})
 }
 
-func (cc *ClientConnection) Write(x interface{}) error {
-	return wsjson.Write(context.Background(), cc.conn, x)
-}
-
 // CatchupBuffer implemented protocol-specific client catch-up logic
 type CatchupBuffer interface {
-	OnRegisterClient(context.Context, *ClientConnection) error
+	OnRegisterClient(context.Context, *ClientConnection) ([]interface{}, error)
 	OnDoBroadcast(interface{}) error
 }
 
@@ -158,20 +154,39 @@ func (s *WSBroadcastServer) clientHandler(w http.ResponseWriter, r *http.Request
 // messages and cancel the context if the connection drops.
 func (s *WSBroadcastServer) subscribe(ctx context.Context, c *ClientConnection) error {
 	start := time.Now()
-	err := func() error {
+	s.subscribersMu.Lock()
+	initialBatches, err := func() ([]interface{}, error) {
 		registerCtx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
 		defer cancel()
 		return s.catchupBuffer.OnRegisterClient(registerCtx, c)
 	}()
 	if err != nil {
+		s.subscribersMu.Unlock()
 		return err
 	}
+
+	ctx = c.conn.CloseRead(ctx)
 	log.Info("client registered", "client", c.Name, "elapsed", time.Since(start))
 	defer log.Info("client disconnected", "client", c.Name, "elapsed", time.Since(start))
 
-	ctx = c.conn.CloseRead(ctx)
-	s.addSubscriber(c)
-	defer s.deleteSubscriber(c)
+	s.subscribers[c] = struct{}{}
+	s.subscribersMu.Unlock()
+	defer func() {
+		s.subscribersMu.Lock()
+		delete(s.subscribers, c)
+		s.subscribersMu.Unlock()
+	}()
+
+	for _, batch := range initialBatches {
+		err := func() error {
+			ctx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
+			defer cancel()
+			return wsjson.Write(ctx, c.conn, batch)
+		}()
+		if err != nil {
+			return err
+		}
+	}
 
 	for {
 		select {
@@ -188,20 +203,6 @@ func (s *WSBroadcastServer) subscribe(ctx context.Context, c *ClientConnection) 
 			return ctx.Err()
 		}
 	}
-}
-
-// addSubscriber registers a subscriber.
-func (s *WSBroadcastServer) addSubscriber(c *ClientConnection) {
-	s.subscribersMu.Lock()
-	s.subscribers[c] = struct{}{}
-	s.subscribersMu.Unlock()
-}
-
-// deleteSubscriber deletes the given subscriber.
-func (s *WSBroadcastServer) deleteSubscriber(c *ClientConnection) {
-	s.subscribersMu.Lock()
-	delete(s.subscribers, c)
-	s.subscribersMu.Unlock()
 }
 
 func (s *WSBroadcastServer) Start(ctx context.Context) error {
@@ -243,10 +244,6 @@ func (s *WSBroadcastServer) StopAndWait() {
 // It never blocks and so messages to slow subscribers
 // are dropped.
 func (s *WSBroadcastServer) Broadcast(bm interface{}) {
-	if err := s.catchupBuffer.OnDoBroadcast(bm); err != nil {
-		log.Error("error executing broadcast handler", "err", err)
-		return
-	}
 	msg, err := json.Marshal(bm)
 	if err != nil {
 		log.Error("error to marshaling message for broadcast", "err", err)
@@ -254,6 +251,11 @@ func (s *WSBroadcastServer) Broadcast(bm interface{}) {
 	}
 	s.subscribersMu.Lock()
 	defer s.subscribersMu.Unlock()
+
+	if err := s.catchupBuffer.OnDoBroadcast(bm); err != nil {
+		log.Error("error executing broadcast handler", "err", err)
+		return
+	}
 
 	for s := range s.subscribers {
 		select {

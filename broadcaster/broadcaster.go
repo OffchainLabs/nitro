@@ -6,11 +6,10 @@ package broadcaster
 
 import (
 	"context"
-	"net"
-	"sync/atomic"
-	"time"
-
 	"github.com/ethereum/go-ethereum/log"
+	"net"
+	"sync"
+	"sync/atomic"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -55,6 +54,7 @@ type ConfirmedSequenceNumberMessage struct {
 }
 
 type SequenceNumberCatchupBuffer struct {
+	sync.Mutex
 	messages     []*BroadcastFeedMessage
 	messageCount int32
 }
@@ -63,11 +63,15 @@ func NewSequenceNumberCatchupBuffer() *SequenceNumberCatchupBuffer {
 	return &SequenceNumberCatchupBuffer{}
 }
 
-func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) error {
-	start := time.Now()
-	messages := b.messages
+const messageBatchingSize = 100
+
+func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clientConnection *wsbroadcastserver.ClientConnection) ([]interface{}, error) {
+	b.Lock()
+	messages := append([]*BroadcastFeedMessage{}, b.messages...)
+	b.Unlock()
+	batches := make([]interface{}, 0, (len(messages)+messageBatchingSize-1)/messageBatchingSize)
 	for len(messages) > 0 {
-		messagesToGet := 100
+		messagesToGet := messageBatchingSize
 		if len(messages) < messagesToGet {
 			messagesToGet = len(messages)
 		}
@@ -76,17 +80,15 @@ func (b *SequenceNumberCatchupBuffer) OnRegisterClient(ctx context.Context, clie
 			Version:  1,
 			Messages: messages[:messagesToGet],
 		}
-		err := clientConnection.Write(bm)
-		if err != nil {
-			log.Error("error sending client cached messages", err, "client", clientConnection.Name, "elapsed", time.Since(start))
-			return err
-		}
+		batches = append(batches, bm)
 		messages = messages[messagesToGet:]
 	}
-	return nil
+	return batches, nil
 }
 
 func (b *SequenceNumberCatchupBuffer) OnDoBroadcast(bmi interface{}) error {
+	b.Lock()
+	defer b.Unlock()
 	broadcastMessage, ok := bmi.(BroadcastMessage)
 	if !ok {
 		log.Crit("Requested to broadcast messasge of unknown type")
