@@ -51,7 +51,6 @@ var DefaultBroadcasterConfig BroadcasterConfig
 
 type WSBroadcastServer struct {
 	util.StopWaiter
-	mux      http.ServeMux
 	srv      *http.Server
 	listener net.Listener
 	settings BroadcasterConfig
@@ -103,17 +102,15 @@ type CatchupBuffer interface {
 }
 
 func NewWSBroadcastServer(settings BroadcasterConfig, catchupBuffer CatchupBuffer) *WSBroadcastServer {
-	s := &WSBroadcastServer{
+	return &WSBroadcastServer{
 		settings:      settings,
 		catchupBuffer: catchupBuffer,
 		subscribers:   make(map[*ClientConnection]struct{}),
 	}
-	s.mux.HandleFunc("/feed", s.clientHandler)
-	return s
 }
 
 func (s *WSBroadcastServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.clientHandler(w, r)
 }
 
 func (s *WSBroadcastServer) clientHandler(w http.ResponseWriter, r *http.Request) {
@@ -160,11 +157,17 @@ func (s *WSBroadcastServer) clientHandler(w http.ResponseWriter, r *http.Request
 // It uses CloseRead to keep reading from the connection to process control
 // messages and cancel the context if the connection drops.
 func (s *WSBroadcastServer) subscribe(ctx context.Context, c *ClientConnection) error {
-	registerCtx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
-	defer cancel()
-	if err := s.catchupBuffer.OnRegisterClient(registerCtx, c); err != nil {
+	start := time.Now()
+	err := func() error {
+		registerCtx, cancel := context.WithTimeout(ctx, s.settings.ClientTimeout)
+		defer cancel()
+		return s.catchupBuffer.OnRegisterClient(registerCtx, c)
+	}()
+	if err != nil {
 		return err
 	}
+	log.Info("client registered", "client", c.Name, "elapsed", time.Since(start))
+	defer log.Info("client disconnected", "client", c.Name, "elapsed", time.Since(start))
 
 	ctx = c.conn.CloseRead(ctx)
 	s.addSubscriber(c)
@@ -217,7 +220,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 		s.srv.BaseContext = func(net.Listener) context.Context {
 			return ctx
 		}
-		if err := s.srv.Serve(ln); err != nil {
+		if err := s.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("shutting down broadcaster with error", "err", err)
 		}
 	})

@@ -6,6 +6,7 @@ package broadcastclient
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
@@ -70,7 +71,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 		cancel()
 		if err != nil {
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
-		} else if err := bc.readMessages(ctx, conn); err != nil {
+		} else if err := bc.readMessages(ctx, conn); err != nil && !errors.Is(err, context.Canceled) {
 			log.Warn("error getting broadcast message from broadcast feed", "err", err)
 		}
 		if waitDuration < maxWaitDuration {

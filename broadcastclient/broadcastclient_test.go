@@ -7,7 +7,9 @@ package broadcastclient
 import (
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"net"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +19,12 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+func init() {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(true)))
+	glogger.Verbosity(log.LvlInfo)
+	log.Root().SetHandler(glogger)
+}
 
 func TestReceiveMessages(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
