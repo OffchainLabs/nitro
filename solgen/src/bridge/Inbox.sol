@@ -194,14 +194,15 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-   /**
-    * @notice Get the L1 fee for submitting a retryable
-    * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
-    * @param dataLength The length of the retryable's calldata, in bytes
-    * @param baseFee The block basefee when the retryable is included in the chain
-    */
-    function retryableSubmissionFee(uint256 dataLength, uint256 baseFee) external pure returns (uint256) {
-        return calculateRetryableSubmissionFee(dataLength, baseFee);
+    /**
+     * @notice Get the L1 fee for submitting a retryable
+     * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
+     * @dev This formula may change in the future, to future proof your code query this method instead of inlining!!
+     * @param dataLength The length of the retryable's calldata, in bytes
+     * @param baseFee The block basefee when the retryable is included in the chain
+     */
+    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee) public pure returns (uint256) {
+        return (1400 + 6 * dataLength) * baseFee;
     }
 
     /// @notice deposit eth from L1 to L2
