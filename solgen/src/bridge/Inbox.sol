@@ -194,13 +194,14 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
             );
     }
 
-    /**
-     * @notice Get the L1 fee for submitting a retryable
-     * @dev This fee is only payable by via the deposit
-     * @param dataLength The length of the retryable's calldata, in bytes
-     */
-    function retryableSubmissionFee(uint256 dataLength) public view returns (uint256) {
-        return (1400 + 6 * dataLength) * block.basefee;
+   /**
+    * @notice Get the L1 fee for submitting a retryable
+    * @dev This fee can be paid by funds already in the L2 aliased address or by the current message value
+    * @param dataLength The length of the retryable's calldata, in bytes
+    * @param baseFee The block basefee when the retryable is included in the chain
+    */
+    function retryableSubmissionFee(uint256 dataLength, uint256 baseFee) external pure returns (uint256) {
+        return calculateRetryableSubmissionFee(dataLength, baseFee);
     }
 
     /// @notice deposit eth from L1 to L2
@@ -216,7 +217,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender = msg.sender;
         address destinationAddress = msg.sender;
 
-        uint256 submissionFee = retryableSubmissionFee(0);
+        uint256 submissionFee = calculateRetryableSubmissionFee(0, block.basefee);
         require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
 
         // solhint-disable-next-line avoid-tx-origin
@@ -276,7 +277,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual whenNotPaused returns (uint256) {
-        uint256 submissionFee = retryableSubmissionFee(data.length);
+        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
         require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
 
         return
