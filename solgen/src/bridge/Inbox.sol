@@ -201,7 +201,11 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
      * @param dataLength The length of the retryable's calldata, in bytes
      * @param baseFee The block basefee when the retryable is included in the chain
      */
-    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee) public pure returns (uint256) {
+    function calculateRetryableSubmissionFee(uint256 dataLength, uint256 baseFee)
+        public
+        pure
+        returns (uint256)
+    {
         return (1400 + 6 * dataLength) * baseFee;
     }
 
