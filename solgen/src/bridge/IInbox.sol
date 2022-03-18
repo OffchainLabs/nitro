@@ -64,7 +64,7 @@ interface IInbox is IMessageProvider {
         bytes calldata data
     ) external payable returns (uint256);
 
-    function safeCreateRetryableTicket(
+    function unsafeCreateRetryableTicket(
         address to,
         uint256 arbTxCallValue,
         uint256 maxSubmissionCost,
