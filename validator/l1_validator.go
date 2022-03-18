@@ -250,7 +250,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			log.Error("invalid start global state inbox position", startState.GlobalState.BlockHash, "batch", startState.GlobalState.Batch, "pos", startState.GlobalState.PosInBatch)
 			return nil, false, errors.New("invalid start global state inbox position")
 		}
-		latestHeader := v.l2Blockchain.CurrentHeader()
+		latestHeader := v.l2Blockchain.CurrentBlock().Header()
 		if latestHeader.Number.Int64() < expectedBlockHeight {
 			log.Info("catching up to chain blocks", "localBlocks", latestHeader.Number, "target", expectedBlockHeight)
 			return nil, false, nil
@@ -269,7 +269,7 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
 		}
 	} else {
-		lastBlockValidated = v.l2Blockchain.CurrentHeader().Number.Uint64()
+		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()
 
 		if localBatchCount > 0 {
 			messageCount, err := v.inboxTracker.GetBatchMessageCount(localBatchCount - 1)

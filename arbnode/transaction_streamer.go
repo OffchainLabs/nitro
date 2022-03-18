@@ -355,7 +355,7 @@ func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessa
 		return err
 	}
 
-	lastBlockHeader := s.bc.CurrentHeader()
+	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
@@ -505,7 +505,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 	}
 
 	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
-	if s.bc.CurrentHeader().Number.Int64() >= expectedBlockNum {
+	if s.bc.CurrentBlock().Header().Number.Int64() >= expectedBlockNum {
 		err = s.createBlocks(ctx)
 		if err != nil {
 			return err
@@ -592,7 +592,7 @@ func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lastBlockHeader := s.bc.CurrentHeader()
+	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
