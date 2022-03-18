@@ -2,6 +2,7 @@ package wsbroadcastserver
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/ioutil"
 	"net"
@@ -20,7 +21,7 @@ type chainedReader struct {
 func (cr *chainedReader) Read(b []byte) (n int, err error) {
 	for _, r := range cr.readers {
 		n, err = r.Read(b)
-		if err == io.EOF || n == 0 {
+		if errors.Is(err, io.EOF) || n == 0 {
 			continue
 		}
 		break
