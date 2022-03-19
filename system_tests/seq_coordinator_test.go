@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -31,7 +32,7 @@ func TestSeqCoordinator(t *testing.T) {
 	nodeConfig.SeqCoordinator = true
 	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
 
-	l2Info := NewArbTestInfo(t)
+	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
 	// stdio protocol makes sure forwarder initialization doesn't fail
 	nodeNames := []string{"stdio://A", "stdio://B", "stdio://C", "stdio://D", "stdio://E"}
@@ -49,7 +50,7 @@ func TestSeqCoordinator(t *testing.T) {
 
 	createStartNode := func(nodeNum int, msgNum arbutil.MessageIndex) {
 		nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[nodeNum]
-		_, stack, chainDb, blockchain := createL2BlockChain(t, l2Info)
+		_, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
 		node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, redis.NewClient(redisOptions))
 		Require(t, err)
 		if msgNum > 0 {

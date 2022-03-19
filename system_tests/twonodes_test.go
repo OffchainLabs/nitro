@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -23,17 +24,19 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
 	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
-	defer os.RemoveAll(dbPath)
+	var err error
 	if dasModeStr == "local" {
-		var err error
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
 		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	_, err := l1NodeConfigA.DataAvailability.Mode()
+	_, err = l1NodeConfigA.DataAvailability.Mode()
 	Require(t, err)
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()

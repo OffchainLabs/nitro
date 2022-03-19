@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -130,18 +131,17 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	nodeConfigA.BatchPoster.Enable = true
 	nodeConfigA.Feed.Output.Enable = false
 	nodeConfigA.DataAvailability.ModeImpl = dasModeStr
-
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
-	defer os.RemoveAll(dbPath)
+	var err error
 	if dasModeStr == "local" {
-		var err error
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
 		nodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	_, err := nodeConfigA.DataAvailability.Mode()
-	Require(t, err)
-	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA)
+	l2infoA, nodeA, l2clientA, _, _, _, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, nodeConfigA, chainConfig)
 	defer l1stack.Close()
 
 	// The lying sequencer

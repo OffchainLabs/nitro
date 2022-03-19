@@ -42,16 +42,18 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	defer cancel()
 
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
-	defer os.RemoveAll(dbPath)
+	var err error
 	if dasModeStr == "local" {
-		var err error
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
 		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
 	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
