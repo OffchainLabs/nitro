@@ -54,27 +54,27 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type L1ValidatorConfig struct {
-	Enable                bool              `koanf:"enable"`
-	Strategy              string            `koanf:"strategy"`
-	StakerInterval        time.Duration     `koanf:"staker-interval"`
-	L1PostingStrategy     L1PostingStrategy `koanf:"posting-strategy"`
-	DisableChallenge      bool              `koanf:"disable-challenge"`
-	WithdrawDestination   string            `koanf:"withdraw-destination"`
-	TargetMachineCount    int               `koanf:"target-machine-count"`
-	ConfirmationBlocks    int64             `koanf:"confirmation-blocks"`
-	WithoutBlockValidator bool              `koanf:"dangerous-without-block-validator"`
+	Enable              bool              `koanf:"enable"`
+	Strategy            string            `koanf:"strategy"`
+	StakerInterval      time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy   L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge    bool              `koanf:"disable-challenge"`
+	WithdrawDestination string            `koanf:"withdraw-destination"`
+	TargetMachineCount  int               `koanf:"target-machine-count"`
+	ConfirmationBlocks  int64             `koanf:"confirmation-blocks"`
+	Dangerous           DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
-	Enable:                false,
-	Strategy:              "Watchtower",
-	StakerInterval:        time.Minute,
-	L1PostingStrategy:     L1PostingStrategy{},
-	DisableChallenge:      false,
-	WithdrawDestination:   "",
-	TargetMachineCount:    4,
-	ConfirmationBlocks:    12,
-	WithoutBlockValidator: false,
+	Enable:              false,
+	Strategy:            "Watchtower",
+	StakerInterval:      time.Minute,
+	L1PostingStrategy:   L1PostingStrategy{},
+	DisableChallenge:    false,
+	WithdrawDestination: "",
+	TargetMachineCount:  4,
+	ConfirmationBlocks:  12,
+	Dangerous:           DangerousConfig{},
 }
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -86,7 +86,19 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".withdraw-destination", DefaultL1ValidatorConfig.WithdrawDestination, "validator withdraw destination")
 	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
-	f.Bool(prefix+".dangerous-without-block-validator", DefaultL1ValidatorConfig.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
+	DangerousConfigAddOptions(prefix+".dangerous", f)
+}
+
+type DangerousConfig struct {
+	WithoutBlockValidator bool `koanf:"without-block-validator"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	WithoutBlockValidator: false,
+}
+
+func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
 type nodeAndHash struct {

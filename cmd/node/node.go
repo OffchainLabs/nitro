@@ -69,7 +69,7 @@ func main() {
 
 	log.Info("Running Arbitrum nitro node")
 
-	if nodeConfig.Node.NoL1Listener {
+	if nodeConfig.Node.Dangerous.NoL1Listener {
 		nodeConfig.Node.EnableL1Reader = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
@@ -110,7 +110,7 @@ func main() {
 		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
 		fileBytes, err := ioutil.ReadFile(fileToRead)
 		if err != nil {
-			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.WithoutBlockValidator {
+			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
 			}
 		}
@@ -126,11 +126,11 @@ func main() {
 			flag.Usage()
 			panic("validator must read from L1")
 		}
-		if !nodeConfig.Node.BlockValidator.Enable && !nodeConfig.Node.Validator.WithoutBlockValidator {
+		if !nodeConfig.Node.BlockValidator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			flag.Usage()
 			panic("L1 validator requires block validator to safely function")
 		}
-		if !nodeConfig.Node.Validator.WithoutBlockValidator {
+		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 			if nodeConfig.Node.Wasm.CachePath != "" {
 				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
@@ -226,10 +226,16 @@ func main() {
 			account.Address = devAddr
 			account, err = mykeystore.Find(account)
 		} else {
+			if l2wallet.Password() == nil {
+				panic("l2 password not set")
+			}
 			account, err = mykeystore.ImportECDSA(devPrivKey, *l2wallet.Password())
 		}
 		if err != nil {
 			panic(err)
+		}
+		if l2wallet.Password() == nil {
+			panic("l2 password not set")
 		}
 		err = mykeystore.Unlock(account, *l2wallet.Password())
 		if err != nil {

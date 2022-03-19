@@ -70,24 +70,24 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable              bool   `koanf:"enable"`
-	OutputPath          string `koanf:"output-path"`
-	ConcurrentRunsLimit int    `koanf:"concurrent-runs-limit"`
-	BlockToRecord       uint64 `koanf:"block-to-record"`
+	Enable              bool    `koanf:"enable"`
+	OutputPath          string  `koanf:"output-path"`
+	ConcurrentRunsLimit int     `koanf:"concurrent-runs-limit"`
+	BlocksToRecord      []int64 `koanf:"blocks-to-record"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "")
+	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
-	f.Uint64(prefix+".block-to-record", DefaultBlockValidatorConfig.BlockToRecord, "")
+	f.Int64Slice(prefix+".blocks-to-record", DefaultBlockValidatorConfig.BlocksToRecord, "")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:              false,
 	OutputPath:          "./target/output",
 	ConcurrentRunsLimit: 0,
-	BlockToRecord:       0,
+	BlocksToRecord:      []int64{},
 }
 
 type BlockValidatorRegistrer interface {
@@ -618,14 +618,12 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		writeThisBlock = true
 	}
 	// stupid search for now, assuming the list will always be empty or very mall
-	if v.config.BlockToRecord != 0 {
-		for _, blockNr := range []uint64{v.config.BlockToRecord} {
-			if blockNr > entry.BlockNumber {
-				break
-			} else if blockNr == entry.BlockNumber {
-				writeThisBlock = true
-				break
-			}
+	for _, blockNr := range v.config.BlocksToRecord {
+		if uint64(blockNr) > entry.BlockNumber {
+			break
+		} else if uint64(blockNr) == entry.BlockNumber {
+			writeThisBlock = true
+			break
 		}
 	}
 

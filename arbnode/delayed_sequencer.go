@@ -35,7 +35,7 @@ type DelayedSequencerConfig struct {
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance.Int64(), "how many blocks in the past L1 block is considered final")
 	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate.Int64(), "how many blocks we aggregate looking for delayedMessage")
-	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "how many blocks we aggregate looking for delayedMessages")
+	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{

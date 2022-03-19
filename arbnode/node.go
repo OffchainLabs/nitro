@@ -307,7 +307,7 @@ type Config struct {
 	SeqCoordinator       SeqCoordinatorConfig           `koanf:"seq-coordinator"`
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
-	NoL1Listener         bool                           `koanf:"no-l1-listener"`
+	Dangerous            DangerousConfig                `koanf:"dangerous"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -332,7 +332,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
-	f.Bool(prefix+".dangerous-no-l1-listener", ConfigDefault.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
+	DangerousConfigAddOptions(prefix+".dangerous", f)
 }
 
 var ConfigDefault = Config{
@@ -349,7 +349,7 @@ var ConfigDefault = Config{
 	SeqCoordinator:       DefaultSeqCoordinatorConfig,
 	DataAvailability:     das.DefaultDataAvailabilityConfig,
 	Wasm:                 DefaultWasmConfig,
-	NoL1Listener:         false,
+	Dangerous:            DefaultDangerousConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -368,6 +368,18 @@ func ConfigDefaultL2Test() *Config {
 	config.EnableL1Reader = false
 
 	return &config
+}
+
+type DangerousConfig struct {
+	NoL1Listener bool `koanf:"no-l1-listener"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	NoL1Listener: false,
+}
+
+func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 }
 
 type SequencerConfig struct {
