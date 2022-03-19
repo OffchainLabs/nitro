@@ -296,7 +296,8 @@ func ProduceBlockAdvanced(
 
 		if gasUsed < dataGas {
 			delta := strconv.FormatUint(dataGas-gasUsed, 10)
-			panic("ApplyTransaction() used " + delta + " less gas than it should have")
+			panic(fmt.Sprintf("ApplyTransaction() used %v less gas than it should have %v", delta, tx.Type()))
+			// panic("ApplyTransaction() used " + delta + " less gas than it should have")
 		}
 
 		if gasUsed > tx.Gas() {

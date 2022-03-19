@@ -77,8 +77,8 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	}
 
 	// Try to reap 2 retryables
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingBeforeEVM)
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingBeforeEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingDuringEVM)
 
 	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
 	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)
