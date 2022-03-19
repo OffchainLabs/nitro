@@ -83,7 +83,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 
-	startTracer := func() func() {
+	zeroAddr := common.Address{}
+	startTracer := func(fallbackTo common.Address) func() {
 		if !evm.Config.Debug {
 			return func() {}
 		}
@@ -91,7 +92,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		start := time.Now()
 		to := p.msg.To()
 		if to == nil {
-			to = &common.Address{}
+			to = &fallbackTo
 		}
 		tracer.CaptureStart(evm, p.msg.From(), *to, false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
 		return func() { tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil) }
@@ -99,21 +100,21 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
-		defer (startTracer())()
+		defer (startTracer(zeroAddr))()
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
-		defer (startTracer())()
+		defer (startTracer(zeroAddr))()
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		defer (startTracer())()
+		defer (startTracer(common.HexToAddress("0x6e")))()
 		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
