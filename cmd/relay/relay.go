@@ -42,12 +42,9 @@ func printSampleUsage() {
 }
 
 func startup() error {
-	ctx, cancelFunc := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancelFunc()
-
 	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
-	relayConfig, err := ParseRelay(ctx)
+	relayConfig, err := ParseRelay(context.Background())
 	if err != nil {
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
@@ -78,12 +75,16 @@ func startup() error {
 
 	defer log.Info("Cleanly shutting down relay")
 
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+
 	// Start up an arbitrum sequencer relay
 	newRelay := relay.NewRelay(serverConf, clientConf)
-	err = newRelay.Start(ctx)
+	err = newRelay.Start(context.Background())
 	if err != nil {
 		return err
 	}
+	<-sigint
 	newRelay.StopAndWait()
 	return nil
 }
