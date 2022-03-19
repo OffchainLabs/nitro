@@ -84,7 +84,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:              true,
+	Enable:              false,
 	OutputPath:          "./target/output",
 	ConcurrentRunsLimit: 0,
 	BlockToRecord:       0,
