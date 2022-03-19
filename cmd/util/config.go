@@ -121,18 +121,21 @@ func WalletConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type PersistentConfig struct {
-	Chain        string `koanf:"chain"`
 	GlobalConfig string `koanf:"global-config"`
+	Chain        string `koanf:"chain"`
+	Data         string `koanf:"data"`
 }
 
 var PersistentConfigDefault = PersistentConfig{
-	Chain:        "",
 	GlobalConfig: "",
+	Chain:        "",
+	Data:         "",
 }
 
 func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
 	f.String(prefix+".global-config", PersistentConfigDefault.GlobalConfig, "directory to store global config")
+	f.String(prefix+".chain", PersistentConfigDefault.Chain, "directory to store chain state")
+	f.String(prefix+".data", PersistentConfigDefault.Data, "directory for data storage requirements")
 }
 
 type HTTPConfig struct {

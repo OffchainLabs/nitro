@@ -187,7 +187,7 @@ func main() {
 	}
 
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = nodeConfig.Persistent.Chain
+	stackConf.DataDir = nodeConfig.Persistent.Data
 	stackConf.HTTPHost = nodeConfig.HTTP.Addr
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
@@ -349,7 +349,6 @@ type NodeConfig struct {
 	L1         cmdutil.L1Config         `koanf:"l1"`
 	L2         cmdutil.L2Config         `koanf:"l2"`
 	LogLevel   int                      `koanf:"log-level"`
-	DataDir    string                   `koanf:"data-dir"`
 	Persistent cmdutil.PersistentConfig `koanf:"persistent"`
 	HTTP       cmdutil.HTTPConfig       `koanf:"http"`
 	WS         cmdutil.WSConfig         `koanf:"ws"`
