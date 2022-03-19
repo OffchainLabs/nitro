@@ -4,8 +4,9 @@ services:
     depends_on:
       - postgres
       - sequencer
-    #image: blockscout/blockscout:${DOCKER_TAG:-latest}
-    image: f0342c90338a
+    build:
+      context: blockscout
+      dockerfile: docker/Dockerfile
     restart: always
     container_name: 'blockscout'
     links:
@@ -14,10 +15,9 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file:
-      -  ./.blockscout.env
+      -  ./blockscout/nitro.env
     environment:
         ETHEREUM_JSONRPC_VARIANT: 'geth'
-        #BLOCK_TRANSFORMER: 'clique'
         ETHEREUM_JSONRPC_HTTP_URL: http://sequencer:7545/
         INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: true
         DATABASE_URL: postgresql://postgres:@postgres:5432/blockscout?ssl=false
