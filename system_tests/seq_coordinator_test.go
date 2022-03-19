@@ -29,8 +29,8 @@ func TestSeqCoordinator(t *testing.T) {
 	Require(t, err)
 	redisClient := redis.NewClient(redisOptions)
 	nodeConfig := arbnode.ConfigDefaultL2Test()
-	nodeConfig.SeqCoordinator = true
-	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
+	nodeConfig.SeqCoordinator.Enable = true
+	nodeConfig.SeqCoordinator = arbnode.TestSeqCoordinatorConfig
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -49,7 +49,7 @@ func TestSeqCoordinator(t *testing.T) {
 	redisClient.Del(ctx, arbnode.CHOSENSEQ_KEY, arbnode.MSG_COUNT_KEY)
 
 	createStartNode := func(nodeNum int, msgNum arbutil.MessageIndex) {
-		nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[nodeNum]
+		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		_, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
 		node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, redis.NewClient(redisOptions))
 		Require(t, err)
@@ -131,7 +131,7 @@ func TestSeqCoordinator(t *testing.T) {
 
 	messagesPerRound := arbutil.MessageIndex(10)
 	maxAttempts := 10
-	delayPerAttempt := nodeConfig.SeqCoordinatorConfig.LockoutDuration / 5
+	delayPerAttempt := nodeConfig.SeqCoordinator.LockoutDuration / 5
 	currentSequencer := 0
 	sequencedMesssages := arbutil.MessageIndex(1) // we start with 1 so messageCountKey will be written
 	followerMessages := sequencedMesssages
