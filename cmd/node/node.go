@@ -28,13 +28,17 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	koanfjson "github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/confmap"
+	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -158,7 +162,7 @@ func main() {
 			panic(err)
 		}
 		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
-			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(
+			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(
 				l1wallet.Pathname,
 				l1wallet.Account,
 				*l1wallet.Password(),
@@ -331,4 +335,92 @@ func main() {
 	if err := stack.Close(); err != nil {
 		utils.Fatalf("Error closing stack: %v\n", err)
 	}
+}
+
+type NodeConfig struct {
+	Conf       cmdutil.ConfConfig       `koanf:"conf"`
+	Node       arbnode.Config           `koanf:"node"`
+	L1         cmdutil.L1Config         `koanf:"l1"`
+	L2         cmdutil.L2Config         `koanf:"l2"`
+	LogLevel   int                      `koanf:"log-level"`
+	DataDir    string                   `koanf:"data-dir"`
+	Persistent cmdutil.PersistentConfig `koanf:"persistent"`
+	HTTP       cmdutil.HTTPConfig       `koanf:"http"`
+	WS         cmdutil.WSConfig         `koanf:"ws"`
+	DevInit    bool                     `koanf:"dev-init"`
+	ImportFile string                   `koanf:"import-file"`
+}
+
+var NodeConfigDefault = NodeConfig{
+	Conf:       cmdutil.ConfConfigDefault,
+	Node:       arbnode.ConfigDefault,
+	L1:         cmdutil.L1ConfigDefault,
+	L2:         cmdutil.L2ConfigDefault,
+	LogLevel:   int(log.LvlInfo),
+	Persistent: cmdutil.PersistentConfigDefault,
+	HTTP:       cmdutil.HTTPConfigDefault,
+	WS:         cmdutil.WSConfigDefault,
+	DevInit:    false,
+	ImportFile: "",
+}
+
+func NodeConfigAddOptions(f *flag.FlagSet) {
+	cmdutil.ConfConfigAddOptions("conf", f)
+	arbnode.ConfigAddOptions("node", f, true, true)
+	cmdutil.L1ConfigAddOptions("l1", f)
+	cmdutil.L2ConfigAddOptions("l2", f)
+	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	cmdutil.PersistentConfigAddOptions("persistent", f)
+	cmdutil.HTTPConfigAddOptions("http", f)
+	cmdutil.WSConfigAddOptions("ws", f)
+	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
+}
+
+func ParseNode(_ context.Context) (*NodeConfig, *cmdutil.WalletConfig, *cmdutil.WalletConfig, error) {
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+
+	NodeConfigAddOptions(f)
+
+	k, err := cmdutil.BeginCommonParse(f)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	var nodeConfig NodeConfig
+	if err := cmdutil.EndCommonParse(k, &nodeConfig); err != nil {
+		return nil, nil, nil, err
+	}
+
+	if nodeConfig.Conf.Dump {
+		// Print out current configuration
+
+		// Don't keep printing configuration file and don't print wallet passwords
+		err := k.Load(confmap.Provider(map[string]interface{}{
+			"conf.dump":             false,
+			"wallet.l1.password":    "",
+			"wallet.l1.private-key": "",
+			"wallet.l2.password":    "",
+			"wallet.l2.private-key": "",
+		}, "."), nil)
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")
+		}
+
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "unable to marshal config file to JSON")
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	// Don't pass around wallet contents with normal configuration
+	l1wallet := nodeConfig.L1.Wallet
+	l2wallet := nodeConfig.L2.Wallet
+	nodeConfig.L1.Wallet = cmdutil.WalletConfigDefault
+	nodeConfig.L2.Wallet = cmdutil.WalletConfigDefault
+
+	return &nodeConfig, &l1wallet, &l2wallet, nil
 }
