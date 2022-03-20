@@ -188,11 +188,11 @@ func ClientForArbBackend(t *testing.T, backend *arbitrum.Backend) *ethclient.Cli
 
 // Create and deploy L1 and arbnode for L2
 func CreateTestNodeOnL1(t *testing.T, ctx context.Context, isSequencer bool) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
-	conf := arbnode.NodeConfigL1Test
-	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, &conf, params.ArbitrumDevTestChainConfig())
+	conf := arbnode.ConfigDefaultL1Test()
+	return CreateTestNodeOnL1WithConfig(t, ctx, isSequencer, conf, params.ArbitrumDevTestChainConfig())
 }
 
-func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.NodeConfig, chainConfig *params.ChainConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
+func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer bool, nodeConfig *arbnode.Config, chainConfig *params.ChainConfig) (l2info info, node *arbnode.Node, l2client *ethclient.Client, l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node) {
 	l1info, l1client, l1backend, l1stack = CreateTestL1BlockChain(t, nil)
 	l2info, l2stack, l2chainDb, l2blockchain := createL2BlockChain(t, nil, chainConfig)
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
@@ -203,7 +203,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	}
 
 	if !isSequencer {
-		nodeConfig.BatchPoster = false
+		nodeConfig.BatchPoster.Enable = false
 	}
 	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, nil)
 
@@ -217,10 +217,10 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, &arbnode.NodeConfigL2Test, nil, true)
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), nil, true)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.NodeConfig, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
 	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, redisClient)
 	Require(t, err)
@@ -268,13 +268,13 @@ func Fail(t *testing.T, printables ...interface{}) {
 }
 
 func Create2ndNode(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, blockValidator bool) (*ethclient.Client, *arbnode.Node) {
-	nodeConf := arbnode.NodeConfigL1Test
-	nodeConf.BatchPoster = false
-	nodeConf.BlockValidator = blockValidator
-	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, &nodeConf)
+	nodeConf := arbnode.ConfigDefaultL1Test()
+	nodeConf.BatchPoster.Enable = false
+	nodeConf.BlockValidator.Enable = blockValidator
+	return Create2ndNodeWithConfig(t, ctx, first, l1stack, l2InitData, nodeConf)
 }
 
-func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.NodeConfig) (*ethclient.Client, *arbnode.Node) {
+func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.Node, l1stack *node.Node, l2InitData *statetransfer.ArbosInitializationInfo, nodeConfig *arbnode.Config) (*ethclient.Client, *arbnode.Node) {
 	l1rpcClient, err := l1stack.Attach()
 	if err != nil {
 		t.Fatal(err)

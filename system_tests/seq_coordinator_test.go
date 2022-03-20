@@ -47,9 +47,9 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 
 	redisOptions, err := redis.ParseURL(getTestRediUrl())
 	Require(t, err)
-	nodeConfig := arbnode.NodeConfigL2Test
-	nodeConfig.SeqCoordinator = true
-	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
+	nodeConfig := arbnode.ConfigDefaultL2Test()
+	nodeConfig.SeqCoordinator = arbnode.TestSeqCoordinatorConfig
+	nodeConfig.SeqCoordinator.Enable = true
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
@@ -61,8 +61,8 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	initRedisForTest(t, ctx, redis.NewClient(redisOptions), nodeNames)
 
 	createStartNode := func(nodeNum int) {
-		nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[nodeNum]
-		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, &nodeConfig, redis.NewClient(redisOptions), false)
+		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
+		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, redis.NewClient(redisOptions), false)
 		node.TxStreamer.StopAndWait() // prevent blocks from building
 		nodes[nodeNum] = node
 	}
@@ -114,7 +114,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 				if attempts > 10 {
 					Fail(t, "timeout waiting for msg ", msgNum, " debug: ", node.SeqCoordinator.DebugPrint())
 				}
-				time.Sleep(nodeConfig.SeqCoordinatorConfig.UpdateInterval / 3)
+				time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval / 3)
 			}
 		}
 	}
@@ -211,7 +211,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 			}
 			if sequencer == -1 ||
 				(addNodes && (sequencer == currentSequencer+1)) {
-				time.Sleep(nodeConfig.SeqCoordinatorConfig.LockoutDuration / 5)
+				time.Sleep(nodeConfig.SeqCoordinator.LockoutDuration / 5)
 				continue
 			}
 			if sequencer == currentSequencer {
@@ -246,9 +246,9 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeConfig := arbnode.NodeConfigL2Test
-	nodeConfig.SeqCoordinator = true
-	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
+	nodeConfig := arbnode.ConfigDefaultL2Test()
+	nodeConfig.SeqCoordinator = arbnode.TestSeqCoordinatorConfig
+	nodeConfig.SeqCoordinator.Enable = true
 
 	nodeNames := []string{"stdio://A", "stdio://B"}
 
@@ -258,22 +258,22 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 
 	initRedisForTest(t, ctx, redisClient, nodeNames)
 
-	nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[0]
-	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, &nodeConfig, redis.NewClient(redisOptions), false)
+	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, redis.NewClient(redisOptions), false)
 
 	// wait for sequencerA to become master
 	for {
 		err := redisClient.Get(ctx, arbnode.CHOSENSEQ_KEY).Err()
 		if errors.Is(err, redis.Nil) {
-			time.Sleep(nodeConfig.SeqCoordinatorConfig.UpdateInterval)
+			time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval)
 			continue
 		}
 		Require(t, err)
 		break
 	}
 
-	nodeConfig.SeqCoordinatorConfig.MyUrl = nodeNames[1]
-	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, &nodeConfig, redis.NewClient(redisOptions), false)
+	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, redis.NewClient(redisOptions), false)
 
 	l2Info.GenerateAccount("User2")
 

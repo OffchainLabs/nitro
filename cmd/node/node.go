@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -15,10 +14,8 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -31,133 +28,74 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	koanfjson "github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/confmap"
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/broadcastclient"
-	"github.com/offchainlabs/nitro/das"
+	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/wsbroadcastserver"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
 )
 
+func printSampleUsage() {
+	progname := os.Args[0]
+	fmt.Printf("\n")
+	fmt.Printf("Sample usage:                  %s --help \n", progname)
+}
+
 func main() {
-
-	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
-
-	nol1Listener := flag.Bool("UNSAFEnol1listener", false, "DANGEROUS! disables listening to L1. To be used in test nodes only")
-	l1conn := flag.String("l1conn", "", "l1 connection (required unless no l1 listener)")
-
-	l1sequencer := flag.Bool("l1sequencer", false, "act and post to l1 as sequencer")
-	l1keystore := flag.String("l1keystore", "", "l1 private key store (required if l1role == sequencer)")
-	l1Account := flag.String("l1Account", "", "l1 seq account to use (default is first account in keystore)")
-	l1passphrase := flag.String("l1passphrase", "passphrase", "l1 private key file passphrase (1required if l1role == sequencer)")
-	l1deploy := flag.Bool("l1deploy", false, "deploy L1 (sequencer)")
-	l1deployment := flag.String("l1deployment", "", "json file including the existing deployment information")
-	l1ChainIdUint := flag.Uint64("l1chainid", 1337, "L1 chain ID")
-	l2ChainIdUint := flag.Uint64("l2chainid", params.ArbitrumTestnetChainConfig().ChainID.Uint64(), "L2 chain ID (determines Arbitrum network)")
-	forwardingtarget := flag.String("forwardingtarget", "", "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
-	batchpostermaxinterval := flag.Duration("batchpostermaxinterval", time.Minute, "maximum interval to post batches at (quicker if batches fill up)")
-
-	dataAvailabilityMode := flag.String("dataavailability.mode", "onchain", "where to read/write sequencer batches. Options: onchain, local (testing only)")
-	dataAvailabilityLocalDiskDirectory := flag.String("dataavailability.localdisk.dir", "", "directory to store data availability files")
-
-	datadir := flag.String("datadir", "", "directory to store chain state")
-	importFile := flag.String("importfile", "", "path for json data to import")
-	devInit := flag.Bool("dev", false, "init with dev data (1 account with balance) instead of file import")
-	keystorepath := flag.String("keystore", "", "dir for keystore")
-	keystorepassphrase := flag.String("passphrase", "passphrase", "passphrase for keystore")
-
-	httphost := flag.String("httphost", "localhost", "http host")
-	httpPort := flag.Int("httpport", 7545, "http port")
-	httpvhosts := flag.String("httpvhosts", "localhost", "list of virtual hosts to accept requests from")
-	wshost := flag.String("wshost", "localhost", "websocket host")
-	wsport := flag.Int("wsport", 7546, "websocket port")
-	wsorigins := flag.String("wsorigins", "localhost", "list of origins to accept requests from")
-	wsexposeall := flag.Bool("wsexposeall", false, "expose private api via websocket")
-
-	broadcasterEnabled := flag.Bool("feed.output.enabled", false, "enable the broadcaster")
-	broadcasterAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
-	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
-	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
-	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
-	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
-
-	feedInputUrls := flag.String("feed.input.url", "", "URLs of sequencer feed source, comma separated")
-	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
-
-	l1validator := flag.Bool("l1validator", false, "enable L1 validator and staker functionality")
-	validatorstrategy := flag.String("validatorstrategy", "watchtower", "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes (requires l1role=validator)")
-	l1validatorwithoutblockvalidator := flag.Bool("UNSAFEl1validatorwithoutblockvalidator", false, "DANGEROUS! allows running an L1 validator without a block validator")
-	stakerinterval := flag.Duration("stakerinterval", time.Minute, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
-	wasmrootpath := flag.String("wasmrootpath", "", "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm)")
-	wasmmoduleroot := flag.String("wasmmoduleroot", "", "wasm module root (if empty, read from <wasmrootpath>/module_root)")
-	wasmcachepath := flag.String("wasmcachepath", "", "path for cache of wasm machines")
-
-	flag.Parse()
 	ctx := context.Background()
 
+	nodeConfig, l1wallet, l2wallet, err := ParseNode(ctx, os.Args[1:])
+	if err != nil {
+		printSampleUsage()
+		if !strings.Contains(err.Error(), "help requested") {
+			fmt.Printf("%s\n", err.Error())
+		}
+
+		return
+	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.Lvl(*loglevel))
+	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
-	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
-	l2ChainId := new(big.Int).SetUint64(*l2ChainIdUint)
+	log.Info("Running Arbitrum nitro node")
 
-	nodeConf := arbnode.NodeConfigDefault
-	if *nol1Listener {
-		nodeConf.L1Reader = false
-		nodeConf.Sequencer = true // we sequence messages, but not to l1
-		nodeConf.BatchPoster = false
-		if *l1sequencer || *l1validator {
-			flag.Usage()
-			panic("nol1listener cannot be used with l1sequencer or l1validator")
-		}
+	if nodeConfig.Node.Dangerous.NoL1Listener {
+		nodeConfig.Node.EnableL1Reader = false
+		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
+		nodeConfig.Node.BatchPoster.Enable = false
 	} else {
-		nodeConf.L1Reader = true
+		nodeConfig.Node.EnableL1Reader = true
 	}
 
-	if *l1sequencer {
-		nodeConf.Sequencer = true
-		nodeConf.BatchPoster = true
-		nodeConf.BatchPosterConfig.MaxBatchPostInterval = *batchpostermaxinterval
-
-		if *forwardingtarget != "" && *forwardingtarget != "null" {
+	if nodeConfig.Node.Sequencer.Enable {
+		nodeConfig.Node.BatchPoster.Enable = true
+		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
-			panic("forwardingtarget set with l1sequencer")
+			panic("forwarding-target set when sequencer enabled")
 		}
-	} else {
-		if *forwardingtarget == "" {
-			flag.Usage()
-			panic("forwardingtarget unset, and not l1sequencer (can set to \"null\" to disable forwarding)")
-		}
-		if *forwardingtarget == "null" {
-			nodeConf.ForwardingTarget = ""
-		} else {
-			nodeConf.ForwardingTarget = *forwardingtarget
-		}
-	}
-
-	if *dataAvailabilityMode == "onchain" {
-		nodeConf.DataAvailabilityMode = das.OnchainDataAvailability
-	} else if *dataAvailabilityMode == "local" {
-		nodeConf.DataAvailabilityMode = das.LocalDataAvailability
-		if *dataAvailabilityLocalDiskDirectory == "" {
-			flag.Usage()
-			panic("davaavailability.localdisk.dir must be specified if mode is set to local")
-		}
-	} else {
+	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
-		panic("dataavailability.mode not recognized")
+		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
-	if *wasmrootpath != "" {
-		validator.StaticNitroMachineConfig.RootPath = *wasmrootpath
+	// Perform sanity check on mode
+	_, err = nodeConfig.Node.DataAvailability.Mode()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	if nodeConfig.Node.Wasm.RootPath != "" {
+		validator.StaticNitroMachineConfig.RootPath = nodeConfig.Node.Wasm.RootPath
 	} else {
 		execfile, err := os.Executable()
 		if err != nil {
@@ -167,12 +105,12 @@ func main() {
 		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
 	}
 
-	wasmModuleRootString := *wasmmoduleroot
+	wasmModuleRootString := nodeConfig.Node.Wasm.ModuleRoot
 	if wasmModuleRootString == "" {
 		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
 		fileBytes, err := ioutil.ReadFile(fileToRead)
 		if err != nil {
-			if *l1deploy || (*l1validator && !*l1validatorwithoutblockvalidator) {
+			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
 			}
 		}
@@ -183,14 +121,19 @@ func main() {
 	}
 	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
 
-	if *l1validator {
-		nodeConf.L1Validator = true
-		nodeConf.L1ValidatorConfig.Strategy = *validatorstrategy
-		nodeConf.L1ValidatorConfig.StakerInterval = *stakerinterval
-		if !*l1validatorwithoutblockvalidator {
-			nodeConf.BlockValidator = true
-			if *wasmcachepath != "" {
-				validator.StaticNitroMachineConfig.InitialMachineCachePath = *wasmcachepath
+	if nodeConfig.Node.Validator.Enable {
+		if !nodeConfig.Node.EnableL1Reader {
+			flag.Usage()
+			panic("validator must read from L1")
+		}
+		if !nodeConfig.Node.BlockValidator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
+			flag.Usage()
+			panic("L1 validator requires block validator to safely function")
+		}
+		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
+			nodeConfig.Node.BlockValidator.Enable = true
+			if nodeConfig.Node.Wasm.CachePath != "" {
+				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
 			}
 			go func() {
 				expectedRoot := wasmModuleRoot
@@ -210,74 +153,51 @@ func main() {
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	if nodeConf.L1Reader {
+	if nodeConfig.Node.EnableL1Reader {
 		var err error
-		var l1Addr common.Address
 
-		l1client, err = ethclient.Dial(*l1conn)
+		l1client, err = ethclient.Dial(nodeConfig.L1.URL)
 		if err != nil {
 			flag.Usage()
 			panic(err)
 		}
-		if nodeConf.BatchPoster || nodeConf.L1Validator {
-			l1TransactionOpts, err = util.GetTransactOptsFromKeystore(*l1keystore, *l1Account, *l1passphrase, l1ChainId)
+		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
+			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(
+				l1wallet.Pathname,
+				l1wallet.Account,
+				*l1wallet.Password(),
+				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
+			)
 			if err != nil {
-				panic(err)
-			}
-			l1Addr = l1TransactionOpts.From
-		}
-		if *l1deploy {
-			if !nodeConf.BatchPoster {
-				flag.Usage()
-				panic("deploy but not sequencer")
-			}
-			if nodeConf.BlockValidator {
-				// TODO actually figure out the wasmModuleRoot
-				panic("deploy as validator not yet supported")
-			}
-			var validators uint64
-			if nodeConf.L1Validator {
-				validators++
-			}
-			deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1Addr, validators, wasmModuleRoot, l2ChainId, time.Minute*5)
-			if err != nil {
-				flag.Usage()
-				panic(err)
-			}
-			deployInfo = *deployPtr
-		} else {
-			if *l1deployment == "" {
-				flag.Usage()
-				panic("not deploying, but no deployment specified")
-			}
-			rawDeployment, err := ioutil.ReadFile(*l1deployment)
-			if err != nil {
-				panic(err)
-			}
-			if err := json.Unmarshal(rawDeployment, &deployInfo); err != nil {
 				panic(err)
 			}
 		}
-	} else {
-		*l1deploy = false
+
+		if nodeConfig.L1.Deployment == "" {
+			flag.Usage()
+			panic("no deployment specified")
+		}
+		rawDeployment, err := ioutil.ReadFile(nodeConfig.L1.Deployment)
+		if err != nil {
+			panic(err)
+		}
+		if err := json.Unmarshal(rawDeployment, &deployInfo); err != nil {
+			panic(err)
+		}
 	}
 
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = *datadir
-	stackConf.HTTPHost = *httphost
-	stackConf.HTTPPort = *httpPort
-	stackConf.HTTPVirtualHosts = utils.SplitAndTrim(*httpvhosts)
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth")
-	// TODO: Add CLI option for this
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "debug")
-	stackConf.WSHost = *wshost
-	stackConf.WSPort = *wsport
-	stackConf.WSOrigins = utils.SplitAndTrim(*wsorigins)
-	stackConf.WSModules = append(stackConf.WSModules, "eth")
-	// TODO: Add CLI option for this
-	stackConf.WSModules = append(stackConf.WSModules, "debug")
-	stackConf.WSExposeAll = *wsexposeall
-	if *wsexposeall {
+	stackConf.DataDir = nodeConfig.Persistent.Data
+	stackConf.HTTPHost = nodeConfig.HTTP.Addr
+	stackConf.HTTPPort = nodeConfig.HTTP.Port
+	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
+	stackConf.HTTPModules = nodeConfig.HTTP.API
+	stackConf.WSHost = nodeConfig.WS.Addr
+	stackConf.WSPort = nodeConfig.WS.Port
+	stackConf.WSOrigins = nodeConfig.WS.Origins
+	stackConf.WSModules = nodeConfig.WS.API
+	stackConf.WSExposeAll = nodeConfig.WS.ExposeAll
+	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
 	stackConf.P2P.ListenAddr = ""
@@ -298,42 +218,30 @@ func main() {
 	log.Info("Dev node funded private key", "priv", devPrivKeyStr)
 	log.Info("Funded public address", "addr", devAddr)
 
-	if *keystorepath != "" {
-		mykeystore := keystore.NewPlaintextKeyStore(*keystorepath)
+	if l2wallet.Pathname != "" {
+		mykeystore := keystore.NewPlaintextKeyStore(l2wallet.Pathname)
 		stack.AccountManager().AddBackend(mykeystore)
 		var account accounts.Account
 		if mykeystore.HasAddress(devAddr) {
 			account.Address = devAddr
 			account, err = mykeystore.Find(account)
 		} else {
-			account, err = mykeystore.ImportECDSA(devPrivKey, *keystorepassphrase)
+			if l2wallet.Password() == nil {
+				panic("l2 password not set")
+			}
+			account, err = mykeystore.ImportECDSA(devPrivKey, *l2wallet.Password())
 		}
 		if err != nil {
 			panic(err)
 		}
-		err = mykeystore.Unlock(account, *keystorepassphrase)
+		if l2wallet.Password() == nil {
+			panic("l2 password not set")
+		}
+		err = mykeystore.Unlock(account, *l2wallet.Password())
 		if err != nil {
 			panic(err)
 		}
 	}
-
-	nodeConf.Broadcaster = *broadcasterEnabled
-	nodeConf.BroadcasterConfig = wsbroadcastserver.BroadcasterConfig{
-		Addr:          *broadcasterAddr,
-		IOTimeout:     *broadcasterIOTimeout,
-		Port:          strconv.Itoa(*broadcasterPort),
-		Ping:          *broadcasterPing,
-		ClientTimeout: *broadcasterClientTimeout,
-		Queue:         100,
-		Workers:       *broadcasterWorkers,
-	}
-
-	nodeConf.BroadcastClient = *feedInputUrls != ""
-	nodeConf.BroadcastClientConfig = broadcastclient.BroadcastClientConfig{
-		Timeout: *feedInputTimeout,
-		URLs:    strings.Split(*feedInputUrls, ","),
-	}
-
 	var initDataReader statetransfer.InitDataReader = nil
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
@@ -341,12 +249,12 @@ func main() {
 		utils.Fatalf("Failed to open database: %v", err)
 	}
 
-	if *importFile != "" {
-		initDataReader, err = statetransfer.NewJsonInitDataReader(*importFile)
+	if nodeConfig.ImportFile != "" {
+		initDataReader, err = statetransfer.NewJsonInitDataReader(nodeConfig.ImportFile)
 		if err != nil {
 			panic(err)
 		}
-	} else if *devInit {
+	} else if nodeConfig.DevInit {
 		initData := statetransfer.ArbosInitializationInfo{
 			Accounts: []statetransfer.AccountInitializationInfo{
 				{
@@ -362,7 +270,7 @@ func main() {
 		}
 	}
 
-	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(*l2ChainIdUint))
+	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
 	if err != nil {
 		panic(err)
 	}
@@ -415,7 +323,7 @@ func main() {
 		}
 	}
 
-	_, err = arbnode.CreateNode(stack, chainDb, &nodeConf, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -433,4 +341,91 @@ func main() {
 	if err := stack.Close(); err != nil {
 		utils.Fatalf("Error closing stack: %v\n", err)
 	}
+}
+
+type NodeConfig struct {
+	Conf       cmdutil.ConfConfig       `koanf:"conf"`
+	Node       arbnode.Config           `koanf:"node"`
+	L1         cmdutil.L1Config         `koanf:"l1"`
+	L2         cmdutil.L2Config         `koanf:"l2"`
+	LogLevel   int                      `koanf:"log-level"`
+	Persistent cmdutil.PersistentConfig `koanf:"persistent"`
+	HTTP       cmdutil.HTTPConfig       `koanf:"http"`
+	WS         cmdutil.WSConfig         `koanf:"ws"`
+	DevInit    bool                     `koanf:"dev-init"`
+	ImportFile string                   `koanf:"import-file"`
+}
+
+var NodeConfigDefault = NodeConfig{
+	Conf:       cmdutil.ConfConfigDefault,
+	Node:       arbnode.ConfigDefault,
+	L1:         cmdutil.L1ConfigDefault,
+	L2:         cmdutil.L2ConfigDefault,
+	LogLevel:   int(log.LvlInfo),
+	Persistent: cmdutil.PersistentConfigDefault,
+	HTTP:       cmdutil.HTTPConfigDefault,
+	WS:         cmdutil.WSConfigDefault,
+	DevInit:    false,
+	ImportFile: "",
+}
+
+func NodeConfigAddOptions(f *flag.FlagSet) {
+	cmdutil.ConfConfigAddOptions("conf", f)
+	arbnode.ConfigAddOptions("node", f, true, true)
+	cmdutil.L1ConfigAddOptions("l1", f)
+	cmdutil.L2ConfigAddOptions("l2", f)
+	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	cmdutil.PersistentConfigAddOptions("persistent", f)
+	cmdutil.HTTPConfigAddOptions("http", f)
+	cmdutil.WSConfigAddOptions("ws", f)
+	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
+}
+
+func ParseNode(_ context.Context, args []string) (*NodeConfig, *cmdutil.WalletConfig, *cmdutil.WalletConfig, error) {
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+
+	NodeConfigAddOptions(f)
+
+	k, err := cmdutil.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	var nodeConfig NodeConfig
+	if err := cmdutil.EndCommonParse(k, &nodeConfig); err != nil {
+		return nil, nil, nil, err
+	}
+
+	if nodeConfig.Conf.Dump {
+		// Print out current configuration
+
+		// Don't keep printing configuration file and don't print wallet passwords
+		err := k.Load(confmap.Provider(map[string]interface{}{
+			"conf.dump":             false,
+			"l1.wallet.password":    "",
+			"l1.wallet.private-key": "",
+			"l2.wallet.password":    "",
+			"l2.wallet.private-key": "",
+		}, "."), nil)
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")
+		}
+
+		c, err := k.Marshal(koanfjson.Parser())
+		if err != nil {
+			return nil, nil, nil, errors.Wrap(err, "unable to marshal config file to JSON")
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	// Don't pass around wallet contents with normal configuration
+	l1wallet := nodeConfig.L1.Wallet
+	l2wallet := nodeConfig.L2.Wallet
+	nodeConfig.L1.Wallet = cmdutil.WalletConfigDefault
+	nodeConfig.L2.Wallet = cmdutil.WalletConfigDefault
+
+	return &nodeConfig, &l1wallet, &l2wallet, nil
 }
