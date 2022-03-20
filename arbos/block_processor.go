@@ -6,7 +6,6 @@ package arbos
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
@@ -36,16 +35,6 @@ var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
-var eip3675UncleHash [32]byte
-
-func init() { // per EIP-3675, initialize eip3675UncleHash to the keccak256 hash of the RLP encoding of an empty list
-	decoded, err := hex.DecodeString("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
-	if err != nil {
-		panic(err)
-	}
-	copy(eip3675UncleHash[:], decoded)
-}
-
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.GasPriceWei()
@@ -72,7 +61,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   eip3675UncleHash,
+		UncleHash:   types.EmptyUncleHash,
 		Coinbase:    coinbase,
 		Root:        [32]byte{},  // Filled in later
 		TxHash:      [32]byte{},  // Filled in later
