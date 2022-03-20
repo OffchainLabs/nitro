@@ -7,6 +7,9 @@ package das
 import (
 	"context"
 	"encoding/binary"
+	"errors"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
@@ -29,10 +32,39 @@ const (
 )
 
 type DataAvailabilityConfig struct {
-	LocalDiskDataDir string
+	ModeImpl         string `koanf:"mode"`
+	LocalDiskDataDir string `koanf:"local-disk-data-dir"`
 }
 
-var DefaultDataAvailabilityConfig = DataAvailabilityConfig{}
+var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
+	ModeImpl:         "onchain",
+	LocalDiskDataDir: "",
+}
+
+func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
+	if c.ModeImpl == "" {
+		return 0, errors.New("--data-availability.mode missing")
+	}
+
+	if c.ModeImpl == "onchain" {
+		return OnchainDataAvailability, nil
+	}
+
+	if c.ModeImpl == "local" {
+		if c.LocalDiskDataDir == "" {
+			flag.Usage()
+			return 0, errors.New("--data-availability.local-disk-data-dir must be specified if mode is set to local")
+		}
+		return LocalDataAvailability, nil
+	}
+
+	flag.Usage()
+	return 0, errors.New("--data-availability.mode " + c.ModeImpl + " not recognized")
+}
+
+func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode (onchain or local)")
+}
 
 func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
 	buf := make([]byte, 0, 32+8+8)

@@ -6,16 +6,20 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/providers/confmap"
+	"github.com/offchainlabs/nitro/cmd/util"
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -31,38 +35,42 @@ func main() {
 	}
 }
 
+func printSampleUsage() {
+	progname := os.Args[0]
+	fmt.Printf("\n")
+	fmt.Printf("Sample usage:                  %s --help \n", progname)
+}
+
 func startup() error {
 	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
-	broadcasterAddr := flag.String("feed.output.addr", "0.0.0.0", "address to bind the relay feed output to")
-	broadcasterIOTimeout := flag.Duration("feed.output.io-timeout", 5*time.Second, "duration to wait before timing out HTTP to WS upgrade")
-	broadcasterPort := flag.Int("feed.output.port", 9642, "port to bind the relay feed output to")
-	broadcasterPing := flag.Duration("feed.output.ping", 5*time.Second, "duration for ping interval")
-	broadcasterClientTimeout := flag.Duration("feed.output.client-timeout", 15*time.Second, "duration to wait before timing out connections to client")
-	broadcasterWorkers := flag.Int("feed.output.workers", 100, "Number of threads to reserve for HTTP to WS upgrade")
+	relayConfig, err := ParseRelay(context.Background(), os.Args[1:])
+	if err != nil {
+		printSampleUsage()
+		if !strings.Contains(err.Error(), "help requested") {
+			fmt.Printf("%s\n", err.Error())
+		}
 
-	feedInputUrls := flag.String("feed.input.url", "", "URLs of sequencer feed source, comma separated")
-	feedInputTimeout := flag.Duration("feed.input.timeout", 20*time.Second, "duration to wait before timing out conection to server")
-
-	flag.Parse()
+		return nil
+	}
 
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.Lvl(*loglevel))
 	log.Root().SetHandler(glogger)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{
-		Addr:          *broadcasterAddr,
-		IOTimeout:     *broadcasterIOTimeout,
-		Port:          strconv.Itoa(*broadcasterPort),
-		Ping:          *broadcasterPing,
-		ClientTimeout: *broadcasterClientTimeout,
-		Queue:         100,
-		Workers:       *broadcasterWorkers,
+		Addr:          relayConfig.Node.Feed.Output.Addr,
+		IOTimeout:     relayConfig.Node.Feed.Output.IOTimeout,
+		Port:          relayConfig.Node.Feed.Output.Port,
+		Ping:          relayConfig.Node.Feed.Output.Ping,
+		ClientTimeout: relayConfig.Node.Feed.Output.ClientTimeout,
+		Queue:         relayConfig.Node.Feed.Output.Queue,
+		Workers:       relayConfig.Node.Feed.Output.Workers,
 	}
 
 	clientConf := broadcastclient.BroadcastClientConfig{
-		Timeout: *feedInputTimeout,
-		URLs:    strings.Split(*feedInputUrls, ","),
+		Timeout: relayConfig.Node.Feed.Input.Timeout,
+		URLs:    relayConfig.Node.Feed.Input.URLs,
 	}
 
 	defer log.Info("Cleanly shutting down relay")
@@ -71,12 +79,80 @@ func startup() error {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	// Start up an arbitrum sequencer relay
-	relay := relay.NewRelay(serverConf, clientConf)
-	err := relay.Start(context.Background())
+	newRelay := relay.NewRelay(serverConf, clientConf)
+	err = newRelay.Start(context.Background())
 	if err != nil {
 		return err
 	}
 	<-sigint
-	relay.StopAndWait()
+	newRelay.StopAndWait()
 	return nil
+}
+
+type RelayConfig struct {
+	Conf     util.ConfConfig `koanf:"conf"`
+	LogLevel int             `koanf:"log-level"`
+	Node     RelayNodeConfig `koanf:"node"`
+}
+
+var RelayConfigDefault = RelayConfig{
+	Conf:     util.ConfConfigDefault,
+	LogLevel: int(log.LvlInfo),
+	Node:     RelayNodeConfigDefault,
+}
+
+func RelayConfigAddOptions(f *flag.FlagSet) {
+	util.ConfConfigAddOptions("conf", f)
+	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
+	RelayNodeConfigAddOptions("node", f)
+}
+
+type RelayNodeConfig struct {
+	Feed broadcastclient.FeedConfig `koanf:"feed"`
+}
+
+var RelayNodeConfigDefault = RelayNodeConfig{
+	Feed: broadcastclient.FeedConfigDefault,
+}
+
+func RelayNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
+}
+
+func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {
+	f := flag.NewFlagSet("", flag.ContinueOnError)
+
+	RelayConfigAddOptions(f)
+
+	k, err := util.BeginCommonParse(f, args)
+	if err != nil {
+		return nil, err
+	}
+
+	var relayConfig RelayConfig
+	if err := util.EndCommonParse(k, &relayConfig); err != nil {
+		return nil, err
+	}
+
+	if relayConfig.Conf.Dump {
+		// Print out current configuration
+
+		// Don't keep printing configuration file and don't print wallet passwords
+		err := k.Load(confmap.Provider(map[string]interface{}{
+			"conf.dump": false,
+		}, "."), nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "error removing extra parameters before dump")
+		}
+
+		c, err := k.Marshal(json.Parser())
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to marshal config file to JSON")
+		}
+
+		fmt.Println(string(c))
+		os.Exit(0)
+	}
+
+	return &relayConfig, nil
 }
