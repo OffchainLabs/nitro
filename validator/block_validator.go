@@ -84,9 +84,10 @@ const validationStatusPrepared uint32 = 1   // ready to undergo validation
 const validationStatusValid uint32 = 2      // validation succeeded
 
 type validationStatus struct {
-	Status uint32           // atomic: value is one of validationStatus*
-	Cancel func()           // non-atomic: only read/written to with reorg mutex
-	Entry  *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
+	Status    uint32           // atomic: value is one of validationStatus*
+	Cancel    func()           // non-atomic: only read/written to with reorg mutex
+	Entry     *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
+	Preimages []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 }
 
 func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
@@ -175,12 +176,13 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 		return
 	}
 	hashlist := v.preimageCache.PourToCache(preimages)
-	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, hashlist)
+	validationEntry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
 	if err != nil {
 		log.Error("failed to create validation entry", "err", err, "header", header, "prevHeader", prevHeader)
 		return
 	}
 	validationStatus.Entry = validationEntry
+	validationStatus.Preimages = hashlist
 	atomic.StoreUint32(&validationStatus.Status, validationStatusPrepared)
 	v.sendValidationsChan <- struct{}{}
 }
@@ -308,7 +310,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	}
 	entry := validationStatus.Entry
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	preimages, err := v.preimageCache.FillHashedValues(entry.Preimages)
+	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
 		return
@@ -316,7 +318,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	defer (func() {
 		atomic.AddInt32(&v.atomicValidationsRunning, -1)
 		v.sendValidationsChan <- struct{}{}
-		err := v.preimageCache.RemoveFromCache(entry.Preimages)
+		err := v.preimageCache.RemoveFromCache(validationStatus.Preimages)
 		if err != nil {
 			log.Error("validator failed to remove from cache", "err", err)
 		}
@@ -561,60 +563,6 @@ func (v *BlockValidator) ReorgToBlock(blockNum uint64, blockHash common.Hash) er
 		}
 	}
 
-	return nil
-}
-
-func (v *BlockValidator) ValidateBlock(ctx context.Context, blockNum uint64) error {
-	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum)
-	header := v.blockchain.GetHeaderByNumber(blockNum)
-	if header == nil {
-		return errors.New("header not found")
-	}
-	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
-	if prevHeader == nil {
-		return errors.New("prev header not found")
-	}
-	msg, err := v.streamer.GetMessage(msgIndex)
-	if err != nil {
-		return err
-	}
-	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
-	if err != nil {
-		return errors.New("failed to get block data to validate")
-	}
-
-	batchCount, err := v.inboxTracker.GetBatchCount()
-	if err != nil {
-		return err
-	}
-	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, msgIndex, batchCount)
-	if err != nil {
-		return err
-	}
-
-	startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
-	if err != nil {
-		return fmt.Errorf("failed calculating position for validation: %w", err)
-	}
-
-	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create validation entry %w", err)
-	}
-	entry.SeqMsgNr = startPos.BatchNumber
-	entry.StartPosition = startPos
-	entry.EndPosition = endPos
-
-	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
-	if err != nil {
-		return err
-	}
-
-	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg)
-	if err != nil {
-		return err
-	}
-	fmt.Println("Finished validation:", gsEnd == entry.expectedEnd())
 	return nil
 }
 

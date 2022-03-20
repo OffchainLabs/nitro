@@ -123,7 +123,6 @@ type validationEntry struct {
 	SendRoot      common.Hash
 	PrevSendRoot  common.Hash
 	BlockHeader   *types.Header
-	Preimages     []common.Hash
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	SeqMsgNr      uint64
@@ -156,7 +155,6 @@ func newValidationEntry(
 	header *types.Header,
 	hasDelayed bool,
 	delayedMsgNr uint64,
-	preimages []common.Hash,
 ) (*validationEntry, error) {
 	extraInfo, err := types.DeserializeHeaderExtraInformation(header)
 	if err != nil {
@@ -173,7 +171,6 @@ func newValidationEntry(
 		PrevSendRoot:  prevExtraInfo.SendRoot,
 		PrevBlockHash: header.ParentHash,
 		BlockHeader:   header,
-		Preimages:     preimages,
 		HasDelayedMsg: hasDelayed,
 		DelayedMsgNr:  delayedMsgNr,
 	}, nil
@@ -388,7 +385,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, blockNum ui
 		return fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
-	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead, nil)
+	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
 	if err != nil {
 		return fmt.Errorf("failed to create validation entry %w", err)
 	}
