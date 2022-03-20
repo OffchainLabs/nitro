@@ -125,7 +125,6 @@ type validationEntry struct {
 	BlockHeader   *types.Header
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	SeqMsgNr      uint64
 	StartPosition GlobalStatePosition
 	EndPosition   GlobalStatePosition
 }
@@ -389,7 +388,6 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, blockNum ui
 	if err != nil {
 		return fmt.Errorf("failed to create validation entry %w", err)
 	}
-	entry.SeqMsgNr = startPos.BatchNumber
 	entry.StartPosition = startPos
 	entry.EndPosition = endPos
 

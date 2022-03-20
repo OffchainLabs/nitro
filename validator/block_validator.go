@@ -401,7 +401,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			return
 		}
 		atomic.AddInt32(&v.atomicValidationsRunning, 1)
-		validationStatus.Entry.SeqMsgNr = startPos.BatchNumber
 		validationStatus.Entry.StartPosition = startPos
 		validationStatus.Entry.EndPosition = endPos
 		validationCtx, cancel := context.WithCancel(ctx)
@@ -471,11 +470,12 @@ func (v *BlockValidator) progressValidated() {
 			return
 		}
 		earliestBatchKept := atomic.LoadUint64(&v.earliestBatchKept)
-		if earliestBatchKept < validationEntry.SeqMsgNr {
-			for batch := earliestBatchKept; batch < validationEntry.SeqMsgNr; batch++ {
+		seqMsgNr := validationEntry.StartPosition.BatchNumber
+		if earliestBatchKept < seqMsgNr {
+			for batch := earliestBatchKept; batch < seqMsgNr; batch++ {
 				v.sequencerBatches.Delete(batch)
 			}
-			atomic.StoreUint64(&v.earliestBatchKept, validationEntry.SeqMsgNr)
+			atomic.StoreUint64(&v.earliestBatchKept, seqMsgNr)
 		}
 
 		v.lastBlockValidatedMutex.Lock()
