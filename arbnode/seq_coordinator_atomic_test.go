@@ -106,7 +106,7 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl == "" {
-		redisUrl = "redis://localhost:6379/0"
+		redisUrl = coordConfig.RedisUrl
 	}
 	redisOptions, err := redis.ParseURL(redisUrl)
 	Require(t, err)

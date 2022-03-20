@@ -19,8 +19,14 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-func initRedisForTest(t *testing.T, ctx context.Context, redisClient *redis.Client, nodeNames []string) {
+func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNames []string) {
 	var priorities string
+
+	redisOptions, err := redis.ParseURL(redisUrl)
+	Require(t, err)
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+
 	for _, name := range nodeNames {
 		priorities = priorities + name + ","
 		redisClient.Del(ctx, arbnode.LIVELINESS_KEY_PREFIX+name)
@@ -36,7 +42,7 @@ func initRedisForTest(t *testing.T, ctx context.Context, redisClient *redis.Clie
 func getTestRediUrl() string {
 	redisUrl := os.Getenv("TEST_REDIS")
 	if redisUrl == "" {
-		redisUrl = "redis://localhost:6379/0"
+		redisUrl = arbnode.TestSeqCoordinatorConfig.RedisUrl
 	}
 	return redisUrl
 }
@@ -45,10 +51,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	redisOptions, err := redis.ParseURL(getTestRediUrl())
-	Require(t, err)
 	nodeConfig := arbnode.ConfigDefaultL2Test()
-	nodeConfig.SeqCoordinator = arbnode.TestSeqCoordinatorConfig
 	nodeConfig.SeqCoordinator.Enable = true
 
 	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
@@ -58,11 +61,11 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	nodes := make([]*arbnode.Node, len(nodeNames))
 
 	// init DB to known state
-	initRedisForTest(t, ctx, redis.NewClient(redisOptions), nodeNames)
+	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	createStartNode := func(nodeNum int) {
 		nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
-		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, redis.NewClient(redisOptions), false)
+		_, node, _ := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 		node.TxStreamer.StopAndWait() // prevent blocks from building
 		nodes[nodeNum] = node
 	}
@@ -247,19 +250,19 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	defer cancel()
 
 	nodeConfig := arbnode.ConfigDefaultL2Test()
-	nodeConfig.SeqCoordinator = arbnode.TestSeqCoordinatorConfig
 	nodeConfig.SeqCoordinator.Enable = true
 
 	nodeNames := []string{"stdio://A", "stdio://B"}
 
-	redisOptions, err := redis.ParseURL(getTestRediUrl())
-	Require(t, err)
-	redisClient := redis.NewClient(redisOptions)
-
-	initRedisForTest(t, ctx, redisClient, nodeNames)
+	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
-	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, redis.NewClient(redisOptions), false)
+	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+
+	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
+	Require(t, err)
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
 
 	// wait for sequencerA to become master
 	for {
@@ -273,7 +276,7 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	}
 
 	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
-	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, redis.NewClient(redisOptions), false)
+	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
 
 	l2Info.GenerateAccount("User2")
 

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -205,7 +204,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	if !isSequencer {
 		nodeConfig.BatchPoster.Enable = false
 	}
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil, nil)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, addresses, sequencerTxOptsPtr, nil)
 
 	Require(t, err)
 	Require(t, node.Start(ctx))
@@ -217,12 +216,12 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func CreateTestL2(t *testing.T, ctx context.Context) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
-	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), nil, true)
+	return CreateTestL2WithConfig(t, ctx, nil, arbnode.ConfigDefaultL2Test(), true)
 }
 
-func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, redisClient *redis.Client, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
+func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, takeOwnership bool) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	l2info, stack, chainDb, blockchain := createL2BlockChain(t, l2Info, params.ArbitrumDevTestChainConfig())
-	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil, redisClient)
+	node, err := arbnode.CreateNode(stack, chainDb, nodeConfig, blockchain, nil, nil, nil, nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -288,7 +287,7 @@ func Create2ndNodeWithConfig(t *testing.T, ctx context.Context, first *arbnode.N
 	l2blockchain, err := arbnode.WriteOrTestBlockChain(l2chainDb, nil, initReader, 0, first.ArbInterface.BlockChain().Config())
 	Require(t, err)
 
-	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil, nil)
+	node, err := arbnode.CreateNode(l2stack, l2chainDb, nodeConfig, l2blockchain, l1client, first.DeployInfo, nil, nil)
 	Require(t, err)
 
 	err = node.Start(ctx)

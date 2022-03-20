@@ -323,7 +323,7 @@ func main() {
 		}
 	}
 
-	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts, nil)
+	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

@@ -46,6 +46,7 @@ type SeqCoordinator struct {
 
 type SeqCoordinatorConfig struct {
 	Enable          bool                 `koanf:"enable"`
+	RedisUrl        string               `koanf:"redis-url"`
 	LockoutDuration time.Duration        `koanf:"lockout-duration"`
 	LockoutSpare    time.Duration        `koanf:"lockout-spare"`
 	SeqNumDuration  time.Duration        `koanf:"seq-num-duration"`
@@ -70,6 +71,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:          false,
+	RedisUrl:        "",
 	LockoutDuration: time.Duration(5) * time.Minute,
 	LockoutSpare:    time.Duration(30) * time.Second,
 	SeqNumDuration:  time.Duration(24) * time.Hour,
@@ -82,6 +84,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:          false,
+	RedisUrl:        "redis://localhost:6379/0",
 	LockoutDuration: time.Millisecond * 500,
 	LockoutSpare:    time.Millisecond * 10,
 	SeqNumDuration:  time.Minute * 10,
@@ -92,15 +95,19 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	MyUrl:           "",
 }
 
-func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, client redis.UniversalClient, config SeqCoordinatorConfig) *SeqCoordinator {
+func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+	redisOptions, err := redis.ParseURL(config.RedisUrl)
+	if err != nil {
+		return nil, err
+	}
 	coordinator := &SeqCoordinator{
 		streamer:  streamer,
 		sequencer: sequencer,
-		client:    client,
+		client:    redis.NewClient(redisOptions),
 		config:    config,
 	}
 	streamer.SetSeqCoordinator(coordinator)
-	return coordinator
+	return coordinator, nil
 }
 
 func (c *SeqCoordinator) recommendLiveSequencer(ctx context.Context) (string, error) {
@@ -476,6 +483,11 @@ func (c *SeqCoordinator) DebugPrint() string {
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn)
 	c.CallIteratively(c.update)
+}
+
+func (c *SeqCoordinator) StopAndWait() {
+	c.StopWaiter.StopAndWait()
+	c.client.Close()
 }
 
 var ErrNotMainSequencer = errors.New("not main sequencer")
