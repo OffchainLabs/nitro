@@ -5,9 +5,11 @@
 package arbstate
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
 )
@@ -66,7 +68,12 @@ func init() {
 		if !found {
 			return nil
 		}
-		return precompiles.RenderSolError(errABI, data)
+		rendered, err := precompiles.RenderSolError(errABI, data)
+		if err != nil {
+			log.Warn("failed to render rpc error", "err", err)
+			return nil
+		}
+		return errors.New(rendered)
 	}
 }
 

@@ -5,6 +5,7 @@
 package precompiles
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -89,28 +90,28 @@ type SolError struct {
 	solErr abi.Error
 }
 
-func RenderSolError(solErr abi.Error, data []byte) error {
+func RenderSolError(solErr abi.Error, data []byte) (string, error) {
 	vals, err := solErr.Unpack(data)
 	if err != nil {
-		return nil
+		return "", err
 	}
 	valsRange, ok := vals.([]interface{})
 	if !ok {
-		return nil
+		return "", errors.New("unexpected unpack result")
 	}
 	strVals := make([]string, 0, len(valsRange))
 	for _, val := range valsRange {
 		strVals = append(strVals, fmt.Sprintf("%v", val))
 	}
-	return fmt.Errorf("error %v(%v)", solErr.Name, strings.Join(strVals, ", "))
+	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
 }
 
 func (e *SolError) Error() string {
-	rendered := RenderSolError(e.solErr, e.data)
-	if rendered != nil {
-		return rendered.Error()
+	rendered, err := RenderSolError(e.solErr, e.data)
+	if err != nil {
+		return "unable to decode execution error"
 	}
-	return "unable to decode execution error"
+	return rendered
 }
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
@@ -438,11 +439,6 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		structFields := reflect.ValueOf(implementer).Elem()
 		errorReturnPointer := structFields.FieldByName(name + "Error")
 
-		dataInputs := make(abi.Arguments, 0)
-		for _, input := range solErr.Inputs {
-			dataInputs = append(dataInputs, input)
-		}
-
 		capturedSolErr := solErr
 		errorReturn := func(args []reflect.Value) []reflect.Value {
 			var dataValues []interface{}
@@ -450,7 +446,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 				dataValues = append(dataValues, args[i].Interface())
 			}
 
-			data, err := dataInputs.PackValues(dataValues)
+			data, err := solErr.Inputs.PackValues(dataValues)
 			if err != nil {
 				glog.Error(fmt.Sprintf(
 					"Couldn't pack values for error %s\nnargs %s\nvalues %s\nerror %s",
@@ -655,14 +651,19 @@ func (p Precompile) Call(
 	reflectResult := method.handler.Func.Call(reflectArgs)
 	resultCount := len(reflectResult) - 1
 	if !reflectResult[resultCount].IsNil() {
-		errRet := reflectResult[resultCount].Interface().(error)
-		if errRet, ok := errRet.(*SolError); ok {
-			resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(errRet.data)))
+		errRet, ok := reflectResult[resultCount].Interface().(error)
+		if !ok {
+			log.Fatal("final return value must be error")
+		}
+		var solErr *SolError
+		isSolErr := errors.As(errRet, &solErr)
+		if isSolErr {
+			resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(solErr.data)))
 			if err := callerCtx.Burn(resultCost); err != nil {
 				// user cannot afford the result data returned
 				return nil, 0, vm.ErrExecutionReverted
 			}
-			return errRet.data, callerCtx.gasLeft, vm.ErrExecutionReverted
+			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
 		// the last arg is always the error status
 		return nil, callerCtx.gasLeft, errRet
