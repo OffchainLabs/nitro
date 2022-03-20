@@ -45,7 +45,7 @@ type NitroMachineConfig struct {
 var StaticNitroMachineConfig = NitroMachineConfig{
 	RootPath:                "./target/machine/",
 	ProverBinPath:           "replay.wasm",
-	ModulePaths:             []string{"wasi_stub.wasm", "host_io.wasm", "soft-float.wasm", "go_stub.wasm", "brotli.wasm"},
+	ModulePaths:             []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 	InitialMachineCachePath: "./target/etc/initial-machine-cache",
 }
 
