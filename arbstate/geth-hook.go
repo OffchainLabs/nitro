@@ -5,6 +5,7 @@
 package arbstate
 
 import (
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos"
@@ -46,10 +47,26 @@ func init() {
 		vm.PrecompiledContractsArbitrum[k] = v
 	}
 
+	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
+		for _, errABI := range precompile.Precompile().GetErrorABIs() {
+			var id [4]byte
+			copy(id[:], errABI.ID[:4])
+			precompileErrors[id] = errABI
+		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.PrecompiledContractsArbitrum[addr] = wrapped
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+	}
+
+	core.RenderRPCError = func(data []byte) error {
+		var id [4]byte
+		copy(id[:], data[:4])
+		errABI, found := precompileErrors[id]
+		if !found {
+			return nil
+		}
+		return precompiles.RenderSolError(errABI, data)
 	}
 }
 
