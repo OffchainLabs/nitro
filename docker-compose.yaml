@@ -21,7 +21,7 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --feed.output.enabled -feed.output.port 9642
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642
     depends_on:
       - geth
   staker-unsafe:
@@ -34,7 +34,7 @@ services:
       - "unsafestaker-data:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.validator.enable -node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null -node.validator.dangerous.without-block-validator
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null --node.validator.dangerous.without-block-validator
     depends_on:
       - sequencer
   validator:
@@ -47,7 +47,7 @@ services:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init -l1.url ws://geth:8546 --l1wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 -node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forward-ingtarget null
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forward-ingtarget null
     depends_on:
       - sequencer
   relay:
@@ -56,7 +56,7 @@ services:
     ports:
       - "9652:9652"
     entrypoint: target/bin/relay
-    command: --feed.output.port 9652 --feed.input.url ws://sequencer:9642/feed
+    command: --node.feed.output.port 9652 --node.feed.input.url ws://sequencer:9642/feed
 volumes:
   l1data:
   l1keystore:
