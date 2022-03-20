@@ -36,8 +36,9 @@ type TransactionStreamer struct {
 	db ethdb.Database
 	bc *core.BlockChain
 
-	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
-	reorgMutex         sync.Mutex
+	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex or createBlocksMutex is held
+	createBlocksMutex  sync.Mutex // cannot be acquired while reorgMutex is held
+	reorgMutex         sync.RWMutex
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
@@ -157,6 +158,13 @@ func (s *TransactionStreamer) reorgToInternal(batch ethdb.Batch, count arbutil.M
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		return errors.New("reorg target block not found")
+	}
+
+	if s.validator != nil {
+		err = s.validator.ReorgToBlock(targetBlock.NumberU64(), targetBlock.Hash())
+		if err != nil {
+			return err
+		}
 	}
 
 	err = s.bc.ReorgToOldBlock(targetBlock)
@@ -340,15 +348,17 @@ func messageFromTxes(header *arbos.L1IncomingMessageHeader, txes types.Transacti
 func (s *TransactionStreamer) SequenceTransactions(header *arbos.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	s.reorgMutex.RLock()
+	defer s.reorgMutex.RUnlock()
 
 	pos, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
 
-	lastBlockHeader := s.bc.CurrentHeader()
+	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}
@@ -498,7 +508,7 @@ func (s *TransactionStreamer) SequenceDelayedMessages(ctx context.Context, messa
 	}
 
 	// If we were already caught up to the latest message, ensure we produce blocks for the delayed messages.
-	if s.bc.CurrentHeader().Number.Int64() >= expectedBlockNum {
+	if s.bc.CurrentBlock().Header().Number.Int64() >= expectedBlockNum {
 		err = s.createBlocks(ctx)
 		if err != nil {
 			return err
@@ -527,6 +537,15 @@ func (s *TransactionStreamer) MessageCountToBlockNumber(messageNum arbutil.Messa
 		return 0, err
 	}
 	return arbutil.MessageCountToBlockNumber(messageNum, genesis), nil
+}
+
+// Pauses reorgs until a matching call to ResumeReorgs (may be called concurrently)
+func (s *TransactionStreamer) PauseReorgs() {
+	s.reorgMutex.RLock()
+}
+
+func (s *TransactionStreamer) ResumeReorgs() {
+	s.reorgMutex.RUnlock()
 }
 
 // The mutex must be held, and pos must be the latest message count.
@@ -569,14 +588,16 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 
 // Produce and record blocks for all available messages
 func (s *TransactionStreamer) createBlocks(ctx context.Context) error {
-	s.reorgMutex.Lock()
-	defer s.reorgMutex.Unlock()
+	s.createBlocksMutex.Lock()
+	defer s.createBlocksMutex.Unlock()
+	s.reorgMutex.RLock()
+	defer s.reorgMutex.RUnlock()
 
 	msgCount, err := s.GetMessageCount()
 	if err != nil {
 		return err
 	}
-	lastBlockHeader := s.bc.CurrentHeader()
+	lastBlockHeader := s.bc.CurrentBlock().Header()
 	if lastBlockHeader == nil {
 		return errors.New("current block header not found")
 	}

@@ -428,7 +428,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *NodeConfig
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator {
-		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, &config.BlockValidatorConfig, dataAvailabilityService)
+		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidatorConfig, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}

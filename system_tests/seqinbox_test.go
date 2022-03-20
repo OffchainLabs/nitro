@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -36,10 +37,15 @@ type blockTestState struct {
 
 const seqInboxTestIters = 40
 
-func TestSequencerInboxReader(t *testing.T) {
+func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1(t, ctx, false)
+	conf := arbnode.NodeConfigL1Test
+	if validator {
+		conf.BlockValidator = true
+		conf.BlockValidatorConfig.ConcurrentRunsLimit = 16
+	}
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, &conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
 	defer stack.Close()
 
@@ -257,6 +263,18 @@ func TestSequencerInboxReader(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 
+		if validator && i%15 == 0 {
+			for i := 0; ; i++ {
+				lastValidated := arbNode.BlockValidator.LastBlockValidated()
+				if lastValidated == expectedBlockNumber {
+					break
+				} else if i >= 1000 {
+					Fail(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+				}
+				time.Sleep(time.Second)
+			}
+		}
+
 		for _, state := range blockStates {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
@@ -273,4 +291,8 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSequencerInboxReader(t *testing.T) {
+	testSequencerInboxReaderImpl(t, false)
 }

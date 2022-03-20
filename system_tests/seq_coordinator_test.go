@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -50,7 +51,7 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 	nodeConfig.SeqCoordinator = true
 	nodeConfig.SeqCoordinatorConfig = arbnode.TestSeqCoordinatorConfig
 
-	l2Info := NewArbTestInfo(t)
+	l2Info := NewArbTestInfo(t, params.ArbitrumDevTestChainConfig().ChainID)
 
 	// stdio protocol makes sure forwarder initialization doesn't fail
 	nodeNames := []string{"stdio://A", "stdio://B", "stdio://C", "stdio://D", "stdio://E"}
