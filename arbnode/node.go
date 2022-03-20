@@ -576,14 +576,6 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-type BlockValidatorAPI struct {
-	val *validator.BlockValidator
-}
-
-func (a *BlockValidatorAPI) ValidateBlock(ctx context.Context, blockNum uint64) error {
-	return a.val.ValidateBlock(ctx, blockNum)
-}
-
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
 	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
 	if err != nil {
@@ -594,7 +586,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: node.BlockValidator},
+			Service:   &BlockValidatorAPI{val: node.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}

@@ -351,55 +351,54 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, blockNum uint64) error {
-	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum)
-	header := v.blockchain.GetHeaderByNumber(blockNum)
+func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header) (bool, error) {
+	blockNum := header.Number.Uint64()
+	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	if header == nil {
-		return errors.New("header not found")
+		return false, errors.New("header not found")
 	}
 	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
 	if prevHeader == nil {
-		return errors.New("prev header not found")
+		return false, errors.New("prev header not found")
 	}
 	msg, err := v.streamer.GetMessage(msgIndex)
 	if err != nil {
-		return err
+		return false, err
 	}
 	preimages, hasDelayedMessage, delayedMsgToRead, err := BlockDataForValidation(v.blockchain, header, prevHeader, msg)
 	if err != nil {
-		return errors.New("failed to get block data to validate")
+		return false, fmt.Errorf("failed to get block data to validate: %w", err)
 	}
 
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
-		return err
+		return false, err
 	}
 	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, msgIndex, batchCount)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, msgIndex, batch)
 	if err != nil {
-		return fmt.Errorf("failed calculating position for validation: %w", err)
+		return false, fmt.Errorf("failed calculating position for validation: %w", err)
 	}
 
 	entry, err := newValidationEntry(prevHeader, header, hasDelayedMessage, delayedMsgToRead)
 	if err != nil {
-		return fmt.Errorf("failed to create validation entry %w", err)
+		return false, fmt.Errorf("failed to create validation entry %w", err)
 	}
 	entry.StartPosition = startPos
 	entry.EndPosition = endPos
 
 	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg)
 	if err != nil {
-		return err
+		return false, err
 	}
-	fmt.Println("Finished validation:", gsEnd == entry.expectedEnd())
-	return nil
+	return gsEnd == entry.expectedEnd(), nil
 }
