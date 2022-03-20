@@ -88,7 +88,7 @@ var L2ConfigDefault = L2Config{
 }
 
 func L2ConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
+	f.Uint64(prefix+".chain-id", L2ConfigDefault.ChainID, "L2 chain ID (determines Arbitrum network)")
 	WalletConfigAddOptions(prefix+".wallet", f)
 }
 
