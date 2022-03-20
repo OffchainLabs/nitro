@@ -74,7 +74,7 @@ func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".deployment", L1ConfigDefault.Deployment, "json file including the existing deployment information")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
-	WalletConfigAddOptions(prefix+"wallet", f)
+	WalletConfigAddOptions(prefix+".wallet", f)
 }
 
 type L2Config struct {
@@ -142,8 +142,8 @@ type HTTPConfig struct {
 	Addr       string   `koanf:"addr"`
 	Port       int      `koanf:"port"`
 	API        []string `koanf:"api"`
-	RPCPrefix  string   `koanf:"rpcprefix"`
-	CORSDomain []string `koanf:"corsdomain"`
+	RPCPrefix  string   `koanf:"rpc-prefix"`
+	CORSDomain []string `koanf:"cors-domain"`
 	VHosts     []string `koanf:"vhosts"`
 }
 

@@ -403,10 +403,10 @@ func ParseNode(_ context.Context, args []string) (*NodeConfig, *cmdutil.WalletCo
 		// Don't keep printing configuration file and don't print wallet passwords
 		err := k.Load(confmap.Provider(map[string]interface{}{
 			"conf.dump":             false,
-			"wallet.l1.password":    "",
-			"wallet.l1.private-key": "",
-			"wallet.l2.password":    "",
-			"wallet.l2.private-key": "",
+			"l1.wallet.password":    "",
+			"l1.wallet.private-key": "",
+			"l2.wallet.password":    "",
+			"l2.wallet.private-key": "",
 		}, "."), nil)
 		if err != nil {
 			return nil, nil, nil, errors.Wrap(err, "error removing extra parameters before dump")

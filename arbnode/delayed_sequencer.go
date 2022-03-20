@@ -27,26 +27,26 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
-	FinalizeDistance *big.Int      `koanf:"finalize-distance"`
-	BlocksAggregate  *big.Int      `koanf:"blocks-aggregate"`
+	FinalizeDistance int64         `koanf:"finalize-distance"`
+	BlocksAggregate  int64         `koanf:"blocks-aggregate"`
 	TimeAggregate    time.Duration `koanf:"time-aggregate"`
 }
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance.Int64(), "how many blocks in the past L1 block is considered final")
-	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate.Int64(), "how many blocks we aggregate looking for delayedMessage")
+	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final")
+	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate, "how many blocks we aggregate looking for delayedMessage")
 	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
-	FinalizeDistance: big.NewInt(12),
-	BlocksAggregate:  big.NewInt(5),
+	FinalizeDistance: 12,
+	BlocksAggregate:  5,
 	TimeAggregate:    time.Minute,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
-	FinalizeDistance: big.NewInt(12),
-	BlocksAggregate:  big.NewInt(5),
+	FinalizeDistance: 12,
+	BlocksAggregate:  5,
 	TimeAggregate:    time.Second,
 }
 
@@ -80,8 +80,8 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 
 	// Unless we find an unfinalized message (which sets waitingForBlock),
 	// we won't find a new finalized message until FinalizeDistance blocks in the future.
-	d.waitingForBlock = new(big.Int).Add(lastBlockHeader.Number, d.config.FinalizeDistance)
-	finalized := new(big.Int).Sub(lastBlockHeader.Number, d.config.FinalizeDistance)
+	d.waitingForBlock = new(big.Int).Add(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
+	finalized := new(big.Int).Sub(lastBlockHeader.Number, big.NewInt(d.config.FinalizeDistance))
 	if finalized.Sign() < 0 {
 		finalized.SetInt64(0)
 	}
@@ -107,7 +107,7 @@ func (d *DelayedSequencer) update(ctx context.Context) error {
 		blockNumber := arbmath.UintToBig(msg.Header.BlockNumber)
 		if blockNumber.Cmp(finalized) > 0 {
 			// Message isn't finalized yet; stop here
-			d.waitingForBlock = new(big.Int).Add(blockNumber, d.config.FinalizeDistance)
+			d.waitingForBlock = new(big.Int).Add(blockNumber, big.NewInt(d.config.FinalizeDistance))
 			break
 		}
 		if lastDelayedAcc != (common.Hash{}) {

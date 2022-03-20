@@ -203,7 +203,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
 
 	var confirmPeriodBlocks uint64 = 20
@@ -216,7 +216,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}
 	nonce, err := l1client.PendingNonceAt(ctx, rollupCreatorAddress)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting pending nonce: %w", err)
 	}
 	expectedRollupAddr := crypto.CreateAddress(rollupCreatorAddress, nonce+2)
 	tx, err := rollupCreator.CreateRollup(
@@ -248,7 +248,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 
 	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, l1client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting rollup admin: %w", err)
 	}
 	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
 	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
