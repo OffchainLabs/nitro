@@ -21,10 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 )
 
-func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
+func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -42,27 +41,27 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.NodeConfigL1Test
-	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	if dasMode == das.LocalDataAvailability {
+	if dasModeStr == "local" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
-		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA, chainConfig)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l1NodeConfigB := arbnode.NodeConfigL1Test
-	l1NodeConfigB.BatchPoster = false
-	l1NodeConfigB.BlockValidator = false
-	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -201,9 +200,9 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 }
 
 func TestTwoNodesLong(t *testing.T) {
-	testTwoNodesLong(t, das.OnchainDataAvailability)
+	testTwoNodesLong(t, "onchain")
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	testTwoNodesLong(t, das.LocalDataAvailability)
+	testTwoNodesLong(t, "local")
 }

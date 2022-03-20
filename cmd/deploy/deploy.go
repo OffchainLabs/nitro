@@ -41,18 +41,21 @@ func main() {
 	l1TransactionOpts, err := util.GetTransactOptsFromKeystore(*l1keystore, *deployAccount, *l1passphrase, l1ChainId)
 	if err != nil {
 		flag.Usage()
+		log.Error("error reading keystore")
 		panic(err)
 	}
 
 	l1client, err := ethclient.Dial(*l1conn)
 	if err != nil {
 		flag.Usage()
+		log.Error("error creating l1client")
 		panic(err)
 	}
 
 	deployPtr, err := arbnode.DeployOnL1(ctx, l1client, l1TransactionOpts, l1TransactionOpts.From, *authorizevalidators, common.HexToHash(*wasmmoduleroot), l2ChainId, time.Minute*5)
 	if err != nil {
 		flag.Usage()
+		log.Error("error deploying on l1")
 		panic(err)
 	}
 	deployData, err := json.Marshal(deployPtr)

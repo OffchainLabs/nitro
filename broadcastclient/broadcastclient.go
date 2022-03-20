@@ -17,6 +17,7 @@ import (
 
 	"github.com/gobwas/ws"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -26,12 +27,43 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type BroadcastClientConfig struct {
-	Timeout time.Duration
-	URLs    []string
+type FeedConfig struct {
+	Output wsbroadcastserver.BroadcasterConfig `koanf:"output"`
+	Input  BroadcastClientConfig               `koanf:"input"`
 }
 
-var DefaultBroadcastClientConfig BroadcastClientConfig
+func FeedConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
+	if feedInputEnable {
+		BroadcastClientConfigAddOptions(prefix+".input", f)
+	}
+	if feedOutputEnable {
+		wsbroadcastserver.BroadcasterConfigAddOptions(prefix+".output", f)
+	}
+}
+
+var FeedConfigDefault = FeedConfig{
+	Output: wsbroadcastserver.DefaultBroadcasterConfig,
+	Input:  DefaultBroadcastClientConfig,
+}
+
+type BroadcastClientConfig struct {
+	Timeout time.Duration `koanf:"timeout"`
+	URLs    []string      `koanf:"url"`
+}
+
+func (c *BroadcastClientConfig) Enable() bool {
+	return len(c.URLs) > 0 && c.URLs[0] != ""
+}
+
+func BroadcastClientConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.StringSlice(prefix+".url", DefaultBroadcastClientConfig.URLs, "URL of sequencer feed source")
+	f.Duration(prefix+".timeout", DefaultBroadcastClientConfig.Timeout, "duration to wait before timing out connection to sequencer feed")
+}
+
+var DefaultBroadcastClientConfig = BroadcastClientConfig{
+	URLs:    []string{""},
+	Timeout: 20 * time.Second,
+}
 
 type TransactionStreamerInterface interface {
 	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
