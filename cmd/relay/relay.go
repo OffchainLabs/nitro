@@ -59,18 +59,18 @@ func startup() error {
 	log.Root().SetHandler(glogger)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{
-		Addr:          relayConfig.Feed.Output.Addr,
-		IOTimeout:     relayConfig.Feed.Output.IOTimeout,
-		Port:          relayConfig.Feed.Output.Port,
-		Ping:          relayConfig.Feed.Output.Ping,
-		ClientTimeout: relayConfig.Feed.Output.ClientTimeout,
-		Queue:         relayConfig.Feed.Output.Queue,
-		Workers:       relayConfig.Feed.Output.Workers,
+		Addr:          relayConfig.Node.Feed.Output.Addr,
+		IOTimeout:     relayConfig.Node.Feed.Output.IOTimeout,
+		Port:          relayConfig.Node.Feed.Output.Port,
+		Ping:          relayConfig.Node.Feed.Output.Ping,
+		ClientTimeout: relayConfig.Node.Feed.Output.ClientTimeout,
+		Queue:         relayConfig.Node.Feed.Output.Queue,
+		Workers:       relayConfig.Node.Feed.Output.Workers,
 	}
 
 	clientConf := broadcastclient.BroadcastClientConfig{
-		Timeout: relayConfig.Feed.Input.Timeout,
-		URLs:    relayConfig.Feed.Input.URLs,
+		Timeout: relayConfig.Node.Feed.Input.Timeout,
+		URLs:    relayConfig.Node.Feed.Input.URLs,
 	}
 
 	defer log.Info("Cleanly shutting down relay")
@@ -90,21 +90,33 @@ func startup() error {
 }
 
 type RelayConfig struct {
-	Conf     util.ConfConfig            `koanf:"conf"`
-	LogLevel int                        `koanf:"log-level"`
-	Feed     broadcastclient.FeedConfig `koanf:"feed"`
+	Conf     util.ConfConfig `koanf:"conf"`
+	LogLevel int             `koanf:"log-level"`
+	Node     RelayNodeConfig `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
 	Conf:     util.ConfConfigDefault,
 	LogLevel: int(log.LvlInfo),
-	Feed:     broadcastclient.FeedConfigDefault,
+	Node:     RelayNodeConfigDefault,
 }
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
 	util.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
-	broadcastclient.FeedConfigAddOptions("feed", f, true, true)
+	RelayNodeConfigAddOptions("node", f)
+}
+
+type RelayNodeConfig struct {
+	Feed broadcastclient.FeedConfig `koanf:"feed"`
+}
+
+var RelayNodeConfigDefault = RelayNodeConfig{
+	Feed: broadcastclient.FeedConfigDefault,
+}
+
+func RelayNodeConfigAddOptions(prefix string, f *flag.FlagSet) {
+	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, true, true)
 }
 
 func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {

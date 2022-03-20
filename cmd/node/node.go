@@ -81,11 +81,11 @@ func main() {
 		nodeConfig.Node.BatchPoster.Enable = true
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
-			panic("forwardingtarget set when sequencer enabled")
+			panic("forwarding-target set when sequencer enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
-		panic("forwardingtarget unset, and not sequencer (can set to \"null\" to disable forwarding)")
+		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
 	// Perform sanity check on mode
