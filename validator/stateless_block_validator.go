@@ -352,11 +352,11 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 }
 
 func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header) (bool, error) {
-	blockNum := header.Number.Uint64()
-	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	if header == nil {
 		return false, errors.New("header not found")
 	}
+	blockNum := header.Number.Uint64()
+	msgIndex := arbutil.BlockNumberToMessageCount(blockNum, v.genesisBlockNum) - 1
 	prevHeader := v.blockchain.GetHeaderByNumber(blockNum - 1)
 	if prevHeader == nil {
 		return false, errors.New("prev header not found")
