@@ -42,7 +42,7 @@ services:
     build: .
     ports:
       - "7547:7547"
-      - "7548:758"
+      - "7548:7548"
     volumes:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"

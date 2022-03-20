@@ -18,7 +18,7 @@ type BlockValidatorAPI struct {
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorAPI) ValidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash) (bool, error) {
+func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
