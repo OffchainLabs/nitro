@@ -39,7 +39,7 @@ const (
 )
 
 type L1PostingStrategy struct {
-	HighGasThreshold   float64 `koanf:"high-gas-threshold"'`
+	HighGasThreshold   float64 `koanf:"high-gas-threshold"`
 	HighGasDelayBlocks int64   `koanf:"high-gas-delay-blocks"`
 }
 
