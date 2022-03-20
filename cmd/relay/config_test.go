@@ -7,6 +7,6 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	_, err := ParseRelay(context.Background())
+	_, err := ParseRelay(context.Background(), []string{})
 	testhelpers.RequireImpl(t, err)
 }

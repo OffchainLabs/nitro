@@ -7,6 +7,6 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	_, _, _, err := ParseNode(context.Background())
+	_, _, _, err := ParseNode(context.Background(), []string{})
 	testhelpers.RequireImpl(t, err)
 }

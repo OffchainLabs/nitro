@@ -1,7 +1,6 @@
 package util
 
 import (
-	"os"
 	"strings"
 
 	"github.com/knadh/koanf"
@@ -100,8 +99,8 @@ func loadS3Variables(k *koanf.Koanf) error {
 	}), nil)
 }
 
-func BeginCommonParse(f *flag.FlagSet) (*koanf.Koanf, error) {
-	if err := f.Parse(os.Args[1:]); err != nil {
+func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	if err := f.Parse(args); err != nil {
 		return nil, err
 	}
 

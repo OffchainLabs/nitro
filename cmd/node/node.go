@@ -54,7 +54,7 @@ func printSampleUsage() {
 func main() {
 	ctx := context.Background()
 
-	nodeConfig, l1wallet, l2wallet, err := ParseNode(ctx)
+	nodeConfig, l1wallet, l2wallet, err := ParseNode(ctx, os.Args[1:])
 	if err != nil {
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
@@ -382,12 +382,12 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 }
 
-func ParseNode(_ context.Context) (*NodeConfig, *cmdutil.WalletConfig, *cmdutil.WalletConfig, error) {
+func ParseNode(_ context.Context, args []string) (*NodeConfig, *cmdutil.WalletConfig, *cmdutil.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
-	k, err := cmdutil.BeginCommonParse(f)
+	k, err := cmdutil.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, nil, nil, err
 	}

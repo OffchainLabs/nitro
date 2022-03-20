@@ -44,7 +44,7 @@ func printSampleUsage() {
 func startup() error {
 	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
 
-	relayConfig, err := ParseRelay(context.Background())
+	relayConfig, err := ParseRelay(context.Background(), os.Args[1:])
 	if err != nil {
 		printSampleUsage()
 		if !strings.Contains(err.Error(), "help requested") {
@@ -107,12 +107,12 @@ func RelayConfigAddOptions(f *flag.FlagSet) {
 	broadcastclient.FeedConfigAddOptions("feed", f, true, true)
 }
 
-func ParseRelay(_ context.Context) (*RelayConfig, error) {
+func ParseRelay(_ context.Context, args []string) (*RelayConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	RelayConfigAddOptions(f)
 
-	k, err := util.BeginCommonParse(f)
+	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, err
 	}
