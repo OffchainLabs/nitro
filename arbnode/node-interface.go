@@ -45,15 +45,15 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 		}
 		sender, _ := inputs[0].(common.Address)
 		deposit, _ := inputs[1].(*big.Int)
-		to, _ := inputs[2].(common.Address)
+		retryTo, _ := inputs[2].(common.Address)
 		l2CallValue, _ := inputs[3].(*big.Int)
 		excessFeeRefundAddress, _ := inputs[4].(common.Address)
 		callValueRefundAddress, _ := inputs[5].(common.Address)
 		data, _ := inputs[6].([]byte)
 
-		var pTo *common.Address
-		if to != (common.Address{}) {
-			pTo = &to
+		var pRetryTo *common.Address
+		if retryTo != (common.Address{}) {
+			pRetryTo = &retryTo
 		}
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
@@ -68,7 +68,7 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 			DepositValue:     deposit,
 			GasFeeCap:        msg.GasPrice(),
 			Gas:              msg.Gas(),
-			To:               pTo,
+			RetryTo:          pRetryTo,
 			Value:            l2CallValue,
 			Beneficiary:      callValueRefundAddress,
 			MaxSubmissionFee: maxSubmissionFee,

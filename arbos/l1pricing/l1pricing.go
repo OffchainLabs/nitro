@@ -246,7 +246,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
-	if util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
 		return
 	}
 
