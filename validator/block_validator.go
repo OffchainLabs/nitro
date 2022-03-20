@@ -15,6 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
+
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -28,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/pkg/errors"
 )
 
 type BlockValidator struct {
@@ -68,15 +70,21 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	OutputPath          string
-	ConcurrentRunsLimit int // 0 - default (CPU#)
-	BlocksToRecord      []uint64
+	Enable              bool   `koanf:"enable"`
+	OutputPath          string `koanf:"output-path"`
+	ConcurrentRunsLimit int    `koanf:"concurrent-runs-limit"`
+}
+
+func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
+	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
+	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
+	Enable:              false,
 	OutputPath:          "./target/output",
 	ConcurrentRunsLimit: 0,
-	BlocksToRecord:      []uint64{},
 }
 
 type BlockValidatorRegistrer interface {
@@ -605,16 +613,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 
 	if !resultValid {
 		writeThisBlock = true
-	}
-	// stupid search for now, assuming the list will always be empty or very mall
-	for _, blockNr := range v.config.BlocksToRecord {
-		if blockNr > entry.BlockNumber {
-			break
-		}
-		if blockNr == entry.BlockNumber {
-			writeThisBlock = true
-			break
-		}
 	}
 
 	if writeThisBlock {
