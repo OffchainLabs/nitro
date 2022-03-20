@@ -492,10 +492,6 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, l2BlockChain, arbInterface)
-	if err != nil {
-		return nil, err
-	}
 
 	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
@@ -504,7 +500,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.EnableL1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{nil, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -549,7 +545,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 
 	if !config.BatchPoster.Enable {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{nil, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -563,7 +559,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{nil, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -584,6 +580,11 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 	if err != nil {
 		return nil, err
 	}
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, l2BlockChain, node.ArbInterface)
+	if err != nil {
+		return nil, err
+	}
+	node.Backend = backend
 	stack.RegisterLifecycle(arbNodeLifecycle{node})
 	return node, nil
 }
