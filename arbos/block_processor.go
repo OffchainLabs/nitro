@@ -6,6 +6,7 @@ package arbos
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
@@ -35,7 +36,17 @@ var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+var eip3675UncleHash [32]byte
+
+func init() { // per EIP-3675, initialize eip3675UncleHash to the keccak256 hash of the RLP encoding of an empty list
+	decoded, err := hex.DecodeString("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
+	if err != nil {
+		panic(err)
+	}
+	copy(eip3675UncleHash[:], decoded)
+}
+
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.GasPriceWei()
 	state.Restrict(err)
@@ -55,21 +66,25 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 			timestamp = prevHeader.Time
 		}
 	}
+	difficulty := int64(1) // non-zero, so geth sees the difficulty as increasing
+	if chainConfig.MergeForkBlock != nil {
+		difficulty = 0 // required by EIP-3675
+	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   [32]byte{},
+		UncleHash:   eip3675UncleHash,
 		Coinbase:    coinbase,
 		Root:        [32]byte{},  // Filled in later
 		TxHash:      [32]byte{},  // Filled in later
 		ReceiptHash: [32]byte{},  // Filled in later
 		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(1),
+		Difficulty:  big.NewInt(difficulty),
 		Number:      blockNumber,
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
 		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Unused
+		MixDigest:   [32]byte{}, // Value required by EIP-3675
 		Nonce:       [8]byte{},  // Filled in later
 		BaseFee:     baseFee,
 	}
@@ -144,7 +159,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber
