@@ -593,7 +593,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 			Public:    false,
 		})
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, l2BlockChain, node.ArbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, node.ArbInterface)
 	if err != nil {
 		return nil, err
 	}
