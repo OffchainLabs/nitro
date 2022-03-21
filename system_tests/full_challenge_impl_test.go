@@ -175,7 +175,7 @@ func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTes
 	}
 }
 
-func runChallengeTest(t *testing.T, asserterIsCorrect bool) {
+func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
