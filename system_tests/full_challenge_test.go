@@ -12,9 +12,9 @@ import (
 )
 
 func TestFullChallengeAsserterIncorrect(t *testing.T) {
-	runChallengeTest(t, false)
+	RunChallengeTest(t, false)
 }
 
 func TestFullChallengeAsserterCorrect(t *testing.T) {
-	runChallengeTest(t, true)
+	RunChallengeTest(t, true)
 }
