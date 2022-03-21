@@ -281,7 +281,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), initDataReader, blockNum, chainConfig)
+		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, blockNum, chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -294,7 +294,7 @@ func main() {
 		if blocksInDb == 0 {
 			panic("No initialization mode supplied, no blocks in Db")
 		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack), chainConfig)
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
 			panic(err)
 		}
