@@ -49,13 +49,13 @@ func TestSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 
-	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
+	_, nodeB, client2 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 
 	l2info1.GenerateAccount("User2")
 
@@ -84,7 +84,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 
 	seqNodeConfig := arbnode.ConfigDefaultL2Test()
 	seqNodeConfig.Feed.Output = *newBroadcasterConfigTest(0)
-	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, nil, true)
+	l2info1, nodeA, client1 := CreateTestL2WithConfig(t, ctx, nil, seqNodeConfig, true)
 
 	relayServerConf := *newBroadcasterConfigTest(0)
 	port := nodeA.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
@@ -97,7 +97,7 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	clientNodeConfig := arbnode.ConfigDefaultL2Test()
 	port = relay.GetListenerAddr().(*net.TCPAddr).Port
 	clientNodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
-	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, nil, false)
+	_, nodeC, client3 := CreateTestL2WithConfig(t, ctx, nil, clientNodeConfig, false)
 
 	l2info1.GenerateAccount("User2")
 

@@ -134,7 +134,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das D
 	}
 }
 
-var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
+var InvalidL1Message *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
 		Kind: arbos.L1MessageType_Invalid,
 	},
@@ -167,7 +167,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 	// parsing error in getNextMsg
 	if msg == nil && err == nil {
 		msg = &MessageWithMetadata{
-			Message:             invalidMessage,
+			Message:             InvalidL1Message,
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
 	}
@@ -318,7 +318,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				)
 			}
 			msg = &MessageWithMetadata{
-				Message:             invalidMessage,
+				Message:             InvalidL1Message,
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,
 			}
 		} else {
