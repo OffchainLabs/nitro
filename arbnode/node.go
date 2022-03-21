@@ -496,6 +496,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface)
+	if err != nil {
+		return nil, err
+	}
 
 	var broadcastClients []*broadcastclient.BroadcastClient
 	if config.Feed.Input.Enable() {
@@ -504,7 +508,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.EnableL1Reader {
-		return &Node{nil, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -549,7 +553,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 
 	if !config.BatchPoster.Enable {
-		return &Node{nil, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if sequencerTxOpt == nil {
@@ -563,7 +567,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	return &Node{nil, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -593,12 +597,8 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 			Public:    false,
 		})
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, node.ArbInterface)
-	if err != nil {
-		return nil, err
-	}
 	stack.RegisterAPIs(apis)
-	node.Backend = backend
+
 	stack.RegisterLifecycle(arbNodeLifecycle{node})
 	return node, nil
 }
