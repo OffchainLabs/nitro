@@ -406,6 +406,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(makePrecompile(templates.ArbRevertMetaData, &ArbRevert{Address: types.ArbosAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *context {
 		if err != nil {
@@ -417,7 +418,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 	}
 
-	ArbRetryableImpl := &ArbRetryableTx{Address: hex("6e")}
+	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
