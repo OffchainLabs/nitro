@@ -126,10 +126,6 @@ func main() {
 			flag.Usage()
 			panic("validator must read from L1")
 		}
-		if !nodeConfig.Node.BlockValidator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
-			flag.Usage()
-			panic("L1 validator requires block validator to safely function")
-		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
 			if nodeConfig.Node.Wasm.CachePath != "" {
