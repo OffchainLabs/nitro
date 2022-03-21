@@ -12,14 +12,22 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks int64
-	CheckDelay  time.Duration
-	HardReorg   bool // erase future transactions in addition to overwriting existing ones
+	DelayBlocks int64         `koanf:"delay-blocks"`
+	CheckDelay  time.Duration `koanf:"check-delay"`
+	HardReorg   bool          `koanf:"hard-reorg"`
+}
+
+func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
+	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
+	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{

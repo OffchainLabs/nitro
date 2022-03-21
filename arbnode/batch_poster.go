@@ -9,6 +9,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -37,14 +38,25 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize         int
-	MaxBatchPostInterval time.Duration
-	BatchPollDelay       time.Duration
-	PostingErrorDelay    time.Duration
-	CompressionLevel     int
+	Enable               bool          `koanf:"enable"`
+	MaxBatchSize         int           `koanf:"max-size"`
+	MaxBatchPostInterval time.Duration `koanf:"max-interval"`
+	BatchPollDelay       time.Duration `koanf:"poll-delay"`
+	PostingErrorDelay    time.Duration `koanf:"error-delay"`
+	CompressionLevel     int           `koanf:"compression-level"`
+}
+
+func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
+	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
+	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
+	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
+	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
+	Enable:               false,
 	MaxBatchSize:         500,
 	BatchPollDelay:       time.Second,
 	PostingErrorDelay:    time.Second * 5,
@@ -53,6 +65,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
+	Enable:               true,
 	MaxBatchSize:         10000,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
@@ -102,6 +115,9 @@ type buildingBatch struct {
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
+	if config.MaxBatchSize <= 40 {
+		panic("MaxBatchSize too small")
+	}
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),

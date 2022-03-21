@@ -20,33 +20,34 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 )
 
-func testBlockValidatorSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
+func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l1NodeConfigA := arbnode.NodeConfigL1Test
-	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeString
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	if dasMode == das.LocalDataAvailability {
+	if dasModeString == "local" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
-		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 		chainConfig = params.ArbitrumDevTestDASChainConfig()
 	}
-	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA, chainConfig)
+	_, err = l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	l2info, nodeA, l2client, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l1NodeConfigB := arbnode.NodeConfigL1Test
-	l1NodeConfigB.BatchPoster = false
-	l1NodeConfigB.BlockValidator = true
-	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = true
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeString
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
@@ -97,9 +98,9 @@ func testBlockValidatorSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
 }
 
 func TestBlockValidatorSimple(t *testing.T) {
-	testBlockValidatorSimple(t, das.OnchainDataAvailability)
+	testBlockValidatorSimple(t, "onchain")
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, das.LocalDataAvailability)
+	testBlockValidatorSimple(t, "local")
 }

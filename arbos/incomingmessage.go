@@ -434,13 +434,13 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 }
 
 func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
-	to, err := util.AddressFrom256FromReader(rd)
+	retryTo, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	pTo := &to
-	if to == (common.Address{}) {
-		pTo = nil
+	pRetryTo := &retryTo
+	if retryTo == (common.Address{}) {
+		pRetryTo = nil
 	}
 	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
@@ -503,7 +503,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		DepositValue:     depositValue.Big(),
 		GasFeeCap:        maxFeePerGas.Big(),
 		Gas:              gasLimitBig.Uint64(),
-		To:               pTo,
+		RetryTo:          pRetryTo,
 		Value:            callvalue.Big(),
 		Beneficiary:      callvalueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee.Big(),

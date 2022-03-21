@@ -56,26 +56,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ $# -eq 1 ]]; then
-    if [[ $1 == "--init" ]]; then
-        if ! $force_init; then
-            echo == Warning! this will remove all previous data
-            read -p "are you sure? [y/n]" -n 1 response
-            if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
-                force_init=true
-                echo
-            else
-                exit 0
-            fi
-        fi
-    elif [[ $1 == "--build" ]]; then
-        force_build=true
-    else
-        echo Usage: $0 \[--init \| --build\]
-        exit 0
-    fi
-fi
-
 if $force_init; then
     force_build=true
 fi
@@ -88,6 +68,10 @@ fi
 if $force_init; then
     echo == Removing old data..
     docker-compose down
+    leftoverContainers=`docker container ls -a --filter label=com.docker.compose.project=nitro -q | xargs echo`
+    if [ `echo $leftoverContainers | wc -w` -gt 0 ]; then
+        docker rm $leftoverContainers
+    fi
     docker volume prune -f --filter label=com.docker.compose.project=nitro
 
     echo == Generating l1 key
@@ -106,4 +90,4 @@ if $validate; then
 else
     STAKER_NODE="staker-unsafe"
 fi
-docker-compose up sequencer $STAKER_NODE
+docker-compose up sequencer $STAKER_NODE blockscout

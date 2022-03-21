@@ -10,6 +10,7 @@ import (
 
 type Burner interface {
 	Burn(amount uint64) error
+	Burned() uint64
 	Restrict(err error)
 	ReadOnly() bool
 }

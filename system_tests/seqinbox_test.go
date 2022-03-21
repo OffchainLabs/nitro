@@ -40,12 +40,12 @@ const seqInboxTestIters = 40
 func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	conf := arbnode.NodeConfigL1Test
+	conf := arbnode.ConfigDefaultL1Test()
 	if validator {
-		conf.BlockValidator = true
-		conf.BlockValidatorConfig.ConcurrentRunsLimit = 16
+		conf.BlockValidator.Enable = true
+		conf.BlockValidator.ConcurrentRunsLimit = 16
 	}
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, &conf, params.ArbitrumDevTestChainConfig())
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
 	defer stack.Close()
 

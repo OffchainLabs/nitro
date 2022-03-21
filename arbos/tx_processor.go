@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -77,31 +78,44 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return false, 0, nil, nil
 	}
 
-	scenario := util.TracingBeforeEVM
 	evm := p.evm
 
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 
+	startTracer := func() func() {
+		if !evm.Config.Debug {
+			return func() {}
+		}
+		tracer := evm.Config.Tracer
+		start := time.Now()
+		tracer.CaptureStart(evm, p.msg.From(), *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
+		return func() { tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil) }
+	}
+
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
+		defer (startTracer())()
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		util.MintBalance(p.msg.To(), p.msg.Value(), evm, scenario)
+		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
+		defer (startTracer())()
 		if p.msg.From() != arbAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
+		defer (startTracer())()
 		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
 		networkFeeAccount, _ := p.state.NetworkFeeAccount()
 		from := tx.From
+		scenario := util.TracingDuringEVM
 
 		// mint funds with the deposit, then charge fees later
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
@@ -131,7 +145,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			ticketId,
 			timeout,
 			tx.From,
-			underlyingTx.To(),
+			tx.RetryTo,
 			underlyingTx.Value(),
 			tx.Beneficiary,
 			tx.Data,
@@ -196,14 +210,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util.TransferBalance(&escrow, &tx.From, tx.Value, evm, scenario)
+		err = util.TransferBalance(&escrow, &tx.From, tx.Value, evm, util.TracingBeforeEVM)
 		if err != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
 		basefee := evm.Context.BaseFee
-		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), evm, scenario)
+		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), evm, util.TracingBeforeEVM)
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}

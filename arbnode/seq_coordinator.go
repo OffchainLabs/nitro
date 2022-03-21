@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -41,31 +42,47 @@ type SeqCoordinator struct {
 }
 
 type SeqCoordinatorConfig struct {
-	LockoutDuration time.Duration
-	LockoutSpare    time.Duration
-	SeqNumDuration  time.Duration
-	UpdateInterval  time.Duration
-	RetryInterval   time.Duration
-	AllowedMsgLag   arbutil.MessageIndex // will only be marked live if not too far behind
-	MyUrl           string
+	Enable          bool                 `koanf:"enable"`
+	LockoutDuration time.Duration        `koanf:"lockout-duration"`
+	LockoutSpare    time.Duration        `koanf:"lockout-spare"`
+	SeqNumDuration  time.Duration        `koanf:"seq-num-duration"`
+	UpdateInterval  time.Duration        `koanf:"update-interval"`
+	RetryInterval   time.Duration        `koanf:"retry-interval"`
+	AllowedMsgLag   arbutil.MessageIndex `koanf:"allowed-msg-lag"`
+	MyUrl           string               `koanf:"my-url"`
+}
+
+func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
+	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
+	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
+	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
+	f.Duration(prefix+".update-interval", DefaultSeqCoordinatorConfig.UpdateInterval, "")
+	f.Duration(prefix+".retry-interval", DefaultSeqCoordinatorConfig.RetryInterval, "")
+	f.Uint16(prefix+".allowed-msg-lag", uint16(DefaultSeqCoordinatorConfig.AllowedMsgLag), "will only be marked live if not too far behind")
+	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "")
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
+	Enable:          false,
 	LockoutDuration: time.Duration(5) * time.Minute,
 	LockoutSpare:    time.Duration(30) * time.Second,
 	SeqNumDuration:  time.Duration(24) * time.Hour,
 	UpdateInterval:  time.Duration(10) * time.Second,
 	RetryInterval:   time.Second,
 	AllowedMsgLag:   arbutil.MessageIndex(50),
+	MyUrl:           "",
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
+	Enable:          false,
 	LockoutDuration: time.Millisecond * 500,
 	LockoutSpare:    time.Millisecond * 10,
 	SeqNumDuration:  time.Minute * 10,
 	UpdateInterval:  time.Millisecond * 10,
 	RetryInterval:   time.Millisecond * 3,
 	AllowedMsgLag:   3,
+	MyUrl:           "",
 }
 
 func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, client redis.UniversalClient, config SeqCoordinatorConfig) *SeqCoordinator {
