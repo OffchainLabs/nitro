@@ -210,7 +210,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	receipt, err = arbutil.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
-		Fail(t)
+		Fail(t, receipt.Status)
 	}
 
 	// verify that the increment happened, so we know the retry succeeded
