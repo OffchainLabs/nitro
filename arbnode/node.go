@@ -309,6 +309,7 @@ type Config struct {
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
+	Archive              bool                           `koanf:"archive"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -334,6 +335,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".archive", ConfigDefault.Archive, "retain past block state")
 }
 
 var ConfigDefault = Config{
@@ -351,6 +353,7 @@ var ConfigDefault = Config{
 	DataAvailability:     das.DefaultDataAvailabilityConfig,
 	Wasm:                 DefaultWasmConfig,
 	Dangerous:            DefaultDangerousConfig,
+	Archive:              false,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -699,19 +702,22 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node) *core.CacheConfig {
-	defaultConf := ethconfig.Defaults
+func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig {
+	baseConf := ethconfig.Defaults
+	if archiveMode {
+		baseConf = ethconfig.ArchiveDefaults
+	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:      defaultConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(defaultConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  defaultConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: defaultConf.NoPrefetch,
-		TrieDirtyLimit:      defaultConf.TrieDirtyCache,
-		TrieDirtyDisabled:   defaultConf.NoPruning,
-		TrieTimeLimit:       defaultConf.TrieTimeout,
-		SnapshotLimit:       defaultConf.SnapshotCache,
-		Preimages:           defaultConf.Preimages,
+		TrieCleanLimit:      baseConf.TrieCleanCache,
+		TrieCleanJournal:    stack.ResolvePath(baseConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch: baseConf.NoPrefetch,
+		TrieDirtyLimit:      baseConf.TrieDirtyCache,
+		TrieDirtyDisabled:   baseConf.NoPruning,
+		TrieTimeLimit:       baseConf.TrieTimeout,
+		SnapshotLimit:       baseConf.SnapshotCache,
+		Preimages:           baseConf.Preimages,
 	}
 }
 

@@ -47,7 +47,7 @@ services:
     volumes:
       - "l1data:/root/.ethereum"
       - "l1keystore:/keystore"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
 
   sequencer:
     pid: host # allow debugging
@@ -60,7 +60,7 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --node.archive
     depends_on:
       - geth
 
@@ -74,7 +74,7 @@ services:
       - "unsafestaker-data:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null --node.validator.dangerous.without-block-validator
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null --node.validator.dangerous.without-block-validator --node.archive
     depends_on:
       - sequencer
 
@@ -88,7 +88,7 @@ services:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "deploydata:/deploydata"
-    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --http.port 7547 --http.api net,web3,arb,debug --ws.addr 0.0.0.0 --ws.port 7548 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null
+    command: --persistent.data /data --dev-init --l1.url ws://geth:8546 --l1.wallet.pathname /l1keystore --l1.wallet.password passphrase --l1.deployment /deploydata/deployment.json --http.addr 0.0.0.0 --http.port 7547 --http.api net,web3,arb,debug --ws.addr 0.0.0.0 --ws.port 7548 --node.validator.enable --node.validator.strategy MakeNodes --node.validator.staker-interval 10s --node.forwarding-target null --node.archive
     depends_on:
       - sequencer
 

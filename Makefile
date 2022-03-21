@@ -145,8 +145,11 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/relay
 
+# recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
-	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
+	mkdir -p `dirname $(replay_wasm)`
+	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
+	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_bin)`
