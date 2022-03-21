@@ -399,10 +399,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		rsBytes := []byte(resString)
 		err = json.Unmarshal(rsBytes, &message)
 		if err != nil {
-			log.Warn("coordinator failed to parse message from resis", "pos", msgToRead, "err", err)
+			log.Warn("coordinator failed to parse message from redis", "pos", msgToRead, "err", err)
 			msgReadErr = fmt.Errorf("failed to parse message: %w", err)
-			// make progress in case of parse failures - but only progress one bad message at a time
-			if len(messages) > 0 {
+			// redis messages spelled "INVALID" will be parsed as invalid L1 message, but only one at a time
+			if len(messages) > 0 || string(rsBytes) != "INVALID" {
 				break
 			}
 			lastDelayedMsg := uint64(0)
