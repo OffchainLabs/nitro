@@ -62,7 +62,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay
+build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -144,6 +144,9 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/relay
+
+$(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ ./cmd/daserver
 
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
 	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
