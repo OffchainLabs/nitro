@@ -20,6 +20,7 @@ else
     force_init=false
 fi
 
+run=true
 force_build=false
 validate=false
 while [[ $# -gt 0 ]]; do
@@ -45,6 +46,10 @@ while [[ $# -gt 0 ]]; do
             validate=true
             shift
             ;;
+        --no-run)
+            run=false
+            shift
+            ;;
         *)
             echo Usage: $0 \[OPTIONS..]
             echo
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker image
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
+            echo --no-run:          does not launch nodes \(usefull with build or init\)
             exit 0
     esac
 done
@@ -74,12 +80,16 @@ if $force_init; then
     fi
     docker volume prune -f --filter label=com.docker.compose.project=nitro
 
-    echo == Generating l1 key
+    echo == Generating l1 keys
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
+    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
+    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
+
+    echo == funding validator and writing configs
+    docker-compose run testnode-scripts index.js --l1url ws://geth:8546 --l1keystore /l1keystore --config /config/ --writeconf --fundvalidator
 
     echo == Deploying L2
-    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /deploydata/deployment.json -authorizevalidators 10
+    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /config/deployment.json -authorizevalidators 10
 fi
 
 echo == Launching Sequencer
@@ -90,4 +100,6 @@ if $validate; then
 else
     STAKER_NODE="staker-unsafe"
 fi
-docker-compose up sequencer $STAKER_NODE blockscout
+if $run; then
+    docker-compose up sequencer $STAKER_NODE blockscout
+fi
