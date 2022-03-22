@@ -182,11 +182,29 @@ func DoesTxTypeAlias(txType *byte) bool {
 	}
 	switch *txType {
 	case types.ArbitrumUnsignedTxType:
+		fallthrough
 	case types.ArbitrumContractTxType:
+		fallthrough
 	case types.ArbitrumRetryTxType:
 		return true
 	}
 	return false
+}
+
+func TxTypeHasPosterCosts(txType byte) bool {
+	switch txType {
+	case types.ArbitrumUnsignedTxType:
+		fallthrough
+	case types.ArbitrumContractTxType:
+		fallthrough
+	case types.ArbitrumRetryTxType:
+		fallthrough
+	case types.ArbitrumInternalTxType:
+		fallthrough
+	case types.ArbitrumSubmitRetryableTxType:
+		return false
+	}
+	return true
 }
 
 // represents when
@@ -214,7 +232,7 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 	if evm.Config.Debug {
 		tracer := evm.Config.Tracer
 
-		if (evm.Depth() != 0) != (scenario == TracingDuringEVM) {
+		if evm.Depth() != 0 && scenario != TracingDuringEVM {
 			// A non-zero depth implies this transfer is occuring inside EVM execution
 			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
 			return errors.New("Tracing scenario mismatch")

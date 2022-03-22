@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/go-redis/redis/v8"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -308,6 +307,7 @@ type Config struct {
 	DataAvailability     das.DataAvailabilityConfig     `koanf:"data-availability"`
 	Wasm                 WasmConfig                     `koanf:"wasm"`
 	Dangerous            DangerousConfig                `koanf:"dangerous"`
+	Archive              bool                           `koanf:"archive"`
 }
 
 func (c *Config) ForwardingTarget() string {
@@ -333,6 +333,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	das.DataAvailabilityConfigAddOptions(prefix+".data-availability", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".archive", ConfigDefault.Archive, "retain past block state")
 }
 
 var ConfigDefault = Config{
@@ -350,6 +351,7 @@ var ConfigDefault = Config{
 	DataAvailability:     das.DefaultDataAvailabilityConfig,
 	Wasm:                 DefaultWasmConfig,
 	Dangerous:            DefaultDangerousConfig,
+	Archive:              false,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -358,6 +360,7 @@ func ConfigDefaultL1Test() *Config {
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
+	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
 }
@@ -366,6 +369,7 @@ func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
 	config.EnableL1Reader = false
+	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
 }
@@ -433,7 +437,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -476,7 +480,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 		txPublisher = sequencer
 		if config.SeqCoordinator.Enable {
-			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinator)
+			coordinator, err = NewSeqCoordinator(txStreamer, sequencer, config.SeqCoordinator)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		if config.SeqCoordinator.Enable {
@@ -579,8 +586,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (newNode *Node, err error) {
+	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -688,19 +695,22 @@ func CreateDefaultStack() (*node.Node, error) {
 	return stack, nil
 }
 
-func DefaultCacheConfigFor(stack *node.Node) *core.CacheConfig {
-	defaultConf := ethconfig.Defaults
+func DefaultCacheConfigFor(stack *node.Node, archiveMode bool) *core.CacheConfig {
+	baseConf := ethconfig.Defaults
+	if archiveMode {
+		baseConf = ethconfig.ArchiveDefaults
+	}
 
 	return &core.CacheConfig{
-		TrieCleanLimit:      defaultConf.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(defaultConf.TrieCleanCacheJournal),
-		TrieCleanRejournal:  defaultConf.TrieCleanCacheRejournal,
-		TrieCleanNoPrefetch: defaultConf.NoPrefetch,
-		TrieDirtyLimit:      defaultConf.TrieDirtyCache,
-		TrieDirtyDisabled:   defaultConf.NoPruning,
-		TrieTimeLimit:       defaultConf.TrieTimeout,
-		SnapshotLimit:       defaultConf.SnapshotCache,
-		Preimages:           defaultConf.Preimages,
+		TrieCleanLimit:      baseConf.TrieCleanCache,
+		TrieCleanJournal:    stack.ResolvePath(baseConf.TrieCleanCacheJournal),
+		TrieCleanRejournal:  baseConf.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch: baseConf.NoPrefetch,
+		TrieDirtyLimit:      baseConf.TrieDirtyCache,
+		TrieDirtyDisabled:   baseConf.NoPruning,
+		TrieTimeLimit:       baseConf.TrieTimeout,
+		SnapshotLimit:       baseConf.SnapshotCache,
+		Preimages:           baseConf.Preimages,
 	}
 }
 

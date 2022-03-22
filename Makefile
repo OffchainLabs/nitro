@@ -106,6 +106,10 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
 	@printf $(done)
 
+test-go-redis: test-go-deps
+	go test -p 1 -run TestSeqCoordinator -tags redistest ./system_tests/... ./arbnode/...
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
@@ -145,8 +149,11 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/relay
 
+# recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen
-	GOOS=js GOARCH=wasm go build -o $@ ./cmd/replay/...
+	mkdir -p `dirname $(replay_wasm)`
+	GOOS=js GOARCH=wasm go build -o $(output_root)/tmp/replay.wasm ./cmd/replay/...
+	if ! diff -qN $(output_root)/tmp/replay.wasm $@ > /dev/null; then cp $(output_root)/tmp/replay.wasm $@; fi
 
 $(arbitrator_prover_bin): $(DEP_PREDICATE) arbitrator/prover/src/*.rs arbitrator/prover/Cargo.toml
 	mkdir -p `dirname $(arbitrator_prover_bin)`
@@ -274,7 +281,7 @@ $(output_root)/machine/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
 $(output_root)/machine/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/brotli.wasm  > $@
+	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/brotli.wasm  > $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
