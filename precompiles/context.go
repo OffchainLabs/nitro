@@ -43,7 +43,7 @@ func (c *context) Burn(amount uint64) error {
 }
 
 //nolint:unused
-func (c *context) burned() uint64 {
+func (c *context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 
