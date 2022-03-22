@@ -34,7 +34,7 @@ contract BridgeStub is IBridge {
         revert("NOT_IMPLEMENTED");
     }
 
-    function enqueueDelayedMessage(
+    function deliverMessageToInbox(
         uint8 kind,
         address sender,
         bytes32 messageDataHash

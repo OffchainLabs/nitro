@@ -57,7 +57,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
 
     /// @dev function to be called one time during the inbox upgrade process
     /// this is used to fix the storage slots
-    function postUpgradeInit(IBridge _bridge) external onlyDelegated onlyProxyOwner {
+    function postUpgradeInit(IBridge _bridge) external {
         uint8 slotsToWipe = 3;
         for (uint8 i = 0; i < slotsToWipe; i++) {
             assembly {
@@ -372,7 +372,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes calldata data
     ) public payable virtual override whenNotPaused returns (uint256) {
         uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
 
         return
             _deliverMessage(
@@ -410,6 +409,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
+        return bridge.deliverMessageToInbox{value: msg.value}(kind, sender, messageDataHash);
     }
 }
