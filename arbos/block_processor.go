@@ -35,7 +35,7 @@ var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.GasPriceWei()
 	state.Restrict(err)
@@ -57,20 +57,20 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   [32]byte{},
+		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
-		Root:        [32]byte{},  // Filled in later
-		TxHash:      [32]byte{},  // Filled in later
-		ReceiptHash: [32]byte{},  // Filled in later
-		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(1),
+		Root:        [32]byte{},    // Filled in later
+		TxHash:      [32]byte{},    // Filled in later
+		ReceiptHash: [32]byte{},    // Filled in later
+		Bloom:       [256]byte{},   // Filled in later
+		Difficulty:  big.NewInt(1), // Eventually, Ethereum plans to require this to be zero
 		Number:      blockNumber,
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Unused
-		Nonce:       [8]byte{},  // Filled in later
+		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
+		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
+		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
@@ -144,7 +144,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
 	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
 	l1BlockNum := l1Info.l1BlockNumber

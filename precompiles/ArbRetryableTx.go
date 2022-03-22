@@ -65,7 +65,7 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
 		nonce,
-		evm.GasPrice,
+		evm.Context.BaseFee,
 		0, // will fill this in below
 		ticketId,
 		c.caller,
