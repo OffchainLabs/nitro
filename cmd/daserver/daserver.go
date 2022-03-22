@@ -92,11 +92,12 @@ func startup() error {
 		panic("Only local DAS implementation supported for daserver currently.")
 	}
 
-	_, err = dasrpc.StartDASRPCServer(ctx, serverConfig.Port, dasImpl)
+	server, err := dasrpc.StartDASRPCServer(ctx, serverConfig.Port, dasImpl)
 	if err != nil {
 		return err
 	}
 	<-sigint
+	server.Stop()
 
 	return nil
 }
