@@ -26,7 +26,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/go-redis/redis/v8"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbos"
@@ -362,6 +361,7 @@ func ConfigDefaultL1Test() *Config {
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
+	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
 }
@@ -370,6 +370,7 @@ func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
 	config.EnableL1Reader = false
+	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
 }
@@ -437,7 +438,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -480,7 +481,10 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 		txPublisher = sequencer
 		if config.SeqCoordinator.Enable {
-			coordinator = NewSeqCoordinator(txStreamer, sequencer, redisclient, config.SeqCoordinator)
+			coordinator, err = NewSeqCoordinator(txStreamer, sequencer, config.SeqCoordinator)
+			if err != nil {
+				return nil, err
+			}
 		}
 	} else {
 		if config.SeqCoordinator.Enable {
@@ -583,8 +587,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts, redisclient *redis.Client) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts, redisclient)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (newNode *Node, err error) {
+	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts)
 	if err != nil {
 		return nil, err
 	}
