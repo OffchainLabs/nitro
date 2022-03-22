@@ -6,13 +6,11 @@ package arbos
 
 import (
 	"fmt"
-	"log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
@@ -23,12 +21,6 @@ const (
 	arbInternalTxStartBlock uint8 = 0
 )
 
-type internalTxStartBlockContents struct {
-	Header        *types.Header
-	L1BlockNumber uint64
-	L1BaseFee     *big.Int
-}
-
 func InternalTxStartBlock(
 	chainId,
 	l1BaseFee *big.Int,
@@ -36,13 +28,12 @@ func InternalTxStartBlock(
 	l2BlockNum uint64,
 	header *types.Header,
 ) *types.ArbitrumInternalTx {
-	data, err := rlp.EncodeToBytes(internalTxStartBlockContents{
-		Header:        header,
-		L1BlockNumber: l1BlockNum,
-		L1BaseFee:     l1BaseFee,
-	})
+	if l1BaseFee == nil {
+		l1BaseFee = big.NewInt(0)
+	}
+	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, header.BaseFee, l1BlockNum, header.Time)
 	if err != nil {
-		panic(fmt.Sprintf("rlp encoding failure %v", err))
+		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
 		ChainId:       chainId,
@@ -53,36 +44,33 @@ func InternalTxStartBlock(
 }
 
 func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.ArbosState, evm *vm.EVM) {
-
-	var contents internalTxStartBlockContents
-	err := rlp.DecodeBytes(tx.Data, &contents)
+	inputs, err := util.UnpackInternalTxDataStartBlock(tx.Data)
 	if err != nil {
-		log.Fatal("internal tx failure", err)
+		panic(err)
 	}
+	l1BaseFee, _ := inputs[0].(*big.Int)
+	l2BaseFee, _ := inputs[1].(*big.Int)
+	l1BlockNumber, _ := inputs[2].(uint64)
+	timeLastBlock, _ := inputs[3].(uint64)
 
 	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 	state.Restrict(err)
 
-	if contents.L1BlockNumber >= nextL1BlockNumber {
+	if l1BlockNumber >= nextL1BlockNumber {
 		var prevHash common.Hash
 		if evm.Context.BlockNumber.Sign() > 0 {
 			prevHash = evm.Context.GetHash(evm.Context.BlockNumber.Uint64() - 1)
 		}
-		state.Restrict(state.Blockhashes().RecordNewL1Block(contents.L1BlockNumber, prevHash))
-	}
-
-	lastBlockHeader := contents.Header
-	if lastBlockHeader == nil {
-		return
+		state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
 	}
 
 	// Try to reap 2 retryables
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingDuringEVM)
-	_ = state.RetryableState().TryToReapOneRetryable(lastBlockHeader.Time, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(timeLastBlock, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(timeLastBlock, evm, util.TracingDuringEVM)
 
-	timePassed := state.SetLastTimestampSeen(lastBlockHeader.Time)
-	state.L2PricingState().UpdatePricingModel(lastBlockHeader, timePassed, false)
-	state.L1PricingState().UpdatePricingModel(contents.L1BaseFee, timePassed)
+	timePassed := state.SetLastTimestampSeen(timeLastBlock)
+	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
+	state.L1PricingState().UpdatePricingModel(l1BaseFee, timePassed)
 
-	state.UpgradeArbosVersionIfNecessary(lastBlockHeader.Time)
+	state.UpgradeArbosVersionIfNecessary(timeLastBlock)
 }

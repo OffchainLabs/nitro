@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/solgen/go/packsolgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -22,6 +23,8 @@ var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
+var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -57,8 +60,31 @@ func init() {
 		}
 	}
 
+	// Create a mechanism for packing and unpacking calls
+	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) ([]interface{}, error)) {
+		contract, err := abi.JSON(strings.NewReader(source))
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+		}
+		method, ok := contract.Methods[name]
+		if !ok {
+			panic(fmt.Sprintf("method %v does not exist", name))
+		}
+		pack := func(args ...interface{}) ([]byte, error) {
+			return contract.Pack(name, args...)
+		}
+		unpack := func(data []byte) ([]interface{}, error) {
+			if len(data) < 4 {
+				return nil, errors.New("Data not long enough")
+			}
+			return method.Inputs.Unpack(data[4:])
+		}
+		return pack, unpack
+	}
+
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(packsolgen.InternalTxDataABI, "startBlock")
 }
 
 func AddressToHash(address common.Address) common.Hash {

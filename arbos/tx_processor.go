@@ -27,8 +27,6 @@ import (
 	glog "github.com/ethereum/go-ethereum/log"
 )
 
-var arbAddress = common.HexToAddress("0xa4b05")
-
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
@@ -96,14 +94,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		defer (startTracer())()
-		if p.msg.From() != arbAddress {
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
-		if p.msg.From() != arbAddress {
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)

@@ -21,7 +21,7 @@ import (
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/solgen/go/packsolgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -84,7 +84,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	callValue := big.NewInt(1e6)
 
-	nodeInterface, err := node_interfacegen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
+	nodeInterface, err := packsolgen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto-redeem the retryable

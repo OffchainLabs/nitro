@@ -29,7 +29,7 @@ color_reset = "\e[0;0m"
 
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
-replay_deps=arbos wavmio arbstate arbcompress solgen/go/node_interfacegen blsSignatures cmd/replay
+replay_deps=arbos wavmio arbstate arbcompress solgen/go/packsolgen blsSignatures cmd/replay
 
 replay_wasm=$(output_root)/machine/replay.wasm
 

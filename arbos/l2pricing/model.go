@@ -5,7 +5,8 @@
 package l2pricing
 
 import (
-	"github.com/ethereum/go-ethereum/core/types"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -31,7 +32,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 }
 
 // Update the pricing model with a finalized block's header
-func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed uint64, debug bool) {
+func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
 
 	// update the rate estimate, which is the weighted average of the past and present
 	//     rate' = weighted average of the historical rate and the current
@@ -96,8 +97,8 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//      price' = price * exp(seconds at intensity) / 2 mins
 	//
 	exp := (averageOfRatios - arbmath.OneInBips) * arbmath.Bips(timePassed) / 120 // limit to EIP 1559's max rate
-	price := arbmath.BigMulByBips(header.BaseFee, arbmath.ApproxExpBasisPoints(exp))
-	maxPrice := arbmath.BigMulByInt(header.BaseFee, 2)
+	price := arbmath.BigMulByBips(l2BaseFee, arbmath.ApproxExpBasisPoints(exp))
+	maxPrice := arbmath.BigMulByInt(l2BaseFee, 2)
 	minPrice, _ := ps.MinGasPriceWei()
 
 	p := func(args ...interface{}) {
@@ -109,7 +110,7 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	p("pool\t", gasPool, "/", poolMax, " ➤ ", averagePool, " ➤ ", newGasPool, " ", poolRatio)
 	p("ratio\t", poolRatio, rateRatio, " ➤ ", averageOfRatiosUnbounded, "‱   bound to [0, 20000]")
 	p("exp()\t", exp, " ➤ ", arbmath.ApproxExpBasisPoints(exp), "‱  ")
-	p("price\t", header.BaseFee, " ➤ ", price, " bound to [", minPrice, ", ", maxPrice, "]\n")
+	p("price\t", l2BaseFee, " ➤ ", price, " bound to [", minPrice, ", ", maxPrice, "]\n")
 
 	if arbmath.BigLessThan(price, minPrice) {
 		price = minPrice

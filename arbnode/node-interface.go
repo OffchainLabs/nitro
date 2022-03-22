@@ -19,7 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/solgen/go/packsolgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -85,7 +85,7 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 func init() {
 
-	nodeInterface, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceABI))
+	nodeInterface, err := abi.JSON(strings.NewReader(packsolgen.NodeInterfaceABI))
 	if err != nil {
 		panic(err)
 	}
