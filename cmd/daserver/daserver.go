@@ -25,10 +25,6 @@ type DAServerConfig struct {
 	DAConf   das.DataAvailabilityConfig `koanf:"data-availability"`
 }
 
-var DAServerConfigDefault = DAServerConfig{
-	Port: 9876,
-}
-
 func main() {
 	if err := startup(); err != nil {
 		log.Error("Error running DAServer", "err", err)
@@ -96,7 +92,10 @@ func startup() error {
 		panic("Only local DAS implementation supported for daserver currently.")
 	}
 
-	dasrpc.StartDASRPCServer(ctx, serverConfig.Port, dasImpl)
+	_, err = dasrpc.StartDASRPCServer(ctx, serverConfig.Port, dasImpl)
+	if err != nil {
+		return err
+	}
 	<-sigint
 
 	return nil
