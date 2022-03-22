@@ -55,26 +55,22 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 			timestamp = prevHeader.Time
 		}
 	}
-	difficulty := int64(1) // non-zero, so geth sees the difficulty as increasing
-	if chainConfig.MergeForkBlock != nil {
-		difficulty = 0 // required by EIP-3675
-	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   types.EmptyUncleHash,
+		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
-		Root:        [32]byte{},  // Filled in later
-		TxHash:      [32]byte{},  // Filled in later
-		ReceiptHash: [32]byte{},  // Filled in later
-		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(difficulty),
+		Root:        [32]byte{},    // Filled in later
+		TxHash:      [32]byte{},    // Filled in later
+		ReceiptHash: [32]byte{},    // Filled in later
+		Bloom:       [256]byte{},   // Filled in later
+		Difficulty:  big.NewInt(1), // Eventually, Ethereum plans to require this to be zero
 		Number:      blockNumber,
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Value required by EIP-3675
-		Nonce:       [8]byte{},  // Filled in later
+		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
+		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
+		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
