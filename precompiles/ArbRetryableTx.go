@@ -56,10 +56,11 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if retryable == nil {
 		return hash{}, ErrNotFound
 	}
-	nonce, err := retryable.IncrementNumTries()
+	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err
 	}
+	nonce := nextNonce - 1
 
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
