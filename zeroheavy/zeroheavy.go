@@ -131,7 +131,7 @@ func NewZeroheavyDecoder(inner io.Reader) *ZeroheavyDecoder {
 func (dec *ZeroheavyDecoder) readOne() (byte, error) {
 	ret := byte(0)
 	for i := 0; i < 8; i++ {
-		b, err := dec.bitReader.next(dec.refillBitReader)
+		b, err := dec.bitReader.nextBit(dec.refillBitReader)
 		if err != nil {
 			return 0, err
 		}
@@ -187,20 +187,38 @@ func (dec *ZeroheavyDecoder) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-type bufferingBitReader struct {
-	buffer         []bool
-	eofAfterBuffer bool
+type paddingEatingBitReader struct {
+	buffer          []bool
+	eofAfterBuffer  bool
+	deferredZero    bool
+	numDeferredOnes uint
 }
 
-func newBufferingBitReader() *bufferingBitReader {
-	return new(bufferingBitReader)
+func newPaddingEatingBitReader() *paddingEatingBitReader {
+	return &paddingEatingBitReader{[]bool{}, false, false, 0}
 }
 
-func (br *bufferingBitReader) pushBit(b bool) {
-	br.buffer = append(br.buffer, b)
+func (br *paddingEatingBitReader) pushBit(b bool) {
+	if br.deferredZero {
+		if b {
+			br.numDeferredOnes++
+		} else {
+			br.buffer = append(br.buffer, false)
+			for br.numDeferredOnes > 0 {
+				br.buffer = append(br.buffer, true)
+				br.numDeferredOnes--
+			}
+		}
+	} else {
+		if b {
+			br.buffer = append(br.buffer, true)
+		} else {
+			br.deferredZero = true
+		}
+	}
 }
 
-func (br *bufferingBitReader) next(refill func() bool) (bool, error) {
+func (br *paddingEatingBitReader) nextBit(refill func() bool) (bool, error) {
 	for len(br.buffer) == 0 {
 		if br.eofAfterBuffer {
 			return false, io.EOF
@@ -210,38 +228,4 @@ func (br *bufferingBitReader) next(refill func() bool) (bool, error) {
 	ret := br.buffer[0]
 	br.buffer = br.buffer[1:]
 	return ret, nil
-}
-
-type paddingEatingBitReader struct {
-	inner           *bufferingBitReader
-	bufferedZero    bool
-	numBufferedOnes uint
-}
-
-func newPaddingEatingBitReader() *paddingEatingBitReader {
-	return &paddingEatingBitReader{newBufferingBitReader(), false, 0}
-}
-
-func (br *paddingEatingBitReader) pushBit(b bool) {
-	if br.bufferedZero {
-		if b {
-			br.numBufferedOnes++
-		} else {
-			br.inner.pushBit(false)
-			for br.numBufferedOnes > 0 {
-				br.inner.pushBit(true)
-				br.numBufferedOnes--
-			}
-		}
-	} else {
-		if b {
-			br.inner.pushBit(true)
-		} else {
-			br.bufferedZero = true
-		}
-	}
-}
-
-func (br *paddingEatingBitReader) next(refill func() bool) (bool, error) {
-	return br.inner.next(refill)
 }
