@@ -446,7 +446,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 				dataValues = append(dataValues, args[i].Interface())
 			}
 
-			data, err := solErr.Inputs.PackValues(dataValues)
+			data, err := capturedSolErr.Inputs.PackValues(dataValues)
 			if err != nil {
 				glog.Error(fmt.Sprintf(
 					"Couldn't pack values for error %s\nnargs %s\nvalues %s\nerror %s",
