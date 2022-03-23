@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::utils::Bytes32;
 use digest::Digest;
 use rayon::prelude::*;
