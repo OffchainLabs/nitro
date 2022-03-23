@@ -27,6 +27,8 @@ type ArbRetryableTx struct {
 	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
 	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
+
+	NoTicketWithIDError func() error
 }
 
 var (
@@ -56,15 +58,16 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if retryable == nil {
 		return hash{}, ErrNotFound
 	}
-	nonce, err := retryable.IncrementNumTries()
+	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err
 	}
+	nonce := nextNonce - 1
 
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
 		nonce,
-		evm.GasPrice,
+		evm.Context.BaseFee,
 		0, // will fill this in below
 		ticketId,
 		c.caller,
@@ -127,7 +130,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 		return nil, err
 	}
 	if retryable == nil {
-		return nil, ErrNotFound
+		return nil, con.NoTicketWithIDError()
 	}
 	timeout, err := retryable.CalculateTimeout()
 	if err != nil {

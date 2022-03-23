@@ -28,7 +28,6 @@ type L1PricingState struct {
 	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
-	aggregatorFixedCharges      *storage.Storage
 	aggregatorFeeCollectors     *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
 }
@@ -38,9 +37,8 @@ var (
 
 	userSpecifiedAggregatorKey    = []byte{0}
 	refuseDefaultAggregatorKey    = []byte{1}
-	aggregatorFixedChargeKey      = []byte{2}
-	aggregatorFeeCollectorKey     = []byte{3}
-	aggregatorCompressionRatioKey = []byte{4}
+	aggregatorFeeCollectorKey     = []byte{2}
+	aggregatorCompressionRatioKey = []byte{3}
 )
 
 const (
@@ -71,7 +69,6 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
-		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),
 		sto.OpenSubStorage(aggregatorCompressionRatioKey),
 	}
@@ -186,27 +183,6 @@ func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address)
 	}
 	return &aggregator, nil
 
-}
-
-func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Address, chargeL1Gas *big.Int) error {
-	return ps.aggregatorFixedCharges.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(chargeL1Gas))
-}
-
-func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Address) (*big.Int, error) {
-	value, err := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes()))
-	return value.Big(), err
-}
-
-func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) (*big.Int, error) {
-	fixed, err := ps.FixedChargeForAggregatorL1Gas(aggregator)
-	if err != nil {
-		return nil, err
-	}
-	price, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMul(fixed, price), nil
 }
 
 func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) error {

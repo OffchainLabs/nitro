@@ -286,7 +286,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         _latestConfirmed = nodeNum;
         _firstUnresolvedNode = nodeNum + 1;
 
-        rollupEventBridge.nodeConfirmed(nodeNum);
         emit NodeConfirmed(nodeNum, blockHash, sendRoot);
     }
 
@@ -624,12 +623,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             prevNode.childCreated(nodeNum);
 
             nodeCreated(memoryFrame.node);
-            rollupEventBridge.nodeCreated(
-                nodeNum,
-                prevNodeNum,
-                memoryFrame.deadlineBlock,
-                msg.sender
-            );
         }
 
         emit NodeCreated(

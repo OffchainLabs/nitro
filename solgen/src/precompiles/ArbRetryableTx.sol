@@ -79,4 +79,6 @@ interface ArbRetryableTx {
         address gasDonor
     );
     event Canceled(bytes32 indexed ticketId);
+
+    error NoTicketWithID();
 }
