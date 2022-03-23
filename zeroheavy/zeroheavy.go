@@ -109,7 +109,7 @@ func (enc *ZeroheavyEncoder) readOneImpl() (byte, error) {
 }
 
 func (enc *ZeroheavyEncoder) Read(p []byte) (int, error) {
-	for i, _ := range p {
+	for i := range p {
 		b, err := enc.readOne()
 		if err != nil {
 			return i, err
@@ -177,7 +177,7 @@ func (dec *ZeroheavyDecoder) refillBitReader() bool {
 }
 
 func (dec *ZeroheavyDecoder) Read(p []byte) (int, error) {
-	for i, _ := range p {
+	for i := range p {
 		b, err := dec.readOne()
 		if err != nil {
 			return i, err
