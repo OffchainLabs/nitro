@@ -175,11 +175,6 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			if fc != acct.AggregatorInfo.FeeCollector {
 				t.Fatal()
 			}
-			charge, err := l1p.FixedChargeForAggregatorL1Gas(addr)
-			Require(t, err)
-			if charge.Cmp(acct.AggregatorInfo.BaseFeeL1Gas) != 0 {
-				Fail(t)
-			}
 		}
 		if acct.AggregatorToPay != nil {
 			aggregator, err := l1p.ReimbursableAggregatorForSender(addr)
