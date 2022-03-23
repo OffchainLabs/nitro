@@ -49,4 +49,5 @@ interface ArbDebug {
     function customRevert(uint64 number) external pure;
 
     error Custom(uint64, string, bool);
+    error Unused();
 }

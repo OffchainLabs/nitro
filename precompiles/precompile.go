@@ -455,9 +455,9 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 				return []reflect.Value{reflect.ValueOf(err)}
 			}
 
-			solErr := &SolError{data: append(solErr.ID[:4], data...), solErr: capturedSolErr}
+			customErr := &SolError{data: append(capturedSolErr.ID[:4], data...), solErr: capturedSolErr}
 
-			return []reflect.Value{reflect.ValueOf(solErr)}
+			return []reflect.Value{reflect.ValueOf(customErr)}
 		}
 
 		errorReturnPointer.Set(reflect.MakeFunc(field.Type, errorReturn))
@@ -651,6 +651,7 @@ func (p Precompile) Call(
 	reflectResult := method.handler.Func.Call(reflectArgs)
 	resultCount := len(reflectResult) - 1
 	if !reflectResult[resultCount].IsNil() {
+		// the last arg is always the error status
 		errRet, ok := reflectResult[resultCount].Interface().(error)
 		if !ok {
 			log.Fatal("final return value must be error")
@@ -665,7 +666,6 @@ func (p Precompile) Call(
 			}
 			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
-		// the last arg is always the error status
 		return nil, callerCtx.gasLeft, errRet
 	}
 	result := make([]interface{}, resultCount)

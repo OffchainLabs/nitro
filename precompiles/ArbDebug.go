@@ -16,6 +16,7 @@ type ArbDebug struct {
 	StoreGasCost func(bool, addr, huge, bytes32, []byte) (uint64, error)
 
 	CustomError func(uint64, string, bool) error
+	UnusedError func() error
 }
 
 func (con ArbDebug) Events(c ctx, evm mech, paid huge, flag bool, value bytes32) (addr, huge, error) {
