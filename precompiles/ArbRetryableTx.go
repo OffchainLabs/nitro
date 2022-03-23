@@ -27,6 +27,8 @@ type ArbRetryableTx struct {
 	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
 	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
+
+	NoTicketWithIDError func() error
 }
 
 var (
@@ -128,7 +130,7 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 		return nil, err
 	}
 	if retryable == nil {
-		return nil, ErrNotFound
+		return nil, con.NoTicketWithIDError()
 	}
 	timeout, err := retryable.CalculateTimeout()
 	if err != nil {

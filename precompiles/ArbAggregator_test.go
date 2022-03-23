@@ -141,18 +141,18 @@ func TestTxBaseFee(t *testing.T) {
 	fee, err := agg.GetTxBaseFee(callerCtx, evm, aggAddr)
 	Require(t, err)
 	if fee.Cmp(big.NewInt(0)) != 0 {
-		Fail(t)
+		Fail(t, fee)
 	}
 
-	// set base fee to value
+	// set base fee to value -- should be ignored
 	if err := agg.SetTxBaseFee(aggCtx, evm, aggAddr, targetFee); err != nil {
 		Fail(t, err)
 	}
 
-	// base fee should now be targetFee
+	// base fee should still be zero
 	fee, err = agg.GetTxBaseFee(callerCtx, evm, aggAddr)
 	Require(t, err)
-	if fee.Cmp(targetFee) != 0 {
-		Fail(t, fee, targetFee)
+	if fee.Cmp(big.NewInt(0)) != 0 {
+		Fail(t, fee)
 	}
 }

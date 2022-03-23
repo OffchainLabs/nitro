@@ -159,10 +159,6 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 		if err != nil {
 			return err
 		}
-		err = l1pState.SetFixedChargeForAggregatorL1Gas(account.Addr, account.AggregatorInfo.BaseFeeL1Gas)
-		if err != nil {
-			return err
-		}
 	}
 	if account.AggregatorToPay != nil {
 		err := l1pState.SetUserSpecifiedAggregator(account.Addr, account.AggregatorToPay)

@@ -61,10 +61,12 @@ interface ArbAggregator {
     /// @param newFeeCollector The new fee collector to set
     function setFeeCollector(address aggregator, address newFeeCollector) external;
 
+    /// @notice Deprecated, always returns zero
     /// @notice Get the tx base fee (in approximate L1 gas) for aggregator
     /// @param aggregator The aggregator to get the base fee for
     function getTxBaseFee(address aggregator) external view returns (uint256);
 
+    /// @notice Deprecated, is now a no-op
     /// @notice Set the tx base fee (in approximate L1 gas) for aggregator
     /// Revert unless called by aggregator or the chain owner
     /// Revert if feeInL1Gas is outside the chain's allowed bounds
