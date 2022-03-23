@@ -427,7 +427,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 
 		field, ok := implementerType.Elem().FieldByName(name + "Error")
 		if !ok {
-			log.Fatal(missing, "event ", name, "Error of type\n\t", expectedFieldType)
+			log.Fatal(missing, "custom error ", name, "Error of type\n\t", expectedFieldType)
 		}
 		if field.Type != expectedFieldType {
 			log.Fatal(
