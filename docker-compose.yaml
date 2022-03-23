@@ -82,13 +82,13 @@ services:
     pid: host # allow debugging
     build: .
     ports:
-      - "7545"
-      - "7546"
+      - "7547:7547"
+      - "7548:7548"
     volumes:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/validator_config.json
+    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.addr 0.0.0.0 --ws.port 7548
     depends_on:
       - sequencer
 

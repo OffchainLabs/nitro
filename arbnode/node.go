@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"time"
 
@@ -499,7 +500,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if err != nil {
 		return nil, err
 	}
-	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, l2BlockChain, arbInterface)
+	backend, err := arbitrum.NewBackend(stack, &config.RPC, chainDb, arbInterface)
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +537,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, dataAvailabilityService)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
@@ -591,6 +592,17 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 	if err != nil {
 		return nil, err
 	}
+	var apis []rpc.API
+	if node.BlockValidator != nil {
+		apis = append(apis, rpc.API{
+			Namespace: "arb",
+			Version:   "1.0",
+			Service:   &BlockValidatorAPI{val: node.BlockValidator, blockchain: l2BlockChain},
+			Public:    false,
+		})
+	}
+	stack.RegisterAPIs(apis)
+
 	stack.RegisterLifecycle(arbNodeLifecycle{node})
 	return node, nil
 }

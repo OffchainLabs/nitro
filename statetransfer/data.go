@@ -45,7 +45,7 @@ type AccountInitContractInfo struct {
 
 type AccountInitAggregatorInfo struct {
 	FeeCollector common.Address
-	BaseFeeL1Gas *big.Int
+	BaseFeeL1Gas *big.Int // This is unused in Nitro, so its value will be ignored.
 }
 
 type StoredBlock struct {

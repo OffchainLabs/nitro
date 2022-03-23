@@ -23,7 +23,7 @@ import "./IRollupLogic.sol";
 import "../bridge/IBridge.sol";
 import "../bridge/IMessageProvider.sol";
 import "../libraries/DelegateCallAware.sol";
-import {ROLLUP_PROTOCOL_EVENT_TYPE, INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
+import {INITIALIZATION_MSG_TYPE} from "../libraries/MessageTypes.sol";
 
 /**
  * @title The inbox for rollup protocol events
@@ -56,53 +56,5 @@ contract RollupEventBridge is IMessageProvider, DelegateCallAware {
             keccak256(initMsg)
         );
         emit InboxMessageDelivered(num, initMsg);
-    }
-
-    function nodeCreated(
-        uint256 nodeNum,
-        uint256 prev,
-        uint256 deadline,
-        address asserter
-    ) external onlyRollup {
-        deliverToBridge(
-            abi.encodePacked(
-                CREATE_NODE_EVENT,
-                nodeNum,
-                prev,
-                block.number,
-                deadline,
-                uint256(uint160(bytes20(asserter)))
-            )
-        );
-    }
-
-    function nodeConfirmed(uint256 nodeNum) external onlyRollup {
-        deliverToBridge(abi.encodePacked(CONFIRM_NODE_EVENT, nodeNum));
-    }
-
-    function nodeRejected(uint256 nodeNum) external onlyRollup {
-        deliverToBridge(abi.encodePacked(REJECT_NODE_EVENT, nodeNum));
-    }
-
-    function stakeCreated(address staker, uint256 nodeNum) external onlyRollup {
-        deliverToBridge(
-            abi.encodePacked(
-                STAKE_CREATED_EVENT,
-                uint256(uint160(bytes20(staker))),
-                nodeNum,
-                block.number
-            )
-        );
-    }
-
-    function deliverToBridge(bytes memory message) private {
-        emit InboxMessageDelivered(
-            bridge.enqueueDelayedMessage(
-                ROLLUP_PROTOCOL_EVENT_TYPE,
-                msg.sender,
-                keccak256(message)
-            ),
-            message
-        );
     }
 }

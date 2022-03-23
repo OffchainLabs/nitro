@@ -64,6 +64,7 @@ func (c *DataAvailabilityConfig) Mode() (DataAvailabilityMode, error) {
 
 func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".mode", DefaultDataAvailabilityConfig.ModeImpl, "mode (onchain or local)")
+	f.String(prefix+".local-disk-data-dir", DefaultDataAvailabilityConfig.LocalDiskDataDir, "For local mode, the directory of the data store")
 }
 
 func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
