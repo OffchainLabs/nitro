@@ -6,9 +6,9 @@
   "author": "Offchain Labs, Inc.",
   "license": "Apache-2.0",
   "dependencies": {
-    "fs": "^0.0.1-security",
+    "@types/node": "^17.0.22",
+    "ethers": "^5.6.1",
     "path": "^0.12.7",
-    "web3": "^1.7.1",
     "yargs": "^17.4.0"
   },
   "private": true,

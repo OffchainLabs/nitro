@@ -86,20 +86,22 @@ if $force_init; then
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
 
     echo == funding validator and writing configs
-    docker-compose run testnode-scripts index.js --l1url ws://geth:8546 --l1keystore /l1keystore --config /config/ --writeconf --fundvalidator
+    docker-compose run testnode-scripts index.js --fundvalidator --writeconfig
 
     echo == Deploying L2
     docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1deployment /config/deployment.json -authorizevalidators 10
 fi
 
-echo == Launching Sequencer
-echo if things go wrong - use --init to create a new chain
-echo
 if $validate; then
     STAKER_NODE="validator"
 else
     STAKER_NODE="staker-unsafe"
 fi
+
 if $run; then
+    echo == Launching Sequencer
+    echo if things go wrong - use --init to create a new chain
+    echo
+
     docker-compose up sequencer $STAKER_NODE blockscout
 fi

@@ -93,7 +93,7 @@ services:
       - sequencer
 
   testnode-scripts:
-    build: testnode_scripts/
+    build: testnode-scripts/
     volumes:
       - "l1keystore:/l1keystore"
       - "config:/config"
