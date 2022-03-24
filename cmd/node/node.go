@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -105,21 +104,19 @@ func main() {
 		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
 	}
 
-	wasmModuleRootString := nodeConfig.Node.Wasm.ModuleRoot
-	if wasmModuleRootString == "" {
-		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
-		fileBytes, err := ioutil.ReadFile(fileToRead)
+	var wasmModuleRoot common.Hash
+	if nodeConfig.Node.Wasm.ModuleRoot != "" {
+		wasmModuleRoot = common.HexToHash(nodeConfig.Node.Wasm.ModuleRoot)
+	} else {
+		wasmModuleRoot, err = validator.ReadWasmModuleRoot()
 		if err != nil {
 			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
+			} else {
+				wasmModuleRoot = common.Hash{}
 			}
 		}
-		wasmModuleRootString = strings.TrimSpace(string(fileBytes))
-		if len(wasmModuleRootString) > 64 {
-			wasmModuleRootString = wasmModuleRootString[0:64]
-		}
 	}
-	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
 
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.EnableL1Reader {

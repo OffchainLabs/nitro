@@ -349,14 +349,16 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 		return
 	}
 
-	var blockhash common.Hash
-	blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
-	if err != nil {
-		return
-	}
-	if blockhash != header.Hash() {
-		err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
-		return
+	if prevHeader != nil { // no preimages are needed for the genesis block
+		var blockhash common.Hash
+		blockhash, preimages, err = RecordBlockCreation(blockchain, prevHeader, &msg)
+		if err != nil {
+			return
+		}
+		if blockhash != header.Hash() {
+			err = fmt.Errorf("wrong hash expected %s got %s", header.Hash(), blockhash)
+			return
+		}
 	}
 	if prevHeader == nil || header.Nonce != prevHeader.Nonce {
 		hasDelayedMessage = true
