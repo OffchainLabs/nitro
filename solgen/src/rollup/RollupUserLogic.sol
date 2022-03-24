@@ -69,7 +69,6 @@ abstract contract AbsRollupUserLogic is
         }
         // Simpler case: if the first unreseolved node doesn't point to the last confirmed node, another branch was confirmed and can simply reject it outright
         _rejectNextNode();
-        rollupEventBridge.nodeRejected(firstUnresolvedNodeNum);
 
         emit NodeRejected(firstUnresolvedNodeNum);
     }
@@ -124,8 +123,6 @@ abstract contract AbsRollupUserLogic is
         require(depositAmount >= currentRequiredStake(), "NOT_ENOUGH_STAKE");
 
         createNewStake(msg.sender, depositAmount);
-
-        rollupEventBridge.stakeCreated(msg.sender, latestConfirmed());
     }
 
     /**

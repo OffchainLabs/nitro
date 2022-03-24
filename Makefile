@@ -62,7 +62,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay
+build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -106,6 +106,10 @@ test-go-challenge: test-go-deps
 	go test -v -timeout 120m ./system_tests/... -run TestFullChallenge -tags fullchallengetest
 	@printf $(done)
 
+test-go-redis: test-go-deps
+	go test -p 1 -run TestSeqCoordinator -tags redistest ./system_tests/... ./arbnode/...
+	@printf $(done)
+
 test-gen-proofs: \
 	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
@@ -144,6 +148,9 @@ $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/relay
+
+$(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ ./cmd/daserver
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

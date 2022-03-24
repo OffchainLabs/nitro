@@ -36,6 +36,10 @@ func StartDASRPCServer(ctx context.Context, portNum uint64, localDAS das.DataAva
 	return dasServer, nil
 }
 
+func (serv *DASRPCServer) Stop() {
+	serv.grpcServer.GracefulStop()
+}
+
 func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResponse, error) {
 	cert, err := serv.localDAS.Store(ctx, req.Message)
 	if err != nil {
