@@ -1,9 +1,28 @@
 package zeroheavy
 
 import (
+	"bytes"
 	"errors"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"io"
 )
+
+func ZeroheavyCompress(buf []byte) ([]byte, error) {
+	buf, err := arbcompress.CompressWell(buf)
+	if err != nil {
+		return nil, err
+	}
+	enc := NewZeroheavyEncoder(bytes.NewReader(buf))
+	return io.ReadAll(enc)
+}
+
+func ZeroheavyDecompress(buf []byte, maxSize int) ([]byte, error) {
+	zhDecodedBuf, err := io.ReadAll(io.LimitReader(NewZeroheavyDecoder(bytes.NewReader(buf)), int64(5*maxSize+2)))
+	if err != nil {
+		return nil, err
+	}
+	return arbcompress.Decompress(zhDecodedBuf, maxSize)
+}
 
 type ZeroheavyEncoder struct {
 	inner              io.Reader

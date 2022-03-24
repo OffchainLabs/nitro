@@ -9,7 +9,8 @@ import (
 )
 
 func TestZeroheavyNullInput(t *testing.T) {
-	source := bytes.NewReader([]byte{})
+	inBuf := []byte{}
+	source := bytes.NewReader(inBuf)
 	enc := NewZeroheavyEncoder(source)
 	dec := NewZeroheavyDecoder(enc)
 
@@ -21,11 +22,24 @@ func TestZeroheavyNullInput(t *testing.T) {
 	if n != 0 {
 		t.Fatal(n, buf[0])
 	}
+
+	mid, err := ZeroheavyCompress(inBuf)
+	if err != nil {
+		t.Error(err)
+	}
+	res, err := ZeroheavyDecompress(mid, 1000)
+	if err != nil {
+		t.Error(err)
+	}
+	if !bytes.Equal(inBuf, res) {
+		t.Fatal()
+	}
 }
 
 func TestZeroHeavyOneByte(t *testing.T) {
 	for i := 0; i < 256; i++ {
-		source := bytes.NewReader([]byte{byte(i)})
+		inBuf := []byte{byte(i)}
+		source := bytes.NewReader(inBuf)
 		enc := NewZeroheavyEncoder(source)
 		dec := NewZeroheavyDecoder(enc)
 
@@ -39,6 +53,18 @@ func TestZeroHeavyOneByte(t *testing.T) {
 		if buf[0] != byte(i) {
 			t.Fatal(buf[0], i)
 		}
+
+		mid, err := ZeroheavyCompress(inBuf)
+		if err != nil {
+			t.Error(err)
+		}
+		res, err := ZeroheavyDecompress(mid, 1000)
+		if err != nil {
+			t.Error(err)
+		}
+		if !bytes.Equal(inBuf, res) {
+			t.Fatal()
+		}
 	}
 }
 
@@ -46,14 +72,25 @@ func TestZeroHeavyRandomData(t *testing.T) {
 	rand.Seed(0)
 	for i := 0; i < 1024; i++ {
 		size := rand.Uint64() % 4096
-		buf := make([]byte, size)
-		_, _ = rand.Read(buf)
-		dec := NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(buf)))
+		inBuf := make([]byte, size)
+		_, _ = rand.Read(inBuf)
+		dec := NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(inBuf)))
 		res, err := io.ReadAll(dec)
 		if err != nil {
 			t.Error(err)
 		}
-		if !bytes.Equal(buf, res) {
+		if !bytes.Equal(inBuf, res) {
+			t.Fatal()
+		}
+		mid, err := ZeroheavyCompress(inBuf)
+		if err != nil {
+			t.Error(err)
+		}
+		res, err = ZeroheavyDecompress(mid, 5000)
+		if err != nil {
+			t.Error(err)
+		}
+		if !bytes.Equal(inBuf, res) {
 			t.Fatal()
 		}
 	}
