@@ -327,6 +327,9 @@ func main() {
 		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
 		// we should create our own fake init message.
 		count, err := node.TxStreamer.GetMessageCount()
+		if err != nil {
+			panic(err)
+		}
 		if count == 0 {
 			err = node.TxStreamer.AddFakeInitMessage()
 			if err != nil {
