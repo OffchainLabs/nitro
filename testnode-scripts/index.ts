@@ -29,7 +29,7 @@ async function createSendTransaction(provider: ethers.providers.Provider, from: 
         throw Error("bad L1 fee data")
     }
     transactionRequest.gasLimit = BigNumber.from(Math.ceil(gasEstimate.toNumber() * 1.2))
-    transactionRequest.maxPriorityFeePerGas = BigNumber.from(Math.ceil(feeData.maxPriorityFeePerGas.toNumber() * 1.2)), // Recommended maxPriorityFeePerGas
+    transactionRequest.maxPriorityFeePerGas = BigNumber.from(Math.ceil(feeData.maxPriorityFeePerGas.toNumber() * 1.2)) // Recommended maxPriorityFeePerGas
     transactionRequest.maxFeePerGas = BigNumber.from(Math.ceil(feeData.maxFeePerGas.toNumber() * 1.2))
 
     const signedTx = await from.signTransaction(transactionRequest)
@@ -100,12 +100,12 @@ async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wal
 
 async function main() {
     const argv = yargs(hideBin(process.argv)).options({
-        writeconfig: {type: 'boolean', describe: 'write config'},
-        bridgefunds: {type: 'boolean', describe: 'bridge funds'},
-        ethamount: {type: 'string', describe:'amount to transfer (in eth)', default: "10"},
-        l1account: {choices: ["funnel", "sequencer", "validator"] as const, default: "funnel"},
-        fund: {type: 'boolean', describe: 'send funds from funnel'},
-        printaddress: {type: 'boolean', describe: 'print address'}
+        writeconfig: { type: 'boolean', describe: 'write config' },
+        bridgefunds: { type: 'boolean', describe: 'bridge funds' },
+        ethamount: { type: 'string', describe: 'amount to transfer (in eth)', default: "10" },
+        l1account: { choices: ["funnel", "sequencer", "validator"] as const, default: "funnel" },
+        fund: { type: 'boolean', describe: 'send funds from funnel' },
+        printaddress: { type: 'boolean', describe: 'print address' }
     }).help().parseSync()
 
     let keyFilenames = fs.readdirSync(l1keystore)
@@ -120,7 +120,7 @@ async function main() {
     }
 
     let accounts = keyFilenames.map((filename) => {
-        return ethers.Wallet.fromEncryptedJsonSync(fs.readFileSync(path.join(l1keystore,filename)).toString(), l1passphrase)
+        return ethers.Wallet.fromEncryptedJsonSync(fs.readFileSync(path.join(l1keystore, filename)).toString(), l1passphrase)
     })
 
     let provider = new ethers.providers.WebSocketProvider("ws://geth:8546")
@@ -149,8 +149,8 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
-  .catch(error => {
-    console.error(error)
-    process.exit(1)
-  })
+    .then(() => process.exit(0))
+    .catch(error => {
+        console.error(error)
+        process.exit(1)
+    })
