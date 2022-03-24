@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -223,6 +224,19 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
+}
+
+// Should only be used for testing or running a local dev node
+func (s *TransactionStreamer) AddFakeInitMessage() error {
+	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
+		Message: &arbos.L1IncomingMessage{
+			Header: &arbos.L1IncomingMessageHeader{
+				Kind: arbos.L1MessageType_Initialize,
+			},
+			L2msg: math.U256Bytes(s.bc.Config().ChainID),
+		},
+		DelayedMessagesRead: 0,
+	}})
 }
 
 func (s *TransactionStreamer) GetMessageCountSync() (arbutil.MessageIndex, error) {

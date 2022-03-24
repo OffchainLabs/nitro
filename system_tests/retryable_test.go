@@ -74,6 +74,19 @@ func retryableSetup(t *testing.T) (
 	return l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown
 }
 
+func TestRetryableNoExist(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, _, l2client := CreateTestL2(t, ctx)
+
+	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
+	if err.Error() != "error NoTicketWithID()" {
+		Fail(t, "didn't get expected NoTicketWithID error")
+	}
+}
+
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()

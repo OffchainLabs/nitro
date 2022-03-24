@@ -28,3 +28,22 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 		Fail(t, "Wrong ChainID", chainId.Uint64())
 	}
 }
+
+func TestCustomSolidityErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, client := CreateTestL2(t, ctx)
+
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	Require(t, err, "could not deploy ArbDebug contract")
+	customError := arbDebug.CustomRevert(&bind.CallOpts{}, 1024)
+	if customError == nil {
+		Fail(t, "should have errored")
+	}
+	observedMessage := customError.Error()
+	expectedMessage := "error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\, true)"
+	if observedMessage != expectedMessage {
+		Fail(t, observedMessage)
+	}
+}
