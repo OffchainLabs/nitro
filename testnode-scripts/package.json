@@ -14,7 +14,8 @@
     "yargs": "^17.4.0"
   },
   "scripts": {
-    "build": "tsc -p ."
+    "build": "tsc -p .",
+    "postinstall": "echo 'Postinstall running without source available'"
   },
   "private": true,
   "devDependencies": {}
