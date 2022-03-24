@@ -201,6 +201,9 @@ func runChallengeTest(
 			}
 			if !currentCorrect &&
 				(strings.Contains(err.Error(), "lost challenge") || strings.Contains(err.Error(), "SAME_OSP_END")) {
+				if shouldTimeout {
+					t.Fatal("expected challenge to end in timeout")
+				}
 				t.Log("challenge completed! asserter hit expected error:", err)
 				return
 			}
