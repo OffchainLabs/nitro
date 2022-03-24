@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -225,15 +223,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	Require(t, err)
 
 	// Give the node an init message
-	err = node.TxStreamer.AddMessages(0, false, []arbstate.MessageWithMetadata{{
-		Message: &arbos.L1IncomingMessage{
-			Header: &arbos.L1IncomingMessageHeader{
-				Kind: arbos.L1MessageType_Initialize,
-			},
-			L2msg: math.U256Bytes(l2info.Signer.ChainID()),
-		},
-		DelayedMessagesRead: 0,
-	}})
+	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
 
 	Require(t, node.Start(ctx))

@@ -319,9 +319,20 @@ func main() {
 		}
 	}
 
-	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
 	if err != nil {
 		panic(err)
+	}
+	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.DevInit {
+		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
+		// we should create our own fake init message.
+		count, err := node.TxStreamer.GetMessageCount()
+		if count == 0 {
+			err = node.TxStreamer.AddFakeInitMessage()
+			if err != nil {
+				panic(err)
+			}
+		}
 	}
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)
