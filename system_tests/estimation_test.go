@@ -70,6 +70,7 @@ func TestEstimate(t *testing.T) {
 	numTriesLeft := 20
 	for !equilibrated && numTriesLeft > 0 {
 		// make an empty block to let the gas price update
+		l2info.GasPrice = new(big.Int).Mul(l2info.GasPrice, big.NewInt(2))
 		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
 
 		// check if the price has equilibrated
