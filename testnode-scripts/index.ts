@@ -13,7 +13,7 @@ async function createSendTransaction(provider: ethers.providers.Provider, from: 
     const nonce = await provider.getTransactionCount(from.address, "latest");
     const chainId = (await provider.getNetwork()).chainId
 
-    var transactionRequest: ethers.providers.TransactionRequest = {
+    let transactionRequest: ethers.providers.TransactionRequest = {
         type: 2,
         from: from.address,
         to: to,
@@ -77,17 +77,17 @@ function writeConfigs(sequenceraddress: string, validatoraddress: string) {
     }
     const baseConfJSON = JSON.stringify(baseConfig)
 
-    var validatorConfig = JSON.parse(baseConfJSON)
+    let validatorConfig = JSON.parse(baseConfJSON)
     validatorConfig.l1.wallet.account = validatoraddress
     validatorConfig.node.validator.enable = true
-    var validconfJSON = JSON.stringify(validatorConfig)
+    let validconfJSON = JSON.stringify(validatorConfig)
     fs.writeFileSync(path.join(configpath, "validator_config.json"), validconfJSON)
 
-    var unsafeStakerConfig = JSON.parse(validconfJSON)
+    let unsafeStakerConfig = JSON.parse(validconfJSON)
     unsafeStakerConfig.node.validator.dangerous["without-block-validator"] = true
     fs.writeFileSync(path.join(configpath, "unsafe_staker_config.json"), JSON.stringify(unsafeStakerConfig))
 
-    var sequencerConfig = JSON.parse(baseConfJSON)
+    let sequencerConfig = JSON.parse(baseConfJSON)
     sequencerConfig.l1.wallet.account = sequenceraddress
     sequencerConfig.node.sequencer.enable = true
     fs.writeFileSync(path.join(configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
@@ -108,7 +108,7 @@ async function main() {
         printaddress: {type: 'boolean', describe: 'print address'}
     }).help().parseSync()
 
-    var keyFilenames = fs.readdirSync(l1keystore)
+    let keyFilenames = fs.readdirSync(l1keystore)
     keyFilenames.sort()
 
     let chosenAccount = 0
@@ -123,10 +123,10 @@ async function main() {
         return ethers.Wallet.fromEncryptedJsonSync(fs.readFileSync(path.join(l1keystore,filename)).toString(), l1passphrase)
     })
 
-    var provider = new ethers.providers.WebSocketProvider("ws://geth:8546")
+    let provider = new ethers.providers.WebSocketProvider("ws://geth:8546")
 
     if (argv.fund) {
-        var response = await createSendTransaction(provider, accounts[0], accounts[chosenAccount].address, ethers.utils.parseEther(argv.ethamount), new Uint8Array())
+        let response = await createSendTransaction(provider, accounts[0], accounts[chosenAccount].address, ethers.utils.parseEther(argv.ethamount), new Uint8Array())
         console.log("sent " + argv.l1account + " funding")
         console.log(response)
     }
@@ -137,7 +137,7 @@ async function main() {
     }
 
     if (argv.bridgefunds) {
-        var response = await bridgeFunds(provider, accounts[chosenAccount])
+        let response = await bridgeFunds(provider, accounts[chosenAccount])
         console.log("bridged funds")
         console.log(response)
     }
