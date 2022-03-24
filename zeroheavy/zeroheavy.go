@@ -142,18 +142,21 @@ func (enc *ZeroheavyEncoder) Read(p []byte) (int, error) {
 }
 
 type ZeroheavyDecoder struct {
-	inner     io.Reader
-	bitReader *paddingEatingBitReader
+	source          io.Reader
+	buffer          []bool
+	eofAfterBuffer  bool
+	deferredZero    bool
+	numDeferredOnes uint
 }
 
-func NewZeroheavyDecoder(inner io.Reader) *ZeroheavyDecoder {
-	return &ZeroheavyDecoder{inner, newPaddingEatingBitReader()}
+func NewZeroheavyDecoder(source io.Reader) *ZeroheavyDecoder {
+	return &ZeroheavyDecoder{source, []bool{}, false, false, 0}
 }
 
-func (dec *ZeroheavyDecoder) readOne() (byte, error) {
+func (br *ZeroheavyDecoder) readOne() (byte, error) {
 	ret := byte(0)
 	for i := 0; i < 8; i++ {
-		b, err := dec.bitReader.nextBit(dec.refillBitReader)
+		b, err := br.nextBit()
 		if err != nil {
 			return 0, err
 		}
@@ -165,42 +168,9 @@ func (dec *ZeroheavyDecoder) readOne() (byte, error) {
 	return ret, nil
 }
 
-func (dec *ZeroheavyDecoder) push7Bits(b byte) {
-	for i := 0; i < 7; i++ {
-		dec.bitReader.pushBit(b&(1<<(6-i)) != 0)
-	}
-}
-
-func (dec *ZeroheavyDecoder) refillBitReader() bool {
-	var buf [1]byte
-	_, err := io.ReadFull(dec.inner, buf[:])
-	if err != nil {
-		return true
-	}
-	b := buf[0]
-	if b == 0 {
-		dec.bitReader.pushBit(false)
-		dec.bitReader.pushBit(false)
-	} else if b == 1 {
-		dec.bitReader.pushBit(false)
-		dec.bitReader.pushBit(true)
-		for i := 0; i < 6; i++ {
-			dec.bitReader.pushBit(false)
-		}
-	} else if b < 0x80 {
-		dec.bitReader.pushBit(false)
-		dec.bitReader.pushBit(true)
-		dec.push7Bits(b)
-	} else {
-		dec.bitReader.pushBit(true)
-		dec.push7Bits(b & 0x7f)
-	}
-	return false
-}
-
-func (dec *ZeroheavyDecoder) Read(p []byte) (int, error) {
+func (br *ZeroheavyDecoder) Read(p []byte) (int, error) {
 	for i := range p {
-		b, err := dec.readOne()
+		b, err := br.readOne()
 		if err != nil {
 			return i, err
 		}
@@ -209,18 +179,7 @@ func (dec *ZeroheavyDecoder) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-type paddingEatingBitReader struct {
-	buffer          []bool
-	eofAfterBuffer  bool
-	deferredZero    bool
-	numDeferredOnes uint
-}
-
-func newPaddingEatingBitReader() *paddingEatingBitReader {
-	return &paddingEatingBitReader{[]bool{}, false, false, 0}
-}
-
-func (br *paddingEatingBitReader) pushBit(b bool) {
+func (br *ZeroheavyDecoder) pushBit(b bool) {
 	if br.deferredZero {
 		if b {
 			br.numDeferredOnes++
@@ -240,14 +199,47 @@ func (br *paddingEatingBitReader) pushBit(b bool) {
 	}
 }
 
-func (br *paddingEatingBitReader) nextBit(refill func() bool) (bool, error) {
+func (br *ZeroheavyDecoder) push7Bits(b byte) {
+	for i := 0; i < 7; i++ {
+		br.pushBit(b&(1<<(6-i)) != 0)
+	}
+}
+
+func (br *ZeroheavyDecoder) nextBit() (bool, error) {
 	for len(br.buffer) == 0 {
 		if br.eofAfterBuffer {
 			return false, io.EOF
 		}
-		br.eofAfterBuffer = refill()
+		br.eofAfterBuffer = br.refill()
 	}
 	ret := br.buffer[0]
 	br.buffer = br.buffer[1:]
 	return ret, nil
+}
+
+func (br *ZeroheavyDecoder) refill() bool {
+	var buf [1]byte
+	_, err := io.ReadFull(br.source, buf[:])
+	if err != nil {
+		return true
+	}
+	b := buf[0]
+	if b == 0 {
+		br.pushBit(false)
+		br.pushBit(false)
+	} else if b == 1 {
+		br.pushBit(false)
+		br.pushBit(true)
+		for i := 0; i < 6; i++ {
+			br.pushBit(false)
+		}
+	} else if b < 0x80 {
+		br.pushBit(false)
+		br.pushBit(true)
+		br.push7Bits(b)
+	} else {
+		br.pushBit(true)
+		br.push7Bits(b & 0x7f)
+	}
+	return false
 }
