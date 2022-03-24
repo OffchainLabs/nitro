@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -59,6 +60,19 @@ func init() {
 
 	zeroStepMachine.chanSignal = make(chan struct{})
 	hostIoMachine.chanSignal = make(chan struct{})
+}
+
+func ReadWasmModuleRoot() (common.Hash, error) {
+	fileToRead := path.Join(StaticNitroMachineConfig.RootPath, "module_root")
+	fileBytes, err := ioutil.ReadFile(fileToRead)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	s := strings.TrimSpace(string(fileBytes))
+	if len(s) > 64 {
+		s = s[0:64]
+	}
+	return common.HexToHash(s), nil
 }
 
 func createZeroStepMachineInternal() {
