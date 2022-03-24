@@ -61,16 +61,27 @@ func TestEstimate(t *testing.T) {
 	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	// make an empty block to let the gas price update
-	TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
-
-	// get the gas price
+	// connect to arbGasInfo precompile
 	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), client)
 	Require(t, err, "could not deploy contract")
-	_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
-	Require(t, err, "could not get L2 gas price")
-	if gasPrice.Cmp(setPrice) != 0 {
-		Fail(t, "L2 gas price was not set correctly", gasPrice, setPrice)
+
+	// wait for price to come to equilibrium
+	equilibrated := false
+	numTriesLeft := 20
+	for !equilibrated && numTriesLeft > 0 {
+		// make an empty block to let the gas price update
+		TransferBalance(t, "Owner", "Owner", common.Big0, l2info, client, ctx)
+
+		// check if the price has equilibrated
+		_, _, _, _, _, setPrice, err := arbGasInfo.GetPricesInWei(&bind.CallOpts{})
+		Require(t, err, "could not get L2 gas price")
+		if gasPrice.Cmp(setPrice) == 0 {
+			equilibrated = true
+		}
+		numTriesLeft--
+	}
+	if !equilibrated {
+		Fail(t, "L2 gas price did not converge", gasPrice)
 	}
 
 	initialBalance, err := client.BalanceAt(ctx, auth.From, nil)
