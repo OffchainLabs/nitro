@@ -19,6 +19,9 @@ brotli/buildfiles/**/*
 testnode-scripts/
 blockscout/
 
+# these are used by environment outside the docker:
+test-node.bash
+
 # Arbitrator ignores
 
 # Rust outputs
