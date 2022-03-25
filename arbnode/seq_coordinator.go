@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -230,6 +229,45 @@ func execTestPipe(pipe redis.Pipeliner, ctx context.Context) error {
 	return nil
 }
 
+// On success, extracts the message from the message+signature data passed in, and returns it
+func (c *SeqCoordinator) verifyMessageSignature(prefix []byte, data []byte) ([]byte, error) {
+	if len(data) < 32 {
+		return nil, errors.New("data is too short to contain message signature")
+	}
+	msg := data[32:]
+	if c.config.Dangerous.DisableSignatureVerificaiton || c.signingKey == nil {
+		return msg, nil
+	}
+	var haveHmac common.Hash
+	copy(haveHmac[:], data[:32])
+
+	expectHmac := crypto.Keccak256Hash(c.signingKey[:], prefix[:], msg)
+	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
+		return msg, nil
+	}
+
+	if c.fallbackVerificationKey != nil {
+		expectHmac = crypto.Keccak256Hash(c.fallbackVerificationKey[:], prefix[:], msg)
+		if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
+			return msg, nil
+		}
+	}
+
+	if haveHmac == (common.Hash{}) {
+		return nil, errors.New("no HMAC signature present but signature verification is enabled")
+	} else {
+		return nil, errors.New("HMAC signature doesn't match expected value(s)")
+	}
+}
+
+func (c *SeqCoordinator) signMessage(prefix []byte, msg []byte) []byte {
+	var hmac [32]byte
+	if c.signingKey != nil {
+		hmac = crypto.Keccak256Hash(c.signingKey[:], prefix[:], msg)
+	}
+	return append(hmac[:], msg...)
+}
+
 func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, msgCountToWrite arbutil.MessageIndex, lastmsg *arbstate.MessageWithMetadata) error {
 	var messageData *string
 	if lastmsg != nil {
@@ -237,13 +275,12 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if err != nil {
 			return err
 		}
-		var hmac [32]byte
-		if c.signingKey != nil {
-			var msgCountBytes [8]byte
-			binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite-1))
-			hmac = crypto.Keccak256Hash(c.signingKey[:], msgCountBytes[:], msgBytes)
-		}
-		messageString := string(append(hmac[:], msgBytes...))
+
+		var msgCountBytes [8]byte
+		binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite-1))
+		msgBytes = c.signMessage(msgCountBytes[:], msgBytes)
+
+		messageString := string(msgBytes)
 		messageData = &messageString
 	}
 	c.chosenUpdateMutex.Lock()
@@ -262,15 +299,10 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if !wasEmpty && (current != c.config.MyUrl) {
 			return fmt.Errorf("%w: redis shows chosen: %s", ErrNotMainSequencer, current)
 		}
-		remoteMsgCountInt64, err := tx.Get(ctx, MSG_COUNT_KEY).Int64()
-		if !errors.Is(err, redis.Nil) {
-			if err != nil {
-				return err
-			}
-			if arbutil.MessageIndex(remoteMsgCountInt64) > msgCountExpected {
-				log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCountInt64, "message is nil?", messageData == nil)
-				return fmt.Errorf("%w: expected msg %d found %d", ErrNotMainSequencer, msgCountExpected, remoteMsgCountInt64)
-			}
+		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
+		if remoteMsgCount > msgCountExpected {
+			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
+			return fmt.Errorf("%w: expected msg %d found %d", ErrNotMainSequencer, msgCountExpected, remoteMsgCount)
 		}
 		pipe := tx.TxPipeline()
 		initialDuration := c.config.LockoutDuration
@@ -280,7 +312,9 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 		if wasEmpty {
 			pipe.Set(ctx, CHOSENSEQ_KEY, c.config.MyUrl, initialDuration)
 		}
-		pipe.Set(ctx, MSG_COUNT_KEY, strconv.FormatUint(uint64(msgCountToWrite), 10), c.config.SeqNumDuration)
+		var msgCountBytes [8]byte
+		binary.BigEndian.PutUint64(msgCountBytes[:], uint64(msgCountToWrite))
+		pipe.Set(ctx, MSG_COUNT_KEY, c.signMessage(nil, msgCountBytes[:]), c.config.SeqNumDuration)
 		myLivelinessKey := livelinessKeyFor(c.config.MyUrl)
 		pipe.Set(ctx, myLivelinessKey, LIVELINESS_VAL, initialDuration)
 		if messageData != nil {
@@ -305,17 +339,27 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 	return nil
 }
 
-func (c *SeqCoordinator) GetRemoteMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
-	res := c.client.Get(ctx, MSG_COUNT_KEY)
-	resErr := res.Err()
-	if errors.Is(resErr, redis.Nil) {
+func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmdable) (arbutil.MessageIndex, error) {
+	resStr, err := r.Get(ctx, MSG_COUNT_KEY).Result()
+	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
-	if resErr != nil {
-		return 0, resErr
+	if err != nil {
+		return 0, err
 	}
-	resuint, err := res.Uint64()
-	return arbutil.MessageIndex(resuint), err
+	resBytes := []byte(resStr)
+	resBytes, err = c.verifyMessageSignature(nil, []byte(resBytes))
+	if err != nil {
+		return 0, err
+	}
+	if len(resBytes) != 8 {
+		return 0, fmt.Errorf("unexpected msg count value length %v", len(resBytes))
+	}
+	return arbutil.MessageIndex(binary.BigEndian.Uint64(resBytes)), nil
+}
+
+func (c *SeqCoordinator) GetRemoteMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return c.getRemoteMsgCountImpl(ctx, c.client)
 }
 
 func (c *SeqCoordinator) livelinessUpdate(ctx context.Context) error {
@@ -429,39 +473,6 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	return c.noRedisError()
 }
 
-// On success, extracts the message from the message+signature data passed in, and returns it
-func (c *SeqCoordinator) verifyMessageSignature(pos arbutil.MessageIndex, data []byte) ([]byte, error) {
-	if len(data) < 32 {
-		return nil, errors.New("data is too short to contain message signature")
-	}
-	msg := data[32:]
-	if c.config.Dangerous.DisableSignatureVerificaiton || c.signingKey == nil {
-		return msg, nil
-	}
-	var haveHmac common.Hash
-	copy(haveHmac[:], data[:32])
-	var posBytes [8]byte
-	binary.BigEndian.PutUint64(posBytes[:], uint64(pos))
-
-	expectHmac := crypto.Keccak256Hash(c.signingKey[:], posBytes[:], msg)
-	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
-		return msg, nil
-	}
-
-	if c.fallbackVerificationKey != nil {
-		expectHmac = crypto.Keccak256Hash(c.fallbackVerificationKey[:], posBytes[:], msg)
-		if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
-			return msg, nil
-		}
-	}
-
-	if haveHmac == (common.Hash{}) {
-		return nil, errors.New("no HMAC signature present but signature verification is enabled")
-	} else {
-		return nil, errors.New("HMAC signature doesn't match expected value(s)")
-	}
-}
-
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	chosenSeq, err := c.recommendLiveSequencer(ctx)
 	if err != nil {
@@ -502,7 +513,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			break
 		}
 		rsBytes := []byte(resString)
-		rsBytes, msgReadErr = c.verifyMessageSignature(msgToRead, rsBytes)
+		var msgToReadBytes [8]byte
+		binary.BigEndian.PutUint64(msgToReadBytes[:], uint64(msgToRead))
+		rsBytes, msgReadErr = c.verifyMessageSignature(msgToReadBytes[:], rsBytes)
 		if msgReadErr != nil {
 			log.Warn("coordinator failed verifying message signature", "pos", msgToRead, "err", msgReadErr)
 			break
