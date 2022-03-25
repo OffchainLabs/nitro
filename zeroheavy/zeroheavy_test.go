@@ -6,8 +6,10 @@ package zeroheavy
 import (
 	"bytes"
 	"errors"
+	"github.com/offchainlabs/nitro/arbcompress"
 	"io"
 	"math/rand"
+	"os"
 	"testing"
 )
 
@@ -96,5 +98,27 @@ func TestZeroHeavyRandomData(t *testing.T) {
 		if !bytes.Equal(inBuf, res) {
 			t.Fatal()
 		}
+	}
+}
+
+func TestZeroHeadyAndBrotli(t *testing.T) {
+	inData, err := os.ReadFile("../go.sum")
+	if err != nil {
+		t.Error(err)
+	}
+	bout, err := arbcompress.CompressWell(inData)
+	if err != nil {
+		t.Error(err)
+	}
+	zhout, err := io.ReadAll(NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(bout))))
+	if err != nil {
+		t.Error(err)
+	}
+	res, err := arbcompress.Decompress(zhout, len(inData)+1)
+	if err != nil {
+		t.Error(err)
+	}
+	if !bytes.Equal(inData, res) {
+		t.Fatal()
 	}
 }
