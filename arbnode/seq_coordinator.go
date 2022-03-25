@@ -31,6 +31,7 @@ const PRIORITIES_KEY string = "coordinator.priorities"         // Read only
 const LIVELINESS_KEY_PREFIX string = "coordinator.liveliness." // Per server. Only written by self
 const MESSAGE_KEY_PREFIX string = "coordinator.msg."           // Per Message. Only written by sequencer holding CHOSEN
 const LIVELINESS_VAL string = "OK"
+const INVALID_VAL string = "INVALID"
 
 type SeqCoordinator struct {
 	util.StopWaiter
@@ -176,6 +177,28 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	return coordinator, nil
 }
 
+func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisUrl string, keyConfig string, msgIndex arbutil.MessageIndex) error {
+	redisOptions, err := redis.ParseURL(redisUrl)
+	if err != nil {
+		return err
+	}
+	r := redis.NewClient(redisOptions)
+	signingKey, err := loadSigningKey(keyConfig)
+	if err != nil {
+		return err
+	}
+	msg := []byte(INVALID_VAL)
+	var hmac [32]byte
+	if signingKey != nil {
+		var msgIndexBytes [8]byte
+		binary.BigEndian.PutUint64(msgIndexBytes[:], uint64(msgIndex))
+		hmac = crypto.Keccak256Hash(signingKey[:], msgIndexBytes[:], msg)
+	}
+	data := append(hmac[:], msg...)
+	r.Set(ctx, messageKeyFor(msgIndex), data, DefaultSeqCoordinatorConfig.SeqNumDuration)
+	return nil
+}
+
 func (c *SeqCoordinator) recommendLiveSequencer(ctx context.Context) (string, error) {
 	prioritiesString, err := c.client.Get(ctx, PRIORITIES_KEY).Result()
 	if err != nil {
@@ -241,13 +264,13 @@ func (c *SeqCoordinator) verifyMessageSignature(prefix []byte, data []byte) ([]b
 	var haveHmac common.Hash
 	copy(haveHmac[:], data[:32])
 
-	expectHmac := crypto.Keccak256Hash(c.signingKey[:], prefix[:], msg)
+	expectHmac := crypto.Keccak256Hash(c.signingKey[:], prefix, msg)
 	if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
 		return msg, nil
 	}
 
 	if c.fallbackVerificationKey != nil {
-		expectHmac = crypto.Keccak256Hash(c.fallbackVerificationKey[:], prefix[:], msg)
+		expectHmac = crypto.Keccak256Hash(c.fallbackVerificationKey[:], prefix, msg)
 		if subtle.ConstantTimeCompare(expectHmac[:], haveHmac[:]) == 1 {
 			return msg, nil
 		}
@@ -263,7 +286,7 @@ func (c *SeqCoordinator) verifyMessageSignature(prefix []byte, data []byte) ([]b
 func (c *SeqCoordinator) signMessage(prefix []byte, msg []byte) []byte {
 	var hmac [32]byte
 	if c.signingKey != nil {
-		hmac = crypto.Keccak256Hash(c.signingKey[:], prefix[:], msg)
+		hmac = crypto.Keccak256Hash(c.signingKey[:], prefix, msg)
 	}
 	return append(hmac[:], msg...)
 }
@@ -300,6 +323,9 @@ func (c *SeqCoordinator) chosenOneUpdate(ctx context.Context, msgCountExpected, 
 			return fmt.Errorf("%w: redis shows chosen: %s", ErrNotMainSequencer, current)
 		}
 		remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, tx)
+		if err != nil {
+			return err
+		}
 		if remoteMsgCount > msgCountExpected {
 			log.Info("coordinator failed to become main", "expected", msgCountExpected, "found", remoteMsgCount, "message is nil?", messageData == nil)
 			return fmt.Errorf("%w: expected msg %d found %d", ErrNotMainSequencer, msgCountExpected, remoteMsgCount)
@@ -526,7 +552,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			log.Warn("coordinator failed to parse message from redis", "pos", msgToRead, "err", err)
 			msgReadErr = fmt.Errorf("failed to parse message: %w", err)
 			// redis messages spelled "INVALID" will be parsed as invalid L1 message, but only one at a time
-			if len(messages) > 0 || string(rsBytes) != "INVALID" {
+			if len(messages) > 0 || string(rsBytes) != INVALID_VAL {
 				break
 			}
 			lastDelayedMsg := uint64(0)
