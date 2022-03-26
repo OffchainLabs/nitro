@@ -176,7 +176,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 				rawTx := &types.DynamicFeeTx{
 					To:        &dest,
-					Gas:       210000,
+					Gas:       210000 * params.GWei / params.InitialBaseFee,
 					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
 					Value:     amount,
 					Nonce:     state.nonces[source],
