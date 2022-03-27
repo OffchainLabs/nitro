@@ -14,7 +14,7 @@ fi
 
 if [[ $# -gt 0 ]] && [[ $1 == "script" ]]; then
     shift
-    docker-compose run testnode-scripts index.js "$@"
+    docker-compose run testnode-scripts "$@"
     exit $?
 fi
 
@@ -112,18 +112,22 @@ if $force_init; then
 
     echo == Generating l1 keys
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
+    docker-compose run --entrypoint sh geth -c "echo e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2 > /root/.ethereum/tmp-funnelkey"
+    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
+    docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
 
     echo == funding validator and sequencer, writing configs
-    docker-compose run testnode-scripts index.js --fund --amount 1000 --l1account validator
-    docker-compose run testnode-scripts index.js --fund --amount 1000 --l1account sequencer
-    docker-compose run testnode-scripts index.js --writeconfig
+    docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account validator
+    docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account sequencer
+    docker-compose run testnode-scripts --writeconfig
 
     echo == Deploying L2
-    validaotraddress=`docker-compose run testnode-scripts index.js --l1account sequencer --printaddress | tail -n 1 | tr -d '\r\n'`
+    validaotraddress=`docker-compose run testnode-scripts --l1account sequencer --printaddress | tail -n 1 | tr -d '\r\n'`
     docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $validaotraddress -l1deployment /config/deployment.json -authorizevalidators 10
+
+    docker-compose run testnode-scripts --bridgefunds --ethamount 100000
 fi
 
 if $run; then

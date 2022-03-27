@@ -1,6 +1,5 @@
 import { ethers, BigNumber } from "ethers";
 import * as fs from 'fs';
-import { boolean } from "yargs";
 import { hideBin } from 'yargs/helpers';
 import yargs from 'yargs/yargs';
 const path = require("path");
@@ -93,9 +92,9 @@ function writeConfigs(sequenceraddress: string, validatoraddress: string) {
     fs.writeFileSync(path.join(configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
 }
 
-async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wallet): Promise<ethers.providers.TransactionResponse> {
+async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wallet, ethamount: string): Promise<ethers.providers.TransactionResponse> {
     const deploydata = JSON.parse(fs.readFileSync(path.join(configpath, "deployment.json")).toString())
-    return createSendTransaction(provider, from, deploydata.Inbox, "0x82f79cd90000", "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
+    return createSendTransaction(provider, from, deploydata.Inbox, ethers.utils.parseEther(ethamount), "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
 }
 
 async function main() {
@@ -104,7 +103,7 @@ async function main() {
         bridgefunds: { type: 'boolean', describe: 'bridge funds' },
         ethamount: { type: 'string', describe: 'amount to transfer (in eth)', default: "10" },
         l1account: { choices: ["funnel", "sequencer", "validator"] as const, default: "funnel" },
-        fund: { type: 'boolean', describe: 'send funds from funnel' },
+        l1fund: { type: 'boolean', describe: 'send funds from funnel' },
         printaddress: { type: 'boolean', describe: 'print address' }
     }).help().parseSync()
 
@@ -125,7 +124,7 @@ async function main() {
 
     let provider = new ethers.providers.WebSocketProvider("ws://geth:8546")
 
-    if (argv.fund) {
+    if (argv.l1fund) {
         let response = await createSendTransaction(provider, accounts[0], accounts[chosenAccount].address, ethers.utils.parseEther(argv.ethamount), new Uint8Array())
         console.log("sent " + argv.l1account + " funding")
         console.log(response)
@@ -137,7 +136,7 @@ async function main() {
     }
 
     if (argv.bridgefunds) {
-        let response = await bridgeFunds(provider, accounts[chosenAccount])
+        let response = await bridgeFunds(provider, accounts[chosenAccount], argv.ethamount)
         console.log("bridged funds")
         console.log(response)
     }
