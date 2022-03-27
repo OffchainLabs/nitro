@@ -126,7 +126,7 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	},
 }
 
-var keyIsHexRegex = regexp.MustCompile("^[a-fA-F0-9]{64}$")
+var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
 
 func loadSigningKey(keyConfig string) (*[32]byte, error) {
 	if keyConfig == "" {
@@ -160,6 +160,9 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	signingKey, err := loadSigningKey(config.SigningKey)
 	if err != nil {
 		return nil, err
+	}
+	if signingKey == nil && !config.Dangerous.DisableSignatureVerificaiton {
+		return nil, errors.New("signature verification is enabled but no key is present")
 	}
 	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
@@ -258,7 +261,7 @@ func (c *SeqCoordinator) verifyMessageSignature(prefix []byte, data []byte) ([]b
 		return nil, errors.New("data is too short to contain message signature")
 	}
 	msg := data[32:]
-	if c.config.Dangerous.DisableSignatureVerificaiton || c.signingKey == nil {
+	if c.config.Dangerous.DisableSignatureVerificaiton {
 		return msg, nil
 	}
 	var haveHmac common.Hash

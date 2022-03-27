@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if len(os.Args) != 4 {
-		fmt.Fprintf(os.Stderr, "Usage: seq-coordinator-invalidate [redis url] [signing key] [msg index]")
+		fmt.Fprintf(os.Stderr, "Usage: seq-coordinator-invalidate [redis url] [signing key] [msg index]\n")
 		os.Exit(1)
 	}
 	redisUrl := os.Args[1]
