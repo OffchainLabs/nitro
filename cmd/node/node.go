@@ -247,15 +247,18 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-	} else if nodeConfig.DevInit {
-		initData := statetransfer.ArbosInitializationInfo{
-			Accounts: []statetransfer.AccountInitializationInfo{
-				{
-					Addr:       devAddr,
-					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-					Nonce:      0,
+	} else {
+		var initData statetransfer.ArbosInitializationInfo
+		if nodeConfig.DevInit {
+			initData = statetransfer.ArbosInitializationInfo{
+				Accounts: []statetransfer.AccountInitializationInfo{
+					{
+						Addr:       devAddr,
+						EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+						Nonce:      0,
+					},
 				},
-			},
+			}
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 		if err != nil {
@@ -269,7 +272,19 @@ func main() {
 	}
 
 	var l2BlockChain *core.BlockChain
-	if initDataReader != nil {
+	if nodeConfig.NoInit {
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if blocksInDb == 0 {
+			panic("No initialization mode supplied, no blocks in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	} else {
 		blockReader, err := initDataReader.GetStoredBlockReader()
 		if err != nil {
 			panic(err)
@@ -279,19 +294,6 @@ func main() {
 			panic(err)
 		}
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, blockNum, chainConfig)
-		if err != nil {
-			panic(err)
-		}
-
-	} else {
-		blocksInDb, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if blocksInDb == 0 {
-			panic("No initialization mode supplied, no blocks in Db")
-		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -360,6 +362,7 @@ type NodeConfig struct {
 	HTTP       cmdutil.HTTPConfig       `koanf:"http"`
 	WS         cmdutil.WSConfig         `koanf:"ws"`
 	DevInit    bool                     `koanf:"dev-init"`
+	NoInit     bool                     `koanf:"no-init"`
 	ImportFile string                   `koanf:"import-file"`
 }
 
@@ -386,6 +389,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	cmdutil.HTTPConfigAddOptions("http", f)
 	cmdutil.WSConfigAddOptions("ws", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 }
 

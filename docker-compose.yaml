@@ -60,7 +60,7 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug
+    command: --l1.url ws://geth:8546 --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug
     depends_on:
       - geth
 
@@ -74,7 +74,7 @@ services:
       - "unsafestaker-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/unsafe_staker_config.json
+    command: --l1.url ws://geth:8546 --conf.file /config/unsafe_staker_config.json
     depends_on:
       - sequencer
 
@@ -88,7 +88,7 @@ services:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
+    command: --l1.url ws://geth:8546 --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
     depends_on:
       - sequencer
 
