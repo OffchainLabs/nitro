@@ -66,9 +66,6 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 		if to == nil {
 			to = &common.Address{}
 		}
-		// TODO Review later how this shows up in the trace
-		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
-		tracer.CaptureExit(nil, 0, nil)
 
 		input := []byte("Transfer Balance")
 		inputLen := uint64(len(input))
@@ -91,22 +88,32 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 			Stack:    stack,
 			Contract: contract,
 		}
-		tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, evm.Depth()+1, nil)
+		tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, evm.Depth(), nil)
+		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
 
-		retMemory := vm.NewMemory()
-		/*retMemory.Resize(1)
-		retMemory.Set32(0, uint256.NewInt(0))*/
 		retStack := &vm.Stack{}
 		retStack.SetData([]uint256.Int{
 			*uint256.NewInt(0), // return size
 			*uint256.NewInt(0), // return offset
 		})
 		retScope := &vm.ScopeContext{
-			Memory:   retMemory,
+			Memory:   vm.NewMemory(),
 			Stack:    retStack,
 			Contract: contract,
 		}
 		tracer.CaptureState(0, vm.RETURN, 0, 0, retScope, []byte{}, evm.Depth()+1, nil)
+		tracer.CaptureExit(nil, 0, nil)
+
+		popStack := &vm.Stack{}
+		popStack.SetData([]uint256.Int{
+			*uint256.NewInt(1), // CALL result success
+		})
+		popScope := &vm.ScopeContext{
+			Memory:   vm.NewMemory(),
+			Stack:    popStack,
+			Contract: contract,
+		}
+		tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, evm.Depth(), nil)
 	}
 	return nil
 }

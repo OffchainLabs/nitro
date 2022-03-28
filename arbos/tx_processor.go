@@ -85,10 +85,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if !evm.Config.Debug {
 			return func() {}
 		}
+		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
 		start := time.Now()
 		tracer.CaptureStart(evm, p.msg.From(), *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
-		return func() { tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil) }
+		return func() {
+			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
+			evm.DecrementDepth() // fake the return to the first faked call
+		}
 	}
 
 	switch tx := underlyingTx.GetInner().(type) {
