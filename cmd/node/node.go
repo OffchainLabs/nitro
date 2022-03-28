@@ -88,7 +88,7 @@ func main() {
 	}
 
 	if nodeConfig.Node.SeqCoordinator.Enable {
-		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerificaiton {
+		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
 			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
 		}
 	}
@@ -191,6 +191,7 @@ func main() {
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
 	stackConf.HTTPModules = nodeConfig.HTTP.API
+	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
 	stackConf.WSHost = nodeConfig.WS.Addr
 	stackConf.WSPort = nodeConfig.WS.Port
 	stackConf.WSOrigins = nodeConfig.WS.Origins

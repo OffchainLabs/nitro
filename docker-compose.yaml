@@ -52,7 +52,7 @@ services:
     volumes:
       - "l1data:/root/.ethereum"
       - "l1keystore:/keystore"
-    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
+    command: --keystore /keystore --http --http.addr 0.0.0.0 --http.vhosts * --http.api personal,eth,net,web3 --http.corsdomain * --ws --ws.addr 0.0.0.0 --ws.api personal,eth,net,web3,debug,txpool --dev --dev.period 1 --password /root/.ethereum/passphrase --gcmode archive
 
   sequencer:
     pid: host # allow debugging
@@ -64,7 +64,7 @@ services:
     volumes:
       - "seqdata:/data"
       - "config:/config"
-    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:7546
+    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --http.corsdomain * --node.seq-coordinator.my-url  ws://sequencer:7546
     depends_on:
       - geth
 

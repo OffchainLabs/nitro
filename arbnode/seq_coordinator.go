@@ -69,7 +69,7 @@ type SeqCoordinatorConfig struct {
 }
 
 type SeqCoordinatorDangerousConfig struct {
-	DisableSignatureVerificaiton bool `koanf:"disable-signature-verification"`
+	DisableSignatureVerification bool `koanf:"disable-signature-verification"`
 }
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -87,7 +87,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func SeqCoordinatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".disable-signature-verification", DefaultSeqCoordinatorDangerousConfig.DisableSignatureVerificaiton, "disable message signature verification")
+	f.Bool(prefix+".disable-signature-verification", DefaultSeqCoordinatorDangerousConfig.DisableSignatureVerification, "disable message signature verification")
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -106,7 +106,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 }
 
 var DefaultSeqCoordinatorDangerousConfig = SeqCoordinatorDangerousConfig{
-	DisableSignatureVerificaiton: false,
+	DisableSignatureVerification: false,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
@@ -122,11 +122,11 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	MyUrl:           "",
 	SigningKey:      "b561f5d5d98debc783aa8a1472d67ec3bcd532a1c8d95e5cb23caa70c649f7c9",
 	Dangerous: SeqCoordinatorDangerousConfig{
-		DisableSignatureVerificaiton: false,
+		DisableSignatureVerification: false,
 	},
 }
 
-var keyIsHexRegex = regexp.MustCompile("^[a-fA-F0-9]{64}$")
+var keyIsHexRegex = regexp.MustCompile("^(0x)?[a-fA-F0-9]{64}$")
 
 func loadSigningKey(keyConfig string) (*[32]byte, error) {
 	if keyConfig == "" {
@@ -160,6 +160,9 @@ func NewSeqCoordinator(streamer *TransactionStreamer, sequencer *Sequencer, conf
 	signingKey, err := loadSigningKey(config.SigningKey)
 	if err != nil {
 		return nil, err
+	}
+	if signingKey == nil && !config.Dangerous.DisableSignatureVerification {
+		return nil, errors.New("signature verification is enabled but no key is present")
 	}
 	fallbackVerificationKey, err := loadSigningKey(config.FallbackVerificationKey)
 	if err != nil {
@@ -258,7 +261,7 @@ func (c *SeqCoordinator) verifyMessageSignature(prefix []byte, data []byte) ([]b
 		return nil, errors.New("data is too short to contain message signature")
 	}
 	msg := data[32:]
-	if c.config.Dangerous.DisableSignatureVerificaiton || c.signingKey == nil {
+	if c.config.Dangerous.DisableSignatureVerification {
 		return msg, nil
 	}
 	var haveHmac common.Hash
