@@ -213,7 +213,7 @@ func (s *WSBroadcastServer) Start(ctx context.Context) error {
 			if errors.Is(err, gopool.ErrScheduleTimeout) {
 				var netError net.Error
 				success := errors.As(err, &netError)
-				if !success || !netError.Temporary() { //nolint
+				if !success || !netError.Timeout() {
 					log.Error("error in poller.Start", "err", err)
 					return
 				}
