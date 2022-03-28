@@ -16,6 +16,8 @@ solgen/go
 target/**/*
 brotli/buildfiles/**/*
 
+/blockscout
+
 # Arbitrator ignores
 
 # Rust outputs

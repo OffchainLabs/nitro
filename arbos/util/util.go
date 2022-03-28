@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/solgen/go/packsolgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
@@ -25,6 +24,7 @@ var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
+var PackArbRetryableTxSubmitRetryable func(...interface{}) ([]byte, error)
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -84,7 +84,10 @@ func init() {
 
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
-	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(packsolgen.InternalTxDataABI, "startBlock")
+
+	acts := precompilesgen.ArbosActsABI
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
+	PackArbRetryableTxSubmitRetryable, _ = callParser(precompilesgen.ArbRetryableTxABI, "submitRetryable")
 }
 
 func AddressToHash(address common.Address) common.Hash {

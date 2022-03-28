@@ -59,13 +59,11 @@ COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./solgen/src/precompiles/ ./solgen/src/precompiles/
-COPY ./solgen/src/packsol/ ./solgen/src/packsol/
 COPY ./solgen/gen.go ./solgen/package.json ./solgen/yarn.lock ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY --from=brotli-wasm-export / target/
 COPY --from=contracts-builder workspace/solgen/build/contracts/src/precompiles/ solgen/build/contracts/src/precompiles/
-COPY --from=contracts-builder workspace/solgen/build/contracts/src/packsol/ solgen/build/contracts/src/packsol/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 

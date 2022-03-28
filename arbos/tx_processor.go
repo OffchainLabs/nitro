@@ -118,7 +118,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// mint funds with the deposit, then charge fees later
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 
-		submissionFee := retryables.RetryableSubmissionFee(len(tx.Data), tx.L1BaseFee)
+		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
 		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
 		if excessDeposit.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
@@ -146,7 +146,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.RetryTo,
 			underlyingTx.Value(),
 			tx.Beneficiary,
-			tx.Data,
+			tx.RetryData,
 		)
 		p.state.Restrict(err)
 

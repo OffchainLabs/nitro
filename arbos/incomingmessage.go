@@ -486,9 +486,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if dataLength > MaxL2MessageSize {
 		return nil, errors.New("retryable data too large")
 	}
-	data := make([]byte, dataLength)
+	retryData := make([]byte, dataLength)
 	if dataLength > 0 {
-		if _, err := rd.Read(data); err != nil {
+		if _, err := rd.Read(retryData); err != nil {
 			return nil, err
 		}
 	}
@@ -508,7 +508,27 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		Beneficiary:      callvalueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee.Big(),
 		FeeRefundAddr:    feeRefundAddress,
-		Data:             data,
+		RetryData:        retryData,
+	}
+	toToEncode := common.Address{}
+	if tx.RetryTo != nil {
+		toToEncode = *tx.RetryTo
+	}
+	tx.Data, err = util.PackArbRetryableTxSubmitRetryable(
+		tx.RequestId,
+		tx.L1BaseFee,
+		tx.DepositValue,
+		tx.Value,
+		tx.GasFeeCap,
+		tx.Gas,
+		tx.MaxSubmissionFee,
+		tx.FeeRefundAddr,
+		tx.Beneficiary,
+		toToEncode,
+		tx.RetryData,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to abi-encode submission data %w", err)
 	}
 	return types.NewTx(tx), nil
 }
