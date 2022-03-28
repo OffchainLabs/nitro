@@ -67,6 +67,7 @@ services:
     command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --http.corsdomain * --node.seq-coordinator.my-url  ws://sequencer:7546
     depends_on:
       - geth
+      - redis
 
   sequencer_b:
     pid: host # allow debugging
@@ -80,6 +81,7 @@ services:
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:7546
     depends_on:
       - geth
+      - redis
 
   sequencer_c:
     pid: host # allow debugging
@@ -93,6 +95,7 @@ services:
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:7546
     depends_on:
       - geth
+      - redis
 
   sequencer_d:
     pid: host # allow debugging
@@ -106,6 +109,7 @@ services:
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:7546
     depends_on:
       - geth
+      - redis
 
   staker-unsafe:
     pid: host # allow debugging
@@ -120,6 +124,7 @@ services:
     command: --conf.file /config/unsafe_staker_config.json
     depends_on:
       - sequencer
+      - redis
 
   poster:
     pid: host # allow debugging
@@ -133,7 +138,8 @@ services:
       - "config:/config"
     command: --conf.file /config/poster_config.json
     depends_on:
-      - sequencer
+      - geth
+      - redis
 
   validator:
     pid: host # allow debugging
