@@ -495,40 +495,20 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if header.RequestId == nil {
 		return nil, errors.New("cannot issue submit retryable tx without L1 request id")
 	}
-	tx := &types.ArbitrumSubmitRetryableTx{
-		ChainId:          chainId,
-		RequestId:        *header.RequestId,
-		From:             util.RemapL1Address(header.Poster),
-		L1BaseFee:        header.L1BaseFee,
-		DepositValue:     depositValue.Big(),
-		GasFeeCap:        maxFeePerGas.Big(),
-		Gas:              gasLimitBig.Uint64(),
-		RetryTo:          pRetryTo,
-		Value:            callvalue.Big(),
-		Beneficiary:      callvalueRefundAddress,
-		MaxSubmissionFee: maxSubmissionFee.Big(),
-		FeeRefundAddr:    feeRefundAddress,
-		RetryData:        retryData,
-	}
-	toToEncode := common.Address{}
-	if tx.RetryTo != nil {
-		toToEncode = *tx.RetryTo
-	}
-	tx.Data, err = util.PackArbRetryableTxSubmitRetryable(
-		tx.RequestId,
-		tx.L1BaseFee,
-		tx.DepositValue,
-		tx.Value,
-		tx.GasFeeCap,
-		tx.Gas,
-		tx.MaxSubmissionFee,
-		tx.FeeRefundAddr,
-		tx.Beneficiary,
-		toToEncode,
-		tx.RetryData,
+	tx, err := util.NewArbitrumSubmitRetryableTx(
+		chainId,
+		*header.RequestId,
+		util.RemapL1Address(header.Poster),
+		header.L1BaseFee,
+		depositValue.Big(),
+		maxFeePerGas.Big(),
+		gasLimitBig.Uint64(),
+		pRetryTo,
+		callvalue.Big(),
+		callvalueRefundAddress,
+		maxSubmissionFee.Big(),
+		feeRefundAddress,
+		retryData,
 	)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to abi-encode submission data %w", err)
-	}
-	return types.NewTx(tx), nil
+	return types.NewTx(tx), err
 }

@@ -70,7 +70,8 @@ interface ArbRetryableTx {
     function cancel(bytes32 ticketId) external;
 
     /**
-     * @notice Don't call this,
+     * @notice Do not call. This method represents a retryable submission to aid explorers.
+     * Calling it will always revert.
      */
     function submitRetryable(
         bytes32 requestId,

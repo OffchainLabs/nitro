@@ -60,24 +60,27 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
 		maxSubmissionFee := retryables.RetryableSubmissionFee(len(retryData), l1BaseFee)
 
-		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
-			ChainId:          nil,
-			RequestId:        common.Hash{},
-			From:             util.RemapL1Address(sender),
-			L1BaseFee:        l1BaseFee,
-			DepositValue:     deposit,
-			GasFeeCap:        msg.GasPrice(),
-			Gas:              msg.Gas(),
-			RetryTo:          pRetryTo,
-			Value:            l2CallValue,
-			Beneficiary:      callValueRefundAddress,
-			MaxSubmissionFee: maxSubmissionFee,
-			FeeRefundAddr:    excessFeeRefundAddress,
-			RetryData:        retryData,
-		})
+		submitTx, err := util.NewArbitrumSubmitRetryableTx(
+			nil,
+			common.Hash{},
+			util.RemapL1Address(sender),
+			l1BaseFee,
+			deposit,
+			msg.GasPrice(),
+			msg.Gas(),
+			pRetryTo,
+			l2CallValue,
+			callValueRefundAddress,
+			maxSubmissionFee,
+			excessFeeRefundAddress,
+			retryData,
+		)
+		if err != nil {
+			return msg, err
+		}
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-		return tx.AsMessage(types.NewArbitrumSigner(nil), nil)
+		return types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
 	}
 
 	return msg, errors.New("method does not exist in NodeInterface.sol")
