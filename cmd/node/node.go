@@ -185,6 +185,7 @@ func main() {
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
 	stackConf.HTTPModules = nodeConfig.HTTP.API
+	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
 	stackConf.WSHost = nodeConfig.WS.Addr
 	stackConf.WSPort = nodeConfig.WS.Port
 	stackConf.WSOrigins = nodeConfig.WS.Origins
