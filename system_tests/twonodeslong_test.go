@@ -10,6 +10,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -70,11 +71,11 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	l2info.GenerateAccount("ErrorTxSender")
 
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(params.InitialBaseFee*int64(l2info.TransferGas)), nil),
+		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(l2pricing.InitialMinimumBaseFeeWei*int64(l2info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
-	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
+	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(l2pricing.InitialMinimumBaseFeeWei*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
 	})
@@ -84,7 +85,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
 		t.Fatalf("Unexpected balance, has %v, expects %v", delayedFaucetBalance, delayedFaucetNeeds)
 	}
-	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, params.InitialBaseFee)
+	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, l2pricing.InitialMinimumBaseFeeWei)
 
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
 		Fail(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
