@@ -1,26 +1,27 @@
-import { createClient } from '@node-redis/client';
+import { createClient, RedisClientType, RedisModules, RedisScripts } from '@node-redis/client';
 import * as consts from './consts'
-import yargs, { Argv } from 'yargs';
 
+async function getAndPrint(redis: RedisClientType<RedisModules, RedisScripts>, key: string) {
+    const val = await redis.get(key)
+    console.log("redis[%s]:%s", key, val)
+}
 
 async function readRedis(key: string) {
     const redis = createClient({ url: consts.redisUrl })
     await redis.connect()
-
-    const val = await redis.get(key)
-    console.log("redis[%s]:%s", key, val)
+    await getAndPrint(redis, key)
 }
 
 export const redisReadCommand = {
     command: "redis-read",
     describe: "read key",
-    builder: (yargs: Argv) => yargs.positional('key', {
-        type: 'string',
+    builder: { 'key': {
+        string: true,
         describe: 'key to read',
         default: 'coordinator.priorities'
-    }),
-    handler: (argv: any) => {
-        readRedis(argv.key)
+    }},
+    handler: async (argv: any) => {
+        await readRedis(argv.key)
     }
 }
 
@@ -45,17 +46,19 @@ async function writeRedisPriorities(priorities: number) {
     await redis.connect()
 
     await redis.set("coordinator.priorities", priostring)
+
+    await getAndPrint(redis, "coordinator.priorities")
 }
 
 export const redisInitCommand = {
     command: "redis-init",
     describe: "init redis priorities",
-    builder: (yargs: Argv) => yargs.positional('redundancy', {
-        type: 'number',
+    builder: { 'redundancy':{
+        string: true,
         describe: 'number of servers [0-3]',
         default: 0
-    }),
-    handler: (argv: any) => {
-        writeRedisPriorities(argv.redundancy)
+    }},
+    handler: async (argv: any) => {
+        await writeRedisPriorities(argv.redundancy)
     }
 }

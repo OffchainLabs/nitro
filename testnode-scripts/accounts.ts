@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, BigNumber } from "ethers";
 import { Argv } from 'yargs';
 import * as consts from './consts'
 import * as fs from 'fs';
@@ -18,7 +18,7 @@ function possiblyInitKnownAccounts() {
     })
 }
 
-export function namedAccount(name: "funnel" | "sequencer" | "validator"): ethers.Wallet {
+export function namedAccount(name: string): ethers.Wallet {
     possiblyInitKnownAccounts()
 
     if (name == "funnel") {
@@ -27,20 +27,30 @@ export function namedAccount(name: "funnel" | "sequencer" | "validator"): ethers
     if (name == "sequencer") {
         return knownaccounts[1]
     }
-    return knownaccounts[2]
-}
-
-export const accountChooser = {
-    choices: ["funnel", "sequencer", "validator"] as const,
-    default: "funnel"
+    if (name == "validator") {
+        return knownaccounts[2]
+    }
+    try {
+        if (!name.startsWith("user_")) {
+            throw ("")
+        }
+        let usernum = Number(name.substring(5))
+        let userhex = usernum.toString(16)
+        for (let index = 0; index < 4; index++) {
+            userhex = userhex + userhex
+        }
+        return new ethers.Wallet("0x" + userhex)
+    } catch (error) {
+        throw Error("account name must either be funnel, sequencer, validator or user_[number]")
+    }
 }
 
 export const printAddressCommand = {
     command: "print-address",
     describe: "sends funds from l1 to l2",
-    builder: (yargs: Argv) => yargs.options({
-        account: accountChooser,
-    }),
+    builder: {
+        account: { string: true, describe: "account name", default: "funnel" },
+    },
     handler: (argv: any) => {
         console.log(namedAccount(argv.account).address)
     }

@@ -145,7 +145,7 @@ if $force_init; then
     docker-compose run testnode-scripts write-config
 
     echo == initializing redis
-    docker-compose run testnode-scripts --initredisprios $redundantsequencers
+    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     echo == Deploying L2
     validaotraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`

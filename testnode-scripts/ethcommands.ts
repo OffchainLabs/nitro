@@ -1,7 +1,7 @@
 import yargs, { Argv } from 'yargs';
 import { ethers, BigNumber } from "ethers";
 import * as consts from './consts'
-import { accountChooser, namedAccount } from './accounts'
+import { namedAccount } from './accounts'
 import * as fs from 'fs';
 const path = require("path");
 
@@ -41,10 +41,10 @@ async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wal
 export const bridgeFundsCommand = {
     command: "bridge-funds",
     describe: "sends funds from l1 to l2",
-    builder: (yargs: Argv) => yargs.options({
-        ethamount: { type: 'string', describe: 'amount to transfer (in eth)', default: "10" },
-        account: accountChooser,
-    }),
+    builder: {
+        ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
+        account: { string: true, describe: 'account name', default: "funnel" },
+    },
     handler: async (argv: any) => {
         let provider = new ethers.providers.WebSocketProvider(consts.l1url)
 
@@ -60,13 +60,33 @@ export const bridgeFundsCommand = {
 export const sendL1FundsCommand = {
     command: "send-l1",
     describe: "sends funds between l1 accounts",
-    builder: (yargs: Argv) => yargs.options({
-        ethamount: { type: 'string', describe: 'amount to transfer (in eth)', default: "10" },
-        from: accountChooser,
-        to: accountChooser,
-    }),
+    builder: {
+        ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
+        from: { string: true, describe: 'account name', default: "funnel" },
+        to: { string: true, describe: 'account name', default: "funnel" },
+    },
     handler: async (argv: any) => {
         let provider = new ethers.providers.WebSocketProvider(consts.l1url)
+
+        let response = await createSendTransaction(provider, namedAccount(argv.from), namedAccount(argv.to).address, ethers.utils.parseEther(argv.ethamount), new Uint8Array())
+
+        console.log("sent funds")
+        console.log(response)
+
+        provider.destroy()
+    }
+}
+
+export const sendL2FundsCommand = {
+    command: "send-l2",
+    describe: "sends funds between l2 accounts",
+    builder: {
+        ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
+        from: { string: true, describe: 'account name', default: "funnel" },
+        to: { string: true, describe: 'account name', default: "funnel" },
+    },
+    handler: async (argv: any) => {
+        let provider = new ethers.providers.WebSocketProvider(consts.l2url)
 
         let response = await createSendTransaction(provider, namedAccount(argv.from), namedAccount(argv.to).address, ethers.utils.parseEther(argv.ethamount), new Uint8Array())
 
