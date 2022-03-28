@@ -28,24 +28,28 @@ type DelayedSequencer struct {
 }
 
 type DelayedSequencerConfig struct {
+	Enable           bool          `koanf:"enable"`
 	FinalizeDistance int64         `koanf:"finalize-distance"`
 	BlocksAggregate  int64         `koanf:"blocks-aggregate"`
 	TimeAggregate    time.Duration `koanf:"time-aggregate"`
 }
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final")
 	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate, "how many blocks we aggregate looking for delayedMessage")
 	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
+	Enable:           true,
 	FinalizeDistance: 12,
 	BlocksAggregate:  5,
 	TimeAggregate:    time.Minute,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
+	Enable:           true,
 	FinalizeDistance: 12,
 	BlocksAggregate:  5,
 	TimeAggregate:    time.Second,

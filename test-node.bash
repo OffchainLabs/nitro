@@ -96,7 +96,7 @@ if $force_init; then
     force_build=true
 fi
 
-NODES="sequencer"
+NODES="sequencer poster"
 
 if [ $redundantsequencers -gt 0 ]; then
     NODES="$NODES sequencer_b"

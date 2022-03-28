@@ -42,6 +42,9 @@ function writeConfigs() {
                 "update-interval": "3s",
                 "signing-key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             },
+            "batch-poster": {
+                "enable": false,
+            }
         },
         "persistent": {
             "data": "/data"
@@ -66,10 +69,16 @@ function writeConfigs() {
     fs.writeFileSync(path.join(consts.configpath, "unsafe_staker_config.json"), JSON.stringify(unsafeStakerConfig))
 
     let sequencerConfig = JSON.parse(baseConfJSON)
-    sequencerConfig.l1.wallet.account = namedAccount("sequencer").address
     sequencerConfig.node.sequencer.enable = true
     sequencerConfig.node["seq-coordinator"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
+
+    let posterConfig = JSON.parse(baseConfJSON)
+    posterConfig.l1.wallet.account = namedAccount("sequencer").address
+    posterConfig.node["batch-poster"].enable = true
+    fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
+
+
 }
 
 export const writeConfigCommand = {

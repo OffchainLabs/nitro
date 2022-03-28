@@ -472,7 +472,9 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	if nextChosen != c.config.MyUrl {
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
-		c.sequencer.ForwardTo(nextChosen)
+		if c.sequencer != nil {
+			c.sequencer.ForwardTo(nextChosen)
+		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
 			return c.retryAfterRedisError()
@@ -509,7 +511,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
-		c.sequencer.ForwardTo(chosenSeq)
+		if c.sequencer != nil {
+			c.sequencer.ForwardTo(chosenSeq)
+		}
 		c.prevChosenSequencer = chosenSeq
 	}
 
@@ -582,6 +586,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// can take over as main sequencer?
 	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
+		if c.sequencer == nil {
+			log.Crit("myurl main sequencer, but no sequencer exists")
+			return c.noRedisError()
+		}
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon

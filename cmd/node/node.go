@@ -72,12 +72,12 @@ func main() {
 		nodeConfig.Node.EnableL1Reader = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
+		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
 		nodeConfig.Node.EnableL1Reader = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
-		nodeConfig.Node.BatchPoster.Enable = true
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
@@ -324,7 +324,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

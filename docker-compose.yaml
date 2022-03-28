@@ -63,7 +63,6 @@ services:
       - "9642:9642"
     volumes:
       - "seqdata:/data"
-      - "l1keystore:/l1keystore"
       - "config:/config"
     command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:7546
     depends_on:
@@ -77,7 +76,6 @@ services:
       - "7546"
     volumes:
       - "seqdata_b:/data"
-      - "l1keystore:/l1keystore"
       - "config:/config"
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:7546
     depends_on:
@@ -91,7 +89,6 @@ services:
       - "7546"
     volumes:
       - "seqdata_c:/data"
-      - "l1keystore:/l1keystore"
       - "config:/config"
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:7546
     depends_on:
@@ -105,7 +102,6 @@ services:
       - "7546"
     volumes:
       - "seqdata_d:/data"
-      - "l1keystore:/l1keystore"
       - "config:/config"
     command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:7546
     depends_on:
@@ -121,7 +117,21 @@ services:
       - "unsafestaker-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --l1.url ws://geth:8546 --conf.file /config/unsafe_staker_config.json
+    command: --conf.file /config/unsafe_staker_config.json
+    depends_on:
+      - sequencer
+
+  poster:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7547:7547"
+      - "7548:7548"
+    volumes:
+      - "validator-data:/data"
+      - "l1keystore:/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/poster_config.json
     depends_on:
       - sequencer
 
@@ -135,7 +145,7 @@ services:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --l1.url ws://geth:8546 --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
+    command: --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
     depends_on:
       - sequencer
 

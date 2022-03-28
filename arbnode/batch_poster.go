@@ -30,7 +30,6 @@ type BatchPoster struct {
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
 	config        *BatchPosterConfig
-	coordinator   *SeqCoordinator
 	inboxContract *bridgegen.SequencerInbox
 	gasRefunder   common.Address
 	transactOpts  *bind.TransactOpts
@@ -74,7 +73,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:     2,
 }
 
-func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, coordinator *SeqCoordinator, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
 	if err != nil {
 		return nil, err
@@ -84,7 +83,6 @@ func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *T
 		inbox:         inbox,
 		streamer:      streamer,
 		config:        config,
-		coordinator:   coordinator,
 		inboxContract: inboxContract,
 		transactOpts:  transactOpts,
 		gasRefunder:   refunder,
@@ -299,9 +297,6 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 }
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatchPosted time.Duration) (*types.Transaction, error) {
-	if b.coordinator != nil && !b.coordinator.CurrentlyChosen() {
-		return nil, nil
-	}
 	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
 		return nil, err
