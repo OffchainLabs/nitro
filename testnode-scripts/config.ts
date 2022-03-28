@@ -79,6 +79,7 @@ function writeConfigs() {
 
     let posterConfig = JSON.parse(baseConfJSON)
     posterConfig.l1.wallet.account = namedAccount("sequencer").address
+    posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
 
