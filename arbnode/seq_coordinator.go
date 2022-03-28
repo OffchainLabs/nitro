@@ -637,10 +637,10 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 
 func (c *SeqCoordinator) StopAndWait() {
 	if c.CurrentlyChosen() {
-		c.chosenOneRelease(c.GetContext())
+		_ = c.chosenOneRelease(c.GetContext())
 	}
 	if c.reportedAlive {
-		c.livelinessRelease(c.GetContext())
+		_ = c.livelinessRelease(c.GetContext())
 	}
 	c.StopWaiter.StopAndWait()
 	c.client.Close()
