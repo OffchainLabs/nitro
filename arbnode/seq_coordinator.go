@@ -642,8 +642,15 @@ func (c *SeqCoordinator) StopAndWait() {
 
 var ErrNotMainSequencer = errors.New("not main sequencer")
 
+func (c *SeqCoordinator) CurrentlyChosen() bool {
+	if time.Now().Before(atomicTimeRead(&c.lockoutUntil)) {
+		return true
+	}
+	return false
+}
+
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
-	if time.Now().After(atomicTimeRead(&c.lockoutUntil)) {
+	if !c.CurrentlyChosen() {
 		return ErrNotMainSequencer
 	}
 	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {

@@ -22,6 +22,7 @@ type DelayedSequencer struct {
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
+	coordinator     *SeqCoordinator
 	waitingForBlock *big.Int
 	config          *DelayedSequencerConfig
 }
@@ -50,13 +51,14 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
-		client:     client,
-		bridge:     reader.DelayedBridge(),
-		inbox:      reader.Tracker(),
-		txStreamer: txStreamer,
-		config:     config,
+		client:      client,
+		bridge:      reader.DelayedBridge(),
+		inbox:       reader.Tracker(),
+		coordinator: coordinator,
+		txStreamer:  txStreamer,
+		config:      config,
 	}, nil
 }
 
@@ -73,6 +75,9 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 }
 
 func (d *DelayedSequencer) update(ctx context.Context) error {
+	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
+		return nil
+	}
 	lastBlockHeader, err := d.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err

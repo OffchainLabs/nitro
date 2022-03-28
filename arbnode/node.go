@@ -8,9 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -563,11 +564,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if sequencerTxOpt == nil {
 		return nil, errors.New("sequencerTxOpts is nil")
 	}
-	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, &(config.DelayedSequencer))
+	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
 	if err != nil {
 		return nil, err
 	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
+	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, coordinator, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
 	if err != nil {
 		return nil, err
 	}
