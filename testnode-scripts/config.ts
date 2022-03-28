@@ -31,6 +31,9 @@ function writeConfigs() {
             "sequencer": {
                 "enable": false
             },
+            "delayed-sequencer": {
+                "enable": false
+            },
             "seq-coordinator": {
                 "enable": false,
                 "redis-url": consts.redisUrl,
@@ -71,6 +74,7 @@ function writeConfigs() {
     let sequencerConfig = JSON.parse(baseConfJSON)
     sequencerConfig.node.sequencer.enable = true
     sequencerConfig.node["seq-coordinator"].enable = true
+    sequencerConfig.node["delayed-sequencer"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "sequencer_config.json"), JSON.stringify(sequencerConfig))
 
     let posterConfig = JSON.parse(baseConfJSON)
