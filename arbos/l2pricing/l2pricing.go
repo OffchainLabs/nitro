@@ -24,8 +24,8 @@ type L2PricingState struct {
 	rateEstimateInertia storage.StorageBackedUint64
 	speedLimitPerSecond storage.StorageBackedUint64
 	maxPerBlockGasLimit storage.StorageBackedUint64
-	gasPriceWei         storage.StorageBackedBigInt
-	minGasPriceWei      storage.StorageBackedBigInt
+	baseFeeWei          storage.StorageBackedBigInt
+	minBaseFeeWei       storage.StorageBackedBigInt
 }
 
 const (
@@ -38,8 +38,8 @@ const (
 	rateEstimateInertiaOffset
 	speedLimitPerSecondOffset
 	maxPerBlockGasLimitOffset
-	gasPriceWeiOffset
-	minGasPriceWeiOffset
+	baseFeeWeiOffset
+	minBaseFeeWeiOffset
 )
 
 const GethBlockGasLimit = 1 << 63
@@ -54,8 +54,8 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(rateEstimateInertiaOffset, InitialRateEstimateInertia)
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
-	_ = sto.SetUint64ByUint64(gasPriceWeiOffset, InitialBaseFeeWei)
-	return sto.SetUint64ByUint64(minGasPriceWeiOffset, InitialMinimumGasPriceWei)
+	_ = sto.SetUint64ByUint64(baseFeeWeiOffset, InitialBaseFeeWei)
+	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
@@ -70,8 +70,8 @@ func OpenL2PricingState(sto *storage.Storage) *L2PricingState {
 		sto.OpenStorageBackedUint64(rateEstimateInertiaOffset),
 		sto.OpenStorageBackedUint64(speedLimitPerSecondOffset),
 		sto.OpenStorageBackedUint64(maxPerBlockGasLimitOffset),
-		sto.OpenStorageBackedBigInt(gasPriceWeiOffset),
-		sto.OpenStorageBackedBigInt(minGasPriceWeiOffset),
+		sto.OpenStorageBackedBigInt(baseFeeWeiOffset),
+		sto.OpenStorageBackedBigInt(minBaseFeeWeiOffset),
 	}
 }
 
@@ -148,36 +148,23 @@ func (ps *L2PricingState) SetRateEstimateInertia(inertia uint64) error {
 	return ps.rateEstimateInertia.Set(inertia)
 }
 
-func (ps *L2PricingState) GasPriceWei() (*big.Int, error) {
-	return ps.gasPriceWei.Get()
+func (ps *L2PricingState) BaseFeeWei() (*big.Int, error) {
+	return ps.baseFeeWei.Get()
 }
 
-func (ps *L2PricingState) SetGasPriceWei(val *big.Int) error {
-	return ps.gasPriceWei.Set(val)
+func (ps *L2PricingState) SetBaseFeeWei(val *big.Int) error {
+	return ps.baseFeeWei.Set(val)
 }
 
-func (ps *L2PricingState) MinGasPriceWei() (*big.Int, error) {
-	return ps.minGasPriceWei.Get()
+func (ps *L2PricingState) MinBaseFeeWei() (*big.Int, error) {
+	return ps.minBaseFeeWei.Get()
 }
 
-func (ps *L2PricingState) SetMinGasPriceWei(val *big.Int) error {
-	err := ps.minGasPriceWei.Set(val)
-	if err != nil {
-		return err
-	}
-
-	// Check if the current gas price is below the new minimum.
-	curGasPrice, err := ps.gasPriceWei.Get()
-	if err != nil {
-		return err
-	}
-	if arbmath.BigLessThan(curGasPrice, val) {
-		// The current gas price is less than the new minimum. Override it.
-		return ps.gasPriceWei.Set(val)
-	} else {
-		// The current gas price is greater than the new minimum. Ignore it.
-		return nil
-	}
+func (ps *L2PricingState) SetMinBaseFeeWei(val *big.Int) error {
+	// This modifies the "minimum basefee" parameter, but doesn't modify the current basefee.
+	// If this increases the minimum basefee, then the basefee might be below the minimum for a little while.
+	// If so, the basefee will increase by up to a factor of two per block, until it reaches the minimum.
+	return ps.minBaseFeeWei.Set(val)
 }
 
 func (ps *L2PricingState) SpeedLimitPerSecond() (uint64, error) {
