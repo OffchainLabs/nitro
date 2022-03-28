@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as consts from './consts'
-import { namedAccount } from './keys'
+import { namedAccount } from './accounts'
 
 const path = require("path");
 

@@ -2,7 +2,7 @@ import { hideBin } from 'yargs/helpers';
 import yargs from 'yargs/yargs';
 import { redisReadCommand, redisInitCommand } from './redis'
 import { writeConfigCommand } from './config'
-import { printAddressCommand } from "./keys";
+import { printAddressCommand } from "./accounts";
 import { bridgeFundsCommand, sendL1FundsCommand } from './ethcommands'
 
 async function main() {

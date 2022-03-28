@@ -1,7 +1,7 @@
 import yargs, { Argv } from 'yargs';
 import { ethers, BigNumber } from "ethers";
 import * as consts from './consts'
-import { accountChooser, namedAccount } from './keys'
+import { accountChooser, namedAccount } from './accounts'
 import * as fs from 'fs';
 const path = require("path");
 
