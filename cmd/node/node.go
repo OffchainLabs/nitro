@@ -88,7 +88,7 @@ func main() {
 	}
 
 	if nodeConfig.Node.SeqCoordinator.Enable {
-		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerificaiton {
+		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
 			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
 		}
 	}
