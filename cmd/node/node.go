@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -88,6 +87,12 @@ func main() {
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
 	}
 
+	if nodeConfig.Node.SeqCoordinator.Enable {
+		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
+			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
+		}
+	}
+
 	// Perform sanity check on mode
 	_, err = nodeConfig.Node.DataAvailability.Mode()
 	if err != nil {
@@ -105,21 +110,19 @@ func main() {
 		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
 	}
 
-	wasmModuleRootString := nodeConfig.Node.Wasm.ModuleRoot
-	if wasmModuleRootString == "" {
-		fileToRead := path.Join(validator.StaticNitroMachineConfig.RootPath, "module_root")
-		fileBytes, err := ioutil.ReadFile(fileToRead)
+	var wasmModuleRoot common.Hash
+	if nodeConfig.Node.Wasm.ModuleRoot != "" {
+		wasmModuleRoot = common.HexToHash(nodeConfig.Node.Wasm.ModuleRoot)
+	} else {
+		wasmModuleRoot, err = validator.ReadWasmModuleRoot()
 		if err != nil {
 			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
+			} else {
+				wasmModuleRoot = common.Hash{}
 			}
 		}
-		wasmModuleRootString = strings.TrimSpace(string(fileBytes))
-		if len(wasmModuleRootString) > 64 {
-			wasmModuleRootString = wasmModuleRootString[0:64]
-		}
 	}
-	wasmModuleRoot := common.HexToHash(wasmModuleRootString)
 
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.EnableL1Reader {
@@ -188,6 +191,7 @@ func main() {
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
 	stackConf.HTTPModules = nodeConfig.HTTP.API
+	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
 	stackConf.WSHost = nodeConfig.WS.Addr
 	stackConf.WSPort = nodeConfig.WS.Port
 	stackConf.WSOrigins = nodeConfig.WS.Origins
@@ -319,9 +323,23 @@ func main() {
 		}
 	}
 
-	_, err = arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
 	if err != nil {
 		panic(err)
+	}
+	if nodeConfig.Node.Dangerous.NoL1Listener && nodeConfig.DevInit {
+		// If we don't have any messages, we're not connected to the L1, and we're using a dev init,
+		// we should create our own fake init message.
+		count, err := node.TxStreamer.GetMessageCount()
+		if err != nil {
+			panic(err)
+		}
+		if count == 0 {
+			err = node.TxStreamer.AddFakeInitMessage()
+			if err != nil {
+				panic(err)
+			}
+		}
 	}
 	if err := stack.Start(); err != nil {
 		utils.Fatalf("Error starting protocol stack: %v\n", err)

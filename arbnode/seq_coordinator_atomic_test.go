@@ -99,6 +99,7 @@ func TestSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig := TestSeqCoordinatorConfig
 	coordConfig.LockoutDuration = time.Millisecond * 100
 	coordConfig.LockoutSpare = time.Millisecond * 10
+	coordConfig.Dangerous.DisableSignatureVerification = true
 	testData := CoordinatorTestData{
 		testStartRound: -1,
 		sequencer:      make([]string, messagesPerRound),
