@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	nitroutil "github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -90,7 +91,7 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000*params.GWei/l2pricing.InitialMinimumBaseFeeWei)),
+			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(int64(nitroutil.NormalizeL2GasForL1GasInitial(1_000_000, params.GWei)))),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 1,

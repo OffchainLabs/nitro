@@ -56,7 +56,7 @@ func TestEstimate(t *testing.T) {
 	// set the gas price
 	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), client)
 	Require(t, err, "could not deploy ArbOwner contract")
-	tx, err := arbOwner.SetMinimumGasPrice(&auth, gasPrice)
+	tx, err := arbOwner.SetMinimumL2BaseFee(&auth, gasPrice)
 	Require(t, err, "could not set L2 gas price")
 	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)

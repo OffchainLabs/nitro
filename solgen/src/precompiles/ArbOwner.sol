@@ -44,11 +44,11 @@ interface ArbOwner {
     /// @notice Set how slowly ArbOS updates its estimate of the L1 basefee
     function setL1BaseFeeEstimateInertia(uint64 inertia) external;
 
-    /// @notice Set the L2 gas price directly, bypassing the pool calculus
-    function setL2GasPrice(uint256 priceInWei) external;
+    /// @notice Set the L2 basefee directly, bypassing the pool calculus
+    function setL2BaseFee(uint256 priceInWei) external;
 
-    /// @notice Set the minimum gas price needed for a transaction to succeed
-    function setMinimumGasPrice(uint256 priceInWei) external;
+    /// @notice Set the minimum basefee needed for a transaction to succeed
+    function setMinimumL2BaseFee(uint256 priceInWei) external;
 
     /// @notice Set the computational speed limit for the chain
     function setSpeedLimit(uint64 limit) external;
