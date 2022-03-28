@@ -90,7 +90,7 @@ func TestTransactionStreamer(t *testing.T) {
 	var blockStates []blockTestState
 	blockStates = append(blockStates, blockTestState{
 		balances: map[common.Address]*big.Int{
-			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000*params.GWei/params.InitialBaseFee)),
+			rewrittenOwnerAddress: new(big.Int).Mul(maxExpectedGasCost, big.NewInt(1_000_000*params.GWei/l2pricing.InitialMinimumBaseFeeWei)),
 		},
 		accounts:    []common.Address{rewrittenOwnerAddress},
 		numMessages: 1,

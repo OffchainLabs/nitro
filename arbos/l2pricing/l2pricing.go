@@ -55,7 +55,7 @@ func InitializeL2PricingState(sto *storage.Storage) error {
 	_ = sto.SetUint64ByUint64(speedLimitPerSecondOffset, InitialSpeedLimitPerSecond)
 	_ = sto.SetUint64ByUint64(maxPerBlockGasLimitOffset, InitialPerBlockGasLimit)
 	_ = sto.SetUint64ByUint64(baseFeeWeiOffset, InitialBaseFeeWei)
-	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumGasPriceWei)
+	return sto.SetUint64ByUint64(minBaseFeeWeiOffset, InitialMinimumBaseFeeWei)
 }
 
 func OpenL2PricingState(sto *storage.Storage) *L2PricingState {

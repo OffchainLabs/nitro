@@ -6,6 +6,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"math/big"
 	"testing"
 	"time"
@@ -129,7 +130,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		beneficiaryAddress,
 		beneficiaryAddress,
 		arbmath.UintToBig(estimate),
-		big.NewInt(params.InitialBaseFee*2),
+		big.NewInt(l2pricing.InitialMinimumBaseFeeWei*2),
 		[]byte{0x32, 0x42, 0x32, 0x88},
 	)
 	Require(t, err)
@@ -179,7 +180,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		beneficiaryAddress,
 		// send enough L2 gas for intrinsic but not compute
 		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
-		big.NewInt(params.InitialBaseFee*2),
+		big.NewInt(l2pricing.InitialMinimumBaseFeeWei*2),
 		simpleABI.Methods["increment"].ID,
 	)
 	Require(t, err)
@@ -272,7 +273,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		feeRefundAddress,
 		beneficiaryAddress,
 		retryableGas,
-		big.NewInt(params.InitialBaseFee*2),
+		big.NewInt(l2pricing.InitialMinimumBaseFeeWei*2),
 		retryableCallData,
 	)
 	Require(t, err)
