@@ -56,12 +56,12 @@ func (con ArbOwner) SetL1BaseFeeEstimateInertia(c ctx, evm mech, inertia uint64)
 }
 
 // Sets the L2 gas price directly, bypassing the pool calculus
-func (con ArbOwner) SetL2GasPrice(c ctx, evm mech, priceInWei huge) error {
+func (con ArbOwner) SetL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L2PricingState().SetBaseFeeWei(priceInWei)
 }
 
-// Sets the minimum gas price needed for a transaction to succeed
-func (con ArbOwner) SetMinimumGasPrice(c ctx, evm mech, priceInWei huge) error {
+// Sets the minimum base fee needed for a transaction to succeed
+func (con ArbOwner) SetMinimumL2BaseFee(c ctx, evm mech, priceInWei huge) error {
 	return c.state.L2PricingState().SetMinBaseFeeWei(priceInWei)
 }
 
