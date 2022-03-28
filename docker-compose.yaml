@@ -125,10 +125,10 @@ services:
     pid: host # allow debugging
     build: .
     ports:
-      - "7547:7547"
-      - "7548:7548"
+      - "7547"
+      - "7548"
     volumes:
-      - "validator-data:/data"
+      - "poster-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
     command: --conf.file /config/poster_config.json
@@ -175,6 +175,7 @@ volumes:
   seqdata_d:
   unsafestaker-data:
   validator-data:
+  poster-data:
   config:
   postgres-data:
 
