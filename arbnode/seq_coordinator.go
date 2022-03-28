@@ -660,10 +660,7 @@ func (c *SeqCoordinator) StopAndWait() {
 var ErrNotMainSequencer = errors.New("not main sequencer")
 
 func (c *SeqCoordinator) CurrentlyChosen() bool {
-	if time.Now().Before(atomicTimeRead(&c.lockoutUntil)) {
-		return true
-	}
-	return false
+	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
 }
 
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
