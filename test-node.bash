@@ -140,18 +140,18 @@ if $force_init; then
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
 
     echo == funding validator and sequencer, writing configs
-    docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account validator
-    docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account sequencer
-    docker-compose run testnode-scripts --writeconfig
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
+    docker-compose run testnode-scripts write-config
 
     echo == initializing redis
     docker-compose run testnode-scripts --initredisprios $redundantsequencers
 
     echo == Deploying L2
-    validaotraddress=`docker-compose run testnode-scripts --l1account sequencer --printaddress | tail -n 1 | tr -d '\r\n'`
+    validaotraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
     docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $validaotraddress -l1deployment /config/deployment.json -authorizevalidators 10
 
-    docker-compose run testnode-scripts --bridgefunds --ethamount 100000
+    docker-compose run testnode-scripts bridge-funds --ethamount 100000
 fi
 
 if $run; then
