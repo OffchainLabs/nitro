@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -98,7 +99,15 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 	return alloc
 }
 
-func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, steps uint64, asserterIsCorrect bool) {
+func runChallengeTest(
+	t *testing.T,
+	wasmPath string,
+	wasmLibPaths []string,
+	steps uint64,
+	asserterIsCorrect bool,
+	timeBetweenSteps time.Duration,
+	shouldTimeout bool,
+) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlDebug)
 	log.Root().SetHandler(glogger)
@@ -174,6 +183,9 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	Require(t, err)
 
 	for i := 0; i < 100; i++ {
+		err = backend.AdjustTime(timeBetweenSteps)
+		backend.Commit()
+
 		var currentCorrect bool
 		if i%2 == 0 {
 			_, err = challengerManager.Act(ctx)
@@ -183,8 +195,15 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 			currentCorrect = asserterIsCorrect
 		}
 		if err != nil {
+			if shouldTimeout && strings.Contains(err.Error(), "CHAL_DEADLINE") {
+				t.Log("challenge completed in timeout")
+				return
+			}
 			if !currentCorrect &&
 				(strings.Contains(err.Error(), "lost challenge") || strings.Contains(err.Error(), "SAME_OSP_END")) {
+				if shouldTimeout {
+					t.Fatal("expected challenge to end in timeout")
+				}
 				t.Log("challenge completed! asserter hit expected error:", err)
 				return
 			}
@@ -207,23 +226,27 @@ func runChallengeTest(t *testing.T, wasmPath string, wasmLibPaths []string, step
 	t.Fatal("challenge timed out without winner")
 }
 
-var wasmDir string = (func() string {
+var wasmDir = (func() string {
 	_, filename, _, _ := runtime.Caller(0)
 	return path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
 })()
 
 func TestChallengeToOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false, 0, false)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, true)
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, true, 0, false)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, false)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, false, 0, false)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, true)
+	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, true, 0, false)
+}
+
+func TestChallengeToTimeout(t *testing.T) {
+	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false, time.Second*40, true)
 }
