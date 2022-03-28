@@ -38,6 +38,11 @@ services:
     ports:
       - 7432:5432
 
+  redis:
+    image: redis:6.2.6
+    ports:
+      - "6379:6379"
+
   geth:
     image: ethereum/client-go:stable
     ports:
@@ -60,7 +65,49 @@ services:
       - "seqdata:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --l1.url ws://geth:8546 --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug
+    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --node.seq-coordinator.my-url  ws://sequencer:7546
+    depends_on:
+      - geth
+
+  sequencer_b:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_b:/data"
+      - "l1keystore:/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:7546
+    depends_on:
+      - geth
+
+  sequencer_c:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_c:/data"
+      - "l1keystore:/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:7546
+    depends_on:
+      - geth
+
+  sequencer_d:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_d:/data"
+      - "l1keystore:/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:7546
     depends_on:
       - geth
 
@@ -99,6 +146,7 @@ services:
       - "config:/config"
     depends_on:
       - geth
+      - redis
 
   relay:
     pid: host
@@ -112,6 +160,9 @@ volumes:
   l1data:
   l1keystore:
   seqdata:
+  seqdata_b:
+  seqdata_c:
+  seqdata_d:
   unsafestaker-data:
   validator-data:
   config:

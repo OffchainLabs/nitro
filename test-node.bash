@@ -31,6 +31,7 @@ force_build=false
 validate=false
 detach=false
 blockscout=true
+redundantsequencers=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -66,6 +67,14 @@ while [[ $# -gt 0 ]]; do
             detach=true
             shift
             ;;
+        --redundantsequencers)
+            redundantsequencers=$2
+            if ! [[ $redundantsequencers =~ "[0-3]" ]] ; then
+                echo "redundantsequencers must be between 0 and 3"
+            fi
+            shift
+            shift
+            ;;
         *)
             echo Usage: $0 \[OPTIONS..]
             echo        $0 script [SCRIPT-ARGS]
@@ -74,6 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker image
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
+            echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
@@ -87,6 +97,17 @@ if $force_init; then
 fi
 
 NODES="sequencer"
+
+if [ $redundantsequencers -gt 0 ]; then
+    NODES="$NODES sequencer_b"
+fi
+if [ $redundantsequencers -gt 1 ]; then
+    NODES="$NODES sequencer_c"
+fi
+if [ $redundantsequencers -gt 2 ]; then
+    NODES="$NODES sequencer_d"
+fi
+
 if $validate; then
     NODES="$NODES validator"
 else
@@ -122,6 +143,9 @@ if $force_init; then
     docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account validator
     docker-compose run testnode-scripts --l1fund --ethamount 1000 --l1account sequencer
     docker-compose run testnode-scripts --writeconfig
+
+    echo == initializing redis
+    docker-compose run testnode-scripts --initredisprios $redundantsequencers
 
     echo == Deploying L2
     validaotraddress=`docker-compose run testnode-scripts --l1account sequencer --printaddress | tail -n 1 | tr -d '\r\n'`
