@@ -52,6 +52,7 @@ type sequencerMessage struct {
 }
 
 const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxSegmentsPerSequencerMessage = 1024
 
 func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
@@ -96,6 +97,11 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						break
 					}
 					segments = append(segments, segment)
+					if len(segments) > maxSegmentsPerSequencerMessage {
+						log.Warn("too many segments in sequence batch")
+						segments = [][]byte{}
+						break
+					}
 				}
 			} else {
 				log.Warn("sequencer msg decompression failed", "err", err)
