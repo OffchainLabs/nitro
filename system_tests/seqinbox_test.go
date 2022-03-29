@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -156,7 +158,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
-				reserveAmount := new(big.Int).SetUint64(params.InitialBaseFee * 10000000)
+				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
 					amount = big.NewInt(1)
@@ -176,8 +178,8 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 				rawTx := &types.DynamicFeeTx{
 					To:        &dest,
-					Gas:       210000,
-					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					Gas:       util.NormalizeL2GasForL1GasInitial(210000, params.GWei),
+					GasFeeCap: big.NewInt(l2pricing.InitialBaseFeeWei * 2),
 					Value:     amount,
 					Nonce:     state.nonces[source],
 				}

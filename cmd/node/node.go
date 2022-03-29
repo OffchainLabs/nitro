@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
@@ -85,6 +86,12 @@ func main() {
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")
+	}
+
+	if nodeConfig.Node.SeqCoordinator.Enable {
+		if nodeConfig.Node.SeqCoordinator.SigningKey == "" && !nodeConfig.Node.SeqCoordinator.Dangerous.DisableSignatureVerification {
+			panic("sequencer coordinator enabled, but signing key unset, and signature verification isn't disabled")
+		}
 	}
 
 	// Perform sanity check on mode
@@ -185,6 +192,7 @@ func main() {
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
 	stackConf.HTTPModules = nodeConfig.HTTP.API
+	stackConf.HTTPCors = nodeConfig.HTTP.CORSDomain
 	stackConf.WSHost = nodeConfig.WS.Addr
 	stackConf.WSPort = nodeConfig.WS.Port
 	stackConf.WSOrigins = nodeConfig.WS.Origins
@@ -351,45 +359,45 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf       cmdutil.ConfConfig       `koanf:"conf"`
-	Node       arbnode.Config           `koanf:"node"`
-	L1         cmdutil.L1Config         `koanf:"l1"`
-	L2         cmdutil.L2Config         `koanf:"l2"`
-	LogLevel   int                      `koanf:"log-level"`
-	Persistent cmdutil.PersistentConfig `koanf:"persistent"`
-	HTTP       cmdutil.HTTPConfig       `koanf:"http"`
-	WS         cmdutil.WSConfig         `koanf:"ws"`
-	DevInit    bool                     `koanf:"dev-init"`
-	ImportFile string                   `koanf:"import-file"`
+	Conf       conf.ConfConfig       `koanf:"conf"`
+	Node       arbnode.Config        `koanf:"node"`
+	L1         conf.L1Config         `koanf:"l1"`
+	L2         conf.L2Config         `koanf:"l2"`
+	LogLevel   int                   `koanf:"log-level"`
+	Persistent conf.PersistentConfig `koanf:"persistent"`
+	HTTP       conf.HTTPConfig       `koanf:"http"`
+	WS         conf.WSConfig         `koanf:"ws"`
+	DevInit    bool                  `koanf:"dev-init"`
+	ImportFile string                `koanf:"import-file"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:       cmdutil.ConfConfigDefault,
+	Conf:       conf.ConfConfigDefault,
 	Node:       arbnode.ConfigDefault,
-	L1:         cmdutil.L1ConfigDefault,
-	L2:         cmdutil.L2ConfigDefault,
+	L1:         conf.L1ConfigDefault,
+	L2:         conf.L2ConfigDefault,
 	LogLevel:   int(log.LvlInfo),
-	Persistent: cmdutil.PersistentConfigDefault,
-	HTTP:       cmdutil.HTTPConfigDefault,
-	WS:         cmdutil.WSConfigDefault,
+	Persistent: conf.PersistentConfigDefault,
+	HTTP:       conf.HTTPConfigDefault,
+	WS:         conf.WSConfigDefault,
 	DevInit:    false,
 	ImportFile: "",
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
-	cmdutil.ConfConfigAddOptions("conf", f)
+	conf.ConfConfigAddOptions("conf", f)
 	arbnode.ConfigAddOptions("node", f, true, true)
-	cmdutil.L1ConfigAddOptions("l1", f)
-	cmdutil.L2ConfigAddOptions("l2", f)
+	conf.L1ConfigAddOptions("l1", f)
+	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
-	cmdutil.PersistentConfigAddOptions("persistent", f)
-	cmdutil.HTTPConfigAddOptions("http", f)
-	cmdutil.WSConfigAddOptions("ws", f)
+	conf.PersistentConfigAddOptions("persistent", f)
+	conf.HTTPConfigAddOptions("http", f)
+	conf.WSConfigAddOptions("ws", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 }
 
-func ParseNode(_ context.Context, args []string) (*NodeConfig, *cmdutil.WalletConfig, *cmdutil.WalletConfig, error) {
+func ParseNode(_ context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
@@ -431,8 +439,8 @@ func ParseNode(_ context.Context, args []string) (*NodeConfig, *cmdutil.WalletCo
 	// Don't pass around wallet contents with normal configuration
 	l1wallet := nodeConfig.L1.Wallet
 	l2wallet := nodeConfig.L2.Wallet
-	nodeConfig.L1.Wallet = cmdutil.WalletConfigDefault
-	nodeConfig.L2.Wallet = cmdutil.WalletConfigDefault
+	nodeConfig.L1.Wallet = conf.WalletConfigDefault
+	nodeConfig.L2.Wallet = conf.WalletConfigDefault
 
 	return &nodeConfig, &l1wallet, &l2wallet, nil
 }

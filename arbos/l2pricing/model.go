@@ -14,8 +14,8 @@ import (
 
 const InitialSpeedLimitPerSecond = 1000000
 const InitialPerBlockGasLimit uint64 = 20 * 1000000
-const InitialMinimumGasPriceWei = 1 * params.GWei
-const InitialBaseFeeWei = InitialMinimumGasPriceWei
+const InitialMinimumBaseFeeWei = params.GWei / 10
+const InitialBaseFeeWei = InitialMinimumBaseFeeWei
 const InitialGasPoolSeconds = 10 * 60
 const InitialRateEstimateInertia = 60
 
@@ -97,8 +97,8 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 	//
 	exp := (averageOfRatios - arbmath.OneInBips) * arbmath.Bips(timePassed) / 120 // limit to EIP 1559's max rate
 	price := arbmath.BigMulByBips(header.BaseFee, arbmath.ApproxExpBasisPoints(exp))
-	maxPrice := arbmath.BigMulByInt(header.BaseFee, 2)
-	minPrice, _ := ps.MinGasPriceWei()
+	maxPrice := arbmath.BigMulByInt(header.BaseFee, params.ElasticityMultiplier)
+	minPrice, _ := ps.MinBaseFeeWei()
 
 	p := func(args ...interface{}) {
 		if debug {
@@ -118,7 +118,7 @@ func (ps *L2PricingState) UpdatePricingModel(header *types.Header, timePassed ui
 		log.Warn("ArbOS tried to 2x the price", "price", price, "bound", maxPrice)
 		price = maxPrice
 	}
-	_ = ps.SetGasPriceWei(price)
+	_ = ps.SetBaseFeeWei(price)
 	_ = ps.SetGasPool(newGasPool)
 	ps.SetGasPoolLastBlock(newGasPool)
 }

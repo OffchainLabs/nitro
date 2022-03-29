@@ -298,3 +298,58 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	nodeA.StopAndWait()
 	nodeB.StopAndWait()
 }
+
+func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	nodeConfig := arbnode.ConfigDefaultL2Test()
+	nodeConfig.SeqCoordinator.Enable = true
+
+	nodeNames := []string{"stdio://A", "stdio://B"}
+
+	initRedisForTest(t, ctx, nodeConfig.SeqCoordinator.RedisUrl, nodeNames)
+
+	nodeConfig.SeqCoordinator.MyUrl = nodeNames[0]
+	l2Info, nodeA, clientA := CreateTestL2WithConfig(t, ctx, nil, nodeConfig, false)
+
+	redisOptions, err := redis.ParseURL(nodeConfig.SeqCoordinator.RedisUrl)
+	Require(t, err)
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+
+	// wait for sequencerA to become master
+	for {
+		err := redisClient.Get(ctx, arbnode.CHOSENSEQ_KEY).Err()
+		if errors.Is(err, redis.Nil) {
+			time.Sleep(nodeConfig.SeqCoordinator.UpdateInterval)
+			continue
+		}
+		Require(t, err)
+		break
+	}
+
+	nodeConfigCopy := *nodeConfig
+	nodeConfig = &nodeConfigCopy
+	nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
+	nodeConfig.SeqCoordinator.SigningKey = "629b39225c813bf1975fb49bcb6ca2622f2c62509f138ac609f0c048764a95ee"
+	_, nodeB, clientB := CreateTestL2WithConfig(t, ctx, l2Info, nodeConfig, false)
+
+	l2Info.GenerateAccount("User2")
+
+	tx := l2Info.PrepareTx("Owner", "User2", l2Info.TransferGas, big.NewInt(1e12), nil)
+
+	err = clientA.SendTransaction(ctx, tx)
+	Require(t, err)
+
+	_, err = arbutil.EnsureTxSucceeded(ctx, clientA, tx)
+	Require(t, err)
+
+	_, err = arbutil.WaitForTx(ctx, clientB, tx.Hash(), time.Second)
+	if err == nil {
+		Fail(t, "tx received by node with different seq coordinator signing key")
+	}
+
+	nodeA.StopAndWait()
+	nodeB.StopAndWait()
+}

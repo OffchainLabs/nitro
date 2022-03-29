@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
@@ -90,19 +91,19 @@ func startup() error {
 }
 
 type RelayConfig struct {
-	Conf     util.ConfConfig `koanf:"conf"`
+	Conf     conf.ConfConfig `koanf:"conf"`
 	LogLevel int             `koanf:"log-level"`
 	Node     RelayNodeConfig `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
-	Conf:     util.ConfConfigDefault,
+	Conf:     conf.ConfConfigDefault,
 	LogLevel: int(log.LvlInfo),
 	Node:     RelayNodeConfigDefault,
 }
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
-	util.ConfConfigAddOptions("conf", f)
+	conf.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
 	RelayNodeConfigAddOptions("node", f)
 }
