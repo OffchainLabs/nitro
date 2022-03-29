@@ -1,41 +1,18 @@
-import yargs, { Argv } from 'yargs';
-import { ethers, BigNumber } from "ethers";
+import { ethers } from "ethers";
 import * as consts from './consts'
 import { namedAccount } from './accounts'
 import * as fs from 'fs';
 const path = require("path");
 
-export async function createSendTransaction(provider: ethers.providers.Provider, from: ethers.Wallet, to: string, value: ethers.BigNumberish, data: ethers.BytesLike): Promise<ethers.providers.TransactionResponse> {
-    const nonce = await provider.getTransactionCount(from.address, "latest");
-    const chainId = (await provider.getNetwork()).chainId
-
-    let transactionRequest: ethers.providers.TransactionRequest = {
-        type: 2,
-        from: from.address,
-        to: to,
-        value: value,
-        data: data,
-        nonce: nonce,
-        chainId: chainId,
-    }
-    const gasEstimate = await provider.estimateGas(transactionRequest)
-
-    let feeData = await provider.getFeeData();
-    if (feeData.maxPriorityFeePerGas == null || feeData.maxFeePerGas == null) {
-        throw Error("bad L1 fee data")
-    }
-    transactionRequest.gasLimit = BigNumber.from(Math.ceil(gasEstimate.toNumber() * 1.2))
-    transactionRequest.maxPriorityFeePerGas = BigNumber.from(Math.ceil(feeData.maxPriorityFeePerGas.toNumber() * 1.2)) // Recommended maxPriorityFeePerGas
-    transactionRequest.maxFeePerGas = BigNumber.from(Math.ceil(feeData.maxFeePerGas.toNumber() * 1.2))
-
-    const signedTx = await from.signTransaction(transactionRequest)
-
-    return provider.sendTransaction(signedTx)
-}
-
 async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wallet, ethamount: string): Promise<ethers.providers.TransactionResponse> {
     const deploydata = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString())
-    return createSendTransaction(provider, from, deploydata.Inbox, ethers.utils.parseEther(ethamount), "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000")
+
+    return from.connect(provider)
+        .sendTransaction({
+            to: deploydata.Inbox,
+            value: ethers.utils.parseEther(ethamount),
+            data: "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000",
+        })
 }
 
 export const bridgeFundsCommand = {
@@ -57,7 +34,7 @@ export const bridgeFundsCommand = {
     }
 }
 
-export const sendL1FundsCommand = {
+export const sendL1Command = {
     command: "send-l1",
     describe: "sends funds between l1 accounts",
     builder: {
@@ -69,16 +46,21 @@ export const sendL1FundsCommand = {
     handler: async (argv: any) => {
         let provider = new ethers.providers.WebSocketProvider(consts.l1url)
 
-        let response = await createSendTransaction(provider, namedAccount(argv.from), namedAccount(argv.to).address, ethers.utils.parseEther(argv.ethamount), argv.data)
+        let response = await namedAccount(argv.from).connect(provider)
+            .sendTransaction({
+                to: namedAccount(argv.to).address,
+                value: ethers.utils.parseEther(argv.ethamount),
+                data: argv.data,
+            })
 
-        console.log("sent funds")
+        console.log("sent on l1")
         console.log(response)
 
         provider.destroy()
     }
 }
 
-export const sendL2FundsCommand = {
+export const sendL2Command = {
     command: "send-l2",
     describe: "sends funds between l2 accounts",
     builder: {
@@ -90,9 +72,14 @@ export const sendL2FundsCommand = {
     handler: async (argv: any) => {
         let provider = new ethers.providers.WebSocketProvider(consts.l2url)
 
-        let response = await createSendTransaction(provider, namedAccount(argv.from), namedAccount(argv.to).address, ethers.utils.parseEther(argv.ethamount), argv.data)
+        let response = await namedAccount(argv.from).connect(provider)
+            .sendTransaction({
+                to: namedAccount(argv.to).address,
+                value: ethers.utils.parseEther(argv.ethamount),
+                data: argv.data,
+            })
 
-        console.log("sent funds")
+        console.log("sent on l2")
         console.log(response)
 
         provider.destroy()

@@ -1,5 +1,4 @@
-import { ethers, BigNumber } from "ethers";
-import { Argv } from 'yargs';
+import { ethers } from "ethers";
 import * as consts from './consts'
 import * as fs from 'fs';
 const path = require("path");
