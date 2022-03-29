@@ -60,23 +60,20 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
 		maxSubmissionFee := retryables.RetryableSubmissionFee(len(retryData), l1BaseFee)
 
-		submitTx, err := util.NewArbitrumSubmitRetryableTx(
-			nil,
-			common.Hash{},
-			util.RemapL1Address(sender),
-			l1BaseFee,
-			deposit,
-			msg.GasPrice(),
-			msg.Gas(),
-			pRetryTo,
-			l2CallValue,
-			callValueRefundAddress,
-			maxSubmissionFee,
-			excessFeeRefundAddress,
-			retryData,
-		)
-		if err != nil {
-			return msg, err
+		submitTx := &types.ArbitrumSubmitRetryableTx{
+			ChainId:          nil,
+			RequestId:        common.Hash{},
+			From:             util.RemapL1Address(sender),
+			L1BaseFee:        l1BaseFee,
+			DepositValue:     deposit,
+			GasFeeCap:        msg.GasPrice(),
+			Gas:              msg.Gas(),
+			RetryTo:          pRetryTo,
+			Value:            l2CallValue,
+			Beneficiary:      callValueRefundAddress,
+			MaxSubmissionFee: maxSubmissionFee,
+			FeeRefundAddr:    excessFeeRefundAddress,
+			RetryData:        retryData,
 		}
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
