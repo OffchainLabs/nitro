@@ -11,7 +11,7 @@ services:
     container_name: 'blockscout'
     links:
       - postgres:database
-    command: 'mix do ecto.create, ecto.migrate, phx.server'
+    command: 'sh -c "mix do ecto.create, ecto.migrate; node init/install.js postgres 5432; mix do phx.server"'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file:

@@ -29,6 +29,7 @@ type ArbRetryableTx struct {
 	CanceledGasCost         func(bytes32) (uint64, error)
 
 	NoTicketWithIDError func() error
+	NotCallableError    func() error
 }
 
 var (
@@ -207,4 +208,13 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 		return err
 	}
 	return con.Canceled(c, evm, ticketId)
+}
+
+func (con ArbRetryableTx) SubmitRetryable(
+	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	gasLimit uint64, maxSubmissionFee huge,
+	feeRefundAddress, beneficiary, retryTo addr,
+	retryData []byte,
+) error {
+	return con.NotCallableError()
 }

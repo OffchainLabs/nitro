@@ -108,7 +108,7 @@ func (atab *AddressTable) Decompress(buf []byte) (common.Address, uint64, error)
 		return common.BytesToAddress(input), numBytesRead, nil
 	} else {
 		rd = bytes.NewReader(buf)
-		index, err := rlp.NewStream(rd, 9).Uint()
+		index, err := rlp.NewStream(rd, 9).Uint64()
 		if err != nil {
 			return common.Address{}, 0, err
 		}
