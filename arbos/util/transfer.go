@@ -89,7 +89,7 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 			Contract: contract,
 		}
 		tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, evm.Depth(), nil)
-		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
+		tracer.CaptureEnter(vm.INVALID, *from, *to, input, 0, amount)
 
 		retStack := &vm.Stack{}
 		retStack.SetData([]uint256.Int{
