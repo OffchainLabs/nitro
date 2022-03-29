@@ -12,20 +12,19 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
 var ParseRedeemScheduledLog func(interface{}, *types.Log) error
 var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
+var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
+var UnpackInternalTxDataStartBlock func([]byte) ([]interface{}, error)
+var PackArbRetryableTxSubmitRetryable func(...interface{}) ([]byte, error)
 
 func init() {
 	offset, success := new(big.Int).SetString("0x1111000000000000000000000000000000001111", 0)
@@ -61,8 +60,34 @@ func init() {
 		}
 	}
 
+	// Create a mechanism for packing and unpacking calls
+	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) ([]interface{}, error)) {
+		contract, err := abi.JSON(strings.NewReader(source))
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+		}
+		method, ok := contract.Methods[name]
+		if !ok {
+			panic(fmt.Sprintf("method %v does not exist", name))
+		}
+		pack := func(args ...interface{}) ([]byte, error) {
+			return contract.Pack(name, args...)
+		}
+		unpack := func(data []byte) ([]interface{}, error) {
+			if len(data) < 4 {
+				return nil, errors.New("Data not long enough")
+			}
+			return method.Inputs.Unpack(data[4:])
+		}
+		return pack, unpack
+	}
+
 	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
 	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
+
+	acts := precompilesgen.ArbosActsABI
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
+	PackArbRetryableTxSubmitRetryable, _ = callParser(precompilesgen.ArbRetryableTxABI, "submitRetryable")
 }
 
 func AddressToHash(address common.Address) common.Hash {
@@ -205,61 +230,4 @@ func TxTypeHasPosterCosts(txType byte) bool {
 		return false
 	}
 	return true
-}
-
-// represents when
-type TracingScenario uint64
-
-const (
-	TracingBeforeEVM TracingScenario = iota
-	TracingDuringEVM
-	TracingAfterEVM
-)
-
-// Represents a balance change occuring aside from a call.
-// While most uses will be transfers, setting `from` or `to` to nil will mint or burn funds, respectively.
-func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) error {
-	if from != nil {
-		balance := evm.StateDB.GetBalance(*from)
-		if arbmath.BigLessThan(balance, amount) {
-			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
-		}
-		evm.StateDB.SubBalance(*from, amount)
-	}
-	if to != nil {
-		evm.StateDB.AddBalance(*to, amount)
-	}
-	if evm.Config.Debug {
-		tracer := evm.Config.Tracer
-
-		if evm.Depth() != 0 && scenario != TracingDuringEVM {
-			// A non-zero depth implies this transfer is occuring inside EVM execution
-			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
-			return errors.New("Tracing scenario mismatch")
-		}
-
-		if scenario != TracingDuringEVM {
-			tracer.CaptureArbitrumTransfer(evm, from, to, amount, scenario == TracingBeforeEVM)
-			return nil
-		}
-
-		if from == nil {
-			from = &common.Address{}
-		}
-		if to == nil {
-			to = &common.Address{}
-		}
-		// TODO Review later how this shows up in the trace
-		tracer.CaptureEnter(vm.INVALID, *from, *to, []byte("Transfer Balance"), 0, amount)
-		tracer.CaptureExit(nil, 0, nil)
-	}
-	return nil
-}
-
-// Mints funds for the user and adds them to their balance
-func MintBalance(to *common.Address, amount *big.Int, evm *vm.EVM, scenario TracingScenario) {
-	err := TransferBalance(nil, to, amount, evm, scenario)
-	if err != nil {
-		panic(fmt.Sprintf("impossible error: %v", err))
-	}
 }

@@ -241,7 +241,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		segmentKind := segment[0]
 		if segmentKind == BatchSegmentKindAdvanceTimestamp || segmentKind == BatchSegmentKindAdvanceL1BlockNumber {
 			rd := bytes.NewReader(segment[1:])
-			advancing, err := rlp.NewStream(rd, 16).Uint()
+			advancing, err := rlp.NewStream(rd, 16).Uint64()
 			if err != nil {
 				log.Warn("error parsing sequencer advancing segment", "err", err)
 				segmentNum++

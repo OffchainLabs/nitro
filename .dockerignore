@@ -16,8 +16,8 @@ target/**/*
 brotli/buildfiles/**/*
 
 # these go to different docker images
-testnode-scripts/
-blockscout/
+testnode-scripts/**/*
+blockscout/**/*
 
 # these are used by environment outside the docker:
 test-node.bash

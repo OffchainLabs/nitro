@@ -14,7 +14,7 @@ fi
 
 if [[ $# -gt 0 ]] && [[ $1 == "script" ]]; then
     shift
-    docker-compose run testnode-scripts index.js "$@"
+    docker-compose run testnode-scripts "$@"
     exit $?
 fi
 
@@ -31,6 +31,7 @@ force_build=false
 validate=false
 detach=false
 blockscout=true
+redundantsequencers=0
 while [[ $# -gt 0 ]]; do
     case $1 in
         --init)
@@ -66,6 +67,14 @@ while [[ $# -gt 0 ]]; do
             detach=true
             shift
             ;;
+        --redundantsequencers)
+            redundantsequencers=$2
+            if ! [[ $redundantsequencers =~ "[0-3]" ]] ; then
+                echo "redundantsequencers must be between 0 and 3"
+            fi
+            shift
+            shift
+            ;;
         *)
             echo Usage: $0 \[OPTIONS..]
             echo        $0 script [SCRIPT-ARGS]
@@ -74,6 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo --build:           rebuild docker image
             echo --init:            remove all data, rebuild, deploy new rollup
             echo --validate:        heavy computation, validating all blocks in WASM
+            echo --redundantsequencers redundant sequencers [0-3]
             echo --detach:          detach from nodes after running them
             echo --no-run:          does not launch nodes \(usefull with build or init\)
             echo
@@ -86,7 +96,18 @@ if $force_init; then
     force_build=true
 fi
 
-NODES="sequencer"
+NODES="sequencer poster"
+
+if [ $redundantsequencers -gt 0 ]; then
+    NODES="$NODES sequencer_b"
+fi
+if [ $redundantsequencers -gt 1 ]; then
+    NODES="$NODES sequencer_c"
+fi
+if [ $redundantsequencers -gt 2 ]; then
+    NODES="$NODES sequencer_d"
+fi
+
 if $validate; then
     NODES="$NODES validator"
 else
@@ -112,18 +133,25 @@ if $force_init; then
 
     echo == Generating l1 keys
     docker-compose run --entrypoint sh geth -c "echo passphrase > /root/.ethereum/passphrase"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
+    docker-compose run --entrypoint sh geth -c "echo e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2 > /root/.ethereum/tmp-funnelkey"
+    docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
+    docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
     docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
 
     echo == funding validator and sequencer, writing configs
-    docker-compose run testnode-scripts index.js --fund --amount 1000 --l1account validator
-    docker-compose run testnode-scripts index.js --fund --amount 1000 --l1account sequencer
-    docker-compose run testnode-scripts index.js --writeconfig
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
+    docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
+    docker-compose run testnode-scripts write-config
+
+    echo == initializing redis
+    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     echo == Deploying L2
-    validaotraddress=`docker-compose run testnode-scripts index.js --l1account sequencer --printaddress | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint target/bin/deploy sequencer -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $validaotraddress -l1deployment /config/deployment.json -authorizevalidators 10
+    sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
+    docker-compose run --entrypoint target/bin/deploy poster -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $sequenceraddress -l1deployment /config/deployment.json -authorizevalidators 10
+
+    docker-compose run testnode-scripts bridge-funds --ethamount 100000
 fi
 
 if $run; then
