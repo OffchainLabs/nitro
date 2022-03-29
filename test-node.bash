@@ -148,8 +148,8 @@ if $force_init; then
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     echo == Deploying L2
-    validaotraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint target/bin/deploy poster -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $validaotraddress -l1deployment /config/deployment.json -authorizevalidators 10
+    sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
+    docker-compose run --entrypoint target/bin/deploy poster -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $sequenceraddress -l1deployment /config/deployment.json -authorizevalidators 10
 
     docker-compose run testnode-scripts bridge-funds --ethamount 100000
 fi
