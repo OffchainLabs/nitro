@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -253,7 +254,8 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
-	L2MessageKind_BrotliCompressed = 9
+	L2MessageKind_BrotliCompressed    = 9
+	L2MessageKind_ZeroHeavyCompressed = 10
 )
 
 func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
@@ -324,6 +326,23 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 			return nil, errors.New("can only compress top level batch")
 		}
 		compressed, err := ioutil.ReadAll(rd)
+		if err != nil {
+			return nil, err
+		}
+		decompressed, err := arbcompress.Decompress(compressed, MaxL2MessageSize)
+		if err != nil {
+			return nil, err
+		}
+		return parseL2Message(bytes.NewReader(decompressed), poster, requestId, chainId, depth+1)
+	case L2MessageKind_ZeroHeavyCompressed:
+		if depth > 0 { // ignore compressed messages if not top level
+			return nil, errors.New("can only compress top level batch")
+		}
+		compressed, err := ioutil.ReadAll(rd)
+		if err != nil {
+			return nil, err
+		}
+		compressed, err = io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(compressed)), 5*MaxL2MessageSize+2))
 		if err != nil {
 			return nil, err
 		}

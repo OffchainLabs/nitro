@@ -27,18 +27,6 @@ func TestZeroheavyNullInput(t *testing.T) {
 	if n != 0 {
 		t.Fatal(n, buf[0])
 	}
-
-	mid, err := ZeroheavyCompress(inBuf)
-	if err != nil {
-		t.Error(err)
-	}
-	res, err := ZeroheavyDecompress(mid, 1000)
-	if err != nil {
-		t.Error(err)
-	}
-	if !bytes.Equal(inBuf, res) {
-		t.Fatal()
-	}
 }
 
 func TestZeroHeavyOneByte(t *testing.T) {
@@ -58,18 +46,6 @@ func TestZeroHeavyOneByte(t *testing.T) {
 		if buf[0] != byte(i) {
 			t.Fatal(buf[0], i)
 		}
-
-		mid, err := ZeroheavyCompress(inBuf)
-		if err != nil {
-			t.Error(err)
-		}
-		res, err := ZeroheavyDecompress(mid, 1000)
-		if err != nil {
-			t.Error(err)
-		}
-		if !bytes.Equal(inBuf, res) {
-			t.Fatal()
-		}
 	}
 }
 
@@ -81,17 +57,6 @@ func TestZeroHeavyRandomData(t *testing.T) {
 		_, _ = rand.Read(inBuf)
 		dec := NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(inBuf)))
 		res, err := io.ReadAll(dec)
-		if err != nil {
-			t.Error(err)
-		}
-		if !bytes.Equal(inBuf, res) {
-			t.Fatal()
-		}
-		mid, err := ZeroheavyCompress(inBuf)
-		if err != nil {
-			t.Error(err)
-		}
-		res, err = ZeroheavyDecompress(mid, 5000)
 		if err != nil {
 			t.Error(err)
 		}
