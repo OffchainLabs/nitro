@@ -483,6 +483,7 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 			return c.retryAfterRedisError()
 		}
 		c.prevChosenSequencer = nextChosen
+		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
 	// Was, and still, the active sequencer
@@ -518,6 +519,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			c.sequencer.ForwardTo(chosenSeq)
 		}
 		c.prevChosenSequencer = chosenSeq
+		log.Info("chosen sequencer changed", "chosen", chosenSeq)
 	}
 
 	// read messages from redis
@@ -603,6 +605,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			return c.retryAfterRedisError()
 		}
+		log.Info("caught chosen-coordinator lock")
 		c.sequencer.DontForward()
 		c.prevChosenSequencer = c.config.MyUrl
 		return c.noRedisError()
