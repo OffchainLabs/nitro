@@ -137,13 +137,13 @@ func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
 }
 
 func getPrice(t *testing.T, pricing *L2PricingState) uint64 {
-	value, err := pricing.GasPriceWei()
+	value, err := pricing.BaseFeeWei()
 	Require(t, err)
 	return arbmath.BigToUintOrPanic(value)
 }
 
 func getMinPrice(t *testing.T, pricing *L2PricingState) uint64 {
-	value, err := pricing.MinGasPriceWei()
+	value, err := pricing.MinBaseFeeWei()
 	Require(t, err)
 	return arbmath.BigToUintOrPanic(value)
 }

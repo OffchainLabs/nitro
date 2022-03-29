@@ -1,4 +1,4 @@
-package util
+package conf
 
 import (
 	"github.com/ethereum/go-ethereum/node"
