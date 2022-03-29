@@ -241,7 +241,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
-		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
 
 		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
