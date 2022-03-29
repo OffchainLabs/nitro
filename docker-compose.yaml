@@ -11,7 +11,7 @@ services:
     container_name: 'blockscout'
     links:
       - postgres:database
-    command: 'mix do ecto.create, ecto.migrate, phx.server'
+    command: 'sh -c "mix do ecto.create, ecto.migrate; node init/install.js postgres 5432; mix do phx.server"'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file:
@@ -38,6 +38,11 @@ services:
     ports:
       - 7432:5432
 
+  redis:
+    image: redis:6.2.6
+    ports:
+      - "6379:6379"
+
   geth:
     image: ethereum/client-go:stable
     ports:
@@ -58,11 +63,53 @@ services:
       - "9642:9642"
     volumes:
       - "seqdata:/data"
-      - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --http.corsdomain *
+    command: --conf.file /config/sequencer_config.json --node.feed.output.enable --node.feed.output.port 9642 --http.vhosts * --http.api net,web3,eth,txpool,debug --http.corsdomain * --node.seq-coordinator.my-url  ws://sequencer:7546
     depends_on:
       - geth
+      - redis
+
+  sequencer_b:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_b:/data"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_b:7546
+    depends_on:
+      - geth
+      - redis
+
+  sequencer_c:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_c:/data"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_c:7546
+    depends_on:
+      - geth
+      - redis
+
+  sequencer_d:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7545"
+      - "7546"
+    volumes:
+      - "seqdata_d:/data"
+      - "config:/config"
+    command: --conf.file /config/sequencer_config.json --node.seq-coordinator.my-url ws://sequencer_d:7546
+    depends_on:
+      - geth
+      - redis
 
   staker-unsafe:
     pid: host # allow debugging
@@ -74,9 +121,25 @@ services:
       - "unsafestaker-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/unsafe_staker_config.json
+    command: --conf.file /config/unsafe_staker_config.json
     depends_on:
       - sequencer
+      - redis
+
+  poster:
+    pid: host # allow debugging
+    build: .
+    ports:
+      - "7547"
+      - "7548"
+    volumes:
+      - "poster-data:/data"
+      - "l1keystore:/l1keystore"
+      - "config:/config"
+    command: --conf.file /config/poster_config.json
+    depends_on:
+      - geth
+      - redis
 
   validator:
     pid: host # allow debugging
@@ -88,7 +151,7 @@ services:
       - "validator-data:/data"
       - "l1keystore:/l1keystore"
       - "config:/config"
-    command: --dev-init --l1.url ws://geth:8546 --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
+    command: --conf.file /config/validator_config.json --http.port 7547 --http.api net,web3,arb,debug --ws.port 7548
     depends_on:
       - sequencer
 
@@ -99,6 +162,7 @@ services:
       - "config:/config"
     depends_on:
       - geth
+      - redis
 
   relay:
     pid: host
@@ -112,8 +176,12 @@ volumes:
   l1data:
   l1keystore:
   seqdata:
+  seqdata_b:
+  seqdata_c:
+  seqdata_d:
   unsafestaker-data:
   validator-data:
+  poster-data:
   config:
   postgres-data:
 

@@ -73,12 +73,12 @@ func main() {
 		nodeConfig.Node.EnableL1Reader = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
+		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
 		nodeConfig.Node.EnableL1Reader = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
-		nodeConfig.Node.BatchPoster.Enable = true
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
@@ -255,15 +255,18 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-	} else if nodeConfig.DevInit {
-		initData := statetransfer.ArbosInitializationInfo{
-			Accounts: []statetransfer.AccountInitializationInfo{
-				{
-					Addr:       devAddr,
-					EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
-					Nonce:      0,
+	} else {
+		var initData statetransfer.ArbosInitializationInfo
+		if nodeConfig.DevInit {
+			initData = statetransfer.ArbosInitializationInfo{
+				Accounts: []statetransfer.AccountInitializationInfo{
+					{
+						Addr:       devAddr,
+						EthBalance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(1000)),
+						Nonce:      0,
+					},
 				},
-			},
+			}
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
 		if err != nil {
@@ -277,7 +280,19 @@ func main() {
 	}
 
 	var l2BlockChain *core.BlockChain
-	if initDataReader != nil {
+	if nodeConfig.NoInit {
+		blocksInDb, err := chainDb.Ancients()
+		if err != nil {
+			panic(err)
+		}
+		if blocksInDb == 0 {
+			panic("No initialization mode supplied, no blocks in Db")
+		}
+		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
+		if err != nil {
+			panic(err)
+		}
+	} else {
 		blockReader, err := initDataReader.GetStoredBlockReader()
 		if err != nil {
 			panic(err)
@@ -287,19 +302,6 @@ func main() {
 			panic(err)
 		}
 		l2BlockChain, err = arbnode.WriteOrTestBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), initDataReader, blockNum, chainConfig)
-		if err != nil {
-			panic(err)
-		}
-
-	} else {
-		blocksInDb, err := chainDb.Ancients()
-		if err != nil {
-			panic(err)
-		}
-		if blocksInDb == 0 {
-			panic("No initialization mode supplied, no blocks in Db")
-		}
-		l2BlockChain, err = arbnode.GetBlockChain(chainDb, arbnode.DefaultCacheConfigFor(stack, nodeConfig.Node.Archive), chainConfig)
 		if err != nil {
 			panic(err)
 		}
@@ -324,7 +326,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}
@@ -368,6 +370,7 @@ type NodeConfig struct {
 	HTTP       conf.HTTPConfig       `koanf:"http"`
 	WS         conf.WSConfig         `koanf:"ws"`
 	DevInit    bool                  `koanf:"dev-init"`
+	NoInit     bool                  `koanf:"no-init"`
 	ImportFile string                `koanf:"import-file"`
 }
 
@@ -394,6 +397,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.HTTPConfigAddOptions("http", f)
 	conf.WSConfigAddOptions("ws", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
+	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
 }
 

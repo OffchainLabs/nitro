@@ -475,12 +475,15 @@ func (c *SeqCoordinator) updatePrevKnownChosen(ctx context.Context, nextChosen s
 	if nextChosen != c.config.MyUrl {
 		// was the active sequencer, but no longer
 		atomicTimeWrite(&c.lockoutUntil, time.Time{})
-		c.sequencer.ForwardTo(nextChosen)
+		if c.sequencer != nil {
+			c.sequencer.ForwardTo(nextChosen)
+		}
 		if err := c.chosenOneRelease(ctx); err != nil {
 			log.Warn("coordinator failed chosen one release", "err", err)
 			return c.retryAfterRedisError()
 		}
 		c.prevChosenSequencer = nextChosen
+		log.Info("released chosen-coordinator lock", "nextChosen", nextChosen)
 		return c.noRedisError()
 	}
 	// Was, and still, the active sequencer
@@ -512,8 +515,11 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.updatePrevKnownChosen(ctx, chosenSeq)
 	}
 	if chosenSeq != c.config.MyUrl && chosenSeq != c.prevChosenSequencer {
-		c.sequencer.ForwardTo(chosenSeq)
+		if c.sequencer != nil {
+			c.sequencer.ForwardTo(chosenSeq)
+		}
 		c.prevChosenSequencer = chosenSeq
+		log.Info("chosen sequencer changed", "chosen", chosenSeq)
 	}
 
 	// read messages from redis
@@ -585,6 +591,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 
 	// can take over as main sequencer?
 	if localMsgCount >= remoteMsgCount && chosenSeq == c.config.MyUrl {
+		if c.sequencer == nil {
+			log.Crit("myurl main sequencer, but no sequencer exists")
+			return c.noRedisError()
+		}
 		err := c.chosenOneUpdate(ctx, localMsgCount, localMsgCount, nil)
 		if err != nil {
 			// this could be just new messages we didn't get yet - even then, we should retry soon
@@ -595,6 +605,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 			return c.retryAfterRedisError()
 		}
+		log.Info("caught chosen-coordinator lock")
 		c.sequencer.DontForward()
 		c.prevChosenSequencer = c.config.MyUrl
 		return c.noRedisError()
@@ -639,14 +650,24 @@ func (c *SeqCoordinator) Start(ctxIn context.Context) {
 }
 
 func (c *SeqCoordinator) StopAndWait() {
+	if c.CurrentlyChosen() {
+		_ = c.chosenOneRelease(c.GetContext())
+	}
+	if c.reportedAlive {
+		_ = c.livelinessRelease(c.GetContext())
+	}
 	c.StopWaiter.StopAndWait()
 	c.client.Close()
 }
 
 var ErrNotMainSequencer = errors.New("not main sequencer")
 
+func (c *SeqCoordinator) CurrentlyChosen() bool {
+	return time.Now().Before(atomicTimeRead(&c.lockoutUntil))
+}
+
 func (c *SeqCoordinator) SequencingMessage(pos arbutil.MessageIndex, msg *arbstate.MessageWithMetadata) error {
-	if time.Now().After(atomicTimeRead(&c.lockoutUntil)) {
+	if !c.CurrentlyChosen() {
 		return ErrNotMainSequencer
 	}
 	if err := c.chosenOneUpdate(c.GetContext(), pos, pos+1, msg); err != nil {
