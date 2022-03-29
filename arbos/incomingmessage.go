@@ -505,9 +505,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if dataLength > MaxL2MessageSize {
 		return nil, errors.New("retryable data too large")
 	}
-	data := make([]byte, dataLength)
+	retryData := make([]byte, dataLength)
 	if dataLength > 0 {
-		if _, err := rd.Read(data); err != nil {
+		if _, err := rd.Read(retryData); err != nil {
 			return nil, err
 		}
 	}
@@ -527,7 +527,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		Beneficiary:      callvalueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee.Big(),
 		FeeRefundAddr:    feeRefundAddress,
-		Data:             data,
+		RetryData:        retryData,
 	}
-	return types.NewTx(tx), nil
+	return types.NewTx(tx), err
 }
