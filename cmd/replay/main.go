@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -97,10 +96,6 @@ func (das *PreimageDAS) Retrieve(ctx context.Context, certBytes []byte) ([]byte,
 
 func main() {
 	wavmio.StubInit()
-
-	// We initialize the elliptic curve before calling into wavmio.
-	// This allows the validator to cache the elliptic curve initialization.
-	btcec.S256()
 
 	raw := rawdb.NewDatabase(PreimageDb{})
 	db := state.NewDatabase(raw)
