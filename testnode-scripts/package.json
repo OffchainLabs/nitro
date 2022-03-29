@@ -6,6 +6,7 @@
   "author": "Offchain Labs, Inc.",
   "license": "Apache-2.0",
   "dependencies": {
+    "@node-redis/client": "^1.0.4",
     "@types/node": "^17.0.22",
     "@types/yargs": "^17.0.10",
     "ethers": "^5.6.1",

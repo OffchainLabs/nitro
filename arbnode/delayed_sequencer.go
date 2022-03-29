@@ -22,41 +22,47 @@ type DelayedSequencer struct {
 	bridge          *DelayedBridge
 	inbox           *InboxTracker
 	txStreamer      *TransactionStreamer
+	coordinator     *SeqCoordinator
 	waitingForBlock *big.Int
 	config          *DelayedSequencerConfig
 }
 
 type DelayedSequencerConfig struct {
+	Enable           bool          `koanf:"enable"`
 	FinalizeDistance int64         `koanf:"finalize-distance"`
 	BlocksAggregate  int64         `koanf:"blocks-aggregate"`
 	TimeAggregate    time.Duration `koanf:"time-aggregate"`
 }
 
 func DelayedSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.Int64(prefix+".finalize-distance", DefaultDelayedSequencerConfig.FinalizeDistance, "how many blocks in the past L1 block is considered final")
 	f.Int64(prefix+".blocks-aggregate", DefaultDelayedSequencerConfig.BlocksAggregate, "how many blocks we aggregate looking for delayedMessage")
 	f.Duration(prefix+".time-aggregate", DefaultDelayedSequencerConfig.TimeAggregate, "polling interval for the delayed sequencer")
 }
 
 var DefaultDelayedSequencerConfig = DelayedSequencerConfig{
+	Enable:           true,
 	FinalizeDistance: 12,
 	BlocksAggregate:  5,
 	TimeAggregate:    time.Minute,
 }
 
 var TestDelayedSequencerConfig = DelayedSequencerConfig{
+	Enable:           true,
 	FinalizeDistance: 12,
 	BlocksAggregate:  5,
 	TimeAggregate:    time.Second,
 }
 
-func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
+func NewDelayedSequencer(client arbutil.L1Interface, reader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, config *DelayedSequencerConfig) (*DelayedSequencer, error) {
 	return &DelayedSequencer{
-		client:     client,
-		bridge:     reader.DelayedBridge(),
-		inbox:      reader.Tracker(),
-		txStreamer: txStreamer,
-		config:     config,
+		client:      client,
+		bridge:      reader.DelayedBridge(),
+		inbox:       reader.Tracker(),
+		coordinator: coordinator,
+		txStreamer:  txStreamer,
+		config:      config,
 	}, nil
 }
 
@@ -73,6 +79,9 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 }
 
 func (d *DelayedSequencer) update(ctx context.Context) error {
+	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
+		return nil
+	}
 	lastBlockHeader, err := d.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return err
