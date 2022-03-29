@@ -388,20 +388,40 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 }
 
+type DangerousSequencerConfig struct {
+	NoCoordinator bool `koanf:"no-coordinator"`
+}
+
+var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: false,
+}
+
+var TestDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: true,
+}
+
+func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
+}
+
 type SequencerConfig struct {
-	Enable bool `koanf:"enable"`
+	Enable    bool                     `koanf:"enable"`
+	Dangerous DangerousSequencerConfig `koanf:"dangerous"`
 }
 
 var DefaultSequencerConfig = SequencerConfig{
-	Enable: false,
+	Enable:    false,
+	Dangerous: DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
-	Enable: true,
+	Enable:    true,
+	Dangerous: TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type WasmConfig struct {
@@ -468,6 +488,9 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if config.Sequencer.Enable {
 		if config.ForwardingTarget() != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
+		}
+		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
+			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
 		if config.EnableL1Reader {
 			if l1client == nil {
