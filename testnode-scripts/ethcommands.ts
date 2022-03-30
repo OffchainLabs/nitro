@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import * as consts from './consts'
-import { namedAccount } from './accounts'
+import { namedAccount, namedAddress } from './accounts'
 import * as fs from 'fs';
 const path = require("path");
 
@@ -48,7 +48,7 @@ export const sendL1Command = {
 
         let response = await namedAccount(argv.from).connect(provider)
             .sendTransaction({
-                to: namedAccount(argv.to).address,
+                to: namedAddress(argv.to),
                 value: ethers.utils.parseEther(argv.ethamount),
                 data: argv.data,
             })
@@ -74,7 +74,7 @@ export const sendL2Command = {
 
         let response = await namedAccount(argv.from).connect(provider)
             .sendTransaction({
-                to: namedAccount(argv.to).address,
+                to: namedAddress(argv.to),
                 value: ethers.utils.parseEther(argv.ethamount),
                 data: argv.data,
             })

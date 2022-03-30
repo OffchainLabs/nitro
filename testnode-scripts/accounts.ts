@@ -29,19 +29,17 @@ export function namedAccount(name: string): ethers.Wallet {
     if (name == "validator") {
         return knownaccounts[2]
     }
-    try {
-        if (!name.startsWith("user_")) {
-            throw ("")
-        }
-        let usernum = Number(name.substring(5))
-        let userhex = usernum.toString(16)
-        for (let index = 0; index < 4; index++) {
-            userhex = userhex + userhex
-        }
-        return new ethers.Wallet("0x" + userhex)
-    } catch (error) {
-        throw Error("account name must either be funnel, sequencer, validator or user_[number]")
+    if (name.startsWith("user_")) {
+        return new ethers.Wallet(ethers.utils.sha256(ethers.utils.toUtf8Bytes(name)))
     }
+    throw Error("account name must either be funnel, sequencer, validator or user_[number]")
+}
+
+export function namedAddress(name: string): string {
+    if (name.startsWith("address_")) {
+        return name.substring(8)
+    }
+    return namedAccount(name).address
 }
 
 export const printAddressCommand = {
