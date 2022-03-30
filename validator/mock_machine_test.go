@@ -11,32 +11,35 @@ import (
 )
 
 type IncorrectMachine struct {
-	inner         MachineInterface
+	inner         *ArbitratorMachine
 	incorrectStep uint64
 	stepCount     uint64
 }
 
+var badGlobalState = GoGlobalState{Batch: 0xbadbadbadbad, PosInBatch: 0xbadbadbadbad}
+
 var _ MachineInterface = (*IncorrectMachine)(nil)
 
-func NewIncorrectMachine(inner MachineInterface, incorrectStep uint64) *IncorrectMachine {
+func NewIncorrectMachine(inner *ArbitratorMachine, incorrectStep uint64) *IncorrectMachine {
 	return &IncorrectMachine{
-		inner:         inner,
+		inner:         inner.Clone(),
 		incorrectStep: incorrectStep,
 	}
 }
 
-func IncorrectMachineHash(correctHash common.Hash) common.Hash {
-	correctHash[0] ^= 0xF0
-	correctHash[31] ^= 0x0F
-	return correctHash
-}
-
 func (m *IncorrectMachine) CloneMachineInterface() MachineInterface {
 	return &IncorrectMachine{
-		inner:         m.inner.CloneMachineInterface(),
+		inner:         m.inner.Clone(),
 		incorrectStep: m.incorrectStep,
 		stepCount:     m.stepCount,
 	}
+}
+
+func (m *IncorrectMachine) GetGlobalState() GoGlobalState {
+	if m.GetStepCount() >= m.incorrectStep {
+		return badGlobalState
+	}
+	return m.inner.GetGlobalState()
 }
 
 func (m *IncorrectMachine) GetStepCount() uint64 {
@@ -73,11 +76,18 @@ func (m *IncorrectMachine) Step(ctx context.Context, count uint64) error {
 }
 
 func (m *IncorrectMachine) Hash() common.Hash {
-	h := m.inner.Hash()
 	if m.GetStepCount() >= m.incorrectStep {
-		h = IncorrectMachineHash(h)
+		if m.inner.IsErrored() {
+			return common.HexToHash("0xbad00000bad00000bad00000bad00000")
+		}
+		beforeGs := m.inner.GetGlobalState()
+		if beforeGs != badGlobalState {
+			if err := m.inner.SetGlobalState(badGlobalState); err != nil {
+				panic(err)
+			}
+		}
 	}
-	return h
+	return m.inner.Hash()
 }
 
 func (m *IncorrectMachine) ProveNextStep() []byte {
