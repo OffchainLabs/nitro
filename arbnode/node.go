@@ -596,7 +596,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
-	} else if !config.Sequencer.Enable {
+	} else if config.Sequencer.Enable {
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
