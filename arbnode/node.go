@@ -8,9 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
@@ -387,20 +388,40 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 }
 
+type DangerousSequencerConfig struct {
+	NoCoordinator bool `koanf:"no-coordinator"`
+}
+
+var DefaultDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: false,
+}
+
+var TestDangerousSequencerConfig = DangerousSequencerConfig{
+	NoCoordinator: true,
+}
+
+func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".no-coordinator", DefaultDangerousSequencerConfig.NoCoordinator, "DANGEROUS! allows sequencer without coordinator.")
+}
+
 type SequencerConfig struct {
-	Enable bool `koanf:"enable"`
+	Enable    bool                     `koanf:"enable"`
+	Dangerous DangerousSequencerConfig `koanf:"dangerous"`
 }
 
 var DefaultSequencerConfig = SequencerConfig{
-	Enable: false,
+	Enable:    false,
+	Dangerous: DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
-	Enable: true,
+	Enable:    true,
+	Dangerous: TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type WasmConfig struct {
@@ -438,7 +459,7 @@ type Node struct {
 	SeqCoordinator   *SeqCoordinator
 }
 
-func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (*Node, error) {
+func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (*Node, error) {
 	var broadcastServer *broadcaster.Broadcaster
 	if config.Feed.Output.Enable {
 		broadcastServer = broadcaster.NewBroadcaster(config.Feed.Output)
@@ -463,11 +484,14 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	}
 	var txPublisher TransactionPublisher
 	var coordinator *SeqCoordinator
+	var sequencer *Sequencer
 	if config.Sequencer.Enable {
 		if config.ForwardingTarget() != "" {
 			return nil, errors.New("sequencer and forwarding target both set")
 		}
-		var sequencer *Sequencer
+		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
+			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
+		}
 		if config.EnableL1Reader {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
@@ -480,20 +504,20 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			return nil, err
 		}
 		txPublisher = sequencer
-		if config.SeqCoordinator.Enable {
-			coordinator, err = NewSeqCoordinator(txStreamer, sequencer, config.SeqCoordinator)
-			if err != nil {
-				return nil, err
-			}
-		}
 	} else {
-		if config.SeqCoordinator.Enable {
-			return nil, errors.New("sequencer coordinator without sequencer")
+		if config.DelayedSequencer.Enable {
+			return nil, errors.New("cannot have delayedsequencer without sequencer")
 		}
 		if config.ForwardingTarget() == "" {
 			txPublisher = NewTxDropper()
 		} else {
 			txPublisher = NewForwarder(config.ForwardingTarget())
+		}
+	}
+	if config.SeqCoordinator.Enable {
+		coordinator, err = NewSeqCoordinator(txStreamer, sequencer, config.SeqCoordinator)
+		if err != nil {
+			return nil, err
 		}
 	}
 	arbInterface, err := NewArbInterface(txStreamer, txPublisher)
@@ -546,7 +570,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	var staker *validator.Staker
 	if config.Validator.Enable {
 		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
-		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, validatorTxOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}
@@ -556,21 +580,26 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 
-	if !config.BatchPoster.Enable {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, nil, nil, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	var batchPoster *BatchPoster
+	var delayedSequencer *DelayedSequencer
+	if config.BatchPoster.Enable {
+		if txOpts == nil {
+			return nil, errors.New("batchposter, but no TxOpts")
+		}
+		batchPoster, err = NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if config.DelayedSequencer.Enable {
+		delayedSequencer, err = NewDelayedSequencer(l1client, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
+		if err != nil {
+			return nil, err
+		}
+	} else if config.Sequencer.Enable {
+		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	if sequencerTxOpt == nil {
-		return nil, errors.New("sequencerTxOpts is nil")
-	}
-	delayedSequencer, err := NewDelayedSequencer(l1client, inboxReader, txStreamer, &(config.DelayedSequencer))
-	if err != nil {
-		return nil, err
-	}
-	batchPoster, err := NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, sequencerTxOpt, dataAvailabilityService)
-	if err != nil {
-		return nil, err
-	}
 	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
@@ -587,8 +616,8 @@ func (l arbNodeLifecycle) Stop() error {
 	return nil
 }
 
-func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, sequencerTxOpt *bind.TransactOpts, validatorTxOpts *bind.TransactOpts) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, sequencerTxOpt, validatorTxOpts)
+func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
+	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
 	if err != nil {
 		return nil, err
 	}
