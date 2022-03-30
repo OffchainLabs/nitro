@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
 	"math/big"
 
@@ -83,6 +84,14 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 		}
 
 		if len(payload) > 0 {
+			if IsZeroheavyEncodedHeaderByte(data[40]) {
+				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(5*maxDecompressedLen+2)))
+				if err != nil {
+					log.Warn("error reading from zeroheavy decoder", err.Error())
+					pl = []byte{}
+				}
+				payload = pl
+			}
 			decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
 			if err == nil {
 				reader := bytes.NewReader(decompressed)

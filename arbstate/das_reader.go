@@ -23,8 +23,15 @@ const DASMessageHeaderFlag byte = 0x80
 // Indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
 
+// Indicates that this message is zeroheavy-encoded.
+const ZeroheavyMessageHeaderFlag byte = 0x20
+
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
+}
+
+func IsZeroheavyEncodedHeaderByte(header byte) bool {
+	return (ZeroheavyMessageHeaderFlag & header) > 0
 }
 
 type DataAvailabilityCertificate struct {
