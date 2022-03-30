@@ -433,5 +433,5 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
-	receipt.GasForL1Cost = p.posterGas
+	receipt.GasUsedForL1 = p.posterGas
 }
