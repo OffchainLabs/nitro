@@ -164,25 +164,31 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		timeout := time.After(d.config.TimeAggregate)
-	AggregateWaitLoop:
-		for {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-timeout:
-				break AggregateWaitLoop
-			case newHeader, ok := <-headerChan:
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				if !ok {
-					return errors.New("header channel closed")
-				}
-				if d.waitingForBlock == nil || newHeader.Number.Cmp(d.waitingForBlock) >= 0 {
-					break AggregateWaitLoop
+
+		exit, err := func() (bool, error) {
+			timeoutTimer := time.NewTimer(d.config.TimeAggregate)
+			defer timeoutTimer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return true, nil
+				case <-timeoutTimer.C:
+					return false, nil
+				case newHeader, ok := <-headerChan:
+					if ctx.Err() != nil {
+						return true, ctx.Err()
+					}
+					if !ok {
+						return true, errors.New("header channel closed")
+					}
+					if d.waitingForBlock == nil || newHeader.Number.Cmp(d.waitingForBlock) >= 0 {
+						return false, nil
+					}
 				}
 			}
+		}()
+		if err != nil || exit {
+			return err
 		}
 	}
 }

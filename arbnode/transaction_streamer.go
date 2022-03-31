@@ -690,12 +690,17 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("error creating blocks", "err", err.Error())
 			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.newMessageNotifier:
-			case <-time.After(10 * time.Second):
-			}
+			func() {
+				timer := time.NewTimer(10 * time.Second)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return
+				case <-s.newMessageNotifier:
+				case <-timer.C:
+				}
+			}()
+
 		}
 	})
 }

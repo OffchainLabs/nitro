@@ -21,16 +21,18 @@ type predicate interface {
 }
 
 func waitUntilUpdated(t *testing.T, p predicate) {
-	updateTimeout := time.After(2 * time.Second)
+	updateTimer := time.NewTimer(2 * time.Second)
+	defer updateTimer.Stop()
 	for {
 		if p.Test() {
 			break
 		}
 		select {
-		case <-updateTimeout:
+		case <-updateTimer.C:
 			t.Fatalf("%s", p.Error())
-		case <-time.After(10 * time.Millisecond):
+		default:
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
