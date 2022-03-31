@@ -6,6 +6,7 @@ package broadcastclient
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"math/big"
@@ -134,6 +135,9 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	timeoutDialer := ws.Dialer{
 		Timeout: 10 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	if bc.isShuttingDown() {
