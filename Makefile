@@ -302,6 +302,10 @@ solgen/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/
 solgen/test/prover/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
 
+# avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
+solgen/test/prover/proofs/read-inboxmsg-10.json:
+	echo "[]" > $@
+
 solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
