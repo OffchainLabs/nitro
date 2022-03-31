@@ -56,7 +56,9 @@ services:
 
   sequencer:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7545:7545"
       - "7546:7546"
@@ -113,7 +115,9 @@ services:
 
   staker-unsafe:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7545"
       - "7546"
@@ -143,7 +147,9 @@ services:
 
   validator:
     pid: host # allow debugging
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "7547:7547"
       - "7548:7548"
@@ -166,7 +172,9 @@ services:
 
   relay:
     pid: host
-    build: .
+    build:
+      context: .
+      target: nitro-node
     ports:
       - "9652:9652"
     entrypoint: target/bin/relay
