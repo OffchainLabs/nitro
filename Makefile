@@ -70,6 +70,7 @@ build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-
 test-go-deps: \
 	build-replay-env \
 	arbitrator/prover/test-cases/global-state.wasm \
+	arbitrator/prover/test-cases/read-inboxmsg-10.wasm \
 	arbitrator/prover/test-cases/global-state-wrapper.wasm \
 	arbitrator/prover/test-cases/const.wasm
 
