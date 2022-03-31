@@ -690,11 +690,14 @@ func (s *TransactionStreamer) Start(ctxIn context.Context) {
 			if err != nil && !errors.Is(err, context.Canceled) {
 				log.Error("error creating blocks", "err", err.Error())
 			}
+			timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			select {
-			case <-ctx.Done():
-				return
+			case <-timeoutCtx.Done():
 			case <-s.newMessageNotifier:
-			case <-time.After(10 * time.Second):
+			}
+			cancel()
+			if ctx.Err() != nil {
+				return
 			}
 		}
 	})

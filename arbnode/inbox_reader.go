@@ -345,10 +345,9 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 		// TODO feed reading
-		select {
-		case <-ctx.Done():
+		util.WaitForContextOrTimeout(ctx, ir.config.CheckDelay)
+		if ctx.Err() != nil {
 			return nil
-		case <-time.After(ir.config.CheckDelay):
 		}
 	}
 }

@@ -114,10 +114,9 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
-			select {
-			case <-ctx.Done():
+			util.WaitForContextOrTimeout(ctx, 5*time.Second)
+			if ctx.Err() != nil {
 				return
-			case <-time.After(5 * time.Second):
 			}
 		}
 	})
@@ -238,10 +237,9 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {
-		select {
-		case <-ctx.Done():
+		util.WaitForContextOrTimeout(ctx, waitDuration)
+		if ctx.Err() != nil {
 			return nil
-		case <-time.After(waitDuration):
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)

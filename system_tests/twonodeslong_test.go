@@ -192,7 +192,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		} else {
 			timeout = time.Hour * 12
 		}
-		if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), timeout) {
+		timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if !nodeB.BlockValidator.WaitForBlock(timeoutCtx, lastBlockHeader.Number.Uint64()) {
 			Fail(t, "did not validate all blocks")
 		}
 	}

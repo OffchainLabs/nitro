@@ -91,7 +91,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	Require(t, err)
 	testDeadLine, _ := t.Deadline()
 	nodeA.StopAndWait()
-	if !nodeB.BlockValidator.WaitForBlock(lastBlockHeader.Number.Uint64(), time.Until(testDeadLine)-time.Second*10) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Until(testDeadLine)-time.Second*10)
+	defer cancel()
+	if !nodeB.BlockValidator.WaitForBlock(timeoutCtx, lastBlockHeader.Number.Uint64()) {
 		Fail(t, "did not validate all blocks")
 	}
 	nodeB.StopAndWait()

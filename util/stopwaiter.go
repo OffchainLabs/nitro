@@ -96,15 +96,9 @@ func (s *StopWaiterSafe) CallIteratively(foo func(context.Context) time.Duration
 	return s.LaunchThread(func(ctx context.Context) {
 		for {
 			interval := foo(ctx)
+			WaitForContextOrTimeout(ctx, interval)
 			if ctx.Err() != nil {
 				return
-			}
-			timer := time.NewTimer(interval)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
 			}
 		}
 	})
@@ -139,4 +133,10 @@ func (s *StopWaiter) GetContext() context.Context {
 		panic(err)
 	}
 	return ctx
+}
+
+func WaitForContextOrTimeout(ctx context.Context, timeout time.Duration) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	<-timeoutCtx.Done()
+	cancel()
 }

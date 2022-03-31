@@ -95,6 +95,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 		defer wg.Done()
 		defer broadcastClient.StopAndWait()
 		for {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			gotMsg := false
 			select {
 			case <-ts.messageReceiver:
@@ -102,18 +103,18 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 				gotMsg = true
 
 				if messageCount == expectedCount {
+					cancel()
 					return
 				}
-			case <-time.After(60 * time.Second):
-			case <-ctx.Done():
+			case <-timeoutCtx.Done():
 			}
+			cancel()
 			if !gotMsg {
 				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
 		}
 	}()
-
 }
 
 func TestServerClientDisconnect(t *testing.T) {
@@ -145,23 +146,26 @@ func TestServerClientDisconnect(t *testing.T) {
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
 
 	// Wait for client to receive batch to ensure it is connected
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	select {
 	case receivedMsg := <-ts.messageReceiver:
 		t.Logf("Received Message, Sequence Message: %v\n", receivedMsg)
-	case <-time.After(5 * time.Second):
+	case <-timeoutCtx.Done():
 		t.Fatal("Client did not receive batch item")
 	}
 
 	broadcastClient.StopAndWait()
 
-	disconnectTimeout := time.After(5 * time.Second)
+	timeoutCtx, cancel = context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	for {
 		if b.ClientCount() == 0 {
 			break
 		}
 
 		select {
-		case <-disconnectTimeout:
+		case <-timeoutCtx.Done():
 			t.Fatal("Client was not disconnected")
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -246,14 +250,15 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	// Confirmed Accumulator will also broadcast to the clients.
 	b.Confirm(0) // remove the first message we generated
 
-	updateTimeout := time.After(2 * time.Second)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	for {
 		if b.GetCachedMessageCount() == 1 { // should have left the second message
 			break
 		}
 
 		select {
-		case <-updateTimeout:
+		case <-timeoutCtx.Done():
 			t.Fatal("confirmed accumulator did not get updated")
 		case <-time.After(10 * time.Millisecond):
 		}
@@ -262,14 +267,15 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	// Send second accumulator again so that the previously added accumulator is sent
 	b.Confirm(1)
 
-	updateTimeout = time.After(2 * time.Second)
+	timeoutCtx, cancel = context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	for {
 		if b.GetCachedMessageCount() == 0 { // should have left the second message
 			break
 		}
 
 		select {
-		case <-updateTimeout:
+		case <-timeoutCtx.Done():
 			t.Fatal("cache did not get cleared")
 		case <-time.After(10 * time.Millisecond):
 		}
@@ -287,12 +293,13 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.
 
 		gotMsg := false
 		// Wait for client to receive first item
+		timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
-		case <-time.After(10 * time.Second):
-		case <-ctx.Done():
+		case <-timeoutCtx.Done():
 		}
 		if !gotMsg {
 			t.Errorf("client %d did not receive first batch item\n", clientIndex)
@@ -301,17 +308,17 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.
 
 		gotMsg = false
 		// Wait for client to receive second item
+		timeoutCtx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
-		case <-time.After(10 * time.Second):
-		case <-ctx.Done():
+		case <-timeoutCtx.Done():
 		}
 		if !gotMsg {
 			t.Errorf("client %d did not receive second batch item\n", clientIndex)
 			return
 		}
-
 	}()
 }
