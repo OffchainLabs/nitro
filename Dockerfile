@@ -58,6 +58,7 @@ COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
+COPY ./zeroheavy ./zeroheavy
 COPY ./solgen/src/precompiles/ ./solgen/src/precompiles/
 COPY ./solgen/gen.go ./solgen/package.json ./solgen/yarn.lock ./solgen/
 COPY ./fastcache ./fastcache
