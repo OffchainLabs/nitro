@@ -6,11 +6,14 @@ package zeroheavy
 import (
 	"bytes"
 	"errors"
-	"github.com/offchainlabs/nitro/arbcompress"
 	"io"
 	"math/rand"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestZeroheavyNullInput(t *testing.T) {
@@ -22,10 +25,10 @@ func TestZeroheavyNullInput(t *testing.T) {
 	var buf [256]byte
 	n, err := dec.Read(buf[:])
 	if !errors.Is(err, io.EOF) {
-		t.Fatal()
+		Fail(t)
 	}
 	if n != 0 {
-		t.Fatal(n, buf[0])
+		Fail(t, n, buf[0])
 	}
 }
 
@@ -37,53 +40,45 @@ func TestZeroHeavyOneByte(t *testing.T) {
 		dec := NewZeroheavyDecoder(enc)
 
 		buf, err := io.ReadAll(dec)
-		if err != nil {
-			t.Error(err)
-		}
+		ShowError(t, err)
+
 		if len(buf) != 1 {
-			t.Fatal(i, len(buf))
+			Fail(t, i, len(buf))
 		}
 		if buf[0] != byte(i) {
-			t.Fatal(buf[0], i)
+			Fail(t, buf[0], i)
 		}
 	}
 }
 
 func TestZeroHeavyRandomData(t *testing.T) {
-	rand.Seed(0)
+	rand.Seed(time.Now().UTC().UnixNano())
 	for i := 0; i < 1024; i++ {
 		size := rand.Uint64() % 4096
-		inBuf := make([]byte, size)
-		_, _ = rand.Read(inBuf)
+		inBuf := testhelpers.RandomizeSlice(make([]byte, size))
 		dec := NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(inBuf)))
 		res, err := io.ReadAll(dec)
-		if err != nil {
-			t.Error(err)
-		}
+		ShowError(t, err)
 		if !bytes.Equal(inBuf, res) {
-			t.Fatal()
+			Fail(t, size, inBuf)
 		}
 	}
 }
 
-func TestZeroHeadyAndBrotli(t *testing.T) {
+func TestZeroHeavyAndBrotli(t *testing.T) {
 	inData, err := os.ReadFile("../go.sum")
-	if err != nil {
-		t.Error(err)
-	}
+	ShowError(t, err)
+
 	bout, err := arbcompress.CompressWell(inData)
-	if err != nil {
-		t.Error(err)
-	}
+	ShowError(t, err)
+
 	zhout, err := io.ReadAll(NewZeroheavyDecoder(NewZeroheavyEncoder(bytes.NewReader(bout))))
-	if err != nil {
-		t.Error(err)
-	}
-	res, err := arbcompress.Decompress(zhout, len(inData)+1)
-	if err != nil {
-		t.Error(err)
-	}
+	ShowError(t, err)
+
+	res, err := arbcompress.Decompress(zhout, len(inData))
+	ShowError(t, err)
+
 	if !bytes.Equal(inData, res) {
-		t.Fatal()
+		Fail(t)
 	}
 }
