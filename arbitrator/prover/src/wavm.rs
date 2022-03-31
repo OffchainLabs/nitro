@@ -283,15 +283,15 @@ impl Opcode {
     }
 
     pub fn is_host_io(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::GetGlobalStateBytes32
-            | Opcode::SetGlobalStateBytes32
-            | Opcode::GetGlobalStateU64
-            | Opcode::SetGlobalStateU64
-            | Opcode::ReadPreImage
-            | Opcode::ReadInboxMessage => true,
-            _ => false,
-        }
+                | Opcode::SetGlobalStateBytes32
+                | Opcode::GetGlobalStateU64
+                | Opcode::SetGlobalStateU64
+                | Opcode::ReadPreImage
+                | Opcode::ReadInboxMessage
+        )
     }
 }
 

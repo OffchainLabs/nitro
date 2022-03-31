@@ -44,11 +44,11 @@ pub enum InboxIdentifier {
     Delayed,
 }
 
-pub fn argument_data_to_inbox(argument_data: u64) -> Result<InboxIdentifier, ()> {
+pub fn argument_data_to_inbox(argument_data: u64) -> Option<InboxIdentifier> {
     match argument_data {
-        0x0 => Ok(InboxIdentifier::Sequencer),
-        0x1 => Ok(InboxIdentifier::Delayed),
-        _ => Err(()),
+        0x0 => Some(InboxIdentifier::Sequencer),
+        0x1 => Some(InboxIdentifier::Delayed),
+        _ => None,
     }
 }
 
@@ -222,8 +222,7 @@ struct Table {
 
 impl Table {
     fn serialize_for_proof(&self) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.push(Into::<ValueType>::into(self.ty.ty).serialize());
+        let mut data = vec![Into::<ValueType>::into(self.ty.ty).serialize()];
         data.extend(&(self.elems.len() as u64).to_be_bytes());
         data.extend(self.elems_merkle.root());
         data
@@ -240,10 +239,11 @@ impl Table {
 }
 
 fn make_internal_func(opcode: Opcode, ty: FunctionType) -> Function {
-    let mut wavm = Vec::new();
-    wavm.push(Instruction::simple(Opcode::InitFrame));
-    wavm.push(Instruction::simple(opcode));
-    wavm.push(Instruction::simple(Opcode::Return));
+    let wavm = vec![
+        Instruction::simple(Opcode::InitFrame),
+        Instruction::simple(opcode),
+        Instruction::simple(Opcode::Return),
+    ];
     Function::new_from_wavm(wavm, ty, Vec::new())
 }
 
@@ -296,13 +296,14 @@ impl Module {
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
                         import.ty, have_ty,
                     );
-                    let mut wavm = Vec::new();
-                    wavm.push(Instruction::simple(Opcode::InitFrame));
-                    wavm.push(Instruction::with_data(
-                        Opcode::CrossModuleCall,
-                        pack_cross_module_call(import.func, import.module),
-                    ));
-                    wavm.push(Instruction::simple(Opcode::Return));
+                    let wavm = vec![
+                        Instruction::simple(Opcode::InitFrame),
+                        Instruction::with_data(
+                            Opcode::CrossModuleCall,
+                            pack_cross_module_call(import.func, import.module),
+                        ),
+                        Instruction::simple(Opcode::Return),
+                    ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
                     func = get_host_impl(
@@ -610,13 +611,13 @@ impl Deref for LazyModuleMerkle<'_> {
     type Target = Module;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
 impl DerefMut for LazyModuleMerkle<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        self.0
     }
 }
 
@@ -761,10 +762,9 @@ where
     if matches!(
         op,
         IBinOpType::DivS | IBinOpType::DivU | IBinOpType::RemS | IBinOpType::RemU,
-    ) {
-        if b.is_zero() {
-            return T::zero();
-        }
+    ) && b.is_zero()
+    {
+        return T::zero();
     }
     let res = match op {
         IBinOpType::Add => a + b,
@@ -856,7 +856,7 @@ impl Machine {
                     name.clone(),
                     AvailableImport {
                         module: modules.len() as u32,
-                        func: func,
+                        func,
                         ty: ty.clone(),
                     },
                 );
@@ -1477,7 +1477,6 @@ impl Machine {
                     v => panic!("WASM validation failed: bad value for memory.grow {:?}", v),
                 };
                 let new_size = (|| {
-                    let old_size = u64::try_from(old_size).ok()?;
                     let adding_size =
                         u64::from(adding_pages).checked_mul(Memory::PAGE_SIZE as u64)?;
                     let new_size = old_size.checked_add(adding_size)?;
@@ -1616,11 +1615,10 @@ impl Machine {
             Opcode::GetGlobalStateBytes32 => {
                 let ptr = self.value_stack.pop().unwrap().assume_u32();
                 let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
-                if idx >= self.global_state.bytes32_vals.len() {
-                    self.status = MachineStatus::Errored;
-                } else if !module
-                    .memory
-                    .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
+                if idx >= self.global_state.bytes32_vals.len()
+                    || !module
+                        .memory
+                        .store_slice_aligned(ptr.into(), &*self.global_state.bytes32_vals[idx])
                 {
                     self.status = MachineStatus::Errored;
                 }
@@ -1834,9 +1832,7 @@ impl Machine {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
 
-        let mut data = Vec::new();
-
-        data.push(self.status as u8);
+        let mut data = vec![self.status as u8];
 
         data.extend(prove_stack(
             &self.value_stack,
@@ -2051,8 +2047,8 @@ impl Machine {
                             .get(self.value_stack.len() - 3)
                             .unwrap()
                             .assume_u64();
-                        let inbox_identifier =
-                            argument_data_to_inbox(next_inst.argument_data).unwrap();
+                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data)
+                            .expect("Bad inbox indentifier");
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
@@ -2110,11 +2106,8 @@ impl Machine {
         };
         push_pc(self.pc);
         for frame in self.frame_stack.iter().rev() {
-            match frame.return_ref {
-                Value::InternalRef(pc) => {
-                    push_pc(pc);
-                }
-                _ => {}
+            if let Value::InternalRef(pc) = frame.return_ref {
+                push_pc(pc);
             }
         }
         res
