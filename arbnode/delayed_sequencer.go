@@ -170,8 +170,11 @@ func (d *DelayedSequencer) run(ctx context.Context) error {
 			for {
 				select {
 				case <-timeoutCtx.Done():
-					if ctx.Err() != nil {
-						return true, nil
+					if err := ctx.Err(); err != nil {
+						if errors.Is(err, context.Canceled) {
+							return true, nil
+						}
+						return true, err
 					}
 					return false, nil
 				case newHeader, ok := <-headerChan:

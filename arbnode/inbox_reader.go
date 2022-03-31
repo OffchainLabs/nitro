@@ -346,8 +346,11 @@ func (ir *InboxReader) run(ctx context.Context) error {
 		}
 		// TODO feed reading
 		util.WaitForContextOrTimeout(ctx, ir.config.CheckDelay)
-		if ctx.Err() != nil {
-			return nil
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return err
 		}
 	}
 }
