@@ -53,6 +53,7 @@ type sequencerMessage struct {
 }
 
 const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
 func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
@@ -85,7 +86,7 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 
 		if len(payload) > 0 {
 			if IsZeroheavyEncodedHeaderByte(data[40]) {
-				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(5*maxDecompressedLen+2)))
+				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(maxZeroheavyDecompressedLen)))
 				if err != nil {
 					log.Warn("error reading from zeroheavy decoder", err.Error())
 					pl = []byte{}
