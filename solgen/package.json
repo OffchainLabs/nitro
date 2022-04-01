@@ -4,7 +4,15 @@
   "description": "Layer 2 precompiles for Arbitrum Nitro",
   "main": "index.js",
   "author": "Offchain Labs, Inc.",
-  "license": "Apache-2.0",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/offchainlabs/nitro.git",
+    "directory": "solgen"
+  },
+  "bugs": {
+    "url": "https://github.com/offchainlabs/nitro/issues"
+  },
   "scripts": {
     "build": "./scripts/build.sh",
     "solhint": "solhint -f table src/**/*.sol",
