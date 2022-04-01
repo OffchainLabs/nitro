@@ -2,9 +2,10 @@
 
 pragma solidity >=0.4.21 <0.9.0;
 
-/** @title Interface for providing gas estimation for retryable auto-redeems
- *  @notice This contract doesn't exist on-chain. Instead it is a virtual interface accessible at 0x00000000000000000000000000000000000000C8
- *  This is a cute trick to allow an Arbitrum node to provide data without us having to implement an additional RPC
+/** @title Interface for providing gas estimation for retryable auto-redeems and constructing outbox proofs
+ *  @notice This contract doesn't exist on-chain. Instead it is a virtual interface accessible at
+ *  0x00000000000000000000000000000000000000C8
+ *  This is a cute trick to allow an Arbitrum node to provide data without us having to implement additional RPCs
  */
 
 interface NodeInterface {
@@ -27,4 +28,18 @@ interface NodeInterface {
         address callValueRefundAddress,
         bytes calldata data
     ) external;
+
+    /**
+     * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator
+     * @param send the l2->l1 send's hash
+     * @param root the root of the outbox accumulator
+     * @param size the number of elements in the accumulator at the time of the given root
+     * @param leaf the position of the send in the accumulator
+     */
+    function constructOutboxProof(
+        bytes32 send,
+        bytes32 root,
+        uint64 size,
+        uint64 leaf
+    ) external returns (bytes32[] memory);
 }
