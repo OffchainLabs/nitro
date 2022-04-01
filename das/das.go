@@ -68,15 +68,13 @@ func DataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func serializeSignableFields(c arbstate.DataAvailabilityCertificate) []byte {
-	buf := make([]byte, 0, 32+8+8)
+	buf := make([]byte, 0, 32+8)
 	buf = append(buf, c.DataHash[:]...)
 
 	var intData [8]byte
 	binary.BigEndian.PutUint64(intData[:], c.Timeout)
 	buf = append(buf, intData[:]...)
 
-	binary.BigEndian.PutUint64(intData[:], c.SignersMask)
-	buf = append(buf, intData[:]...)
 	return buf
 }
 
