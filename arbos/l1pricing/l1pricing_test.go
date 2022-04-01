@@ -5,11 +5,12 @@
 package l1pricing
 
 import (
-	"github.com/offchainlabs/nitro/arbos/burn"
-	"github.com/offchainlabs/nitro/arbos/storage"
 	"math"
 	"math/big"
 	"testing"
+
+	"github.com/offchainlabs/nitro/arbos/burn"
+	"github.com/offchainlabs/nitro/arbos/storage"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -43,55 +44,46 @@ func TestTxFixedCost(t *testing.T) {
 		S:          maxSigVal,
 	})
 	largeTxEncoded, err := largeTx.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
+	Require(t, err)
+
 	if len(largeTxEncoded) > TxFixedCost {
-		t.Fatal("large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCost)
+		Fail(t, "large tx is", len(largeTxEncoded), "bytes but tx fixed cost is", TxFixedCost)
 	}
 }
 
 func TestL1PriceUpdate(t *testing.T) {
 	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
 	err := InitializeL1PricingState(sto)
-	if err != nil {
-		t.Error(err)
-	}
+	Require(t, err)
 	ps := OpenL1PricingState(sto)
 
 	tyme, err := ps.LastL1BaseFeeUpdateTime()
-	if err != nil {
-		t.Error(err)
-	}
+	Require(t, err)
 	if tyme != 0 {
 		t.Fatal()
 	}
 
 	priceEstimate, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		t.Error(err)
-	}
+	Require(t, err)
 	if priceEstimate.Cmp(big.NewInt(InitialL1BaseFeeEstimate)) != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	newPrice := big.NewInt(20 * params.GWei)
 	ps.UpdatePricingModel(newPrice, 2)
 	priceEstimate, err = ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		t.Error(err)
-	}
+	Require(t, err)
+
 	if priceEstimate.Cmp(newPrice) <= 0 || priceEstimate.Cmp(big.NewInt(InitialL1BaseFeeEstimate)) >= 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	ps.UpdatePricingModel(newPrice, uint64(1)<<63)
 	priceEstimate, err = ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		t.Error(err)
-	}
+	Require(t, err)
+
 	priceLimit := new(big.Int).Add(newPrice, big.NewInt(300))
 	if priceEstimate.Cmp(priceLimit) > 0 || priceEstimate.Cmp(newPrice) < 0 {
-		t.Fatal(priceEstimate)
+		Fail(t, priceEstimate)
 	}
 }
