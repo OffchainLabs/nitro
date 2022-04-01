@@ -11,6 +11,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -82,8 +83,8 @@ func TestL1PriceUpdate(t *testing.T) {
 	priceEstimate, err = ps.L1BaseFeeEstimateWei()
 	Require(t, err)
 
-	priceLimit := new(big.Int).Add(newPrice, big.NewInt(300))
-	if priceEstimate.Cmp(priceLimit) > 0 || priceEstimate.Cmp(newPrice) < 0 {
+	priceLimit := arbmath.BigAdd(newPrice, big.NewInt(300))
+	if arbmath.BigGreaterThan(priceEstimate, priceLimit) || arbmath.BigLessThan(priceEstimate, newPrice) {
 		Fail(t, priceEstimate)
 	}
 }

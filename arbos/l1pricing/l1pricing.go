@@ -102,7 +102,7 @@ func (ps *L1PricingState) SetLastL1BaseFeeUpdateTime(t uint64) error {
 	return ps.lastL1BaseFeeUpdateTime.Set(t)
 }
 
-// Update the pricing model with a finalized block's header
+// Update the pricing model with info from the start of a block
 func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, currentTime uint64) {
 
 	if baseFeeSample.Sign() == 0 {
