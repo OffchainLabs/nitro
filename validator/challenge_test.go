@@ -278,15 +278,15 @@ func TestChallengeToTimeout(t *testing.T) {
 func TestChallengeToTooFar(t *testing.T) {
 	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
 	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
-	IncorrectMachine := machine.Clone()
-	Require(t, IncorrectMachine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
-	runChallengeTest(t, machine, IncorrectMachine, false, false, 9)
+	incorrectMachine := machine.Clone()
+	Require(t, incorrectMachine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
+	runChallengeTest(t, machine, incorrectMachine, false, false, 9)
 }
 
 func TestChallengeToFailedTooFar(t *testing.T) {
 	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
 	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
-	IncorrectMachine := machine.Clone()
+	incorrectMachine := machine.Clone()
 	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
-	runChallengeTest(t, machine, IncorrectMachine, true, false, 11)
+	runChallengeTest(t, machine, incorrectMachine, true, false, 11)
 }
