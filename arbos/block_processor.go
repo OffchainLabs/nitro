@@ -36,7 +36,7 @@ var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
 func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.GasPriceWei()
+	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash

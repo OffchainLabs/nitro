@@ -62,7 +62,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver
+build: $(output_root)/bin/node $(output_root)/bin/deploy $(output_root)/bin/relay $(output_root)/bin/daserver $(output_root)/bin/seq-coordinator-invalidate
 	@printf $(done)
 
 build-node-deps: $(go_source) $(das_rpc_files) build-prover-header build-prover-lib .make/solgen .make/cbrotli-lib
@@ -136,7 +136,7 @@ clean:
 	@rm -f .make/*
 
 docker:
-	docker build -t nitro-node .
+	docker build -t nitro-node --target nitro-node .
 
 # regular build rules
 
@@ -151,6 +151,9 @@ $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/daserver: $(DEP_PREDICATE) build-node-deps
 	go build -o $@ ./cmd/daserver
+
+$(output_root)/bin/seq-coordinator-invalidate: $(DEP_PREDICATE) build-node-deps
+	go build -o $@ ./cmd/seq-coordinator-invalidate
 
 # recompile wasm, but don't change timestamp unless files differ
 $(replay_wasm): $(DEP_PREDICATE) $(go_source) .make/solgen

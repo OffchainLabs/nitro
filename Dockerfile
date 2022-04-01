@@ -58,6 +58,7 @@ COPY ./precompiles ./precompiles
 COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
+COPY ./zeroheavy ./zeroheavy
 COPY ./solgen/src/precompiles/ ./solgen/src/precompiles/
 COPY ./solgen/gen.go ./solgen/package.json ./solgen/yarn.lock ./solgen/
 COPY ./fastcache ./fastcache
@@ -148,3 +149,16 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 COPY --from=node-builder /workspace/target/ target/
 COPY --from=machine-export / target/
 ENTRYPOINT [ "./target/bin/node" ]
+
+FROM nitro-node as nitro-node-dist
+WORKDIR /workspace
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y curl \
+        procps jq rsync \
+        node-ws vim-tiny libatomic1 python3 \
+        libgmp10 libssl1.1 \
+        libgoogle-perftools4 \
+        libgflags2.2 libsnappy1v5 libzstd1 dnsutils && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/* /usr/share/doc/*

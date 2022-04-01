@@ -464,26 +464,13 @@ abstract contract AbsRollupUserLogic is
         ];
         uint256 firstUnresolvedAge = _blockNumber - firstUnresolvedDeadline;
         uint256 periodsPassed = (firstUnresolvedAge * 10) / confirmPeriodBlocks;
-        // Overflow check
-        if (periodsPassed / 10 >= 255) {
-            return type(uint256).max;
-        }
         uint256 baseMultiplier = 2**(periodsPassed / 10);
         uint256 withNumerator = baseMultiplier * numerators[periodsPassed % 10];
-        // Overflow check
-        if (withNumerator / baseMultiplier != numerators[periodsPassed % 10]) {
-            return type(uint256).max;
-        }
         uint256 multiplier = withNumerator / denominators[periodsPassed % 10];
         if (multiplier == 0) {
             multiplier = 1;
         }
-        uint256 fullStake = baseStake * multiplier;
-        // Overflow check
-        if (fullStake / baseStake != multiplier) {
-            return type(uint256).max;
-        }
-        return fullStake;
+        return baseStake * multiplier;
     }
 
     /**

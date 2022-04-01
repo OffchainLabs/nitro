@@ -7,10 +7,13 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
+	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/precompiles"
 )
 
@@ -74,6 +77,31 @@ func init() {
 			return nil
 		}
 		return errors.New(rendered)
+	}
+
+	types.ArbitrumSubmitRetryableTxDataHook = func(tx *types.ArbitrumSubmitRetryableTx) []byte {
+		toToEncode := common.Address{}
+		if tx.RetryTo != nil {
+			toToEncode = *tx.RetryTo
+		}
+		data, err := util.PackArbRetryableTxSubmitRetryable(
+			tx.RequestId,
+			tx.L1BaseFee,
+			tx.DepositValue,
+			tx.Value,
+			tx.GasFeeCap,
+			tx.Gas,
+			tx.MaxSubmissionFee,
+			tx.FeeRefundAddr,
+			tx.Beneficiary,
+			toToEncode,
+			tx.RetryData,
+		)
+		if err != nil {
+			log.Error("failed to abi-encode submission data", "err", err)
+			return nil
+		}
+		return data
 	}
 }
 

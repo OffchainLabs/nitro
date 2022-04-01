@@ -6,7 +6,6 @@ package l2pricing
 import (
 	"testing"
 
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -24,10 +23,7 @@ func PricingForTest(t *testing.T) *L2PricingState {
 func fakeBlockUpdate(t *testing.T, pricing *L2PricingState, gasUsed int64, timePassed uint64) {
 	basefee := getPrice(t, pricing)
 	pricing.storage.Burner().Restrict(pricing.AddToGasPool(-gasUsed))
-	header := &types.Header{
-		BaseFee: arbmath.UintToBig(basefee),
-	}
-	pricing.UpdatePricingModel(header, timePassed, true)
+	pricing.UpdatePricingModel(arbmath.UintToBig(basefee), timePassed, true)
 }
 
 func TestPricingModel(t *testing.T) {
@@ -136,13 +132,13 @@ func getGasPool(t *testing.T, pricing *L2PricingState) int64 {
 }
 
 func getPrice(t *testing.T, pricing *L2PricingState) uint64 {
-	value, err := pricing.GasPriceWei()
+	value, err := pricing.BaseFeeWei()
 	Require(t, err)
 	return arbmath.BigToUintOrPanic(value)
 }
 
 func getMinPrice(t *testing.T, pricing *L2PricingState) uint64 {
-	value, err := pricing.MinGasPriceWei()
+	value, err := pricing.MinBaseFeeWei()
 	Require(t, err)
 	return arbmath.BigToUintOrPanic(value)
 }

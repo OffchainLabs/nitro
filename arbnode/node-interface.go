@@ -48,7 +48,7 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 		l2CallValue, _ := inputs[3].(*big.Int)
 		excessFeeRefundAddress, _ := inputs[4].(common.Address)
 		callValueRefundAddress, _ := inputs[5].(common.Address)
-		data, _ := inputs[6].([]byte)
+		retryData, _ := inputs[6].([]byte)
 
 		var pRetryTo *common.Address
 		if retryTo != (common.Address{}) {
@@ -57,9 +57,9 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 
 		state, _ := arbosState.OpenSystemArbosState(statedb, true)
 		l1BaseFee, _ := state.L1PricingState().L1BaseFeeEstimateWei()
-		maxSubmissionFee := retryables.RetryableSubmissionFee(len(data), l1BaseFee)
+		maxSubmissionFee := retryables.RetryableSubmissionFee(len(retryData), l1BaseFee)
 
-		tx := types.NewTx(&types.ArbitrumSubmitRetryableTx{
+		submitTx := &types.ArbitrumSubmitRetryableTx{
 			ChainId:          nil,
 			RequestId:        common.Hash{},
 			From:             util.RemapL1Address(sender),
@@ -72,11 +72,11 @@ func ApplyNodeInterface(msg types.Message, statedb *state.StateDB, nodeInterface
 			Beneficiary:      callValueRefundAddress,
 			MaxSubmissionFee: maxSubmissionFee,
 			FeeRefundAddr:    excessFeeRefundAddress,
-			Data:             data,
-		})
+			RetryData:        retryData,
+		}
 
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-		return tx.AsMessage(types.NewArbitrumSigner(nil), nil)
+		return types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
 	}
 
 	return msg, errors.New("method does not exist in NodeInterface.sol")

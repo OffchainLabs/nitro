@@ -26,8 +26,6 @@ import (
 	glog "github.com/ethereum/go-ethereum/log"
 )
 
-var arbAddress = common.HexToAddress("0xa4b05")
-
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
 // Public fields are accessible in precompiles.
@@ -86,23 +84,27 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		if !evm.Config.Debug {
 			return func() {}
 		}
+		evm.IncrementDepth() // fake a call
 		tracer := evm.Config.Tracer
 		start := time.Now()
 		tracer.CaptureStart(evm, p.msg.From(), *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
-		return func() { tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil) }
+		return func() {
+			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
+			evm.DecrementDepth() // fake the return to the first faked call
+		}
 	}
 
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
 		defer (startTracer())()
-		if p.msg.From() != arbAddress {
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
 		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
-		if p.msg.From() != arbAddress {
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
 		ApplyInternalTxUpdate(tx, p.state, evm)
@@ -119,7 +121,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// mint funds with the deposit, then charge fees later
 		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 
-		submissionFee := retryables.RetryableSubmissionFee(len(tx.Data), tx.L1BaseFee)
+		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
 		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
 		if excessDeposit.Sign() < 0 {
 			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
@@ -147,7 +149,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			tx.RetryTo,
 			underlyingTx.Value(),
 			tx.Beneficiary,
-			tx.Data,
+			tx.RetryData,
 		)
 		p.state.Restrict(err)
 
@@ -238,7 +240,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
-		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
 
 		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
@@ -430,5 +432,5 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
-	receipt.L1GasUsed = p.posterGas
+	receipt.GasUsedForL1 = p.posterGas
 }

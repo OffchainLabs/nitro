@@ -199,7 +199,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if overflow {
+	if overflow || len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)

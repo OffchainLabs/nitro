@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
 	"math/big"
 
@@ -51,6 +52,8 @@ type sequencerMessage struct {
 }
 
 const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
+const MaxSegmentsPerSequencerMessage = 100 * 1024
 
 func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
@@ -81,6 +84,14 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 		}
 
 		if len(payload) > 0 {
+			if IsZeroheavyEncodedHeaderByte(data[40]) {
+				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(maxZeroheavyDecompressedLen)))
+				if err != nil {
+					log.Warn("error reading from zeroheavy decoder", err.Error())
+					pl = []byte{}
+				}
+				payload = pl
+			}
 			decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
 			if err == nil {
 				reader := bytes.NewReader(decompressed)
@@ -92,6 +103,10 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 							log.Warn("error parsing sequencer message segment", "err", err.Error())
 						}
+						break
+					}
+					if len(segments) >= MaxSegmentsPerSequencerMessage {
+						log.Warn("too many segments in sequence batch")
 						break
 					}
 					segments = append(segments, segment)
@@ -235,7 +250,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		segmentKind := segment[0]
 		if segmentKind == BatchSegmentKindAdvanceTimestamp || segmentKind == BatchSegmentKindAdvanceL1BlockNumber {
 			rd := bytes.NewReader(segment[1:])
-			advancing, err := rlp.NewStream(rd, 16).Uint()
+			advancing, err := rlp.NewStream(rd, 16).Uint64()
 			if err != nil {
 				log.Warn("error parsing sequencer advancing segment", "err", err)
 				segmentNum++

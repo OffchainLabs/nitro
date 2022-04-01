@@ -670,13 +670,14 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 
 // can only be used from One thread
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
-	timeoutChan := time.After(timeout)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	for {
 		if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 			return true
 		}
 		select {
-		case <-timeoutChan:
+		case <-timer.C:
 			if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 				return true
 			}

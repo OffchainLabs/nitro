@@ -243,14 +243,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 
 	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain := createL2BlockChain(t, nil, chainConfig)
 	rollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	asserterL2, err := arbnode.CreateNode(asserterL2Stack, asserterL2ChainDb, conf, asserterL2Blockchain, l1Backend, rollupAddresses, nil)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
 
 	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain := createL2BlockChain(t, nil, chainConfig)
 	rollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil, nil)
+	challengerL2, err := arbnode.CreateNode(challengerL2Stack, challengerL2ChainDb, conf, challengerL2Blockchain, l1Backend, rollupAddresses, nil)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)

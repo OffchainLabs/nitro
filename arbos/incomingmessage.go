@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -252,7 +250,6 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
-	L2MessageKind_BrotliCompressed = 9
 )
 
 func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
@@ -318,19 +315,6 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
-	case L2MessageKind_BrotliCompressed:
-		if depth > 0 { // ignore compressed messages if not top level
-			return nil, errors.New("can only compress top level batch")
-		}
-		compressed, err := ioutil.ReadAll(rd)
-		if err != nil {
-			return nil, err
-		}
-		decompressed, err := arbcompress.Decompress(compressed, MaxL2MessageSize)
-		if err != nil {
-			return nil, err
-		}
-		return parseL2Message(bytes.NewReader(decompressed), poster, requestId, chainId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
@@ -485,9 +469,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if dataLength > MaxL2MessageSize {
 		return nil, errors.New("retryable data too large")
 	}
-	data := make([]byte, dataLength)
+	retryData := make([]byte, dataLength)
 	if dataLength > 0 {
-		if _, err := rd.Read(data); err != nil {
+		if _, err := rd.Read(retryData); err != nil {
 			return nil, err
 		}
 	}
@@ -507,7 +491,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		Beneficiary:      callvalueRefundAddress,
 		MaxSubmissionFee: maxSubmissionFee.Big(),
 		FeeRefundAddr:    feeRefundAddress,
-		Data:             data,
+		RetryData:        retryData,
 	}
-	return types.NewTx(tx), nil
+	return types.NewTx(tx), err
 }

@@ -55,6 +55,24 @@ interface ArbRetryableTx {
      */
     function cancel(bytes32 ticketId) external;
 
+    /**
+     * @notice Do not call. This method represents a retryable submission to aid explorers.
+     * Calling it will always revert.
+     */
+    function submitRetryable(
+        bytes32 requestId,
+        uint256 l1BaseFee,
+        uint256 deposit,
+        uint256 callvalue,
+        uint256 gasFeeCap,
+        uint64 gasLimit,
+        uint256 maxSubmissionFee,
+        address feeRefundAddress,
+        address beneficiary,
+        address retryTo,
+        bytes calldata retryData
+    ) external;
+
     event TicketCreated(bytes32 indexed ticketId);
     event LifetimeExtended(bytes32 indexed ticketId, uint256 newTimeout);
     event RedeemScheduled(
@@ -67,4 +85,5 @@ interface ArbRetryableTx {
     event Canceled(bytes32 indexed ticketId);
 
     error NoTicketWithID();
+    error NotCallable();
 }

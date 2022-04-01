@@ -11,10 +11,16 @@ solgen/build
 solgen/cache/
 solgen/go
 **/node_modules
-/reproducible-wasm
 
 target/**/*
 brotli/buildfiles/**/*
+
+# these go to different docker images
+testnode-scripts/**/*
+blockscout/**/*
+
+# these are used by environment outside the docker:
+test-node.bash
 
 # Arbitrator ignores
 

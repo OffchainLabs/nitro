@@ -5,6 +5,7 @@ package broadcastclient
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"math/big"
@@ -113,10 +114,12 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				break
 			}
 			log.Warn("failed connect to sequencer broadcast, waiting and retrying", "url", bc.websocketUrl, "err", err)
+			timer := time.NewTimer(5 * time.Second)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-time.After(5 * time.Second):
+			case <-timer.C:
 			}
 		}
 	})
@@ -131,6 +134,9 @@ func (bc *BroadcastClient) connect(ctx context.Context) (earlyFrameData io.Reade
 	log.Info("connecting to arbitrum inbox message broadcaster", "url", bc.websocketUrl)
 	timeoutDialer := ws.Dialer{
 		Timeout: 10 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 
 	if bc.isShuttingDown() {
@@ -237,10 +243,12 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 	bc.retrying = true
 
 	for !bc.isShuttingDown() {
+		timer := time.NewTimer(waitDuration)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-time.After(waitDuration):
+		case <-timer.C:
 		}
 
 		atomic.AddInt64(&bc.retryCount, 1)

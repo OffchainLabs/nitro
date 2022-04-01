@@ -98,12 +98,12 @@ func (m *ArbitratorMachine) GetStepCount() uint64 {
 
 func (m *ArbitratorMachine) IsRunning() bool {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_get_status(m.ptr) == C.Running
+	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_RUNNING
 }
 
 func (m *ArbitratorMachine) IsErrored() bool {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_get_status(m.ptr) == C.Errored
+	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
