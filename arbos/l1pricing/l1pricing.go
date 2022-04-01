@@ -26,6 +26,7 @@ type L1PricingState struct {
 	defaultAggregator           storage.StorageBackedAddress
 	l1BaseFeeEstimate           storage.StorageBackedBigInt
 	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
+	lastL1BaseFeeUpdateTime     storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
 	aggregatorFeeCollectors     *storage.Storage
@@ -45,6 +46,7 @@ const (
 	defaultAggregatorAddressOffset uint64 = 0
 	l1BaseFeeEstimateOffset        uint64 = 1
 	l1BaseFeeEstimateInertiaOffset uint64 = 2
+	lastL1BaseFeeUpdateTimeOffset  uint64 = 3
 )
 
 const InitialL1BaseFeeEstimate = 50 * params.GWei
@@ -58,7 +60,10 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
 		return err
 	}
-	return sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate)
+	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate); err != nil {
+		return err
+	}
+	return sto.SetUint64ByUint64(lastL1BaseFeeUpdateTimeOffset, 0)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
@@ -67,6 +72,7 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
 		sto.OpenStorageBackedBigInt(l1BaseFeeEstimateOffset),
 		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
+		sto.OpenStorageBackedUint64(lastL1BaseFeeUpdateTimeOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),
@@ -90,8 +96,16 @@ func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 	return ps.l1BaseFeeEstimate.Set(val)
 }
 
-// Update the pricing model with a finalized block's header
-func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed uint64) {
+func (ps *L1PricingState) LastL1BaseFeeUpdateTime() (uint64, error) {
+	return ps.lastL1BaseFeeUpdateTime.Get()
+}
+
+func (ps *L1PricingState) SetLastL1BaseFeeUpdateTime(t uint64) error {
+	return ps.lastL1BaseFeeUpdateTime.Set(t)
+}
+
+// Update the pricing model with info from the start of a block
+func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, currentTime uint64) {
 
 	if baseFeeSample.Sign() == 0 {
 		// The sequencer's normal messages do not include the l1 basefee, so ignore them
@@ -104,13 +118,18 @@ func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, timePassed 
 	//
 	baseFee, _ := ps.L1BaseFeeEstimateWei()
 	inertia, _ := ps.L1BaseFeeEstimateInertia()
-	passedSqrt := arbmath.ApproxSquareRoot(timePassed)
+	lastTime, _ := ps.LastL1BaseFeeUpdateTime()
+	if currentTime <= lastTime {
+		return
+	}
+	passedSqrt := arbmath.ApproxSquareRoot(currentTime - lastTime)
 	newBaseFee := arbmath.BigDivByUint(
 		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
 		inertia+passedSqrt,
 	)
 
 	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
+	_ = ps.SetLastL1BaseFeeUpdateTime(currentTime)
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
