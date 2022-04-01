@@ -60,7 +60,7 @@ func TestL1PriceUpdate(t *testing.T) {
 	tyme, err := ps.LastL1BaseFeeUpdateTime()
 	Require(t, err)
 	if tyme != 0 {
-		t.Fatal()
+		Fail(t)
 	}
 
 	priceEstimate, err := ps.L1BaseFeeEstimateWei()
