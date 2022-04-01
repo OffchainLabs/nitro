@@ -184,6 +184,6 @@ contract Outbox is DelegateCallAware, IOutbox {
         uint256 path,
         bytes32 item
     ) public pure returns (bytes32) {
-        return MerkleLib.calculateRoot(proof, path, item);
+        return MerkleLib.calculateRoot(proof, path, keccak256(abi.encodePacked(item)));
     }
 }
