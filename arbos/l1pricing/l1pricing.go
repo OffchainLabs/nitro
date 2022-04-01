@@ -53,7 +53,6 @@ const InitialL1BaseFeeEstimate = 50 * params.GWei
 const InitialL1BaseFeeEstimateInertia = 24
 
 func InitializeL1PricingState(sto *storage.Storage) error {
-	// this deliberately doesn't initialize lastL1BaseFeeUpdateTime, because we want it to be zero
 	err := sto.SetByUint64(defaultAggregatorAddressOffset, common.BytesToHash(SequencerAddress.Bytes()))
 	if err != nil {
 		return err
@@ -61,7 +60,10 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
 		return err
 	}
-	return sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate)
+	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate); err != nil {
+		return err
+	}
+	return sto.SetUint64ByUint64(lastL1BaseFeeUpdateTimeOffset, 0)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
