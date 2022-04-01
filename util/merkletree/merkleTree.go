@@ -60,7 +60,7 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
-	return leaf.hash
+	return crypto.Keccak256Hash(leaf.hash.Bytes())
 }
 
 func (leaf *merkleTreeLeaf) Size() uint64 {
@@ -296,7 +296,7 @@ type MerkleProof struct {
 }
 
 func (proof *MerkleProof) IsCorrect() bool {
-	hash := proof.LeafHash
+	hash := crypto.Keccak256Hash(proof.LeafHash.Bytes())
 	index := proof.LeafIndex
 	for _, hashFromProof := range proof.Proof {
 		if index&1 == 0 {

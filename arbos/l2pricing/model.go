@@ -31,7 +31,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 	return ps.SetGasPool(arbmath.SaturatingAdd(gasPool, gas))
 }
 
-// Update the pricing model with a finalized block's header
+// Update the pricing model with info from the last block
 func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint64, debug bool) {
 
 	// update the rate estimate, which is the weighted average of the past and present
