@@ -49,9 +49,9 @@ library MerkleLib {
         bytes32 h = item;
         for (uint256 i = 0; i < proofItems; i++) {
             if (route % 2 == 0) {
-                h = keccak256(abi.encodePacked(nodes[i], h));
-            } else {
                 h = keccak256(abi.encodePacked(h, nodes[i]));
+            } else {
+                h = keccak256(abi.encodePacked(nodes[i], h));
             }
             route /= 2;
         }

@@ -43,7 +43,7 @@ func TestAccumulator1(t *testing.T) {
 	if mt.Size() != 1 {
 		t.Fatal(mt.Size())
 	}
-	if root(t, acc) != itemHash {
+	if root(t, acc) != crypto.Keccak256Hash(itemHash.Bytes()) {
 		Fail(t)
 	}
 	if root(t, acc) != mt.Hash() {
@@ -79,8 +79,8 @@ func TestAccumulator3(t *testing.T) {
 	}
 
 	expectedHash := crypto.Keccak256(
-		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
-		crypto.Keccak256(itemHash2.Bytes(), make([]byte, 32)),
+		crypto.Keccak256(crypto.Keccak256(itemHash0.Bytes()), crypto.Keccak256(itemHash1.Bytes())),
+		crypto.Keccak256(crypto.Keccak256(itemHash2.Bytes()), make([]byte, 32)),
 	)
 	if root(t, acc) != common.BytesToHash(expectedHash) {
 		Fail(t)
@@ -121,8 +121,8 @@ func TestAccumulator4(t *testing.T) {
 	}
 
 	expectedHash := crypto.Keccak256(
-		crypto.Keccak256(itemHash0.Bytes(), itemHash1.Bytes()),
-		crypto.Keccak256(itemHash2.Bytes(), itemHash3.Bytes()),
+		crypto.Keccak256(crypto.Keccak256(itemHash0.Bytes()), crypto.Keccak256(itemHash1.Bytes())),
+		crypto.Keccak256(crypto.Keccak256(itemHash2.Bytes()), crypto.Keccak256(itemHash3.Bytes())),
 	)
 	if root(t, acc) != common.BytesToHash(expectedHash) {
 		Fail(t)
