@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -43,8 +44,9 @@ type DataAvailabilityCertificate struct {
 
 func DeserializeDASCertFrom(buf []byte) (c *DataAvailabilityCertificate, bytesRead int, err error) {
 	c = &DataAvailabilityCertificate{}
-	if uintptr(len(buf)) < 1+32+8+8+96 {
-		return nil, 0, errors.New("Can't deserialize DAS cert from smaller buffer")
+	expectedCertSize := uintptr(1 + 32 + 8 + 8 + 96)
+	if uintptr(len(buf)) < expectedCertSize {
+		return nil, 0, fmt.Errorf("Can't deserialize DAS cert from smaller buffer (was %dB but should be %d)", uintptr(len(buf)), expectedCertSize)
 	}
 	if !IsDASMessageHeaderByte(buf[0]) {
 		return nil, 0, errors.New("Tried to deserialize a message that doesn't have the DAS header.")

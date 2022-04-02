@@ -85,5 +85,9 @@ func Serialize(c arbstate.DataAvailabilityCertificate) []byte {
 
 	buf = append(buf, serializeSignableFields(c)...)
 
+	var intData [8]byte
+	binary.BigEndian.PutUint64(intData[:], c.SignersMask)
+	buf = append(buf, intData[:]...)
+
 	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }

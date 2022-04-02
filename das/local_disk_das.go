@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/base32"
 	"errors"
+	"fmt"
+	"math/bits"
 	"os"
 	"sync"
 	"time"
@@ -68,9 +70,13 @@ func generateAndStoreKeys(dbPath string) (*blsSignatures.PublicKey, blsSignature
 	return &pubKey, privKey, nil
 }
 
-func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabilityService, error) {
+func NewLocalDiskDataAvailabilityService(dbPath string, signerMask uint64) (*LocalDiskDataAvailabilityService, error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
+	if bits.OnesCount64(signerMask) != 1 {
+		return nil, fmt.Errorf("Tried to construct a local DAS with invalid signerMask %X", signerMask)
+	}
+
 	pubKey, privKey, err := readKeysFromFile(dbPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -84,9 +90,10 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}
 
 	return &LocalDiskDataAvailabilityService{
-		dbPath:  dbPath,
-		pubKey:  pubKey,
-		privKey: privKey,
+		dbPath:     dbPath,
+		pubKey:     pubKey,
+		privKey:    privKey,
+		signerMask: signerMask,
 	}, nil
 }
 
