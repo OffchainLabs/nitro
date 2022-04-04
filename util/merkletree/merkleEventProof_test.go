@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -31,7 +32,7 @@ func TestProofForNext(t *testing.T) {
 		if proof == nil {
 			Fail(t, i)
 		}
-		if proof.LeafHash != leaf {
+		if proof.LeafHash != crypto.Keccak256Hash(leaf.Bytes()) {
 			Fail(t, i)
 		}
 		if !proof.IsCorrect() {
@@ -72,7 +73,7 @@ func ProofFromAccumulator(acc *merkleAccumulator.MerkleAccumulator, nextHash com
 
 	return &MerkleProof{
 		RootHash:  root,
-		LeafHash:  nextHash,
+		LeafHash:  crypto.Keccak256Hash(nextHash.Bytes()),
 		LeafIndex: size,
 		Proof:     partials,
 	}, nil

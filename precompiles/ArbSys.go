@@ -95,7 +95,6 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 
 // Sends a transaction to L1, adding it to the outbox
 func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, calldataForL1 []byte) (huge, error) {
-	timestamp, _ := c.state.LastTimestampSeen()
 	l1BlockNum, err := c.txProcessor.L1BlockNumber(vm.BlockContext{})
 	if err != nil {
 		return nil, err
@@ -158,7 +157,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		big.NewInt(0),
 		evm.Context.BlockNumber,
 		bigL1BlockNum,
-		new(big.Int).SetUint64(timestamp),
+		evm.Context.Time,
 		value,
 		calldataForL1,
 	)

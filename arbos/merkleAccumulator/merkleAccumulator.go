@@ -123,6 +123,7 @@ func (acc *MerkleAccumulator) setPartial(level uint64, val *common.Hash) error {
 	return nil
 }
 
+// Note: itemHash is hashed before being included in the tree, to prevent confusing leafs with branches.
 func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEvent, error) {
 	size, err := acc.size.Increment()
 	if err != nil {
@@ -131,7 +132,7 @@ func (acc *MerkleAccumulator) Append(itemHash common.Hash) ([]MerkleTreeNodeEven
 	events := []MerkleTreeNodeEvent{}
 
 	level := uint64(0)
-	soFar := itemHash.Bytes()
+	soFar := crypto.Keccak256(itemHash.Bytes())
 	for {
 		if level == CalcNumPartials(size-1) { // -1 to counteract the acc.size++ at top of this function
 			h := common.BytesToHash(soFar)

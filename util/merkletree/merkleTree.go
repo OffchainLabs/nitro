@@ -34,6 +34,13 @@ type LevelAndLeaf struct {
 	Leaf  uint64
 }
 
+func NewLevelAndLeaf(level, leaf uint64) LevelAndLeaf {
+	return LevelAndLeaf{
+		Level: level,
+		Leaf:  leaf,
+	}
+}
+
 func (place LevelAndLeaf) ToBigInt() *big.Int {
 	return new(big.Int).Add(
 		new(big.Int).Lsh(big.NewInt(int64(place.Level)), 192),
@@ -59,7 +66,7 @@ func newMerkleLeafFromReader(rd io.Reader) (MerkleTree, error) {
 }
 
 func (leaf *merkleTreeLeaf) Hash() common.Hash {
-	return leaf.hash
+	return crypto.Keccak256Hash(leaf.hash.Bytes())
 }
 
 func (leaf *merkleTreeLeaf) Size() uint64 {
@@ -298,6 +305,7 @@ func (proof *MerkleProof) IsCorrect() bool {
 	hash := proof.LeafHash
 	index := proof.LeafIndex
 	for _, hashFromProof := range proof.Proof {
+
 		if index&1 == 0 {
 			hash = crypto.Keccak256Hash(hash.Bytes(), hashFromProof.Bytes())
 		} else {

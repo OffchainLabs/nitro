@@ -25,9 +25,7 @@ import (
 func TestOpenNonexistentRetryable(t *testing.T) {
 	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
 	id := common.BigToHash(big.NewInt(978645611142))
-	lastTimestamp, err := state.LastTimestampSeen()
-	Require(t, err)
-	retryable, err := state.RetryableState().OpenRetryable(id, lastTimestamp)
+	retryable, err := state.RetryableState().OpenRetryable(id, 0)
 	Require(t, err)
 	if retryable != nil {
 		Fail(t)
@@ -188,8 +186,7 @@ func TestRetryableCleanup(t *testing.T) {
 func TestRetryableCreate(t *testing.T) {
 	state, _ := arbosState.NewArbosMemoryBackedArbOSState()
 	id := common.BigToHash(big.NewInt(978645611142))
-	lastTimestamp, err := state.LastTimestampSeen()
-	Require(t, err)
+	lastTimestamp := uint64(0)
 
 	timeout := lastTimestamp + 10000000
 	from := common.BytesToAddress([]byte{3, 4, 5})
