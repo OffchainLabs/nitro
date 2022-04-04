@@ -151,17 +151,14 @@ func nodeInterfaceConstructOutboxProof(
 	}
 
 	// find which nodes we'll want in our proof up to a partial
-	query := make([]merkletree.LevelAndLeaf, 0) // the nodes we'll query for
-	nodes := make([]merkletree.LevelAndLeaf, 0) // the nodes needed (might not be found from query)
-	which := uint64(1)                          // which bit to flip & set
-	place := leaf                               // where we are in the tree
+	start := merkletree.NewLevelAndLeaf(0, leaf)
+	query := []merkletree.LevelAndLeaf{start} // the nodes we'll query for
+	nodes := []merkletree.LevelAndLeaf{}      // the nodes needed (might not be found from query)
+	which := uint64(1)                        // which bit to flip & set
+	place := leaf                             // where we are in the tree
 	for level := 0; level < walkLevels; level++ {
 		sibling := place ^ which
-
-		position := merkletree.LevelAndLeaf{
-			Level: uint64(level),
-			Leaf:  sibling,
-		}
+		position := merkletree.NewLevelAndLeaf(uint64(level), sibling)
 
 		if sibling < size {
 			// the sibling must not be newer than the root
@@ -184,10 +181,7 @@ func nodeInterfaceConstructOutboxProof(
 				total += power    // The leaf for a given partial is the sum of the powers
 				leaf := total - 1 // of 2 preceding it. It's 1 less since we count from 0
 
-				partial := merkletree.LevelAndLeaf{
-					Level: uint64(level),
-					Leaf:  leaf,
-				}
+				partial := merkletree.NewLevelAndLeaf(uint64(level), leaf)
 
 				query = append(query, partial)
 				partials[partial] = common.Hash{}
@@ -287,13 +281,20 @@ func nodeInterfaceConstructOutboxProof(
 		position := log.Topics[3]
 
 		level := new(big.Int).SetBytes(position[:8]).Uint64()
-		leaf := new(big.Int).SetBytes(position[8:]).Uint64()
+		leafAdded := new(big.Int).SetBytes(position[8:]).Uint64()
 
-		place := merkletree.LevelAndLeaf{
-			Level: level,
-			Leaf:  leaf,
+		if level == 0 && leafAdded == leaf {
+			if send != hash && send != (common.Hash{}) {
+				return nil, fmt.Errorf("The send %v provided differs from the actual send %v", send, hash)
+			}
+			send = hash
 		}
 
+		if level == 0 {
+			hash = crypto.Keccak256Hash(hash.Bytes())
+		}
+
+		place := merkletree.NewLevelAndLeaf(level, leafAdded)
 		known[place] = hash
 
 		if zero, ok := partials[place]; ok {
@@ -350,12 +351,6 @@ func nodeInterfaceConstructOutboxProof(
 			step.Leaf |= 1 << (step.Level - 1)
 			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
 		}
-
-		if known[step] != root && root != (common.Hash{}) {
-			// a correct walk of the frontier should end with resolving the root
-			return nil, errors.New("internal error constructing proof: failed to recover root")
-		}
-		root = known[step]
 	}
 
 	hashes := make([]common.Hash, len(nodes))
@@ -367,9 +362,25 @@ func nodeInterfaceConstructOutboxProof(
 		hashes[i] = hash
 	}
 
+	// recover the root and check correctness
+	recovery := crypto.Keccak256Hash(send.Bytes())
+	recoveryStep := leaf
+	for _, hash := range hashes {
+		if recoveryStep&1 == 0 {
+			recovery = crypto.Keccak256Hash(recovery.Bytes(), hash.Bytes())
+		} else {
+			recovery = crypto.Keccak256Hash(hash.Bytes(), recovery.Bytes())
+		}
+		recoveryStep >>= 1
+	}
+	if root != recovery && root != (common.Hash{}) {
+		return nil, fmt.Errorf("The root %v provided differs from the recovered root %v", root, recovery)
+	}
+	root = recovery
+
 	proof := merkletree.MerkleProof{
 		RootHash:  root, // now resolved
-		LeafHash:  send,
+		LeafHash:  crypto.Keccak256Hash(send.Bytes()),
 		LeafIndex: leaf,
 		Proof:     hashes,
 	}
@@ -377,9 +388,9 @@ func nodeInterfaceConstructOutboxProof(
 		return nil, errors.New("internal error constructing proof: proof is wrong")
 	}
 
-	returnData, err := method.Outputs.Pack(root, hashes)
+	returnData, err := method.Outputs.Pack(send, root, hashes)
 	if err != nil {
-		return nil, fmt.Errorf("internal error: failed to encode outputs: %v", err)
+		return nil, fmt.Errorf("internal error: failed to encode outputs: %w", err)
 	}
 
 	result := &ExecutionResult{

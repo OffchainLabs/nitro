@@ -315,7 +315,7 @@ func TestOutboxProofs(t *testing.T) {
 
 			proof := merkletree.MerkleProof{
 				RootHash:  rootHash,
-				LeafHash:  provable.hash,
+				LeafHash:  crypto.Keccak256Hash(provable.hash.Bytes()),
 				LeafIndex: provable.leaf,
 				Proof:     hashes,
 			}
@@ -324,13 +324,22 @@ func TestOutboxProofs(t *testing.T) {
 				Fail(t, "Proof is wrong")
 			}
 
-			//Check NodeInterface.sol produces equivalent proofs
+			// Check NodeInterface.sol produces equivalent proofs
+			rootUsed := common.Hash{} // the api allows these to be 0
+			hashUsed := common.Hash{} //
+			if rand.Int()%2 == 0 {
+				rootUsed = rootHash
+			}
+			if rand.Int()%2 == 0 {
+				hashUsed = provable.hash
+			}
 			outboxProof, err := nodeInterface.ConstructOutboxProof(
-				&bind.CallOpts{}, provable.hash, rootHash, treeSize, provable.leaf,
+				&bind.CallOpts{}, hashUsed, rootUsed, treeSize, provable.leaf,
 			)
 			Require(t, err, "failed to construct outbox proof using NodeInterface.sol")
 			nodeRoot := common.Hash(outboxProof.RootAtSize)
 			nodeProof := outboxProof.Proof
+			nodeSend := outboxProof.SendAtLeaf
 
 			if nodeRoot != rootHash {
 				Fail(t, "NodeInterface root differs\n", nodeRoot, "\n", rootHash)
@@ -343,7 +352,9 @@ func TestOutboxProofs(t *testing.T) {
 					t.Error("NodeInterface proof differs", i, correct, nodeProof[i])
 				}
 			}
-			//_ = nodeInterface
+			if nodeSend != provable.hash {
+				Fail(t, "NodeInterface send differs\n", nodeSend, "\n", provable.hash)
+			}
 		}
 	}
 }
