@@ -214,6 +214,10 @@ func TestOutboxProofs(t *testing.T) {
 				level := new(big.Int).SetBytes(position[:8]).Uint64()
 				leaf := new(big.Int).SetBytes(position[8:]).Uint64()
 
+				if level == 0 {
+					hash = crypto.Keccak256Hash(hash.Bytes())
+				}
+
 				place := merkletree.LevelAndLeaf{
 					Level: level,
 					Leaf:  leaf,

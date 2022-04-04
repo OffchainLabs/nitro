@@ -345,10 +345,12 @@ func (ir *InboxReader) run(ctx context.Context) error {
 			}
 		}
 		// TODO feed reading
+		timer := time.NewTimer(ir.config.CheckDelay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-time.After(ir.config.CheckDelay):
+		case <-timer.C:
 		}
 	}
 }
