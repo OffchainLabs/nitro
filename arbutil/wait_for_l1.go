@@ -132,26 +132,33 @@ func EnsureTxSucceededWithTimeout(ctx context.Context, client L1Interface, tx *t
 	if err != nil {
 		return nil, fmt.Errorf("waitFoxTx got: %w", err)
 	}
+	return txRes, DetailTxError(ctx, client, tx, txRes)
+}
+
+func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transaction, txRes *types.Receipt) error {
+	// Re-execute the transaction as a call to get a better error
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if txRes == nil {
-		return nil, errors.New("expected receipt")
+		return errors.New("expected receipt")
 	}
-	if txRes.Status != types.ReceiptStatusSuccessful {
-		// Re-execute the transaction as a call to get a better error
-		from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
-		if err != nil {
-			return txRes, fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
-		}
-		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
-		if err == nil {
-			return txRes, fmt.Errorf("tx failed but call succeeded for tx hash %v", tx.Hash())
-		}
-		_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
-		if err == nil {
-			return txRes, fmt.Errorf("%w for tx hash %v", core.ErrGasLimitReached, tx.Hash())
-		}
-		return txRes, fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
+	if txRes.Status == types.ReceiptStatusSuccessful {
+		return nil
 	}
-	return txRes, nil
+	from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
+	if err != nil {
+		return fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
+	}
+	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
+	if err == nil {
+		return fmt.Errorf("tx failed but call succeeded for tx hash %v", tx.Hash())
+	}
+	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
+	if err == nil {
+		return fmt.Errorf("%w for tx hash %v", core.ErrGasLimitReached, tx.Hash())
+	}
+	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
 }
 
 func headerSubscribeMainLoop(chanOut chan<- *types.Header, ctx context.Context, client ethereum.ChainReader) {

@@ -297,7 +297,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer"`
-	EnableL1Reader       bool                           `koanf:"enable-l1-reader"`
+	L1Reader             L1ReaderConfig                 `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
@@ -323,7 +323,7 @@ func (c *Config) ForwardingTarget() string {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
-	f.Bool(prefix+".enable-l1-reader", ConfigDefault.EnableL1Reader, "enable l1 reader")
+	f.Bool(prefix+".enable-l1-reader", ConfigDefault.L1Reader.Enable, "enable l1 reader")
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -341,7 +341,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 var ConfigDefault = Config{
 	RPC:                  arbitrum.DefaultConfig,
 	Sequencer:            DefaultSequencerConfig,
-	EnableL1Reader:       true,
+	L1Reader:             DefaultL1ReaderConfig,
 	InboxReader:          DefaultInboxReaderConfig,
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
@@ -359,6 +359,7 @@ var ConfigDefault = Config{
 func ConfigDefaultL1Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
+	config.L1Reader = TestL1ReaderConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
@@ -370,7 +371,7 @@ func ConfigDefaultL1Test() *Config {
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.EnableL1Reader = false
+	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
@@ -445,6 +446,7 @@ var DefaultWasmConfig = WasmConfig{
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
+	L1Reader         *L1Reader
 	TxStreamer       *TransactionStreamer
 	TxPublisher      TransactionPublisher
 	DeployInfo       *RollupAddresses
@@ -478,6 +480,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 
+	var l1Reader *L1Reader
+	if config.L1Reader.Enable {
+		l1Reader = NewL1Reader(l1client, config.L1Reader)
+	}
+
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
@@ -492,11 +499,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
-		if config.EnableL1Reader {
+		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1client)
+			sequencer, err = NewSequencer(txStreamer, l1Reader)
 		} else {
 			sequencer, err = NewSequencer(txStreamer, nil)
 		}
@@ -535,8 +542,8 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.Feed.Input.Timeout, txStreamer))
 		}
 	}
-	if !config.EnableL1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+	if !config.L1Reader.Enable {
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -570,11 +577,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	var staker *validator.Staker
 	if config.Validator.Enable {
 		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
-		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -586,13 +593,13 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if config.DelayedSequencer.Enable {
-		delayedSequencer, err = NewDelayedSequencer(l1client, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
+		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
 		if err != nil {
 			return nil, err
 		}
@@ -600,7 +607,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -684,6 +691,9 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 		n.Staker.Start(ctx)
 	}
+	if n.L1Reader != nil {
+		n.L1Reader.Start(ctx)
+	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
 		if err != nil {
@@ -702,6 +712,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.BroadcastServer != nil {
 		n.BroadcastServer.StopAndWait()
+	}
+	if n.L1Reader != nil {
+		n.L1Reader.StopAndWait()
 	}
 	if n.BlockValidator != nil {
 		n.BlockValidator.StopAndWait()

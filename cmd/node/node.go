@@ -70,12 +70,12 @@ func main() {
 	log.Info("Running Arbitrum nitro node")
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
-		nodeConfig.Node.EnableL1Reader = false
+		nodeConfig.Node.L1Reader.Enable = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
-		nodeConfig.Node.EnableL1Reader = true
+		nodeConfig.Node.L1Reader.Enable = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
@@ -126,7 +126,7 @@ func main() {
 	}
 
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.EnableL1Reader {
+		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
 		}
@@ -153,7 +153,7 @@ func main() {
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	if nodeConfig.Node.EnableL1Reader {
+	if nodeConfig.Node.L1Reader.Enable {
 		var err error
 
 		l1client, err = ethclient.Dial(nodeConfig.L1.URL)

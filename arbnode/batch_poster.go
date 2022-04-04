@@ -26,7 +26,7 @@ import (
 
 type BatchPoster struct {
 	util.StopWaiter
-	client        arbutil.L1Interface
+	l1Reader      *L1Reader
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
 	config        *BatchPosterConfig
@@ -73,13 +73,13 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	CompressionLevel:     2,
 }
 
-func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
-	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
+func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
 	return &BatchPoster{
-		client:        client,
+		l1Reader:      l1Reader,
 		inbox:         inbox,
 		streamer:      streamer,
 		config:        config,
@@ -395,7 +395,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if tx != nil {
 			b.building = nil
-			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
+			_, err = b.l1Reader.WaitForTxApproval(ctx, tx)
 			if err != nil {
 				log.Error("failed ensuring batch tx succeeded", "err", err)
 			} else {

@@ -20,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
@@ -49,7 +48,7 @@ type Sequencer struct {
 
 	txStreamer *TransactionStreamer
 	txQueue    chan txQueueItem
-	l1Client   arbutil.L1Interface
+	l1Reader   *L1Reader
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -59,11 +58,11 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Reader *L1Reader) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),
-		l1Client:      l1Client,
+		l1Reader:      l1Reader,
 		l1BlockNumber: 0,
 		l1Timestamp:   0,
 	}, nil
@@ -155,7 +154,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Client != nil && (l1Block == 0 || int64Abs(int64(l1Timestamp)-timestamp) > maxAcceptableTimestampDeltaSeconds) {
+	if s.l1Reader != nil && (l1Block == 0 || int64Abs(int64(l1Timestamp)-timestamp) > maxAcceptableTimestampDeltaSeconds) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -291,11 +290,11 @@ func (s *Sequencer) updateLatestL1Block(header *types.Header) {
 }
 
 func (s *Sequencer) Initialize(ctx context.Context) error {
-	if s.l1Client == nil {
+	if s.l1Reader == nil {
 		return nil
 	}
 
-	header, err := s.l1Client.HeaderByNumber(ctx, nil)
+	header, err := s.l1Reader.LastHeader(ctx)
 	if err != nil {
 		return err
 	}
@@ -305,13 +304,13 @@ func (s *Sequencer) Initialize(ctx context.Context) error {
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn)
-	if s.l1Client != nil {
+	if s.l1Reader != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := arbutil.HeaderSubscribeWithRetry(s.GetContext(), s.l1Client)
+		headerChan, cancel := s.l1Reader.Subscribe()
 
 		s.LaunchThread(func(ctx context.Context) {
 			defer cancel()
@@ -328,15 +327,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			}
 		})
 
-		s.CallIteratively(func(ctx context.Context) time.Duration {
-			header, err := s.l1Client.HeaderByNumber(s.GetContext(), nil)
-			if err != nil {
-				log.Warn("failed to get current L1 header", "err", err)
-				return time.Second * 5
-			}
-			s.updateLatestL1Block(header)
-			return time.Second
-		})
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {

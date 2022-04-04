@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/pkg/errors"
 )
@@ -40,18 +39,18 @@ type ValidatorWallet struct {
 	con               *rollupgen.ValidatorWallet
 	address           *common.Address
 	onWalletCreated   func(common.Address)
-	client            arbutil.L1Interface
+	l1Reader          L1ReaderInterface
 	auth              *bind.TransactOpts
 	rollupAddress     common.Address
 	walletFactoryAddr common.Address
 	rollupFromBlock   int64
 }
 
-func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, client arbutil.L1Interface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
+func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddress common.Address, l1Reader L1ReaderInterface, auth *bind.TransactOpts, rollupFromBlock int64, onWalletCreated func(common.Address)) (*ValidatorWallet, error) {
 	var con *rollupgen.ValidatorWallet
 	if address != nil {
 		var err error
-		con, err = rollupgen.NewValidatorWallet(*address, client)
+		con, err = rollupgen.NewValidatorWallet(*address, l1Reader.Client())
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +59,7 @@ func NewValidatorWallet(address *common.Address, walletFactoryAddr, rollupAddres
 		con:               con,
 		address:           address,
 		onWalletCreated:   onWalletCreated,
-		client:            client,
+		l1Reader:          l1Reader,
 		auth:              auth,
 		rollupAddress:     rollupAddress,
 		walletFactoryAddr: walletFactoryAddr,
@@ -94,7 +93,7 @@ func (v *ValidatorWallet) createWalletIfNeeded(ctx context.Context) error {
 		return nil
 	}
 	if v.address == nil {
-		addr, err := CreateValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.client)
+		addr, err := CreateValidatorWallet(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader)
 		if err != nil {
 			return err
 		}
@@ -103,7 +102,7 @@ func (v *ValidatorWallet) createWalletIfNeeded(ctx context.Context) error {
 			v.onWalletCreated(addr)
 		}
 	}
-	con, err := rollupgen.NewValidatorWallet(*v.address, v.client)
+	con, err := rollupgen.NewValidatorWallet(*v.address, v.l1Reader.Client())
 	if err != nil {
 		return err
 	}
@@ -180,14 +179,15 @@ func CreateValidatorWallet(
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
 	transactAuth *bind.TransactOpts,
-	client arbutil.L1Interface,
+	l1Reader L1ReaderInterface,
 ) (common.Address, error) {
+	client := l1Reader.Client()
+
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
 	if err != nil {
 		return common.Address{}, errors.WithStack(err)
 	}
-
 	query := ethereum.FilterQuery{
 		BlockHash: nil,
 		FromBlock: big.NewInt(fromBlock),
@@ -215,12 +215,7 @@ func CreateValidatorWallet(
 		return common.Address{}, err
 	}
 
-	receipt, err := arbutil.EnsureTxSucceededWithTimeout(
-		ctx,
-		client,
-		tx,
-		txTimeout,
-	)
+	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return common.Address{}, err
 	}
