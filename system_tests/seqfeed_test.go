@@ -17,7 +17,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -64,10 +63,10 @@ func TestSequencerFeed(t *testing.T) {
 	err := client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client2, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := client2.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -106,10 +105,10 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	err = client1.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, client1, tx)
+	_, err = EnsureTxSucceeded(ctx, client1, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, client3, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := client3.BalanceAt(ctx, l2info1.GetAddress("User2"), nil)
 	Require(t, err)
@@ -175,13 +174,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientC, fraudTx)
+	_, err = EnsureTxSucceeded(ctx, l2clientC, fraudTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction immediately from the sequencer feed
-	_, err = arbutil.WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
+	_, err = WaitForTx(ctx, l2clientB, fraudTx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,13 +198,13 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal(err)
 	}
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, realTx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, realTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node B should get the transaction after NodeC posts a batch.
-	_, err = arbutil.WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, realTx.Hash(), time.Second*5)
 	if err != nil {
 		t.Fatal(err)
 	}

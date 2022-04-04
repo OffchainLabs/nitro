@@ -285,10 +285,10 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -342,10 +342,10 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, clientB, tx.Hash(), time.Second)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
 	if err == nil {
 		Fail(t, "tx received by node with different seq coordinator signing key")
 	}

@@ -32,7 +32,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 		if err != nil {
 			return err
 		}
-		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 		if err != nil {
 			return err
 		}
@@ -44,7 +44,7 @@ func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2client
 			if err != nil {
 				return err
 			}
-			_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+			_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
 			if err != nil {
 				return err
 			}
@@ -103,12 +103,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, valWalletAddrB}, []bool{true, true})
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
 	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, tx)
 	Require(t, err)
 
 	valConfig := validator.L1ValidatorConfig{
@@ -161,12 +161,12 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 	if faultyStaker {
 		err = l2clientB.SendTransaction(ctx, tx)
 		Require(t, err)
-		_, err = arbutil.EnsureTxSucceeded(ctx, l2clientB, tx)
+		_, err = EnsureTxSucceeded(ctx, l2clientB, tx)
 		Require(t, err)
 	}
 
@@ -225,7 +225,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
-			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+			_, err = EnsureTxSucceeded(ctx, l1client, tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {

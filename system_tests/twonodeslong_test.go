@@ -10,7 +10,6 @@ package arbtest
 
 import (
 	"context"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -18,10 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func testTwoNodesLong(t *testing.T, dasModeStr string) {
@@ -121,7 +121,7 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 		SendWaitTestTransactions(t, ctx, l2client, l2Txs)
 		directTransfers += int64(l2TxsThisTime)
 		if len(l1Txs) > 0 {
-			_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+			_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 			if err != nil {
 				Fail(t, err)
 			}
@@ -155,15 +155,15 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 				Fail(t, err)
 			}
 		}
-		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, tx)
+		_, err := EnsureTxSucceeded(ctx, l1client, tx)
 		if err != nil {
 			Fail(t, err)
 		}
 	}
 
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2client, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
+	_, err = EnsureTxSucceededWithTimeout(ctx, l2clientB, delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)

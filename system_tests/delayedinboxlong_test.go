@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestDelayInboxLong(t *testing.T) {
@@ -57,7 +56,7 @@ func TestDelayInboxLong(t *testing.T) {
 			Require(t, err)
 		}
 		// Checking every tx is expensive, so we just check the last, assuming that the others succeeded too
-		_, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
+		_, err := EnsureTxSucceeded(ctx, l1client, l1Txs[len(l1Txs)-1])
 		Require(t, err)
 	}
 
@@ -73,7 +72,7 @@ func TestDelayInboxLong(t *testing.T) {
 		})
 	}
 
-	_, err := arbutil.WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
+	_, err := WaitForTx(ctx, l2client, lastDelayedMessage.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := l2client.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
