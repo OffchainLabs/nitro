@@ -3,24 +3,13 @@ import 'hardhat-deploy'
 import '@nomiclabs/hardhat-ethers'
 import '@typechain/hardhat'
 import 'solidity-coverage'
+import prodConfig from "./hardhat.prod-config"
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
 module.exports = {
-  solidity: {
-    version: '0.8.9',
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 100,
-      },
-    },
-  },
-  paths: {
-    sources: './src',
-    artifacts: 'build/contracts',
-  },
+  ...prodConfig,
   namedAccounts: {
     deployer: {
       default: 0,

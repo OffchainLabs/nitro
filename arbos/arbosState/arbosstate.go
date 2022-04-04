@@ -275,10 +275,6 @@ func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
 	return state.blockhashes
 }
 
-func (state *ArbosState) LastTimestampSeen() (uint64, error) {
-	return state.timestamp.Get()
-}
-
 func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
 	lastTimestamp, err := state.timestamp.Get()
 	state.Restrict(err)
