@@ -28,21 +28,21 @@ type L1ReaderConfig struct {
 	Enable       bool
 	PollOnly     bool
 	PollInterval time.Duration
-	ErrInterval  time.Duration
+	TxTimeout    time.Duration
 }
 
 var DefaultL1ReaderConfig = L1ReaderConfig{
 	Enable:       true,
 	PollOnly:     false,
 	PollInterval: 7 * time.Second,
-	ErrInterval:  12 * time.Second,
+	TxTimeout:    time.Minute,
 }
 
 var TestL1ReaderConfig = L1ReaderConfig{
 	Enable:       true,
 	PollOnly:     false,
 	PollInterval: time.Second,
-	ErrInterval:  time.Second,
+	TxTimeout:    time.Second * 4,
 }
 
 func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
@@ -121,7 +121,7 @@ func (s *L1Reader) pollHeader(ctx context.Context) time.Duration {
 	lastHeader, err := s.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		log.Warn("failed reading l1 header", "err", err)
-		return s.config.ErrInterval
+		return s.config.PollInterval
 	}
 	s.possiblyBroadcast(lastHeader)
 	return s.config.PollInterval
@@ -175,9 +175,11 @@ func (s *L1Reader) subscribeLoop(ctx context.Context) {
 	}
 }
 
-func (s *L1Reader) WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error) {
+func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
 	headerchan, unsubscribe := s.Subscribe()
 	defer unsubscribe()
+	ctx, cancel := context.WithTimeout(ctxIn, s.config.TxTimeout)
+	defer cancel()
 	txHash := tx.Hash()
 	for {
 		receipt, err := s.client.TransactionReceipt(ctx, txHash)

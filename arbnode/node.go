@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
@@ -54,56 +53,57 @@ type RollupAddresses struct {
 	DeployedAt             uint64
 }
 
-func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	_, err = l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, error) {
+	client := l1Reader.Client()
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
 	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
 	}
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
 	}
 
 	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventBridge(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
 	}
 
 	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
 
 	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)
 	}
@@ -111,44 +111,40 @@ func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(
-	ctx context.Context,
-	client arbutil.L1Interface,
-	auth *bind.TransactOpts,
-	txTimeout time.Duration,
-) (common.Address, common.Address, error) {
+func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
+	client := l1Reader.Client()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
 	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
@@ -156,31 +152,31 @@ func deployChallengeFactory(
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
+func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
+	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
-	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
@@ -193,7 +189,7 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 		rollupAdminLogic,
 		rollupUserLogic,
 	)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
@@ -201,8 +197,12 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
-	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig) (*RollupAddresses, error) {
+	l1Reader := NewL1Reader(l1client, readerConfig)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
+	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -238,7 +238,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -252,19 +252,19 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error getting rollup admin: %w", err)
 	}
 	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
 	}
 
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("validator utils deploy error: %w", err)
 	}
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("validator utils deploy error: %w", err)
 	}
@@ -277,7 +277,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}
 	if len(validatorAddrs) > 0 {
 		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
 		if err != nil {
 			return nil, fmt.Errorf("error setting validator: %w", err)
 		}

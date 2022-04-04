@@ -152,7 +152,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	wasmModuleRoot, err := validator.ReadWasmModuleRoot()
 	Require(t, err)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, 5*time.Second)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, arbnode.TestL1ReaderConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
