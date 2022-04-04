@@ -44,17 +44,25 @@ func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.
 
 func CreateChallenge(
 	t *testing.T,
+	ctx context.Context,
 	auth *bind.TransactOpts,
 	client bind.ContractBackend,
 	ospEntry common.Address,
-	startMachineHash common.Hash,
-	endMachineHash common.Hash,
-	endMachineSteps uint64,
+	inputMachine MachineInterface,
+	maxInboxMessage uint64,
 	asserter common.Address,
 	challenger common.Address,
 ) (*mocksgen.MockResultReceiver, common.Address) {
 	resultReceiverAddr, _, resultReceiver, err := mocksgen.DeployMockResultReceiver(auth, client, common.Address{})
 	Require(t, err)
+
+	machine := inputMachine.CloneMachineInterface()
+	startMachineHash := machine.Hash()
+
+	Require(t, machine.Step(ctx, ^uint64(0)))
+
+	endMachineHash := machine.Hash()
+	endMachineSteps := machine.GetStepCount()
 
 	var startHashBytes [32]byte
 	var endHashBytes [32]byte
@@ -65,7 +73,7 @@ func CreateChallenge(
 		client,
 		ospEntry,
 		resultReceiverAddr,
-		^uint64(0),
+		maxInboxMessage,
 		[2][32]byte{startHashBytes, endHashBytes},
 		big.NewInt(int64(endMachineSteps)),
 		asserter,
@@ -101,18 +109,18 @@ func createGenesisAlloc(accts ...*bind.TransactOpts) core.GenesisAlloc {
 
 func runChallengeTest(
 	t *testing.T,
-	wasmPath string,
-	wasmLibPaths []string,
-	steps uint64,
+	baseMachine *ArbitratorMachine,
+	incorrectMachine MachineInterface,
 	asserterIsCorrect bool,
-	timeBetweenSteps time.Duration,
-	shouldTimeout bool,
+	testTimeout bool,
+	maxInboxMessage uint64,
 ) {
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlDebug)
 	log.Root().SetHandler(glogger)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	deployer := createTransactOpts(t)
 	asserter := createTransactOpts(t)
 	challenger := createTransactOpts(t)
@@ -123,40 +131,31 @@ func runChallengeTest(
 	ospEntry := DeployOneStepProofEntry(t, deployer, backend)
 	backend.Commit()
 
-	machine, err := LoadSimpleMachine(wasmPath, wasmLibPaths)
-	Require(t, err)
-
-	endMachine := machine.Clone()
-	Require(t, endMachine.Step(ctx, ^uint64(0)))
-
-	startMachineHash := machine.Hash()
-	endMachineHash := endMachine.Hash()
-	endMachineSteps := endMachine.GetStepCount()
-	if !asserterIsCorrect {
-		endMachineHash = IncorrectMachineHash(endMachineHash)
+	var asserterMachine, challengerMachine MachineInterface
+	var expectedWinner common.Address
+	if asserterIsCorrect {
+		expectedWinner = asserter.From
+		asserterMachine = baseMachine.Clone()
+		challengerMachine = incorrectMachine
+	} else {
+		expectedWinner = challenger.From
+		asserterMachine = incorrectMachine
+		challengerMachine = baseMachine.Clone()
 	}
 
 	resultReceiver, challengeManager := CreateChallenge(
 		t,
+		ctx,
 		deployer,
 		backend,
 		ospEntry,
-		startMachineHash,
-		endMachineHash,
-		endMachineSteps,
+		asserterMachine,
+		maxInboxMessage,
 		asserter.From,
 		challenger.From,
 	)
 
 	backend.Commit()
-
-	var asserterMachine MachineInterface = NewIncorrectMachine(machine.Clone(), steps)
-	var challengerMachine MachineInterface = machine.Clone()
-	expectedWinner := challenger.From
-	if asserterIsCorrect {
-		asserterMachine, challengerMachine = challengerMachine, asserterMachine
-		expectedWinner = asserter.From
-	}
 
 	asserterManager, err := NewExecutionChallengeManager(
 		backend,
@@ -183,7 +182,10 @@ func runChallengeTest(
 	Require(t, err)
 
 	for i := 0; i < 100; i++ {
-		err = backend.AdjustTime(timeBetweenSteps)
+		if testTimeout {
+			err = backend.AdjustTime(time.Second * 40)
+		}
+		Require(t, err)
 		backend.Commit()
 
 		var currentCorrect bool
@@ -195,13 +197,13 @@ func runChallengeTest(
 			currentCorrect = asserterIsCorrect
 		}
 		if err != nil {
-			if shouldTimeout && strings.Contains(err.Error(), "CHAL_DEADLINE") {
+			if testTimeout && strings.Contains(err.Error(), "CHAL_DEADLINE") {
 				t.Log("challenge completed in timeout")
 				return
 			}
 			if !currentCorrect &&
 				(strings.Contains(err.Error(), "lost challenge") || strings.Contains(err.Error(), "SAME_OSP_END")) {
-				if shouldTimeout {
+				if testTimeout {
 					t.Fatal("expected challenge to end in timeout")
 				}
 				t.Log("challenge completed! asserter hit expected error:", err)
@@ -226,27 +228,65 @@ func runChallengeTest(
 	t.Fatal("challenge timed out without winner")
 }
 
-var wasmDir = (func() string {
+func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *ArbitratorMachine {
 	_, filename, _, _ := runtime.Caller(0)
-	return path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
-})()
+	wasmDir := path.Join(path.Dir(filename), "../arbitrator/prover/test-cases/")
+
+	wasmPath := path.Join(wasmDir, wasmname)
+
+	var modulePaths []string
+	for _, moduleName := range wasmModules {
+		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
+	}
+
+	machine, err := LoadSimpleMachine(wasmPath, modulePaths)
+	Require(t, err)
+
+	return machine
+}
 
 func TestChallengeToOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false, 0, false)
+	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
+	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, true, 0, false)
+	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
+	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, false, 0, false)
+	machine := createBaseMachine(t, "const.wasm", nil)
+	IncorrectMachine := NewIncorrectMachine(machine, 20)
+	runChallengeTest(t, machine, IncorrectMachine, false, false, 0)
 }
 
 func TestChallengeToFailedErroredOSP(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "const.wasm"), nil, 23, true, 0, false)
+	machine := createBaseMachine(t, "const.wasm", nil)
+	IncorrectMachine := NewIncorrectMachine(machine, 20)
+	runChallengeTest(t, machine, IncorrectMachine, true, false, 0)
 }
 
 func TestChallengeToTimeout(t *testing.T) {
-	runChallengeTest(t, path.Join(wasmDir, "global-state.wasm"), []string{path.Join(wasmDir, "global-state-wrapper.wasm")}, 500, false, time.Second*40, true)
+	machine := createBaseMachine(t, "global-state.wasm", []string{"global-state-wrapper.wasm"})
+	IncorrectMachine := NewIncorrectMachine(machine, 500)
+	runChallengeTest(t, machine, IncorrectMachine, false, true, 0)
+}
+
+func TestChallengeToTooFar(t *testing.T) {
+	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
+	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
+	incorrectMachine := machine.Clone()
+	Require(t, incorrectMachine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
+	runChallengeTest(t, machine, incorrectMachine, false, false, 9)
+}
+
+func TestChallengeToFailedTooFar(t *testing.T) {
+	machine := createBaseMachine(t, "read-inboxmsg-10.wasm", []string{"global-state-wrapper.wasm"})
+	Require(t, machine.SetGlobalState(GoGlobalState{PosInBatch: 10}))
+	incorrectMachine := machine.Clone()
+	Require(t, machine.AddSequencerInboxMessage(10, []byte{0, 1, 2, 3}))
+	runChallengeTest(t, machine, incorrectMachine, true, false, 11)
 }
