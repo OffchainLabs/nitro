@@ -32,7 +32,7 @@ interface NodeInterface {
     /**
      * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator
      * @param send the l2->l1 send's hash
-     * @param root the root of the outbox accumulator
+     * @param root the root of the outbox accumulator (optional -- set to 0 to ignore root check)
      * @param size the number of elements in the accumulator at the time of the given root
      * @param leaf the position of the send in the accumulator
      */
@@ -41,5 +41,5 @@ interface NodeInterface {
         bytes32 root,
         uint64 size,
         uint64 leaf
-    ) external returns (bytes32[] memory);
+    ) external view returns (bytes32 rootAtSize, bytes32[] memory proof);
 }

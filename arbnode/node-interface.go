@@ -6,9 +6,11 @@ package arbnode
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -18,10 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
@@ -35,7 +39,13 @@ type ExecutionResult = core.ExecutionResult
 // This function handles messages sent to 0xc8 and uses NodeInterface.sol to determine what to do. No contract
 // actually exists at 0xc8, but the abi methods allow the incoming message's calldata to specify the arguments.
 //
-func ApplyNodeInterface(msg Message, statedb *state.StateDB, nodeInterface abi.ABI) (Message, *ExecutionResult, error) {
+func ApplyNodeInterface(
+	msg Message,
+	ctx context.Context,
+	statedb *state.StateDB,
+	backend core.NodeInterfaceBackendAPI,
+	nodeInterface abi.ABI,
+) (Message, *ExecutionResult, error) {
 
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 	outboxMethod := nodeInterface.Methods["constructOutboxProof"]
@@ -98,11 +108,12 @@ func ApplyNodeInterface(msg Message, statedb *state.StateDB, nodeInterface abi.A
 		size, _ := inputs[2].(uint64)
 		leaf, _ := inputs[3].(uint64)
 
-		if leaf > size {
-			return msg, nil, fmt.Errorf("leaf %v is newer than root %v", leaf, size)
+		if leaf >= size {
+			return msg, nil, fmt.Errorf("leaf %v is newer than root of size %v", leaf, size)
 		}
 
-		res, err := nodeInterfaceConstructOutboxProof(msg, send, root, size, leaf)
+		method := nodeInterface.Methods["constructOutboxProof"]
+		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, send, root, size, leaf, backend, method)
 		return msg, res, err
 
 	}
@@ -110,7 +121,26 @@ func ApplyNodeInterface(msg Message, statedb *state.StateDB, nodeInterface abi.A
 	return msg, nil, errors.New("method does not exist in NodeInterface.sol")
 }
 
-func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size, leaf uint64) (*ExecutionResult, error) {
+var merkleTopic common.Hash
+var withdrawTopic common.Hash
+
+func nodeInterfaceConstructOutboxProof(
+	msg Message,
+	ctx context.Context,
+	send, root common.Hash,
+	size, leaf uint64,
+	backend core.NodeInterfaceBackendAPI,
+	method abi.Method,
+) (*ExecutionResult, error) {
+
+	currentBlock := backend.CurrentBlock()
+	currentBlockInfo, err := types.DeserializeHeaderExtraInformation(currentBlock.Header())
+	if err != nil {
+		return nil, err
+	}
+	if leaf > currentBlockInfo.SendCount {
+		return nil, errors.New("leaf does not exist")
+	}
 
 	internalError := errors.New("internal error constructing proof")
 
@@ -123,7 +153,7 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 	}
 
 	// find which nodes we'll want in our proof up to a partial
-	query := make([]common.Hash, 0)             // the nodes we'll query for
+	query := make([]merkletree.LevelAndLeaf, 0) // the nodes we'll query for
 	nodes := make([]merkletree.LevelAndLeaf, 0) // the nodes needed (might not be found from query)
 	which := uint64(1)                          // which bit to flip & set
 	place := leaf                               // where we are in the tree
@@ -137,7 +167,7 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 
 		if sibling < size {
 			// the sibling must not be newer than the root
-			query = append(query, common.BigToHash(position.ToBigInt()))
+			query = append(query, position)
 		}
 		nodes = append(nodes, position)
 		place |= which // set the bit so that we approach from the right
@@ -161,39 +191,99 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 					Leaf:  leaf,
 				}
 
-				query = append(query, common.BigToHash(partial.ToBigInt()))
+				query = append(query, partial)
 				partials[partial] = common.Hash{}
 			}
 			power >>= 1
 		}
 	}
+	sort.Slice(query, func(i, j int) bool {
+		return query[i].Leaf < query[j].Leaf
+	})
 
 	// collect the logs
-	// var logs []types.Log
-	logs := []types.Log{}
-	if len(query) > 0 {
-		/*logs, err = client.FilterLogs(ctx, ethereum.FilterQuery{
-			Addresses: []common.Address{
-				arbSysAddress,
-			},
-			Topics: [][]common.Hash{
-				{merkleTopic, withdrawTopic},
-				nil,
-				nil,
-				query,
-			},
-		})
+	var search func(lo, hi uint64, find []merkletree.LevelAndLeaf)
+	var searchLogs []*types.Log
+	var searchErr error
+	var searchPositions = make(map[common.Hash]struct{})
+	for _, item := range query {
+		hash := common.BigToHash(item.ToBigInt())
+		searchPositions[hash] = struct{}{}
+	}
+	search = func(lo, hi uint64, find []merkletree.LevelAndLeaf) {
+
+		mid := (lo + hi) / 2
+
+		block, err := backend.BlockByNumber(ctx, rpc.BlockNumber(mid))
 		if err != nil {
-			return nil, internalError
-		}*/
-		_ = query
+			searchErr = err
+			return
+		}
+
+		if lo == mid {
+			all, err := backend.GetLogs(ctx, block.Hash())
+			if err != nil {
+				searchErr = err
+				return
+			}
+			for _, tx := range all {
+				for _, log := range tx {
+					if log.Address != types.ArbSysAddress {
+						// log not produced by ArbOS
+						continue
+					}
+
+					if log.Topics[0] != merkleTopic && log.Topics[0] != withdrawTopic {
+						// log is unrelated
+						continue
+					}
+
+					position := log.Topics[2]
+					if _, ok := searchPositions[position]; ok {
+						// ensure log is one we're looking for
+						searchLogs = append(searchLogs, log)
+					}
+				}
+			}
+			return
+		}
+
+		info, err := types.DeserializeHeaderExtraInformation(block.Header())
+		if err != nil {
+			searchErr = err
+			return
+		}
+
+		// Figure out which elements are above and below the midpoint
+		//   lower includes leaves older than the midpoint
+		//   upper includes leaves at least as new as the midpoint
+		//   note: while a binary search is possible here, it doesn't change the complexity
+		//
+		lower := find
+		for len(lower) > 0 && lower[len(lower)-1].Leaf >= info.SendCount {
+			lower = lower[:len(lower)-1]
+		}
+		upper := find[len(lower):]
+
+		if len(lower) > 0 {
+			search(lo, mid, lower)
+		}
+		if len(upper) > 0 {
+			search(mid+1, hi, upper)
+		}
+	}
+
+	search(0, currentBlock.NumberU64(), query)
+
+	if searchErr != nil {
+		return nil, searchErr
 	}
 
 	known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
 	partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
 	var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
 
-	for _, log := range logs {
+	for _, log := range searchLogs {
 
 		hash := log.Topics[2]
 		position := log.Topics[3]
@@ -208,7 +298,10 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 
 		known[place] = hash
 
-		if _, ok := partials[place]; ok {
+		if zero, ok := partials[place]; ok {
+			if zero != (common.Hash{}) {
+				return nil, internalError
+			}
 			partials[place] = hash
 			partialsByLevel[level] = hash
 			if minPartialPlace == nil || level < minPartialPlace.Level {
@@ -259,10 +352,11 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 			step.Leaf |= 1 << (step.Level - 1)
 			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
 
-			if known[step] != root {
+			if known[step] != root && root != (common.Hash{}) {
 				// a correct walk of the frontier should end with resolving the root
 				return nil, internalError
 			}
+			root = known[step]
 		}
 	}
 
@@ -276,7 +370,7 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 	}
 
 	proof := merkletree.MerkleProof{
-		RootHash:  root,
+		RootHash:  root, // now resolved
 		LeafHash:  send,
 		LeafIndex: leaf,
 		Proof:     hashes,
@@ -285,33 +379,37 @@ func nodeInterfaceConstructOutboxProof(msg Message, send, root common.Hash, size
 		return nil, internalError
 	}
 
-	proofBytes := []byte{}
-	for _, hash := range hashes {
-		proofBytes = append(proofBytes, hash.Bytes()...)
+	returnData, err := method.Outputs.Pack(root, hashes)
+	if err != nil {
+		return nil, fmt.Errorf("internal error: failed to encode outputs: %v", err)
 	}
 
 	result := &ExecutionResult{
 		UsedGas:       0,
 		Err:           nil,
-		ReturnData:    proofBytes,
+		ReturnData:    returnData,
 		ScheduledTxes: nil,
 	}
 	return result, nil
 }
 
 func init() {
-
 	nodeInterface, err := abi.JSON(strings.NewReader(node_interfacegen.NodeInterfaceABI))
 	if err != nil {
 		panic(err)
 	}
-	core.InterceptRPCMessage = func(msg Message, statedb *state.StateDB) (Message, *ExecutionResult, error) {
+	core.InterceptRPCMessage = func(
+		msg Message,
+		ctx context.Context,
+		statedb *state.StateDB,
+		backend core.NodeInterfaceBackendAPI,
+	) (Message, *ExecutionResult, error) {
 		to := msg.To()
 		arbosVersion := arbosState.ArbOSVersion(statedb) // check ArbOS has been installed
-		if to == nil || *to != common.HexToAddress("0xc8") || arbosVersion == 0 {
+		if to == nil || *to != types.NodeInterfaceAddress || arbosVersion == 0 {
 			return msg, nil, nil
 		}
-		return ApplyNodeInterface(msg, statedb, nodeInterface)
+		return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
 	}
 
 	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {
@@ -334,4 +432,11 @@ func init() {
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}
+
+	arbSys, err := precompilesgen.ArbSysMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	withdrawTopic = arbSys.Events["L2ToL1Transaction"].ID
+	merkleTopic = arbSys.Events["SendMerkleUpdate"].ID
 }

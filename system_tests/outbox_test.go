@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -33,15 +34,17 @@ func TestOutboxProofs(t *testing.T) {
 	Require(t, err, "failed to get abi")
 	withdrawTopic := arbSysAbi.Events["L2ToL1Transaction"].ID
 	merkleTopic := arbSysAbi.Events["SendMerkleUpdate"].ID
-	arbSysAddress := common.HexToAddress("0x64")
 
 	l2info, _, client := CreateTestL2(t, ctx)
 	auth := l2info.GetDefaultTransactOpts("Owner")
 
-	arbSys, err := precompilesgen.NewArbSys(arbSysAddress, client)
+	arbSys, err := precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	Require(t, err)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, client)
 	Require(t, err)
 
 	txnCount := int64(1 + rand.Intn(64))
+	txnCount = 4
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
@@ -185,7 +188,7 @@ func TestOutboxProofs(t *testing.T) {
 			if len(query) > 0 {
 				logs, err = client.FilterLogs(ctx, ethereum.FilterQuery{
 					Addresses: []common.Address{
-						arbSysAddress,
+						types.ArbSysAddress,
 					},
 					Topics: [][]common.Hash{
 						{merkleTopic, withdrawTopic},
@@ -317,6 +320,27 @@ func TestOutboxProofs(t *testing.T) {
 			if !proof.IsCorrect() {
 				Fail(t, "Proof is wrong")
 			}
+
+			//Check NodeInterface.sol produces equivalent proofs
+			outboxProof, err := nodeInterface.ConstructOutboxProof(
+				&bind.CallOpts{}, provable.hash, rootHash, treeSize, provable.leaf,
+			)
+			Require(t, err, "failed to construct outbox proof using NodeInterface.sol")
+			nodeRoot := common.Hash(outboxProof.RootAtSize)
+			nodeProof := outboxProof.Proof
+
+			if nodeRoot != rootHash {
+				Fail(t, "NodeInterface root differs\n", nodeRoot, "\n", rootHash)
+			}
+			if len(hashes) != len(nodeProof) {
+				Fail(t, "NodeInterface proof is the wrong size", len(nodeProof), len(hashes))
+			}
+			for i, correct := range hashes {
+				if nodeProof[i] != correct {
+					t.Error("NodeInterface proof differs", i, correct, nodeProof[i])
+				}
+			}
+			//_ = nodeInterface
 		}
 	}
 }
