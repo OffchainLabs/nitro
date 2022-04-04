@@ -6,6 +6,8 @@
 /*.test
 /system_tests/*_fuzz/*
 !/system_tests/*_fuzz/*_fuzz.go
+node_modules
+.DS_Store
 .idea
 .vscode
 cmd/node/data
@@ -15,7 +17,6 @@ solgen/coverage.json
 solgen/build/
 solgen/cache/
 solgen/go/
-solgen/node_modules/
 solgen/deployments/
 solgen/test/prover/proofs/*.json
 .make/
