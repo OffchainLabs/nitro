@@ -103,8 +103,8 @@ func ApplyNodeInterface(
 		if err != nil {
 			return msg, nil, err
 		}
-		send, _ := inputs[0].(common.Hash)
-		root, _ := inputs[1].(common.Hash)
+		send, _ := inputs[0].([32]byte)
+		root, _ := inputs[1].([32]byte)
 		size, _ := inputs[2].(uint64)
 		leaf, _ := inputs[3].(uint64)
 
@@ -141,8 +141,6 @@ func nodeInterfaceConstructOutboxProof(
 	if leaf > currentBlockInfo.SendCount {
 		return nil, errors.New("leaf does not exist")
 	}
-
-	internalError := errors.New("internal error constructing proof")
 
 	balanced := size == arbmath.NextPowerOf2(size)/2
 	treeLevels := int(arbmath.Log2ceil(size)) // the # of levels in the tree
@@ -220,7 +218,7 @@ func nodeInterfaceConstructOutboxProof(
 			return
 		}
 
-		if lo == mid {
+		if lo == hi {
 			all, err := backend.GetLogs(ctx, block.Hash())
 			if err != nil {
 				searchErr = err
@@ -238,7 +236,7 @@ func nodeInterfaceConstructOutboxProof(
 						continue
 					}
 
-					position := log.Topics[2]
+					position := log.Topics[3]
 					if _, ok := searchPositions[position]; ok {
 						// ensure log is one we're looking for
 						searchLogs = append(searchLogs, log)
@@ -300,7 +298,7 @@ func nodeInterfaceConstructOutboxProof(
 
 		if zero, ok := partials[place]; ok {
 			if zero != (common.Hash{}) {
-				return nil, internalError
+				return nil, errors.New("internal error constructing proof: duplicate partial")
 			}
 			partials[place] = hash
 			partialsByLevel[level] = hash
@@ -324,7 +322,7 @@ func nodeInterfaceConstructOutboxProof(
 
 			curr, ok := known[step]
 			if !ok {
-				return nil, internalError
+				return nil, errors.New("internal error constructing proof: bad step in walk")
 			}
 
 			left := curr
@@ -336,7 +334,7 @@ func nodeInterfaceConstructOutboxProof(
 				step.Leaf -= 1 << step.Level
 				partial, ok := known[step]
 				if !ok {
-					return nil, internalError
+					return nil, errors.New("internal error constructing proof: incomplete frontier")
 				}
 				left = partial
 			} else {
@@ -351,20 +349,20 @@ func nodeInterfaceConstructOutboxProof(
 			step.Level += 1
 			step.Leaf |= 1 << (step.Level - 1)
 			known[step] = crypto.Keccak256Hash(left.Bytes(), right.Bytes())
-
-			if known[step] != root && root != (common.Hash{}) {
-				// a correct walk of the frontier should end with resolving the root
-				return nil, internalError
-			}
-			root = known[step]
 		}
+
+		if known[step] != root && root != (common.Hash{}) {
+			// a correct walk of the frontier should end with resolving the root
+			return nil, errors.New("internal error constructing proof: failed to recover root")
+		}
+		root = known[step]
 	}
 
 	hashes := make([]common.Hash, len(nodes))
 	for i, place := range nodes {
 		hash, ok := known[place]
 		if !ok {
-			return nil, internalError
+			return nil, errors.New("internal error constructing proof: incomplete information")
 		}
 		hashes[i] = hash
 	}
@@ -376,7 +374,7 @@ func nodeInterfaceConstructOutboxProof(
 		Proof:     hashes,
 	}
 	if !proof.IsCorrect() {
-		return nil, internalError
+		return nil, errors.New("internal error constructing proof: proof is wrong")
 	}
 
 	returnData, err := method.Outputs.Pack(root, hashes)

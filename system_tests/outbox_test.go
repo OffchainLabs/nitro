@@ -44,7 +44,6 @@ func TestOutboxProofs(t *testing.T) {
 	Require(t, err)
 
 	txnCount := int64(1 + rand.Intn(64))
-	txnCount = 4
 
 	// represents a send we should be able to prove exists
 	type proofPair struct {
