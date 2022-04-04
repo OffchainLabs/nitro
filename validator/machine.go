@@ -24,6 +24,7 @@ type MachineInterface interface {
 	ValidForStep(uint64) bool
 	Step(context.Context, uint64) error
 	Hash() common.Hash
+	GetGlobalState() GoGlobalState
 	ProveNextStep() []byte
 }
 
