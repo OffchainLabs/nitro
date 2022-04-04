@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	flag "github.com/spf13/pflag"
 )
 
 type L1Reader struct {
@@ -25,17 +26,24 @@ type L1Reader struct {
 }
 
 type L1ReaderConfig struct {
-	Enable       bool
-	PollOnly     bool
-	PollInterval time.Duration
-	TxTimeout    time.Duration
+	Enable       bool          `koanf:"enable"`
+	PollOnly     bool          `koanf:"poll-only"`
+	PollInterval time.Duration `koanf:"poll-interval"`
+	TxTimeout    time.Duration `koanf:"tx-timeout"`
 }
 
 var DefaultL1ReaderConfig = L1ReaderConfig{
 	Enable:       true,
 	PollOnly:     false,
-	PollInterval: 7 * time.Second,
+	PollInterval: 15 * time.Second,
 	TxTimeout:    time.Minute,
+}
+
+func L1ReaderAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultL1ReaderConfig.Enable, "enable l1 connection")
+	f.Bool(prefix+".poll-only", DefaultL1ReaderConfig.PollOnly, "do not attempt to subscribe to L1 events")
+	f.Duration(prefix+".poll-interval", DefaultL1ReaderConfig.PollInterval, "interval when polling L1")
+	f.Duration(prefix+".tx-timeout", DefaultL1ReaderConfig.TxTimeout, "timeout when waiting for a transaction")
 }
 
 var TestL1ReaderConfig = L1ReaderConfig{

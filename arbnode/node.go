@@ -323,7 +323,7 @@ func (c *Config) ForwardingTarget() string {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
-	f.Bool(prefix+".enable-l1-reader", ConfigDefault.L1Reader.Enable, "enable l1 reader")
+	L1ReaderAddOptions(prefix+".l1-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
