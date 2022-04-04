@@ -31,25 +31,18 @@ interface NodeInterface {
 
     /**
      * @notice Constructs an outbox proof of an l2->l1 send's existence in the outbox accumulator
-     * @param send the l2->l1 send's hash             (optional -- set to 0 to ignore send check)
-     * @param root the root of the outbox accumulator (optional -- set to 0 to ignore root check)
-     * @param size the number of elements in the accumulator at the time of the given root
+     * @param size the number of elements in the accumulator
      * @param leaf the position of the send in the accumulator
-     * @return sendAtLeaf the l2->l1 send's hash             (informative when the `send` provided is 0)
-     * @return rootAtSize the root of the outbox accumulator (informative when the `root` provided is 0)
+     * @return send the l2->l1 send's hash
+     * @return root the root of the outbox accumulator
      * @return proof level-by-level branch hashes constituting a proof of the send's membership at the given size
      */
-    function constructOutboxProof(
-        bytes32 send,
-        bytes32 root,
-        uint64 size,
-        uint64 leaf
-    )
+    function constructOutboxProof(uint64 size, uint64 leaf)
         external
         view
         returns (
-            bytes32 sendAtLeaf,
-            bytes32 rootAtSize,
+            bytes32 send,
+            bytes32 root,
             bytes32[] memory proof
         );
 }

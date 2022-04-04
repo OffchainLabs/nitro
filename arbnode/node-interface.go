@@ -103,17 +103,15 @@ func ApplyNodeInterface(
 		if err != nil {
 			return msg, nil, err
 		}
-		send, _ := inputs[0].([32]byte)
-		root, _ := inputs[1].([32]byte)
-		size, _ := inputs[2].(uint64)
-		leaf, _ := inputs[3].(uint64)
+		size, _ := inputs[0].(uint64)
+		leaf, _ := inputs[1].(uint64)
 
 		if leaf >= size {
 			return msg, nil, fmt.Errorf("leaf %v is newer than root of size %v", leaf, size)
 		}
 
 		method := nodeInterface.Methods["constructOutboxProof"]
-		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, send, root, size, leaf, backend, method)
+		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, size, leaf, backend, method)
 		return msg, res, err
 
 	}
@@ -127,7 +125,6 @@ var withdrawTopic common.Hash
 func nodeInterfaceConstructOutboxProof(
 	msg Message,
 	ctx context.Context,
-	send, root common.Hash,
 	size, leaf uint64,
 	backend core.NodeInterfaceBackendAPI,
 	method abi.Method,
@@ -274,6 +271,7 @@ func nodeInterfaceConstructOutboxProof(
 	known := make(map[merkletree.LevelAndLeaf]common.Hash) // all values in the tree we know
 	partialsByLevel := make(map[uint64]common.Hash)        // maps for each level the partial it may have
 	var minPartialPlace *merkletree.LevelAndLeaf           // the lowest-level partial
+	var send common.Hash
 
 	for _, log := range searchLogs {
 
@@ -284,9 +282,6 @@ func nodeInterfaceConstructOutboxProof(
 		leafAdded := new(big.Int).SetBytes(position[8:]).Uint64()
 
 		if level == 0 && leafAdded == leaf {
-			if send != hash && send != (common.Hash{}) {
-				return nil, fmt.Errorf("The send %v provided differs from the actual send %v", send, hash)
-			}
 			send = hash
 		}
 
@@ -373,10 +368,7 @@ func nodeInterfaceConstructOutboxProof(
 		}
 		recoveryStep >>= 1
 	}
-	if root != recovery && root != (common.Hash{}) {
-		return nil, fmt.Errorf("The root %v provided differs from the recovered root %v", root, recovery)
-	}
-	root = recovery
+	root := recovery
 
 	proof := merkletree.MerkleProof{
 		RootHash:  root, // now resolved

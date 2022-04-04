@@ -325,21 +325,13 @@ func TestOutboxProofs(t *testing.T) {
 			}
 
 			// Check NodeInterface.sol produces equivalent proofs
-			rootUsed := common.Hash{} // the api allows these to be 0
-			hashUsed := common.Hash{} //
-			if rand.Int()%2 == 0 {
-				rootUsed = rootHash
-			}
-			if rand.Int()%2 == 0 {
-				hashUsed = provable.hash
-			}
 			outboxProof, err := nodeInterface.ConstructOutboxProof(
-				&bind.CallOpts{}, hashUsed, rootUsed, treeSize, provable.leaf,
+				&bind.CallOpts{}, treeSize, provable.leaf,
 			)
 			Require(t, err, "failed to construct outbox proof using NodeInterface.sol")
-			nodeRoot := common.Hash(outboxProof.RootAtSize)
+			nodeRoot := common.Hash(outboxProof.Root)
 			nodeProof := outboxProof.Proof
-			nodeSend := outboxProof.SendAtLeaf
+			nodeSend := outboxProof.Send
 
 			if nodeRoot != rootHash {
 				Fail(t, "NodeInterface root differs\n", nodeRoot, "\n", rootHash)

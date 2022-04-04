@@ -306,6 +306,7 @@ func (proof *MerkleProof) IsCorrect() bool {
 	hash := proof.LeafHash
 	index := proof.LeafIndex
 	for _, hashFromProof := range proof.Proof {
+
 		if index&1 == 0 {
 			hash = crypto.Keccak256Hash(hash.Bytes(), hashFromProof.Bytes())
 		} else {
