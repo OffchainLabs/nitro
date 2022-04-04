@@ -19,35 +19,15 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
 
-func getPendingBlockNumberNonArbitrum(ctx context.Context, client arbutil.L1Interface) (*big.Int, error) {
-	msg := ethereum.CallMsg{
-		// Pretend to be a contract deployment to execute EVM code without calling a contract.
-		To: nil,
-		// Contains the following EVM code, which returns the current block number:
-		// NUMBER
-		// PUSH1 0
-		// MSTORE
-		// PUSH1 32
-		// PUSH1 0
-		// RETURN
-		Data: []byte{0x43, 0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xF3},
-	}
-	callRes, err := client.PendingCallContract(ctx, msg)
-	if err != nil {
-		return nil, err
-	}
-	return new(big.Int).SetBytes(callRes), nil
-}
-
 func GetPendingBlockNumber(ctx context.Context, client arbutil.L1Interface) (*big.Int, error) {
 	// Attempt to get the block number from ArbSys, if it exists
 	arbSys, err := precompilesgen.NewArbSys(common.BigToAddress(big.NewInt(100)), client)
 	if err != nil {
-		return getPendingBlockNumberNonArbitrum(ctx, client)
+		return arbutil.GetCallMsgBlockNumber(ctx, client)
 	}
 	blockNum, err := arbSys.ArbBlockNumber(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return getPendingBlockNumberNonArbitrum(ctx, client)
+		return arbutil.GetCallMsgBlockNumber(ctx, client)
 	}
 	// Arbitrum chains don't have miners, so they're one block behind non-Arbitrum chains.
 	return blockNum.Add(blockNum, common.Big1), nil

@@ -192,7 +192,13 @@ func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transactio
 	for {
 		receipt, err := s.client.TransactionReceipt(ctx, txHash)
 		if err == nil {
-			return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
+			callBlockNr, err := arbutil.GetCallMsgBlockNumber(ctx, s.client)
+			if err != nil {
+				return nil, err
+			}
+			if callBlockNr.Cmp(receipt.BlockNumber) >= 0 {
+				return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
+			}
 		}
 		select {
 		case _, ok := <-headerchan:
