@@ -47,7 +47,6 @@ type ArbosState struct {
 	blsTable          *blsTable.BLSTable
 	chainOwners       *addressSet.AddressSet
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
-	timestamp         storage.StorageBackedUint64
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
 	backingStorage    *storage.Storage
@@ -78,7 +77,6 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage,
@@ -125,7 +123,6 @@ const (
 	versionOffset ArbosStateOffset = iota
 	upgradeVersionOffset
 	upgradeTimestampOffset
-	timestampOffset
 	networkFeeAccountOffset
 	chainIdOffset
 )
@@ -187,7 +184,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
