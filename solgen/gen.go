@@ -63,6 +63,7 @@ func main() {
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
+		module = strings.ReplaceAll(module, "-", "_")
 		module += "gen"
 
 		name := file[:len(file)-5]
