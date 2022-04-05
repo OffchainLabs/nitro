@@ -62,7 +62,16 @@ func main() {
 
 		return
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	var logFormat log.Format
+	if nodeConfig.LogType == "plaintext" {
+		logFormat = log.TerminalFormat(false)
+	} else if nodeConfig.LogType == "json" {
+		logFormat = log.JSONFormat()
+	} else {
+		flag.Usage()
+		panic(fmt.Sprintf("invalid log type: %v", nodeConfig.LogType))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
@@ -365,6 +374,7 @@ type NodeConfig struct {
 	L1         conf.L1Config         `koanf:"l1"`
 	L2         conf.L2Config         `koanf:"l2"`
 	LogLevel   int                   `koanf:"log-level"`
+	LogType    string                `koanf:"log-type"`
 	Persistent conf.PersistentConfig `koanf:"persistent"`
 	HTTP       conf.HTTPConfig       `koanf:"http"`
 	WS         conf.WSConfig         `koanf:"ws"`
@@ -379,6 +389,7 @@ var NodeConfigDefault = NodeConfig{
 	L1:         conf.L1ConfigDefault,
 	L2:         conf.L2ConfigDefault,
 	LogLevel:   int(log.LvlInfo),
+	LogType:    "plaintext",
 	Persistent: conf.PersistentConfigDefault,
 	HTTP:       conf.HTTPConfigDefault,
 	WS:         conf.WSConfigDefault,
@@ -392,6 +403,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	conf.PersistentConfigAddOptions("persistent", f)
 	conf.HTTPConfigAddOptions("http", f)
 	conf.WSConfigAddOptions("ws", f)
