@@ -47,7 +47,8 @@ func main() {
 		log.Fatal("bad path")
 	}
 	root := filepath.Dir(filename)
-	filePaths, err := filepath.Glob(filepath.Join(root, "build", "contracts", "src", "*", "*", "*.json"))
+	parent := filepath.Dir(root)
+	filePaths, err := filepath.Glob(filepath.Join(parent, "nitro-contracts", "build", "contracts", "src", "*", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}

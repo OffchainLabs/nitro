@@ -112,9 +112,9 @@ test-go-redis: test-go-deps
 	@printf $(done)
 
 test-gen-proofs: \
-	$(patsubst arbitrator/prover/test-cases/%.wat,solgen/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
-	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,solgen/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
-	solgen/test/prover/proofs/go.json
+	$(patsubst arbitrator/prover/test-cases/%.wat,nitro-contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
+	$(patsubst arbitrator/prover/test-cases/rust/src/bin/%.rs,nitro-contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
+	nitro-contracts/test/prover/proofs/go.json
 
 wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms)
 	@printf $(done)
@@ -125,7 +125,7 @@ clean:
 	rm -f arbitrator/prover/test-cases/*.wasm
 	rm -f arbitrator/prover/test-cases/go/main
 	rm -rf $(output_root)
-	rm -f solgen/test/prover/proofs/*.json
+	rm -f nitro-contracts/test/prover/proofs/*.json
 	rm -rf arbitrator/target
 	rm -rf arbitrator/wasm-libraries/target
 	rm -f arbitrator/wasm-libraries/soft-float/soft-float.wasm
@@ -133,7 +133,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f $(das_rpc_files)
-	@rm -rf solgen/build solgen/cache solgen/go/
+	@rm -rf nitro-contracts/build nitro-contracts/cache solgen/go/
 	@rm -f .make/*
 
 docker:
@@ -293,33 +293,33 @@ $(output_root)/machine/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
-solgen/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machine/soft-float.wasm
+nitro-contracts/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machine/soft-float.wasm
 	$(arbitrator_prover_bin) $< -l $(output_root)/machine/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
-solgen/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
+nitro-contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin
 
-solgen/test/prover/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
+nitro-contracts/test/prover/proofs/go.json: arbitrator/prover/test-cases/go/main $(arbitrator_prover_bin) $(arbitrator_wasm_libs)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 5000000
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
-solgen/test/prover/proofs/read-inboxmsg-10.json:
+nitro-contracts/test/prover/proofs/read-inboxmsg-10.json:
 	echo "[]" > $@
 
-solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
+nitro-contracts/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrator_prover_bin)
 	$(arbitrator_prover_bin) $< -o $@ --allow-hostapi --always-merkleize
 
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --fix
-	yarn --cwd solgen solhint
+	yarn --cwd nitro-contracts solhint
 	@touch $@
 
 .make/fmt: $(DEP_PREDICATE) build-node-deps .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	golangci-lint run --disable-all -E gofmt --fix
 	cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
-	yarn --cwd solgen prettier:solidity
+	yarn --cwd nitro-contracts prettier:solidity
 	@touch $@
 
 .make/test-go: $(DEP_PREDICATE) $(go_source) build-node-deps test-go-deps $(ORDER_ONLY_PREDICATE) .make
@@ -331,12 +331,12 @@ solgen/test/prover/proofs/%.json: arbitrator/prover/test-cases/%.wasm $(arbitrat
 	go run solgen/gen.go
 	@touch $@
 
-.make/solidity: $(DEP_PREDICATE) solgen/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
-	yarn --cwd solgen build
+.make/solidity: $(DEP_PREDICATE) nitro-contracts/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+	yarn --cwd nitro-contracts build
 	@touch $@
 
-.make/yarndeps: $(DEP_PREDICATE) solgen/package.json solgen/yarn.lock $(ORDER_ONLY_PREDICATE) .make
-	yarn --cwd solgen install
+.make/yarndeps: $(DEP_PREDICATE) nitro-contracts/package.json nitro-contracts/yarn.lock $(ORDER_ONLY_PREDICATE) .make
+	yarn --cwd nitro-contracts install
 	@touch $@
 
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
