@@ -275,19 +275,6 @@ func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
 	return state.blockhashes
 }
 
-func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
-	lastTimestamp, err := state.timestamp.Get()
-	state.Restrict(err)
-	if timestamp < lastTimestamp {
-		panic("timestamp decreased")
-	}
-	timePassed := timestamp - lastTimestamp
-	if timePassed > 0 {
-		state.Restrict(state.timestamp.Set(timestamp))
-	}
-	return timePassed
-}
-
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {
 	return state.networkFeeAccount.Get()
 }
