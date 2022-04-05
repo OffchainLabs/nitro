@@ -1,14 +1,14 @@
 {
   "name": "@arbitrum/nitro-contracts",
   "version": "1.0.0",
-  "description": "Layer 2 precompiles for Arbitrum Nitro",
+  "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "main": "index.js",
   "author": "Offchain Labs, Inc.",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/offchainlabs/nitro.git",
-    "directory": "solgen"
+    "directory": "contracts"
   },
   "bugs": {
     "url": "https://github.com/offchainlabs/nitro/issues"

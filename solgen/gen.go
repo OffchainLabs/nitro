@@ -47,7 +47,8 @@ func main() {
 		log.Fatal("bad path")
 	}
 	root := filepath.Dir(filename)
-	filePaths, err := filepath.Glob(filepath.Join(root, "build", "contracts", "src", "*", "*", "*.json"))
+	parent := filepath.Dir(root)
+	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,6 +63,7 @@ func main() {
 		dir, file := filepath.Split(path)
 		dir, _ = filepath.Split(dir[:len(dir)-1])
 		_, module := filepath.Split(dir[:len(dir)-1])
+		module = strings.ReplaceAll(module, "-", "_")
 		module += "gen"
 
 		name := file[:len(file)-5]
