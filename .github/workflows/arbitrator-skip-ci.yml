@@ -4,10 +4,10 @@ on:
   pull_request:
     paths-ignore:
       - 'arbitrator/**'
-      - 'solgen/src/osp/**'
-      - 'solgen/src/mock/**'
-      - 'solgen/test/**'
-      - 'solgen/hardhat.config.ts'
+      - 'contracts/src/osp/**'
+      - 'contracts/src/mock/**'
+      - 'contracts/test/**'
+      - 'contracts/hardhat.config.ts'
       - 'Makefile'
 
 jobs:

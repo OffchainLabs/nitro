@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ type SeqCoordinator struct {
 
 type SeqCoordinatorConfig struct {
 	Enable                  bool                          `koanf:"enable"`
+	ChosenHealthcheckAddr   string                        `koanf:"chosen-healthcheck-addr"`
 	RedisUrl                string                        `koanf:"redis-url"`
 	LockoutDuration         time.Duration                 `koanf:"lockout-duration"`
 	LockoutSpare            time.Duration                 `koanf:"lockout-spare"`
@@ -77,6 +79,7 @@ type SeqCoordinatorDangerousConfig struct {
 
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
+	f.String(prefix+".chosen-healthcheck-addr", DefaultSeqCoordinatorConfig.ChosenHealthcheckAddr, "if non-empty, launch an HTTP service binding to this address that returns status code 200 when chosen and 503 otherwise")
 	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
 	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
 	f.Duration(prefix+".seq-num-duration", DefaultSeqCoordinatorConfig.SeqNumDuration, "")
@@ -94,18 +97,19 @@ func SeqCoordinatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:          false,
-	RedisUrl:        "",
-	LockoutDuration: time.Duration(5) * time.Minute,
-	LockoutSpare:    time.Duration(30) * time.Second,
-	SeqNumDuration:  time.Duration(24) * time.Hour,
-	UpdateInterval:  time.Duration(10) * time.Second,
-	RetryInterval:   time.Second,
-	AllowedMsgLag:   200,
-	MaxMsgPerPoll:   120,
-	MyUrl:           "",
-	SigningKey:      "",
-	Dangerous:       DefaultSeqCoordinatorDangerousConfig,
+	Enable:                false,
+	ChosenHealthcheckAddr: "",
+	RedisUrl:              "",
+	LockoutDuration:       time.Duration(5) * time.Minute,
+	LockoutSpare:          time.Duration(30) * time.Second,
+	SeqNumDuration:        time.Duration(24) * time.Hour,
+	UpdateInterval:        time.Duration(10) * time.Second,
+	RetryInterval:         time.Second,
+	AllowedMsgLag:         200,
+	MaxMsgPerPoll:         120,
+	MyUrl:                 "",
+	SigningKey:            "",
+	Dangerous:             DefaultSeqCoordinatorDangerousConfig,
 }
 
 var DefaultSeqCoordinatorDangerousConfig = SeqCoordinatorDangerousConfig{
@@ -647,9 +651,44 @@ func (c *SeqCoordinator) DebugPrint() string {
 		" redisErrors:", c.redisErrors)
 }
 
+type seqCoordinatorChosenHealthcheck struct {
+	c *SeqCoordinator
+}
+
+func (h seqCoordinatorChosenHealthcheck) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if h.c.CurrentlyChosen() {
+		response.WriteHeader(http.StatusOK)
+	} else {
+		response.WriteHeader(http.StatusServiceUnavailable)
+	}
+}
+
+func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
+	server := &http.Server{
+		Addr:    c.config.ChosenHealthcheckAddr,
+		Handler: seqCoordinatorChosenHealthcheck{c},
+	}
+
+	go func() {
+		<-ctx.Done()
+		err := server.Shutdown(ctx)
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			log.Warn("error shutting down coordinator chosen healthcheck server", "err", err)
+		}
+	}()
+
+	err := server.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Warn("error serving coordinator chosen healthcheck server", "err", err)
+	}
+}
+
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn)
 	c.CallIteratively(c.update)
+	if c.config.ChosenHealthcheckAddr != "" {
+		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
+	}
 }
 
 func (c *SeqCoordinator) StopAndWait() {

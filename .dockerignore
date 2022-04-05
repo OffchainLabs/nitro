@@ -7,8 +7,8 @@
 **/.gitmodules
 go-ethereum/tests
 **/*.yml
-solgen/build
-solgen/cache/
+contracts/build
+contracts/cache/
 solgen/go
 **/node_modules
 
