@@ -124,8 +124,8 @@ struct SimpleProfile {
     local_cycles: u64,
 }
 
-const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & nitro-contracts's OneStepProverHostIo.sol
-const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & nitro-contracts's OneStepProverHostIo.sol
+const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
+const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 
 fn main() -> Result<()> {
     let opts = Opts::from_args();

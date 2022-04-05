@@ -10,8 +10,8 @@ extern "C" {
 #[repr(C, align(32))]
 struct Bytes32([u8; 32]);
 
-const INBOX_HEADER_LEN: usize = 40; // also in src/main.rs & nitro-contracts's OneStepProverHostIo.sol
-const DELAYED_HEADER_LEN: usize = 112; // also in src/main.rs & nitro-contracts's OneStepProverHostIo.sol
+const INBOX_HEADER_LEN: usize = 40; // also in src/main.rs & contracts's OneStepProverHostIo.sol
+const DELAYED_HEADER_LEN: usize = 112; // also in src/main.rs & contracts's OneStepProverHostIo.sol
 
 fn main() {
     println!("hello!");

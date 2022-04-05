@@ -4,10 +4,10 @@ on:
   pull_request:
     paths-ignore:
       - 'arbitrator/**'
-      - 'nitro-contracts/src/osp/**'
-      - 'nitro-contracts/src/mock/**'
-      - 'nitro-contracts/test/**'
-      - 'nitro-contracts/hardhat.config.ts'
+      - 'contracts/src/osp/**'
+      - 'contracts/src/mock/**'
+      - 'contracts/test/**'
+      - 'contracts/hardhat.config.ts'
       - 'Makefile'
 
 jobs:

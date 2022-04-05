@@ -5,10 +5,10 @@ on:
   pull_request:
     paths:
       - 'arbitrator/**'
-      - 'nitro-contracts/src/osp/**'
-      - 'nitro-contracts/src/mock/**'
-      - 'nitro-contracts/test/**'
-      - 'nitro-contracts/hardhat.config.ts'
+      - 'contracts/src/osp/**'
+      - 'contracts/src/mock/**'
+      - 'contracts/test/**'
+      - 'contracts/hardhat.config.ts'
       - '.github/workflows/arbitrator-ci.yml'
       - 'Makefile'
   push:
@@ -176,7 +176,7 @@ jobs:
       - name: Run proof validation tests
         run: |
           npm install --global yarn
-          cd nitro-contracts
+          cd contracts
           yarn install
           yarn build
           yarn hardhat --network localhost test test/prover/*.ts

@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/offchainlabs/nitro.git",
-    "directory": "nitro-contracts"
+    "directory": "contracts"
   },
   "bugs": {
     "url": "https://github.com/offchainlabs/nitro/issues"

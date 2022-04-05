@@ -25,9 +25,9 @@ FROM node:17-bullseye-slim as contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++
 WORKDIR /workspace
-COPY nitro-contracts/package.json nitro-contracts/yarn.lock nitro-contracts/
-RUN cd nitro-contracts && yarn
-COPY nitro-contracts nitro-contracts/
+COPY contracts/package.json contracts/yarn.lock contracts/
+RUN cd contracts && yarn
+COPY contracts contracts/
 COPY Makefile .
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
@@ -59,13 +59,13 @@ COPY ./statetransfer ./statetransfer
 COPY ./util ./util
 COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
-COPY ./nitro-contracts/src/precompiles/ ./nitro-contracts/src/precompiles/
-COPY ./nitro-contracts/package.json ./nitro-contracts/yarn.lock ./nitro-contracts/
+COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
+COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
 COPY ./solgen/gen.go ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
 COPY --from=brotli-wasm-export / target/
-COPY --from=contracts-builder workspace/nitro-contracts/build/contracts/src/precompiles/ nitro-contracts/build/contracts/src/precompiles/
+COPY --from=contracts-builder workspace/contracts/build/contracts/src/precompiles/ contracts/build/contracts/src/precompiles/
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
@@ -116,7 +116,7 @@ COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
-COPY ./nitro-contracts ./nitro-contracts
+COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM scratch as machine-export
@@ -135,7 +135,7 @@ COPY go-ethereum/go.mod go-ethereum/go.sum go-ethereum/
 COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
 COPY . ./
-COPY --from=contracts-builder workspace/nitro-contracts/build/ nitro-contracts/build/
+COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
