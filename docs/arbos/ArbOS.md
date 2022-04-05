@@ -6,7 +6,7 @@ ArbOS is the Layer 2 EVM hypervisor that facilitates the execution environment o
 
 ArbOS provides L2-specific precompiles with methods smart contracts can call the same way they can solidity functions. This section documents the infrastructure that makes this possible. For more details on specific calls, please refer to the [methods documentation](Precompiles.md).
 
-A precompile consists of a of solidity interface in [`solgen/src/precompiles/`][solgen_precompiles_dir] and a corresponding golang implementation in [`precompiles/`][precompiles_dir]. Using geth's abi generator, [`solgen/gen.go`][gen_file] generates [`solgen/go/precompilesgen/precompilesgen.go`][precompilesgen_link], which collects the ABI data of the precompiles. The [runtime installer][installer_link] uses this generated file to check the type safety of each precompile's implementer.
+A precompile consists of a of solidity interface in [`nitro-contracts/src/precompiles/`][nitro_precompiles_dir] and a corresponding golang implementation in [`precompiles/`][precompiles_dir]. Using geth's abi generator, [`solgen/gen.go`][gen_file] generates [`solgen/go/precompilesgen/precompilesgen.go`][precompilesgen_link], which collects the ABI data of the precompiles. The [runtime installer][installer_link] uses this generated file to check the type safety of each precompile's implementer.
 
 [The installer][installer_link] uses runtime reflection to ensure each implementer has all the right methods and signatures. This includes restricting access to stateful objects like the EVM and statedb based on the declared purity. Additionally, the installer verifies and populates event function pointers to provide each precompile the ability to emit logs and know their gas costs. Additional configuration like restricting a precompile's methods to only be callable by chain owners is possible by adding precompile wrappers like [`ownerOnly`][ownerOnly_link] and [`debugOnly`][debugOnly_link] to their [installation entry][installation_link].
 
@@ -14,7 +14,7 @@ The calling, dispatching, and recording of precompile methods is done via runtim
 
 Each time a tx calls a method of an L2-specific precompile, a [`call context`][call_context_link] is created to track and record the gas burnt. For convenience, it also provides access to the public fields of the underlying [`TxProcessor`][TxProcessor_link]. Because sub-transactions could revert without updates to this struct, the [`TxProcessor`][TxProcessor_link] only makes public that which is safe, such as the amount of L1 calldata paid by the top level transaction.
 
-[solgen_precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/solgen/src/precompiles
+[nitro_precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/nitro-contracts/src/precompiles
 [precompiles_dir]: https://github.com/OffchainLabs/nitro/tree/master/precompiles
 [installer_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L379
 [installation_link]: https://github.com/OffchainLabs/nitro/blob/bc6b52daf7232af2ca2fec3f54a5b546f1196c45/precompiles/precompile.go#L403

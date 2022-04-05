@@ -15,7 +15,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: solgen
+        working-directory: nitro-contracts
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -43,6 +43,6 @@ jobs:
         uses: codecov/codecov-action@v2
         with:
           fail_ci_if_error: true
-          files: ./solgen/coverage.json
+          files: ./nitro-contracts/coverage.json
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
