@@ -80,7 +80,7 @@ build-prover-lib: $(arbitrator_prover_lib)
 
 build-prover-bin: $(arbitrator_prover_bin)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machine/module_root
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machine/module_root $(output_root)/machines/latest
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -289,6 +289,10 @@ $(output_root)/machine/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-
 
 $(output_root)/machine/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/brotli.wasm  > $@
+
+$(output_root)/machines/latest: $(DEP_PREDICATE)
+	mkdir -p $(output_root)/machines
+	ln -s ../machine $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@

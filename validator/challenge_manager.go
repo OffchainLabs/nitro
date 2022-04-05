@@ -68,6 +68,7 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
+	machineLoader     *NitroMachineLoader
 	targetNumMachines int
 
 	initialMachine        *ArbitratorMachine
@@ -88,6 +89,7 @@ func NewChallengeManager(
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
+	machineLoader *NitroMachineLoader,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -145,6 +147,7 @@ func NewChallengeManager(
 		inboxTracker:          inboxTracker,
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
+		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
 	}, nil
 }
@@ -381,7 +384,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := GetZeroStepMachine(ctx)
+	initialFrozenMachine, err := m.machineLoader.GetZeroStepMachine(ctx)
 	if err != nil {
 		return err
 	}

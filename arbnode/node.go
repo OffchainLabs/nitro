@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -363,6 +365,7 @@ func ConfigDefaultL1Test() *Config {
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
 
 	return &config
 }
@@ -443,6 +446,7 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Node struct {
+	Config           *Config
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
 	TxStreamer       *TransactionStreamer
@@ -536,7 +540,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.EnableL1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{config, backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -561,7 +565,22 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, dataAvailabilityService)
+		nitroMachineConfig := validator.DefaultNitroMachineConfig
+		if config.Wasm.RootPath != "" {
+			nitroMachineConfig.RootPath = config.Wasm.RootPath
+		} else {
+			execfile, err := os.Executable()
+			if err != nil {
+				panic(err)
+			}
+			targetDir := filepath.Dir(filepath.Dir(execfile))
+			nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines", "latest")
+		}
+		if config.Wasm.CachePath != "" {
+			nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
+		}
+		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, machineLoader, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
@@ -600,7 +619,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{config, backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -676,6 +695,20 @@ func (n *Node) Start(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		var expectedWasmModuleRoot *common.Hash
+		if n.Config.Wasm.ModuleRoot != "" {
+			hash := common.HexToHash(n.Config.Wasm.ModuleRoot)
+			expectedWasmModuleRoot = &hash
+		}
+		go func() {
+			root, err := n.BlockValidator.ValidateWasmModuleRoot(ctx, expectedWasmModuleRoot)
+			if err != nil {
+				panic(fmt.Errorf("failed to validate wasm module root: %w", err))
+			} else {
+				log.Info("loaded wasm machine", "wasmModuleRoot", root)
+			}
+		}()
 	}
 	if n.Staker != nil {
 		err = n.Staker.Initialize(ctx)

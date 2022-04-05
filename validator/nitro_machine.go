@@ -28,14 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-type staticMachineData struct {
-	machine    *ArbitratorMachine
-	chanSignal chan struct{}
-	ready      bool
-	err        error
-	once       sync.Once
-}
-
 type NitroMachineConfig struct {
 	RootPath                string // prepends all other paths
 	ProverBinPath           string
@@ -43,27 +35,21 @@ type NitroMachineConfig struct {
 	InitialMachineCachePath string
 }
 
-var StaticNitroMachineConfig = NitroMachineConfig{
-	RootPath:                "./target/machine/",
+var DefaultNitroMachineConfig = NitroMachineConfig{
+	RootPath:                "./target/machines/latest/",
 	ProverBinPath:           "replay.wasm",
 	ModulePaths:             []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 	InitialMachineCachePath: "./target/etc/initial-machine-cache",
 }
 
-var zeroStepMachine staticMachineData
-var hostIoMachine staticMachineData
-
 func init() {
 	_, thisfile, _, _ := runtime.Caller(0)
 	projectDir := filepath.Dir(filepath.Dir(thisfile))
-	StaticNitroMachineConfig.RootPath = filepath.Join(projectDir, "target/machine")
-
-	zeroStepMachine.chanSignal = make(chan struct{})
-	hostIoMachine.chanSignal = make(chan struct{})
+	DefaultNitroMachineConfig.RootPath = filepath.Join(projectDir, "target", "machines", "latest")
 }
 
-func ReadWasmModuleRoot() (common.Hash, error) {
-	fileToRead := path.Join(StaticNitroMachineConfig.RootPath, "module_root")
+func (c NitroMachineConfig) ReadWasmModuleRoot() (common.Hash, error) {
+	fileToRead := path.Join(c.RootPath, "module_root")
 	fileBytes, err := ioutil.ReadFile(fileToRead)
 	if err != nil {
 		return common.Hash{}, err
@@ -75,40 +61,70 @@ func ReadWasmModuleRoot() (common.Hash, error) {
 	return common.HexToHash(s), nil
 }
 
-func createZeroStepMachineInternal() {
-	moduleList := []string{}
-	for _, module := range StaticNitroMachineConfig.ModulePaths {
-		moduleList = append(moduleList, filepath.Join(StaticNitroMachineConfig.RootPath, module))
+type loaderMachineStatus struct {
+	machine    *ArbitratorMachine
+	chanSignal chan struct{}
+	err        error
+	once       sync.Once
+}
+
+func (s *loaderMachineStatus) signalReady() {
+	close(s.chanSignal)
+}
+
+type NitroMachineLoader struct {
+	config      NitroMachineConfig
+	zeroStep    loaderMachineStatus
+	untilHostIo loaderMachineStatus
+}
+
+func NewNitroMachineLoader(config NitroMachineConfig) *NitroMachineLoader {
+	return &NitroMachineLoader{
+		config: config,
+		zeroStep: loaderMachineStatus{
+			chanSignal: make(chan struct{}),
+		},
+		untilHostIo: loaderMachineStatus{
+			chanSignal: make(chan struct{}),
+		},
 	}
-	binPath := filepath.Join(StaticNitroMachineConfig.RootPath, StaticNitroMachineConfig.ProverBinPath)
+}
+
+func (l *NitroMachineLoader) createZeroStepMachineInternal() {
+	defer l.zeroStep.signalReady()
+	moduleList := []string{}
+	for _, module := range l.config.ModulePaths {
+		moduleList = append(moduleList, filepath.Join(l.config.RootPath, module))
+	}
+	binPath := filepath.Join(l.config.RootPath, l.config.ProverBinPath)
 	cModuleList := CreateCStringList(moduleList)
 	cBinPath := C.CString(binPath)
 	log.Info("creating nitro machine", "binpath", binPath, "moduleList", moduleList)
 	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)))
 	if baseMachine == nil {
-		panic("failed to create base machine")
+		l.zeroStep.err = errors.New("failed to create base machine")
+		return
 	}
 	FreeCStringList(cModuleList, len(moduleList))
 	C.free(unsafe.Pointer(cBinPath))
-	zeroStepMachine.machine = machineFromPointer(baseMachine)
-	zeroStepMachine.machine.Freeze()
-	signalReady(&zeroStepMachine)
+	l.zeroStep.machine = machineFromPointer(baseMachine)
+	l.zeroStep.machine.Freeze()
 }
 
-// We try to store/load state before firt host_io to a file.
+// We try to store/load state before first host_io to a file.
 // We will chicken out of that if something fails, but still try to calculate the machine
-func createHostIoMachineInternal() {
-	defer signalReady(&hostIoMachine)
+func (l *NitroMachineLoader) createHostIoMachineInternal() {
+	defer l.untilHostIo.signalReady()
 	ctx := context.Background()
-	zerostep, err := GetZeroStepMachine(ctx)
+	zerostep, err := l.GetZeroStepMachine(ctx)
 	if err != nil {
-		hostIoMachine.err = err
+		l.untilHostIo.err = err
 		return
 	}
 	machine := zerostep.Clone()
 	hash := machine.Hash()
 	expectedName := hash.String() + ".bin"
-	cacheDir := StaticNitroMachineConfig.InitialMachineCachePath
+	cacheDir := l.config.InitialMachineCachePath
 	foundInCache := false
 	saveStateToFile := true
 	err = os.MkdirAll(cacheDir, 0o755)
@@ -163,16 +179,16 @@ func createHostIoMachineInternal() {
 			// Safe as if DeserializeAndReplaceState returns an error it will not have mutated the machine
 			log.Info("failed to load initial machine cache; will reexecute", "err", err)
 		} else {
-			hostIoMachine.machine = machine
-			hostIoMachine.machine.Freeze()
+			l.untilHostIo.machine = machine
+			l.untilHostIo.machine.Freeze()
 			return
 		}
 	} else {
 		log.Info("didn't find initial machine in cache", "hash", hash)
 	}
 
-	hostIoMachine.err = machine.StepUntilHostIo(ctx)
-	if hostIoMachine.err != nil {
+	l.untilHostIo.err = machine.StepUntilHostIo(ctx)
+	if l.untilHostIo.err != nil {
 		return
 	}
 
@@ -180,8 +196,8 @@ func createHostIoMachineInternal() {
 		panic("Machine entered errored state while caching execution up to host io")
 	}
 
-	hostIoMachine.machine = machine
-	hostIoMachine.machine.Freeze()
+	l.untilHostIo.machine = machine
+	l.untilHostIo.machine.Freeze()
 	if !saveStateToFile {
 		return
 	}
@@ -200,61 +216,55 @@ func createHostIoMachineInternal() {
 	}
 }
 
-func signalReady(machine *staticMachineData) {
-	machine.ready = true
-	close(machine.chanSignal)
-}
-
-func waitForMachine(ctx context.Context, machine *staticMachineData) (*ArbitratorMachine, error) {
+func (s *loaderMachineStatus) waitForMachine(ctx context.Context) (*ArbitratorMachine, error) {
 	select {
-	case <-machine.chanSignal:
+	case <-s.chanSignal:
 	case <-ctx.Done():
-	}
-	if machine.err != nil {
-		return nil, machine.err
-	}
-	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if machine.machine == nil {
-		return nil, errors.New("machine is nill")
+	if s.err != nil {
+		return nil, s.err
 	}
-	if machine.ready {
-		return machine.machine, nil
+	if s.machine == nil {
+		return nil, errors.New("machine is nil")
 	}
-	return nil, errors.New("failed to get machine")
+	return s.machine, nil
 }
 
 // Starts work on creating the machine in a separate goroutine
 // Returns immediately. Can be called multiple times.
-func CreateZeroStepMachine() {
-	zeroStepMachine.once.Do(func() { go createZeroStepMachineInternal() })
+func (l *NitroMachineLoader) CreateZeroStepMachine() {
+	l.zeroStep.once.Do(func() { go l.createZeroStepMachineInternal() })
 }
 
 // Starts work on creating the machine in a separate goroutine
 // Returns immediately. Can be called multiple times.
-func CreateHostIoMachine() {
-	hostIoMachine.once.Do(func() { go createHostIoMachineInternal() })
+func (l *NitroMachineLoader) CreateHostIoMachine() {
+	l.untilHostIo.once.Do(func() { go l.createHostIoMachineInternal() })
 }
 
 // Gets Zero-Steps machine (used by challenges) when one is ready
 // Returns with proper error if context aborts
-func GetZeroStepMachine(ctx context.Context) (*ArbitratorMachine, error) {
-	CreateZeroStepMachine()
-	return waitForMachine(ctx, &zeroStepMachine)
+func (l *NitroMachineLoader) GetZeroStepMachine(ctx context.Context) (*ArbitratorMachine, error) {
+	l.CreateZeroStepMachine()
+	return l.zeroStep.waitForMachine(ctx)
 }
 
 // Gets Zero-Steps machine (used by challenges) when one is ready
 // Returns with proper error if context aborts
-func GetHostIoMachine(ctx context.Context) (*ArbitratorMachine, error) {
-	CreateHostIoMachine()
-	return waitForMachine(ctx, &hostIoMachine)
+func (l *NitroMachineLoader) GetHostIoMachine(ctx context.Context) (*ArbitratorMachine, error) {
+	l.CreateHostIoMachine()
+	return l.untilHostIo.waitForMachine(ctx)
 }
 
-func GetInitialModuleRoot(ctx context.Context) (common.Hash, error) {
-	machine, err := GetZeroStepMachine(ctx)
+func (l *NitroMachineLoader) RecomputeInitialModuleRoot(ctx context.Context) (common.Hash, error) {
+	machine, err := l.GetZeroStepMachine(ctx)
 	if err != nil {
 		return common.Hash{}, err
 	}
 	return machine.GetModuleRoot(), nil
+}
+
+func (l *NitroMachineLoader) GetConfig() NitroMachineConfig {
+	return l.config
 }

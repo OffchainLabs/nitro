@@ -23,6 +23,7 @@ import (
 )
 
 type StatelessBlockValidator struct {
+	MachineLoader   *NitroMachineLoader
 	inboxReader     InboxReaderInterface
 	inboxTracker    InboxTrackerInterface
 	streamer        TransactionStreamerInterface
@@ -177,6 +178,7 @@ func newValidationEntry(
 }
 
 func NewStatelessBlockValidator(
+	machineLoader *NitroMachineLoader,
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
 	streamer TransactionStreamerInterface,
@@ -184,12 +186,12 @@ func NewStatelessBlockValidator(
 	db ethdb.Database,
 	das das.DataAvailabilityService,
 ) (*StatelessBlockValidator, error) {
-	CreateHostIoMachine()
 	genesisBlockNum, err := streamer.GetGenesisBlockNumber()
 	if err != nil {
 		return nil, err
 	}
 	validator := &StatelessBlockValidator{
+		MachineLoader:   machineLoader,
 		inboxReader:     inboxReader,
 		inboxTracker:    inbox,
 		streamer:        streamer,
@@ -198,6 +200,7 @@ func NewStatelessBlockValidator(
 		das:             das,
 		genesisBlockNum: genesisBlockNum,
 	}
+	validator.MachineLoader.CreateHostIoMachine()
 	return validator, nil
 }
 
@@ -297,7 +300,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		}
 	}
 
-	basemachine, err := GetHostIoMachine(ctx)
+	basemachine, err := v.MachineLoader.GetHostIoMachine(ctx)
 	if err != nil {
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}

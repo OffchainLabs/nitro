@@ -432,6 +432,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
+			s.blockValidator.MachineLoader,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

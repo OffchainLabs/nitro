@@ -116,9 +116,10 @@ COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
+RUN rm -f target/machines/latest && mv target/machine target/machines/latest
 
 FROM scratch as machine-export
-COPY --from=module-root-calc /workspace/target/machine/ /machine
+COPY --from=module-root-calc /workspace/target/machines/ /machines
 
 
 FROM golang:1.17-bullseye as node-builder
