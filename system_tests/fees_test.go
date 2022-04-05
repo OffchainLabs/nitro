@@ -6,12 +6,10 @@ package arbtest
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -112,9 +110,6 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 }
 
 func TestSequencerFeePaid(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlWarn)
-	log.Root().SetHandler(glogger)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
