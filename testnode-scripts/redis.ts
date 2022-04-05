@@ -6,8 +6,8 @@ async function getAndPrint(redis: RedisClientType<RedisModules, RedisScripts>, k
     console.log("redis[%s]:%s", key, val)
 }
 
-async function readRedis(key: string) {
-    const redis = createClient({ url: consts.redisUrl })
+async function readRedis(redisUrl: string, key: string) {
+    const redis = createClient({ url: redisUrl })
     await redis.connect()
     await getAndPrint(redis, key)
 }
@@ -15,18 +15,20 @@ async function readRedis(key: string) {
 export const redisReadCommand = {
     command: "redis-read",
     describe: "read key",
-    builder: { 'key': {
-        string: true,
-        describe: 'key to read',
-        default: 'coordinator.priorities'
-    }},
+    builder: {
+        'key': {
+            string: true,
+            describe: 'key to read',
+            default: 'coordinator.priorities'
+        }
+    },
     handler: async (argv: any) => {
-        await readRedis(argv.key)
+        await readRedis(argv.redisUrl, argv.key)
     }
 }
 
-async function writeRedisPriorities(priorities: number) {
-    const redis = createClient({ url: consts.redisUrl })
+async function writeRedisPriorities(redisUrl: string, priorities: number) {
+    const redis = createClient({ url: redisUrl })
 
     let prio_sequencers = "bcd"
     let priostring = ""
@@ -53,12 +55,14 @@ async function writeRedisPriorities(priorities: number) {
 export const redisInitCommand = {
     command: "redis-init",
     describe: "init redis priorities",
-    builder: { 'redundancy':{
-        string: true,
-        describe: 'number of servers [0-3]',
-        default: 0
-    }},
+    builder: {
+        'redundancy': {
+            string: true,
+            describe: 'number of servers [0-3]',
+            default: 0
+        }
+    },
     handler: async (argv: any) => {
-        await writeRedisPriorities(argv.redundancy)
+        await writeRedisPriorities(argv.redisUrl, argv.redundancy)
     }
 }
