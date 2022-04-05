@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 #![allow(clippy::missing_safety_doc)] // We have a lot of unsafe ABI
 
 pub mod binary;

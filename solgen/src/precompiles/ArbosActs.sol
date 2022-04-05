@@ -28,13 +28,13 @@ interface ArbosActs {
      * @param l1BaseFee the L1 BaseFee
      * @param l2BaseFeeLastBlock the L2 BaseFee in the last block's header
      * @param l1BlockNumber the L1 block number
-     * @param timeLastBlock the timestamp in the last block's header
+     * @param timePassed number of seconds since the last block
      */
     function startBlock(
         uint256 l1BaseFee,
         uint256 l2BaseFeeLastBlock,
         uint64 l1BlockNumber,
-        uint64 timeLastBlock
+        uint64 timePassed
     ) external;
 
     error CallerNotArbOS();
