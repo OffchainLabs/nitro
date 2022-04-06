@@ -54,7 +54,12 @@ func startup() error {
 		return nil
 	}
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	logFormat, err := conf.ParseLogType(relayConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(*loglevel))
 	log.Root().SetHandler(glogger)
 
@@ -92,12 +97,14 @@ func startup() error {
 type RelayConfig struct {
 	Conf     conf.ConfConfig `koanf:"conf"`
 	LogLevel int             `koanf:"log-level"`
+	LogType  string          `koanf:"log-type"`
 	Node     RelayNodeConfig `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
 	Conf:     conf.ConfConfigDefault,
 	LogLevel: int(log.LvlInfo),
+	LogType:  "plaintext",
 	Node:     RelayNodeConfigDefault,
 }
 
