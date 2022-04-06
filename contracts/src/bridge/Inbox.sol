@@ -403,7 +403,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
         bytes memory _messageData,
         bool allowRevertOnCall
     ) internal returns (uint256) {
-        if (allowRevertOnCall) EthCallAware.revertOnCall(_messageData);
+        if (allowRevertOnCall) EthCallAware.revertOnCall(abi.encodePacked(_sender, _messageData));
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));
