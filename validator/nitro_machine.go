@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -19,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"unsafe"
@@ -45,7 +45,7 @@ type NitroMachineConfig struct {
 var StaticNitroMachineConfig = NitroMachineConfig{
 	RootPath:                "./target/machine/",
 	ProverBinPath:           "replay.wasm",
-	ModulePaths:             []string{"wasi_stub.wasm", "soft-float.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
+	ModulePaths:             []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 	InitialMachineCachePath: "./target/etc/initial-machine-cache",
 }
 
@@ -59,6 +59,19 @@ func init() {
 
 	zeroStepMachine.chanSignal = make(chan struct{})
 	hostIoMachine.chanSignal = make(chan struct{})
+}
+
+func ReadWasmModuleRoot() (common.Hash, error) {
+	fileToRead := path.Join(StaticNitroMachineConfig.RootPath, "module_root")
+	fileBytes, err := ioutil.ReadFile(fileToRead)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	s := strings.TrimSpace(string(fileBytes))
+	if len(s) > 64 {
+		s = s[0:64]
+	}
+	return common.HexToHash(s), nil
 }
 
 func createZeroStepMachineInternal() {

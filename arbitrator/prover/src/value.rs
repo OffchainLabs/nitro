@@ -1,8 +1,13 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+use crate::{
+    binary::{FloatType, RefType},
+    utils::Bytes32,
+};
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-
-use crate::utils::Bytes32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
@@ -23,15 +28,33 @@ impl ValueType {
     }
 }
 
+impl From<FloatType> for ValueType {
+    fn from(ty: FloatType) -> ValueType {
+        match ty {
+            FloatType::F32 => ValueType::F32,
+            FloatType::F64 => ValueType::F64,
+        }
+    }
+}
+
+impl From<RefType> for ValueType {
+    fn from(ty: RefType) -> ValueType {
+        match ty {
+            RefType::FuncRef => ValueType::FuncRef,
+            RefType::ExternRef => panic!("Extern refs not supported"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum IntegerValType {
     I32,
     I64,
 }
 
-impl Into<ValueType> for IntegerValType {
-    fn into(self) -> ValueType {
-        match self {
+impl From<IntegerValType> for ValueType {
+    fn from(ty: IntegerValType) -> ValueType {
+        match ty {
             IntegerValType::I32 => ValueType::I32,
             IntegerValType::I64 => ValueType::I64,
         }

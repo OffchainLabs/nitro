@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -25,6 +24,7 @@ type MachineInterface interface {
 	ValidForStep(uint64) bool
 	Step(context.Context, uint64) error
 	Hash() common.Hash
+	GetGlobalState() GoGlobalState
 	ProveNextStep() []byte
 }
 
@@ -99,12 +99,12 @@ func (m *ArbitratorMachine) GetStepCount() uint64 {
 
 func (m *ArbitratorMachine) IsRunning() bool {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_get_status(m.ptr) == C.Running
+	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_RUNNING
 }
 
 func (m *ArbitratorMachine) IsErrored() bool {
 	defer runtime.KeepAlive(m)
-	return C.arbitrator_get_status(m.ptr) == C.Errored
+	return C.arbitrator_get_status(m.ptr) == C.ARBITRATOR_MACHINE_STATUS_ERRORED
 }
 
 func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {

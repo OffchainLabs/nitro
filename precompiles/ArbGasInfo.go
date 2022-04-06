@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -112,7 +111,7 @@ func (con ArbGasInfo) GetGasAccountingParams(c ctx, evm mech) (huge, huge, huge,
 
 // Get the minimum gas price needed for a transaction to succeed
 func (con ArbGasInfo) GetMinimumGasPrice(c ctx, evm mech) (huge, error) {
-	return c.state.L2PricingState().MinGasPriceWei()
+	return c.state.L2PricingState().MinBaseFeeWei()
 }
 
 // Get the number of seconds worth of the speed limit the gas pool contains

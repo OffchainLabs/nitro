@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcaster
 
@@ -21,16 +20,18 @@ type predicate interface {
 }
 
 func waitUntilUpdated(t *testing.T, p predicate) {
-	updateTimeout := time.After(2 * time.Second)
+	updateTimer := time.NewTimer(2 * time.Second)
+	defer updateTimer.Stop()
 	for {
 		if p.Test() {
 			break
 		}
 		select {
-		case <-updateTimeout:
+		case <-updateTimer.C:
 			t.Fatalf("%s", p.Error())
-		case <-time.After(10 * time.Millisecond):
+		default:
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

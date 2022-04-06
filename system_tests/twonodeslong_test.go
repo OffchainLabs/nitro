@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -10,6 +9,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"io/ioutil"
 	"math/big"
 	"math/rand"
@@ -21,10 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 )
 
-func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
+func testTwoNodesLong(t *testing.T, dasModeStr string) {
 	largeLoops := 8
 	avgL2MsgsPerLoop := 30
 	avgDelayedMessagesPerLoop := 10
@@ -42,25 +41,27 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.NodeConfigL1Test
-	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	defer os.RemoveAll(dbPath)
-	if dasMode == das.LocalDataAvailability {
+	if dasModeStr == "local" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
-		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
+	l2info, nodeA, l2client, l1info, l1backend, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l1NodeConfigB := arbnode.NodeConfigL1Test
-	l1NodeConfigB.BatchPoster = false
-	l1NodeConfigB.BlockValidator = false
-	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("DelayedFaucet")
 	l2info.GenerateAccount("DelayedReceiver")
@@ -69,11 +70,11 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	l2info.GenerateAccount("ErrorTxSender")
 
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
-		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(params.InitialBaseFee*int64(l2info.TransferGas)), nil),
+		l2info.PrepareTx("Faucet", "ErrorTxSender", l2info.TransferGas, big.NewInt(l2pricing.InitialBaseFeeWei*int64(l2info.TransferGas)), nil),
 	})
 
 	delayedMsgsToSendMax := big.NewInt(int64(largeLoops * avgDelayedMessagesPerLoop * 10))
-	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(params.InitialBaseFee*100000)), delayedMsgsToSendMax)
+	delayedFaucetNeeds := new(big.Int).Mul(new(big.Int).Add(fundsPerDelayed, new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei*100000)), delayedMsgsToSendMax)
 	SendWaitTestTransactions(t, ctx, l2client, []*types.Transaction{
 		l2info.PrepareTx("Faucet", "DelayedFaucet", l2info.TransferGas, delayedFaucetNeeds, nil),
 	})
@@ -83,7 +84,7 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 	if delayedFaucetBalance.Cmp(delayedFaucetNeeds) != 0 {
 		t.Fatalf("Unexpected balance, has %v, expects %v", delayedFaucetBalance, delayedFaucetNeeds)
 	}
-	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, params.InitialBaseFee)
+	t.Logf("DelayedFaucet has %v, per delayd: %v, baseprice: %v", delayedFaucetBalance, fundsPerDelayed, l2pricing.InitialBaseFeeWei)
 
 	if avgTotalL1MessagesPerLoop < avgDelayedMessagesPerLoop {
 		Fail(t, "bad params, avgTotalL1MessagesPerLoop should include avgDelayedMessagesPerLoop")
@@ -199,9 +200,9 @@ func testTwoNodesLong(t *testing.T, dasMode das.DataAvailabilityMode) {
 }
 
 func TestTwoNodesLong(t *testing.T) {
-	testTwoNodesLong(t, das.OnchainDataAvailability)
+	testTwoNodesLong(t, "onchain")
 }
 
 func TestTwoNodesLongLocalDAS(t *testing.T) {
-	testTwoNodesLong(t, das.LocalDataAvailability)
+	testTwoNodesLong(t, "local")
 }

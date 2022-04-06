@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -12,14 +11,23 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks int64
-	CheckDelay  time.Duration
-	HardReorg   bool // erase future transactions in addition to overwriting existing ones
+	DelayBlocks int64         `koanf:"delay-blocks"`
+	CheckDelay  time.Duration `koanf:"check-delay"`
+	HardReorg   bool          `koanf:"hard-reorg"`
+}
+
+func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Int64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
+	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "how long to wait between inbox checks")
+	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
@@ -336,11 +344,13 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				}
 			}
 		}
-		// TODO feed reading
+
+		timer := time.NewTimer(ir.config.CheckDelay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-time.After(ir.config.CheckDelay):
+		case <-timer.C:
 		}
 	}
 }
@@ -382,7 +392,13 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return msg.Header.RequestId.Big(), nil
+	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	// Re-check the last few blocks just in case there are delayed messages we missed
+	msgBlock.Sub(msgBlock, big.NewInt(20))
+	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
+		return new(big.Int).Set(r.firstMessageBlock), nil
+	}
+	return msgBlock, nil
 }
 
 func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

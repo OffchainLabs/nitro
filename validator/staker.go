@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -16,9 +15,11 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
+
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
-	"github.com/pkg/errors"
 )
 
 const txTimeout time.Duration = 5 * time.Minute
@@ -37,28 +38,66 @@ const (
 )
 
 type L1PostingStrategy struct {
-	HighGasThreshold   float64
-	HighGasDelayBlocks int64
+	HighGasThreshold   float64 `koanf:"high-gas-threshold"`
+	HighGasDelayBlocks int64   `koanf:"high-gas-delay-blocks"`
+}
+
+var DefaultL1PostingStrategy = L1PostingStrategy{
+	HighGasThreshold:   0,
+	HighGasDelayBlocks: 0,
+}
+
+func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
+	f.Float64(prefix+".high-gas-threshold", DefaultL1PostingStrategy.HighGasThreshold, "high gas threshold")
+	f.Int64(prefix+".high-gas-delay-blocks", DefaultL1PostingStrategy.HighGasDelayBlocks, "high gas delay blocks")
 }
 
 type L1ValidatorConfig struct {
-	Strategy            string
-	StakerInterval      time.Duration
-	L1PostingStrategy   L1PostingStrategy
-	DontChallenge       bool
-	WithdrawDestination string
-	TargetNumMachines   int
-	ConfirmationBlocks  int64
+	Enable              bool              `koanf:"enable"`
+	Strategy            string            `koanf:"strategy"`
+	StakerInterval      time.Duration     `koanf:"staker-interval"`
+	L1PostingStrategy   L1PostingStrategy `koanf:"posting-strategy"`
+	DisableChallenge    bool              `koanf:"disable-challenge"`
+	WithdrawDestination string            `koanf:"withdraw-destination"`
+	TargetMachineCount  int               `koanf:"target-machine-count"`
+	ConfirmationBlocks  int64             `koanf:"confirmation-blocks"`
+	Dangerous           DangerousConfig   `koanf:"dangerous"`
 }
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
+	Enable:              false,
 	Strategy:            "Watchtower",
 	StakerInterval:      time.Minute,
 	L1PostingStrategy:   L1PostingStrategy{},
-	DontChallenge:       false,
+	DisableChallenge:    false,
 	WithdrawDestination: "",
-	TargetNumMachines:   4,
+	TargetMachineCount:  4,
 	ConfirmationBlocks:  12,
+	Dangerous:           DangerousConfig{},
+}
+
+func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
+	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
+	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
+	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
+	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
+	f.String(prefix+".withdraw-destination", DefaultL1ValidatorConfig.WithdrawDestination, "validator withdraw destination")
+	f.Int(prefix+".target-machine-count", DefaultL1ValidatorConfig.TargetMachineCount, "target machine count")
+	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
+	DangerousConfigAddOptions(prefix+".dangerous", f)
+}
+
+type DangerousConfig struct {
+	WithoutBlockValidator bool `koanf:"without-block-validator"`
+}
+
+var DefaultDangerousConfig = DangerousConfig{
+	WithoutBlockValidator: false,
+}
+
+func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".without-block-validator", DefaultL1ValidatorConfig.Dangerous.WithoutBlockValidator, "DANGEROUS! allows running an L1 validator without a block validator")
 }
 
 type nodeAndHash struct {
@@ -393,7 +432,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxTracker,
 			s.txStreamer,
 			latestConfirmedCreated,
-			s.config.TargetNumMachines,
+			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,
 		)
 		if err != nil {
@@ -423,7 +462,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 	switch action := action.(type) {
 	case createNodeAction:
-		if wrongNodesExist && s.config.DontChallenge {
+		if wrongNodesExist && s.config.DisableChallenge {
 			log.Error("refusing to challenge assertion as config disables challenges")
 			info.CanProgress = false
 			return nil

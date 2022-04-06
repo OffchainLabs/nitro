@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -8,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -36,10 +38,15 @@ type blockTestState struct {
 
 const seqInboxTestIters = 40
 
-func TestSequencerInboxReader(t *testing.T) {
+func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1(t, ctx, false)
+	conf := arbnode.ConfigDefaultL1Test()
+	if validator {
+		conf.BlockValidator.Enable = true
+		conf.BlockValidator.ConcurrentRunsLimit = 16
+	}
+	l2Info, arbNode, _, l1Info, l1backend, l1Client, stack := CreateTestNodeOnL1WithConfig(t, ctx, false, conf, params.ArbitrumDevTestChainConfig())
 	l2Backend := arbNode.Backend
 	defer stack.Close()
 
@@ -150,7 +157,7 @@ func TestSequencerInboxReader(t *testing.T) {
 				sourceNum := rand.Int() % len(state.accounts)
 				source := state.accounts[sourceNum]
 				amount := new(big.Int).SetUint64(uint64(rand.Int()) % state.balances[source].Uint64())
-				reserveAmount := new(big.Int).SetUint64(params.InitialBaseFee * 10000000)
+				reserveAmount := new(big.Int).SetUint64(l2pricing.InitialBaseFeeWei * 100000000)
 				if state.balances[source].Cmp(new(big.Int).Add(amount, reserveAmount)) < 0 {
 					// Leave enough funds for gas
 					amount = big.NewInt(1)
@@ -170,8 +177,8 @@ func TestSequencerInboxReader(t *testing.T) {
 
 				rawTx := &types.DynamicFeeTx{
 					To:        &dest,
-					Gas:       210000,
-					GasFeeCap: big.NewInt(params.InitialBaseFee * 2),
+					Gas:       util.NormalizeL2GasForL1GasInitial(210000, params.GWei),
+					GasFeeCap: big.NewInt(l2pricing.InitialBaseFeeWei * 2),
 					Value:     amount,
 					Nonce:     state.nonces[source],
 				}
@@ -257,6 +264,18 @@ func TestSequencerInboxReader(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 
+		if validator && i%15 == 0 {
+			for i := 0; ; i++ {
+				lastValidated := arbNode.BlockValidator.LastBlockValidated()
+				if lastValidated == expectedBlockNumber {
+					break
+				} else if i >= 1000 {
+					Fail(t, "timed out waiting for block validator; have", lastValidated, "want", expectedBlockNumber)
+				}
+				time.Sleep(time.Second)
+			}
+		}
+
 		for _, state := range blockStates {
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
@@ -273,4 +292,8 @@ func TestSequencerInboxReader(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSequencerInboxReader(t *testing.T) {
+	testSequencerInboxReaderImpl(t, false)
 }

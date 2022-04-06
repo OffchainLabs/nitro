@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -308,6 +307,9 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, newD
 	seqBatchIter.Release()
 	if reorgSeqBatchesToCount != nil {
 		count := *reorgSeqBatchesToCount
+		if t.validator != nil {
+			t.validator.ReorgToBatchCount(count)
+		}
 		err = batch.Put(sequencerBatchCountKey, uint64ToBytes(count))
 		if err != nil {
 			return err
@@ -385,6 +387,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	defer t.mutex.Unlock()
 
 	pos := batches[0].SequenceNumber
+	startPos := pos
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	if pos > 0 {
@@ -493,7 +496,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if err != nil {
 		return err
 	}
-	log.Info("InboxTracker", "SequencerBatchCount", pos)
+	log.Info("InboxTracker", "sequencerBatchCount", pos, "prevMessageCount", prevbatchmeta.MessageCount, "newMessageCount", int(prevbatchmeta.MessageCount)+len(messages))
+
+	if t.validator != nil {
+		t.validator.ReorgToBatchCount(startPos)
+	}
 
 	// This also writes the batch
 	err = t.txStreamer.AddMessagesAndEndBatch(prevbatchmeta.MessageCount, true, messages, dbBatch)
@@ -502,15 +509,15 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 
 	if t.validator != nil {
-		batchMap := make(map[uint64][]byte, len(batches))
+		batchBytes := make([][]byte, 0, len(batches))
 		for _, batch := range batches {
 			msg, err := batch.Serialize(ctx, client)
 			if err != nil {
 				return err
 			}
-			batchMap[batch.SequenceNumber] = msg
+			batchBytes = append(batchBytes, msg)
 		}
-		t.validator.ProcessBatches(batchMap)
+		t.validator.ProcessBatches(startPos, batchBytes)
 	}
 
 	if t.txStreamer.broadcastServer != nil && prevbatchmeta.MessageCount > 0 {
@@ -550,6 +557,10 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		} else if err != nil {
 			return err
 		}
+	}
+
+	if t.validator != nil {
+		t.validator.ReorgToBatchCount(count)
 	}
 
 	dbBatch := t.db.NewBatch()

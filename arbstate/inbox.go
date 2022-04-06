@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbstate
 
@@ -9,17 +8,16 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/offchainlabs/nitro/zeroheavy"
 	"io"
+	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxBackend interface {
@@ -54,6 +52,8 @@ type sequencerMessage struct {
 }
 
 const maxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
+const maxZeroheavyDecompressedLen = 101*maxDecompressedLen/100 + 64
+const MaxSegmentsPerSequencerMessage = 100 * 1024
 
 func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilityServiceReader) *sequencerMessage {
 	if len(data) < 40 {
@@ -84,6 +84,14 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 		}
 
 		if len(payload) > 0 {
+			if IsZeroheavyEncodedHeaderByte(data[40]) {
+				pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload)), int64(maxZeroheavyDecompressedLen)))
+				if err != nil {
+					log.Warn("error reading from zeroheavy decoder", err.Error())
+					pl = []byte{}
+				}
+				payload = pl
+			}
 			decompressed, err := arbcompress.Decompress(payload[1:], maxDecompressedLen)
 			if err == nil {
 				reader := bytes.NewReader(decompressed)
@@ -95,6 +103,10 @@ func parseSequencerMessage(ctx context.Context, data []byte, das DataAvailabilit
 						if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 							log.Warn("error parsing sequencer message segment", "err", err.Error())
 						}
+						break
+					}
+					if len(segments) >= MaxSegmentsPerSequencerMessage {
+						log.Warn("too many segments in sequence batch")
 						break
 					}
 					segments = append(segments, segment)
@@ -136,7 +148,7 @@ func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, das D
 	}
 }
 
-var invalidMessage *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
+var InvalidL1Message *arbos.L1IncomingMessage = &arbos.L1IncomingMessage{
 	Header: &arbos.L1IncomingMessageHeader{
 		Kind: arbos.L1MessageType_Invalid,
 	},
@@ -169,7 +181,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*MessageWithMetadata, error
 	// parsing error in getNextMsg
 	if msg == nil && err == nil {
 		msg = &MessageWithMetadata{
-			Message:             invalidMessage,
+			Message:             InvalidL1Message,
 			DelayedMessagesRead: r.delayedMessagesRead,
 		}
 	}
@@ -238,7 +250,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 		segmentKind := segment[0]
 		if segmentKind == BatchSegmentKindAdvanceTimestamp || segmentKind == BatchSegmentKindAdvanceL1BlockNumber {
 			rd := bytes.NewReader(segment[1:])
-			advancing, err := rlp.NewStream(rd, 16).Uint()
+			advancing, err := rlp.NewStream(rd, 16).Uint64()
 			if err != nil {
 				log.Warn("error parsing sequencer advancing segment", "err", err)
 				segmentNum++
@@ -273,6 +285,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	}
 	if segmentNum >= uint64(len(seqMsg.segments)) {
 		// after end of batch there might be "virtual" delayedMsgSegments
+		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.afterDelayedMessages)
 		segment = []byte{BatchSegmentKindDelayedMessages}
 	} else {
 		segment = seqMsg.segments[int(segmentNum)]
@@ -285,12 +298,6 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 	segment = segment[1:]
 	var msg *MessageWithMetadata
 	if kind == BatchSegmentKindL2Message || kind == BatchSegmentKindL2MessageBrotli {
-
-		// L2 message
-		var blockNumberHash common.Hash
-		copy(blockNumberHash[:], math.U256Bytes(arbmath.UintToBig(blockNumber)))
-		var timestampHash common.Hash
-		copy(timestampHash[:], math.U256Bytes(arbmath.UintToBig(timestamp)))
 
 		if kind == BatchSegmentKindL2MessageBrotli {
 			decompressed, err := arbcompress.Decompress(segment[1:], arbos.MaxL2MessageSize)
@@ -306,10 +313,10 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				Header: &arbos.L1IncomingMessageHeader{
 					Kind:        arbos.L1MessageType_L2Message,
 					Poster:      l1pricing.SequencerAddress,
-					BlockNumber: blockNumberHash,
-					Timestamp:   timestampHash,
+					BlockNumber: blockNumber,
+					Timestamp:   timestamp,
 					RequestId:   nil,
-					BaseFeeL1:   common.Hash{},
+					L1BaseFee:   big.NewInt(0),
 				},
 				L2msg: segment,
 			},
@@ -325,7 +332,7 @@ func (r *inboxMultiplexer) getNextMsg() (*MessageWithMetadata, error) {
 				)
 			}
 			msg = &MessageWithMetadata{
-				Message:             invalidMessage,
+				Message:             InvalidL1Message,
 				DelayedMessagesRead: seqMsg.afterDelayedMessages,
 			}
 		} else {

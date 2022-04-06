@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package retryables
 
@@ -19,10 +18,11 @@ import (
 )
 
 const RetryableLifetimeSeconds = 7 * 24 * 60 * 60 // one week
+const RetryableReapPrice = 58000
 
 type RetryableState struct {
 	retryables   *storage.Storage
-	timeoutQueue *storage.Queue
+	TimeoutQueue *storage.Queue
 }
 
 var (
@@ -96,7 +96,7 @@ func (rs *RetryableState) CreateRetryable(
 	_ = ret.timeoutWindowsLeft.Set(0)
 
 	// insert the new retryable into the queue so it can be reaped later
-	return ret, rs.timeoutQueue.Put(id)
+	return ret, rs.TimeoutQueue.Put(id)
 }
 
 func (rs *RetryableState) OpenRetryable(id common.Hash, currentTimestamp uint64) (*Retryable, error) {
@@ -150,12 +150,13 @@ func (rs *RetryableState) DeleteRetryable(id common.Hash, evm *vm.EVM, scenario 
 		return false, err
 	}
 
-	_ = retStorage.SetUint64ByUint64(numTriesOffset, 0)
-	_ = retStorage.SetByUint64(timeoutOffset, common.Hash{})
-	_ = retStorage.SetByUint64(fromOffset, common.Hash{})
-	_ = retStorage.SetByUint64(toOffset, common.Hash{})
-	_ = retStorage.SetByUint64(callvalueOffset, common.Hash{})
-	_ = retStorage.SetByUint64(beneficiaryOffset, common.Hash{})
+	_ = retStorage.ClearByUint64(numTriesOffset)
+	_ = retStorage.ClearByUint64(fromOffset)
+	_ = retStorage.ClearByUint64(toOffset)
+	_ = retStorage.ClearByUint64(callvalueOffset)
+	_ = retStorage.ClearByUint64(beneficiaryOffset)
+	_ = retStorage.ClearByUint64(timeoutOffset)
+	_ = retStorage.ClearByUint64(timeoutWindowsLeftOffset)
 	err = retStorage.OpenSubStorage(calldataKey).ClearBytes()
 	return true, err
 }
@@ -172,8 +173,13 @@ func (retryable *Retryable) Beneficiary() (common.Address, error) {
 	return retryable.beneficiary.Get()
 }
 
-func (retryable *Retryable) Timeout() (uint64, error) {
-	return retryable.timeout.Get()
+func (retryable *Retryable) CalculateTimeout() (uint64, error) {
+	timeout, err := retryable.timeout.Get()
+	if err != nil {
+		return 0, err
+	}
+	windows, err := retryable.timeoutWindowsLeft.Get()
+	return timeout + windows*RetryableLifetimeSeconds, err
 }
 
 func (retryable *Retryable) SetTimeout(val uint64) error {
@@ -201,31 +207,39 @@ func (retryable *Retryable) CalldataSize() (uint64, error) {
 	return retryable.calldata.Size()
 }
 
-func (rs *RetryableState) Keepalive(ticketId common.Hash, currentTimestamp, limitBeforeAdd, timeToAdd uint64) error {
+func (rs *RetryableState) Keepalive(
+	ticketId common.Hash,
+	currentTimestamp,
+	limitBeforeAdd,
+	timeToAdd uint64,
+) (uint64, error) {
 	retryable, err := rs.OpenRetryable(ticketId, currentTimestamp)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if retryable == nil {
-		return errors.New("ticketId not found")
+		return 0, errors.New("ticketId not found")
 	}
-	timeout, err := retryable.Timeout()
+	timeout, err := retryable.CalculateTimeout()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if timeout > limitBeforeAdd {
-		return errors.New("timeout too far into the future")
+		return 0, errors.New("timeout too far into the future")
 	}
 
 	// Add a duplicate entry to the end of the queue (only the last one deletes the retryable)
-	err = rs.timeoutQueue.Put(retryable.id)
+	err = rs.TimeoutQueue.Put(retryable.id)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := retryable.timeoutWindowsLeft.Increment(); err != nil {
-		return err
+		return 0, err
 	}
-	return retryable.SetTimeout(timeout + timeToAdd)
+	newTimeout := timeout + RetryableLifetimeSeconds
+
+	// Pay in advance for the work needed to reap the duplicate from the timeout queue
+	return newTimeout, rs.retryables.Burner().Burn(RetryableReapPrice)
 }
 
 func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for testing
@@ -234,8 +248,10 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	}
 	rTries, _ := retryable.NumTries()
 	oTries, _ := other.NumTries()
-	rTimeout, _ := retryable.Timeout()
-	oTimeout, _ := other.Timeout()
+	rTimeout, _ := retryable.timeout.Get()
+	oTimeout, _ := other.timeout.Get()
+	rWindows, _ := retryable.timeoutWindowsLeft.Get()
+	oWindows, _ := other.timeoutWindowsLeft.Get()
 	rFrom, _ := retryable.From()
 	oFrom, _ := other.From()
 	rTo, _ := retryable.To()
@@ -247,7 +263,8 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 	rBytes, _ := retryable.Calldata()
 	oBytes, err := other.Calldata()
 
-	diff := rTries != oTries || rTimeout != oTimeout || rFrom != oFrom || rBeneficiary != oBeneficiary
+	diff := rTries != oTries || rTimeout != oTimeout || rWindows != oWindows
+	diff = diff || rFrom != oFrom || rBeneficiary != oBeneficiary
 	diff = diff || rCallvalue.Cmp(oCallvalue) != 0 || !bytes.Equal(rBytes, oBytes)
 	if diff {
 		return false, err
@@ -266,30 +283,30 @@ func (retryable *Retryable) Equals(other *Retryable) (bool, error) { // for test
 }
 
 func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm.EVM, scenario util.TracingScenario) error {
-	id, err := rs.timeoutQueue.Peek()
+	id, err := rs.TimeoutQueue.Peek()
 	if err != nil || id == nil {
 		return err
 	}
 	retryableStorage := rs.retryables.OpenSubStorage(id.Bytes())
-	slot := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
-	timeout, err := slot.Get()
+	timeoutStorage := retryableStorage.OpenStorageBackedUint64(timeoutOffset)
+	timeout, err := timeoutStorage.Get()
 	if err != nil {
 		return err
 	}
 	if timeout == 0 {
 		// The retryable has already been deleted, so discard the peeked entry
-		_, err = rs.timeoutQueue.Get()
+		_, err = rs.TimeoutQueue.Get()
 		return err
 	}
 
 	windowsLeftStorage := retryableStorage.OpenStorageBackedUint64(timeoutWindowsLeftOffset)
 	windowsLeft, err := windowsLeftStorage.Get()
-	if err != nil || (windowsLeft == 0 && timeout > currentTimestamp) {
+	if err != nil || timeout >= currentTimestamp {
 		return err
 	}
 
 	// Either the retryable has expired, or it's lost a lifetime's worth of time
-	_, err = rs.timeoutQueue.Get()
+	_, err = rs.TimeoutQueue.Get()
 	if err != nil {
 		return err
 	}
@@ -300,6 +317,10 @@ func (rs *RetryableState) TryToReapOneRetryable(currentTimestamp uint64, evm *vm
 		return err
 	}
 
+	// Consume a window, delaying the timeout one lifetime period
+	if err := timeoutStorage.Set(timeout + RetryableLifetimeSeconds); err != nil {
+		return err
+	}
 	return windowsLeftStorage.Set(windowsLeft - 1)
 }
 
@@ -336,4 +357,8 @@ func (retryable *Retryable) MakeTx(chainId *big.Int, nonce uint64, gasFeeCap *bi
 
 func RetryableEscrowAddress(ticketId common.Hash) common.Address {
 	return common.BytesToAddress(crypto.Keccak256([]byte("retryable escrow"), ticketId.Bytes()))
+}
+
+func RetryableSubmissionFee(calldataLengthInBytes int, l1BaseFee *big.Int) *big.Int {
+	return arbmath.BigMulByUint(l1BaseFee, uint64(1400+6*calldataLengthInBytes))
 }

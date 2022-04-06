@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::{
     binary::{BlockType, FloatInstruction, HirInstruction},
     utils::Bytes32,
@@ -283,15 +286,15 @@ impl Opcode {
     }
 
     pub fn is_host_io(self) -> bool {
-        match self {
+        matches!(
+            self,
             Opcode::GetGlobalStateBytes32
-            | Opcode::SetGlobalStateBytes32
-            | Opcode::GetGlobalStateU64
-            | Opcode::SetGlobalStateU64
-            | Opcode::ReadPreImage
-            | Opcode::ReadInboxMessage => true,
-            _ => false,
-        }
+                | Opcode::SetGlobalStateBytes32
+                | Opcode::GetGlobalStateU64
+                | Opcode::SetGlobalStateU64
+                | Opcode::ReadPreImage
+                | Opcode::ReadInboxMessage
+        )
     }
 }
 

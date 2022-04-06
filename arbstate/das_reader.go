@@ -1,6 +1,5 @@
-//
-// Copyright 2021, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbstate
 
@@ -23,8 +22,15 @@ const DASMessageHeaderFlag byte = 0x80
 // Indicates that this message was authenticated by L1. Currently unused.
 const L1AuthenticatedMessageHeaderFlag byte = 0x40
 
+// Indicates that this message is zeroheavy-encoded.
+const ZeroheavyMessageHeaderFlag byte = 0x20
+
 func IsDASMessageHeaderByte(header byte) bool {
 	return (DASMessageHeaderFlag & header) > 0
+}
+
+func IsZeroheavyEncodedHeaderByte(header byte) bool {
+	return (ZeroheavyMessageHeaderFlag & header) > 0
 }
 
 type DataAvailabilityCertificate struct {

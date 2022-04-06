@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::machine::{InboxIdentifier, MachineStatus};
@@ -121,6 +124,9 @@ struct SimpleProfile {
     local_cycles: u64,
 }
 
+const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
+const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
+
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -136,8 +142,8 @@ fn main() -> Result<()> {
     let inbox_header_len;
     let delayed_header_len;
     if opts.inbox_add_stub_headers {
-        inbox_header_len = 40;
-        delayed_header_len = 161;
+        inbox_header_len = INBOX_HEADER_LEN;
+        delayed_header_len = DELAYED_HEADER_LEN + 1;
     } else {
         inbox_header_len = 0;
         delayed_header_len = 0;
@@ -181,7 +187,7 @@ fn main() -> Result<()> {
 
     let mut mach = Machine::from_binary(
         libraries.clone(),
-        main_mod.clone(),
+        main_mod,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
@@ -320,7 +326,7 @@ fn main() -> Result<()> {
 
     let cycles_bigloop = cycles_bigloop_end - cycles_bigloop_start;
 
-    if proofs.len() > 0 && mach.is_halted() {
+    if !proofs.is_empty() && mach.is_halted() {
         let hash = mach.hash();
         proofs.push(ProofInfo {
             before: hash.to_string(),
@@ -360,7 +366,7 @@ fn main() -> Result<()> {
             sum.count += profile.count;
             let entry = func_profile
                 .entry((module, func))
-                .or_insert(SimpleProfile::default());
+                .or_insert_with(SimpleProfile::default);
             entry.count += sum.count;
             entry.total_cycles += sum.total_cycles;
             entry.local_cycles += profile.local_cycles;
@@ -405,27 +411,20 @@ fn main() -> Result<()> {
                     );
                 }
             };
-            let module_name: String;
-            let mut name: String;
-            if module_num == 0 {
-                module_name = names.module.clone();
+            let module_name = if module_num == 0 {
+                names.module.clone()
             } else if module_num == &libraries.len() + 1 {
-                module_name = opts_binary
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
+                opts_binary.file_name().unwrap().to_str().unwrap().into()
             } else {
-                module_name = opts_libraries[module_num - 1]
+                opts_libraries[module_num - 1]
                     .file_name()
                     .unwrap()
                     .to_str()
                     .unwrap()
-                    .to_string();
-            }
+                    .into()
+            };
             let func_idx = func_num as u32;
-            name = names
+            let mut name = names
                 .functions
                 .get(&func_idx)
                 .cloned()
@@ -471,7 +470,7 @@ fn main() -> Result<()> {
                     path += ";";
                 }
                 path.pop(); // remove trailing ';'
-                write!(out, "{} {}\n", path, count)?;
+                writeln!(out, "{} {}", path, count)?;
             }
             out.flush()?;
         }

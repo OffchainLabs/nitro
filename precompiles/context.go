@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -43,7 +42,7 @@ func (c *context) Burn(amount uint64) error {
 }
 
 //nolint:unused
-func (c *context) burned() uint64 {
+func (c *context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
 }
 

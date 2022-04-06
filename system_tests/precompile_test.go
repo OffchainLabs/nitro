@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -26,5 +25,24 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	Require(t, err, "failed to get the ChainID")
 	if chainId.Uint64() != params.ArbitrumDevTestChainConfig().ChainID.Uint64() {
 		Fail(t, "Wrong ChainID", chainId.Uint64())
+	}
+}
+
+func TestCustomSolidityErrors(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, _, client := CreateTestL2(t, ctx)
+
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	Require(t, err, "could not deploy ArbDebug contract")
+	customError := arbDebug.CustomRevert(&bind.CallOpts{}, 1024)
+	if customError == nil {
+		Fail(t, "should have errored")
+	}
+	observedMessage := customError.Error()
+	expectedMessage := "error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\, true)"
+	if observedMessage != expectedMessage {
+		Fail(t, observedMessage)
 	}
 }

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -13,34 +12,38 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das"
 )
 
-func testTwoNodesSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
+func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	l1NodeConfigA := arbnode.NodeConfigL1Test
-	l1NodeConfigA.DataAvailabilityMode = dasMode
+	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigA.DataAvailability.ModeImpl = dasModeStr
+	chainConfig := params.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
-	defer os.RemoveAll(dbPath)
-	if dasMode == das.LocalDataAvailability {
+	if dasModeStr == "local" {
 		dbPath, err = ioutil.TempDir("/tmp", "das_test")
 		Require(t, err)
-		l1NodeConfigA.DataAvailabilityConfig.LocalDiskDataDir = dbPath
+		defer os.RemoveAll(dbPath)
+		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		l1NodeConfigA.DataAvailability.LocalDiskDataDir = dbPath
 	}
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, &l1NodeConfigA)
+	_, err = l1NodeConfigA.DataAvailability.Mode()
+	Require(t, err)
+	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := CreateTestNodeOnL1WithConfig(t, ctx, true, l1NodeConfigA, chainConfig)
 	defer l1stack.Close()
 
-	l1NodeConfigB := arbnode.NodeConfigL1Test
-	l1NodeConfigB.BatchPoster = false
-	l1NodeConfigB.BlockValidator = false
-	l1NodeConfigB.DataAvailabilityMode = dasMode
-	l1NodeConfigB.DataAvailabilityConfig.LocalDiskDataDir = dbPath
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, &l1NodeConfigB)
+	l1NodeConfigB := arbnode.ConfigDefaultL1Test()
+	l1NodeConfigB.BatchPoster.Enable = false
+	l1NodeConfigB.BlockValidator.Enable = false
+	l1NodeConfigB.DataAvailability.ModeImpl = dasModeStr
+	l1NodeConfigB.DataAvailability.LocalDiskDataDir = dbPath
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, &l2info.ArbInitData, l1NodeConfigB)
 
 	l2info.GenerateAccount("User2")
 
@@ -77,9 +80,9 @@ func testTwoNodesSimple(t *testing.T, dasMode das.DataAvailabilityMode) {
 }
 
 func TestTwoNodesSimple(t *testing.T) {
-	testTwoNodesSimple(t, das.OnchainDataAvailability)
+	testTwoNodesSimple(t, "onchain")
 }
 
 func TestTwoNodesSimpleLocalDAS(t *testing.T) {
-	testTwoNodesSimple(t, das.LocalDataAvailability)
+	testTwoNodesSimple(t, "local")
 }

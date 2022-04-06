@@ -10,3 +10,6 @@
 [submodule "brotli"]
 	path = brotli
 	url = https://github.com/google/brotli.git
+[submodule "blockscout"]
+	path = blockscout
+        url = https://github.com/OffchainLabs/blockscout.git

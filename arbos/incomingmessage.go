@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -10,15 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/util"
 )
 
@@ -26,6 +24,7 @@ const (
 	L1MessageType_L2Message             = 3
 	L1MessageType_EndOfBlock            = 6
 	L1MessageType_L2FundedByL1          = 7
+	L1MessageType_RollupEvent           = 8
 	L1MessageType_SubmitRetryable       = 9
 	L1MessageType_BatchForGasEstimation = 10 // probably won't use this in practice
 	L1MessageType_Initialize            = 11
@@ -38,10 +37,10 @@ const MaxL2MessageSize = 256 * 1024
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`
 	Poster      common.Address `json:"sender"`
-	BlockNumber common.Hash    `json:"blockNumber"`
-	Timestamp   common.Hash    `json:"timestamp"`
+	BlockNumber uint64         `json:"blockNumber"`
+	Timestamp   uint64         `json:"timestamp"`
 	RequestId   *common.Hash   `json:"requestId" rlp:"nilList"`
-	BaseFeeL1   common.Hash    `json:"baseFeeL1"`
+	L1BaseFee   *big.Int       `json:"baseFeeL1"`
 }
 
 func (h L1IncomingMessageHeader) SeqNum() (uint64, error) {
@@ -62,14 +61,12 @@ type L1IncomingMessage struct {
 
 type L1Info struct {
 	poster        common.Address
-	l1BlockNumber *big.Int
-	l1Timestamp   *big.Int
+	l1BlockNumber uint64
+	l1Timestamp   uint64
 }
 
 func (info *L1Info) Equals(o *L1Info) bool {
-	return info.poster == o.poster &&
-		info.l1BlockNumber.Cmp(o.l1BlockNumber) == 0 &&
-		info.l1Timestamp.Cmp(o.l1Timestamp) == 0
+	return info.poster == o.poster && info.l1BlockNumber == o.l1BlockNumber && info.l1Timestamp == o.l1Timestamp
 }
 
 func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
@@ -82,11 +79,11 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BlockNumber, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.BlockNumber, wr); err != nil {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.Timestamp, wr); err != nil {
+	if err := util.Uint64ToWriter(msg.Header.Timestamp, wr); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +94,7 @@ func (msg *L1IncomingMessage) Serialize() ([]byte, error) {
 		return nil, err
 	}
 
-	if err := util.HashToWriter(msg.Header.BaseFeeL1, wr); err != nil {
+	if err := util.HashToWriter(common.BigToHash(msg.Header.L1BaseFee), wr); err != nil {
 		return nil, err
 	}
 
@@ -119,7 +116,7 @@ func (header *L1IncomingMessageHeader) Equals(other *L1IncomingMessageHeader) bo
 		header.BlockNumber == other.BlockNumber &&
 		header.Timestamp == other.Timestamp &&
 		header.RequestId == other.RequestId &&
-		header.BaseFeeL1 == other.BaseFeeL1
+		header.L1BaseFee == other.L1BaseFee
 }
 
 func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
@@ -134,12 +131,12 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 		return nil, err
 	}
 
-	blockNumber, err := util.HashFromReader(rd)
+	blockNumber, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
 
-	timestamp, err := util.HashFromReader(rd)
+	timestamp, err := util.Uint64FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +163,7 @@ func ParseIncomingL1Message(rd io.Reader) (*L1IncomingMessage, error) {
 			blockNumber,
 			timestamp,
 			&requestId,
-			baseFeeL1,
+			baseFeeL1.Big(),
 		},
 		data,
 	}, nil
@@ -220,6 +217,9 @@ func (msg *L1IncomingMessage) ParseL2Transactions(chainId *big.Int) (types.Trans
 			return nil, err
 		}
 		return types.Transactions{tx}, nil
+	case L1MessageType_RollupEvent:
+		log.Debug("ignoring rollup event message")
+		return types.Transactions{}, nil
 	case L1MessageType_Invalid:
 		// intentionally invalid message
 		return nil, errors.New("invalid message")
@@ -250,7 +250,6 @@ const (
 	L2MessageKind_Heartbeat          = 6
 	L2MessageKind_SignedCompressedTx = 7
 	// 8 is reserved for BLS signed batch
-	L2MessageKind_BrotliCompressed = 9
 )
 
 func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash, chainId *big.Int, depth int) (types.Transactions, error) {
@@ -316,19 +315,6 @@ func parseL2Message(rd io.Reader, poster common.Address, requestId *common.Hash,
 		return nil, nil
 	case L2MessageKind_SignedCompressedTx:
 		return nil, errors.New("L2 message kind SignedCompressedTx is unimplemented")
-	case L2MessageKind_BrotliCompressed:
-		if depth > 0 { // ignore compressed messages if not top level
-			return nil, errors.New("can only compress top level batch")
-		}
-		compressed, err := ioutil.ReadAll(rd)
-		if err != nil {
-			return nil, err
-		}
-		decompressed, err := arbcompress.Decompress(compressed, MaxL2MessageSize)
-		if err != nil {
-			return nil, err
-		}
-		return parseL2Message(bytes.NewReader(decompressed), poster, requestId, chainId, depth+1)
 	default:
 		// ignore invalid message kind
 		return nil, fmt.Errorf("unkown L2 message kind %v", l2KindBuf[0])
@@ -431,13 +417,13 @@ func parseEthDepositMessage(rd io.Reader, header *L1IncomingMessageHeader, chain
 }
 
 func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, chainId *big.Int) (*types.Transaction, error) {
-	to, err := util.AddressFrom256FromReader(rd)
+	retryTo, err := util.AddressFrom256FromReader(rd)
 	if err != nil {
 		return nil, err
 	}
-	pTo := &to
-	if to == (common.Address{}) {
-		pTo = nil
+	pRetryTo := &retryTo
+	if retryTo == (common.Address{}) {
+		pRetryTo = nil
 	}
 	callvalue, err := util.HashFromReader(rd)
 	if err != nil {
@@ -447,7 +433,7 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if err != nil {
 		return nil, err
 	}
-	submissionFeePaid, err := util.HashFromReader(rd)
+	maxSubmissionFee, err := util.HashFromReader(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -483,9 +469,9 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 	if dataLength > MaxL2MessageSize {
 		return nil, errors.New("retryable data too large")
 	}
-	data := make([]byte, dataLength)
+	retryData := make([]byte, dataLength)
 	if dataLength > 0 {
-		if _, err := rd.Read(data); err != nil {
+		if _, err := rd.Read(retryData); err != nil {
 			return nil, err
 		}
 	}
@@ -493,18 +479,19 @@ func parseSubmitRetryableMessage(rd io.Reader, header *L1IncomingMessageHeader, 
 		return nil, errors.New("cannot issue submit retryable tx without L1 request id")
 	}
 	tx := &types.ArbitrumSubmitRetryableTx{
-		ChainId:           chainId,
-		RequestId:         *header.RequestId,
-		From:              util.RemapL1Address(header.Poster),
-		DepositValue:      depositValue.Big(),
-		GasFeeCap:         maxFeePerGas.Big(),
-		Gas:               gasLimitBig.Uint64(),
-		To:                pTo,
-		Value:             callvalue.Big(),
-		Beneficiary:       callvalueRefundAddress,
-		SubmissionFeePaid: submissionFeePaid.Big(),
-		FeeRefundAddr:     feeRefundAddress,
-		Data:              data,
+		ChainId:          chainId,
+		RequestId:        *header.RequestId,
+		From:             util.RemapL1Address(header.Poster),
+		L1BaseFee:        header.L1BaseFee,
+		DepositValue:     depositValue.Big(),
+		GasFeeCap:        maxFeePerGas.Big(),
+		Gas:              gasLimitBig.Uint64(),
+		RetryTo:          pRetryTo,
+		Value:            callvalue.Big(),
+		Beneficiary:      callvalueRefundAddress,
+		MaxSubmissionFee: maxSubmissionFee.Big(),
+		FeeRefundAddr:    feeRefundAddress,
+		RetryData:        retryData,
 	}
-	return types.NewTx(tx), nil
+	return types.NewTx(tx), err
 }

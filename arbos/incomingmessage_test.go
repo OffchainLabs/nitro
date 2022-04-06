@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -18,10 +17,10 @@ func TestSerializeAndParseL1Message(t *testing.T) {
 	header := L1IncomingMessageHeader{
 		L1MessageType_EndOfBlock,
 		common.BigToAddress(big.NewInt(4684)),
-		common.BigToHash(big.NewInt(864513)),
-		common.BigToHash(big.NewInt(8794561564)),
+		864513,
+		8794561564,
 		&requestId,
-		common.BigToHash(big.NewInt(10000000000000)),
+		big.NewInt(10000000000000),
 	}
 	msg := L1IncomingMessage{
 		&header,

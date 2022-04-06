@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -8,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"time"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -25,8 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	glog "github.com/ethereum/go-ethereum/log"
 )
-
-var arbAddress = common.HexToAddress("0xa4b05")
 
 // A TxProcessor is created and freed for every L2 transaction.
 // It tracks state for ArbOS, allowing it infuence in Geth's tx processing.
@@ -77,35 +75,70 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		return false, 0, nil, nil
 	}
 
+	evm := p.evm
+
 	tipe := underlyingTx.Type()
 	p.TopTxType = &tipe
 
+	startTracer := func() func() {
+		if !evm.Config.Debug {
+			return func() {}
+		}
+		evm.IncrementDepth() // fake a call
+		tracer := evm.Config.Tracer
+		start := time.Now()
+		tracer.CaptureStart(evm, p.msg.From(), *p.msg.To(), false, p.msg.Data(), p.msg.Gas(), p.msg.Value())
+		return func() {
+			tracer.CaptureEnd(nil, p.state.Burner.Burned(), time.Since(start), nil)
+			evm.DecrementDepth() // fake the return to the first faked call
+		}
+	}
+
 	switch tx := underlyingTx.GetInner().(type) {
 	case *types.ArbitrumDepositTx:
-		if p.msg.From() != arbAddress {
+		defer (startTracer())()
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("deposit not from arbAddress"), nil
 		}
-		util.MintBalance(p.msg.To(), p.msg.Value(), p.evm, util.TracingBeforeEVM)
+		util.MintBalance(p.msg.To(), p.msg.Value(), evm, util.TracingDuringEVM)
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
-		if p.msg.From() != arbAddress {
+		defer (startTracer())()
+		if p.msg.From() != types.ArbosAddress {
 			return false, 0, errors.New("internal tx not from arbAddress"), nil
 		}
-		ApplyInternalTxUpdate(tx, p.state, p.evm)
+		ApplyInternalTxUpdate(tx, p.state, evm)
 		return true, 0, nil, nil
 	case *types.ArbitrumSubmitRetryableTx:
-		statedb := p.evm.StateDB
+		defer (startTracer())()
+		statedb := evm.StateDB
 		ticketId := underlyingTx.Hash()
 		escrow := retryables.RetryableEscrowAddress(ticketId)
+		networkFeeAccount, _ := p.state.NetworkFeeAccount()
+		from := tx.From
+		scenario := util.TracingDuringEVM
 
-		util.MintBalance(&tx.From, tx.DepositValue, p.evm, util.TracingBeforeEVM)
+		// mint funds with the deposit, then charge fees later
+		util.MintBalance(&from, tx.DepositValue, evm, scenario)
 
-		err := util.TransferBalance(&tx.From, &escrow, tx.Value, p.evm, util.TracingBeforeEVM)
-		if err != nil {
+		submissionFee := retryables.RetryableSubmissionFee(len(tx.RetryData), tx.L1BaseFee)
+		excessDeposit := arbmath.BigSub(tx.MaxSubmissionFee, submissionFee)
+		if excessDeposit.Sign() < 0 {
+			return true, 0, errors.New("max submission fee is less than the actual submission fee"), nil
+		}
+
+		// move balance to the relevant parties
+		if err := util.TransferBalance(&from, &networkFeeAccount, submissionFee, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+		if err := util.TransferBalance(&from, &tx.FeeRefundAddr, excessDeposit, evm, scenario); err != nil {
+			return true, 0, err, nil
+		}
+		if err := util.TransferBalance(&tx.From, &escrow, tx.Value, evm, scenario); err != nil {
 			return true, 0, err, nil
 		}
 
-		time := p.evm.Context.Time.Uint64()
+		time := evm.Context.Time.Uint64()
 		timeout := time + retryables.RetryableLifetimeSeconds
 
 		// we charge for creating the retryable and reaping the next expired one on L1
@@ -113,20 +146,20 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 			ticketId,
 			timeout,
 			tx.From,
-			underlyingTx.To(),
+			tx.RetryTo,
 			underlyingTx.Value(),
 			tx.Beneficiary,
-			tx.Data,
+			tx.RetryData,
 		)
 		p.state.Restrict(err)
 
-		err = EmitTicketCreatedEvent(p.evm, underlyingTx.Hash())
+		err = EmitTicketCreatedEvent(evm, underlyingTx.Hash())
 		if err != nil {
 			glog.Error("failed to emit TicketCreated event", "err", err)
 		}
 
 		balance := statedb.GetBalance(tx.From)
-		basefee := p.evm.Context.BaseFee
+		basefee := evm.Context.BaseFee
 		usergas := p.msg.Gas()
 		gascost := arbmath.BigMulByUint(basefee, usergas)
 
@@ -141,8 +174,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		// pay for the retryable's gas and update the pools
-		networkFeeAccount, _ := p.state.NetworkFeeAccount()
-		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, p.evm, util.TracingBeforeEVM)
+		err = util.TransferBalance(&tx.From, &networkFeeAccount, gascost, evm, scenario)
 		if err != nil {
 			// should be impossible because we just checked the tx.From balance
 			panic(err)
@@ -163,7 +195,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		p.state.Restrict(err)
 
 		err = EmitReedeemScheduledEvent(
-			p.evm,
+			evm,
 			usergas,
 			retryTxInner.Nonce,
 			ticketId,
@@ -179,14 +211,14 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// Transfer callvalue from escrow
 		escrow := retryables.RetryableEscrowAddress(tx.TicketId)
-		err = util.TransferBalance(&escrow, &tx.From, tx.Value, p.evm, util.TracingBeforeEVM)
+		err = util.TransferBalance(&escrow, &tx.From, tx.Value, evm, util.TracingBeforeEVM)
 		if err != nil {
 			return true, 0, err, nil
 		}
 
 		// The redeemer has pre-paid for this tx's gas
-		basefee := p.evm.Context.BaseFee
-		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), p.evm, util.TracingBeforeEVM)
+		basefee := evm.Context.BaseFee
+		util.MintBalance(&tx.From, arbmath.BigMulByUint(basefee, tx.Gas), evm, util.TracingBeforeEVM)
 		ticketId := tx.TicketId
 		p.CurrentRetryable = &ticketId
 	}
@@ -208,7 +240,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 		// This will help the user pad the total they'll pay in case the price rises a bit.
 		// Note, reducing the poster cost will increase share the network fee gets, not reduce the total.
 
-		minGasPrice, _ := p.state.L2PricingState().MinGasPriceWei()
+		minGasPrice, _ := p.state.L2PricingState().MinBaseFeeWei()
 
 		adjustedPrice := arbmath.BigMulByFrac(gasPrice, 7, 8) // assume congestion
 		if arbmath.BigLessThan(adjustedPrice, minGasPrice) {
@@ -400,5 +432,5 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
-	receipt.L1GasUsed = p.posterGas
+	receipt.GasUsedForL1 = p.posterGas
 }

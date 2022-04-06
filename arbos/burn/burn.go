@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package burn
 
@@ -10,6 +9,7 @@ import (
 
 type Burner interface {
 	Burn(amount uint64) error
+	Burned() uint64
 	Restrict(err error)
 	ReadOnly() bool
 }

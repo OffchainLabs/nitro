@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbosState
 
@@ -156,10 +155,6 @@ func initializeArbosAccount(statedb *state.StateDB, arbosState *ArbosState, acco
 	l1pState := arbosState.L1PricingState()
 	if account.AggregatorInfo != nil {
 		err := l1pState.SetAggregatorFeeCollector(account.Addr, account.AggregatorInfo.FeeCollector)
-		if err != nil {
-			return err
-		}
-		err = l1pState.SetFixedChargeForAggregatorL1Gas(account.Addr, account.AggregatorInfo.BaseFeeL1Gas)
 		if err != nil {
 			return err
 		}

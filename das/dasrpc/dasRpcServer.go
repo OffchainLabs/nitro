@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package dasrpc
 
 import (
@@ -34,6 +37,10 @@ func StartDASRPCServer(ctx context.Context, portNum uint64, localDAS das.DataAva
 		grpcServer.GracefulStop()
 	}()
 	return dasServer, nil
+}
+
+func (serv *DASRPCServer) Stop() {
+	serv.grpcServer.GracefulStop()
 }
 
 func (serv *DASRPCServer) Store(ctx context.Context, req *StoreRequest) (*StoreResponse, error) {

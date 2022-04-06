@@ -1,10 +1,10 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -59,6 +59,7 @@ const (
 type Precompile struct {
 	methods      map[[4]byte]PrecompileMethod
 	events       map[string]PrecompileEvent
+	errors       map[string]PrecompileError
 	implementer  reflect.Value
 	address      common.Address
 	arbosVersion uint64
@@ -76,6 +77,40 @@ type PrecompileMethod struct {
 type PrecompileEvent struct {
 	name     string
 	template abi.Event
+}
+
+type PrecompileError struct {
+	name     string
+	template abi.Error
+}
+
+type SolError struct {
+	data   []byte
+	solErr abi.Error
+}
+
+func RenderSolError(solErr abi.Error, data []byte) (string, error) {
+	vals, err := solErr.Unpack(data)
+	if err != nil {
+		return "", err
+	}
+	valsRange, ok := vals.([]interface{})
+	if !ok {
+		return "", errors.New("unexpected unpack result")
+	}
+	strVals := make([]string, 0, len(valsRange))
+	for _, val := range valsRange {
+		strVals = append(strVals, fmt.Sprintf("%v", val))
+	}
+	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
+}
+
+func (e *SolError) Error() string {
+	rendered, err := RenderSolError(e.solErr, e.data)
+	if err != nil {
+		return "unable to decode execution error"
+	}
+	return rendered
 }
 
 // Make a precompile for the given hardhat-to-geth bindings, ensuring that the implementer
@@ -101,6 +136,7 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 
 	methods := make(map[[4]byte]PrecompileMethod)
 	events := make(map[string]PrecompileEvent)
+	errors := make(map[string]PrecompileError)
 
 	for _, method := range source.Methods {
 
@@ -374,9 +410,67 @@ func makePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, Arb
 		}
 	}
 
+	for _, solErr := range source.Errors {
+		name := solErr.Name
+
+		var needs []reflect.Type
+		for _, arg := range solErr.Inputs {
+			needs = append(needs, arg.Type.GetType())
+		}
+
+		errorType := reflect.TypeOf((*error)(nil)).Elem()
+		expectedFieldType := reflect.FuncOf(needs, []reflect.Type{errorType}, false)
+
+		context := "Precompile " + contract + "'s implementer"
+		missing := context + " is missing a field for "
+
+		field, ok := implementerType.Elem().FieldByName(name + "Error")
+		if !ok {
+			log.Fatal(missing, "custom error ", name, "Error of type\n\t", expectedFieldType)
+		}
+		if field.Type != expectedFieldType {
+			log.Fatal(
+				context, "'s field for error ", name, "Error has the wrong type\n",
+				"\texpected:\t", expectedFieldType, "\n\tbut have:\t", field.Type,
+			)
+		}
+
+		structFields := reflect.ValueOf(implementer).Elem()
+		errorReturnPointer := structFields.FieldByName(name + "Error")
+
+		capturedSolErr := solErr
+		errorReturn := func(args []reflect.Value) []reflect.Value {
+			var dataValues []interface{}
+			for i := 0; i < len(args); i++ {
+				dataValues = append(dataValues, args[i].Interface())
+			}
+
+			data, err := capturedSolErr.Inputs.PackValues(dataValues)
+			if err != nil {
+				glog.Error(fmt.Sprintf(
+					"Couldn't pack values for error %s\nnargs %s\nvalues %s\nerror %s",
+					name, args, dataValues, err,
+				))
+				return []reflect.Value{reflect.ValueOf(err)}
+			}
+
+			customErr := &SolError{data: append(capturedSolErr.ID[:4], data...), solErr: capturedSolErr}
+
+			return []reflect.Value{reflect.ValueOf(customErr)}
+		}
+
+		errorReturnPointer.Set(reflect.MakeFunc(field.Type, errorReturn))
+
+		errors[name] = PrecompileError{
+			name,
+			solErr,
+		}
+	}
+
 	return address, Precompile{
 		methods,
 		events,
+		errors,
 		reflect.ValueOf(implementer),
 		address,
 		0,
@@ -406,6 +500,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	insert(makePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
 	insert(makePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(makePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(makePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *context {
 		if err != nil {
@@ -417,7 +512,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 	}
 
-	ArbRetryableImpl := &ArbRetryableTx{Address: hex("6e")}
+	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(makePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
@@ -431,7 +526,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: hex("64")}))
+	ArbSys := insert(makePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 
@@ -557,7 +652,21 @@ func (p Precompile) Call(
 	resultCount := len(reflectResult) - 1
 	if !reflectResult[resultCount].IsNil() {
 		// the last arg is always the error status
-		return nil, 0, reflectResult[resultCount].Interface().(error)
+		errRet, ok := reflectResult[resultCount].Interface().(error)
+		if !ok {
+			log.Fatal("final return value must be error")
+		}
+		var solErr *SolError
+		isSolErr := errors.As(errRet, &solErr)
+		if isSolErr {
+			resultCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(solErr.data)))
+			if err := callerCtx.Burn(resultCost); err != nil {
+				// user cannot afford the result data returned
+				return nil, 0, vm.ErrExecutionReverted
+			}
+			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
+		}
+		return nil, callerCtx.gasLeft, errRet
 	}
 	result := make([]interface{}, resultCount)
 	for i := 0; i < resultCount; i++ {
@@ -589,6 +698,14 @@ func (p Precompile) Get4ByteMethodSignatures() [][4]byte {
 	ret := make([][4]byte, 0, len(p.methods))
 	for sig := range p.methods {
 		ret = append(ret, sig)
+	}
+	return ret
+}
+
+func (p Precompile) GetErrorABIs() []abi.Error {
+	ret := make([]abi.Error, 0, len(p.errors))
+	for _, solErr := range p.errors {
+		ret = append(ret, solErr.template)
 	}
 	return ret
 }

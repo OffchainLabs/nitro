@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbstate
 
@@ -68,10 +67,10 @@ func TestEthDepositMessage(t *testing.T) {
 	header := arbos.L1IncomingMessageHeader{
 		Kind:        arbos.L1MessageType_EthDeposit,
 		Poster:      addr,
-		BlockNumber: common.BigToHash(big.NewInt(864513)),
-		Timestamp:   common.BigToHash(big.NewInt(8794561564)),
+		BlockNumber: 864513,
+		Timestamp:   8794561564,
 		RequestId:   &firstRequestId,
-		BaseFeeL1:   common.BigToHash(big.NewInt(10000000000000)),
+		L1BaseFee:   big.NewInt(10000000000000),
 	}
 	msgBuf := bytes.Buffer{}
 	if err := util.HashToWriter(balance, &msgBuf); err != nil {

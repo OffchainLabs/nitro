@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -27,6 +26,9 @@ type ArbRetryableTx struct {
 	LifetimeExtendedGasCost func(bytes32, huge) (uint64, error)
 	RedeemScheduledGasCost  func(bytes32, bytes32, uint64, uint64, addr) (uint64, error)
 	CanceledGasCost         func(bytes32) (uint64, error)
+
+	NoTicketWithIDError func() error
+	NotCallableError    func() error
 }
 
 var (
@@ -56,15 +58,16 @@ func (con ArbRetryableTx) Redeem(c ctx, evm mech, ticketId bytes32) (bytes32, er
 	if retryable == nil {
 		return hash{}, ErrNotFound
 	}
-	nonce, err := retryable.IncrementNumTries()
+	nextNonce, err := retryable.IncrementNumTries()
 	if err != nil {
 		return hash{}, err
 	}
+	nonce := nextNonce - 1
 
 	retryTxInner, err := retryable.MakeTx(
 		evm.ChainConfig().ChainID,
 		nonce,
-		evm.GasPrice,
+		evm.Context.BaseFee,
 		0, // will fill this in below
 		ticketId,
 		c.caller,
@@ -127,9 +130,9 @@ func (con ArbRetryableTx) GetTimeout(c ctx, evm mech, ticketId bytes32) (huge, e
 		return nil, err
 	}
 	if retryable == nil {
-		return nil, ErrNotFound
+		return nil, con.NoTicketWithIDError()
 	}
-	timeout, err := retryable.Timeout()
+	timeout, err := retryable.CalculateTimeout()
 	if err != nil {
 		return nil, err
 	}
@@ -155,24 +158,13 @@ func (con ArbRetryableTx) Keepalive(c ctx, evm mech, ticketId bytes32) (huge, er
 
 	currentTime := evm.Context.Time.Uint64()
 	window := currentTime + retryables.RetryableLifetimeSeconds
-	err = retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
+	newTimeout, err := retryableState.Keepalive(ticketId, currentTime, window, retryables.RetryableLifetimeSeconds)
 	if err != nil {
 		return big.NewInt(0), err
 	}
 
-	retryable, err := retryableState.OpenRetryable(ticketId, currentTime)
-	if err != nil {
-		return nil, err
-	}
-	newTimeout, err := retryable.Timeout()
-	if err != nil {
-		return nil, err
-	}
 	err = con.LifetimeExtended(c, evm, ticketId, big.NewInt(int64(newTimeout)))
-	if err != nil {
-		return nil, err
-	}
-	return big.NewInt(int64(newTimeout)), nil
+	return big.NewInt(int64(newTimeout)), err
 }
 
 // Gets the beneficiary of the ticket
@@ -215,4 +207,13 @@ func (con ArbRetryableTx) Cancel(c ctx, evm mech, ticketId bytes32) error {
 		return err
 	}
 	return con.Canceled(c, evm, ticketId)
+}
+
+func (con ArbRetryableTx) SubmitRetryable(
+	c ctx, evm mech, requestId bytes32, l1BaseFee, deposit, callvalue, gasFeeCap huge,
+	gasLimit uint64, maxSubmissionFee huge,
+	feeRefundAddress, beneficiary, retryTo addr,
+	retryData []byte,
+) error {
+	return con.NotCallableError()
 }

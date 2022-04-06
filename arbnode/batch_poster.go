@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package arbnode
 
 import (
@@ -9,6 +12,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type BatchPoster struct {
@@ -36,23 +41,35 @@ type BatchPoster struct {
 }
 
 type BatchPosterConfig struct {
-	MaxBatchSize         int
-	MaxBatchPostInterval time.Duration
-	BatchPollDelay       time.Duration
-	PostingErrorDelay    time.Duration
-	CompressionLevel     int
+	Enable               bool          `koanf:"enable"`
+	MaxBatchSize         int           `koanf:"max-size"`
+	MaxBatchPostInterval time.Duration `koanf:"max-interval"`
+	BatchPollDelay       time.Duration `koanf:"poll-delay"`
+	PostingErrorDelay    time.Duration `koanf:"error-delay"`
+	CompressionLevel     int           `koanf:"compression-level"`
+}
+
+func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
+	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxBatchSize, "maximum batch size")
+	f.Duration(prefix+".max-interval", DefaultBatchPosterConfig.MaxBatchPostInterval, "maximum batch posting interval")
+	f.Duration(prefix+".poll-delay", DefaultBatchPosterConfig.BatchPollDelay, "how long to delay after successfully posting batch")
+	f.Duration(prefix+".error-delay", DefaultBatchPosterConfig.PostingErrorDelay, "how long to delay after error posting batch")
+	f.Int(prefix+".compression-level", DefaultBatchPosterConfig.CompressionLevel, "batch compression level")
 }
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
+	Enable:               false,
+	MaxBatchSize:         100000,
+	BatchPollDelay:       time.Second * 10,
+	PostingErrorDelay:    time.Second * 10,
+	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	MaxBatchSize:         10000,
+	Enable:               true,
+	MaxBatchSize:         100000,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
@@ -101,6 +118,9 @@ type buildingBatch struct {
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
+	if config.MaxBatchSize <= 40 {
+		panic("MaxBatchSize too small")
+	}
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
@@ -179,7 +199,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	if overflow {
+	if overflow || len(s.rawSegments) >= arbstate.MaxSegmentsPerSequencerMessage {
 		return false, s.close()
 	}
 	s.rawSegments = append(s.rawSegments, segment)
@@ -208,23 +228,18 @@ func (s *batchSegments) prepareIntSegment(val uint64, segmentHeader byte) ([]byt
 	return append(segment, enc...), nil
 }
 
-func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal common.Hash, segmentHeader byte) (bool, error) {
-	asBig := newVal.Big()
-	if !asBig.IsUint64() {
-		return false, errors.New("number not uint64")
-	}
-	asUint := asBig.Uint64()
-	if asUint == *base {
+func (s *batchSegments) maybeAddDiffSegment(base *uint64, newVal uint64, segmentHeader byte) (bool, error) {
+	if newVal == *base {
 		return true, nil
 	}
-	diff := asUint - *base
+	diff := newVal - *base
 	seg, err := s.prepareIntSegment(diff, segmentHeader)
 	if err != nil {
 		return false, err
 	}
 	success, err := s.addSegment(seg, true)
 	if success {
-		*base = asUint
+		*base = newVal
 	}
 	return success, err
 }
@@ -284,7 +299,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	return fullMsg, nil
 }
 
-func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatch bool) (*types.Transaction, error) {
+func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatchPosted time.Duration) (*types.Transaction, error) {
 	batchSeqNum, err := b.inbox.GetBatchCount()
 	if err != nil {
 		return nil, err
@@ -293,7 +308,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatc
 	if err != nil {
 		return nil, err
 	}
-	if inboxContractCount.Cmp(new(big.Int).SetUint64(batchSeqNum)) != 0 {
+	if !arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum)) {
+		// If it's been under a minute since the last batch was posted, and the inbox tracker is exactly one batch behind,
+		// then there isn't an error. We're just waiting for the inbox tracker to read the most recently posted batch.
+		if timeSinceBatchPosted <= time.Minute && arbmath.BigEquals(inboxContractCount, arbmath.UintToBig(batchSeqNum+1)) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("inbox tracker not synced: contract has %v batches but inbox tracker has %v", inboxContractCount, batchSeqNum)
 	}
 	var prevBatchMeta BatchMetadata
@@ -315,6 +335,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, forcePostBatc
 	if err != nil {
 		return nil, err
 	}
+	forcePostBatch := timeSinceBatchPosted >= b.config.MaxBatchPostInterval
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -369,7 +390,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn)
 	var lastBatchPosted time.Time
 	b.CallIteratively(func(ctx context.Context) time.Duration {
-		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted) >= b.config.MaxBatchPostInterval)
+		tx, err := b.maybePostSequencerBatch(ctx, time.Since(lastBatchPosted))
 		if err != nil {
 			b.building = nil
 			log.Error("error posting batch", "err", err)

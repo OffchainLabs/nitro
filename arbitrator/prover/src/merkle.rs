@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::utils::Bytes32;
 use digest::Digest;
 use rayon::prelude::*;
@@ -66,10 +69,8 @@ impl Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
-        let mut layers = Vec::new();
-        layers.push(hashes);
-        let mut empty_layers = Vec::new();
-        empty_layers.push(empty_hash);
+        let mut layers = vec![hashes];
+        let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
             let new_layer = layers
@@ -112,8 +113,7 @@ impl Merkle {
         if idx >= self.leaves().len() {
             return None;
         }
-        let mut proof = Vec::new();
-        proof.push(u8::try_from(self.layers.len() - 1).unwrap());
+        let mut proof = vec![u8::try_from(self.layers.len() - 1).unwrap()];
         for (layer_i, layer) in self.layers.iter().enumerate() {
             if layer_i == self.layers.len() - 1 {
                 break;

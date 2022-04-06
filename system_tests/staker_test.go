@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // race detection makes things slow and miss timeouts
 //go:build !race
@@ -13,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -111,7 +111,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 
 	valConfig := validator.L1ValidatorConfig{
-		TargetNumMachines: 4,
+		TargetMachineCount: 4,
 	}
 
 	valWalletA, err := validator.NewValidatorWallet(nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l1client, &l1authA, 0, func(common.Address) {})
@@ -204,6 +204,24 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				stakerBTxs++
 			}
 		}
+		if err != nil && faultyStaker && i%2 == 1 {
+			// Check if this is an expected error from the faulty staker.
+			if strings.Contains(err.Error(), "agreed with entire challenge") {
+				// Expected error upon realizing you're losing the challenge. Get ready for a timeout.
+				for j := 0; j < 200; j++ {
+					TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+				}
+			} else if strings.Contains(err.Error(), "insufficient funds") && sawStakerZombie {
+				// Expected error when trying to re-stake after losing initial stake.
+			} else if strings.Contains(err.Error(), "unknown start block hash") && sawStakerZombie {
+				// Expected error when trying to re-stake after the challenger's nodes getting confirmed.
+			} else {
+				Require(t, err, "Faulty staker failed to act")
+			}
+			t.Log("got expected faulty staker error", err)
+			err = nil
+			tx = nil
+		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
 			_, err = arbutil.EnsureTxSucceeded(ctx, l1client, tx)
@@ -237,7 +255,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	latestConfirmedNode, err := rollup.LatestConfirmed(&bind.CallOpts{})
 	Require(t, err)
 
-	if latestConfirmedNode <= 1 {
+	if latestConfirmedNode <= 1 && !honestStakerInactive {
 		latestCreatedNode, err := rollup.LatestNodeCreated(&bind.CallOpts{})
 		Require(t, err)
 		t.Fatal("latest confirmed node didn't advance:", latestConfirmedNode, latestCreatedNode)

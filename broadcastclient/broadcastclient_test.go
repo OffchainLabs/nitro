@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcastclient
 
@@ -93,22 +92,23 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, addr net.Addr, 
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.Close()
+		defer broadcastClient.StopAndWait()
 		for {
 			gotMsg := false
+			timer := time.NewTimer(60 * time.Second)
 			select {
 			case <-ts.messageReceiver:
 				messageCount++
 				gotMsg = true
-
-				if messageCount == expectedCount {
-					return
-				}
-			case <-time.After(60 * time.Second):
+			case <-timer.C:
 			case <-ctx.Done():
 			}
+			timer.Stop()
 			if !gotMsg {
 				t.Errorf("Client %d expected %d meesages, only got %d messages\n", index, expectedCount, messageCount)
+				return
+			}
+			if messageCount == expectedCount {
 				return
 			}
 		}
@@ -145,26 +145,30 @@ func TestServerClientDisconnect(t *testing.T) {
 	b.BroadcastSingle(arbstate.MessageWithMetadata{}, 0)
 
 	// Wait for client to receive batch to ensure it is connected
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case receivedMsg := <-ts.messageReceiver:
 		t.Logf("Received Message, Sequence Message: %v\n", receivedMsg)
-	case <-time.After(5 * time.Second):
+	case <-timer.C:
 		t.Fatal("Client did not receive batch item")
 	}
 
-	broadcastClient.Close()
+	broadcastClient.StopAndWait()
 
-	disconnectTimeout := time.After(5 * time.Second)
+	disconnectTimer := time.NewTimer(5 * time.Second)
+	defer disconnectTimer.Stop()
 	for {
 		if b.ClientCount() == 0 {
 			break
 		}
 
 		select {
-		case <-disconnectTimeout:
+		case <-disconnectTimer.C:
 			t.Fatal("Client was not disconnected")
-		case <-time.After(100 * time.Millisecond):
+		default:
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -204,9 +208,13 @@ func TestBroadcastClientReconnectsOnServerDisconnect(t *testing.T) {
 }
 
 func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
+	/* Uncomment to enable logging
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+	*/
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	settings := wsbroadcastserver.BroadcasterConfig{
 		Addr:          "0.0.0.0",
 		IOTimeout:     2 * time.Second,
@@ -242,33 +250,37 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	// Confirmed Accumulator will also broadcast to the clients.
 	b.Confirm(0) // remove the first message we generated
 
-	updateTimeout := time.After(2 * time.Second)
+	updateTimer := time.NewTimer(2 * time.Second)
+	defer updateTimer.Stop()
 	for {
 		if b.GetCachedMessageCount() == 1 { // should have left the second message
 			break
 		}
 
 		select {
-		case <-updateTimeout:
+		case <-updateTimer.C:
 			t.Fatal("confirmed accumulator did not get updated")
-		case <-time.After(10 * time.Millisecond):
+		default:
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Send second accumulator again so that the previously added accumulator is sent
 	b.Confirm(1)
 
-	updateTimeout = time.After(2 * time.Second)
+	updateTimer = time.NewTimer(2 * time.Second)
+	defer updateTimer.Stop()
 	for {
 		if b.GetCachedMessageCount() == 0 { // should have left the second message
 			break
 		}
 
 		select {
-		case <-updateTimeout:
+		case <-updateTimer.C:
 			t.Fatal("cache did not get cleared")
-		case <-time.After(10 * time.Millisecond):
+		default:
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -279,15 +291,17 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.Close()
+		defer broadcastClient.StopAndWait()
 
 		gotMsg := false
 		// Wait for client to receive first item
+		timer := time.NewTimer(10 * time.Second)
+		defer timer.Stop()
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received first message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
-		case <-time.After(10 * time.Second):
+		case <-timer.C:
 		case <-ctx.Done():
 		}
 		if !gotMsg {
@@ -297,11 +311,13 @@ func connectAndGetCachedMessages(ctx context.Context, addr net.Addr, t *testing.
 
 		gotMsg = false
 		// Wait for client to receive second item
+		timer = time.NewTimer(10 * time.Second)
+		defer timer.Stop()
 		select {
 		case receivedMsg := <-ts.messageReceiver:
 			t.Logf("client %d received second message: %v\n", clientIndex, receivedMsg)
 			gotMsg = true
-		case <-time.After(10 * time.Second):
+		case <-timer.C:
 		case <-ctx.Done():
 		}
 		if !gotMsg {

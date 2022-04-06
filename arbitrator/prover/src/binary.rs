@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::{
     value::{FunctionType, IntegerValType, Value as LirValue, ValueType},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
@@ -35,15 +38,6 @@ pub struct MemoryArg {
 pub enum FloatType {
     F32,
     F64,
-}
-
-impl Into<ValueType> for FloatType {
-    fn into(self) -> ValueType {
-        match self {
-            FloatType::F32 => ValueType::F32,
-            FloatType::F64 => ValueType::F64,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -321,15 +315,6 @@ pub struct Data {
 pub enum RefType {
     FuncRef,
     ExternRef,
-}
-
-impl Into<ValueType> for RefType {
-    fn into(self) -> ValueType {
-        match self {
-            RefType::FuncRef => ValueType::FuncRef,
-            RefType::ExternRef => panic!("Extern refs not supported"),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -858,10 +843,7 @@ fn variables_instruction(input: &[u8]) -> IResult<HirInstruction> {
             tag(&[0x21]),
             map(leb128_u32, inst_with_idx(Opcode::LocalSet)),
         ),
-        preceded(
-            tag(&[0x22]),
-            map(leb128_u32, |x| HirInstruction::LocalTee(x)),
-        ),
+        preceded(tag(&[0x22]), map(leb128_u32, HirInstruction::LocalTee)),
         preceded(
             tag(&[0x23]),
             map(leb128_u32, inst_with_idx(Opcode::GlobalGet)),
@@ -1312,7 +1294,7 @@ fn module(mut input: &[u8]) -> IResult<WasmBinary> {
         memories: memories.unwrap_or_default(),
         globals: globals.unwrap_or_default(),
         exports: exports.unwrap_or_default(),
-        start: start,
+        start,
         elements: elements.unwrap_or_default(),
         code: code.unwrap_or_default(),
         datas: datas.unwrap_or_default(),
@@ -1326,8 +1308,6 @@ pub fn parse(input: &[u8]) -> Result<WasmBinary, nom::error::VerboseError<&[u8]>
     match all_consuming(module)(input) {
         Ok(res) => Ok(res.1),
         Err(Err::Error(e)) | Err(Err::Failure(e)) => Err(e),
-        Err(Err::Incomplete(_)) => {
-            return Err(VerboseError::from_error_kind(&[], ErrorKind::Complete));
-        }
+        Err(Err::Incomplete(_)) => Err(VerboseError::from_error_kind(&[], ErrorKind::Complete)),
     }
 }

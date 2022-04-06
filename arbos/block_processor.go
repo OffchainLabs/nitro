@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -35,9 +34,9 @@ var L2ToL1TransactionEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
-	baseFee, err := l2Pricing.GasPriceWei()
+	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
 
 	var lastBlockHash common.Hash
@@ -45,7 +44,7 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	timestamp := uint64(0)
 	coinbase := common.Address{}
 	if l1info != nil {
-		timestamp = l1info.l1Timestamp.Uint64()
+		timestamp = l1info.l1Timestamp
 		coinbase = l1info.poster
 	}
 	if prevHeader != nil {
@@ -57,20 +56,20 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 	}
 	return &types.Header{
 		ParentHash:  lastBlockHash,
-		UncleHash:   [32]byte{},
+		UncleHash:   types.EmptyUncleHash, // Post-merge Ethereum will require this to be types.EmptyUncleHash
 		Coinbase:    coinbase,
-		Root:        [32]byte{},  // Filled in later
-		TxHash:      [32]byte{},  // Filled in later
-		ReceiptHash: [32]byte{},  // Filled in later
-		Bloom:       [256]byte{}, // Filled in later
-		Difficulty:  big.NewInt(1),
+		Root:        [32]byte{},    // Filled in later
+		TxHash:      [32]byte{},    // Filled in later
+		ReceiptHash: [32]byte{},    // Filled in later
+		Bloom:       [256]byte{},   // Filled in later
+		Difficulty:  big.NewInt(1), // Eventually, Ethereum plans to require this to be zero
 		Number:      blockNumber,
 		GasLimit:    l2pricing.GethBlockGasLimit,
 		GasUsed:     0,
 		Time:        timestamp,
-		Extra:       []byte{},   // Unused
-		MixDigest:   [32]byte{}, // Unused
-		Nonce:       [8]byte{},  // Filled in later
+		Extra:       []byte{},   // Unused; Post-merge Ethereum will limit the size of this to 32 bytes
+		MixDigest:   [32]byte{}, // Post-merge Ethereum will require this to be zero
+		Nonce:       [8]byte{},  // Filled in later; post-merge Ethereum will require this to be zero
 		BaseFee:     baseFee,
 	}
 }
@@ -117,7 +116,7 @@ func ProduceBlock(
 
 // A bit more flexible than ProduceBlock for use in the sequencer.
 func ProduceBlockAdvanced(
-	messageHeader *L1IncomingMessageHeader,
+	l1Header *L1IncomingMessageHeader,
 	txes types.Transactions,
 	delayedMessagesRead uint64,
 	lastBlockHeader *types.Header,
@@ -136,20 +135,21 @@ func ProduceBlockAdvanced(
 		panic("ProduceBlock called with dirty StateDB (non-zero unexpected balance delta)")
 	}
 
-	poster := messageHeader.Poster
+	poster := l1Header.Poster
 
 	l1Info := &L1Info{
 		poster:        poster,
-		l1BlockNumber: messageHeader.BlockNumber.Big(),
-		l1Timestamp:   messageHeader.Timestamp.Big(),
+		l1BlockNumber: l1Header.BlockNumber,
+		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
-	header := createNewHeader(lastBlockHeader, l1Info, state)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number)
+	gasLeft, _ := state.L2PricingState().PerBlockGasLimit()
+	l1BlockNum := l1Info.l1BlockNumber
 
 	// Prepend a tx before all others to touch up the state (update the L1 block num, pricing pools, etc)
-	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Info.l1BlockNumber, header.Number, lastBlockHeader)
+	startTx := InternalTxStartBlock(chainConfig.ChainID, l1Header.L1BaseFee, l1BlockNum, header, lastBlockHeader)
 	txes = append(types.Transactions{types.NewTx(startTx)}, txes...)
 
 	complete := types.Transactions{}

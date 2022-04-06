@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package l1pricing
 
@@ -26,9 +25,9 @@ type L1PricingState struct {
 	defaultAggregator           storage.StorageBackedAddress
 	l1BaseFeeEstimate           storage.StorageBackedBigInt
 	l1BaseFeeEstimateInertia    storage.StorageBackedUint64
+	lastL1BaseFeeUpdateTime     storage.StorageBackedUint64
 	userSpecifiedAggregators    *storage.Storage
 	refuseDefaultAggregator     *storage.Storage
-	aggregatorFixedCharges      *storage.Storage
 	aggregatorFeeCollectors     *storage.Storage
 	aggregatorCompressionRatios *storage.Storage
 }
@@ -38,15 +37,15 @@ var (
 
 	userSpecifiedAggregatorKey    = []byte{0}
 	refuseDefaultAggregatorKey    = []byte{1}
-	aggregatorFixedChargeKey      = []byte{2}
-	aggregatorFeeCollectorKey     = []byte{3}
-	aggregatorCompressionRatioKey = []byte{4}
+	aggregatorFeeCollectorKey     = []byte{2}
+	aggregatorCompressionRatioKey = []byte{3}
 )
 
 const (
 	defaultAggregatorAddressOffset uint64 = 0
 	l1BaseFeeEstimateOffset        uint64 = 1
 	l1BaseFeeEstimateInertiaOffset uint64 = 2
+	lastL1BaseFeeUpdateTimeOffset  uint64 = 3
 )
 
 const InitialL1BaseFeeEstimate = 50 * params.GWei
@@ -60,7 +59,10 @@ func InitializeL1PricingState(sto *storage.Storage) error {
 	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateInertiaOffset, InitialL1BaseFeeEstimateInertia); err != nil {
 		return err
 	}
-	return sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate)
+	if err := sto.SetUint64ByUint64(l1BaseFeeEstimateOffset, InitialL1BaseFeeEstimate); err != nil {
+		return err
+	}
+	return sto.SetUint64ByUint64(lastL1BaseFeeUpdateTimeOffset, 0)
 }
 
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
@@ -69,9 +71,9 @@ func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 		sto.OpenStorageBackedAddress(defaultAggregatorAddressOffset),
 		sto.OpenStorageBackedBigInt(l1BaseFeeEstimateOffset),
 		sto.OpenStorageBackedUint64(l1BaseFeeEstimateInertiaOffset),
+		sto.OpenStorageBackedUint64(lastL1BaseFeeUpdateTimeOffset),
 		sto.OpenSubStorage(userSpecifiedAggregatorKey),
 		sto.OpenSubStorage(refuseDefaultAggregatorKey),
-		sto.OpenSubStorage(aggregatorFixedChargeKey),
 		sto.OpenSubStorage(aggregatorFeeCollectorKey),
 		sto.OpenSubStorage(aggregatorCompressionRatioKey),
 	}
@@ -93,22 +95,40 @@ func (ps *L1PricingState) SetL1BaseFeeEstimateWei(val *big.Int) error {
 	return ps.l1BaseFeeEstimate.Set(val)
 }
 
-func (ps *L1PricingState) UpdateL1BaseFeeEstimate(baseFeeWei *big.Int) error {
-	curr, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return err
-	}
-	weight, err := ps.L1BaseFeeEstimateInertia()
-	if err != nil {
-		return err
+func (ps *L1PricingState) LastL1BaseFeeUpdateTime() (uint64, error) {
+	return ps.lastL1BaseFeeUpdateTime.Get()
+}
+
+func (ps *L1PricingState) SetLastL1BaseFeeUpdateTime(t uint64) error {
+	return ps.lastL1BaseFeeUpdateTime.Set(t)
+}
+
+// Update the pricing model with info from the start of a block
+func (ps *L1PricingState) UpdatePricingModel(baseFeeSample *big.Int, currentTime uint64) {
+
+	if baseFeeSample.Sign() == 0 {
+		// The sequencer's normal messages do not include the l1 basefee, so ignore them
+		return
 	}
 
-	// new = (alpha * old + observed) / (alpha + 1)
-	memory := arbmath.BigMul(curr, arbmath.UintToBig(weight))
-	impact := arbmath.BigAdd(memory, baseFeeWei)
-	update := arbmath.BigDiv(impact, arbmath.UintToBig(weight+1))
+	// update the l1 basefee estimate, which is the weighted average of the past and present
+	//     basefee' = weighted average of the historical rate and the current, discounting time passed
+	//     basefee' = (memory * basefee + sqrt(passed) * sample) / (memory + sqrt(passed))
+	//
+	baseFee, _ := ps.L1BaseFeeEstimateWei()
+	inertia, _ := ps.L1BaseFeeEstimateInertia()
+	lastTime, _ := ps.LastL1BaseFeeUpdateTime()
+	if currentTime <= lastTime {
+		return
+	}
+	passedSqrt := arbmath.ApproxSquareRoot(currentTime - lastTime)
+	newBaseFee := arbmath.BigDivByUint(
+		arbmath.BigAdd(arbmath.BigMulByUint(baseFee, inertia), arbmath.BigMulByUint(baseFeeSample, passedSqrt)),
+		inertia+passedSqrt,
+	)
 
-	return ps.SetL1BaseFeeEstimateWei(update)
+	_ = ps.SetL1BaseFeeEstimateWei(newBaseFee)
+	_ = ps.SetLastL1BaseFeeUpdateTime(currentTime)
 }
 
 // Get how slowly ArbOS updates its estimate of the L1 basefee
@@ -183,27 +203,6 @@ func (ps *L1PricingState) ReimbursableAggregatorForSender(sender common.Address)
 
 }
 
-func (ps *L1PricingState) SetFixedChargeForAggregatorL1Gas(aggregator common.Address, chargeL1Gas *big.Int) error {
-	return ps.aggregatorFixedCharges.Set(common.BytesToHash(aggregator.Bytes()), common.BigToHash(chargeL1Gas))
-}
-
-func (ps *L1PricingState) FixedChargeForAggregatorL1Gas(aggregator common.Address) (*big.Int, error) {
-	value, err := ps.aggregatorFixedCharges.Get(common.BytesToHash(aggregator.Bytes()))
-	return value.Big(), err
-}
-
-func (ps *L1PricingState) FixedChargeForAggregatorWei(aggregator common.Address) (*big.Int, error) {
-	fixed, err := ps.FixedChargeForAggregatorL1Gas(aggregator)
-	if err != nil {
-		return nil, err
-	}
-	price, err := ps.L1BaseFeeEstimateWei()
-	if err != nil {
-		return nil, err
-	}
-	return arbmath.BigMul(fixed, price), nil
-}
-
 func (ps *L1PricingState) SetAggregatorFeeCollector(aggregator common.Address, addr common.Address) error {
 	return ps.aggregatorFeeCollectors.Set(common.BytesToHash(aggregator.Bytes()), common.BytesToHash(addr.Bytes()))
 }
@@ -241,7 +240,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	aggregator, perr := ps.ReimbursableAggregatorForSender(sender)
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
-	if util.DoesTxTypeAlias(&txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
 		return
 	}
 
@@ -264,7 +263,7 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	tx.PosterCost = adjustedL1Fee
 }
 
-const TxFixedCost = 100 // assumed size in bytes of a typical RLP-encoded tx, not including its calldata
+const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
 func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
 
