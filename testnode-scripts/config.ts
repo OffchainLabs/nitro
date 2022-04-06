@@ -47,6 +47,7 @@ function writeConfigs(argv: any) {
             },
             "batch-poster": {
                 "enable": false,
+                "max-interval": "30s",
             }
         },
         "persistent": {

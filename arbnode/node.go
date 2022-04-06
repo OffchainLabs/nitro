@@ -404,22 +404,34 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type SequencerConfig struct {
-	Enable    bool                     `koanf:"enable"`
-	Dangerous DangerousSequencerConfig `koanf:"dangerous"`
+	Enable                      bool                     `koanf:"enable"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
+	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
+	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
 var DefaultSequencerConfig = SequencerConfig{
-	Enable:    false,
-	Dangerous: DefaultDangerousSequencerConfig,
+	Enable:                      false,
+	MaxBlockSpeed:               time.Millisecond * 100,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
-	Enable:    true,
-	Dangerous: TestDangerousSequencerConfig,
+	Enable:                      true,
+	MaxBlockSpeed:               time.Millisecond * 10,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	Dangerous:                   TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
+	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
+	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
@@ -495,9 +507,9 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1client)
+			sequencer, err = NewSequencer(txStreamer, l1client, config.Sequencer)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil)
+			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)
 		}
 		if err != nil {
 			return nil, err

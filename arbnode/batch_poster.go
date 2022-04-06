@@ -63,7 +63,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxBatchSize:         117964, // From contracts/src/libraries/Constants.sol
 	BatchPollDelay:       time.Second * 10,
 	PostingErrorDelay:    time.Second * 10,
-	MaxBatchPostInterval: time.Minute,
+	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
