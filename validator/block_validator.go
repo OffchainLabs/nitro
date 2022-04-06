@@ -390,7 +390,6 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			}
 			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
 			seqBatchEntry = seqMsg
-			haveBatch = true
 		}
 		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
