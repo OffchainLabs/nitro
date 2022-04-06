@@ -405,7 +405,7 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type SequencerConfig struct {
 	Enable                      bool                     `koanf:"enable"`
-	MinBlockInterval            time.Duration            `koanf:"min-block-interval"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
 	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
 	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
 	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
@@ -413,22 +413,25 @@ type SequencerConfig struct {
 
 var DefaultSequencerConfig = SequencerConfig{
 	Enable:                      false,
-	MinBlockInterval:            time.Millisecond * 100,
+	MaxBlockSpeed:               time.Millisecond * 100,
 	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: 60 * 60 * time.Second,
+	MaxAcceptableTimestampDelta: time.Hour,
 	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
 	Enable:                      true,
-	MinBlockInterval:            time.Millisecond * 10,
+	MaxBlockSpeed:               time.Millisecond * 10,
 	MaxRevertGasReject:          params.TxGas + 10000,
-	MaxAcceptableTimestampDelta: 60 * 60 * time.Second,
+	MaxAcceptableTimestampDelta: time.Hour,
 	Dangerous:                   TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
+	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
+	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
