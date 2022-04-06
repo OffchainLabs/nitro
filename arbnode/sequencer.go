@@ -328,8 +328,10 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		nextBlock := time.Now().Add(s.config.MaxBlockSpeed)
 		s.sequenceTransactions(ctx)
-		return s.config.MaxBlockSpeed
+		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+		return nextBlock.Sub(time.Now())
 	})
 
 	return nil
