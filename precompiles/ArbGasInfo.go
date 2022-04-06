@@ -160,3 +160,8 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
 }
+
+// Get the amount of gas remaining in the gas pool
+func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
+	return c.state.L2PricingState().GasPool()
+}
