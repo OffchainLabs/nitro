@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -251,7 +250,7 @@ func main() {
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
-		utils.Fatalf("Failed to open database: %v", err)
+		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
 	if nodeConfig.ImportFile != "" {
@@ -349,7 +348,7 @@ func main() {
 		}
 	}
 	if err := stack.Start(); err != nil {
-		utils.Fatalf("Error starting protocol stack: %v\n", err)
+		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -360,7 +359,7 @@ func main() {
 	close(sigint)
 
 	if err := stack.Close(); err != nil {
-		utils.Fatalf("Error closing stack: %v\n", err)
+		panic(fmt.Sprintf("Error closing stack: %v\n", err))
 	}
 }
 

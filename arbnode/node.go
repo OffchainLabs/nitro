@@ -14,7 +14,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -792,7 +791,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 			// validate db and import match
 			hashInDb := rawdb.ReadCanonicalHash(chainDb, blockNum)
 			if storedBlockHash != hashInDb {
-				utils.Fatalf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb)
+				panic(fmt.Sprintf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb))
 			}
 		}
 		if blockNum+1 == blocksInDb && blockNum > 0 {
@@ -801,7 +800,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 			td = rawdb.ReadTd(chainDb, prevHash, blockNum-1)
 		}
 		if storedBlock.Header.ParentHash != prevHash {
-			utils.Fatalf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash)
+			panic(fmt.Sprintf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash))
 		}
 		if storedBlock.Header.Number.Cmp(new(big.Int).SetUint64(blockNum)) != 0 {
 			panic("unexpected block number in import")
