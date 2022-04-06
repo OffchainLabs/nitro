@@ -197,7 +197,7 @@ func (d *DelayedSequencer) Start(ctxIn context.Context) {
 	d.CallIteratively(func(ctx context.Context) time.Duration {
 		err := d.run(ctx)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Error("error reading inbox", "err", err)
+			log.Error("error sequencing delayed messages", "err", err)
 		}
 		return time.Second
 	})

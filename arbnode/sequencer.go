@@ -137,22 +137,6 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 }
 
 func (s *Sequencer) sequenceTransactions(ctx context.Context) {
-	timestamp := time.Now().Unix()
-	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
-	l1Timestamp := s.l1Timestamp
-	s.L1BlockAndTimeMutex.Unlock()
-
-	if s.l1Client != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
-		log.Error(
-			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
-			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
-		)
-		return
-	}
-
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
@@ -207,6 +191,22 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	if s.forwardIfSet(queueItems) {
+		return
+	}
+
+	timestamp := time.Now().Unix()
+	s.L1BlockAndTimeMutex.Lock()
+	l1Block := s.l1BlockNumber
+	l1Timestamp := s.l1Timestamp
+	s.L1BlockAndTimeMutex.Unlock()
+
+	if s.l1Client != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
+		log.Error(
+			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
+			"l1Block", l1Block,
+			"l1Timestamp", l1Timestamp,
+			"localTimestamp", timestamp,
+		)
 		return
 	}
 
@@ -328,8 +328,10 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		nextBlock := time.Now().Add(s.config.MaxBlockSpeed)
 		s.sequenceTransactions(ctx)
-		return s.config.MinBlockInterval
+		// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
+		return time.Until(nextBlock)
 	})
 
 	return nil

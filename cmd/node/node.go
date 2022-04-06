@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -62,14 +61,10 @@ func main() {
 
 		return
 	}
-	var logFormat log.Format
-	if nodeConfig.LogType == "plaintext" {
-		logFormat = log.TerminalFormat(false)
-	} else if nodeConfig.LogType == "json" {
-		logFormat = log.JSONFormat()
-	} else {
+	logFormat, err := conf.ParseLogType(nodeConfig.LogType)
+	if err != nil {
 		flag.Usage()
-		panic(fmt.Sprintf("invalid log type: %v", nodeConfig.LogType))
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
@@ -255,7 +250,7 @@ func main() {
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
-		utils.Fatalf("Failed to open database: %v", err)
+		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
 	if nodeConfig.ImportFile != "" {
@@ -277,9 +272,6 @@ func main() {
 			}
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-		if err != nil {
-			panic(err)
-		}
 	}
 
 	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
@@ -350,7 +342,7 @@ func main() {
 		}
 	}
 	if err := stack.Start(); err != nil {
-		utils.Fatalf("Error starting protocol stack: %v\n", err)
+		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -361,7 +353,7 @@ func main() {
 	close(sigint)
 
 	if err := stack.Close(); err != nil {
-		utils.Fatalf("Error closing stack: %v\n", err)
+		panic(fmt.Sprintf("Error closing stack: %v\n", err))
 	}
 }
 
