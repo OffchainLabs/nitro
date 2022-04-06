@@ -67,7 +67,7 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
 			SequenceNumber: pos + arbutil.MessageIndex(i),
