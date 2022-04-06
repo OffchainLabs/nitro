@@ -29,7 +29,7 @@ import "./Bridge.sol";
  * @notice Messages created via this inbox are enqueued in the delayed accumulator
  * to await inclusion in the SequencerInbox
  */
-contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
+contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox {
     IBridge public override bridge;
 
     modifier onlyOwner() {
@@ -94,15 +94,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
     function sendL2Message(bytes calldata messageData)
         external
         override
-        revertOnCall(false)
         whenNotPaused
         returns (uint256)
     {
-        if (messageData.length > MAX_DATA_SIZE)
-            revert DataTooLarge(messageData.length, MAX_DATA_SIZE);
-        uint256 msgNum = deliverToBridge(L2_MSG, msg.sender, keccak256(messageData));
-        emit InboxMessageDelivered(msgNum, messageData);
-        return msgNum;
+        return _deliverMessage(L2_MSG, msg.sender, messageData, false);
     }
 
     function sendL1FundedUnsignedTransaction(
@@ -111,15 +106,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 nonce,
         address to,
         bytes calldata data
-    )
-        external
-        payable
-        virtual
-        override
-        revertOnCall(gasLimit == 0)
-        whenNotPaused
-        returns (uint256)
-    {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -132,7 +119,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     uint256(uint160(to)),
                     msg.value,
                     data
-                )
+                ),
+                gasLimit != 0
             );
     }
 
@@ -141,15 +129,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 maxFeePerGas,
         address to,
         bytes calldata data
-    )
-        external
-        payable
-        virtual
-        override
-        revertOnCall(gasLimit == 0)
-        whenNotPaused
-        returns (uint256)
-    {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L1MessageType_L2FundedByL1,
@@ -161,7 +141,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     uint256(uint160(to)),
                     msg.value,
                     data
-                )
+                ),
+                gasLimit != 0
             );
     }
 
@@ -172,7 +153,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -185,7 +166,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     uint256(uint160(to)),
                     value,
                     data
-                )
+                ),
+                gasLimit != 0
             );
     }
 
@@ -195,7 +177,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         address to,
         uint256 value,
         bytes calldata data
-    ) external virtual override revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    ) external virtual override whenNotPaused returns (uint256) {
         return
             _deliverMessage(
                 L2_MSG,
@@ -207,7 +189,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     uint256(uint160(to)),
                     value,
                     data
-                )
+                ),
+                gasLimit != 0
             );
     }
 
@@ -233,7 +216,6 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         payable
         virtual
         override
-        revertOnCall(false)
         whenNotPaused
         returns (uint256)
     {
@@ -273,7 +255,8 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     uint256(0),
                     uint256(0),
                     ""
-                )
+                ),
+                false
             );
     }
 
@@ -299,7 +282,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    ) external payable virtual revertOnCall(gasLimit == 0) whenNotPaused returns (uint256) {
+    ) external payable virtual whenNotPaused returns (uint256) {
         return
             unsafeCreateRetryableTicket(
                 to,
@@ -335,15 +318,7 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 gasLimit,
         uint256 maxFeePerGas,
         bytes calldata data
-    )
-        external
-        payable
-        virtual
-        override
-        revertOnCall(gasLimit == 0)
-        whenNotPaused
-        returns (uint256)
-    {
+    ) external payable virtual override whenNotPaused returns (uint256) {
         // ensure the user's deposit alone will make submission succeed
         require(msg.value >= maxSubmissionCost + l2CallValue, "insufficient value");
 
@@ -397,8 +372,10 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
         uint256 maxFeePerGas,
         bytes calldata data
     ) public payable virtual override whenNotPaused returns (uint256) {
-        uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
-        require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
+        {
+            uint256 submissionFee = calculateRetryableSubmissionFee(data.length, block.basefee);
+            require(maxSubmissionCost >= submissionFee, "insufficient submission fee");
+        }
 
         return
             _deliverMessage(
@@ -415,15 +392,18 @@ contract Inbox is DelegateCallAware, PausableUpgradeable, IInbox, EthCallAware {
                     maxFeePerGas,
                     data.length,
                     data
-                )
+                ),
+                gasLimit != 0
             );
     }
 
     function _deliverMessage(
         uint8 _kind,
         address _sender,
-        bytes memory _messageData
+        bytes memory _messageData,
+        bool allowRevertOnCall
     ) internal returns (uint256) {
+        if (allowRevertOnCall) EthCallAware.revertOnCall(_messageData);
         if (_messageData.length > MAX_DATA_SIZE)
             revert DataTooLarge(_messageData.length, MAX_DATA_SIZE);
         uint256 msgNum = deliverToBridge(_kind, _sender, keccak256(_messageData));

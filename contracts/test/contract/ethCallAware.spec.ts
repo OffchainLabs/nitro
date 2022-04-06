@@ -55,17 +55,12 @@ describe("EthCallAware", async () => {
         // we expect this to succeed
         await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware);
       } else {
-        const revertData = ethCallAware.interface.encodeFunctionData("testFunction", [
-          num,
-          data,
-          skipEthCallAware,
-        ]);
         try {
           await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
             assert.fail("Test should have failed.");
         } catch (err) {
           expect(
-            (err as Error).message.includes(`CallAwareData("${revertData}")`),
+            (err as Error).message.includes(`CallAwareData(\\"${data}\\")`),
             "Did not contain error message."
           ).to.be.true;
         }

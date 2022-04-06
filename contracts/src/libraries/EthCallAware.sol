@@ -23,14 +23,12 @@ pragma solidity ^0.8.4;
 error CallAwareData(bytes data);
 
 /// @dev Tools for inferring whether a transaction was made in the context of an eth_call
-abstract contract EthCallAware {
+library EthCallAware {
     /// @dev Tries to determine if the current execution is a transaction
     /// or a call. Allows execution to continue if the execution is a transaction
     /// and reverts with the provided data if the execution is a call
-    /// @param skip Whether the the call awareness check should be skipped
-    modifier revertOnCall(bool skip) {
-        if (!skip && isCall()) revert CallAwareData(msg.data);
-        _;
+    function revertOnCall(bytes memory data) internal view {
+        if (isCall()) revert CallAwareData(data);
     }
 
     /// @dev Tries to determine if the current execution is a transaction
