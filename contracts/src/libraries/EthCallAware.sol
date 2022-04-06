@@ -31,8 +31,7 @@ library EthCallAware {
         if (isCall()) revert CallAwareData(data);
     }
 
-    /// @dev Tries to determine if the current execution is a transaction
-    /// or a call
+    /// @dev Tries to determine if the current execution is a transaction or a call
     function isCall() internal view returns (bool) {
         // when making eth_calls many libraries leave empty, or allow arbitrary setting of, some
         // transaction fields such as 'from' and 'gasPrice'. Since it's impossible for a user to
