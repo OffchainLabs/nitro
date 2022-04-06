@@ -55,18 +55,13 @@ describe("EthCallAware", async () => {
         // we expect this to succeed
         await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware);
       } else {
-        try {
-          await ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
-            assert.fail("Test should have failed.");
-        } catch (err) {
-          expect(
-            (err as Error).message.includes(`CallAwareData(\\"${data}\\")`),
-            "Did not contain error message."
-          ).to.be.true;
-        }
+        expect(
+          ethCallAware.callStatic.testFunction(num, data, skipEthCallAware),
+          "Error message"
+        ).to.be.revertedWith(`CallAwareData("${data}")`);
       }
     });
-    
+
     it(`estimate gas returns correct value (skipped: ${skipEthCallAware})`, async () => {
       const ethCallAware = await setupEthCallAware();
       const gasEstimate = await ethCallAware.estimateGas.testFunction(num, data, skipEthCallAware);
