@@ -26,7 +26,7 @@ export const bridgeFundsCommand = {
         argv.provider = new ethers.providers.WebSocketProvider(argv.l1url)
 
         const deploydata = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString())
-        const inboxAddr = ethers.utils.hexlify(deploydata.Inbox)
+        const inboxAddr = ethers.utils.hexlify(deploydata.inbox)
         argv.to = "address_" + inboxAddr
         argv.data = "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000"
 

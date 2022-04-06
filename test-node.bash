@@ -136,20 +136,22 @@ if $force_init; then
     docker-compose run --entrypoint sh geth -c "echo e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2 > /root/.ethereum/tmp-funnelkey"
     docker-compose run geth account import --password /root/.ethereum/passphrase --keystore /keystore /root/.ethereum/tmp-funnelkey
     docker-compose run --entrypoint sh geth -c "rm /root/.ethereum/tmp-funnelkey"
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
-    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore 
+    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
+    docker-compose run geth account new --password /root/.ethereum/passphrase --keystore /keystore
 
-    echo == funding validator and sequencer, writing configs
+    echo == Funding validator and sequencer
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
-    docker-compose run testnode-scripts write-config
-
-    echo == initializing redis
-    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
-    docker-compose run --entrypoint target/bin/deploy poster -l1conn ws://geth:8546 -l1keystore /l1keystore -l1DeployAccount $sequenceraddress -l1deployment /config/deployment.json -authorizevalidators 10
+    docker-compose run --entrypoint target/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10
+
+    echo == Writing configs
+    docker-compose run testnode-scripts write-config
+
+    echo == Initializing redis
+    docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers
 
     docker-compose run testnode-scripts bridge-funds --ethamount 100000
 fi

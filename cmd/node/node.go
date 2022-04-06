@@ -5,9 +5,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"os/signal"
@@ -159,7 +157,7 @@ func main() {
 	}
 
 	var l1client *ethclient.Client
-	var deployInfo arbnode.RollupAddresses
+	var rollupAddrs arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
 	if nodeConfig.Node.EnableL1Reader {
 		var err error
@@ -181,15 +179,8 @@ func main() {
 			}
 		}
 
-		if nodeConfig.L1.Deployment == "" {
-			flag.Usage()
-			panic("no deployment specified")
-		}
-		rawDeployment, err := ioutil.ReadFile(nodeConfig.L1.Deployment)
+		rollupAddrs, err = nodeConfig.L1.Rollup.ParseAddresses()
 		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal(rawDeployment, &deployInfo); err != nil {
 			panic(err)
 		}
 	}
@@ -334,7 +325,7 @@ func main() {
 		}
 	}
 
-	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
+	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &rollupAddrs, l1TransactionOpts)
 	if err != nil {
 		panic(err)
 	}

@@ -3,6 +3,7 @@ package conf
 import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 	flag "github.com/spf13/pflag"
 )
 
@@ -57,23 +58,23 @@ var DefaultS3Config = S3Config{
 }
 
 type L1Config struct {
-	ChainID    uint64       `koanf:"chain-id"`
-	Deployment string       `koanf:"deployment"`
-	URL        string       `koanf:"url"`
-	Wallet     WalletConfig `koanf:"wallet"`
+	ChainID uint64                        `koanf:"chain-id"`
+	Rollup  arbnode.RollupAddressesConfig `koanf:"rollup"`
+	URL     string                        `koanf:"url"`
+	Wallet  WalletConfig                  `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:    1337,
-	Deployment: "",
-	URL:        "",
-	Wallet:     WalletConfigDefault,
+	ChainID: 1337,
+	Rollup:  arbnode.RollupAddressesConfig{},
+	URL:     "",
+	Wallet:  WalletConfigDefault,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
-	f.String(prefix+".deployment", L1ConfigDefault.Deployment, "json file including the existing deployment information")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
+	arbnode.RollupAddressesConfigAddOptions(prefix+".rollup", f)
 	WalletConfigAddOptions(prefix+".wallet", f)
 }
 

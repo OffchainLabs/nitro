@@ -44,13 +44,67 @@ import (
 )
 
 type RollupAddresses struct {
-	Bridge                 common.Address
-	Inbox                  common.Address
-	SequencerInbox         common.Address
-	Rollup                 common.Address
-	ValidatorUtils         common.Address
-	ValidatorWalletCreator common.Address
-	DeployedAt             uint64
+	Bridge                 common.Address `json:"bridge"`
+	Inbox                  common.Address `json:"inbox"`
+	SequencerInbox         common.Address `json:"sequencer-inbox"`
+	Rollup                 common.Address `json:"rollup"`
+	ValidatorUtils         common.Address `json:"validator-utils"`
+	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	DeployedAt             uint64         `json:"deployed-at"`
+}
+
+type RollupAddressesConfig struct {
+	Bridge                 string `koanf:"bridge"`
+	Inbox                  string `koanf:"inbox"`
+	SequencerInbox         string `koanf:"sequencer-inbox"`
+	Rollup                 string `koanf:"rollup"`
+	ValidatorUtils         string `koanf:"validator-utils"`
+	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
+	DeployedAt             uint64 `koanf:"deployed-at"`
+}
+
+var RollupAddressesConfigDefault = RollupAddressesConfig{}
+
+func RollupAddressesConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".bridge", "", "the bridge contract address")
+	f.String(prefix+".inbox", "", "the inbox contract address")
+	f.String(prefix+".sequencer-inbox", "", "the sequencer inbox contract address")
+	f.String(prefix+".rollup", "", "the rollup contract address")
+	f.String(prefix+".validator-utils", "", "the validator utils contract address")
+	f.String(prefix+".validator-wallet-creator", "", "the validator wallet creator contract address")
+	f.Uint64(prefix+".deployed-at", 0, "the block number at which the rollup was deployed")
+}
+
+func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
+	a := RollupAddresses{
+		DeployedAt: c.DeployedAt,
+	}
+	strs := []string{
+		c.Bridge,
+		c.Inbox,
+		c.SequencerInbox,
+		c.Rollup,
+		c.ValidatorUtils,
+		c.ValidatorWalletCreator,
+	}
+	addrs := []*common.Address{
+		&a.Bridge,
+		&a.Inbox,
+		&a.SequencerInbox,
+		&a.Rollup,
+		&a.ValidatorUtils,
+		&a.ValidatorWalletCreator,
+	}
+	if len(strs) != len(addrs) {
+		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
+	}
+	for i, s := range strs {
+		if !common.IsHexAddress(s) {
+			return RollupAddresses{}, fmt.Errorf("invalid address: %v", s)
+		}
+		*addrs[i] = common.HexToAddress(s)
+	}
+	return a, nil
 }
 
 func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
