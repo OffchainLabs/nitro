@@ -15,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxReaderConfig struct {
@@ -391,7 +392,11 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return msg.Header.RequestId.Big(), nil
+	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
+		return new(big.Int).Set(r.firstMessageBlock), nil
+	}
+	return msgBlock, nil
 }
 
 func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
