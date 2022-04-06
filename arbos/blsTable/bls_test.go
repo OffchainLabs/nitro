@@ -19,7 +19,7 @@ import (
 
 func TestLegacyBLS(t *testing.T) {
 	rand.Seed(time.Now().UTC().UnixNano())
-	sto := storage.NewMemoryBacked(burn.NewSystemBurner(false))
+	sto := storage.NewMemoryBacked(burn.NewSystemBurner(nil, false))
 	tab := Open(sto)
 
 	maxInt64 := big.NewInt(math.MaxInt64)

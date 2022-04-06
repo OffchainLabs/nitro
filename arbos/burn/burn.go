@@ -5,6 +5,7 @@ package burn
 
 import (
 	glog "github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbos/util"
 )
 
 type Burner interface {
@@ -12,16 +13,19 @@ type Burner interface {
 	Burned() uint64
 	Restrict(err error)
 	ReadOnly() bool
+	TracingInfo() *util.TracingInfo
 }
 
 type SystemBurner struct {
-	gasBurnt uint64
-	readOnly bool
+	gasBurnt    uint64
+	tracingInfo *util.TracingInfo
+	readOnly    bool
 }
 
-func NewSystemBurner(readOnly bool) *SystemBurner {
+func NewSystemBurner(tracingInfo *util.TracingInfo, readOnly bool) *SystemBurner {
 	return &SystemBurner{
-		readOnly: readOnly,
+		tracingInfo: tracingInfo,
+		readOnly:    readOnly,
 	}
 }
 
@@ -42,4 +46,8 @@ func (burner *SystemBurner) Restrict(err error) {
 
 func (burner *SystemBurner) ReadOnly() bool {
 	return burner.readOnly
+}
+
+func (burner *SystemBurner) TracingInfo() *util.TracingInfo {
+	return burner.tracingInfo
 }
