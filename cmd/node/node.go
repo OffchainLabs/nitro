@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -326,6 +329,15 @@ func main() {
 		}
 	}
 
+	if nodeConfig.Metrics {
+		go metrics.CollectProcessMetrics(3 * time.Second)
+
+		if nodeConfig.MetricsServer.Addr != "" {
+			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
+			exp.Setup(address)
+		}
+	}
+
 	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
@@ -361,32 +373,36 @@ func main() {
 }
 
 type NodeConfig struct {
-	Conf       conf.ConfConfig       `koanf:"conf"`
-	Node       arbnode.Config        `koanf:"node"`
-	L1         conf.L1Config         `koanf:"l1"`
-	L2         conf.L2Config         `koanf:"l2"`
-	LogLevel   int                   `koanf:"log-level"`
-	LogType    string                `koanf:"log-type"`
-	Persistent conf.PersistentConfig `koanf:"persistent"`
-	HTTP       conf.HTTPConfig       `koanf:"http"`
-	WS         conf.WSConfig         `koanf:"ws"`
-	DevInit    bool                  `koanf:"dev-init"`
-	NoInit     bool                  `koanf:"no-init"`
-	ImportFile string                `koanf:"import-file"`
+	Conf          conf.ConfConfig          `koanf:"conf"`
+	Node          arbnode.Config           `koanf:"node"`
+	L1            conf.L1Config            `koanf:"l1"`
+	L2            conf.L2Config            `koanf:"l2"`
+	LogLevel      int                      `koanf:"log-level"`
+	LogType       string                   `koanf:"log-type"`
+	Persistent    conf.PersistentConfig    `koanf:"persistent"`
+	HTTP          conf.HTTPConfig          `koanf:"http"`
+	WS            conf.WSConfig            `koanf:"ws"`
+	DevInit       bool                     `koanf:"dev-init"`
+	NoInit        bool                     `koanf:"no-init"`
+	ImportFile    string                   `koanf:"import-file"`
+	Metrics       bool                     `koanf:"metrics"`
+	MetricsServer conf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:       conf.ConfConfigDefault,
-	Node:       arbnode.ConfigDefault,
-	L1:         conf.L1ConfigDefault,
-	L2:         conf.L2ConfigDefault,
-	LogLevel:   int(log.LvlInfo),
-	LogType:    "plaintext",
-	Persistent: conf.PersistentConfigDefault,
-	HTTP:       conf.HTTPConfigDefault,
-	WS:         conf.WSConfigDefault,
-	DevInit:    false,
-	ImportFile: "",
+	Conf:          conf.ConfConfigDefault,
+	Node:          arbnode.ConfigDefault,
+	L1:            conf.L1ConfigDefault,
+	L2:            conf.L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	Persistent:    conf.PersistentConfigDefault,
+	HTTP:          conf.HTTPConfigDefault,
+	WS:            conf.WSConfigDefault,
+	DevInit:       false,
+	ImportFile:    "",
+	Metrics:       false,
+	MetricsServer: conf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -402,6 +418,8 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
+	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
+	conf.MetricsServerAddOptions("metrics-server", f)
 }
 
 func ParseNode(_ context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, error) {
