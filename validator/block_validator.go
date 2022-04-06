@@ -308,7 +308,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
-	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
