@@ -329,7 +329,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		s.sequenceTransactions(ctx)
-		return s.config.MinBlockInterval
+		return s.config.MaxBlockSpeed
 	})
 
 	return nil
