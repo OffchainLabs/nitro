@@ -40,6 +40,7 @@ describe("EthCallAware", async () => {
   const tests = async (skipEthCallAware: boolean) => {
     it(`allows transaction to continue (skipped: ${skipEthCallAware})`, async () => {
       const ethCallAware = await setupEthCallAware();
+      console.log((await ethCallAware.provider.getGasPrice()).toString())
       const res = await ethCallAware.functions.testFunction(num, data, skipEthCallAware);
       const receipt = await res.wait();
 
