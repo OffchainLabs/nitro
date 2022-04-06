@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -23,11 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/pkg/errors"
 )
-
-// TODO: make these configurable
-const minBlockInterval time.Duration = time.Millisecond * 100
-const maxRevertGasReject uint64 = params.TxGas + 10000
-const maxAcceptableTimestampDeltaSeconds int64 = 60 * 60
 
 // 95% of the SequencerInbox limit, leaving ~5KB for headers and such
 const maxTxDataSize uint64 = 112065
@@ -49,6 +44,7 @@ type Sequencer struct {
 	txStreamer *TransactionStreamer
 	txQueue    chan txQueueItem
 	l1Client   arbutil.L1Interface
+	config     SequencerConfig
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -58,11 +54,12 @@ type Sequencer struct {
 	forwarder      *TxForwarder
 }
 
-func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface) (*Sequencer, error) {
+func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface, config SequencerConfig) (*Sequencer, error) {
 	return &Sequencer{
 		txStreamer:    txStreamer,
 		txQueue:       make(chan txQueueItem, 128),
 		l1Client:      l1Client,
+		config:        config,
 		l1BlockNumber: 0,
 		l1Timestamp:   0,
 	}, nil
@@ -83,7 +80,7 @@ func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transactio
 	}
 }
 
-func preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
+func (s *Sequencer) preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address) error {
 	agg, err := state.L1PricingState().ReimbursableAggregatorForSender(sender)
 	if err != nil {
 		return err
@@ -94,8 +91,8 @@ func preTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender com
 	return nil
 }
 
-func postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
-	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= maxRevertGasReject {
+func (s *Sequencer) postTxFilter(state *arbosState.ArbosState, tx *types.Transaction, sender common.Address, dataGas uint64, receipt *types.Receipt) error {
+	if receipt.Status == types.ReceiptStatusFailed && receipt.GasUsed > dataGas && receipt.GasUsed-dataGas <= s.config.MaxRevertGasReject {
 		return vm.ErrExecutionReverted
 	}
 	return nil
@@ -139,14 +136,6 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 	return true
 }
 
-func int64Abs(a int64) int64 {
-	if a < 0 {
-		return -a
-	} else {
-		return a
-	}
-}
-
 func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
@@ -154,7 +143,7 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
-	if s.l1Client != nil && (l1Block == 0 || int64Abs(int64(l1Timestamp)-timestamp) > maxAcceptableTimestampDeltaSeconds) {
+	if s.l1Client != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
@@ -231,8 +220,8 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	hooks := &arbos.SequencingHooks{
-		PreTxFilter:    preTxFilter,
-		PostTxFilter:   postTxFilter,
+		PreTxFilter:    s.preTxFilter,
+		PostTxFilter:   s.postTxFilter,
 		RequireDataGas: true,
 		TxErrors:       []error{},
 	}
@@ -340,7 +329,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		s.sequenceTransactions(ctx)
-		return minBlockInterval
+		return s.config.MinBlockInterval
 	})
 
 	return nil
