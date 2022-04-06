@@ -62,14 +62,10 @@ func main() {
 
 		return
 	}
-	var logFormat log.Format
-	if nodeConfig.LogType == "plaintext" {
-		logFormat = log.TerminalFormat(false)
-	} else if nodeConfig.LogType == "json" {
-		logFormat = log.JSONFormat()
-	} else {
+	logFormat, err := conf.ParseLogType(nodeConfig.LogType)
+	if err != nil {
 		flag.Usage()
-		panic(fmt.Sprintf("invalid log type: %v", nodeConfig.LogType))
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))

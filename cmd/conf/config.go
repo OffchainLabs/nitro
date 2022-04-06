@@ -1,6 +1,8 @@
 package conf
 
 import (
+	"errors"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	flag "github.com/spf13/pflag"
@@ -190,4 +192,13 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".rpcprefix", WSConfigDefault.RPCPrefix, "WS path path prefix on which JSON-RPC is served. Use '/' to serve on all paths")
 	f.StringSlice(prefix+".origins", WSConfigDefault.Origins, "Origins from which to accept websockets requests")
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")
+}
+
+func ParseLogType(logType string) (log.Format, error) {
+	if logType == "plaintext" {
+		return log.TerminalFormat(false), nil
+	} else if logType == "json" {
+		return log.JSONFormat(), nil
+	}
+	return nil, errors.New("invalid log type")
 }
