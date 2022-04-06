@@ -4,7 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "./IRollupLogic.sol";
 import "../challenge/IChallengeManager.sol";
 import "../libraries/DelegateCallAware.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
