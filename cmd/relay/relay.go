@@ -111,6 +111,7 @@ var RelayConfigDefault = RelayConfig{
 func RelayConfigAddOptions(f *flag.FlagSet) {
 	conf.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
+	f.String("log-type", RelayConfigDefault.LogType, "log type")
 	RelayNodeConfigAddOptions("node", f)
 }
 
