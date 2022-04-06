@@ -60,21 +60,27 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:               false,
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
+	MaxBatchSize:         117964, // From contracts/src/libraries/Constants.sol
+	BatchPollDelay:       time.Second * 10,
+	PostingErrorDelay:    time.Second * 10,
 	MaxBatchPostInterval: time.Minute,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:               true,
-	MaxBatchSize:         10000,
+	MaxBatchSize:         117964,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
 }
+
+// The L1 SequencerInbox metadata (time bounds and delayed messages read), copied from `SequencerInbox.sol`'s HEADER_LENGTH constant.
+const l1HeaderSize int = 40
+
+// The L1 header size, plus an extra byte for the batch data header byte that prefixes the compressed data.
+const fullBatchHeaderSize int = l1HeaderSize + 1
 
 func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
 	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
@@ -118,13 +124,13 @@ type buildingBatch struct {
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig) *batchSegments {
 	compressedBuffer := bytes.NewBuffer(make([]byte, 0, config.MaxBatchSize*2))
-	if config.MaxBatchSize <= 40 {
+	if config.MaxBatchSize <= fullBatchHeaderSize {
 		panic("MaxBatchSize too small")
 	}
 	return &batchSegments{
 		compressedBuffer: compressedBuffer,
 		compressedWriter: brotli.NewWriterLevel(compressedBuffer, config.CompressionLevel),
-		sizeLimit:        config.MaxBatchSize - 40, // TODO
+		sizeLimit:        config.MaxBatchSize - fullBatchHeaderSize,
 		compressionLevel: config.CompressionLevel,
 		rawSegments:      make([][]byte, 0, 128),
 		delayedMsg:       firstDelayed,
@@ -144,13 +150,13 @@ func (s *batchSegments) recompressAll() error {
 	return nil
 }
 
-func (s *batchSegments) testForOverflow() (bool, error) {
+func (s *batchSegments) testForOverflow(isHeader bool) (bool, error) {
 	// there is room, no need to flush
 	if (s.lastCompressedSize + s.newUncompressedSize) < s.sizeLimit {
 		return false, nil
 	}
 	// don't want to flush for headers
-	if s.trailingHeaders > 0 {
+	if isHeader {
 		return false, nil
 	}
 	err := s.compressedWriter.Flush()
@@ -195,7 +201,7 @@ func (s *batchSegments) addSegment(segment []byte, isHeader bool) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	overflow, err := s.testForOverflow()
+	overflow, err := s.testForOverflow(isHeader)
 	if err != nil {
 		return false, err
 	}
@@ -366,6 +372,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatc
 		log.Debug("BatchPoster: batch nil", "sequence nr.", batchSeqNum, "from", prevBatchMeta.MessageCount, "prev delayed", prevBatchMeta.DelayedMessageCount)
 		b.building = nil // a closed batchSegments can't be reused
 		return nil, nil
+	}
+
+	if len(sequencerMsg)+l1HeaderSize > b.config.MaxBatchSize {
+		// This should never happen, but just in case, recover by lowering the batch size limit by 5%
+		b.config.MaxBatchSize = b.config.MaxBatchSize * 95 / 100
+		if b.config.MaxBatchSize < fullBatchHeaderSize {
+			b.config.MaxBatchSize = fullBatchHeaderSize
+		}
+		return nil, fmt.Errorf("BatchPoster made batch of size %v exceeding the max batch size %v; permanently lowering limit", len(sequencerMsg), b.config.MaxBatchSize-l1HeaderSize)
 	}
 
 	if b.das != nil {
