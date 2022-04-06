@@ -404,18 +404,27 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type SequencerConfig struct {
-	Enable    bool                     `koanf:"enable"`
-	Dangerous DangerousSequencerConfig `koanf:"dangerous"`
+	Enable                      bool                     `koanf:"enable"`
+	MinBlockInterval            time.Duration            `koanf:"min-block-interval"`
+	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
+	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
 var DefaultSequencerConfig = SequencerConfig{
-	Enable:    false,
-	Dangerous: DefaultDangerousSequencerConfig,
+	Enable:                      false,
+	MinBlockInterval:            time.Millisecond * 100,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: 60 * 60 * time.Second,
+	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
-	Enable:    true,
-	Dangerous: TestDangerousSequencerConfig,
+	Enable:                      true,
+	MinBlockInterval:            time.Millisecond * 10,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: 60 * 60 * time.Second,
+	Dangerous:                   TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -495,9 +504,9 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1client)
+			sequencer, err = NewSequencer(txStreamer, l1client, config.Sequencer)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil)
+			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)
 		}
 		if err != nil {
 			return nil, err

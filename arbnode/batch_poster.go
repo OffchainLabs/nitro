@@ -60,16 +60,16 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:               false,
-	MaxBatchSize:         500,
+	MaxBatchSize:         100000,
 	BatchPollDelay:       time.Second,
 	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
+	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:               true,
-	MaxBatchSize:         10000,
+	MaxBatchSize:         100000,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
