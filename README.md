@@ -1,6 +1,6 @@
 # Arbitrum Nitro
 
-_For information on the public Nitro devnet, see XXX._
+_For information on the public Nitro devnet, see https://developer.arbitrum.io/docs/public_nitro_testnet ._
 
 Nitro is the latest iteration of the Arbitrum technology. It is a fully integrated, complete
 layer 2 optimistic rollup system, including fraud proofs, the sequencer, the token bridges, 
