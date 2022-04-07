@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcastclient
 
@@ -67,7 +66,7 @@ var DefaultBroadcastClientConfig = BroadcastClientConfig{
 }
 
 type TransactionStreamerInterface interface {
-	AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error
+	AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error
 }
 
 type BroadcastClient struct {
@@ -215,7 +214,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 						for _, message := range res.Messages {
 							messages = append(messages, message.Message)
 						}
-						if err := bc.txStreamer.AddMessages(res.Messages[0].SequenceNumber, false, messages); err != nil {
+						if err := bc.txStreamer.AddBroadcastMessages(res.Messages[0].SequenceNumber, messages); err != nil {
 							log.Error("Error adding message from Sequencer Feed", "err", err)
 						}
 					}

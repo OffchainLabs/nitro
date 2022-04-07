@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package merkletree
 
@@ -33,6 +32,13 @@ const (
 type LevelAndLeaf struct {
 	Level uint64
 	Leaf  uint64
+}
+
+func NewLevelAndLeaf(level, leaf uint64) LevelAndLeaf {
+	return LevelAndLeaf{
+		Level: level,
+		Leaf:  leaf,
+	}
 }
 
 func (place LevelAndLeaf) ToBigInt() *big.Int {
@@ -296,9 +302,10 @@ type MerkleProof struct {
 }
 
 func (proof *MerkleProof) IsCorrect() bool {
-	hash := crypto.Keccak256Hash(proof.LeafHash.Bytes())
+	hash := proof.LeafHash
 	index := proof.LeafIndex
 	for _, hashFromProof := range proof.Proof {
+
 		if index&1 == 0 {
 			hash = crypto.Keccak256Hash(hash.Bytes(), hashFromProof.Bytes())
 		} else {

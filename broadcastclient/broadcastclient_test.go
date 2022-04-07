@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package broadcastclient
 
@@ -68,7 +67,7 @@ func NewDummyTransactionStreamer() *dummyTransactionStreamer {
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		ts.messageReceiver <- broadcaster.BroadcastFeedMessage{
 			SequenceNumber: pos + arbutil.MessageIndex(i),

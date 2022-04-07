@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -9,6 +8,8 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -97,7 +98,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	callValue := big.NewInt(1e6)
 
-	nodeInterface, err := node_interfacegen.NewNodeInterface(common.HexToAddress("0xc8"), l2client)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2client)
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto-redeem the retryable

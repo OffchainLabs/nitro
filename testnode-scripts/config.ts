@@ -4,11 +4,11 @@ import { namedAccount } from './accounts'
 
 const path = require("path");
 
-function writeConfigs() {
+function writeConfigs(argv: any) {
     const baseConfig = {
         "l1": {
             "deployment": "/config/deployment.json",
-            "url": consts.l1url,
+            "url": argv.l1url,
             "wallet": {
                 "account": "",
                 "password": consts.l1passphrase,
@@ -36,7 +36,7 @@ function writeConfigs() {
             },
             "seq-coordinator": {
                 "enable": false,
-                "redis-url": consts.redisUrl,
+                "redis-url": argv.redisUrl,
                 "lockout-duration": "30s",
                 "lockout-spare": "1s",
                 "my-url": "",
@@ -47,6 +47,7 @@ function writeConfigs() {
             },
             "batch-poster": {
                 "enable": false,
+                "max-interval": "30s",
             }
         },
         "persistent": {
@@ -82,15 +83,13 @@ function writeConfigs() {
     posterConfig.node["seq-coordinator"].enable = true
     posterConfig.node["batch-poster"].enable = true
     fs.writeFileSync(path.join(consts.configpath, "poster_config.json"), JSON.stringify(posterConfig))
-
-
 }
 
 export const writeConfigCommand = {
     command: "write-config",
     describe: "writes config files",
     handler: (argv: any) => {
-        writeConfigs()
+        writeConfigs(argv)
     }
 }
 
