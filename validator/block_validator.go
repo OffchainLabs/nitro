@@ -46,6 +46,7 @@ type BlockValidator struct {
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
+	latestWasmModuleRoot    common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -89,7 +90,7 @@ type validationStatus struct {
 	Preimages []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService, latestWasmModuleRoot common.Hash) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
@@ -113,6 +114,7 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
+		latestWasmModuleRoot:    latestWasmModuleRoot,
 	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
@@ -329,7 +331,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg)
+	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, v.latestWasmModuleRoot)
 	if err != nil {
 		log.Error("Validation of block failed", "err", err)
 		return
@@ -723,28 +725,5 @@ func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration)
 				return false
 			}
 		}
-	}
-}
-
-func (v *BlockValidator) ValidateWasmModuleRoot(ctx context.Context, expectedRoot *common.Hash) (common.Hash, error) {
-	var root common.Hash
-	if expectedRoot != nil {
-		root = *expectedRoot
-	} else {
-		var err error
-		root, err = v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
-		if err != nil {
-			return common.Hash{}, fmt.Errorf("failed reading wasmModuleRoot from file: %w", err)
-		}
-	}
-
-	foundRoot, err := v.MachineLoader.RecomputeInitialModuleRoot(ctx)
-	if err != nil {
-		return common.Hash{}, fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err)
-	}
-	if foundRoot != root {
-		return common.Hash{}, fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot)
-	} else {
-		return root, nil
 	}
 }

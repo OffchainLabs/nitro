@@ -456,7 +456,6 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Node struct {
-	Config           *Config
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
 	TxStreamer       *TransactionStreamer
@@ -550,7 +549,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 	if !config.EnableL1Reader {
-		return &Node{config, backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -590,8 +589,8 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, common.Hash{})
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, machineLoader, dataAvailabilityService)
+		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, machineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.ModuleRoot))
 		if err != nil {
 			return nil, err
 		}
@@ -630,7 +629,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{config, backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -701,31 +700,20 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
 	}
+	if n.Staker != nil {
+		// This needs to run before BlockValidator Start
+		err = n.Staker.Initialize(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	if n.BlockValidator != nil {
 		err = n.BlockValidator.Start(ctx)
 		if err != nil {
 			return err
 		}
-
-		var expectedWasmModuleRoot *common.Hash
-		if n.Config.Wasm.ModuleRoot != "" {
-			hash := common.HexToHash(n.Config.Wasm.ModuleRoot)
-			expectedWasmModuleRoot = &hash
-		}
-		go func() {
-			root, err := n.BlockValidator.ValidateWasmModuleRoot(ctx, expectedWasmModuleRoot)
-			if err != nil {
-				panic(fmt.Errorf("failed to validate wasm module root: %w", err))
-			} else {
-				log.Info("loaded wasm machine", "wasmModuleRoot", root)
-			}
-		}()
 	}
 	if n.Staker != nil {
-		err = n.Staker.Initialize(ctx)
-		if err != nil {
-			return err
-		}
 		n.Staker.Start(ctx)
 	}
 	if n.BroadcastServer != nil {

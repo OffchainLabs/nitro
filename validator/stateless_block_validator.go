@@ -199,7 +199,6 @@ func NewStatelessBlockValidator(
 		das:             das,
 		genesisBlockNum: genesisBlockNum,
 	}
-	validator.MachineLoader.CreateHostIoMachine()
 	return validator, nil
 }
 
@@ -276,7 +275,7 @@ func BlockDataForValidation(blockchain *core.BlockChain, header, prevHeader *typ
 	return
 }
 
-func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, preimages map[common.Hash][]byte, seqMsg []byte) (GoGlobalState, []byte, error) {
+func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *validationEntry, preimages map[common.Hash][]byte, seqMsg []byte, moduleRoot common.Hash) (GoGlobalState, []byte, error) {
 	start := entry.StartPosition
 	gsStart := entry.start()
 
@@ -299,7 +298,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		}
 	}
 
-	basemachine, err := v.MachineLoader.GetHostIoMachine(ctx)
+	basemachine, err := v.MachineLoader.GetMachine(ctx, moduleRoot, true)
 	if err != nil {
 		return GoGlobalState{}, nil, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
@@ -356,7 +355,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 	return mach.GetGlobalState(), delayedMsg, nil
 }
 
-func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header) (bool, error) {
+func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *types.Header, moduleRoot common.Hash) (bool, error) {
 	if header == nil {
 		return false, errors.New("header not found")
 	}
@@ -401,7 +400,7 @@ func (v *StatelessBlockValidator) ValidateBlock(ctx context.Context, header *typ
 		return false, err
 	}
 
-	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg)
+	gsEnd, _, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
 	if err != nil {
 		return false, err
 	}

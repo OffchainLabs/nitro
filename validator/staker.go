@@ -119,6 +119,7 @@ type Staker struct {
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
 	nitroMachineConfig      NitroMachineConfig
+	updatingModuleRoot      bool // If true, the staker is managing the BlockValidator's latestModuleRoot
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -170,7 +171,35 @@ func NewStaker(
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
 		nitroMachineConfig:  nitroMachineConfig,
+		updatingModuleRoot:  false,
 	}, nil
+}
+
+func (s *Staker) Initialize(ctx context.Context) error {
+	err := s.L1Validator.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+	return s.updateLatestWasmRoot(ctx)
+}
+
+func (s *Staker) updateLatestWasmRoot(ctx context.Context) error {
+	if s.blockValidator == nil {
+		return nil
+	}
+	if !s.updatingModuleRoot {
+		if s.blockValidator.latestWasmModuleRoot == (common.Hash{}) {
+			s.updatingModuleRoot = true
+		} else {
+			return nil
+		}
+	}
+	moduleRoot, err := s.rollup.WasmModuleRoot(s.getCallOpts(ctx))
+	if err != nil {
+		return err
+	}
+	s.blockValidator.latestWasmModuleRoot = moduleRoot
+	return nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
@@ -423,9 +452,11 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return err
 		}
 
-		var latestMachineLoader *NitroMachineLoader
+		var machineLoader *NitroMachineLoader
 		if s.blockValidator != nil {
-			latestMachineLoader = s.blockValidator.MachineLoader
+			machineLoader = s.blockValidator.MachineLoader
+		} else {
+			machineLoader = NewNitroMachineLoader(s.nitroMachineConfig)
 		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
@@ -438,8 +469,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
-			latestMachineLoader,
-			s.nitroMachineConfig,
+			machineLoader,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

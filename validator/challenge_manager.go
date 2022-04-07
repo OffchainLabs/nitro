@@ -90,8 +90,7 @@ func NewChallengeManager(
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
-	latestMachineLoader *NitroMachineLoader,
-	machineConfig NitroMachineConfig,
+	machineLoader *NitroMachineLoader,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -124,23 +123,6 @@ func NewChallengeManager(
 	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
 	if err != nil {
 		return nil, err
-	}
-	latestModuleRoot, err := machineConfig.ReadLatestWasmModuleRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	var machineLoader *NitroMachineLoader
-	if latestModuleRoot == challengeInfo.WasmModuleRoot {
-		if latestMachineLoader != nil {
-			machineLoader = latestMachineLoader
-		} else {
-			machineLoader = NewNitroMachineLoader(machineConfig, common.Hash{})
-		}
-	} else {
-		log.Info("challenge has old wasm module root; loading old machine", "wasmModuleRoot", challengeInfo.WasmModuleRoot, "latestWasmModuleRoot", latestModuleRoot)
-		machineLoader = NewNitroMachineLoader(machineConfig, challengeInfo.WasmModuleRoot)
-		machineLoader.CreateZeroStepMachine()
 	}
 
 	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
@@ -410,13 +392,9 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := m.machineLoader.GetZeroStepMachine(ctx)
+	initialFrozenMachine, err := m.machineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
 	if err != nil {
 		return err
-	}
-	haveModuleRoot := initialFrozenMachine.GetModuleRoot()
-	if haveModuleRoot != m.wasmModuleRoot {
-		return errors.Errorf("loaded wrong module root %v expecting %v", haveModuleRoot, m.wasmModuleRoot)
 	}
 	machine := initialFrozenMachine.Clone()
 	var blockHeader *types.Header
