@@ -28,14 +28,14 @@ import (
 )
 
 type NitroMachineConfig struct {
-	RootPath                string // prepends all other paths
+	RootPath                string // a folder with various machines in it
 	ProverBinPath           string
 	ModulePaths             []string
 	InitialMachineCachePath string
 }
 
 var DefaultNitroMachineConfig = NitroMachineConfig{
-	RootPath:                "./target/machines/latest/",
+	RootPath:                "./target/machines/",
 	ProverBinPath:           "replay.wasm",
 	ModulePaths:             []string{"soft-float.wasm", "wasi_stub.wasm", "go_stub.wasm", "host_io.wasm", "brotli.wasm"},
 	InitialMachineCachePath: "./target/etc/initial-machine-cache",
@@ -44,11 +44,11 @@ var DefaultNitroMachineConfig = NitroMachineConfig{
 func init() {
 	_, thisfile, _, _ := runtime.Caller(0)
 	projectDir := filepath.Dir(filepath.Dir(thisfile))
-	DefaultNitroMachineConfig.RootPath = filepath.Join(projectDir, "target", "machines", "latest")
+	DefaultNitroMachineConfig.RootPath = filepath.Join(projectDir, "target", "machines")
 }
 
-func (c NitroMachineConfig) ReadWasmModuleRoot() (common.Hash, error) {
-	fileToRead := path.Join(c.RootPath, "module_root")
+func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
+	fileToRead := path.Join(c.RootPath, "latest", "module_root")
 	fileBytes, err := ioutil.ReadFile(fileToRead)
 	if err != nil {
 		return common.Hash{}, err
@@ -73,13 +73,22 @@ func (s *loaderMachineStatus) signalReady() {
 
 type NitroMachineLoader struct {
 	config      NitroMachineConfig
+	machinePath string
 	zeroStep    loaderMachineStatus
 	untilHostIo loaderMachineStatus
 }
 
-func NewNitroMachineLoader(config NitroMachineConfig) *NitroMachineLoader {
+// If requestedModuleRoot is zero, the latest machine will be loaded
+func NewNitroMachineLoader(config NitroMachineConfig, requestedModuleRoot common.Hash) *NitroMachineLoader {
+	var machinePath string
+	if requestedModuleRoot == (common.Hash{}) {
+		machinePath = filepath.Join(config.RootPath, "latest")
+	} else {
+		machinePath = filepath.Join(config.RootPath, requestedModuleRoot.String())
+	}
 	return &NitroMachineLoader{
-		config: config,
+		config:      config,
+		machinePath: machinePath,
 		zeroStep: loaderMachineStatus{
 			chanSignal: make(chan struct{}),
 		},
@@ -93,9 +102,9 @@ func (l *NitroMachineLoader) createZeroStepMachineInternal() {
 	defer l.zeroStep.signalReady()
 	moduleList := []string{}
 	for _, module := range l.config.ModulePaths {
-		moduleList = append(moduleList, filepath.Join(l.config.RootPath, module))
+		moduleList = append(moduleList, filepath.Join(l.machinePath, module))
 	}
-	binPath := filepath.Join(l.config.RootPath, l.config.ProverBinPath)
+	binPath := filepath.Join(l.machinePath, l.config.ProverBinPath)
 	cModuleList := CreateCStringList(moduleList)
 	cBinPath := C.CString(binPath)
 	log.Info("creating nitro machine", "binpath", binPath, "moduleList", moduleList)

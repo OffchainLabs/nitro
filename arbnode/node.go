@@ -573,23 +573,24 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, err
 	}
 
+	nitroMachineConfig := validator.DefaultNitroMachineConfig
+	if config.Wasm.RootPath != "" {
+		nitroMachineConfig.RootPath = config.Wasm.RootPath
+	} else {
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		targetDir := filepath.Dir(filepath.Dir(execfile))
+		nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines")
+	}
+	if config.Wasm.CachePath != "" {
+		nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
+	}
+
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		nitroMachineConfig := validator.DefaultNitroMachineConfig
-		if config.Wasm.RootPath != "" {
-			nitroMachineConfig.RootPath = config.Wasm.RootPath
-		} else {
-			execfile, err := os.Executable()
-			if err != nil {
-				panic(err)
-			}
-			targetDir := filepath.Dir(filepath.Dir(execfile))
-			nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines", "latest")
-		}
-		if config.Wasm.CachePath != "" {
-			nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
-		}
-		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig, common.Hash{})
 		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, machineLoader, dataAvailabilityService)
 		if err != nil {
 			return nil, err
@@ -603,7 +604,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineConfig, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}

@@ -69,6 +69,7 @@ type ChallengeManager struct {
 	blockchain        *core.BlockChain
 	machineLoader     *NitroMachineLoader
 	targetNumMachines int
+	wasmModuleRoot    common.Hash
 
 	initialMachine        *ArbitratorMachine
 	initialMachineBlockNr int64
@@ -77,6 +78,7 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
+// latestMachineLoader may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,
@@ -88,7 +90,8 @@ func NewChallengeManager(
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
-	machineLoader *NitroMachineLoader,
+	latestMachineLoader *NitroMachineLoader,
+	machineConfig NitroMachineConfig,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -115,6 +118,29 @@ func NewChallengeManager(
 	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
 	if err != nil {
 		return nil, err
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
+	if err != nil {
+		return nil, err
+	}
+	latestModuleRoot, err := machineConfig.ReadLatestWasmModuleRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	var machineLoader *NitroMachineLoader
+	if latestModuleRoot == challengeInfo.WasmModuleRoot {
+		if latestMachineLoader != nil {
+			machineLoader = latestMachineLoader
+		} else {
+			machineLoader = NewNitroMachineLoader(machineConfig, common.Hash{})
+		}
+	} else {
+		log.Info("challenge has old wasm module root; loading old machine", "wasmModuleRoot", challengeInfo.WasmModuleRoot, "latestWasmModuleRoot", latestModuleRoot)
+		machineLoader = NewNitroMachineLoader(machineConfig, challengeInfo.WasmModuleRoot)
+		machineLoader.CreateZeroStepMachine()
 	}
 
 	genesisBlockNum, err := txStreamer.GetGenesisBlockNumber()
@@ -148,6 +174,7 @@ func NewChallengeManager(
 		blockchain:            l2blockChain,
 		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
+		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
 }
 
@@ -386,6 +413,10 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	initialFrozenMachine, err := m.machineLoader.GetZeroStepMachine(ctx)
 	if err != nil {
 		return err
+	}
+	haveModuleRoot := initialFrozenMachine.GetModuleRoot()
+	if haveModuleRoot != m.wasmModuleRoot {
+		return errors.Errorf("loaded wrong module root %v expecting %v", haveModuleRoot, m.wasmModuleRoot)
 	}
 	machine := initialFrozenMachine.Clone()
 	var blockHeader *types.Header

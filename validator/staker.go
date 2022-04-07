@@ -118,6 +118,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
+	nitroMachineConfig      NitroMachineConfig
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -144,6 +145,7 @@ func NewStaker(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
+	nitroMachineConfig NitroMachineConfig,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
@@ -167,6 +169,7 @@ func NewStaker(
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
+		nitroMachineConfig:  nitroMachineConfig,
 	}, nil
 }
 
@@ -420,6 +423,10 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return err
 		}
 
+		var latestMachineLoader *NitroMachineLoader
+		if s.blockValidator != nil {
+			latestMachineLoader = s.blockValidator.MachineLoader
+		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
@@ -431,7 +438,8 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
-			s.blockValidator.MachineLoader,
+			latestMachineLoader,
+			s.nitroMachineConfig,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

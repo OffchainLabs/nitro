@@ -732,7 +732,7 @@ func (v *BlockValidator) ValidateWasmModuleRoot(ctx context.Context, expectedRoo
 		root = *expectedRoot
 	} else {
 		var err error
-		root, err = v.MachineLoader.GetConfig().ReadWasmModuleRoot()
+		root, err = v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
 		if err != nil {
 			return common.Hash{}, fmt.Errorf("failed reading wasmModuleRoot from file: %w", err)
 		}
