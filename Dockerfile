@@ -118,7 +118,6 @@ COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
-RUN rm -f target/machines/latest && mv target/machine target/machines/latest
 
 FROM scratch as machine-export
 COPY --from=module-root-calc /workspace/target/machines/ /machines
