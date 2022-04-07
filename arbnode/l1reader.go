@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -26,17 +27,19 @@ type L1Reader struct {
 }
 
 type L1ReaderConfig struct {
-	Enable       bool          `koanf:"enable"`
-	PollOnly     bool          `koanf:"poll-only"`
-	PollInterval time.Duration `koanf:"poll-interval"`
-	TxTimeout    time.Duration `koanf:"tx-timeout"`
+	Enable               bool          `koanf:"enable"`
+	PollOnly             bool          `koanf:"poll-only"`
+	PollInterval         time.Duration `koanf:"poll-interval"`
+	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval"`
+	TxTimeout            time.Duration `koanf:"tx-timeout"`
 }
 
 var DefaultL1ReaderConfig = L1ReaderConfig{
-	Enable:       true,
-	PollOnly:     false,
-	PollInterval: 15 * time.Second,
-	TxTimeout:    time.Minute,
+	Enable:               true,
+	PollOnly:             false,
+	PollInterval:         15 * time.Second,
+	SubscribeErrInterval: 5 * time.Minute,
+	TxTimeout:            time.Minute,
 }
 
 func L1ReaderAddOptions(prefix string, f *flag.FlagSet) {
@@ -49,7 +52,7 @@ func L1ReaderAddOptions(prefix string, f *flag.FlagSet) {
 var TestL1ReaderConfig = L1ReaderConfig{
 	Enable:       true,
 	PollOnly:     false,
-	PollInterval: time.Second,
+	PollInterval: time.Millisecond * 10,
 	TxTimeout:    time.Second * 4,
 }
 
@@ -62,6 +65,7 @@ func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
 	}
 }
 
+// Subscribers are notified when there is a change.
 func (s *L1Reader) Subscribe() (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
@@ -92,6 +96,10 @@ func (s *L1Reader) closeAll() {
 
 	for ch := range s.outChannels {
 		delete(s.outChannels, ch)
+		close(ch)
+	}
+	for ch := range s.outChannelsBehind {
+		delete(s.outChannelsBehind, ch)
 		close(ch)
 	}
 }
@@ -125,28 +133,26 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 	}
 }
 
-func (s *L1Reader) pollHeader(ctx context.Context) time.Duration {
-	lastHeader, err := s.client.HeaderByNumber(ctx, nil)
-	if err != nil {
-		log.Warn("failed reading l1 header", "err", err)
-		return s.config.PollInterval
-	}
-	s.possiblyBroadcast(lastHeader)
-	return s.config.PollInterval
-}
-
-func (s *L1Reader) subscribeLoop(ctx context.Context) {
+func (s *L1Reader) broadcastLoop(ctx context.Context) {
+	var clientSubscription ethereum.Subscription = nil
+	defer func() {
+		if clientSubscription != nil {
+			clientSubscription.Unsubscribe()
+		}
+	}()
 	inputChannel := make(chan *types.Header)
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	headerSubscription, err := s.client.SubscribeNewHead(ctx, inputChannel)
-	if err != nil {
-		log.Error("failed subscribing to header", "err", err)
-		return
-	}
 	ticker := time.NewTicker(s.config.PollInterval)
+	nextSubscribeErr := time.Now().Add(-time.Second)
+	var errChannel <-chan error
 	for {
+		if clientSubscription != nil {
+			errChannel = clientSubscription.Err()
+		} else {
+			errChannel = nil
+		}
 		select {
 		case h := <-inputChannel:
 			s.possiblyBroadcast(h)
@@ -157,27 +163,23 @@ func (s *L1Reader) subscribeLoop(ctx context.Context) {
 			} else {
 				s.possiblyBroadcast(h)
 			}
-		case err := <-headerSubscription.Err():
-			if ctx.Err() == nil {
+			if !s.config.PollOnly && clientSubscription == nil {
+				clientSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
+				if err != nil {
+					clientSubscription = nil
+					if time.Now().After(nextSubscribeErr) {
+						log.Error("failed subscribing to header", "err", err)
+						nextSubscribeErr = time.Now().Add(s.config.SubscribeErrInterval)
+					}
+				}
+			}
+		case err := <-errChannel:
+			if ctx.Err() != nil {
 				return
 			}
+			clientSubscription = nil
 			log.Warn("error in subscription to L1 headers", "err", err)
-			for {
-				headerSubscription, err = s.client.SubscribeNewHead(ctx, inputChannel)
-				if err == nil {
-					break
-				}
-				log.Warn("error re-subscribing to L1 headers", "err", err)
-				timer := time.NewTimer(s.pollHeader(ctx))
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-timer.C:
-				}
-			}
 		case <-ctx.Done():
-			headerSubscription.Unsubscribe()
 			return
 		}
 	}
@@ -227,14 +229,10 @@ func (s *L1Reader) Client() arbutil.L1Interface {
 
 func (s *L1Reader) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
-	if s.config.PollOnly {
-		s.CallIteratively(s.pollHeader)
-	} else {
-		s.LaunchThread(s.subscribeLoop)
-	}
+	s.LaunchThread(s.broadcastLoop)
 }
 
 func (s *L1Reader) StopAndWait() {
-	s.closeAll()
 	s.StopWaiter.StopAndWait()
+	s.closeAll()
 }
