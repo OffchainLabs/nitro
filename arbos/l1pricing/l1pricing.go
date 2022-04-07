@@ -232,7 +232,7 @@ func (ps *L1PricingState) SetAggregatorCompressionRatio(aggregator common.Addres
 	return ps.aggregatorCompressionRatios.Set(util.AddressToHash(aggregator), util.UintToHash(uint64(ratio)))
 }
 
-func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address) {
+func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster common.Address, chainConfig *params.ChainConfig) {
 
 	tx.PosterCost = big.NewInt(0)
 	tx.PosterIsReimbursable = false
@@ -241,6 +241,11 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	txBytes, merr := tx.MarshalBinary()
 	txType := tx.Type()
 	if !util.TxTypeHasPosterCosts(txType) || perr != nil || merr != nil || aggregator == nil || poster != *aggregator {
+		return
+	}
+
+	tx.PosterIsReimbursable = true
+	if chainConfig.ArbitrumChainParams.DataAvailabilityCommittee {
 		return
 	}
 
@@ -259,17 +264,16 @@ func (ps *L1PricingState) AddPosterInfo(tx *types.Transaction, sender, poster co
 	ratio, _ := ps.AggregatorCompressionRatio(poster)
 	adjustedL1Fee := arbmath.BigMulByBips(l1Fee, ratio)
 
-	tx.PosterIsReimbursable = true
 	tx.PosterCost = adjustedL1Fee
 }
 
 const TxFixedCost = 140 // assumed maximum size in bytes of a typical RLP-encoded tx, not including its calldata
 
-func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address) (*big.Int, bool) {
+func (ps *L1PricingState) PosterDataCost(message core.Message, sender, poster common.Address, chainConfig *params.ChainConfig) (*big.Int, bool) {
 
 	if tx := message.UnderlyingTransaction(); tx != nil {
 		if tx.PosterCost == nil {
-			ps.AddPosterInfo(tx, sender, poster)
+			ps.AddPosterInfo(tx, sender, poster, chainConfig)
 		}
 		return tx.PosterCost, tx.PosterIsReimbursable
 	}

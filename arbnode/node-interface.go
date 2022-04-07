@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
@@ -412,7 +413,7 @@ func init() {
 		return ApplyNodeInterface(msg, ctx, statedb, backend, nodeInterface)
 	}
 
-	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, header *types.Header, statedb *state.StateDB) {
+	core.InterceptRPCGasCap = func(gascap *uint64, msg Message, chainConfig *params.ChainConfig, header *types.Header, statedb *state.StateDB) {
 		arbosVersion := arbosState.ArbOSVersion(statedb)
 		if arbosVersion == 0 {
 			// ArbOS hasn't been installed, so use the vanilla gas cap
@@ -428,7 +429,7 @@ func init() {
 			// if gas is free or there's no reimbursable poster, the user won't pay for L1 data costs
 			return
 		}
-		posterCost, _ := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster)
+		posterCost, _ := state.L1PricingState().PosterDataCost(msg, msg.From(), *poster, chainConfig)
 		posterCostInL2Gas := arbmath.BigToUintSaturating(arbmath.BigDiv(posterCost, header.BaseFee))
 		*gascap = arbmath.SaturatingUAdd(*gascap, posterCostInL2Gas)
 	}

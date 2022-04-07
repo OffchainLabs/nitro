@@ -233,7 +233,7 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (*common.Address, er
 	var gasNeededToStartEVM uint64
 	gasPrice := p.evm.Context.BaseFee
 	coinbase := p.evm.Context.Coinbase
-	posterCost, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase)
+	posterCost, reimburse := p.state.L1PricingState().PosterDataCost(p.msg, p.msg.From(), coinbase, p.evm.ChainConfig())
 
 	if p.msg.RunMode() == types.MessageGasEstimationMode {
 		// Suggest the amount of gas needed for a given amount of ETH is higher in case of congestion.
