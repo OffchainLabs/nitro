@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -196,6 +195,11 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		Entry:  nil,
 	}
 	blockNum := block.NumberU64()
+	// It's fine to separately load and then store as we have the blockMutex acquired
+	_, present := v.validationEntries.Load(blockNum)
+	if present {
+		return
+	}
 	v.validationEntries.Store(blockNum, status)
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
@@ -311,7 +315,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
-	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
@@ -377,11 +380,39 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch {
-			return
+			if batchCount == v.globalPosNextSend.BatchNumber+1 {
+				// This is the latest batch.
+				// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
+				return
+			}
+			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
+			if err != nil {
+				log.Error("validator failed to read sequencer message", "err", err)
+				return
+			}
+			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
+			seqBatchEntry = seqMsg
 		}
+		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
 		if !found {
+			block := v.blockchain.GetBlockByNumber(v.nextBlockToValidate)
+			if block == nil {
+				// This block hasn't been created yet.
+				return
+			}
+			prevHeader := v.blockchain.GetHeaderByHash(block.ParentHash())
+			if prevHeader == nil && block.ParentHash() != (common.Hash{}) {
+				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", block.ParentHash())
+				return
+			}
+			msg, err := v.streamer.GetMessage(nextMsg)
+			if err != nil {
+				log.Warn("failed to get message in block validator", "err", err)
+				return
+			}
+			v.NewBlock(block, prevHeader, msg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -389,10 +420,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if atomic.LoadUint32(&validationStatus.Status) == 0 {
+		if atomic.LoadUint32(&validationStatus.Status) == validationStatusUnprepared {
 			return
 		}
-		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "msg", nextMsg, "batch", v.globalPosNextSend.BatchNumber)

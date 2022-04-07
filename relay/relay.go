@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package relay
 
@@ -35,7 +34,7 @@ type RelayMessageQueue struct {
 	queue chan broadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		q.queue <- broadcastFeedMessage{
 			sequenceNumber: pos + arbutil.MessageIndex(i),

@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package arbnode
 
 import (
@@ -57,16 +60,16 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:               false,
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
+	MaxBatchSize:         100000,
+	BatchPollDelay:       time.Second * 10,
+	PostingErrorDelay:    time.Second * 10,
+	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:               true,
-	MaxBatchSize:         10000,
+	MaxBatchSize:         100000,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,

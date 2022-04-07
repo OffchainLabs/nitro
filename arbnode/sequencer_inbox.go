@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -8,13 +7,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/pkg/errors"
-	"math/big"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 )
@@ -105,6 +105,7 @@ type SequencerInboxBatch struct {
 	txIndexInBlock    uint
 	dataLocation      batchDataLocation
 	bridgeAddress     common.Address
+	serialized        []byte // nil if serialization isn't cached yet
 }
 
 func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
@@ -153,6 +154,10 @@ func (m *SequencerInboxBatch) GetData(ctx context.Context, client arbutil.L1Inte
 }
 
 func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1Interface) ([]byte, error) {
+	if m.serialized != nil {
+		return m.serialized, nil
+	}
+
 	var fullData []byte
 
 	// Serialize the header
@@ -176,6 +181,7 @@ func (m *SequencerInboxBatch) Serialize(ctx context.Context, client arbutil.L1In
 	}
 	fullData = append(fullData, data...)
 
+	m.serialized = fullData
 	return fullData, nil
 }
 

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -160,4 +159,9 @@ func (con ArbGasInfo) GetL1GasPriceEstimate(c ctx, evm mech) (huge, error) {
 // Get the fee paid to the aggregator for posting this tx
 func (con ArbGasInfo) GetCurrentTxL1GasFees(c ctx, evm mech) (huge, error) {
 	return c.txProcessor.PosterFee, nil
+}
+
+// Get the amount of gas remaining in the gas pool
+func (con ArbGasInfo) GetGasPool(c ctx, evm mech) (int64, error) {
+	return c.state.L2PricingState().GasPool()
 }

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbosState
 
@@ -47,7 +46,6 @@ type ArbosState struct {
 	blsTable          *blsTable.BLSTable
 	chainOwners       *addressSet.AddressSet
 	sendMerkle        *merkleAccumulator.MerkleAccumulator
-	timestamp         storage.StorageBackedUint64
 	blockhashes       *blockhash.Blockhashes
 	chainId           storage.StorageBackedBigInt
 	backingStorage    *storage.Storage
@@ -78,7 +76,6 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		blsTable.Open(backingStorage.OpenSubStorage(blsTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		backingStorage.OpenStorageBackedUint64(uint64(timestampOffset)),
 		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage,
@@ -125,7 +122,6 @@ const (
 	versionOffset ArbosStateOffset = iota
 	upgradeVersionOffset
 	upgradeTimestampOffset
-	timestampOffset
 	networkFeeAccountOffset
 	chainIdOffset
 )
@@ -187,7 +183,6 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
-	_ = sto.SetUint64ByUint64(uint64(timestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
 	_ = sto.SetByUint64(uint64(chainIdOffset), common.BigToHash(chainConfig.ChainID))
 	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace))
@@ -273,19 +268,6 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {
 	return state.blockhashes
-}
-
-func (state *ArbosState) SetLastTimestampSeen(timestamp uint64) uint64 {
-	lastTimestamp, err := state.timestamp.Get()
-	state.Restrict(err)
-	if timestamp < lastTimestamp {
-		panic("timestamp decreased")
-	}
-	timePassed := timestamp - lastTimestamp
-	if timePassed > 0 {
-		state.Restrict(state.timestamp.Set(timestamp))
-	}
-	return timePassed
 }
 
 func (state *ArbosState) NetworkFeeAccount() (common.Address, error) {

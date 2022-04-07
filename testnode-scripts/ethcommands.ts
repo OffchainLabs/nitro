@@ -1,18 +1,18 @@
+import { runStress } from "./stress";
 import { ethers } from "ethers";
 import * as consts from './consts'
 import { namedAccount, namedAddress } from './accounts'
 import * as fs from 'fs';
 const path = require("path");
 
-async function bridgeFunds(provider: ethers.providers.Provider, from: ethers.Wallet, ethamount: string): Promise<ethers.providers.TransactionResponse> {
-    const deploydata = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString())
-
-    return from.connect(provider)
+async function sendTransaction(argv: any, threadId: number) {
+    const response = await namedAccount(argv.from, threadId).connect(argv.provider)
         .sendTransaction({
-            to: deploydata.Inbox,
-            value: ethers.utils.parseEther(ethamount),
-            data: "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000",
+            to: namedAddress(argv.to, threadId),
+            value: ethers.utils.parseEther(argv.ethamount),
+            data: argv.data,
         })
+    console.log(response)
 }
 
 export const bridgeFundsCommand = {
@@ -20,43 +20,38 @@ export const bridgeFundsCommand = {
     describe: "sends funds from l1 to l2",
     builder: {
         ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
-        account: { string: true, describe: 'account name', default: "funnel" },
+        from: { string: true, describe: "account (see general help)", default: "funnel" },
     },
     handler: async (argv: any) => {
-        let provider = new ethers.providers.WebSocketProvider(consts.l1url)
+        argv.provider = new ethers.providers.WebSocketProvider(argv.l1url)
 
-        let response = await bridgeFunds(provider, namedAccount(argv.account), argv.ethamount)
+        const deploydata = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString())
+        const inboxAddr = ethers.utils.hexlify(deploydata.Inbox)
+        argv.to = "address_" + inboxAddr
+        argv.data = "0x0f4d14e9000000000000000000000000000000000000000000000000000082f79cd90000"
 
-        console.log("bridged funds")
-        console.log(response)
+        await runStress(argv, sendTransaction)
 
-        provider.destroy()
+        argv.provider.destroy()
     }
 }
+
 
 export const sendL1Command = {
     command: "send-l1",
     describe: "sends funds between l1 accounts",
     builder: {
         ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
-        from: { string: true, describe: 'account name', default: "funnel" },
-        to: { string: true, describe: 'account name', default: "funnel" },
+        from: { string: true, describe: "account (see general help)", default: "funnel" },
+        to: { string: true, describe: "address (see general help)", default: "funnel" },
         data: { string: true, describe: 'data' },
     },
     handler: async (argv: any) => {
-        let provider = new ethers.providers.WebSocketProvider(consts.l1url)
+        argv.provider = new ethers.providers.WebSocketProvider(argv.l1url)
 
-        let response = await namedAccount(argv.from).connect(provider)
-            .sendTransaction({
-                to: namedAddress(argv.to),
-                value: ethers.utils.parseEther(argv.ethamount),
-                data: argv.data,
-            })
+        await runStress(argv, sendTransaction)
 
-        console.log("sent on l1")
-        console.log(response)
-
-        provider.destroy()
+        argv.provider.destroy()
     }
 }
 
@@ -65,23 +60,15 @@ export const sendL2Command = {
     describe: "sends funds between l2 accounts",
     builder: {
         ethamount: { string: true, describe: 'amount to transfer (in eth)', default: "10" },
-        from: { string: true, describe: 'account name', default: "funnel" },
-        to: { string: true, describe: 'account name', default: "funnel" },
+        from: { string: true, describe: "account (see general help)", default: "funnel" },
+        to: { string: true, describe: "address (see general help)", default: "funnel" },
         data: { string: true, describe: 'data' },
     },
     handler: async (argv: any) => {
-        let provider = new ethers.providers.WebSocketProvider(consts.l2url)
+        argv.provider = new ethers.providers.WebSocketProvider(argv.l2url)
 
-        let response = await namedAccount(argv.from).connect(provider)
-            .sendTransaction({
-                to: namedAddress(argv.to),
-                value: ethers.utils.parseEther(argv.ethamount),
-                data: argv.data,
-            })
+        await runStress(argv, sendTransaction)
 
-        console.log("sent on l2")
-        console.log(response)
-
-        provider.destroy()
+        argv.provider.destroy()
     }
 }
