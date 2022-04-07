@@ -423,12 +423,12 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	return state.Blockhashes().NextBlockNumber()
 }
 
-func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlocKNumber)
+	return state.Blockhashes().BlockHash(l1BlockNumber)
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {
