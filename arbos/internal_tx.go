@@ -76,5 +76,5 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
 	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
 
-	state.UpgradeArbosVersionIfNecessary(currentTime)
+	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 }
