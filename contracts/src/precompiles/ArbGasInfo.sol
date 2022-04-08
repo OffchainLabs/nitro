@@ -115,4 +115,7 @@ interface ArbGasInfo {
 
     /// @notice Get L1 gas fees paid by the current transaction
     function getCurrentTxL1GasFees() external view returns (uint256);
+
+    /// @notice Get the amount of gas remaining in the gas pool
+    function getGasPool() external view returns (int64);
 }
