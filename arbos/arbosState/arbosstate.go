@@ -212,7 +212,7 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return OpenArbosState(stateDB, burner)
 }
 
-var TestnetUpgrade2Owner = common.HexToAddress("0x123456")
+var TestnetUpgrade2Owner = common.HexToAddress("0x40Fd01b32e97803f12693517776826a71e2B8D5f")
 
 func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
