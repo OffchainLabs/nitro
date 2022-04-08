@@ -67,10 +67,15 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface,
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	resultChan := make(chan error, 1)
-	s.txQueue <- txQueueItem{
+	queueItem := txQueueItem{
 		tx,
 		resultChan,
 		ctx,
+	}
+	select {
+	case s.txQueue <- queueItem:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	select {
 	case res := <-resultChan:
