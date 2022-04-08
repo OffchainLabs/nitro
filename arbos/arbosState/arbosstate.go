@@ -11,6 +11,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/blsTable"
@@ -211,14 +212,19 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	return OpenArbosState(stateDB, burner)
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+var TestnetUpgrade2Owner = common.HexToAddress("0x123456")
+
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
 			if state.arbosVersion == 1 {
-				// Upgrade version 1->2 involves no storage changes
+				// Upgrade version 1->2 adds a chain owner for the testnet
+				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
+					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
+				}
 				state.arbosVersion++
 			} else {
 				// code to upgrade to future versions will be put here
