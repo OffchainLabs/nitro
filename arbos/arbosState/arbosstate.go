@@ -225,11 +225,11 @@ func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64,
 				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
 					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
 				}
-				state.arbosVersion++
 			} else {
 				// code to upgrade to future versions will be put here
 				panic("Unable to perform requested ArbOS upgrade")
 			}
+			state.arbosVersion++
 		}
 		state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
 	}
