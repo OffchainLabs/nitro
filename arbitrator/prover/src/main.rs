@@ -346,13 +346,6 @@ fn main() -> Result<()> {
             module, func, pc
         );
     }
-    let output = mach.get_stdio_output();
-    println!("End machine output:");
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
-    stdout
-        .write_all(output)
-        .expect("Failed to write machine output to stdout");
 
     if let Some(out) = opts.output {
         let out = File::create(out)?;

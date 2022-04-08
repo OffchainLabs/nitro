@@ -34,7 +34,7 @@ type RelayMessageQueue struct {
 	queue chan broadcastFeedMessage
 }
 
-func (q *RelayMessageQueue) AddMessages(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata) error {
+func (q *RelayMessageQueue) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
 	for i, message := range messages {
 		q.queue <- broadcastFeedMessage{
 			sequenceNumber: pos + arbutil.MessageIndex(i),

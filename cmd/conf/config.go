@@ -202,3 +202,18 @@ func ParseLogType(logType string) (log.Format, error) {
 	}
 	return nil, errors.New("invalid log type")
 }
+
+type MetricsServerConfig struct {
+	Addr string `koanf:"addr"`
+	Port int    `koanf:"port"`
+}
+
+var MetricsServerConfigDefault = MetricsServerConfig{
+	Addr: "127.0.0.1",
+	Port: 6070,
+}
+
+func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
+	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
+}

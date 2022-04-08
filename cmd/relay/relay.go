@@ -42,8 +42,6 @@ func printSampleUsage() {
 }
 
 func startup() error {
-	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
-
 	relayConfig, err := ParseRelay(context.Background(), os.Args[1:])
 	if err != nil {
 		printSampleUsage()
@@ -60,7 +58,7 @@ func startup() error {
 		panic(fmt.Sprintf("Error parsing log type: %v", err))
 	}
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	glogger.Verbosity(log.Lvl(*loglevel))
+	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{
@@ -111,6 +109,7 @@ var RelayConfigDefault = RelayConfig{
 func RelayConfigAddOptions(f *flag.FlagSet) {
 	conf.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
+	f.String("log-type", RelayConfigDefault.LogType, "log type")
 	RelayNodeConfigAddOptions("node", f)
 }
 

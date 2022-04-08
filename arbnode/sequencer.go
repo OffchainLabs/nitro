@@ -67,10 +67,15 @@ func NewSequencer(txStreamer *TransactionStreamer, l1Client arbutil.L1Interface,
 
 func (s *Sequencer) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
 	resultChan := make(chan error, 1)
-	s.txQueue <- txQueueItem{
+	queueItem := txQueueItem{
 		tx,
 		resultChan,
 		ctx,
+	}
+	select {
+	case s.txQueue <- queueItem:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 	select {
 	case res := <-resultChan:
@@ -137,22 +142,6 @@ func (s *Sequencer) forwardIfSet(queueItems []txQueueItem) bool {
 }
 
 func (s *Sequencer) sequenceTransactions(ctx context.Context) {
-	timestamp := time.Now().Unix()
-	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
-	l1Timestamp := s.l1Timestamp
-	s.L1BlockAndTimeMutex.Unlock()
-
-	if s.l1Client != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
-		log.Error(
-			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
-			"l1Block", l1Block,
-			"l1Timestamp", l1Timestamp,
-			"localTimestamp", timestamp,
-		)
-		return
-	}
-
 	var txes types.Transactions
 	var queueItems []txQueueItem
 	var totalBatchSize int
@@ -207,6 +196,22 @@ func (s *Sequencer) sequenceTransactions(ctx context.Context) {
 	}
 
 	if s.forwardIfSet(queueItems) {
+		return
+	}
+
+	timestamp := time.Now().Unix()
+	s.L1BlockAndTimeMutex.Lock()
+	l1Block := s.l1BlockNumber
+	l1Timestamp := s.l1Timestamp
+	s.L1BlockAndTimeMutex.Unlock()
+
+	if s.l1Client != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > s.config.MaxAcceptableTimestampDelta.Seconds()) {
+		log.Error(
+			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
+			"l1Block", l1Block,
+			"l1Timestamp", l1Timestamp,
+			"localTimestamp", timestamp,
+		)
 		return
 	}
 
