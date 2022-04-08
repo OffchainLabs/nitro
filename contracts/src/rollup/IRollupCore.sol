@@ -7,8 +7,6 @@ pragma solidity ^0.8.0;
 import "./Node.sol";
 import "./RollupLib.sol";
 
-import "../osp/IOneStepProofEntry.sol";
-
 interface IRollupCore {
     struct Staker {
         uint256 amountStaked;
