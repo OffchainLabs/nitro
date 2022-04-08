@@ -60,6 +60,9 @@ interface ArbOwner {
     /// @notice Set the network fee collector
     function setNetworkFeeAccount(address newNetworkFeeAccount) external;
 
+    /// @notice Upgrades ArbOS to the requested version at the requested timestamp
+    function scheduleArbOSUpgrade(uint64 newVersion, uint64 timestamp) external;
+
     // Emitted when a successful call is made to this precompile
     event OwnerActs(bytes4 indexed method, address indexed owner, bytes data);
 }

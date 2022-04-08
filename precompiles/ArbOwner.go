@@ -103,3 +103,8 @@ func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.state.SetNetworkFeeAccount(newNetworkFeeAccount)
 }
+
+// Upgrades ArbOS to the requested version at the requested timestamp
+func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
+	return c.state.ScheduleArbOSUpgrade(newVersion, timestamp)
+}
