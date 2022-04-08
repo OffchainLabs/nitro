@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "main": "index.js",
   "author": "Offchain Labs, Inc.",
