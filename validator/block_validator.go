@@ -45,8 +45,8 @@ type BlockValidator struct {
 	lastBlockValidatedHash  common.Hash // behind lastBlockValidatedMutex
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
-	nextBatchKept           uint64 // 1 + the last batch number kept
-	latestWasmModuleRoot    common.Hash
+	nextBatchKept           uint64       // 1 + the last batch number kept
+	latestWasmModuleRoot    atomic.Value // is a common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -114,8 +114,8 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
-		latestWasmModuleRoot:    latestWasmModuleRoot,
 	}
+	validator.SetWasmModuleRoot(latestWasmModuleRoot)
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
 		return nil, err
@@ -123,6 +123,14 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator, nil
+}
+
+func (v *BlockValidator) GetWasmModuleRoot() common.Hash {
+	return v.latestWasmModuleRoot.Load().(common.Hash)
+}
+
+func (v *BlockValidator) SetWasmModuleRoot(root common.Hash) {
+	v.latestWasmModuleRoot.Store(root)
 }
 
 func (v *BlockValidator) readLastBlockValidatedDbInfo() error {
@@ -331,7 +339,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, v.latestWasmModuleRoot)
+	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, v.GetWasmModuleRoot())
 	if err != nil {
 		log.Error("Validation of block failed", "err", err)
 		return

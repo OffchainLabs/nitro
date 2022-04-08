@@ -188,7 +188,7 @@ func (s *Staker) updateLatestWasmRoot(ctx context.Context) error {
 		return nil
 	}
 	if !s.updatingModuleRoot {
-		if s.blockValidator.latestWasmModuleRoot == (common.Hash{}) {
+		if s.blockValidator.GetWasmModuleRoot() == (common.Hash{}) {
 			s.updatingModuleRoot = true
 		} else {
 			return nil
@@ -198,7 +198,7 @@ func (s *Staker) updateLatestWasmRoot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.blockValidator.latestWasmModuleRoot = moduleRoot
+	s.blockValidator.SetWasmModuleRoot(moduleRoot)
 	return nil
 }
 
@@ -206,6 +206,10 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.updateLatestWasmRoot(ctx)
+		if err != nil {
+			log.Warn("error updating latest wasm module root", "err", err)
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
