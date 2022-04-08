@@ -12,6 +12,8 @@ import (
 )
 
 func TestBlockHash(t *testing.T) {
+	t.SkipNow() // Will be re-enabled with upgrade support PR
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

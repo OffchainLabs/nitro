@@ -428,6 +428,19 @@ func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64
 	if err != nil {
 		return common.Hash{}, err
 	}
+	if state.FormatVersion() < 2 {
+		// Support the old broken behavior
+		var lower, upper uint64
+		upper = p.evm.Context.BlockNumber.Uint64()
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if l1BlockNumber < lower || l1BlockNumber >= upper {
+			return common.Hash{}, nil
+		}
+	}
 	return state.Blockhashes().BlockHash(l1BlockNumber)
 }
 
