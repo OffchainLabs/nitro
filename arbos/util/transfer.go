@@ -55,7 +55,7 @@ func TransferBalance(from, to *common.Address, amount *big.Int, evm *vm.EVM, sce
 			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0),
 			Depth:    evm.Depth(),
 		}
-		info.MockCall([]byte("Transfer Balance"), 0, *to, amount)
+		info.MockCall([]byte("Transfer Balance"), 0, *from, *to, amount)
 	}
 	return nil
 }

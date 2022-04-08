@@ -35,14 +35,14 @@ func (a addressHolder) Address() common.Address {
 	return a.addr
 }
 
-func NewTracingInfo(evm *vm.EVM, actor common.Address, scenario TracingScenario) *TracingInfo {
+func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenario) *TracingInfo {
 	if evm.Config.Tracer == nil || !evm.Config.Debug {
 		return nil
 	}
 	return &TracingInfo{
 		Tracer:   evm.Config.Tracer,
 		Scenario: scenario,
-		Contract: vm.NewContract(addressHolder{actor}, addressHolder{actor}, big.NewInt(0), 0),
+		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0),
 		Depth:    evm.Depth(),
 	}
 }
@@ -75,9 +75,11 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 	}
 }
 
-func (info *TracingInfo) MockCall(input []byte, gas uint64, to common.Address, amount *big.Int) {
+func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Address, amount *big.Int) {
 	tracer := info.Tracer
 	depth := info.Depth
+
+	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0)
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),
@@ -90,9 +92,8 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, to common.Address, a
 			*uint256.NewInt(0),                          // return offset
 			*uint256.NewInt(0),                          // return size
 		),
-		Contract: info.Contract,
+		Contract: contract,
 	}
-	from := info.Contract.CallerAddress
 	tracer.CaptureState(0, vm.CALL, 0, 0, scope, []byte{}, depth, nil)
 	tracer.CaptureEnter(vm.INVALID, from, to, input, 0, amount)
 
@@ -102,7 +103,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, to common.Address, a
 			*uint256.NewInt(0), // return offset
 			*uint256.NewInt(0), // return size
 		),
-		Contract: info.Contract,
+		Contract: contract,
 	}
 	tracer.CaptureState(0, vm.RETURN, 0, 0, retScope, []byte{}, depth+1, nil)
 	tracer.CaptureExit(nil, 0, nil)
@@ -112,7 +113,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, to common.Address, a
 		Stack: TracingStackFromArgs(
 			*uint256.NewInt(1), // CALL result success
 		),
-		Contract: info.Contract,
+		Contract: contract,
 	}
 	tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, depth, nil)
 }

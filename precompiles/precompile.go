@@ -594,7 +594,7 @@ func (p Precompile) Call(
 		gasSupplied: gasSupplied,
 		gasLeft:     gasSupplied,
 		readOnly:    method.purity <= view,
-		tracingInfo: util.NewTracingInfo(evm, precompileAddress, util.TracingDuringEVM),
+		tracingInfo: util.NewTracingInfo(evm, caller, precompileAddress, util.TracingDuringEVM),
 	}
 
 	argsCost := params.CopyGas * arbmath.WordsForBytes(uint64(len(input)-4))

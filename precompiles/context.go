@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 )
 
@@ -61,7 +62,7 @@ func (c *context) TracingInfo() *util.TracingInfo {
 }
 
 func testContext(caller addr, evm mech) *context {
-	tracingInfo := util.NewTracingInfo(evm, common.Address{}, util.TracingDuringEVM)
+	tracingInfo := util.NewTracingInfo(evm, common.Address{}, types.ArbosAddress, util.TracingDuringEVM)
 	ctx := &context{
 		caller:      caller,
 		gasSupplied: ^uint64(0),
