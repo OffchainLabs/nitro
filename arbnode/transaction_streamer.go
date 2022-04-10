@@ -287,7 +287,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
 	if len(messages) == 0 {
-		return nil
+		if batch == nil {
+			return nil
+		}
+		return batch.Write()
 	}
 
 	var prevDelayedRead uint64
