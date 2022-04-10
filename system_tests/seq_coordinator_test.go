@@ -15,9 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -77,12 +79,26 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		node := nodes[nodeNum]
 		curMsgs, err := node.TxStreamer.GetMessageCountSync()
 		Require(t, err)
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &arbstate.MessageWithMetadata{})
+		emptyMessage := arbstate.MessageWithMetadata{
+			Message: &arbos.L1IncomingMessage{
+				Header: &arbos.L1IncomingMessageHeader{
+					Kind:        0,
+					Poster:      common.Address{},
+					BlockNumber: 0,
+					Timestamp:   0,
+					RequestId:   &common.Hash{},
+					L1BaseFee:   common.Big0,
+				},
+				L2msg: nil,
+			},
+			DelayedMessagesRead: 0,
+		}
+		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
 		if errors.Is(err, arbnode.ErrNotMainSequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{{}}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{emptyMessage}))
 		return true
 	}
 
