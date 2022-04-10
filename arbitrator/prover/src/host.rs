@@ -4,7 +4,7 @@
 use crate::{
     binary::{BlockType, Code, HirInstruction},
     machine::{Function, InboxIdentifier},
-    value::{FunctionType, ValueType},
+    value::{ArbValueType, FunctionType},
     wavm::{FloatingPointImpls, Opcode},
 };
 
@@ -14,23 +14,23 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
     match (module, name) {
         ("env", "wavm_caller_load8") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32],
-                outputs: vec![ValueType::I32],
+                inputs: vec![ArbValueType::I32],
+                outputs: vec![ArbValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 0));
         }
         ("env", "wavm_caller_load32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32],
-                outputs: vec![ValueType::I32],
+                inputs: vec![ArbValueType::I32],
+                outputs: vec![ArbValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::CallerModuleInternalCall, 1));
         }
         ("env", "wavm_caller_store8") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ArbValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
@@ -39,7 +39,7 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_caller_store32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ArbValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
@@ -48,7 +48,7 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_get_globalstate_bytes32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ArbValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
@@ -57,7 +57,7 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_set_globalstate_bytes32") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
+                inputs: vec![ArbValueType::I32; 2],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
@@ -66,15 +66,15 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_get_globalstate_u64") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32],
-                outputs: vec![ValueType::I64],
+                inputs: vec![ArbValueType::I32],
+                outputs: vec![ArbValueType::I64],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::Simple(Opcode::GetGlobalStateU64));
         }
         ("env", "wavm_set_globalstate_u64") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32, ValueType::I64],
+                inputs: vec![ArbValueType::I32, ArbValueType::I64],
                 outputs: vec![],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
@@ -83,8 +83,8 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_read_pre_image") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I32; 2],
-                outputs: vec![ValueType::I32],
+                inputs: vec![ArbValueType::I32; 2],
+                outputs: vec![ArbValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
@@ -92,8 +92,8 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_read_inbox_message") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I64, ValueType::I32, ValueType::I32],
-                outputs: vec![ValueType::I32],
+                inputs: vec![ArbValueType::I64, ArbValueType::I32, ArbValueType::I32],
+                outputs: vec![ArbValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));
@@ -105,8 +105,8 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         ("env", "wavm_read_delayed_inbox_message") => {
             ty = FunctionType {
-                inputs: vec![ValueType::I64, ValueType::I32, ValueType::I32],
-                outputs: vec![ValueType::I32],
+                inputs: vec![ArbValueType::I64, ArbValueType::I32, ArbValueType::I32],
+                outputs: vec![ArbValueType::I32],
             };
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 0));
             insts.push(HirInstruction::WithIdx(Opcode::LocalGet, 1));

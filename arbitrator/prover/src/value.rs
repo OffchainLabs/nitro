@@ -1,17 +1,21 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use std::convert::TryFrom;
+
 use crate::{
     binary::{FloatType, RefType},
     utils::Bytes32,
 };
 use digest::Digest;
+use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
+use wasmparser::Type;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
-pub enum ValueType {
+pub enum ArbValueType {
     I32,
     I64,
     F32,
@@ -22,29 +26,46 @@ pub enum ValueType {
     StackBoundary,
 }
 
-impl ValueType {
+impl ArbValueType {
     pub fn serialize(self) -> u8 {
         self as u8
     }
 }
 
-impl From<FloatType> for ValueType {
-    fn from(ty: FloatType) -> ValueType {
+impl TryFrom<Type> for ArbValueType {
+    type Error = eyre::Error;
+
+    fn try_from(ty: Type) -> Result<ArbValueType> {
+        use Type::*;
+        Ok(match ty {
+            I32 => Self::I32,
+            I64 => Self::I64,
+            F32 => Self::F32,
+            F64 => Self::F64,
+            FuncRef => Self::FuncRef,
+            ExternRef => Self::FuncRef,
+            V128 => bail!("128-bit types are not supported"),
+        })
+    }
+}
+
+impl From<FloatType> for ArbValueType {
+    fn from(ty: FloatType) -> ArbValueType {
         match ty {
-            FloatType::F32 => ValueType::F32,
-            FloatType::F64 => ValueType::F64,
+            FloatType::F32 => ArbValueType::F32,
+            FloatType::F64 => ArbValueType::F64,
         }
     }
 }
 
-impl From<RefType> for ValueType {
-    fn from(ty: RefType) -> ValueType {
+/*impl From<RefType> for ArbValueType {
+    fn from(ty: RefType) -> ArbValueType {
         match ty {
-            RefType::FuncRef => ValueType::FuncRef,
+            RefType::FuncRef => ArbValueType::FuncRef,
             RefType::ExternRef => panic!("Extern refs not supported"),
         }
     }
-}
+}*/
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum IntegerValType {
@@ -52,11 +73,11 @@ pub enum IntegerValType {
     I64,
 }
 
-impl From<IntegerValType> for ValueType {
-    fn from(ty: IntegerValType) -> ValueType {
+impl From<IntegerValType> for ArbValueType {
+    fn from(ty: IntegerValType) -> ArbValueType {
         match ty {
-            IntegerValType::I32 => ValueType::I32,
-            IntegerValType::I64 => ValueType::I64,
+            IntegerValType::I32 => ArbValueType::I32,
+            IntegerValType::I64 => ArbValueType::I64,
         }
     }
 }
@@ -101,16 +122,16 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn ty(self) -> ValueType {
+    pub fn ty(self) -> ArbValueType {
         match self {
-            Value::I32(_) => ValueType::I32,
-            Value::I64(_) => ValueType::I64,
-            Value::F32(_) => ValueType::F32,
-            Value::F64(_) => ValueType::F64,
-            Value::RefNull => ValueType::RefNull,
-            Value::FuncRef(_) => ValueType::FuncRef,
-            Value::InternalRef(_) => ValueType::InternalRef,
-            Value::StackBoundary => ValueType::StackBoundary,
+            Value::I32(_) => ArbValueType::I32,
+            Value::I64(_) => ArbValueType::I64,
+            Value::F32(_) => ArbValueType::F32,
+            Value::F64(_) => ArbValueType::F64,
+            Value::RefNull => ArbValueType::RefNull,
+            Value::FuncRef(_) => ArbValueType::FuncRef,
+            Value::InternalRef(_) => ArbValueType::InternalRef,
+            Value::StackBoundary => ArbValueType::StackBoundary,
         }
     }
 
@@ -178,14 +199,18 @@ impl Value {
         h.finalize().into()
     }
 
-    pub fn default_of_type(ty: ValueType) -> Value {
+    pub fn default_of_type(ty: ArbValueType) -> Value {
         match ty {
-            ValueType::I32 => Value::I32(0),
-            ValueType::I64 => Value::I64(0),
-            ValueType::F32 => Value::F32(0.),
-            ValueType::F64 => Value::F64(0.),
-            ValueType::RefNull | ValueType::FuncRef | ValueType::InternalRef => Value::RefNull,
-            ValueType::StackBoundary => panic!("Attempted to make default of StackBoundary type"),
+            ArbValueType::I32 => Value::I32(0),
+            ArbValueType::I64 => Value::I64(0),
+            ArbValueType::F32 => Value::F32(0.),
+            ArbValueType::F64 => Value::F64(0.),
+            ArbValueType::RefNull | ArbValueType::FuncRef | ArbValueType::InternalRef => {
+                Value::RefNull
+            }
+            ArbValueType::StackBoundary => {
+                panic!("Attempted to make default of StackBoundary type")
+            }
         }
     }
 }
@@ -200,12 +225,12 @@ impl Eq for Value {}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FunctionType {
-    pub inputs: Vec<ValueType>,
-    pub outputs: Vec<ValueType>,
+    pub inputs: Vec<ArbValueType>,
+    pub outputs: Vec<ArbValueType>,
 }
 
 impl FunctionType {
-    pub fn new(inputs: Vec<ValueType>, outputs: Vec<ValueType>) -> FunctionType {
+    pub fn new(inputs: Vec<ArbValueType>, outputs: Vec<ArbValueType>) -> FunctionType {
         FunctionType { inputs, outputs }
     }
 

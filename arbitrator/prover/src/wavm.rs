@@ -4,7 +4,7 @@
 use crate::{
     binary::{BlockType, FloatInstruction, HirInstruction},
     utils::Bytes32,
-    value::{IntegerValType, ValueType},
+    value::{ArbValueType, IntegerValType},
 };
 use digest::Digest;
 use eyre::{bail, Result};
@@ -88,7 +88,7 @@ pub enum Opcode {
 
     MemoryLoad {
         /// The type we are loading into.
-        ty: ValueType,
+        ty: ArbValueType,
         /// How many bytes in memory we are loading from.
         bytes: u8,
         /// When bytes matches the type's size, this is irrelevant and should be false.
@@ -96,7 +96,7 @@ pub enum Opcode {
     },
     MemoryStore {
         /// The type we are storing from.
-        ty: ValueType,
+        ty: ArbValueType,
         /// How many bytes in memory we are storing into.
         bytes: u8,
     },
@@ -117,7 +117,7 @@ pub enum Opcode {
     I64ExtendI32(bool),
 
     /// Parameterized by destination type, then source type
-    Reinterpret(ValueType, ValueType),
+    Reinterpret(ArbValueType, ArbValueType),
 
     /// Parameterized by the number of source bits
     I32ExtendS(u8),
@@ -186,35 +186,35 @@ impl Opcode {
             Opcode::GlobalGet => 0x23,
             Opcode::GlobalSet => 0x24,
             Opcode::MemoryLoad { ty, bytes, signed } => match (ty, bytes, signed) {
-                (ValueType::I32, 4, false) => 0x28,
-                (ValueType::I64, 8, false) => 0x29,
-                (ValueType::F32, 4, false) => 0x2A,
-                (ValueType::F64, 8, false) => 0x2B,
-                (ValueType::I32, 1, true) => 0x2C,
-                (ValueType::I32, 1, false) => 0x2D,
-                (ValueType::I32, 2, true) => 0x2E,
-                (ValueType::I32, 2, false) => 0x2F,
-                (ValueType::I64, 1, true) => 0x30,
-                (ValueType::I64, 1, false) => 0x31,
-                (ValueType::I64, 2, true) => 0x32,
-                (ValueType::I64, 2, false) => 0x33,
-                (ValueType::I64, 4, true) => 0x34,
-                (ValueType::I64, 4, false) => 0x35,
+                (ArbValueType::I32, 4, false) => 0x28,
+                (ArbValueType::I64, 8, false) => 0x29,
+                (ArbValueType::F32, 4, false) => 0x2A,
+                (ArbValueType::F64, 8, false) => 0x2B,
+                (ArbValueType::I32, 1, true) => 0x2C,
+                (ArbValueType::I32, 1, false) => 0x2D,
+                (ArbValueType::I32, 2, true) => 0x2E,
+                (ArbValueType::I32, 2, false) => 0x2F,
+                (ArbValueType::I64, 1, true) => 0x30,
+                (ArbValueType::I64, 1, false) => 0x31,
+                (ArbValueType::I64, 2, true) => 0x32,
+                (ArbValueType::I64, 2, false) => 0x33,
+                (ArbValueType::I64, 4, true) => 0x34,
+                (ArbValueType::I64, 4, false) => 0x35,
                 _ => panic!(
                     "Unsupported memory load of type {:?} from {} bytes with signed {}",
                     ty, bytes, signed,
                 ),
             },
             Opcode::MemoryStore { ty, bytes } => match (ty, bytes) {
-                (ValueType::I32, 4) => 0x36,
-                (ValueType::I64, 8) => 0x37,
-                (ValueType::F32, 4) => 0x38,
-                (ValueType::F64, 8) => 0x39,
-                (ValueType::I32, 1) => 0x3A,
-                (ValueType::I32, 2) => 0x3B,
-                (ValueType::I64, 1) => 0x3C,
-                (ValueType::I64, 2) => 0x3D,
-                (ValueType::I64, 4) => 0x3E,
+                (ArbValueType::I32, 4) => 0x36,
+                (ArbValueType::I64, 8) => 0x37,
+                (ArbValueType::F32, 4) => 0x38,
+                (ArbValueType::F64, 8) => 0x39,
+                (ArbValueType::I32, 1) => 0x3A,
+                (ArbValueType::I32, 2) => 0x3B,
+                (ArbValueType::I64, 1) => 0x3C,
+                (ArbValueType::I64, 2) => 0x3D,
+                (ArbValueType::I64, 4) => 0x3E,
                 _ => panic!(
                     "Unsupported memory store of type {:?} to {} bytes",
                     ty, bytes,
@@ -246,10 +246,10 @@ impl Opcode {
                 false => 0xad,
             },
             Opcode::Reinterpret(dest, source) => match (dest, source) {
-                (ValueType::I32, ValueType::F32) => 0xBC,
-                (ValueType::I64, ValueType::F64) => 0xBD,
-                (ValueType::F32, ValueType::I32) => 0xBE,
-                (ValueType::F64, ValueType::I64) => 0xBF,
+                (ArbValueType::I32, ArbValueType::F32) => 0xBC,
+                (ArbValueType::I64, ArbValueType::F64) => 0xBD,
+                (ArbValueType::F32, ArbValueType::I32) => 0xBE,
+                (ArbValueType::F64, ArbValueType::I64) => 0xBF,
                 _ => panic!("Unsupported reinterpret to {:?} from {:?}", dest, source),
             },
             Opcode::I32ExtendS(x) => match x {
@@ -546,15 +546,15 @@ impl Instruction {
                     let sig = inst.signature();
                     // Reinterpret float args into ints
                     for &arg in sig.inputs.iter().rev() {
-                        if arg == ValueType::F32 {
+                        if arg == ArbValueType::F32 {
                             ops.push(Instruction::simple(Opcode::Reinterpret(
-                                ValueType::I32,
-                                ValueType::F32,
+                                ArbValueType::I32,
+                                ArbValueType::F32,
                             )));
-                        } else if arg == ValueType::F64 {
+                        } else if arg == ArbValueType::F64 {
                             ops.push(Instruction::simple(Opcode::Reinterpret(
-                                ValueType::I64,
-                                ValueType::F64,
+                                ArbValueType::I64,
+                                ArbValueType::F64,
                             )));
                         }
                         ops.push(Instruction::simple(Opcode::MoveFromStackToInternal));
@@ -573,15 +573,15 @@ impl Instruction {
                         "Floating point inst has multiple outputs"
                     );
                     let output = sig.outputs.get(0).cloned();
-                    if output == Some(ValueType::F32) {
+                    if output == Some(ArbValueType::F32) {
                         ops.push(Instruction::simple(Opcode::Reinterpret(
-                            ValueType::F32,
-                            ValueType::I32,
+                            ArbValueType::F32,
+                            ArbValueType::I32,
                         )));
-                    } else if output == Some(ValueType::F64) {
+                    } else if output == Some(ArbValueType::F64) {
                         ops.push(Instruction::simple(Opcode::Reinterpret(
-                            ValueType::F64,
-                            ValueType::I64,
+                            ArbValueType::F64,
+                            ArbValueType::I64,
                         )));
                     }
                 } else {

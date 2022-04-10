@@ -18,7 +18,7 @@ use crate::{
     binary::WasmBinary,
     machine::{argument_data_to_inbox, Machine},
 };
-use eyre::{bail, Result};
+use eyre::{bail, Context, Result};
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
@@ -28,7 +28,6 @@ use std::{
     io::Read,
     os::raw::{c_char, c_int},
     path::Path,
-    process::Command,
     sync::atomic::{self, AtomicU8},
 };
 
@@ -37,33 +36,7 @@ pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
 
-    let mut cmd = Command::new("wasm-validate");
-    if path.starts_with("-") {
-        // Escape the path and ensure it isn't treated as a flag.
-        // Unfortunately, older versions of wasm-validate don't support this,
-        // so we only pass in this option if the path looks like a flag.
-        cmd.arg("--");
-    }
-    let status = cmd.arg(path).status()?;
-    if !status.success() {
-        bail!("failed to validate WASM binary at {:?}", path);
-    }
-
-    let bin = match binary::parse(&buf) {
-        Ok(bin) => bin,
-        Err(err) => {
-            eprintln!("Parsing error:");
-            for (mut input, kind) in err.errors {
-                if input.len() > 64 {
-                    input = &input[..64];
-                }
-                eprintln!("Got {:?} while parsing {}", kind, hex::encode(input));
-            }
-            bail!("failed to parse binary");
-        }
-    };
-
-    Ok(bin)
+    binary::parse(&buf).wrap_err_with(|| format!("failed to validate WASM binary at {:?}", path))
 }
 
 #[repr(C)]

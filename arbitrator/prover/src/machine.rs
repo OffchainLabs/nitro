@@ -3,20 +3,20 @@
 
 use crate::{
     binary::{
-        BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
-        NameCustomSection, TableType, WasmBinary,
+        BlockType, Code, ElementKind, FloatInstruction, HirInstruction, NameCustomSection,
+        WasmBinary,
     },
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::Bytes32,
-    value::{FunctionType, IntegerValType, ProgramCounter, Value, ValueType},
+    value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{pack_cross_module_call, unpack_cross_module_call, FloatingPointImpls, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
-use eyre::{bail, ensure, eyre};
+use eyre::{bail, ensure, eyre, Result};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -32,6 +32,7 @@ use std::{
     path::Path,
     sync::Arc,
 };
+use wasmparser::{ExternalKind, TableType, TypeRef};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -60,7 +61,7 @@ pub struct Function {
     code: Vec<Instruction>,
     ty: FunctionType,
     code_merkle: Merkle,
-    local_types: Vec<ValueType>,
+    local_types: Vec<ArbValueType>,
 }
 
 impl Function {
@@ -70,8 +71,8 @@ impl Function {
         func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
-    ) -> eyre::Result<Function> {
-        let locals_with_params: Vec<ValueType> =
+    ) -> Result<Function> {
+        let locals_with_params: Vec<ArbValueType> =
             func_ty.inputs.iter().cloned().chain(code.locals).collect();
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
@@ -123,7 +124,7 @@ impl Function {
     fn new_from_wavm(
         code: Vec<Instruction>,
         ty: FunctionType,
-        local_types: Vec<ValueType>,
+        local_types: Vec<ArbValueType>,
     ) -> Function {
         assert!(
             u32::try_from(code.len()).is_ok(),
@@ -224,20 +225,20 @@ struct Table {
 }
 
 impl Table {
-    fn serialize_for_proof(&self) -> Vec<u8> {
-        let mut data = vec![Into::<ValueType>::into(self.ty.ty).serialize()];
+    fn serialize_for_proof(&self) -> Result<Vec<u8>> {
+        let mut data = vec![ArbValueType::try_from(self.ty.element_type)?.serialize()];
         data.extend(&(self.elems.len() as u64).to_be_bytes());
         data.extend(self.elems_merkle.root());
-        data
+        Ok(data)
     }
 
-    fn hash(&self) -> Bytes32 {
+    fn hash(&self) -> Result<Bytes32> {
         let mut h = Keccak256::new();
         h.update("Table:");
-        h.update(&[Into::<ValueType>::into(self.ty.ty).serialize()]);
+        h.update(&[ArbValueType::try_from(self.ty.element_type)?.serialize()]);
         h.update(&(self.elems.len() as u64).to_be_bytes());
         h.update(self.elems_merkle.root());
-        h.finalize().into()
+        Ok(h.finalize().into())
     }
 }
 
@@ -280,7 +281,7 @@ impl Module {
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
-    ) -> eyre::Result<Module> {
+    ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
@@ -288,7 +289,7 @@ impl Module {
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
         for import in bin.imports {
-            if let ImportKind::Function(ty) = import.kind {
+            if let TypeRef::Func(ty) = import.ty {
                 let mut qualified_name = format!("{}__{}", import.module, import.name);
                 qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
                 let have_ty = &bin.types[ty as usize];
@@ -355,7 +356,7 @@ impl Module {
         );
         if let Some(limits) = bin.memories.get(0) {
             // We ignore the maximum size
-            let size = usize::try_from(limits.minimum_size)
+            let size = usize::try_from(limits.initial)
                 .ok()
                 .and_then(|x| x.checked_mul(Memory::PAGE_SIZE))
                 .ok_or_else(|| eyre!("Memory size is too large"))?;
@@ -372,10 +373,10 @@ impl Module {
                 }
                 Err(eyre!("Global initializer isn't a constant"))
             })
-            .collect::<eyre::Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
         for export in bin.exports {
-            if let ExportKind::Function(idx) = export.kind {
-                exports.insert(export.name, idx);
+            if let ExternalKind::Func = export.kind {
+                exports.insert(export.name, export.index);
             }
         }
         for data in bin.datas {
@@ -406,16 +407,13 @@ impl Module {
         }
         for table in bin.tables {
             tables.push(Table {
-                elems: vec![
-                    TableElement::default();
-                    usize::try_from(table.limits.minimum_size).unwrap()
-                ],
+                elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
                 ty: table,
                 elems_merkle: Merkle::default(),
             });
         }
         for elem in bin.elements {
-            if let ElementMode::Active(t, o) = elem.mode {
+            if let ElementKind::Active(t, o) = elem.kind {
                 let mut offset = None;
                 if let [insn] = o.as_slice() {
                     if let Some(Value::I32(x)) = insn.get_const_output() {
@@ -431,7 +429,7 @@ impl Module {
                     Some(t) => t,
                     None => bail!("Element segment for non-exsistent table {}", t),
                 };
-                let expected_ty = table.ty.ty;
+                let expected_ty = table.ty.element_type;
                 ensure!(
                     expected_ty == elem.ty,
                     "Element type expected to be of table type {:?} but of type {:?}",
@@ -439,7 +437,7 @@ impl Module {
                     elem.ty
                 );
                 let contents: Vec<_> = elem
-                    .values
+                    .items
                     .into_iter()
                     .map(|val| {
                         let func_ty = match val {
@@ -449,7 +447,7 @@ impl Module {
                         };
                         Ok(TableElement { val, func_ty })
                     })
-                    .collect::<eyre::Result<Vec<_>>>()?;
+                    .collect::<Result<Vec<_>>>()?;
                 let len = contents.len();
                 ensure!(
                     offset.saturating_add(len) <= table.elems.len(),
@@ -468,12 +466,12 @@ impl Module {
         // Make internal functions
         let internals_offset = code.len() as u32;
         let mut memory_load_internal_type = FunctionType::default();
-        memory_load_internal_type.inputs.push(ValueType::I32);
-        memory_load_internal_type.outputs.push(ValueType::I32);
+        memory_load_internal_type.inputs.push(ArbValueType::I32);
+        memory_load_internal_type.outputs.push(ArbValueType::I32);
         func_types.push(memory_load_internal_type.clone());
         code.push(make_internal_func(
             Opcode::MemoryLoad {
-                ty: ValueType::I32,
+                ty: ArbValueType::I32,
                 bytes: 1,
                 signed: false,
             },
@@ -482,19 +480,19 @@ impl Module {
         func_types.push(memory_load_internal_type.clone());
         code.push(make_internal_func(
             Opcode::MemoryLoad {
-                ty: ValueType::I32,
+                ty: ArbValueType::I32,
                 bytes: 4,
                 signed: false,
             },
             memory_load_internal_type,
         ));
         let mut memory_store_internal_type = FunctionType::default();
-        memory_store_internal_type.inputs.push(ValueType::I32);
-        memory_store_internal_type.inputs.push(ValueType::I32);
+        memory_store_internal_type.inputs.push(ArbValueType::I32);
+        memory_store_internal_type.inputs.push(ArbValueType::I32);
         func_types.push(memory_store_internal_type.clone());
         code.push(make_internal_func(
             Opcode::MemoryStore {
-                ty: ValueType::I32,
+                ty: ArbValueType::I32,
                 bytes: 1,
             },
             memory_store_internal_type.clone(),
@@ -502,16 +500,18 @@ impl Module {
         func_types.push(memory_store_internal_type.clone());
         code.push(make_internal_func(
             Opcode::MemoryStore {
-                ty: ValueType::I32,
+                ty: ArbValueType::I32,
                 bytes: 4,
             },
             memory_store_internal_type,
         ));
 
+        let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
+
         Ok(Module {
             memory,
             globals,
-            tables_merkle: Merkle::new(MerkleType::Table, tables.iter().map(Table::hash).collect()),
+            tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
             tables,
             funcs_merkle: Arc::new(Merkle::new(
                 MerkleType::Function,
@@ -827,15 +827,18 @@ impl Machine {
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
-    ) -> eyre::Result<Machine> {
+    ) -> Result<Machine> {
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
 
         for export in &bin.exports {
-            if let ExportKind::Function(f) = export.kind {
-                if let Some(ty_idx) = usize::try_from(f).unwrap().checked_sub(bin.imports.len()) {
+            if let ExternalKind::Func = export.kind {
+                if let Some(ty_idx) = usize::try_from(export.index)
+                    .unwrap()
+                    .checked_sub(bin.imports.len())
+                {
                     let ty = bin.functions[ty_idx];
                     let ty = &bin.types[usize::try_from(ty).unwrap()];
                     let module = u32::try_from(modules.len() + libraries.len()).unwrap();
@@ -844,7 +847,7 @@ impl Machine {
                         AvailableImport {
                             ty: ty.clone(),
                             module,
-                            func: f,
+                            func: export.index,
                         },
                     );
                 }
@@ -867,10 +870,10 @@ impl Machine {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
                     for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
-                        if *ty == ValueType::F32 {
-                            *ty = ValueType::I32;
-                        } else if *ty == ValueType::F64 {
-                            *ty = ValueType::I64;
+                        if *ty == ArbValueType::F32 {
+                            *ty = ArbValueType::I32;
+                        } else if *ty == ArbValueType::F64 {
+                            *ty = ArbValueType::I64;
                         }
                     }
                     ensure!(
@@ -914,9 +917,9 @@ impl Machine {
         // Rust support
         if let Some(&f) = main_module.exports.get("main") {
             let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ValueType::I32); // argc
-            expected_type.inputs.push(ValueType::I32); // argv
-            expected_type.outputs.push(ValueType::I32); // ret
+            expected_type.inputs.push(ArbValueType::I32); // argc
+            expected_type.inputs.push(ArbValueType::I32); // argv
+            expected_type.outputs.push(ArbValueType::I32); // ret
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [argc, argv] -> [ret]",
@@ -933,8 +936,8 @@ impl Machine {
         // Go support
         if let Some(&f) = main_module.exports.get("run") {
             let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(ValueType::I32); // argc
-            expected_type.inputs.push(ValueType::I32); // argv
+            expected_type.inputs.push(ArbValueType::I32); // argc
+            expected_type.inputs.push(ArbValueType::I32); // argv
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Run function doesn't match expected signature of [argc, argv]",
@@ -1029,10 +1032,9 @@ impl Machine {
                     table.elems.iter().map(TableElement::hash).collect(),
                 );
             }
-            module.tables_merkle = Merkle::new(
-                MerkleType::Table,
-                module.tables.iter().map(Table::hash).collect(),
-            );
+
+            let tables_hashes: Result<_, _> = module.tables.iter().map(Table::hash).collect();
+            module.tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
 
             if always_merkleize {
                 module.memory.cache_merkle_tree();
@@ -1066,7 +1068,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> eyre::Result<()> {
+    pub fn serialize_state<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut f = File::create(path)?;
         let mut writer = BufWriter::new(&mut f);
         let modules = self
@@ -1098,7 +1100,7 @@ impl Machine {
     }
 
     // Requires that this is the same base machine. If this returns an error, it has not mutated `self`.
-    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> eyre::Result<()> {
+    pub fn deserialize_and_replace_state<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let reader = BufReader::new(File::open(path)?);
         let new_state: MachineState = bincode::deserialize_from(reader)?;
         if self.initial_hash != new_state.initial_hash {
@@ -1570,20 +1572,20 @@ impl Machine {
             }
             Opcode::Reinterpret(dest, source) => {
                 let val = match self.value_stack.pop() {
-                    Some(Value::I32(x)) if source == ValueType::I32 => {
-                        assert_eq!(dest, ValueType::F32, "Unsupported reinterpret");
+                    Some(Value::I32(x)) if source == ArbValueType::I32 => {
+                        assert_eq!(dest, ArbValueType::F32, "Unsupported reinterpret");
                         Value::F32(f32::from_bits(x))
                     }
-                    Some(Value::I64(x)) if source == ValueType::I64 => {
-                        assert_eq!(dest, ValueType::F64, "Unsupported reinterpret");
+                    Some(Value::I64(x)) if source == ArbValueType::I64 => {
+                        assert_eq!(dest, ArbValueType::F64, "Unsupported reinterpret");
                         Value::F64(f64::from_bits(x))
                     }
-                    Some(Value::F32(x)) if source == ValueType::F32 => {
-                        assert_eq!(dest, ValueType::I32, "Unsupported reinterpret");
+                    Some(Value::F32(x)) if source == ArbValueType::F32 => {
+                        assert_eq!(dest, ArbValueType::I32, "Unsupported reinterpret");
                         Value::I32(x.to_bits())
                     }
-                    Some(Value::F64(x)) if source == ValueType::F64 => {
-                        assert_eq!(dest, ValueType::I64, "Unsupported reinterpret");
+                    Some(Value::F64(x)) if source == ArbValueType::F64 => {
+                        assert_eq!(dest, ArbValueType::I64, "Unsupported reinterpret");
                         Value::I64(x.to_bits())
                     }
                     v => panic!("Bad reinterpret: val {:?} source {:?}", v, source),
@@ -1726,7 +1728,7 @@ impl Machine {
         }
     }
 
-    fn host_call_hook(&mut self, module_name: &str, name: &str) -> eyre::Result<()> {
+    fn host_call_hook(&mut self, module_name: &str, name: &str) -> Result<()> {
         let module = &mut self.modules[self.pc.module];
         macro_rules! pull_arg {
             ($offset:expr, $t:ident) => {
@@ -2013,7 +2015,11 @@ impl Machine {
                 data.extend(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
                 let table = &module.tables[table_usize];
-                data.extend(table.serialize_for_proof());
+                data.extend(
+                    table
+                        .serialize_for_proof()
+                        .expect("failed to serialize table"),
+                );
                 data.extend(
                     module
                         .tables_merkle
