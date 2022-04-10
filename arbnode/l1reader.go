@@ -198,7 +198,7 @@ func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transactio
 			if err != nil {
 				return nil, err
 			}
-			if callBlockNr.Cmp(receipt.BlockNumber) >= 0 {
+			if callBlockNr.Cmp(receipt.BlockNumber) > 0 {
 				return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
 			}
 		}
