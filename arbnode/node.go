@@ -177,7 +177,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
 	tx, err = rollupCreator.SetTemplates(
@@ -190,7 +190,7 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
 	return rollupCreator, rollupCreatorAddress, nil

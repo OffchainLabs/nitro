@@ -24,6 +24,7 @@ type L1Reader struct {
 	chanMutex           sync.Mutex
 	lastBroadcastHash   common.Hash
 	lastBroadcastHeader *types.Header
+	lastPendingBlockNr  uint64
 }
 
 type L1ReaderConfig struct {
@@ -53,7 +54,7 @@ var TestL1ReaderConfig = L1ReaderConfig{
 	Enable:       true,
 	PollOnly:     false,
 	PollInterval: time.Millisecond * 10,
-	TxTimeout:    time.Second * 4,
+	TxTimeout:    time.Second * 5,
 }
 
 func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
@@ -109,8 +110,26 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 	defer s.chanMutex.Unlock()
 
 	headerHash := h.Hash()
+	broadcastThis := false
 
 	if headerHash != s.lastBroadcastHash {
+		broadcastThis = true
+		s.lastBroadcastHash = headerHash
+		s.lastBroadcastHeader = h
+	}
+
+	pendingBlockNr, err := arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
+	if err == nil && pendingBlockNr.IsUint64() {
+		pendingU64 := pendingBlockNr.Uint64()
+		if pendingU64 > s.lastPendingBlockNr {
+			broadcastThis = true
+			s.lastPendingBlockNr = pendingU64
+		}
+	} else {
+		log.Warn("GetPendingBlockNr: bad result", "err", err, "number", pendingBlockNr)
+	}
+
+	if broadcastThis {
 		for ch := range s.outChannels {
 			select {
 			case ch <- h:
@@ -119,8 +138,6 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 				s.outChannelsBehind[ch] = struct{}{}
 			}
 		}
-		s.lastBroadcastHash = headerHash
-		s.lastBroadcastHeader = h
 	}
 
 	for ch := range s.outChannelsBehind {
