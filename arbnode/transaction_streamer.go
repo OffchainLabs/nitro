@@ -326,10 +326,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		if len(messages) == 0 {
 			break
 		}
-		diff := messages[0].DelayedMessagesRead - prevDelayedRead
-		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
-		}
 		key := dbKey(messagePrefix, uint64(pos))
 		hasMessage, err := s.db.Has(key)
 		if err != nil {
@@ -369,6 +365,15 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		}
 	}
 
+	// Validate delayed message counts of remaining messages
+	for _, msg := range messages {
+		diff := msg.DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
+		}
+		prevDelayedRead = msg.DelayedMessagesRead
+	}
+
 	if reorg {
 		if force {
 			batch := s.db.NewBatch()
@@ -389,15 +394,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 			return nil
 		}
 		return batch.Write()
-	}
-
-	// Validate delayed message counts of remaining messages
-	for _, msg := range messages {
-		diff := msg.DelayedMessagesRead - prevDelayedRead
-		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
-		}
-		prevDelayedRead = msg.DelayedMessagesRead
 	}
 
 	return s.writeMessages(pos, messages, batch)
