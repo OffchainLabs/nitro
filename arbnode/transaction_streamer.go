@@ -286,6 +286,11 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 }
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	var prevDelayedRead uint64
 	if pos > 0 {
 		key := dbKey(messagePrefix, uint64(pos-1))
 		hasPrev, err := s.db.Has(key)
@@ -295,6 +300,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		if !hasPrev {
 			return errors.New("missing previous message")
 		}
+		prevMsg, err := s.GetMessage(pos - 1)
+		if err != nil {
+			return err
+		}
+		prevDelayedRead = prevMsg.DelayedMessagesRead
 	}
 
 	dontReorgAfter := len(messages)
@@ -312,6 +322,10 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 	for {
 		if len(messages) == 0 {
 			break
+		}
+		diff := messages[0].DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
 		}
 		key := dbKey(messagePrefix, uint64(pos))
 		hasMessage, err := s.db.Has(key)
@@ -331,6 +345,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
+			prevDelayedRead = messages[0].DelayedMessagesRead
 			messages = messages[1:]
 			pos++
 			dontReorgAfter--
@@ -371,6 +386,15 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 			return nil
 		}
 		return batch.Write()
+	}
+
+	// Validate delayed message counts of remaining messages
+	for _, msg := range messages {
+		diff := msg.DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
+		}
+		prevDelayedRead = msg.DelayedMessagesRead
 	}
 
 	return s.writeMessages(pos, messages, batch)
