@@ -46,7 +46,7 @@ func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction
 	return client.CallContract(ctx, callMsg, blockNum)
 }
 
-func GetCallMsgBlockNumber(ctx context.Context, client L1Interface) (*big.Int, error) {
+func GetPendingCallBlockNumber(ctx context.Context, client L1Interface) (*big.Int, error) {
 	msg := ethereum.CallMsg{
 		// Pretend to be a contract deployment to execute EVM code without calling a contract.
 		To: nil,
