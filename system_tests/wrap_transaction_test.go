@@ -23,11 +23,11 @@ func GetPendingBlockNumber(ctx context.Context, client arbutil.L1Interface) (*bi
 	// Attempt to get the block number from ArbSys, if it exists
 	arbSys, err := precompilesgen.NewArbSys(common.BigToAddress(big.NewInt(100)), client)
 	if err != nil {
-		return arbutil.GetCallMsgBlockNumber(ctx, client)
+		return arbutil.GetPendingCallBlockNumber(ctx, client)
 	}
 	blockNum, err := arbSys.ArbBlockNumber(&bind.CallOpts{Context: ctx})
 	if err != nil {
-		return arbutil.GetCallMsgBlockNumber(ctx, client)
+		return arbutil.GetPendingCallBlockNumber(ctx, client)
 	}
 	// Arbitrum chains don't have miners, so they're one block behind non-Arbitrum chains.
 	return blockNum.Add(blockNum, common.Big1), nil

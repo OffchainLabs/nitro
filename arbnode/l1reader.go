@@ -39,7 +39,7 @@ var DefaultL1ReaderConfig = L1ReaderConfig{
 	PollOnly:             false,
 	PollInterval:         15 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
-	TxTimeout:            time.Minute,
+	TxTimeout:            5 * time.Minute,
 }
 
 func L1ReaderAddOptions(prefix string, f *flag.FlagSet) {
@@ -194,7 +194,7 @@ func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transactio
 	for {
 		receipt, err := s.client.TransactionReceipt(ctx, txHash)
 		if err == nil {
-			callBlockNr, err := arbutil.GetCallMsgBlockNumber(ctx, s.client)
+			callBlockNr, err := arbutil.GetPendingCallBlockNumber(ctx, s.client)
 			if err != nil {
 				return nil, err
 			}

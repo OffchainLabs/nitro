@@ -78,7 +78,9 @@ func (d *DelayedSequencer) getDelayedMessagesRead() (uint64, error) {
 }
 
 func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.Header) error {
-
+	if d.coordinator != nil && !d.coordinator.CurrentlyChosen() {
+		return nil
+	}
 	if d.waitingForBlock != nil && lastBlockHeader.Number.Cmp(d.waitingForBlock) < 0 {
 		return nil
 	}
