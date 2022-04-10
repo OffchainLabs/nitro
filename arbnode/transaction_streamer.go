@@ -354,7 +354,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 	for _, msg := range messages {
 		diff := msg.DelayedMessagesRead - prevDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, messages[0].DelayedMessagesRead, pos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
 		}
 		prevDelayedRead = msg.DelayedMessagesRead
 	}
