@@ -295,17 +295,9 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 
 	var prevDelayedRead uint64
 	if pos > 0 {
-		key := dbKey(messagePrefix, uint64(pos-1))
-		hasPrev, err := s.db.Has(key)
-		if err != nil {
-			return err
-		}
-		if !hasPrev {
-			return errors.New("missing previous message")
-		}
 		prevMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get previous message: %w", err)
 		}
 		prevDelayedRead = prevMsg.DelayedMessagesRead
 	}
