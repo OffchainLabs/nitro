@@ -506,9 +506,6 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			if config.InboxReader.HardReorg {
-				return nil, errors.New("hard reorg cannot safely be used with sequencer mode enabled")
-			}
 			sequencer, err = NewSequencer(txStreamer, l1client, config.Sequencer)
 		} else {
 			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)

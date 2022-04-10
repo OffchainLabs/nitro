@@ -7,8 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -17,6 +15,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -88,6 +89,9 @@ func main() {
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
+		}
+		if nodeConfig.Node.EnableL1Reader && nodeConfig.Node.InboxReader.HardReorg {
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
