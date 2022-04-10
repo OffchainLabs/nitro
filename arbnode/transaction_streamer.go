@@ -286,15 +286,13 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 }
 
 func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	var prevDelayedRead uint64
 	if pos > 0 {
-		key := dbKey(messagePrefix, uint64(pos-1))
-		hasPrev, err := s.db.Has(key)
+		prevMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get previous message: %w", err)
 		}
-		if !hasPrev {
-			return errors.New("missing previous message")
-		}
+		prevDelayedRead = prevMsg.DelayedMessagesRead
 	}
 
 	dontReorgAfter := len(messages)
@@ -331,6 +329,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
+			prevDelayedRead = messages[0].DelayedMessagesRead
 			messages = messages[1:]
 			pos++
 			dontReorgAfter--
@@ -349,6 +348,15 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageInde
 			}
 			break
 		}
+	}
+
+	// Validate delayed message counts of remaining messages
+	for _, msg := range messages {
+		diff := msg.DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
+		}
+		prevDelayedRead = msg.DelayedMessagesRead
 	}
 
 	if reorg {

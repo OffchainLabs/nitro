@@ -12,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util"
+
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -42,6 +45,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	conf := arbnode.ConfigDefaultL1Test()
+	conf.InboxReader.HardReorg = true
 	if validator {
 		conf.BlockValidator.Enable = true
 		conf.BlockValidator.ConcurrentRunsLimit = 16
