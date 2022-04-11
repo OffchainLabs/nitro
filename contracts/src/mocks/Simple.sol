@@ -10,4 +10,9 @@ contract Simple {
     function increment() external {
         counter++;
     }
+
+    function checkBlockHashes() external view returns (uint256) {
+        require(blockhash(block.number - 1) != blockhash(block.number - 2), "SAME_BLOCK_HASH");
+        return block.number;
+    }
 }

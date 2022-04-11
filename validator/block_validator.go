@@ -46,6 +46,7 @@ type BlockValidator struct {
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
+	validateWasmModuleRoot  common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -89,12 +90,13 @@ type validationStatus struct {
 	Preimages []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService, latestWasmModuleRoot common.Hash) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
 	statelessVal, err := NewStatelessBlockValidator(
+		machineLoader,
 		inboxReader,
 		inbox,
 		streamer,
@@ -112,6 +114,7 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
+		validateWasmModuleRoot:  latestWasmModuleRoot,
 	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
@@ -194,6 +197,11 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 		Entry:  nil,
 	}
 	blockNum := block.NumberU64()
+	// It's fine to separately load and then store as we have the blockMutex acquired
+	_, present := v.validationEntries.Load(blockNum)
+	if present {
+		return
+	}
 	v.validationEntries.Store(blockNum, status)
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
@@ -205,7 +213,8 @@ var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
-	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	machConf := v.MachineLoader.GetConfig()
+	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
 		return err
@@ -218,7 +227,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
-		"ROOTPATH=\"" + StaticNitroMachineConfig.RootPath + "\"\n" +
+		"ROOTPATH=\"" + machConf.RootPath + "\"\n" +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
 		"		ROOTPATH=$2\n" +
@@ -226,12 +235,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + StaticNitroMachineConfig.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + machConf.ProverBinPath)
 	if err != nil {
 		return err
 	}
 
-	for _, module := range StaticNitroMachineConfig.ModulePaths {
+	for _, module := range machConf.ModulePaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err
@@ -308,7 +317,6 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		return
 	}
 	entry := validationStatus.Entry
-	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
@@ -323,7 +331,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg)
+	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, v.validateWasmModuleRoot)
 	if err != nil {
 		log.Error("Validation of block failed", "err", err)
 		return
@@ -374,11 +382,39 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch {
-			return
+			if batchCount == v.globalPosNextSend.BatchNumber+1 {
+				// This is the latest batch.
+				// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
+				return
+			}
+			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
+			if err != nil {
+				log.Error("validator failed to read sequencer message", "err", err)
+				return
+			}
+			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
+			seqBatchEntry = seqMsg
 		}
+		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
 		if !found {
+			block := v.blockchain.GetBlockByNumber(v.nextBlockToValidate)
+			if block == nil {
+				// This block hasn't been created yet.
+				return
+			}
+			prevHeader := v.blockchain.GetHeaderByHash(block.ParentHash())
+			if prevHeader == nil && block.ParentHash() != (common.Hash{}) {
+				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", block.ParentHash())
+				return
+			}
+			msg, err := v.streamer.GetMessage(nextMsg)
+			if err != nil {
+				log.Warn("failed to get message in block validator", "err", err)
+				return
+			}
+			v.NewBlock(block, prevHeader, msg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -386,10 +422,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if atomic.LoadUint32(&validationStatus.Status) == 0 {
+		if atomic.LoadUint32(&validationStatus.Status) == validationStatusUnprepared {
 			return
 		}
-		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "msg", nextMsg, "batch", v.globalPosNextSend.BatchNumber)

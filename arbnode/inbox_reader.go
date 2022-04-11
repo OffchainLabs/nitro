@@ -33,13 +33,13 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks: 4,
 	CheckDelay:  2 * time.Second,
-	HardReorg:   true,
+	HardReorg:   false,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks: 0,
 	CheckDelay:  time.Millisecond * 10,
-	HardReorg:   true,
+	HardReorg:   false,
 }
 
 type InboxReader struct {

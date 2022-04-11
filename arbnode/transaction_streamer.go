@@ -42,6 +42,9 @@ type TransactionStreamer struct {
 	reorgPending       uint32 // atomic, indicates whether the reorgMutex is attempting to be acquired
 	newMessageNotifier chan struct{}
 
+	broadcasterQueuedMessages    []arbstate.MessageWithMetadata
+	broadcasterQueuedMessagesPos arbutil.MessageIndex
+
 	coordinator     *SeqCoordinator
 	broadcastServer *broadcaster.Broadcaster
 	validator       *validator.BlockValidator
@@ -225,6 +228,37 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, force bool, 
 	return s.AddMessagesAndEndBatch(pos, force, messages, nil)
 }
 
+func (s *TransactionStreamer) AddBroadcastMessages(pos arbutil.MessageIndex, messages []arbstate.MessageWithMetadata) error {
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+
+	currentMessageCount, err := s.GetMessageCount()
+	if err != nil {
+		return err
+	}
+
+	if currentMessageCount >= pos {
+		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+		s.broadcasterQueuedMessagesPos = 0
+		return s.addMessagesAndEndBatchImpl(pos, false, messages, nil)
+	} else if len(s.broadcasterQueuedMessages) > 0 && s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == pos {
+		s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
+	} else {
+		if len(s.broadcasterQueuedMessages) > 0 {
+			log.Warn(
+				"broadcaster queue jumped positions",
+				"queuedMessages", len(s.broadcasterQueuedMessages),
+				"expectedNextPos", s.broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+				"gotPos", pos,
+			)
+		}
+		s.broadcasterQueuedMessages = messages
+		s.broadcasterQueuedMessagesPos = pos
+	}
+
+	return nil
+}
+
 // Should only be used for testing or running a local dev node
 func (s *TransactionStreamer) AddFakeInitMessage() error {
 	return s.AddMessages(0, false, []arbstate.MessageWithMetadata{{
@@ -248,15 +282,27 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
+	return s.addMessagesAndEndBatchImpl(pos, force, messages, batch)
+}
+
+func (s *TransactionStreamer) addMessagesAndEndBatchImpl(pos arbutil.MessageIndex, force bool, messages []arbstate.MessageWithMetadata, batch ethdb.Batch) error {
+	var prevDelayedRead uint64
 	if pos > 0 {
-		key := dbKey(messagePrefix, uint64(pos-1))
-		hasPrev, err := s.db.Has(key)
+		prevMsg, err := s.GetMessage(pos - 1)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get previous message: %w", err)
 		}
-		if !hasPrev {
-			return errors.New("missing previous message")
+		prevDelayedRead = prevMsg.DelayedMessagesRead
+	}
+
+	dontReorgAfter := len(messages)
+	afterCount := pos + arbutil.MessageIndex(len(messages))
+	if afterCount >= s.broadcasterQueuedMessagesPos {
+		if int(afterCount-s.broadcasterQueuedMessagesPos) < len(messages) {
+			messages = append(messages, s.broadcasterQueuedMessages[afterCount-s.broadcasterQueuedMessagesPos:]...)
 		}
+		s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
+		s.broadcasterQueuedMessagesPos = 0
 	}
 
 	reorg := false
@@ -283,8 +329,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 		}
 		if bytes.Equal(haveMessage, wantMessage) {
 			// This message is a duplicate, skip it
+			prevDelayedRead = messages[0].DelayedMessagesRead
 			messages = messages[1:]
 			pos++
+			dontReorgAfter--
 		} else {
 			var dbMessageParsed arbstate.MessageWithMetadata
 			err := rlp.DecodeBytes(haveMessage, &dbMessageParsed)
@@ -293,9 +341,22 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, f
 			} else {
 				log.Warn("TransactionStreamer: Reorg detected!", "pos", pos, "got-delayed", messages[0].DelayedMessagesRead, "got-header", messages[0].Message.Header, "db-delayed", dbMessageParsed.DelayedMessagesRead, "db-header", dbMessageParsed.Message.Header)
 			}
-			reorg = true
+			if dontReorgAfter > 0 {
+				reorg = true
+			} else {
+				log.Warn("TransactionStreamer ignoring broadcast client reorg")
+			}
 			break
 		}
+	}
+
+	// Validate delayed message counts of remaining messages
+	for _, msg := range messages {
+		diff := msg.DelayedMessagesRead - prevDelayedRead
+		if diff != 0 && diff != 1 {
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", prevDelayedRead, msg.DelayedMessagesRead, pos)
+		}
+		prevDelayedRead = msg.DelayedMessagesRead
 	}
 
 	if reorg {

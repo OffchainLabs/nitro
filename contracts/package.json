@@ -1,6 +1,6 @@
 {
   "name": "@arbitrum/nitro-contracts",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "Layer 2 precompiles and rollup for Arbitrum Nitro",
   "main": "index.js",
   "author": "Offchain Labs, Inc.",
@@ -24,7 +24,7 @@
     "@openzeppelin/contracts-upgradeable": "4.5.1",
     "hardhat": "^2.6.6"
   },
-  "private": true,
+  "private": false,
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "npm:hardhat-deploy-ethers@^0.3.0-beta.13",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
