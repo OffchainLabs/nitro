@@ -55,6 +55,12 @@ type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
 }
 
+type L1ReaderInterface interface {
+	Client() arbutil.L1Interface
+	Subscribe() (<-chan *types.Header, func())
+	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
+}
+
 type GlobalStatePosition struct {
 	BatchNumber uint64
 	PosInBatch  uint64

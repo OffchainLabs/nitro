@@ -18,11 +18,8 @@ import (
 	"github.com/pkg/errors"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
 )
-
-const txTimeout time.Duration = 5 * time.Minute
 
 type StakerStrategy uint8
 
@@ -108,6 +105,7 @@ type nodeAndHash struct {
 type Staker struct {
 	*L1Validator
 	util.StopWaiter
+	l1Reader                L1ReaderInterface
 	activeChallenge         *ChallengeManager
 	strategy                StakerStrategy
 	baseCallOpts            bind.CallOpts
@@ -135,7 +133,7 @@ func stakerStrategyFromString(s string) (StakerStrategy, error) {
 }
 
 func NewStaker(
-	client arbutil.L1Interface,
+	l1Reader L1ReaderInterface,
 	wallet *ValidatorWallet,
 	callOpts bind.CallOpts,
 	config L1ValidatorConfig,
@@ -150,6 +148,7 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
+	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts, l2Blockchain, inboxTracker, txStreamer, blockValidator)
 	if err != nil {
 		return nil, err
@@ -160,6 +159,7 @@ func NewStaker(
 	}
 	return &Staker{
 		L1Validator:         val,
+		l1Reader:            l1Reader,
 		strategy:            strategy,
 		baseCallOpts:        callOpts,
 		config:              config,
@@ -176,7 +176,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
-			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
+			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
 			err = errors.Wrap(err, "error waiting for tx receipt")
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())

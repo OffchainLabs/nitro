@@ -15,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -70,7 +69,7 @@ func TestUpgradeBlockHash(t *testing.T) {
 
 	tx, err := arbOwner.ScheduleArbOSUpgrade(auth, 2, 0)
 	Require(t, err)
-	_, err = arbutil.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	TransferBalance(t, "Faucet", "Faucet", common.Big0, l2info, l2client, ctx)
@@ -86,7 +85,7 @@ func TestUpgradeBlockHash(t *testing.T) {
 
 	tx, err = arbOwner.RemoveChainOwner(auth, arbosState.TestnetUpgrade2Owner)
 	Require(t, err)
-	_, err = arbutil.WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2client, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	_, err = arbOwner.GetNetworkFeeAccount(&bind.CallOpts{Context: ctx, From: arbosState.TestnetUpgrade2Owner})

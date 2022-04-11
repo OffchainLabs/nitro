@@ -43,7 +43,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
+		_, err := EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
@@ -52,7 +52,7 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	res, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
+	res, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return tx, res
 }
@@ -67,7 +67,7 @@ func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTest
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -76,7 +76,7 @@ func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTest
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	receipt, err := arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
 	return receipt
 }
@@ -152,7 +152,7 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
 	wasmModuleRoot, err := validator.ReadWasmModuleRoot()
 	Require(t, err)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, 5*time.Second)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, arbnode.TestL1ReaderConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -242,7 +242,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 
