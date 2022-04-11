@@ -20,7 +20,7 @@ func TestDeploy(t *testing.T) {
 	defer cancel()
 
 	l2info, _, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
 	_, tx, simple, err := mocksgen.DeploySimple(&auth, client)
@@ -46,7 +46,7 @@ func TestEstimate(t *testing.T) {
 	defer cancel()
 
 	l2info, _, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 	auth.GasMargin = 0 // don't adjust, we want to see if the estimate alone is sufficient
 
 	gasPrice := big.NewInt(2 * params.GWei)
