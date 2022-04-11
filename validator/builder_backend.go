@@ -42,7 +42,7 @@ func NewValidatorTxBuilder(wallet *ValidatorWallet) (*ValidatorTxBuilder, error)
 		builderAuth: fakeAuth,
 		realSender:  wallet.From(),
 		wallet:      wallet,
-		L1Interface: wallet.client,
+		L1Interface: wallet.l1Reader.Client(),
 	}, nil
 }
 
