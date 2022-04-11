@@ -444,7 +444,7 @@ func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.Nod
 	}
 	latestBlock := arbutil.MessageCountToBlockNumber(latestCount, genesis)
 	if int64(block) > latestBlock {
-		return 0, fmt.Errorf("request block %v is after latest block published in batch %v", block, latestBlock)
+		return 0, fmt.Errorf("requested block %v is after latest on-chain block %v published in batch %v", block, latestBlock, high)
 	}
 
 	return validator.FindBatchContainingMessageIndex(arbNode.InboxTracker, pos, high)
