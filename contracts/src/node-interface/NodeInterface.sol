@@ -54,4 +54,11 @@ interface NodeInterface {
      * @return batch The L1 block containing the requested L2 block
      */
     function findBatchContainingBlock(uint64 block) external view returns (uint64 batch);
+
+    /**
+     * @notice Finds the latest validated block (meaning its ancestors have also been validated)
+     * @return block The latest validated block number
+     * @return blockHash The corresponding block hash at the time of validation
+     */
+    function latestValidatedBlockAndHash() external view returns (uint64 block, bytes32 blockHash);
 }

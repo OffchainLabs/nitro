@@ -52,6 +52,7 @@ func ApplyNodeInterface(
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 	outboxMethod := nodeInterface.Methods["constructOutboxProof"]
 	findBatchMethod := nodeInterface.Methods["findBatchContainingBlock"]
+	latestValidatedMethod := nodeInterface.Methods["latestValidatedBlockAndHash"]
 
 	calldata := msg.Data()
 	if len(calldata) < 4 {
@@ -120,7 +121,11 @@ func ApplyNodeInterface(
 		}
 		block, _ := inputs[0].(uint64)
 
-		batch, err := nodeInterfaceFindBatchContainingBlock(ctx, backend, block)
+		node, err := arbNodeFromBackend(backend)
+		if err != nil {
+			return msg, nil, err
+		}
+		batch, err := nodeInterfaceFindBatchContainingBlock(ctx, node, block)
 		if err != nil {
 			return msg, nil, err
 		}
@@ -136,9 +141,48 @@ func ApplyNodeInterface(
 			ScheduledTxes: nil,
 		}
 		return msg, res, err
+	} else if bytes.Equal(latestValidatedMethod.ID, calldata[:4]) {
+		_, err := latestValidatedMethod.Inputs.Unpack(calldata[4:])
+		if err != nil {
+			return msg, nil, err
+		}
+
+		node, err := arbNodeFromBackend(backend)
+		if err != nil {
+			return msg, nil, err
+		}
+		if node.BlockValidator == nil {
+			return msg, nil, errors.New("block validator not enabled")
+		}
+
+		block, hash := node.BlockValidator.LastBlockValidatedAndHash()
+		returnData, err := latestValidatedMethod.Outputs.Pack(block, hash)
+		if err != nil {
+			return msg, nil, fmt.Errorf("internal error: failed to encode outputs: %w", err)
+		}
+
+		res := &ExecutionResult{
+			UsedGas:       0,
+			Err:           nil,
+			ReturnData:    returnData,
+			ScheduledTxes: nil,
+		}
+		return msg, res, err
 	}
 
 	return msg, nil, errors.New("method does not exist in NodeInterface.sol")
+}
+
+func arbNodeFromBackend(backend core.NodeInterfaceBackendAPI) (*Node, error) {
+	apiBackend, ok := backend.(*arbitrum.APIBackend)
+	if !ok {
+		return nil, errors.New("API backend isn't Arbitrum")
+	}
+	arbNode, ok := apiBackend.GetArbitrumNode().(*Node)
+	if !ok {
+		return nil, errors.New("failed to get Arbitrum Node from backend")
+	}
+	return arbNode, nil
 }
 
 var merkleTopic common.Hash
@@ -416,16 +460,8 @@ func nodeInterfaceConstructOutboxProof(
 	return result, nil
 }
 
-func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.NodeInterfaceBackendAPI, block uint64) (uint64, error) {
-	apiBackend, ok := backend.(*arbitrum.APIBackend)
-	if !ok {
-		return 0, errors.New("API backend isn't Arbitrum")
-	}
-	arbNode, ok := apiBackend.GetArbitrumNode().(*Node)
-	if !ok {
-		return 0, errors.New("failed to get Arbitrum Node from backend")
-	}
-	genesis, err := arbNode.TxStreamer.GetGenesisBlockNumber()
+func nodeInterfaceFindBatchContainingBlock(ctx context.Context, node *Node, block uint64) (uint64, error) {
+	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
 	if err != nil {
 		return 0, err
 	}
@@ -433,12 +469,12 @@ func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.Nod
 		return 0, fmt.Errorf("block %v is part of genesis", block)
 	}
 	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
-	high, err := arbNode.InboxTracker.GetBatchCount()
+	high, err := node.InboxTracker.GetBatchCount()
 	if err != nil {
 		return 0, err
 	}
 	high--
-	latestCount, err := arbNode.InboxTracker.GetBatchMessageCount(high)
+	latestCount, err := node.InboxTracker.GetBatchMessageCount(high)
 	if err != nil {
 		return 0, err
 	}
@@ -447,7 +483,7 @@ func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.Nod
 		return 0, fmt.Errorf("requested block %v is after latest on-chain block %v published in batch %v", block, latestBlock, high)
 	}
 
-	return validator.FindBatchContainingMessageIndex(arbNode.InboxTracker, pos, high)
+	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
 }
 
 func init() {
