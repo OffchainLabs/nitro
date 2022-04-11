@@ -49,7 +49,7 @@ jobs:
 
       - name: print module root
         run: |
-          docker run --entrypoint cat localhost:5000/nitro-node:latest target/machine/module_root
+          docker run --entrypoint cat localhost:5000/nitro-node:latest target/machines/latest/module_root
 
       - name: Move cache
         # Temp fix

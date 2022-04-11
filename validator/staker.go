@@ -116,6 +116,8 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
+	nitroMachineLoader      *NitroMachineLoader
+	updatingModuleRoot      bool // If true, the staker is managing the BlockValidator's latestModuleRoot
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -142,6 +144,7 @@ func NewStaker(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
+	nitroMachineLoader *NitroMachineLoader,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
@@ -167,6 +170,8 @@ func NewStaker(
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
+		nitroMachineLoader:  nitroMachineLoader,
+		updatingModuleRoot:  false,
 	}, nil
 }
 
@@ -431,6 +436,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
+			s.nitroMachineLoader,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

@@ -46,6 +46,7 @@ type BlockValidator struct {
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
+	validateWasmModuleRoot  common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -89,12 +90,13 @@ type validationStatus struct {
 	Preimages []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService, latestWasmModuleRoot common.Hash) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
 	statelessVal, err := NewStatelessBlockValidator(
+		machineLoader,
 		inboxReader,
 		inbox,
 		streamer,
@@ -112,6 +114,7 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
+		validateWasmModuleRoot:  latestWasmModuleRoot,
 	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
@@ -210,7 +213,8 @@ var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
-	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+	machConf := v.MachineLoader.GetConfig()
+	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
 		return err
@@ -223,7 +227,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
-		"ROOTPATH=\"" + StaticNitroMachineConfig.RootPath + "\"\n" +
+		"ROOTPATH=\"" + machConf.RootPath + "\"\n" +
 		"if (( $# > 1 )); then\n" +
 		"	if [[ $1 == \"-r\" ]]; then\n" +
 		"		ROOTPATH=$2\n" +
@@ -231,12 +235,12 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + StaticNitroMachineConfig.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + machConf.ProverBinPath)
 	if err != nil {
 		return err
 	}
 
-	for _, module := range StaticNitroMachineConfig.ModulePaths {
+	for _, module := range machConf.ModulePaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err
@@ -327,7 +331,7 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg)
+	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, v.validateWasmModuleRoot)
 	if err != nil {
 		log.Error("Validation of block failed", "err", err)
 		return
