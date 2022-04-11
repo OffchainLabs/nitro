@@ -5,11 +5,12 @@ package arbtest
 
 import (
 	"context"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"math/big"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -69,17 +70,13 @@ func TestTips(t *testing.T) {
 	}
 
 	tip := arbmath.BigMulByUint(arbmath.BigSub(tx.GasPrice(), basefee), receipt.GasUsed)
-	full := arbmath.BigMulByUint(tx.GasPrice(), receipt.GasUsed)
+	full := arbmath.BigMulByUint(basefee, receipt.GasUsed) // was gasprice before upgrade
 	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
-	colors.PrintMint("tip: ", tip, full, networkRevenue)
-
+	colors.PrintMint("price: ", tip, full, networkRevenue)
 	colors.PrintRed("used: ", receipt.GasUsed, basefee)
 
-	if !arbmath.BigEquals(tip, arbmath.BigMulByFrac(networkRevenue, 1, 5)) {
-		Fail(t, "1/5th of the network's revenue should be the tip")
-	}
 	if !arbmath.BigEquals(full, networkRevenue) {
-		Fail(t, "the network didn't receive the tip")
+		Fail(t, "the network didn't receive the funds")
 	}
 }
 
