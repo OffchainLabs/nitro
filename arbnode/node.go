@@ -655,6 +655,7 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 }
 
 func (n *Node) Start(ctx context.Context) error {
+	n.ArbInterface.Initialize(n)
 	err := n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return err

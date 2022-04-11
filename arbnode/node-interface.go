@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -23,10 +24,12 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type Message = types.Message
@@ -48,6 +51,7 @@ func ApplyNodeInterface(
 
 	estimateMethod := nodeInterface.Methods["estimateRetryableTicket"]
 	outboxMethod := nodeInterface.Methods["constructOutboxProof"]
+	findBatchMethod := nodeInterface.Methods["findBatchContainingBlock"]
 
 	calldata := msg.Data()
 	if len(calldata) < 4 {
@@ -95,9 +99,7 @@ func ApplyNodeInterface(
 		// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
 		msg, err := types.NewTx(submitTx).AsMessage(types.NewArbitrumSigner(nil), nil)
 		return msg, nil, err
-	}
-
-	if bytes.Equal(outboxMethod.ID, calldata[:4]) {
+	} else if bytes.Equal(outboxMethod.ID, calldata[:4]) {
 		inputs, err := outboxMethod.Inputs.Unpack(calldata[4:])
 		if err != nil {
 			return msg, nil, err
@@ -109,10 +111,31 @@ func ApplyNodeInterface(
 			return msg, nil, fmt.Errorf("leaf %v is newer than root of size %v", leaf, size)
 		}
 
-		method := nodeInterface.Methods["constructOutboxProof"]
-		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, size, leaf, backend, method)
+		res, err := nodeInterfaceConstructOutboxProof(msg, ctx, size, leaf, backend, outboxMethod)
 		return msg, res, err
+	} else if bytes.Equal(findBatchMethod.ID, calldata[:4]) {
+		inputs, err := findBatchMethod.Inputs.Unpack(calldata[4:])
+		if err != nil {
+			return msg, nil, err
+		}
+		block, _ := inputs[0].(uint64)
 
+		batch, err := nodeInterfaceFindBatchContainingBlock(ctx, backend, block)
+		if err != nil {
+			return msg, nil, err
+		}
+		returnData, err := findBatchMethod.Outputs.Pack(batch)
+		if err != nil {
+			return msg, nil, fmt.Errorf("internal error: failed to encode outputs: %w", err)
+		}
+
+		res := &ExecutionResult{
+			UsedGas:       0,
+			Err:           nil,
+			ReturnData:    returnData,
+			ScheduledTxes: nil,
+		}
+		return msg, res, err
 	}
 
 	return msg, nil, errors.New("method does not exist in NodeInterface.sol")
@@ -391,6 +414,40 @@ func nodeInterfaceConstructOutboxProof(
 		ScheduledTxes: nil,
 	}
 	return result, nil
+}
+
+func nodeInterfaceFindBatchContainingBlock(ctx context.Context, backend core.NodeInterfaceBackendAPI, block uint64) (uint64, error) {
+	apiBackend, ok := backend.(*arbitrum.APIBackend)
+	if !ok {
+		return 0, errors.New("API backend isn't Arbitrum")
+	}
+	arbNode, ok := apiBackend.GetArbitrumNode().(*Node)
+	if !ok {
+		return 0, errors.New("failed to get Arbitrum Node from backend")
+	}
+	genesis, err := arbNode.TxStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	if block <= genesis {
+		return 0, fmt.Errorf("block %v is part of genesis", block)
+	}
+	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
+	high, err := arbNode.InboxTracker.GetBatchCount()
+	if err != nil {
+		return 0, err
+	}
+	high--
+	latestCount, err := arbNode.InboxTracker.GetBatchMessageCount(high)
+	if err != nil {
+		return 0, err
+	}
+	latestBlock := arbutil.MessageCountToBlockNumber(latestCount, genesis)
+	if int64(block) > latestBlock {
+		return 0, fmt.Errorf("request block %v is after latest block published in batch %v", block, latestBlock)
+	}
+
+	return validator.FindBatchContainingMessageIndex(arbNode.InboxTracker, pos, high)
 }
 
 func init() {
