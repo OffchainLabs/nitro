@@ -203,6 +203,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	if wasmModuleRoot == (common.Hash{}) {
+		var err error
+		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
