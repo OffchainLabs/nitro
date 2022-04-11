@@ -250,6 +250,7 @@ func (l *NitroMachineLoader) createMachineImpl(moduleRoot common.Hash, untilHost
 	l.machinesLock.Lock()
 	machine, ok := l.machines[machineRequest]
 	if ok {
+		l.machinesLock.Unlock()
 		return machine, nil
 	}
 	l.machinesLock.Unlock()

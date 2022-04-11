@@ -343,7 +343,7 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
 		if steps > 0 {
-			log.Info("validation", "block", entry.BlockNumber, "steps", steps)
+			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
