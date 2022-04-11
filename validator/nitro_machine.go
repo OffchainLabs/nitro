@@ -183,7 +183,8 @@ func (s *loaderMachineStatus) createHostIoMachineInternal(config NitroMachineCon
 	}
 
 	if machine.IsErrored() {
-		panic("Machine entered errored state while caching execution up to host io")
+		s.err = errors.New("machine entered errored state while caching execution up to host io")
+		return
 	}
 
 	s.machine = machine
