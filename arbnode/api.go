@@ -5,7 +5,9 @@ package arbnode
 
 import (
 	"context"
+
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/validator"
@@ -22,4 +24,14 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 		return false, err
 	}
 	return a.val.ValidateBlock(ctx, header)
+}
+
+func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, error) {
+	block := a.val.LastBlockValidated()
+	return block, nil
+}
+
+func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
+	_, hash := a.val.LastBlockValidatedAndHash()
+	return hash, nil
 }
