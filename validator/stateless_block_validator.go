@@ -58,7 +58,7 @@ type InboxReaderInterface interface {
 
 type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
-	Subscribe() (<-chan *types.Header, func())
+	Subscribe(bool) (<-chan *types.Header, func())
 	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
 }
 

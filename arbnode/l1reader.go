@@ -17,14 +17,17 @@ import (
 
 type L1Reader struct {
 	util.StopWaiter
-	config              L1ReaderConfig
-	client              arbutil.L1Interface
-	outChannels         map[chan<- *types.Header]struct{}
-	outChannelsBehind   map[chan<- *types.Header]struct{}
-	chanMutex           sync.Mutex
-	lastBroadcastHash   common.Hash
-	lastBroadcastHeader *types.Header
-	lastPendingBlockNr  uint64
+	config L1ReaderConfig
+	client arbutil.L1Interface
+
+	chanMutex sync.Mutex
+	// All fields below require the chanMutex
+	outChannels                map[chan<- *types.Header]struct{}
+	outChannelsBehind          map[chan<- *types.Header]struct{}
+	lastBroadcastHash          common.Hash
+	lastBroadcastHeader        *types.Header
+	lastPendingCallBlockNr     uint64
+	requiresPendingCallUpdates int
 }
 
 type L1ReaderConfig struct {
@@ -67,20 +70,30 @@ func NewL1Reader(client arbutil.L1Interface, config L1ReaderConfig) *L1Reader {
 }
 
 // Subscribers are notified when there is a change.
-func (s *L1Reader) Subscribe() (<-chan *types.Header, func()) {
+// Channel could be missing headers and have duplicates.
+// Listening to the channel will make sure listenere is notified when header changes.
+func (s *L1Reader) Subscribe(requireBlockNrUpdates bool) (<-chan *types.Header, func()) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
+	if requireBlockNrUpdates {
+		s.requiresPendingCallUpdates++
+	}
 	result := make(chan *types.Header)
 	outchannel := (chan<- *types.Header)(result)
 	s.outChannelsBehind[outchannel] = struct{}{}
-	unsubscribeFunc := func() { s.unsubscribe(outchannel) }
+	unsubscribeFunc := func() { s.unsubscribe(requireBlockNrUpdates, outchannel) }
 	return result, unsubscribeFunc
 }
 
-func (s *L1Reader) unsubscribe(from chan<- *types.Header) {
+func (s *L1Reader) unsubscribe(requireBlockNrUpdates bool, from chan<- *types.Header) {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
+
+	if requireBlockNrUpdates {
+		s.requiresPendingCallUpdates--
+	}
+
 	if _, ok := s.outChannels[from]; ok {
 		delete(s.outChannels, from)
 		close(from)
@@ -94,6 +107,8 @@ func (s *L1Reader) unsubscribe(from chan<- *types.Header) {
 func (s *L1Reader) closeAll() {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
+
+	s.requiresPendingCallUpdates = 0
 
 	for ch := range s.outChannels {
 		delete(s.outChannels, ch)
@@ -118,15 +133,17 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 		s.lastBroadcastHeader = h
 	}
 
-	pendingBlockNr, err := arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
-	if err == nil && pendingBlockNr.IsUint64() {
-		pendingU64 := pendingBlockNr.Uint64()
-		if pendingU64 > s.lastPendingBlockNr {
-			broadcastThis = true
-			s.lastPendingBlockNr = pendingU64
+	if s.requiresPendingCallUpdates > 0 {
+		pendingCallBlockNr, err := arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
+		if err == nil && pendingCallBlockNr.IsUint64() {
+			pendingU64 := pendingCallBlockNr.Uint64()
+			if pendingU64 > s.lastPendingCallBlockNr {
+				broadcastThis = true
+				s.lastPendingCallBlockNr = pendingU64
+			}
+		} else {
+			log.Warn("GetPendingCallBlockNr: bad result", "err", err, "number", pendingCallBlockNr)
 		}
-	} else {
-		log.Warn("GetPendingBlockNr: bad result", "err", err, "number", pendingBlockNr)
 	}
 
 	if broadcastThis {
@@ -203,19 +220,17 @@ func (s *L1Reader) broadcastLoop(ctx context.Context) {
 }
 
 func (s *L1Reader) WaitForTxApproval(ctxIn context.Context, tx *types.Transaction) (*types.Receipt, error) {
-	headerchan, unsubscribe := s.Subscribe()
+	headerchan, unsubscribe := s.Subscribe(true)
 	defer unsubscribe()
 	ctx, cancel := context.WithTimeout(ctxIn, s.config.TxTimeout)
 	defer cancel()
 	txHash := tx.Hash()
 	for {
 		receipt, err := s.client.TransactionReceipt(ctx, txHash)
-		if err == nil {
-			callBlockNr, err := arbutil.GetPendingCallBlockNumber(ctx, s.client)
-			if err != nil {
-				return nil, err
-			}
-			if callBlockNr.Cmp(receipt.BlockNumber) > 0 {
+		if err == nil && receipt.BlockNumber.IsUint64() {
+			receiptBlockNr := receipt.BlockNumber.Uint64()
+			callBlockNr := s.LastPendingCallBlockNr()
+			if callBlockNr > receiptBlockNr {
 				return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
 			}
 		}
@@ -238,6 +253,20 @@ func (s *L1Reader) LastHeader(ctx context.Context) (*types.Header, error) {
 		return storedHeader, nil
 	}
 	return s.client.HeaderByNumber(ctx, nil)
+}
+
+func (s *L1Reader) UpdatingPendingCallBlockNr() bool {
+	s.chanMutex.Lock()
+	defer s.chanMutex.Unlock()
+	return s.requiresPendingCallUpdates > 0
+}
+
+// blocknumber used by pending calls.
+// only updated if UpdatingPendingCallBlockNr returns true
+func (s *L1Reader) LastPendingCallBlockNr() uint64 {
+	s.chanMutex.Lock()
+	defer s.chanMutex.Unlock()
+	return s.lastPendingCallBlockNr
 }
 
 func (s *L1Reader) Client() arbutil.L1Interface {
