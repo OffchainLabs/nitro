@@ -123,7 +123,10 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		config:                  config,
 		pendingWasmModuleRoot:   pendingWasmModuleRoot,
 	}
-	validator.SetCurrentWasmModuleRoot(currentWasmModuleRoot)
+	err = validator.SetCurrentWasmModuleRoot(currentWasmModuleRoot)
+	if err != nil {
+		return nil, err
+	}
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
 		return nil, err
