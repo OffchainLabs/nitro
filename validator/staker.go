@@ -118,7 +118,7 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
-	nitroMachineConfig      NitroMachineConfig
+	nitroMachineLoader      *NitroMachineLoader
 	updatingModuleRoot      bool // If true, the staker is managing the BlockValidator's latestModuleRoot
 }
 
@@ -146,7 +146,7 @@ func NewStaker(
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
-	nitroMachineConfig NitroMachineConfig,
+	nitroMachineLoader *NitroMachineLoader,
 	validatorUtilsAddress common.Address,
 ) (*Staker, error) {
 	strategy, err := stakerStrategyFromString(config.Strategy)
@@ -170,46 +170,15 @@ func NewStaker(
 		lastActCalledBlock:  nil,
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
-		nitroMachineConfig:  nitroMachineConfig,
+		nitroMachineLoader:  nitroMachineLoader,
 		updatingModuleRoot:  false,
 	}, nil
-}
-
-func (s *Staker) Initialize(ctx context.Context) error {
-	err := s.L1Validator.Initialize(ctx)
-	if err != nil {
-		return err
-	}
-	return s.updateLatestWasmRoot(ctx)
-}
-
-func (s *Staker) updateLatestWasmRoot(ctx context.Context) error {
-	if s.blockValidator == nil {
-		return nil
-	}
-	if !s.updatingModuleRoot {
-		if s.blockValidator.GetWasmModuleRoot() == (common.Hash{}) {
-			s.updatingModuleRoot = true
-		} else {
-			return nil
-		}
-	}
-	moduleRoot, err := s.rollup.WasmModuleRoot(s.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
-	s.blockValidator.SetWasmModuleRoot(moduleRoot)
-	return nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		err := s.updateLatestWasmRoot(ctx)
-		if err != nil {
-			log.Warn("error updating latest wasm module root", "err", err)
-		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, s.client, arbTx, txTimeout)
@@ -456,12 +425,6 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			return err
 		}
 
-		var machineLoader *NitroMachineLoader
-		if s.blockValidator != nil {
-			machineLoader = s.blockValidator.MachineLoader
-		} else {
-			machineLoader = NewNitroMachineLoader(s.nitroMachineConfig)
-		}
 		newChallengeManager, err := NewChallengeManager(
 			ctx,
 			s.builder,
@@ -473,7 +436,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			s.inboxReader,
 			s.inboxTracker,
 			s.txStreamer,
-			machineLoader,
+			s.nitroMachineLoader,
 			latestConfirmedCreated,
 			s.config.TargetMachineCount,
 			s.config.ConfirmationBlocks,

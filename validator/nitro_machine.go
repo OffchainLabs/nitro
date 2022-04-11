@@ -55,8 +55,8 @@ func (c NitroMachineConfig) getMachinePath(moduleRoot common.Hash) string {
 	}
 }
 
-func (c NitroMachineConfig) ReadWasmModuleRoot(requestingModuleRoot common.Hash) (common.Hash, error) {
-	fileToRead := filepath.Join(c.getMachinePath(requestingModuleRoot), "module_root")
+func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
+	fileToRead := filepath.Join(c.getMachinePath(common.Hash{}), "module_root")
 	fileBytes, err := ioutil.ReadFile(fileToRead)
 	if err != nil {
 		return common.Hash{}, err
@@ -66,10 +66,6 @@ func (c NitroMachineConfig) ReadWasmModuleRoot(requestingModuleRoot common.Hash)
 		s = s[0:64]
 	}
 	return common.HexToHash(s), nil
-}
-
-func (c NitroMachineConfig) ReadLatestWasmModuleRoot() (common.Hash, error) {
-	return c.ReadWasmModuleRoot(common.Hash{})
 }
 
 type loaderMachineStatus struct {
@@ -82,7 +78,7 @@ func (s *loaderMachineStatus) signalReady() {
 	close(s.chanSignal)
 }
 
-func (s *loaderMachineStatus) createZeroStepMachineInternal(config NitroMachineConfig, moduleRoot common.Hash) {
+func (s *loaderMachineStatus) createZeroStepMachineInternal(config NitroMachineConfig, moduleRoot common.Hash, realModuleRoot common.Hash) {
 	defer s.signalReady()
 	machinePath := config.getMachinePath(moduleRoot)
 	moduleList := []string{}
@@ -91,16 +87,22 @@ func (s *loaderMachineStatus) createZeroStepMachineInternal(config NitroMachineC
 	}
 	binPath := filepath.Join(machinePath, config.ProverBinPath)
 	cModuleList := CreateCStringList(moduleList)
+	defer FreeCStringList(cModuleList, len(moduleList))
 	cBinPath := C.CString(binPath)
+	defer C.free(unsafe.Pointer(cBinPath))
 	log.Info("creating nitro machine", "binpath", binPath, "moduleList", moduleList)
 	baseMachine := C.arbitrator_load_machine(cBinPath, cModuleList, C.intptr_t(len(moduleList)))
 	if baseMachine == nil {
 		s.err = errors.New("failed to create base machine")
 		return
 	}
-	FreeCStringList(cModuleList, len(moduleList))
-	C.free(unsafe.Pointer(cBinPath))
-	s.machine = machineFromPointer(baseMachine)
+	nitroMachine := machineFromPointer(baseMachine)
+	machineModuleRoot := nitroMachine.GetModuleRoot()
+	if machineModuleRoot != realModuleRoot {
+		s.err = fmt.Errorf("attempting to load module root %v got machine with module root %v", realModuleRoot, machineModuleRoot)
+		return
+	}
+	s.machine = nitroMachine
 	s.machine.Freeze()
 }
 
@@ -215,7 +217,6 @@ type NitroMachineLoader struct {
 	machines     map[nitroMachineRequest]*loaderMachineStatus
 }
 
-// If requestedModuleRoot is zero, the latest machine will be loaded
 func NewNitroMachineLoader(config NitroMachineConfig) *NitroMachineLoader {
 	return &NitroMachineLoader{
 		config:   config,
@@ -252,33 +253,39 @@ func (l *NitroMachineLoader) createMachineImpl(moduleRoot common.Hash, untilHost
 	}
 	l.machinesLock.Unlock()
 
-	realModuleRoot, err := l.config.ReadWasmModuleRoot(moduleRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		// Attempt to load the latest module root instead (maybe it's what we're looking for).
-		originalErr := err
-		realModuleRoot, err = l.config.ReadWasmModuleRoot(common.Hash{})
+	// Attempt to resolve any alias to the module root (due to the latest machine being separate).
+	realModuleRoot := moduleRoot
+	if moduleRoot == (common.Hash{}) {
+		var err error
+		realModuleRoot, err = l.config.ReadLatestWasmModuleRoot()
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Be nice and return the original error, as it's clarifies what went wrong.
-				return nil, originalErr
-			} else {
-				return nil, err
+			return nil, err
+		}
+	} else {
+		_, err := os.Stat(filepath.Join(l.config.getMachinePath(moduleRoot), l.config.ProverBinPath))
+		if errors.Is(err, os.ErrNotExist) {
+			// Attempt to load the latest module root instead (maybe it's what we're looking for).
+			originalErr := err
+			realModuleRoot, err = l.config.ReadLatestWasmModuleRoot()
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					// Be nice and return the original error, as it's clarifies what went wrong.
+					return nil, originalErr
+				} else {
+					return nil, err
+				}
 			}
+			if realModuleRoot == moduleRoot {
+				// The latest machine is the requested one! Pretend we're loading the latest machine instead.
+				moduleRoot = common.Hash{}
+				machineRequest.moduleRoot = common.Hash{}
+			} else {
+				// The latest machine is different, so return the original error loading this machine.
+				return nil, originalErr
+			}
+		} else if err != nil {
+			return nil, err
 		}
-		if realModuleRoot == moduleRoot {
-			// The latest machine is the requested one! Pretend we're loading the latest machine instead.
-			moduleRoot = common.Hash{}
-			machineRequest.moduleRoot = common.Hash{}
-		} else {
-			// The latest machine is different, so return the original error loading this machine.
-			return nil, originalErr
-		}
-	} else if err != nil {
-		return nil, err
-	}
-
-	if moduleRoot != (common.Hash{}) && realModuleRoot != moduleRoot {
-		return nil, fmt.Errorf("machine for module root %v specifies module root of %v", moduleRoot, realModuleRoot)
 	}
 
 	l.machinesLock.Lock()
@@ -312,7 +319,7 @@ func (l *NitroMachineLoader) createMachineImpl(moduleRoot common.Hash, untilHost
 					machine.createHostIoMachineInternal(l.config, moduleRoot, zeroStep)
 				}
 			} else {
-				machine.createZeroStepMachineInternal(l.config, moduleRoot)
+				machine.createZeroStepMachineInternal(l.config, moduleRoot, realModuleRoot)
 			}
 		}()
 	}

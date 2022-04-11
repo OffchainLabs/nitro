@@ -121,6 +121,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	} else {
 		valConfig.Strategy = "MakeNodes"
 	}
+	nitroMachineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
 	stakerA, err := validator.NewStaker(
 		l1client,
 		valWalletA,
@@ -131,7 +132,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
 		l2nodeA.BlockValidator,
-		validator.DefaultNitroMachineConfig,
+		nitroMachineLoader,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)
@@ -151,7 +152,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		l2nodeB.BlockValidator,
-		validator.DefaultNitroMachineConfig,
+		nitroMachineLoader,
 		l2nodeA.DeployInfo.ValidatorUtils,
 	)
 	Require(t, err)

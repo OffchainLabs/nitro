@@ -586,11 +586,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	if config.Wasm.CachePath != "" {
 		nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
 	}
+	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		machineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, machineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.ModuleRoot))
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.ModuleRoot))
 		if err != nil {
 			return nil, err
 		}
@@ -603,7 +603,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineConfig, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -701,7 +701,6 @@ func (n *Node) Start(ctx context.Context) error {
 		n.BatchPoster.Start(ctx)
 	}
 	if n.Staker != nil {
-		// This needs to run before BlockValidator Start
 		err = n.Staker.Initialize(ctx)
 		if err != nil {
 			return err
