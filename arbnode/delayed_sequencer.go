@@ -154,7 +154,7 @@ func (d *DelayedSequencer) update(ctx context.Context, lastBlockHeader *types.He
 }
 
 func (d *DelayedSequencer) run(ctx context.Context) {
-	headerChan, cancel := d.l1Reader.Subscribe()
+	headerChan, cancel := d.l1Reader.Subscribe(false)
 	defer cancel()
 
 	for {
