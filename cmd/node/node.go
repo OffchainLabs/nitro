@@ -87,6 +87,9 @@ func main() {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
 		}
+		if nodeConfig.Node.EnableL1Reader && nodeConfig.Node.InboxReader.HardReorg {
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
+		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
 		panic("forwarding-target unset, and not sequencer (can set to \"null\" to disable forwarding)")

@@ -7,7 +7,6 @@ pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
 
 import "../rollup/IRollupCore.sol";
-import "../rollup/IRollupLogic.sol";
 import "../challenge/IChallengeManager.sol";
 
 import {NO_CHAL_INDEX} from "../libraries/Constants.sol";
