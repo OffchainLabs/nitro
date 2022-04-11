@@ -108,6 +108,8 @@ func (s *L1Reader) closeAll() {
 	s.chanMutex.Lock()
 	defer s.chanMutex.Unlock()
 
+	s.requiresPendingCallUpdates = 0
+
 	for ch := range s.outChannels {
 		delete(s.outChannels, ch)
 		close(ch)
@@ -131,7 +133,7 @@ func (s *L1Reader) possiblyBroadcast(h *types.Header) {
 		s.lastBroadcastHeader = h
 	}
 
-	if s.UpdatingPendingCallBlockNr() {
+	if s.requiresPendingCallUpdates > 0 {
 		pendingCallBlockNr, err := arbutil.GetPendingCallBlockNumber(s.GetContext(), s.client)
 		if err == nil && pendingCallBlockNr.IsUint64() {
 			pendingU64 := pendingCallBlockNr.Uint64()
