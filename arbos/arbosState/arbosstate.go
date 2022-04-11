@@ -5,11 +5,13 @@ package arbosState
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/blockhash"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/blsTable"
@@ -182,13 +184,18 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 		return nil, ErrAlreadyInitialized
 	}
 
+	arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
+	if arbosVersion != 1 && arbosVersion != 2 {
+		return nil, fmt.Errorf("cannot initialize to unsupported ArbOS version %v", arbosVersion)
+	}
+
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
 	for _, precompile := range getArbitrumOnlyPrecompiles(chainConfig) {
 		stateDB.SetCode(precompile, []byte{byte(vm.INVALID)})
 	}
 
-	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
+	_ = sto.SetUint64ByUint64(uint64(versionOffset), arbosVersion)
 	_ = sto.SetUint64ByUint64(uint64(upgradeVersionOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(upgradeTimestampOffset), 0)
 	_ = sto.SetUint64ByUint64(uint64(networkFeeAccountOffset), 0) // the 0 address until an owner sets it
@@ -210,20 +217,38 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
 
-	_ = sto.SetUint64ByUint64(uint64(versionOffset), 1)
-
 	return OpenArbosState(stateDB, burner)
 }
 
-func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64) {
+var TestnetUpgrade2Owner = common.HexToAddress("0x40Fd01b32e97803f12693517776826a71e2B8D5f")
+
+func (state *ArbosState) UpgradeArbosVersionIfNecessary(currentTimestamp uint64, chainConfig *params.ChainConfig) {
 	upgradeTo, err := state.upgradeVersion.Get()
 	state.Restrict(err)
 	flagday, _ := state.upgradeTimestamp.Get()
 	if upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
-		// code to upgrade to future versions will be put here
-		// for now, no upgrades are enabled
-		panic("Unable to perform requested ArbOS upgrade")
+		for upgradeTo > state.arbosVersion && currentTimestamp >= flagday {
+			if state.arbosVersion == 1 {
+				// Upgrade version 1->2 adds a chain owner for the testnet
+				if arbmath.BigEquals(chainConfig.ChainID, params.ArbitrumTestnetChainConfig().ChainID) {
+					state.Restrict(state.chainOwners.Add(TestnetUpgrade2Owner))
+				}
+			} else {
+				// code to upgrade to future versions will be put here
+				panic("Unable to perform requested ArbOS upgrade")
+			}
+			state.arbosVersion++
+		}
+		state.Restrict(state.backingStorage.SetUint64ByUint64(uint64(versionOffset), state.arbosVersion))
 	}
+}
+
+func (state *ArbosState) ScheduleArbOSUpgrade(newVersion uint64, timestamp uint64) error {
+	err := state.upgradeVersion.Set(newVersion)
+	if err != nil {
+		return err
+	}
+	return state.upgradeTimestamp.Set(timestamp)
 }
 
 func (state *ArbosState) BackingStorage() *storage.Storage {

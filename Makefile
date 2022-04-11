@@ -31,11 +31,11 @@ done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
 replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSignatures cmd/replay
 
-replay_wasm=$(output_root)/machine/replay.wasm
+replay_wasm=$(output_root)/machines/latest/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs_nogo=$(output_root)/machine/wasi_stub.wasm $(output_root)/machine/host_io.wasm $(output_root)/machine/soft-float.wasm
-arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/machine/go_stub.wasm $(output_root)/machine/brotli.wasm
+arbitrator_wasm_libs_nogo=$(output_root)/machines/latest/wasi_stub.wasm $(output_root)/machines/latest/host_io.wasm $(output_root)/machines/latest/soft-float.wasm
+arbitrator_wasm_libs=$(arbitrator_wasm_libs_nogo) $(output_root)/machines/latest/go_stub.wasm $(output_root)/machines/latest/brotli.wasm
 arbitrator_prover_lib=$(output_root)/lib/libprover.a
 arbitrator_prover_bin=$(output_root)/bin/prover
 
@@ -80,7 +80,7 @@ build-prover-lib: $(arbitrator_prover_lib)
 
 build-prover-bin: $(arbitrator_prover_bin)
 
-build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machine/module_root
+build-replay-env: $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm) $(output_root)/machines/latest/module_root
 
 build-wasm-libs: $(arbitrator_wasm_libs)
 
@@ -183,8 +183,8 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) arbitrator/prover/src/lib.rs ar
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator && cbindgen --config cbindgen.toml --crate prover --output ../$(arbitrator_generated_header)
 
-$(output_root)/machine/wasi_stub.wasm: $(DEP_PREDICATE) $(arbitrator_wasm_wasistub_files)
-	mkdir -p $(output_root)/machine
+$(output_root)/machines/latest/wasi_stub.wasm: $(DEP_PREDICATE) $(arbitrator_wasm_wasistub_files)
+	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-unknown-unknown --package wasi-stub
 	install arbitrator/wasm-libraries/target/wasm32-unknown-unknown/release/wasi_stub.wasm $@
 
@@ -203,11 +203,11 @@ arbitrator/wasm-libraries/soft-float/bindings32.o: $(DEP_PREDICATE) arbitrator/w
 arbitrator/wasm-libraries/soft-float/bindings64.o: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/bindings64.c
 	clang arbitrator/wasm-libraries/soft-float/bindings64.c --sysroot $(WASI_SYSROOT) -I arbitrator/wasm-libraries/soft-float/SoftFloat/source/include -target wasm32-wasi -Wconversion -c -o $@
 
-$(output_root)/machine/soft-float.wasm: $(DEP_PREDICATE) \
+$(output_root)/machines/latest/soft-float.wasm: $(DEP_PREDICATE) \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
 		arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a
-	mkdir -p $(output_root)/machine
+	mkdir -p $(output_root)/machines/latest
 	wasm-ld \
 		arbitrator/wasm-libraries/soft-float/bindings32.o \
 		arbitrator/wasm-libraries/soft-float/bindings64.o \
@@ -272,29 +272,29 @@ $(output_root)/machine/soft-float.wasm: $(DEP_PREDICATE) \
 		--export wavm__f32_demote_f64 \
 		--export wavm__f64_promote_f32
 
-$(output_root)/machine/go_stub.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
-	mkdir -p $(output_root)/machine
+$(output_root)/machines/latest/go_stub.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/go-stub/src/*/*)
+	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package go-stub
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/go_stub.wasm $@
 
-$(output_root)/machine/host_io.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
-	mkdir -p $(output_root)/machine
+$(output_root)/machines/latest/host_io.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/host-io/src/*/*)
+	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package host-io
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/host_io.wasm $@
 
-$(output_root)/machine/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm
-	mkdir -p $(output_root)/machine
+$(output_root)/machines/latest/brotli.wasm: $(DEP_PREDICATE) $(wildcard arbitrator/wasm-libraries/brotli/src/*/*) .make/cbrotli-wasm
+	mkdir -p $(output_root)/machines/latest
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
 	install arbitrator/wasm-libraries/target/wasm32-wasi/release/brotli.wasm $@
 
-$(output_root)/machine/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
-	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machine/soft-float.wasm -l $(output_root)/machine/wasi_stub.wasm -l $(output_root)/machine/go_stub.wasm -l $(output_root)/machine/host_io.wasm -l $(output_root)/machine/brotli.wasm  > $@
+$(output_root)/machines/latest/module_root: $(DEP_PREDICATE) $(arbitrator_prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
+	$(arbitrator_prover_bin) $(replay_wasm) --output-module-root -l $(output_root)/machines/latest/soft-float.wasm -l $(output_root)/machines/latest/wasi_stub.wasm -l $(output_root)/machines/latest/go_stub.wasm -l $(output_root)/machines/latest/host_io.wasm -l $(output_root)/machines/latest/brotli.wasm  > $@
 
 arbitrator/prover/test-cases/%.wasm: arbitrator/prover/test-cases/%.wat
 	wat2wasm $< -o $@
 
-contracts/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machine/soft-float.wasm
-	$(arbitrator_prover_bin) $< -l $(output_root)/machine/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
+contracts/test/prover/proofs/float%.json: arbitrator/prover/test-cases/float%.wasm $(arbitrator_prover_bin) $(output_root)/machines/latest/soft-float.wasm
+	$(arbitrator_prover_bin) $< -l $(output_root)/machines/latest/soft-float.wasm -o $@ -b --allow-hostapi --require-success --always-merkleize
 
 contracts/test/prover/proofs/rust-%.json: arbitrator/prover/test-cases/rust/target/wasm32-wasi/release/%.wasm $(arbitrator_prover_bin) $(arbitrator_wasm_libs_nogo)
 	$(arbitrator_prover_bin) $< $(arbitrator_wasm_lib_flags_nogo) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox arbitrator/prover/test-cases/rust/data/msg0.bin --inbox arbitrator/prover/test-cases/rust/data/msg1.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg0.bin --delayed-inbox arbitrator/prover/test-cases/rust/data/msg1.bin --preimages arbitrator/prover/test-cases/rust/data/preimages.bin

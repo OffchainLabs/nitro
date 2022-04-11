@@ -440,13 +440,26 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	return state.Blockhashes().NextBlockNumber()
 }
 
-func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
 	tracingInfo := util.NewTracingInfo(p.evm, p.msg.From(), arbosAddress, util.TracingDuringEVM)
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, tracingInfo, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlocKNumber)
+	if state.FormatVersion() < 2 {
+		// Support the old broken behavior
+		var lower, upper uint64
+		upper = p.evm.Context.BlockNumber.Uint64()
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if l1BlockNumber < lower || l1BlockNumber >= upper {
+			return common.Hash{}, nil
+		}
+	}
+	return state.Blockhashes().BlockHash(l1BlockNumber)
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {

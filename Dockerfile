@@ -120,7 +120,7 @@ COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM scratch as machine-export
-COPY --from=module-root-calc /workspace/target/machine/ /machine
+COPY --from=module-root-calc /workspace/target/machines/ /machines
 
 
 FROM golang:1.17-bullseye as node-builder

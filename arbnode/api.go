@@ -5,7 +5,9 @@ package arbnode
 
 import (
 	"context"
+
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/validator"
@@ -16,10 +18,14 @@ type BlockValidatorAPI struct {
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash) (bool, error) {
+func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
 	}
-	return a.val.ValidateBlock(ctx, header)
+	var moduleRoot common.Hash
+	if moduleRootOptional != nil {
+		moduleRoot = *moduleRootOptional
+	}
+	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
