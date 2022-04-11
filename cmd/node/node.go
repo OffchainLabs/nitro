@@ -7,21 +7,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
+
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -40,7 +39,6 @@ import (
 	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/validator"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -76,18 +74,21 @@ func main() {
 	log.Info("Running Arbitrum nitro node")
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
-		nodeConfig.Node.EnableL1Reader = false
+		nodeConfig.Node.L1Reader.Enable = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
-		nodeConfig.Node.EnableL1Reader = true
+		nodeConfig.Node.L1Reader.Enable = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
+		}
+		if nodeConfig.Node.L1Reader.Enable && nodeConfig.Node.InboxReader.HardReorg {
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
@@ -106,60 +107,20 @@ func main() {
 		panic(err.Error())
 	}
 
-	if nodeConfig.Node.Wasm.RootPath != "" {
-		validator.StaticNitroMachineConfig.RootPath = nodeConfig.Node.Wasm.RootPath
-	} else {
-		execfile, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-		targetDir := filepath.Dir(filepath.Dir(execfile))
-		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
-	}
-
-	var wasmModuleRoot common.Hash
-	if nodeConfig.Node.Wasm.ModuleRoot != "" {
-		wasmModuleRoot = common.HexToHash(nodeConfig.Node.Wasm.ModuleRoot)
-	} else {
-		wasmModuleRoot, err = validator.ReadWasmModuleRoot()
-		if err != nil {
-			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
-				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
-			} else {
-				wasmModuleRoot = common.Hash{}
-			}
-		}
-	}
-
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.EnableL1Reader {
+		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			if nodeConfig.Node.Wasm.CachePath != "" {
-				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
-			}
-			go func() {
-				expectedRoot := wasmModuleRoot
-				foundRoot, err := validator.GetInitialModuleRoot(ctx)
-				if err != nil {
-					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
-				}
-				if foundRoot != expectedRoot {
-					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
-				} else {
-					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
-				}
-			}()
 		}
 	}
 
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	if nodeConfig.Node.EnableL1Reader {
+	if nodeConfig.Node.L1Reader.Enable {
 		var err error
 
 		l1client, err = ethclient.Dial(nodeConfig.L1.URL)

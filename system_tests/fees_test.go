@@ -13,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -41,7 +40,7 @@ func TestTips(t *testing.T) {
 	Require(t, err, "could not deploy ArbAggregator contract")
 	tx, err := arbAggregator.SetPreferredAggregator(&auth, aggregator)
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	basefee := GetBaseFee(t, l2client, ctx)
@@ -97,7 +96,7 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 	Require(t, err, "could not deploy ArbAggregator contract")
 	tx, err := arbAggregator.SetPreferredAggregator(&auth, testhelpers.RandomAddress())
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	// get the network fee account
