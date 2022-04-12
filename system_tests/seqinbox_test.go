@@ -55,7 +55,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 	seqInbox, err := bridgegen.NewSequencerInbox(l1Info.GetAddress("SequencerInbox"), l1Client)
 	Require(t, err)
-	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer")
+	seqOpts := l1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
 	ownerAddress := l2Info.GetAddress("Owner")
 	var startL2BlockNumber uint64 = 0

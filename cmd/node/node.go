@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -22,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -41,7 +39,6 @@ import (
 	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/validator"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -110,31 +107,6 @@ func main() {
 		panic(err.Error())
 	}
 
-	if nodeConfig.Node.Wasm.RootPath != "" {
-		validator.StaticNitroMachineConfig.RootPath = nodeConfig.Node.Wasm.RootPath
-	} else {
-		execfile, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-		targetDir := filepath.Dir(filepath.Dir(execfile))
-		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
-	}
-
-	var wasmModuleRoot common.Hash
-	if nodeConfig.Node.Wasm.ModuleRoot != "" {
-		wasmModuleRoot = common.HexToHash(nodeConfig.Node.Wasm.ModuleRoot)
-	} else {
-		wasmModuleRoot, err = validator.ReadWasmModuleRoot()
-		if err != nil {
-			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
-				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
-			} else {
-				wasmModuleRoot = common.Hash{}
-			}
-		}
-	}
-
 	if nodeConfig.Node.Validator.Enable {
 		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
@@ -142,21 +114,6 @@ func main() {
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			if nodeConfig.Node.Wasm.CachePath != "" {
-				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
-			}
-			go func() {
-				expectedRoot := wasmModuleRoot
-				foundRoot, err := validator.GetInitialModuleRoot(ctx)
-				if err != nil {
-					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
-				}
-				if foundRoot != expectedRoot {
-					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
-				} else {
-					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
-				}
-			}()
 		}
 	}
 

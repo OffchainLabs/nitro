@@ -303,7 +303,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			return errors.New("sequencer not initialized")
 		}
 
-		headerChan, cancel := s.l1Reader.Subscribe()
+		headerChan, cancel := s.l1Reader.Subscribe(false)
 
 		s.LaunchThread(func(ctx context.Context) {
 			defer cancel()

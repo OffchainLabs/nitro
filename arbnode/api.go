@@ -18,12 +18,16 @@ type BlockValidatorAPI struct {
 	blockchain *core.BlockChain
 }
 
-func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash) (bool, error) {
+func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.BlockNumberOrHash, moduleRootOptional *common.Hash) (bool, error) {
 	header, err := arbitrum.HeaderByNumberOrHash(a.blockchain, blockNum)
 	if err != nil {
 		return false, err
 	}
-	return a.val.ValidateBlock(ctx, header)
+	var moduleRoot common.Hash
+	if moduleRootOptional != nil {
+		moduleRoot = *moduleRootOptional
+	}
+	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, error) {
