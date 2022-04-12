@@ -75,17 +75,17 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 	}
 
-	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner")
+	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	l1info.GenerateAccount("ValidatorA")
 	TransferBalance(t, "Faucet", "ValidatorA", balance, l1info, l1client, ctx)
-	l1authA := l1info.GetDefaultTransactOpts("ValidatorA")
+	l1authA := l1info.GetDefaultTransactOpts("ValidatorA", ctx)
 
 	l1info.GenerateAccount("ValidatorB")
 	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
-	l1authB := l1info.GetDefaultTransactOpts("ValidatorB")
+	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
 
 	valWalletAddrA, err := validator.CreateValidatorWallet(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader)
 	Require(t, err)
