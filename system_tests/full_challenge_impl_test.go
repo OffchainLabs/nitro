@@ -197,10 +197,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	conf.InboxReader.CheckDelay = time.Second
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
-	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
-	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
-	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
-	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger")
+	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
+	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
+	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter", ctx)
+	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger", ctx)
 	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
