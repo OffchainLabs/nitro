@@ -28,7 +28,7 @@ func TestBloom(t *testing.T) {
 
 	l2info.GenerateAccount("User2")
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx) //Owner
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
 	ownerTxOpts.Context = ctx
 	_, tx, simple, err := mocksgen.DeploySimple(&ownerTxOpts, client)
 	Require(t, err)

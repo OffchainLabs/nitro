@@ -770,7 +770,9 @@ func (n *Node) StopAndWait() {
 	}
 	n.TxStreamer.StopAndWait()
 	n.ArbInterface.BlockChain().Stop()
-	n.Backend.Stop()
+	if err := n.Backend.Stop(); err != nil {
+		log.Error("backend stop", "err", err)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {
