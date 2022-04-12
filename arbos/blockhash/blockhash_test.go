@@ -75,9 +75,9 @@ func TestBlockhash(t *testing.T) {
 
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.RequireImpl(t, err, printables...)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

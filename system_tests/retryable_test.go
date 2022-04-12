@@ -67,6 +67,18 @@ func retryableSetup(t *testing.T) (
 	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx)
 
 	teardown := func() {
+
+		// check the integrity of the RPC
+		blockNum, err := l2client.BlockNumber(ctx)
+		Require(t, err, "failed to get L2 block number")
+		for number := uint64(0); number < blockNum; number++ {
+			block, err := l2client.BlockByNumber(ctx, arbmath.UintToBig(number))
+			Require(t, err, "failed to get L2 block", number, "of", blockNum)
+			if block.Number().Uint64() != number {
+				Fail(t, "block number mismatch", number, block.Number().Uint64())
+			}
+		}
+
 		cancel()
 		stack.Close()
 	}
