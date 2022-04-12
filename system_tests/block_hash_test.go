@@ -19,7 +19,7 @@ func TestBlockHash(t *testing.T) {
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	auth := l2info.GetDefaultTransactOpts("Faucet")
+	auth := l2info.GetDefaultTransactOpts("Faucet", ctx)
 
 	_, _, simple, err := mocksgen.DeploySimple(&auth, l2client)
 	Require(t, err)
