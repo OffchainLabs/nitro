@@ -20,6 +20,7 @@ type TransactionPublisher interface {
 type ArbInterface struct {
 	txStreamer  *TransactionStreamer
 	txPublisher TransactionPublisher
+	arbNode     *Node
 }
 
 func NewArbInterface(txStreamer *TransactionStreamer, txPublisher TransactionPublisher) (*ArbInterface, error) {
@@ -27,6 +28,10 @@ func NewArbInterface(txStreamer *TransactionStreamer, txPublisher TransactionPub
 		txStreamer:  txStreamer,
 		txPublisher: txPublisher,
 	}, nil
+}
+
+func (a *ArbInterface) Initialize(n *Node) {
+	a.arbNode = n
 }
 
 func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transaction) error {
@@ -39,4 +44,8 @@ func (a *ArbInterface) TransactionStreamer() *TransactionStreamer {
 
 func (a *ArbInterface) BlockChain() *core.BlockChain {
 	return a.txStreamer.bc
+}
+
+func (a *ArbInterface) ArbNode() interface{} {
+	return a.arbNode
 }
