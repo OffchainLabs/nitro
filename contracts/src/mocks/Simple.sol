@@ -7,8 +7,20 @@ pragma solidity ^0.8.0;
 contract Simple {
     uint64 public counter;
 
+    event CounterEvent(uint64 count);
+    event NullEvent();
+
     function increment() external {
         counter++;
+    }
+
+    function incrementEmit() external {
+        counter++;
+        emit CounterEvent(counter);
+    }
+
+    function emitNullEvent() external {
+        emit NullEvent();
     }
 
     function checkBlockHashes() external view returns (uint256) {
