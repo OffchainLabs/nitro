@@ -197,10 +197,10 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	conf.InboxReader.CheckDelay = time.Second
 	rollupAddresses := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig.ChainID)
 
-	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer")
-	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer")
-	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter")
-	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger")
+	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
+	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
+	asserterTxOpts := l1Info.GetDefaultTransactOpts("asserter", ctx)
+	challengerTxOpts := l1Info.GetDefaultTransactOpts("challenger", ctx)
 	delayedBridge, tx, _, err := mocksgen.DeployBridgeStub(&deployerTxOpts, l1Backend)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(context.Background(), l1Backend, tx)
@@ -268,7 +268,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	}
 	ospEntry := DeployOneStepProofEntry(t, &deployerTxOpts, l1Backend)
 
-	wasmModuleRoot, err := validator.GetInitialModuleRoot(ctx)
+	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,12 +312,13 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool) {
 	)
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
-	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, 0, 4, 0)
+	machineLoader := validator.NewNitroMachineLoader(validator.DefaultNitroMachineConfig)
+	asserterManager, err := validator.NewChallengeManager(ctx, l1Backend, &asserterTxOpts, asserterTxOpts.From, challengeManagerAddr, 1, asserterL2Blockchain, asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, 0, 4, 0)
+	challengerManager, err := validator.NewChallengeManager(ctx, l1Backend, &challengerTxOpts, challengerTxOpts.From, challengeManagerAddr, 1, challengerL2Blockchain, challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, machineLoader, 0, 4, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

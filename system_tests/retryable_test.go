@@ -100,7 +100,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto-redeem the retryable
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL2.NoSend = true
 	usertxoptsL2.GasMargin = 0
 	tx, err := nodeInterface.EstimateRetryableTicket(
@@ -118,7 +118,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	colors.PrintBlue("estimate: ", estimate)
 
 	// submit & auto-redeem the retryable using the gas estimate
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
@@ -159,8 +159,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner")
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _, simple, err := mocksgen.DeploySimple(&ownerTxOpts, l2client)
@@ -238,7 +238,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Refund")
