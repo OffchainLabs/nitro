@@ -249,7 +249,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	return l2info, node, client
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
 }
