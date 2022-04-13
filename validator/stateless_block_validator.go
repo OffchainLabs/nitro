@@ -346,10 +346,6 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("running machine failed", "err", err)
-				panic("Failed to run machine: " + err.Error())
-			}
 			return GoGlobalState{}, nil, fmt.Errorf("machine execution failed with error: %w", err)
 		}
 		steps += count

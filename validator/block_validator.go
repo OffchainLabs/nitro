@@ -391,7 +391,9 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 	for _, moduleRoot := range validationStatus.ModuleRoots {
 		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
 		if err != nil {
-			log.Error("Validation of block failed", "err", err)
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				log.Error("Validation of block failed", "err", err)
+			}
 			return
 		}
 		gsExpected := entry.expectedEnd()
