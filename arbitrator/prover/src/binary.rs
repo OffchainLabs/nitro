@@ -326,11 +326,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         }
 
         match &mut section {
-            Version {
-                num,
-                encoding,
-                range,
-            } => {}
+            Version { .. } => {}
             Payload::TypeSection(type_section) => {
                 /*let TypeDef::Func(ty) = type_section.read()?;
                 let same = FunctionType::new(ty.params.to_owned(), ty.returns.clone());
@@ -346,7 +342,9 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             ElementSection(elements) => process!(binary.elements, elements),
             CodeSectionStart { count, range, size } => {}
             CodeSectionEntry(codes) => {}
-            DataSection(datas) => /*process!(binary.datas, datas)*/ {},
+            DataSection(datas) =>
+                /*process!(binary.datas, datas)*/
+                {}
             AliasSection(names) => {}
             UnknownSection { .. } => {}
             End(offset) => {}

@@ -28,7 +28,7 @@ use std::{
     fs::File,
     io::Read,
     os::raw::{c_char, c_int},
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{self, AtomicU8},
 };
 
@@ -67,28 +67,19 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths: *const *const c_char,
     library_paths_size: isize,
 ) -> Result<*mut Machine> {
-    let error_message = format!("failed to validate WASM binary at {:?}", binary_path);
+
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
-    let main_source = file_bytes(&binary_path)?;
-    let main_mod = binary::parse(&main_source).wrap_err_with(|| error_message.clone())?;
 
-    let mut library_sources = vec![];
     let mut libraries = vec![];
     for i in 0..library_paths_size {
-        let library_path = cstr_to_string(*(library_paths.offset(i)));
-        let library_path = Path::new(&library_path);
-        let error_message = format!("failed to validate WASM binary at {:?}", library_path);
-        library_sources.push((file_bytes(&library_path)?, error_message));
-    }
-    for (source, error_message) in &library_sources {
-        let library = binary::parse(source).wrap_err_with(|| error_message.clone())?;
-        libraries.push(library);
+        let path = cstr_to_string(*(library_paths.offset(i)));
+        libraries.push(Path::new(&path).to_owned());
     }
 
     let mach = Machine::from_binary(
-        libraries,
-        main_mod,
+        &libraries,
+        binary_path,
         false,
         false,
         Default::default(),

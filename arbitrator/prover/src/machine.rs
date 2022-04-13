@@ -3,20 +3,20 @@
 
 use crate::{
     binary::{
-        BlockType, Code, ElementKind, FloatInstruction, HirInstruction, NameCustomSection,
+        parse, BlockType, Code, ElementKind, FloatInstruction, HirInstruction, NameCustomSection,
         WasmBinary,
     },
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::Bytes32,
+    utils::{file_bytes, Bytes32},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{pack_cross_module_call, unpack_cross_module_call, FloatingPointImpls, Instruction},
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
-use eyre::{bail, ensure, eyre, Result};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use num::{traits::PrimInt, Zero};
 use rayon::prelude::*;
@@ -29,7 +29,7 @@ use std::{
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
     ops::{Deref, DerefMut},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use wasmparser::{ExternalKind, TableType, TypeRef};
@@ -828,14 +828,29 @@ impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
     pub fn from_binary(
-        libraries: Vec<WasmBinary<'_>>,
-        bin: WasmBinary<'_>,
+        library_paths: &Vec<PathBuf>,
+        binary_path: &Path,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Result<Machine> {
+        let bin_source = file_bytes(&binary_path)?;
+        let bin = parse(&bin_source)
+            .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
+
+        let mut libraries = vec![];
+        let mut lib_sources = vec![];
+        for path in library_paths {
+            let error_message = format!("failed to validate WASM binary at {:?}", path);
+            lib_sources.push((file_bytes(&path)?, error_message));
+        }
+        for (source, error_message) in &lib_sources {
+            let library = parse(source).wrap_err_with(|| error_message.clone())?;
+            libraries.push(library);
+        }
+
         // `modules` starts out with the entrypoint module, which will be initialized later
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();

@@ -131,19 +131,6 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
-    let main_source = file_bytes(&opts.binary)?;
-    let main_mod = prover::binary::parse(&main_source)?;
-
-    let mut library_sources = vec![];
-    for library_path in &opts.libraries {
-        library_sources.push(file_bytes(library_path)?);
-    }
-    let mut libraries = vec![];
-    for source in &library_sources {
-        let library = prover::binary::parse(&source)?;
-        libraries.push(library);
-    }
-
     let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;
     let mut delayed_position = opts.delayed_inbox_position;
@@ -194,8 +181,8 @@ fn main() -> Result<()> {
     };
 
     let mut mach = Machine::from_binary(
-        libraries.clone(),
-        main_mod,
+        &opts.libraries,
+        &opts.binary,
         opts.always_merkleize,
         opts.allow_hostapi,
         global_state,
@@ -414,7 +401,7 @@ fn main() -> Result<()> {
             };
             let module_name = if module_num == 0 {
                 names.module.clone()
-            } else if module_num == &libraries.len() + 1 {
+            } else if module_num == &opts_libraries.len() + 1 {
                 opts_binary.file_name().unwrap().to_str().unwrap().into()
             } else {
                 opts_libraries[module_num - 1]
