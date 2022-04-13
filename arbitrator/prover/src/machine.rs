@@ -66,14 +66,18 @@ pub struct Function {
 
 impl Function {
     pub fn new(
-        code: Code,
+        code: &Code,
         func_ty: FunctionType,
         func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
-        let locals_with_params: Vec<ArbValueType> =
-            func_ty.inputs.iter().cloned().chain(code.locals).collect();
+        let locals_with_params: Vec<ArbValueType> = func_ty
+            .inputs
+            .iter()
+            .chain(code.locals.iter())
+            .cloned()
+            .collect();
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
             .iter()
@@ -100,7 +104,7 @@ impl Function {
         Instruction::extend_from_hir(
             &mut insts,
             codegen_state,
-            crate::binary::HirInstruction::Block(func_block_ty, code.expr),
+            crate::binary::HirInstruction::Block(func_block_ty, code.expr.clone()),
         )?;
 
         Instruction::extend_from_hir(
@@ -277,7 +281,7 @@ struct Module {
 
 impl Module {
     fn from_binary(
-        bin: WasmBinary,
+        bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
@@ -288,7 +292,7 @@ impl Module {
         let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
-        for import in bin.imports {
+        for import in &bin.imports {
             if let TypeRef::Func(ty) = import.ty {
                 let mut qualified_name = format!("{}__{}", import.module, import.name);
                 qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
@@ -328,18 +332,18 @@ impl Module {
                 }
                 func_type_idxs.push(ty);
                 code.push(func);
-                host_call_hooks.push(Some((import.module, import.name)));
+                host_call_hooks.push(Some((import.module.into(), import.name.into())));
             } else {
                 bail!("Unsupport import kind {:?}", import);
             }
         }
-        func_type_idxs.extend(bin.functions.into_iter());
+        func_type_idxs.extend(bin.functions.iter());
         let types = &bin.types;
         let mut func_types: Vec<FunctionType> = func_type_idxs
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
-        for c in bin.code {
+        for c in &bin.code {
             let idx = code.len();
             code.push(Function::new(
                 c,
@@ -364,23 +368,24 @@ impl Module {
         }
         let globals = bin
             .globals
-            .into_iter()
+            .iter()
             .map(|g| {
-                if let [insn] = g.initializer.as_slice() {
+                todo!("global initializer not implemented")
+                /*if let [insn] = g.init_expr.as_slice() {
                     if let Some(val) = insn.get_const_output() {
                         return Ok(val);
                     }
                 }
-                Err(eyre!("Global initializer isn't a constant"))
+                Err(eyre!("Global initializer isn't a constant"))*/
             })
             .collect::<Result<Vec<_>>>()?;
-        for export in bin.exports {
+        for export in &bin.exports {
             if let ExternalKind::Func = export.kind {
-                exports.insert(export.name, export.index);
+                exports.insert(export.name.to_owned(), export.index);
             }
         }
-        for data in bin.datas {
-            if let Some(loc) = data.active_location {
+        for data in &bin.datas {
+            if let Some(loc) = &data.active_location {
                 ensure!(loc.memory == 0, "Attempted to write to nonexistant memory");
                 let mut offset = None;
                 if let [insn] = loc.offset.as_slice() {
@@ -405,15 +410,15 @@ impl Module {
                 memory.set_range(offset, &data.data);
             }
         }
-        for table in bin.tables {
+        for table in &bin.tables {
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
-                ty: table,
+                ty: table.clone(),
                 elems_merkle: Merkle::default(),
             });
         }
-        for elem in bin.elements {
-            if let ElementKind::Active(t, o) = elem.kind {
+        for elem in &bin.elements {
+            if let ElementKind::Active(t, o) = &elem.kind {
                 let mut offset = None;
                 if let [insn] = o.as_slice() {
                     if let Some(Value::I32(x)) = insn.get_const_output() {
@@ -424,7 +429,7 @@ impl Module {
                     offset.ok_or_else(|| eyre!("Non-constant data offset expression"))?,
                 )
                 .unwrap();
-                let t = usize::try_from(t).unwrap();
+                let t = usize::try_from(*t).unwrap();
                 let table = match tables.get_mut(t) {
                     Some(t) => t,
                     None => bail!("Element segment for non-exsistent table {}", t),
@@ -438,14 +443,17 @@ impl Module {
                 );
                 let contents: Vec<_> = elem
                     .items
-                    .into_iter()
+                    .iter()
                     .map(|val| {
                         let func_ty = match val {
                             Value::RefNull => FunctionType::default(),
-                            Value::FuncRef(x) => func_types[usize::try_from(x).unwrap()].clone(),
+                            Value::FuncRef(x) => func_types[usize::try_from(*x).unwrap()].clone(),
                             _ => bail!("Invalid element value {:?}", val),
                         };
-                        Ok(TableElement { val, func_ty })
+                        Ok(TableElement {
+                            val: val.clone(),
+                            func_ty,
+                        })
                     })
                     .collect::<Result<Vec<_>>>()?;
                 let len = contents.len();
@@ -518,9 +526,9 @@ impl Module {
                 code.iter().map(|f| f.hash()).collect(),
             )),
             funcs: Arc::new(code),
-            types: Arc::new(bin.types),
+            types: Arc::new(bin.types.to_owned()),
             internals_offset,
-            names: Arc::new(bin.names),
+            names: Arc::new(bin.names.to_owned()),
             host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
             func_types: Arc::new(func_types),
@@ -820,8 +828,8 @@ impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
     pub fn from_binary(
-        libraries: Vec<WasmBinary>,
-        bin: WasmBinary,
+        libraries: Vec<WasmBinary<'_>>,
+        bin: WasmBinary<'_>,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
         global_state: GlobalState,
@@ -855,7 +863,8 @@ impl Machine {
         }
 
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
+            let module =
+                Module::from_binary(&lib, &available_imports, &floating_point_impls, true)?;
             for (name, &func) in &*module.exports {
                 let ty = module.func_types[func as usize].clone();
                 available_imports.insert(
@@ -892,7 +901,7 @@ impl Machine {
         // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
-            bin,
+            &bin,
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
@@ -995,7 +1004,7 @@ impl Machine {
             .functions
             .insert(0, "wavm_entrypoint".into());
         let entrypoint_funcs = vec![Function::new(
-            Code {
+            &Code {
                 locals: Vec::new(),
                 expr: entrypoint,
             },

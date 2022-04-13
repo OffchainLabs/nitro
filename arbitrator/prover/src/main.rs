@@ -3,10 +3,11 @@
 
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
-use prover::machine::{InboxIdentifier, MachineStatus};
-use prover::parse_binary;
-use prover::{machine::GlobalState, utils::Bytes32};
-use prover::{machine::Machine, wavm::Opcode};
+use prover::{
+    machine::{GlobalState, InboxIdentifier, Machine, MachineStatus},
+    utils::{file_bytes, Bytes32},
+    wavm::Opcode,
+};
 use serde::Serialize;
 use sha3::{Digest, Keccak256};
 use std::io::BufWriter;
@@ -130,11 +131,18 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
-    let mut libraries = Vec::new();
-    for lib in &opts.libraries {
-        libraries.push(parse_binary(lib)?);
+    let main_source = file_bytes(&opts.binary)?;
+    let main_mod = prover::binary::parse(&main_source)?;
+
+    let mut library_sources = vec![];
+    for library_path in &opts.libraries {
+        library_sources.push(file_bytes(library_path)?);
     }
-    let main_mod = parse_binary(&opts.binary)?;
+    let mut libraries = vec![];
+    for source in &library_sources {
+        let library = prover::binary::parse(&source)?;
+        libraries.push(library);
+    }
 
     let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;

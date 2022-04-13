@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
+    fs::File,
+    io::Read,
     ops::{Deref, DerefMut},
+    path::Path,
 };
 
 /// cbindgen:field-names=[bytes]
@@ -96,4 +99,11 @@ impl fmt::Debug for Bytes32 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(self))
     }
+}
+
+pub fn file_bytes(path: &Path) -> eyre::Result<Vec<u8>> {
+    let mut f = File::open(path)?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf)?;
+    Ok(buf)
 }

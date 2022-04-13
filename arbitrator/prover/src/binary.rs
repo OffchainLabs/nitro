@@ -14,7 +14,8 @@ use nom::{
 };
 use std::{hash::Hash, str::FromStr};
 use wasmparser::{
-    ExternalKind, FuncType, MemoryType, Parser, Payload, Range, TableType, Type, TypeDef, TypeRef,
+    ExternalKind, FuncType, Global, Import, MemoryType, Parser, Payload, Range, TableType, Type,
+    TypeDef, TypeRef,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -285,14 +286,13 @@ pub enum CustomSection {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct WasmBinary {
-    pub unknown_custom_sections: Vec<(String, Vec<u8>)>,
+pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
-    pub imports: Vec<Import>, // fix compare to element
+    pub imports: Vec<Import<'a>>, // fix compare to element
     pub functions: Vec<u32>,
-    pub tables: Vec<TableType>, // 
+    pub tables: Vec<TableType>,    //
     pub memories: Vec<MemoryType>, // check initial
-    pub globals: Vec<Global>,      // finish init
+    pub globals: Vec<Global<'a>>,  // finish init
     pub exports: Vec<Export>,      //
     pub start: Option<u32>,        //
     pub elements: Vec<Element>,    // finish init
@@ -301,7 +301,7 @@ pub struct WasmBinary {
     pub names: NameCustomSection,
 }
 
-pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary> {
+pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
     wasmparser::validate(&input)?;
 
     let sections: Vec<_> = Parser::new(0)
@@ -346,8 +346,9 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary> {
             ElementSection(elements) => process!(binary.elements, elements),
             CodeSectionStart { count, range, size } => {}
             CodeSectionEntry(codes) => {}
-            DataSection(datas) => process!(binary.datas, datas),
+            DataSection(datas) => /*process!(binary.datas, datas)*/ {},
             AliasSection(names) => {}
+            UnknownSection { .. } => {}
             End(offset) => {}
             x => eyre::bail!("unsupported section type {:?}", x),
         }
@@ -355,7 +356,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary> {
     panic!();
 }
 
-#[derive(Clone, Debug)]
+/*#[derive(Clone, Debug)]
 pub struct Import {
     pub module: String,
     pub name: String,
@@ -370,9 +371,9 @@ impl From<wasmparser::Import<'_>> for Import {
             ty: import.ty,
         }
     }
-}
+}*/
 
-#[derive(Clone, Debug)]
+/*#[derive(Clone, Debug)]
 pub struct Global {
     pub ty: Type,
     pub mutable: bool,
@@ -387,7 +388,7 @@ impl From<wasmparser::Global<'_>> for Global {
             initializer: vec![], // TODO: global.init_expr
         }
     }
-}
+}*/
 
 #[derive(Clone, Debug)]
 pub struct Export {
@@ -451,10 +452,7 @@ impl From<wasmparser::Element<'_>> for Element {
 
 pub enum DataKind {
     Passive,
-    Active {
-        memory_index: u32,
-        initializer: Vec<HirInstruction>,
-    },
+    Active(u32, Vec<HirInstruction>),
 }
 
 impl From<wasmparser::DataKind<'_>> for DataKind {
@@ -473,7 +471,7 @@ impl From<wasmparser::DataKind<'_>> for DataKind {
     }
 }
 
-pub struct Data {
+/*pub struct Data {
     pub data: Vec<>,
     pub range: Range,
 }
@@ -482,8 +480,9 @@ impl From<wasmparser::Element<'_>> for Data {
     fn from(data: wasmparser::Data<'_>) -> Self {
         Self {
             kind: element.kind.into(),
-            data: 
+            data:
             range: element.range,
         }
     }
 }
+*/

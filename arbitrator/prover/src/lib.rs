@@ -17,6 +17,7 @@ pub mod wavm;
 use crate::{
     binary::WasmBinary,
     machine::{argument_data_to_inbox, Machine},
+    utils::file_bytes,
 };
 use eyre::{bail, Context, Result};
 use machine::{GlobalState, MachineStatus};
@@ -30,14 +31,6 @@ use std::{
     path::Path,
     sync::atomic::{self, AtomicU8},
 };
-
-pub fn parse_binary(path: &Path) -> Result<WasmBinary> {
-    let mut f = File::open(path)?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf)?;
-
-    binary::parse(&buf).wrap_err_with(|| format!("failed to validate WASM binary at {:?}", path))
-}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -74,17 +67,23 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths: *const *const c_char,
     library_paths_size: isize,
 ) -> Result<*mut Machine> {
-    let main_mod = {
-        let binary_path = cstr_to_string(binary_path);
-        let binary_path = Path::new(&binary_path);
-        parse_binary(binary_path)?
-    };
+    let error_message = format!("failed to validate WASM binary at {:?}", binary_path);
+    let binary_path = cstr_to_string(binary_path);
+    let binary_path = Path::new(&binary_path);
+    let main_source = file_bytes(&binary_path)?;
+    let main_mod = binary::parse(&main_source).wrap_err_with(|| error_message.clone())?;
 
-    let mut libraries = Vec::new();
+    let mut library_sources = vec![];
+    let mut libraries = vec![];
     for i in 0..library_paths_size {
         let library_path = cstr_to_string(*(library_paths.offset(i)));
         let library_path = Path::new(&library_path);
-        libraries.push(parse_binary(library_path)?);
+        let error_message = format!("failed to validate WASM binary at {:?}", library_path);
+        library_sources.push((file_bytes(&library_path)?, error_message));
+    }
+    for (source, error_message) in &library_sources {
+        let library = binary::parse(source).wrap_err_with(|| error_message.clone())?;
+        libraries.push(library);
     }
 
     let mach = Machine::from_binary(
