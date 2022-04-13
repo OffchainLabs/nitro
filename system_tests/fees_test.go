@@ -26,8 +26,8 @@ func TestTips(t *testing.T) {
 	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	auth := l2info.GetDefaultTransactOpts("Owner")
-	callOpts := l2info.GetDefaultCallOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 	aggregator := testhelpers.RandomAddress()
 
 	// get the network fee account
@@ -86,7 +86,7 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 	defer cancel()
 
 	l2info, _, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	// prefer a 3rd party aggregator
 	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), client)
@@ -110,7 +110,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	callOpts := l2info.GetDefaultCallOpts("Owner")
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)

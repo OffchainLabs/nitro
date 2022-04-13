@@ -47,4 +47,11 @@ interface NodeInterface {
             bytes32 root,
             bytes32[] memory proof
         );
+
+    /**
+     * @notice Finds the L1 batch containing a requested L2 block, reverting if none does
+     * @param block The L2 block being queried
+     * @return batch The L1 block containing the requested L2 block
+     */
+    function findBatchContainingBlock(uint64 block) external view returns (uint64 batch);
 }

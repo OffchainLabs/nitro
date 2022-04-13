@@ -40,7 +40,7 @@ func InternalTxStartBlock(
 	}
 	return &types.ArbitrumInternalTx{
 		ChainId:       chainId,
-		Type:          arbInternalTxStartBlock,
+		SubType:       arbInternalTxStartBlock,
 		Data:          data,
 		L2BlockNumber: l2BlockNum,
 	}
