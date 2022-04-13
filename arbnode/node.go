@@ -674,7 +674,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	err := n.TxPublisher.Initialize(ctx)
+	n.ArbInterface.Initialize(n)
+	err := n.Backend.Start()
+	if err != nil {
+		return err
+	}
+	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return err
 	}
@@ -766,6 +771,9 @@ func (n *Node) StopAndWait() {
 	}
 	n.TxStreamer.StopAndWait()
 	n.ArbInterface.BlockChain().Stop()
+	if err := n.Backend.Stop(); err != nil {
+		log.Error("backend stop", "err", err)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {
