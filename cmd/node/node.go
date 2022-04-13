@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"os/signal"
@@ -121,10 +122,20 @@ func main() {
 	if nodeConfig.Node.L1Reader.Enable {
 		var err error
 
-		l1client, err = ethclient.Dial(nodeConfig.L1.URL)
-		if err != nil {
-			flag.Usage()
-			panic(err)
+		if nodeConfig.L1.ConnectionAttempts <= 0 {
+			nodeConfig.L1.ConnectionAttempts = math.MaxInt
+		}
+		for i := 1; i <= nodeConfig.L1.ConnectionAttempts; i++ {
+			l1client, err = ethclient.DialContext(ctx, nodeConfig.L1.URL)
+			if err == nil {
+				break
+			}
+			if i < nodeConfig.L1.ConnectionAttempts {
+				log.Warn("error connecting to L1", "err", err)
+			} else {
+				panic(err)
+			}
+			time.Sleep(time.Second)
 		}
 		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
 			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(

@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -60,7 +59,7 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo, l1client arbutil.L1Interface, l2client arbutil.L1Interface, delayedTx *types.Transaction) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
-	usertxopts := l1info.GetDefaultTransactOpts("User")
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
 
 	txbytes, err := delayedTx.MarshalBinary()
 	Require(t, err)
@@ -149,10 +148,8 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
-	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	wasmModuleRoot, err := validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
-	Require(t, err)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, arbnode.TestL1ReaderConfig)
+	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, arbnode.TestL1ReaderConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -198,7 +195,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
-		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
+		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
@@ -233,7 +230,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	client := ClientForArbBackend(t, node.Backend)
 
 	if takeOwnership {
-		debugAuth := l2info.GetDefaultTransactOpts("Owner")
+		debugAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
@@ -249,7 +246,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	return l2info, node, client
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
 }

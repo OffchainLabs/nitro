@@ -257,6 +257,14 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
+	if wasmModuleRoot == (common.Hash{}) {
+		var err error
+		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
@@ -494,21 +502,24 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type WasmConfig struct {
-	RootPath   string `koanf:"root-path"`
-	ModuleRoot string `koanf:"module-root"`
-	CachePath  string `koanf:"cache-path"`
+	RootPath                 string `koanf:"root-path"`
+	CurrentModuleRoot        string `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
+	CachePath                string `koanf:"cache-path"`
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
-	f.String(prefix+".module-root", DefaultWasmConfig.RootPath, "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
+	f.String(prefix+".current-module-root", DefaultWasmConfig.RootPath, "current wasm module root (if empty and this node is a validator, read from on-chain)")
+	f.String(prefix+".pending-upgrade-module-root", DefaultWasmConfig.RootPath, "pending upgrade wasm module root to additionally validate (if empty, read from <wasmrootpath>/latest/module_root)")
 	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
 }
 
 var DefaultWasmConfig = WasmConfig{
-	RootPath:   "",
-	ModuleRoot: "",
-	CachePath:  "",
+	RootPath:                 "",
+	CurrentModuleRoot:        "",
+	PendingUpgradeModuleRoot: "",
+	CachePath:                "",
 }
 
 type Node struct {
@@ -652,7 +663,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.ModuleRoot))
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.CurrentModuleRoot), common.HexToHash(config.Wasm.PendingUpgradeModuleRoot))
 		if err != nil {
 			return nil, err
 		}
@@ -728,7 +739,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	err := n.TxPublisher.Initialize(ctx)
+	n.ArbInterface.Initialize(n)
+	err := n.Backend.Start()
+	if err != nil {
+		return err
+	}
+	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return err
 	}
@@ -820,6 +836,9 @@ func (n *Node) StopAndWait() {
 	}
 	n.TxStreamer.StopAndWait()
 	n.ArbInterface.BlockChain().Stop()
+	if err := n.Backend.Stop(); err != nil {
+		log.Error("backend stop", "err", err)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {

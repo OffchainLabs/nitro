@@ -2,6 +2,7 @@ package conf
 
 import (
 	"errors"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -63,20 +64,23 @@ type L1Config struct {
 	ChainID uint64                        `koanf:"chain-id"`
 	Rollup  arbnode.RollupAddressesConfig `koanf:"rollup"`
 	URL     string                        `koanf:"url"`
-	Wallet  WalletConfig                  `koanf:"wallet"`
+	ConnectionAttempts int          `koanf:"connection-attempts"`
+	Wallet             WalletConfig `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
 	ChainID: 1337,
 	Rollup:  arbnode.RollupAddressesConfig{},
 	URL:     "",
-	Wallet:  WalletConfigDefault,
+	ConnectionAttempts: 15,
+	Wallet:             WalletConfigDefault,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
 	arbnode.RollupAddressesConfigAddOptions(prefix+".rollup", f)
+	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	WalletConfigAddOptions(prefix+".wallet", f)
 }
 

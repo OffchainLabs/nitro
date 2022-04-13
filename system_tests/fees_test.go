@@ -5,11 +5,12 @@ package arbtest
 
 import (
 	"context"
+	"math/big"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"math/big"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,8 +26,8 @@ func TestTips(t *testing.T) {
 	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	auth := l2info.GetDefaultTransactOpts("Owner")
-	callOpts := l2info.GetDefaultCallOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 	aggregator := testhelpers.RandomAddress()
 
 	// get the network fee account
@@ -69,17 +70,13 @@ func TestTips(t *testing.T) {
 	}
 
 	tip := arbmath.BigMulByUint(arbmath.BigSub(tx.GasPrice(), basefee), receipt.GasUsed)
-	full := arbmath.BigMulByUint(tx.GasPrice(), receipt.GasUsed)
+	full := arbmath.BigMulByUint(basefee, receipt.GasUsed) // was gasprice before upgrade
 	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
-	colors.PrintMint("tip: ", tip, full, networkRevenue)
-
+	colors.PrintMint("price: ", tip, full, networkRevenue)
 	colors.PrintRed("used: ", receipt.GasUsed, basefee)
 
-	if !arbmath.BigEquals(tip, arbmath.BigMulByFrac(networkRevenue, 1, 5)) {
-		Fail(t, "1/5th of the network's revenue should be the tip")
-	}
 	if !arbmath.BigEquals(full, networkRevenue) {
-		Fail(t, "the network didn't receive the tip")
+		Fail(t, "the network didn't receive the funds")
 	}
 }
 
@@ -89,7 +86,7 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 	defer cancel()
 
 	l2info, _, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	// prefer a 3rd party aggregator
 	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), client)
@@ -113,7 +110,7 @@ func TestSequencerFeePaid(t *testing.T) {
 	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	callOpts := l2info.GetDefaultCallOpts("Owner")
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 
 	// get the network fee account
 	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)

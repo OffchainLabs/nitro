@@ -58,7 +58,7 @@ type InboxReaderInterface interface {
 
 type L1ReaderInterface interface {
 	Client() arbutil.L1Interface
-	Subscribe() (<-chan *types.Header, func())
+	Subscribe(bool) (<-chan *types.Header, func())
 	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
 }
 
@@ -343,13 +343,9 @@ func (v *StatelessBlockValidator) executeBlock(ctx context.Context, entry *valid
 		var count uint64 = 500000000
 		err = mach.Step(ctx, count)
 		if steps > 0 {
-			log.Info("validation", "block", entry.BlockNumber, "steps", steps)
+			log.Debug("validation", "moduleRoot", moduleRoot, "block", entry.BlockNumber, "steps", steps)
 		}
 		if err != nil {
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				log.Error("running machine failed", "err", err)
-				panic("Failed to run machine: " + err.Error())
-			}
 			return GoGlobalState{}, nil, fmt.Errorf("machine execution failed with error: %w", err)
 		}
 		steps += count
