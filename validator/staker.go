@@ -184,10 +184,10 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return s.updateLatestWasmRoot(ctx)
+	return s.updateBlockValidatorModuleRoot(ctx)
 }
 
-func (s *Staker) updateLatestWasmRoot(ctx context.Context) error {
+func (s *Staker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if s.blockValidator == nil {
 		return nil
 	}
@@ -227,7 +227,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		err := s.updateLatestWasmRoot(ctx)
+		err := s.updateBlockValidatorModuleRoot(ctx)
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
