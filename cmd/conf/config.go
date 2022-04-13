@@ -2,6 +2,7 @@ package conf
 
 import (
 	"errors"
+
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -59,23 +60,26 @@ var DefaultS3Config = S3Config{
 }
 
 type L1Config struct {
-	ChainID    uint64       `koanf:"chain-id"`
-	Deployment string       `koanf:"deployment"`
-	URL        string       `koanf:"url"`
-	Wallet     WalletConfig `koanf:"wallet"`
+	ChainID            uint64       `koanf:"chain-id"`
+	Deployment         string       `koanf:"deployment"`
+	URL                string       `koanf:"url"`
+	ConnectionAttempts int          `koanf:"connection-attempts"`
+	Wallet             WalletConfig `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:    1337,
-	Deployment: "",
-	URL:        "",
-	Wallet:     WalletConfigDefault,
+	ChainID:            1337,
+	Deployment:         "",
+	URL:                "",
+	ConnectionAttempts: 15,
+	Wallet:             WalletConfigDefault,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".deployment", L1ConfigDefault.Deployment, "json file including the existing deployment information")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
+	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	WalletConfigAddOptions(prefix+".wallet", f)
 }
 
