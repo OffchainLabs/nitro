@@ -61,17 +61,17 @@ var DefaultS3Config = S3Config{
 }
 
 type L1Config struct {
-	ChainID uint64                        `koanf:"chain-id"`
-	Rollup  arbnode.RollupAddressesConfig `koanf:"rollup"`
-	URL     string                        `koanf:"url"`
-	ConnectionAttempts int          `koanf:"connection-attempts"`
-	Wallet             WalletConfig `koanf:"wallet"`
+	ChainID            uint64                        `koanf:"chain-id"`
+	Rollup             arbnode.RollupAddressesConfig `koanf:"rollup"`
+	URL                string                        `koanf:"url"`
+	ConnectionAttempts int                           `koanf:"connection-attempts"`
+	Wallet             WalletConfig                  `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID: 1337,
-	Rollup:  arbnode.RollupAddressesConfig{},
-	URL:     "",
+	ChainID:            1337,
+	Rollup:             arbnode.RollupAddressesConfig{},
+	URL:                "",
 	ConnectionAttempts: 15,
 	Wallet:             WalletConfigDefault,
 }
