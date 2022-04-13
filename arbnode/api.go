@@ -26,6 +26,8 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
+	} else {
+		moduleRoot = a.val.GetCurrentWasmModuleRoot()
 	}
 	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
