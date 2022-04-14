@@ -91,8 +91,14 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 		sigs = append(sigs, cert.Sig)
 		if i == 0 {
 			aggCert.DataHash = cert.DataHash
-		} else if aggCert.DataHash != cert.DataHash {
-			return nil, fmt.Errorf("Mismatched DataHash from DAS %d", i)
+			aggCert.Timeout = cert.Timeout
+		} else {
+			if aggCert.DataHash != cert.DataHash {
+				return nil, fmt.Errorf("Mismatched DataHash from DAS %d", i)
+			}
+			if aggCert.Timeout != cert.Timeout {
+				return nil, fmt.Errorf("Mismatched Timeout from DAS %d", i)
+			}
 		}
 	}
 
