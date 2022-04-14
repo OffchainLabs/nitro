@@ -756,6 +756,9 @@ func (v *BlockValidator) Initialize() error {
 		}
 	default:
 		v.currentWasmModuleRoot = common.HexToHash(v.config.CurrentModuleRoot)
+		if (v.currentWasmModuleRoot == common.Hash{}) {
+			return errors.New("current-module-root config value illegal")
+		}
 	}
 	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
 		return err
@@ -770,6 +773,9 @@ func (v *BlockValidator) Initialize() error {
 			v.pendingWasmModuleRoot = latest
 		} else {
 			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
+			if (v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
 		}
 		if err := v.MachineLoader.CreateMachine(v.pendingWasmModuleRoot, true); err != nil {
 			return err
