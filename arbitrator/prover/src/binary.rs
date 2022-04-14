@@ -5,6 +5,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue},
     wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
+use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
 use nom::{
     branch::alt,
@@ -14,8 +15,8 @@ use nom::{
 };
 use std::{hash::Hash, str::FromStr};
 use wasmparser::{
-    ExternalKind, FuncType, Global, Import, MemoryType, Parser, Payload, Range, TableType, Type,
-    TypeDef, TypeRef,
+    Data, Element, Export, ExternalKind, FuncType, Global, Import, MemoryType, Operator, Parser,
+    Payload, Range, TableType, Type, TypeDef, TypeRef,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -236,15 +237,13 @@ pub enum HirInstruction {
     CrossModuleCall(u32, u32),
 }
 
-impl HirInstruction {
-    pub fn get_const_output(&self) -> Option<LirValue> {
-        match *self {
-            HirInstruction::I32Const(x) => Some(LirValue::I32(x as u32)),
-            HirInstruction::I64Const(x) => Some(LirValue::I64(x as u64)),
-            HirInstruction::F32Const(x) => Some(LirValue::F32(x)),
-            HirInstruction::F64Const(x) => Some(LirValue::F64(x)),
-            _ => None,
-        }
+pub fn op_as_const(op: Operator) -> Result<LirValue> {
+    match op {
+        Operator::I32Const { value } => Ok(LirValue::I32(value as u32)),
+        Operator::I64Const { value } => Ok(LirValue::I64(value as u64)),
+        Operator::F32Const { value } => Ok(LirValue::F32(f32::from_bits(value.bits()))),
+        Operator::F64Const { value } => Ok(LirValue::F64(f64::from_bits(value.bits()))),
+        _ => bail!("Opcode is not a constant"),
     }
 }
 
@@ -252,18 +251,6 @@ impl HirInstruction {
 pub struct Code {
     pub locals: Vec<ArbValueType>,
     pub expr: Vec<HirInstruction>,
-}
-
-#[derive(Clone, Debug)]
-pub struct DataMemoryLocation {
-    pub memory: u32,
-    pub offset: Vec<HirInstruction>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Data {
-    pub data: Vec<u8>,
-    pub active_location: Option<DataMemoryLocation>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -285,20 +272,20 @@ pub enum CustomSection {
     Unknown(String, Vec<u8>),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
-    pub imports: Vec<Import<'a>>, // fix compare to element
-    pub functions: Vec<u32>,
-    pub tables: Vec<TableType>,    //
-    pub memories: Vec<MemoryType>, // check initial
-    pub globals: Vec<Global<'a>>,  // finish init
-    pub exports: Vec<Export>,      //
-    pub start: Option<u32>,        //
-    pub elements: Vec<Element>,    // finish init
+    pub imports: Vec<Import<'a>>,   // fix compare to element
+    pub functions: Vec<u32>,        //
+    pub tables: Vec<TableType>,     //
+    pub memories: Vec<MemoryType>,  //
+    pub globals: Vec<Global<'a>>,   //
+    pub exports: Vec<Export<'a>>,   //
+    pub start: Option<u32>,         //
+    pub elements: Vec<Element<'a>>, //
     pub code: Vec<Code>,
-    pub datas: Vec<Data>,
-    pub names: NameCustomSection,
+    pub datas: Vec<Data<'a>>,     //
+    pub names: NameCustomSection, // do later
 }
 
 pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
@@ -333,154 +320,21 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 binary.types.push(ty);*/
             }
             Payload::ImportSection(imports) => process!(binary.imports, imports),
-            FunctionSection(functions) => {}
+            FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),
             GlobalSection(globals) => process!(binary.globals, globals),
             ExportSection(exports) => process!(binary.exports, exports),
-            StartSection { func, range: _ } => binary.start = Some(*func),
+            StartSection { func, .. } => binary.start = Some(*func),
             ElementSection(elements) => process!(binary.elements, elements),
             CodeSectionStart { count, range, size } => {}
             CodeSectionEntry(codes) => {}
-            DataSection(datas) =>
-                /*process!(binary.datas, datas)*/
-                {}
-            AliasSection(names) => {}
+            DataSection(datas) => process!(binary.datas, datas),
+            //NameCustomSection(names) => process!(binary.names, names),
             UnknownSection { .. } => {}
-            End(offset) => {}
-            x => eyre::bail!("unsupported section type {:?}", x),
+            End(_offset) => {}
+            x => bail!("unsupported section type {:?}", x),
         }
     }
     panic!();
 }
-
-/*#[derive(Clone, Debug)]
-pub struct Import {
-    pub module: String,
-    pub name: String,
-    pub ty: TypeRef,
-}
-
-impl From<wasmparser::Import<'_>> for Import {
-    fn from(import: wasmparser::Import<'_>) -> Self {
-        Self {
-            module: import.module.to_owned(),
-            name: import.name.to_owned(),
-            ty: import.ty,
-        }
-    }
-}*/
-
-/*#[derive(Clone, Debug)]
-pub struct Global {
-    pub ty: Type,
-    pub mutable: bool,
-    pub initializer: Vec<HirInstruction>,
-}
-
-impl From<wasmparser::Global<'_>> for Global {
-    fn from(global: wasmparser::Global<'_>) -> Self {
-        Self {
-            ty: global.ty.content_type,
-            mutable: global.ty.mutable,
-            initializer: vec![], // TODO: global.init_expr
-        }
-    }
-}*/
-
-#[derive(Clone, Debug)]
-pub struct Export {
-    pub name: String,
-    pub kind: ExternalKind,
-    pub index: u32,
-}
-
-impl From<wasmparser::Export<'_>> for Export {
-    fn from(export: wasmparser::Export<'_>) -> Self {
-        Self {
-            name: export.name.to_owned(),
-            kind: export.kind,
-            index: export.index,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum ElementKind {
-    Passive,
-    Active(u32, Vec<HirInstruction>),
-    Declared,
-}
-
-impl From<wasmparser::ElementKind<'_>> for ElementKind {
-    fn from(kind: wasmparser::ElementKind<'_>) -> Self {
-        use wasmparser::ElementKind::*;
-        match kind {
-            Passive => Self::Passive,
-            Declared => Self::Declared,
-            Active {
-                table_index,
-                init_expr,
-            } => Self::Active(
-                table_index,
-                vec![], // TODO: init_expr
-            ),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Element {
-    pub kind: ElementKind,
-    pub items: Vec<LirValue>,
-    pub ty: Type,
-    pub range: Range,
-}
-
-impl From<wasmparser::Element<'_>> for Element {
-    fn from(element: wasmparser::Element<'_>) -> Self {
-        Self {
-            kind: element.kind.into(),
-            items: vec![], // TODO: element.items
-            ty: element.ty,
-            range: element.range,
-        }
-    }
-}
-
-pub enum DataKind {
-    Passive,
-    Active(u32, Vec<HirInstruction>),
-}
-
-impl From<wasmparser::DataKind<'_>> for DataKind {
-    fn from(kind: wasmparser::DataKind<'_>) -> Self {
-        use wasmparser::DataKind::*;
-        match kind {
-            Passive => Self::Passive,
-            Active {
-                memory_index,
-                init_expr,
-            } => Self::Active(
-                memory_index,
-                vec![], // TODO: init_expr
-            ),
-        }
-    }
-}
-
-/*pub struct Data {
-    pub data: Vec<>,
-    pub range: Range,
-}
-
-impl From<wasmparser::Element<'_>> for Data {
-    fn from(data: wasmparser::Data<'_>) -> Self {
-        Self {
-            kind: element.kind.into(),
-            data:
-            range: element.range,
-        }
-    }
-}
-*/

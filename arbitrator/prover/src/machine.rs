@@ -3,8 +3,7 @@
 
 use crate::{
     binary::{
-        parse, BlockType, Code, ElementKind, FloatInstruction, HirInstruction, NameCustomSection,
-        WasmBinary,
+        parse, BlockType, Code, FloatInstruction, HirInstruction, NameCustomSection, WasmBinary,
     },
     host::get_host_impl,
     memory::Memory,
@@ -32,7 +31,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{ExternalKind, TableType, TypeRef};
+use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -366,50 +365,53 @@ impl Module {
                 .ok_or_else(|| eyre!("Memory size is too large"))?;
             memory = Memory::new(size);
         }
-        let globals = bin
-            .globals
-            .iter()
-            .map(|g| {
-                todo!("global initializer not implemented")
-                /*if let [insn] = g.init_expr.as_slice() {
-                    if let Some(val) = insn.get_const_output() {
-                        return Ok(val);
-                    }
-                }
-                Err(eyre!("Global initializer isn't a constant"))*/
-            })
-            .collect::<Result<Vec<_>>>()?;
+
+        let mut globals = vec![];
+        for global in &bin.globals {
+            let mut reader = global.init_expr.get_operators_reader();
+            let value = match reader.read() {
+                Ok(op) if reader.eof() => crate::binary::op_as_const(op)?,
+                _ => bail!("Global initializer isn't a constant"),
+            };
+            globals.push(value);
+        }
+
         for export in &bin.exports {
             if let ExternalKind::Func = export.kind {
                 exports.insert(export.name.to_owned(), export.index);
             }
         }
+
         for data in &bin.datas {
-            if let Some(loc) = &data.active_location {
-                ensure!(loc.memory == 0, "Attempted to write to nonexistant memory");
-                let mut offset = None;
-                if let [insn] = loc.offset.as_slice() {
-                    if let Some(Value::I32(x)) = insn.get_const_output() {
-                        offset = Some(x);
-                    }
-                }
-                let offset = usize::try_from(
-                    offset.ok_or_else(|| eyre!("Non-constant data offset expression"))?,
-                )
-                .unwrap();
-                if !matches!(
-                    offset.checked_add(data.data.len()),
-                    Some(x) if (x as u64) < memory.size() as u64,
-                ) {
-                    bail!(
-                        "Out-of-bounds data memory init with offset {} and size {}",
-                        offset,
-                        data.data.len(),
-                    );
-                }
-                memory.set_range(offset, &data.data);
+            let (memory_index, mut init) = match data.kind {
+                DataKind::Active {
+                    memory_index,
+                    init_expr,
+                } => (memory_index, init_expr.get_operators_reader()),
+                _ => continue,
+            };
+            ensure!(
+                memory_index == 0,
+                "Attempted to write to nonexistant memory"
+            );
+
+            let offset = match init.read()? {
+                Operator::I32Const { value } if init.eof() => value as usize,
+                _ => bail!("Non-constant data offset expression"),
+            };
+            if !matches!(
+                offset.checked_add(data.data.len()),
+                Some(x) if (x as u64) < memory.size() as u64,
+            ) {
+                bail!(
+                    "Out-of-bounds data memory init with offset {} and size {}",
+                    offset,
+                    data.data.len(),
+                );
             }
+            memory.set_range(offset, &data.data);
         }
+
         for table in &bin.tables {
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
@@ -417,53 +419,57 @@ impl Module {
                 elems_merkle: Merkle::default(),
             });
         }
+
         for elem in &bin.elements {
-            if let ElementKind::Active(t, o) = &elem.kind {
-                let mut offset = None;
-                if let [insn] = o.as_slice() {
-                    if let Some(Value::I32(x)) = insn.get_const_output() {
-                        offset = Some(x);
+            let (t, mut init) = match elem.kind {
+                ElementKind::Active {
+                    table_index,
+                    init_expr,
+                } => (table_index, init_expr.get_operators_reader()),
+                _ => continue,
+            };
+            let offset = match init.read()? {
+                Operator::I32Const { value } if init.eof() => value as usize,
+                _ => bail!("Non-constant element segment offset expression"),
+            };
+            let table = match tables.get_mut(t as usize) {
+                Some(t) => t,
+                None => bail!("Element segment for non-exsistent table {}", t),
+            };
+            let expected_ty = table.ty.element_type;
+            ensure!(
+                expected_ty == elem.ty,
+                "Element type expected to be of table type {:?} but of type {:?}",
+                expected_ty,
+                elem.ty
+            );
+
+            let mut contents = vec![];
+            let mut item_reader = elem.items.get_items_reader()?;
+            for _ in 0..item_reader.get_count() {
+                let item = item_reader.read()?;
+                let index = match item {
+                    ElementItem::Func(index) => index,
+                    ElementItem::Expr(_) => {
+                        bail!("Non-constant element initializers are not supported")
                     }
-                }
-                let offset = usize::try_from(
-                    offset.ok_or_else(|| eyre!("Non-constant data offset expression"))?,
-                )
-                .unwrap();
-                let t = usize::try_from(*t).unwrap();
-                let table = match tables.get_mut(t) {
-                    Some(t) => t,
-                    None => bail!("Element segment for non-exsistent table {}", t),
                 };
-                let expected_ty = table.ty.element_type;
-                ensure!(
-                    expected_ty == elem.ty,
-                    "Element type expected to be of table type {:?} but of type {:?}",
-                    expected_ty,
-                    elem.ty
-                );
-                let contents: Vec<_> = elem
-                    .items
-                    .iter()
-                    .map(|val| {
-                        let func_ty = match val {
-                            Value::RefNull => FunctionType::default(),
-                            Value::FuncRef(x) => func_types[usize::try_from(*x).unwrap()].clone(),
-                            _ => bail!("Invalid element value {:?}", val),
-                        };
-                        Ok(TableElement {
-                            val: val.clone(),
-                            func_ty,
-                        })
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let len = contents.len();
-                ensure!(
-                    offset.saturating_add(len) <= table.elems.len(),
-                    "Out of bounds element segment at offset {} and length {} for table of length {}",
-                    offset, len, table.elems.len(),
-                );
-                table.elems[offset..][..len].clone_from_slice(&contents);
+                let func_ty = func_types[index as usize].clone();
+                contents.push(TableElement {
+                    val: Value::FuncRef(index),
+                    func_ty,
+                })
             }
+
+            let len = contents.len();
+            ensure!(
+                offset.saturating_add(len) <= table.elems.len(),
+                "Out of bounds element segment at offset {} and length {} for table of length {}",
+                offset,
+                len,
+                table.elems.len(),
+            );
+            table.elems[offset..][..len].clone_from_slice(&contents);
         }
         ensure!(
             code.len() < (1usize << 31),

@@ -67,7 +67,6 @@ unsafe fn arbitrator_load_machine_impl(
     library_paths: *const *const c_char,
     library_paths_size: isize,
 ) -> Result<*mut Machine> {
-
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
 

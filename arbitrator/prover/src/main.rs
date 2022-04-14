@@ -5,7 +5,7 @@ use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus},
-    utils::{file_bytes, Bytes32},
+    utils::Bytes32,
     wavm::Opcode,
 };
 use serde::Serialize;
