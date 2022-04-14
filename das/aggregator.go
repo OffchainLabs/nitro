@@ -80,7 +80,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 	for i, d := range a.services {
 		// TODO make this asnyc
 		cert, err := d.service.Store(ctx, message)
-		// TODO actually we will want to not bail if until we hit H failures
 		if err != nil {
 			storeFailures++
 			log.Warn("Failed to store message to DAS", "err", err)
@@ -118,6 +117,9 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 				return nil, fmt.Errorf("Mismatched DataHash from DAS %d", i)
 			}
 			if aggCert.Timeout != cert.Timeout {
+				// TODO there is an issue here where each backend DAS currently
+				// sets its own timeout and so they can be mismatched.
+				// This needs to be aggregator controlled
 				return nil, fmt.Errorf("Mismatched Timeout from DAS %d", i)
 			}
 		}
