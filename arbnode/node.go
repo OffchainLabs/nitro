@@ -374,6 +374,7 @@ func ConfigDefaultL1Test() *Config {
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
+	config.BlockValidator = validator.TestBlockValidatorConfig
 
 	return &config
 }
@@ -448,24 +449,18 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type WasmConfig struct {
-	RootPath                 string `koanf:"root-path"`
-	CurrentModuleRoot        string `koanf:"current-module-root"`
-	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
-	CachePath                string `koanf:"cache-path"`
+	RootPath  string `koanf:"root-path"`
+	CachePath string `koanf:"cache-path"`
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
-	f.String(prefix+".current-module-root", DefaultWasmConfig.RootPath, "current wasm module root (if empty and this node is a validator, read from on-chain)")
-	f.String(prefix+".pending-upgrade-module-root", DefaultWasmConfig.RootPath, "pending upgrade wasm module root to additionally validate (if empty, read from <wasmrootpath>/latest/module_root)")
 	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
 }
 
 var DefaultWasmConfig = WasmConfig{
-	RootPath:                 "",
-	CurrentModuleRoot:        "",
-	PendingUpgradeModuleRoot: "",
-	CachePath:                "",
+	RootPath:  "",
+	CachePath: "",
 }
 
 type Node struct {
@@ -609,7 +604,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService, common.HexToHash(config.Wasm.CurrentModuleRoot), common.HexToHash(config.Wasm.PendingUpgradeModuleRoot))
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
@@ -731,6 +726,10 @@ func (n *Node) Start(ctx context.Context) error {
 		}
 	}
 	if n.BlockValidator != nil {
+		err = n.BlockValidator.Initialize()
+		if err != nil {
+			return err
+		}
 		err = n.BlockValidator.Start(ctx)
 		if err != nil {
 			return err

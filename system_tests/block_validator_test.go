@@ -57,8 +57,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
+	delayedTx := l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil)
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-		WrapL2ForDelayed(t, l2info.PrepareTx("Owner", "User2", 30002, big.NewInt(1e12), nil), l1info, "User", 100000),
+		WrapL2ForDelayed(t, delayedTx, l1info, "User", 100000),
 	})
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -71,14 +72,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string) {
 		})
 	}
 
-	// this is needed to stop the 1000000 balance error in CI (BUG)
-	time.Sleep(time.Millisecond * 500)
-
-	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
-
-	// BUG: need to sleep to avoid (Unexpected balance: 1000000000000)
-	time.Sleep(time.Millisecond * 100)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
 	Require(t, err)
