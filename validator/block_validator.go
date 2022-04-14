@@ -83,7 +83,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "current",
-	PendingUpgradeModuleRoot: "",
+	PendingUpgradeModuleRoot: "latest",
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -91,7 +91,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	OutputPath:               "./target/output",
 	ConcurrentRunsLimit:      0,
 	CurrentModuleRoot:        "latest",
-	PendingUpgradeModuleRoot: "",
+	PendingUpgradeModuleRoot: "latest",
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
