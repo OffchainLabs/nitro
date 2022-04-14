@@ -117,7 +117,6 @@ type Staker struct {
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
 	nitroMachineLoader      *NitroMachineLoader
-	updatingModuleRoot      bool // If true, the staker is managing the BlockValidator's latestModuleRoot
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -171,7 +170,6 @@ func NewStaker(
 		withdrawDestination: withdrawDestination,
 		inboxReader:         inboxReader,
 		nitroMachineLoader:  nitroMachineLoader,
-		updatingModuleRoot:  false,
 	}, nil
 }
 
@@ -179,6 +177,10 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn)
 	backoff := time.Second
 	s.CallIteratively(func(ctx context.Context) time.Duration {
+		err := s.updateBlockValidatorModuleRoot(ctx)
+		if err != nil {
+			log.Warn("error updating latest wasm module root", "err", err)
+		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
 			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
@@ -481,6 +483,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			info.CanProgress = false
 			return nil
 		}
+
 		// Details are already logged with more details in generateNodeAction
 		info.CanProgress = false
 		info.LatestStakedNode = 0

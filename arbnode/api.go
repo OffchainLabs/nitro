@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/pkg/errors"
 )
 
 type BlockValidatorAPI struct {
@@ -26,6 +27,12 @@ func (a *BlockValidatorAPI) RevalidateBlock(ctx context.Context, blockNum rpc.Bl
 	var moduleRoot common.Hash
 	if moduleRootOptional != nil {
 		moduleRoot = *moduleRootOptional
+	} else {
+		moduleRoots := a.val.GetModuleRootsToValidate()
+		if len(moduleRoots) == 0 {
+			return false, errors.New("no current WasmModuleRoot configured, must provide parameter")
+		}
+		moduleRoot = moduleRoots[0]
 	}
 	return a.val.ValidateBlock(ctx, header, moduleRoot)
 }
@@ -36,6 +43,6 @@ func (a *BlockValidatorAPI) LatestValidatedBlock(ctx context.Context) (uint64, e
 }
 
 func (a *BlockValidatorAPI) LatestValidatedBlockHash(ctx context.Context) (common.Hash, error) {
-	_, hash := a.val.LastBlockValidatedAndHash()
+	_, hash, _ := a.val.LastBlockValidatedAndHash()
 	return hash, nil
 }
