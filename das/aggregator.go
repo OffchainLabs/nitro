@@ -17,10 +17,16 @@ import (
 )
 
 type AggregatorConfig struct {
+	assumedHonest int
 }
 
 type Aggregator struct {
+	config   AggregatorConfig
 	services []serviceDetails
+
+	/// calculated fields
+	requiredServicesForStore       int
+	maxAllowedServiceStoreFailures int
 }
 
 type serviceDetails struct {
@@ -28,9 +34,12 @@ type serviceDetails struct {
 	pubKey  blsSignatures.PublicKey
 }
 
-func NewAggregator(services []serviceDetails) *Aggregator {
+func NewAggregator(config AggregatorConfig, services []serviceDetails) *Aggregator {
 	return &Aggregator{
-		services: services,
+		config:                         config,
+		services:                       services,
+		requiredServicesForStore:       len(services) + 1 - config.assumedHonest,
+		maxAllowedServiceStoreFailures: config.assumedHonest - 1,
 	}
 }
 
@@ -65,12 +74,21 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 	var pubKeys []blsSignatures.PublicKey
 	var sigs []blsSignatures.Signature
 	var aggCert arbstate.DataAvailabilityCertificate
+
+	var initialStoreSucceeded bool
+	storeFailures := 0
 	for i, d := range a.services {
 		// TODO make this asnyc
 		cert, err := d.service.Store(ctx, message)
 		// TODO actually we will want to not bail if until we hit H failures
 		if err != nil {
-			return nil, err
+			storeFailures++
+			log.Warn("Failed to store message to DAS", "err", err)
+			if storeFailures <= a.maxAllowedServiceStoreFailures {
+				continue
+			} else {
+				return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.assumedHonest)
+			}
 		}
 		verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(*cert), d.pubKey)
 		if err != nil {
@@ -91,7 +109,8 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 		}
 		pubKeys = append(pubKeys, d.pubKey)
 		sigs = append(sigs, cert.Sig)
-		if i == 0 {
+		if !initialStoreSucceeded {
+			initialStoreSucceeded = true
 			aggCert.DataHash = cert.DataHash
 			aggCert.Timeout = cert.Timeout
 		} else {
