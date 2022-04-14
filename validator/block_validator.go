@@ -45,8 +45,8 @@ type BlockValidator struct {
 	lastBlockValidatedHash  common.Hash // behind lastBlockValidatedMutex
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
-	nextBatchKept           uint64       // 1 + the last batch number kept
-	latestWasmModuleRoot    atomic.Value // contains a common.Hash
+	nextBatchKept           uint64 // 1 + the last batch number kept
+	currentWasmModuleRoot   common.Hash
 	pendingWasmModuleRoot   common.Hash
 
 	nextBlockToValidate      uint64
@@ -63,21 +63,35 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable              bool   `koanf:"enable"`
-	OutputPath          string `koanf:"output-path"`
-	ConcurrentRunsLimit int    `koanf:"concurrent-runs-limit"`
+	Enable                   bool   `koanf:"enable"`
+	OutputPath               string `koanf:"output-path"`
+	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
+	CurrentModuleRoot        string `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
+	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:              false,
-	OutputPath:          "./target/output",
-	ConcurrentRunsLimit: 0,
+	Enable:                   false,
+	OutputPath:               "./target/output",
+	ConcurrentRunsLimit:      0,
+	CurrentModuleRoot:        "current",
+	PendingUpgradeModuleRoot: "",
+}
+
+var TestBlockValidatorConfig = BlockValidatorConfig{
+	Enable:                   false,
+	OutputPath:               "./target/output",
+	ConcurrentRunsLimit:      0,
+	CurrentModuleRoot:        "latest",
+	PendingUpgradeModuleRoot: "",
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -92,7 +106,7 @@ type validationStatus struct {
 	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService, currentWasmModuleRoot common.Hash, pendingWasmModuleRoot common.Hash) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
@@ -109,12 +123,6 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	if err != nil {
 		return nil, err
 	}
-	if pendingWasmModuleRoot == (common.Hash{}) {
-		pendingWasmModuleRoot, err = machineLoader.GetConfig().ReadLatestWasmModuleRoot()
-		if err != nil {
-			return nil, err
-		}
-	}
 	validator := &BlockValidator{
 		StatelessBlockValidator: statelessVal,
 		sendValidationsChan:     make(chan struct{}, 1),
@@ -122,21 +130,8 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 		progressChan:            make(chan uint64, 1),
 		concurrentRunsLimit:     int32(concurrent),
 		config:                  config,
-		pendingWasmModuleRoot:   pendingWasmModuleRoot,
-	}
-	err = validator.SetCurrentWasmModuleRoot(currentWasmModuleRoot)
-	if err != nil {
-		return nil, err
 	}
 	err = validator.readLastBlockValidatedDbInfo()
-	if err != nil {
-		return nil, err
-	}
-	err = machineLoader.CreateMachine(currentWasmModuleRoot, true)
-	if err != nil {
-		return nil, err
-	}
-	err = machineLoader.CreateMachine(pendingWasmModuleRoot, true)
 	if err != nil {
 		return nil, err
 	}
@@ -209,21 +204,18 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 	v.sendValidationsChan <- struct{}{}
 }
 
-func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
-	validatingModuleRoots := []common.Hash{v.pendingWasmModuleRoot}
-	currentWasmModuleRoot := v.GetCurrentWasmModuleRoot()
-	if currentWasmModuleRoot == (common.Hash{}) {
-		var err error
-		currentWasmModuleRoot, err = v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
-		if err != nil {
-			log.Warn("failed to get latest wasm module root", "err", err)
-			return validatingModuleRoots
-		}
-	}
-	if currentWasmModuleRoot != v.pendingWasmModuleRoot {
-		validatingModuleRoots = append(validatingModuleRoots, currentWasmModuleRoot)
+func (v *BlockValidator) getModuleRootsToValidateLocked() []common.Hash {
+	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if (v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != common.Hash{}) {
+		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
 	}
 	return validatingModuleRoots
+}
+
+func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+	return v.getModuleRootsToValidateLocked()
 }
 
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
@@ -232,7 +224,7 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 	status := &validationStatus{
 		Status:      validationStatusUnprepared,
 		Entry:       nil,
-		ModuleRoots: v.GetModuleRootsToValidate(),
+		ModuleRoots: v.getModuleRootsToValidateLocked(),
 	}
 	blockNum := block.NumberU64()
 	// It's fine to separately load and then store as we have the blockMutex acquired
@@ -349,23 +341,27 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	return nil
 }
 
-func (v *BlockValidator) GetCurrentWasmModuleRoot() common.Hash {
-	return v.latestWasmModuleRoot.Load().(common.Hash)
-}
-
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
-	oldHash := v.latestWasmModuleRoot.Swap(hash)
-	if hash != oldHash {
-		err := v.MachineLoader.CreateMachine(hash, true)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
 
-func (v *BlockValidator) GetPendingUpgradeWasmModuleRoot() common.Hash {
-	return v.pendingWasmModuleRoot
+	if (hash == common.Hash{}) {
+		return errors.New("trying to set zero as wsmModuleRoot")
+	}
+	if hash == v.currentWasmModuleRoot {
+		return nil
+	}
+	if (v.currentWasmModuleRoot == common.Hash{}) {
+		v.currentWasmModuleRoot = hash
+	}
+	if v.pendingWasmModuleRoot == hash {
+		log.Info("Block validator: detected progressing to pending machine", "hash", hash)
+		v.currentWasmModuleRoot = hash
+	}
+	if v.config.CurrentModuleRoot != "current" {
+		return nil
+	}
+	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
 }
 
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
@@ -595,11 +591,16 @@ func (v *BlockValidator) LastBlockValidated() uint64 {
 	return atomic.LoadUint64(&v.lastBlockValidated)
 }
 
-func (v *BlockValidator) LastBlockValidatedAndHash() (uint64, common.Hash) {
+func (v *BlockValidator) LastBlockValidatedAndHash() (blockNumber uint64, blockHash common.Hash, wasmModuleRoots []common.Hash) {
 	v.lastBlockValidatedMutex.Lock()
-	defer v.lastBlockValidatedMutex.Unlock()
+	blockValidated := v.lastBlockValidated
+	blockValidatedHash := v.lastBlockValidatedHash
+	v.lastBlockValidatedMutex.Unlock()
 
-	return v.lastBlockValidated, v.lastBlockValidatedHash
+	// things can be removed from, but not added to, moduleRootsToValidate. By taking root hashes fter the block we know result is valid
+	moduleRootsValidated := v.GetModuleRootsToValidate()
+
+	return blockValidated, blockValidatedHash, moduleRootsValidated
 }
 
 // Because batches and blocks are handled at separate layers in the node,
@@ -737,6 +738,50 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 		}
 	}
 
+	return nil
+}
+
+// Must be called after SetCurrentWasmModuleRoot sets the current one
+func (v *BlockValidator) Initialize() error {
+	switch v.config.CurrentModuleRoot {
+	case "latest":
+		latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
+		if err != nil {
+			return err
+		}
+		v.currentWasmModuleRoot = latest
+	case "current":
+		if (v.currentWasmModuleRoot == common.Hash{}) {
+			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
+		}
+	default:
+		v.currentWasmModuleRoot = common.HexToHash(v.config.CurrentModuleRoot)
+		if (v.currentWasmModuleRoot == common.Hash{}) {
+			return errors.New("current-module-root config value illegal")
+		}
+	}
+	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
+		return err
+	}
+
+	if v.config.PendingUpgradeModuleRoot != "" {
+		if v.config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
+			if (v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+		if err := v.MachineLoader.CreateMachine(v.pendingWasmModuleRoot, true); err != nil {
+			return err
+		}
+	}
+	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }
 
