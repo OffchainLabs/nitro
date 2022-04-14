@@ -59,8 +59,8 @@ interface NodeInterface {
      * @notice Gets the number of L1 confirmations of the sequencer batch producing the requested L2 block
      * This gets the number of L1 confirmations for the input message producing the L2 block,
      * which happens well before the L1 rollup contract confirms the L2 block.
-     * @param block The L2 block being queried
+     * @param blockHash The hash of the L2 block being queried
      * @return confirmations The number of L1 confirmations the sequencer batch has
      */
-    function getL1Confirmations(uint64 block) external view returns (uint64 confirmations);
+    function getL1Confirmations(bytes32 blockHash) external view returns (uint64 confirmations);
 }

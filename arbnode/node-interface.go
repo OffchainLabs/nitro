@@ -125,7 +125,11 @@ func ApplyNodeInterface(
 		if err != nil {
 			return msg, nil, err
 		}
-		batch, err := findBatchContainingBlock(node, block)
+		genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+		if err != nil {
+			return msg, nil, err
+		}
+		batch, err := findBatchContainingBlock(node, genesis, block)
 		if err != nil {
 			return msg, nil, err
 		}
@@ -146,13 +150,13 @@ func ApplyNodeInterface(
 		if err != nil {
 			return msg, nil, err
 		}
-		block, _ := inputs[0].(uint64)
+		blockHash, _ := inputs[0].([32]byte)
 
 		node, err := arbNodeFromNodeInterfaceBackend(backend)
 		if err != nil {
 			return msg, nil, err
 		}
-		confs, err := getL1Confirmations(node, block)
+		confs, err := getL1Confirmations(node, blockHash)
 		if err != nil {
 			return msg, nil, err
 		}
@@ -463,11 +467,7 @@ func nodeInterfaceConstructOutboxProof(
 var blockInGenesis = errors.New("")
 var blockAfterLatestBatch = errors.New("")
 
-func findBatchContainingBlock(node *Node, block uint64) (uint64, error) {
-	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
-	if err != nil {
-		return 0, err
-	}
+func findBatchContainingBlock(node *Node, genesis uint64, block uint64) (uint64, error) {
 	if block <= genesis {
 		return 0, fmt.Errorf("%wblock %v is part of genesis", blockInGenesis, block)
 	}
@@ -489,11 +489,21 @@ func findBatchContainingBlock(node *Node, block uint64) (uint64, error) {
 	return validator.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
 }
 
-func getL1Confirmations(node *Node, block uint64) (uint64, error) {
+func getL1Confirmations(node *Node, blockHash common.Hash) (uint64, error) {
 	if node.InboxReader == nil {
 		return 0, nil
 	}
-	batch, err := findBatchContainingBlock(node, block)
+	bc := node.ArbInterface.BlockChain()
+	header := bc.GetHeaderByHash(blockHash)
+	if header == nil {
+		return 0, errors.New("unknown block hash")
+	}
+	blockNum := header.Number.Uint64()
+	genesis, err := node.TxStreamer.GetGenesisBlockNumber()
+	if err != nil {
+		return 0, err
+	}
+	batch, err := findBatchContainingBlock(node, genesis, blockNum)
 	if err != nil {
 		if errors.Is(err, blockInGenesis) {
 			batch = 0
@@ -503,16 +513,20 @@ func getL1Confirmations(node *Node, block uint64) (uint64, error) {
 			return 0, err
 		}
 	}
-	meta, err := node.InboxTracker.GetBatchMetadata(batch)
-	if err != nil {
-		return 0, err
-	}
 	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
 	if latestBatchCount <= batch {
 		return 0, nil // batch was reorg'd out?
 	}
-	if latestL1Block < meta.L1Block {
+	meta, err := node.InboxTracker.GetBatchMetadata(batch)
+	if err != nil {
+		return 0, err
+	}
+	if latestL1Block < meta.L1Block || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
 		return 0, nil
+	}
+	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
+	if canonicalHash != header.Hash() {
+		return 0, errors.New("block hash is non-canonical")
 	}
 	confs := (latestL1Block - meta.L1Block) + 1 + node.InboxReader.GetDelayBlocks()
 	return confs, nil
