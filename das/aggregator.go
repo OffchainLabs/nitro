@@ -11,6 +11,7 @@ import (
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
@@ -45,6 +46,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 	for _, d := range a.services {
 		blob, err = d.service.Retrieve(ctx, cert)
 		if err != nil {
+			log.Warn("Retrieve from backend DAS failed", "err", err)
 			continue
 		}
 		var blobHash [32]byte

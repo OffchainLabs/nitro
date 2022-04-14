@@ -147,14 +147,8 @@ func (das *LocalDiskDataAvailabilityService) Retrieve(ctx context.Context, certB
 		return nil, errors.New("Retrieved message stored hash doesn't match calculated hash.")
 	}
 
-	signedBlob := serializeSignableFields(*cert)
-	sigMatch, err := blsSignatures.VerifySignature(cert.Sig, signedBlob, *das.pubKey)
-	if err != nil {
-		return nil, err
-	}
-	if !sigMatch {
-		return nil, errors.New("Signature of data in cert passed in doesn't match")
-	}
+	// The cert passed in may have an aggregate signature, so we don't
+	// check the signature against this DAS's public key here.
 
 	return originalMessage, nil
 }

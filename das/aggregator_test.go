@@ -5,13 +5,21 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
-func TestDASAggregationLocal(t *testing.T) {
+func TestDASBasicAggregationLocal(t *testing.T) {
+	/*
+		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+		glogger.Verbosity(log.LvlTrace)
+		log.Root().SetHandler(glogger)
+	*/
 	numBackendDAS := 10
 	var backends []serviceDetails
 	for i := 0; i < numBackendDAS; i++ {
@@ -28,6 +36,12 @@ func TestDASAggregationLocal(t *testing.T) {
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	_, err := aggregator.Store(ctx, rawMsg)
+	cert, err := aggregator.Store(ctx, rawMsg)
 	Require(t, err, "Error storing message")
+
+	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	Require(t, err, "Failed to retrieve message")
+	if !bytes.Equal(rawMsg, messageRetrieved) {
+		Fail(t, "Retrieved message is not the same as stored one.")
+	}
 }
