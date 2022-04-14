@@ -117,9 +117,6 @@ type Staker struct {
 	withdrawDestination     common.Address
 	inboxReader             InboxReaderInterface
 	nitroMachineLoader      *NitroMachineLoader
-	updatingModuleRoot      bool
-	firstModuleRootSeen     common.Hash
-	moduleRootConsistent    bool // if firstModuleRootSeen has since been the module root consistently
 }
 
 func stakerStrategyFromString(s string) (StakerStrategy, error) {
@@ -163,64 +160,17 @@ func NewStaker(
 		withdrawDestination = common.HexToAddress(config.WithdrawDestination)
 	}
 	return &Staker{
-		L1Validator:          val,
-		l1Reader:             l1Reader,
-		strategy:             strategy,
-		baseCallOpts:         callOpts,
-		config:               config,
-		highGasBlocksBuffer:  big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
-		lastActCalledBlock:   nil,
-		withdrawDestination:  withdrawDestination,
-		inboxReader:          inboxReader,
-		nitroMachineLoader:   nitroMachineLoader,
-		updatingModuleRoot:   false,
-		firstModuleRootSeen:  common.Hash{},
-		moduleRootConsistent: true,
+		L1Validator:         val,
+		l1Reader:            l1Reader,
+		strategy:            strategy,
+		baseCallOpts:        callOpts,
+		config:              config,
+		highGasBlocksBuffer: big.NewInt(config.L1PostingStrategy.HighGasDelayBlocks),
+		lastActCalledBlock:  nil,
+		withdrawDestination: withdrawDestination,
+		inboxReader:         inboxReader,
+		nitroMachineLoader:  nitroMachineLoader,
 	}, nil
-}
-
-func (s *Staker) Initialize(ctx context.Context) error {
-	err := s.L1Validator.Initialize(ctx)
-	if err != nil {
-		return err
-	}
-	return s.updateBlockValidatorModuleRoot(ctx)
-}
-
-func (s *Staker) updateBlockValidatorModuleRoot(ctx context.Context) error {
-	if s.blockValidator == nil {
-		return nil
-	}
-	if !s.updatingModuleRoot {
-		haveModuleRoot := s.blockValidator.GetCurrentWasmModuleRoot()
-		if haveModuleRoot == (common.Hash{}) {
-			s.updatingModuleRoot = true
-		} else {
-			if s.firstModuleRootSeen == (common.Hash{}) {
-				s.firstModuleRootSeen = haveModuleRoot
-			}
-			return nil
-		}
-	}
-	moduleRoot, err := s.rollup.WasmModuleRoot(s.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
-	if moduleRoot == (common.Hash{}) {
-		log.Warn("rollup is configured with an empty WASM module root")
-		s.moduleRootConsistent = false
-		return nil
-	}
-	err = s.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
-	if err != nil {
-		return err
-	}
-	if s.firstModuleRootSeen == (common.Hash{}) {
-		s.firstModuleRootSeen = moduleRoot
-	} else if s.firstModuleRootSeen != moduleRoot {
-		s.moduleRootConsistent = false
-	}
-	return nil
 }
 
 func (s *Staker) Start(ctxIn context.Context) {
@@ -532,22 +482,6 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			}
 			info.CanProgress = false
 			return nil
-		}
-		if s.blockValidator != nil {
-			currentModuleRoot, err := s.rollup.WasmModuleRoot(s.getCallOpts(ctx))
-			if err != nil {
-				return err
-			}
-			if currentModuleRoot == (common.Hash{}) {
-				return errors.New("rollup is configured with an empty WASM module root")
-			}
-			pendingRoot := s.blockValidator.GetPendingUpgradeWasmModuleRoot()
-			if (currentModuleRoot != s.firstModuleRootSeen || !s.moduleRootConsistent) && currentModuleRoot != pendingRoot {
-				return fmt.Errorf(
-					"rollup is configured with an unknown WASM module root %v (known roots are first seen %v and pending %v)",
-					currentModuleRoot, s.firstModuleRootSeen, pendingRoot,
-				)
-			}
 		}
 
 		// Details are already logged with more details in generateNodeAction
