@@ -8,9 +8,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -47,24 +50,119 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	}
 }
 
-type FailsStore struct {
+type failureType int
+
+const (
+	success failureType = iota
+	immediateError
+	// TODO timeoutError
+)
+
+type failureInjector interface {
+	shouldFail() failureType
+}
+
+type randomBagOfFailures struct {
+	t        *testing.T
+	failures []failureType
+}
+
+func newRandomBagOfFailures(t *testing.T, nSuccess, nImmediateError int) *randomBagOfFailures {
+	var failures []failureType
+	for i := 0; i < nSuccess; i++ {
+		failures = append(failures, success)
+	}
+	for i := 0; i < nImmediateError; i++ {
+		failures = append(failures, immediateError)
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(failures), func(i, j int) { failures[i], failures[j] = failures[j], failures[i] })
+
+	log.Trace("Injected failures", "failures", failures)
+
+	return &randomBagOfFailures{t, failures}
+}
+
+func (b *randomBagOfFailures) shouldFail() failureType {
+	if len(b.failures) <= 0 {
+		Fail(b.t, "shouldFail called more times than expected")
+	}
+
+	toReturn := b.failures[0]
+	b.failures = b.failures[1:]
+	return toReturn
+}
+
+type WrapStore struct {
+	t        *testing.T
+	injector failureInjector
 	DataAvailabilityService
 }
 
-type FailsRetrieve struct {
+type WrapRetrieve struct {
+	t        *testing.T
+	injector failureInjector
 	DataAvailabilityService
 }
 
-func (*FailsRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
-	return nil, errors.New("Expected Retrieve failure")
+func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error) {
+	switch w.injector.shouldFail() {
+	case success:
+		return w.DataAvailabilityService.Retrieve(ctx, cert)
+	case immediateError:
+		return nil, errors.New("Expected Retrieve failure")
+	}
+
+	Fail(w.t)
+	return nil, nil
 }
 
-func (*FailsStore) Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	return nil, errors.New("Expected Store failure")
+func (w *WrapStore) Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error) {
+	switch w.injector.shouldFail() {
+	case success:
+		return w.DataAvailabilityService.Store(ctx, message)
+	case immediateError:
+		return nil, errors.New("Expected Store failure")
+	}
+
+	Fail(w.t)
+	return nil, nil
 }
 
-func TestDAS_LessThanHStorageFailures(t *testing.T) {
-	numBackendDAS := 10
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
+	/*
+		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+		glogger.Verbosity(log.LvlTrace)
+		log.Root().SetHandler(glogger)
+	*/
+	rand.Seed(time.Now().UnixNano())
+	numBackendDAS := (rand.Int() % 20) + 1
+	assumedHonest := (rand.Int() % numBackendDAS) + 1
+	var nImmediateErrors int
+	if shouldFailAggregation {
+		nImmediateErrors = max(assumedHonest, rand.Int()%(numBackendDAS+1))
+	} else {
+		nImmediateErrors = min(assumedHonest-1, rand.Int()%(numBackendDAS+1))
+	}
+	nSuccesses := numBackendDAS - nImmediateErrors
+	log.Trace(fmt.Sprintf("Testing aggregator with K:%d with K=N+1-H, N:%d, H:%d, and %d successes", numBackendDAS+1-assumedHonest, numBackendDAS, assumedHonest, nSuccesses))
+
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nImmediateErrors)
 	var backends []serviceDetails
 	for i := 0; i < numBackendDAS; i++ {
 		dbPath, err := ioutil.TempDir("/tmp", "das_test")
@@ -74,53 +172,41 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 		das, err := NewLocalDiskDataAvailabilityService(dbPath, 1<<i)
 		Require(t, err)
 
-		details := serviceDetails{das, *das.pubKey}
-		if i < 3 {
-			details.service = &FailsStore{das}
-		}
+		details := serviceDetails{&WrapStore{t, injectedFailures, das}, *das.pubKey}
 
 		backends = append(backends, details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{4}, backends)
+	aggregator := NewAggregator(AggregatorConfig{assumedHonest}, backends)
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
 	cert, err := aggregator.Store(ctx, rawMsg)
-	Require(t, err, "Error storing message")
+	if !shouldFailAggregation {
+		Require(t, err, "Error storing message")
+	} else {
+		if err == nil {
+			Fail(t, "Expected error from too many failed DASes.")
+		}
+		return
+	}
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
 	Require(t, err, "Failed to retrieve message")
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
+
 }
 
-func TestDAS_HStorageFailures(t *testing.T) {
-	numBackendDAS := 10
-	var backends []serviceDetails
-	for i := 0; i < numBackendDAS; i++ {
-		dbPath, err := ioutil.TempDir("/tmp", "das_test")
-		Require(t, err)
-		defer os.RemoveAll(dbPath)
-
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, 1<<i)
-		Require(t, err)
-
-		details := serviceDetails{das, *das.pubKey}
-		if i < 3 {
-			details.service = &FailsStore{das}
-		}
-
-		backends = append(backends, details)
+func TestDAS_LessThanHStorageFailures(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		testConfigurableStorageFailures(t, false)
 	}
+}
 
-	aggregator := NewAggregator(AggregatorConfig{3}, backends)
-	ctx := context.Background()
-
-	rawMsg := []byte("It's time for you to see the fnords.")
-	_, err := aggregator.Store(ctx, rawMsg)
-	if err == nil {
-		Fail(t, "Expected error from too many failed DASes.")
+func TestDAS_AtLeastHStorageFailures(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		testConfigurableStorageFailures(t, true)
 	}
 }
