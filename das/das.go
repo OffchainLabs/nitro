@@ -17,8 +17,12 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 )
 
+const CALLEE_PICKS_TIMEOUT = 0
+
 type DataAvailabilityServiceWriter interface {
-	Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error)
+	// Requests that the message be stored until timeout (UTC time in unix epoch seconds).
+	// Set timeout to CALLEE_PICKS_TIMEOUT for the callee (eg the aggregator) to pick it.
+	Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error)
 }
 
 type DataAvailabilityService interface {
