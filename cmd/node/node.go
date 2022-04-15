@@ -472,6 +472,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 		return nil, nil, nil, nil, nil, errors.New("l1 reader enabled but --l1.url not provided")
 	}
 
+	if l1ChainId == nil {
+		l1ChainId = big.NewInt(int64(configChainId))
+	}
+
 	if configChainId != l1ChainId.Uint64() {
 		if configChainId != 0 {
 			log.Error("chain id from L1 does not match command line chain id", "l1", l1ChainId.String(), "cli", configChainId)
@@ -499,7 +503,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 			}
 		}
 	case 1337: // local testnet
-		// Just set l2 chain id here until deployment.json gets fixed for test-node
+		// Just set l2 chain id and chain directory here until deployment.json gets fixed for test-node
 		err := k.Load(confmap.Provider(map[string]interface{}{
 			"l2.chain-id":      421612,
 			"persistent.chain": "local-devnet",
