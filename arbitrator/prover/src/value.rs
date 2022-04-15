@@ -11,7 +11,7 @@ use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use wasmparser::Type;
+use wasmparser::{FuncType, Type};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[repr(u8)]
@@ -246,5 +246,23 @@ impl FunctionType {
             h.update(&[*output as u8]);
         }
         h.finalize().into()
+    }
+}
+
+impl TryFrom<FuncType> for FunctionType {
+    type Error = eyre::Error;
+
+    fn try_from(func: FuncType) -> Result<Self> {
+        let mut inputs = vec![];
+        let mut outputs = vec![];
+
+        for input in func.params.into_iter() {
+            inputs.push(ArbValueType::try_from(*input)?)
+        }
+        for output in func.returns.into_iter() {
+            inputs.push(ArbValueType::try_from(*output)?)
+        }
+
+        Ok(Self { inputs, outputs })
     }
 }

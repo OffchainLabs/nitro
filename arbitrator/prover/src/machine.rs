@@ -31,7 +31,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use wasmparser::{
+    DataKind, ElementItem, ElementKind, ExternalKind, FuncType, Operator, TableType, TypeRef,
+};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -71,12 +73,9 @@ impl Function {
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
-        let locals_with_params: Vec<ArbValueType> = func_ty
-            .inputs
-            .iter()
-            .chain(code.locals.iter())
-            .cloned()
-            .collect();
+        let mut locals_with_params = func_ty.inputs.clone();
+        locals_with_params.extend(code.locals.iter().map(|x| x.value.clone()));
+
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
             .iter()
@@ -342,7 +341,7 @@ impl Module {
             .iter()
             .map(|i| types[*i as usize].clone())
             .collect();
-        for c in &bin.code {
+        for c in &bin.codes {
             let idx = code.len();
             code.push(Function::new(
                 c,

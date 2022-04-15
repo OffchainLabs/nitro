@@ -13,7 +13,7 @@ use nom::{
     combinator::{all_consuming, map, value},
     sequence::{preceded, tuple},
 };
-use std::{hash::Hash, str::FromStr};
+use std::{convert::TryInto, hash::Hash, slice::SliceIndex, str::FromStr};
 use wasmparser::{
     Data, Element, Export, ExternalKind, FuncType, Global, Import, MemoryType, Operator, Parser,
     Payload, Range, TableType, Type, TypeDef, TypeRef,
@@ -247,10 +247,16 @@ pub fn op_as_const(op: Operator) -> Result<LirValue> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct Code<'a> {
+    pub locals: Vec<Local>,
+    pub expr: Vec<Operator<'a>>,
+}
+
 #[derive(Clone, Debug)]
-pub struct Code {
-    pub locals: Vec<ArbValueType>,
-    pub expr: Vec<HirInstruction>,
+pub struct Local {
+    pub index: u32,
+    pub value: ArbValueType,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -274,7 +280,7 @@ pub enum CustomSection {
 
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
-    pub types: Vec<FunctionType>,
+    pub types: Vec<FunctionType>,   //
     pub imports: Vec<Import<'a>>,   // fix compare to element
     pub functions: Vec<u32>,        //
     pub tables: Vec<TableType>,     //
@@ -283,7 +289,7 @@ pub struct WasmBinary<'a> {
     pub exports: Vec<Export<'a>>,   //
     pub start: Option<u32>,         //
     pub elements: Vec<Element<'a>>, //
-    pub code: Vec<Code>,
+    pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,     //
     pub names: NameCustomSection, // do later
 }
@@ -313,11 +319,29 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         }
 
         match &mut section {
-            Version { .. } => {}
             Payload::TypeSection(type_section) => {
-                /*let TypeDef::Func(ty) = type_section.read()?;
-                let same = FunctionType::new(ty.params.to_owned(), ty.returns.clone());
-                binary.types.push(ty);*/
+                for _ in 0..type_section.get_count() {
+                    let TypeDef::Func(ty) = type_section.read()?;
+                    binary.types.push(ty.try_into()?);
+                }
+            }
+            CodeSectionEntry(codes) => {
+                let mut code = Code::default();
+                let mut locals = codes.get_locals_reader()?;
+                let mut ops = codes.get_operators_reader()?;
+
+                for _ in 0..locals.get_count() {
+                    let (index, value) = locals.read()?;
+                    code.locals.push(Local {
+                        index,
+                        value: value.try_into()?,
+                    })
+                }
+                while !ops.eof() {
+                    code.expr.push(ops.read()?);
+                }
+
+                binary.codes.push(code);
             }
             Payload::ImportSection(imports) => process!(binary.imports, imports),
             FunctionSection(functions) => process!(binary.functions, functions),
@@ -327,11 +351,11 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             ExportSection(exports) => process!(binary.exports, exports),
             StartSection { func, .. } => binary.start = Some(*func),
             ElementSection(elements) => process!(binary.elements, elements),
-            CodeSectionStart { count, range, size } => {}
-            CodeSectionEntry(codes) => {}
             DataSection(datas) => process!(binary.datas, datas),
             //NameCustomSection(names) => process!(binary.names, names),
+            CodeSectionStart { count, range, size } => {}
             UnknownSection { .. } => {}
+            Version { .. } => {}
             End(_offset) => {}
             x => bail!("unsupported section type {:?}", x),
         }
