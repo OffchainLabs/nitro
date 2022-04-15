@@ -143,12 +143,12 @@ if $force_init; then
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to validator
     docker-compose run testnode-scripts send-l1 --ethamount 1000 --to sequencer
 
+    echo == Writing configs
+    docker-compose run testnode-scripts write-config
+
     echo == Deploying L2
     sequenceraddress=`docker-compose run testnode-scripts print-address --account sequencer | tail -n 1 | tr -d '\r\n'`
     docker-compose run --entrypoint target/bin/deploy poster --l1conn ws://geth:8546 --l1keystore /l1keystore --l1DeployAccount $sequenceraddress --l1deployment /config/deployment.json --authorizevalidators 10
-
-    echo == Writing configs
-    docker-compose run testnode-scripts write-config
 
     echo == Initializing redis
     docker-compose run testnode-scripts redis-init --redundancy $redundantsequencers

@@ -5,10 +5,10 @@ import { namedAccount } from './accounts'
 const path = require("path");
 
 function writeConfigs(argv: any) {
-    const deployment = JSON.parse(fs.readFileSync(path.join(consts.configpath, "deployment.json")).toString('utf-8'));
+    const deployment = path.join(consts.configpath, "deployment.json")
     const baseConfig = {
         "l1": {
-            "rollup": deployment,
+            "deployment": deployment,
             "url": argv.l1url,
             "wallet": {
                 "account": "",

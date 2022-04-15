@@ -55,13 +55,13 @@ type RollupAddresses struct {
 }
 
 type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge"`
-	Inbox                  string `koanf:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at"`
+	Bridge                 string `koanf:"bridge" json:"bridge"`
+	Inbox                  string `koanf:"inbox" json:"inbox"`
+	SequencerInbox         string `koanf:"sequencer-inbox" json:"sequencer-inbox"`
+	Rollup                 string `koanf:"rollup" json:"rollup"`
+	ValidatorUtils         string `koanf:"validator-utils" json:"validator-utils"`
+	ValidatorWalletCreator string `koanf:"validator-wallet-creator" json:"validator-wallet-creator"`
+	DeployedAt             uint64 `koanf:"deployed-at" json:"deployed-at"`
 }
 
 var RollupAddressesConfigDefault = RollupAddressesConfig{}
@@ -96,14 +96,27 @@ func (c *RollupAddressesConfig) ParseAddresses() (RollupAddresses, error) {
 		&a.ValidatorUtils,
 		&a.ValidatorWalletCreator,
 	}
+	names := []string{
+		"Bridge",
+		"Inbox",
+		"SequencerInbox",
+		"Rollup",
+		"ValidatorUtils",
+		"ValidatorWalletCreator",
+	}
 	if len(strs) != len(addrs) {
 		return RollupAddresses{}, fmt.Errorf("internal error: attempting to parse %v strings into %v addresses", len(strs), len(addrs))
 	}
+	complete := true
 	for i, s := range strs {
 		if !common.IsHexAddress(s) {
-			return RollupAddresses{}, fmt.Errorf("invalid address: %v", s)
+			log.Error("invalid address", "name", names[i], "value", s)
+			complete = false
 		}
 		*addrs[i] = common.HexToAddress(s)
+	}
+	if !complete {
+		return RollupAddresses{}, fmt.Errorf("invalid addresses")
 	}
 	return a, nil
 }
@@ -714,23 +727,23 @@ func (l arbNodeLifecycle) Stop() error {
 }
 
 func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2BlockChain *core.BlockChain, l1client arbutil.L1Interface, deployInfo *RollupAddresses, txOpts *bind.TransactOpts) (newNode *Node, err error) {
-	node, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
+	currentNode, err := createNodeImpl(stack, chainDb, config, l2BlockChain, l1client, deployInfo, txOpts)
 	if err != nil {
 		return nil, err
 	}
 	var apis []rpc.API
-	if node.BlockValidator != nil {
+	if currentNode.BlockValidator != nil {
 		apis = append(apis, rpc.API{
 			Namespace: "arb",
 			Version:   "1.0",
-			Service:   &BlockValidatorAPI{val: node.BlockValidator, blockchain: l2BlockChain},
+			Service:   &BlockValidatorAPI{val: currentNode.BlockValidator, blockchain: l2BlockChain},
 			Public:    false,
 		})
 	}
 	stack.RegisterAPIs(apis)
 
-	stack.RegisterLifecycle(arbNodeLifecycle{node})
-	return node, nil
+	stack.RegisterLifecycle(arbNodeLifecycle{currentNode})
+	return currentNode, nil
 }
 
 func (n *Node) Start(ctx context.Context) error {
