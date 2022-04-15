@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,6 +66,7 @@ type failureInjector interface {
 type randomBagOfFailures struct {
 	t        *testing.T
 	failures []failureType
+	mutex    sync.Mutex
 }
 
 func newRandomBagOfFailures(t *testing.T, nSuccess, nImmediateError int) *randomBagOfFailures {
@@ -81,10 +83,15 @@ func newRandomBagOfFailures(t *testing.T, nSuccess, nImmediateError int) *random
 
 	log.Trace("Injected failures", "failures", failures)
 
-	return &randomBagOfFailures{t, failures}
+	return &randomBagOfFailures{
+		t:        t,
+		failures: failures,
+	}
 }
 
 func (b *randomBagOfFailures) shouldFail() failureType {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	if len(b.failures) == 0 {
 		Fail(b.t, "shouldFail called more times than expected")
 	}
