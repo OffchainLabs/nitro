@@ -85,7 +85,7 @@ func newRandomBagOfFailures(t *testing.T, nSuccess, nImmediateError int) *random
 }
 
 func (b *randomBagOfFailures) shouldFail() failureType {
-	if len(b.failures) <= 0 {
+	if len(b.failures) == 0 {
 		Fail(b.t, "shouldFail called more times than expected")
 	}
 
