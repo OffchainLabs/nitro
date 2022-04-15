@@ -467,15 +467,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 				return nil, nil, nil, nil, nil, err
 			}
 		}
-	case 1337: // local testnet
-		// Just set l2 chain id and chain directory here until deployment.json gets fixed for test-node
-		err := k.Load(confmap.Provider(map[string]interface{}{
-			"l2.chain-id":      421612,
-			"persistent.chain": "local-devnet",
-		}, "."), nil)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
 	}
 
 	err = cmdutil.ApplyOverrides(f, k)

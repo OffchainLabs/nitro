@@ -16,6 +16,9 @@ function writeConfigs(argv: any) {
                 "pathname": consts.l1keystore,
             },
         },
+        "l2": {
+            "chain-id": 421612,
+        },
         "node": {
             "archive": true,
             "forwarding-target": "null",
@@ -52,7 +55,8 @@ function writeConfigs(argv: any) {
             }
         },
         "persistent": {
-            "data": "/data"
+            "data": "/data",
+	        "chain": "local-devnet"
         },
         "ws": {
             "addr": "0.0.0.0"
