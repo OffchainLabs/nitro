@@ -135,6 +135,23 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	if err != nil {
 		return nil, err
 	}
+	if config.PendingUpgradeModuleRoot != "" {
+		if config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			if err != nil {
+				return nil, err
+			}
+			validator.pendingWasmModuleRoot = latest
+		} else {
+			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
+			if (validator.pendingWasmModuleRoot == common.Hash{}) {
+				return nil, errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
+			return nil, err
+		}
+	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
 	return validator, nil
@@ -353,10 +370,12 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	}
 	if (v.currentWasmModuleRoot == common.Hash{}) {
 		v.currentWasmModuleRoot = hash
+		return nil
 	}
 	if v.pendingWasmModuleRoot == hash {
 		log.Info("Block validator: detected progressing to pending machine", "hash", hash)
 		v.currentWasmModuleRoot = hash
+		return nil
 	}
 	if v.config.CurrentModuleRoot != "current" {
 		return nil
@@ -764,23 +783,6 @@ func (v *BlockValidator) Initialize() error {
 		return err
 	}
 
-	if v.config.PendingUpgradeModuleRoot != "" {
-		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
-			if err != nil {
-				return err
-			}
-			v.pendingWasmModuleRoot = latest
-		} else {
-			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (v.pendingWasmModuleRoot == common.Hash{}) {
-				return errors.New("pending-upgrade-module-root config value illegal")
-			}
-		}
-		if err := v.MachineLoader.CreateMachine(v.pendingWasmModuleRoot, true); err != nil {
-			return err
-		}
-	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
 	return nil
 }
