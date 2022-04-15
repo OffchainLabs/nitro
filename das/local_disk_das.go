@@ -89,14 +89,18 @@ func NewLocalDiskDataAvailabilityService(dbPath string) (*LocalDiskDataAvailabil
 	}, nil
 }
 
-func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte) (c *arbstate.DataAvailabilityCertificate, err error) {
+func (das *LocalDiskDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64) (c *arbstate.DataAvailabilityCertificate, err error) {
 	dasMutex.Lock()
 	defer dasMutex.Unlock()
 
 	c = &arbstate.DataAvailabilityCertificate{}
 	copy(c.DataHash[:], crypto.Keccak256(message))
 
-	c.Timeout = uint64(time.Now().Add(das.retentionPeriod).Unix())
+	if timeout == CALLEE_PICKS_TIMEOUT {
+		c.Timeout = uint64(time.Now().Add(das.retentionPeriod).Unix())
+	} else {
+		c.Timeout = timeout
+	}
 	c.SignersMask = das.signerMask
 
 	fields := serializeSignableFields(*c)

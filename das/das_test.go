@@ -24,7 +24,7 @@ func TestDASStoreRetrieveMultipleInstances(t *testing.T) {
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved, CALLEE_PICKS_TIMEOUT)
 	Require(t, err, "Error storing message")
 
 	certBytes := Serialize(*cert)
@@ -57,7 +57,7 @@ func TestDASMissingMessage(t *testing.T) {
 	ctx := context.Background()
 
 	messageSaved := []byte("hello world")
-	cert, err := das.Store(ctx, messageSaved)
+	cert, err := das.Store(ctx, messageSaved, CALLEE_PICKS_TIMEOUT)
 	Require(t, err, "Error storing message")
 
 	// Change the hash to look up

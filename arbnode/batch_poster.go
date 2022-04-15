@@ -369,7 +369,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context, timeSinceBatc
 	}
 
 	if b.das != nil {
-		cert, err := b.das.Store(ctx, sequencerMsg)
+		cert, err := b.das.Store(ctx, sequencerMsg, das.CALLEE_PICKS_TIMEOUT)
 		if err != nil {
 			log.Warn("Unable to batch to DAS, falling back to storing data on chain", "err", err)
 		} else {
