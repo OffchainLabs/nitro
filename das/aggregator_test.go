@@ -32,9 +32,10 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, 1<<i)
+		signerMask := uint64(1 << i)
+		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
 		Require(t, err)
-		backends = append(backends, serviceDetails{das, *das.pubKey})
+		backends = append(backends, serviceDetails{das, *das.pubKey, signerMask})
 	}
 
 	aggregator := NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)
@@ -176,10 +177,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		Require(t, err)
 		defer os.RemoveAll(dbPath)
 
-		das, err := NewLocalDiskDataAvailabilityService(dbPath, 1<<i)
+		signerMask := uint64(1 << i)
+		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
 		Require(t, err)
 
-		details := serviceDetails{&WrapStore{t, injectedFailures, das}, *das.pubKey}
+		details := serviceDetails{&WrapStore{t, injectedFailures, das}, *das.pubKey, signerMask}
 
 		backends = append(backends, details)
 	}

@@ -32,8 +32,9 @@ type Aggregator struct {
 }
 
 type serviceDetails struct {
-	service DataAvailabilityService
-	pubKey  blsSignatures.PublicKey
+	service    DataAvailabilityService
+	pubKey     blsSignatures.PublicKey
+	signerMask uint64
 }
 
 func NewAggregator(config AggregatorConfig, services []serviceDetails) *Aggregator {
@@ -50,11 +51,28 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	// Cert is the aggregate cert
+
+	// Cert is the aggregate cert, validate it against DAS public keys
+	var servicesThatSignedCert []serviceDetails
+	var pubKeys []blsSignatures.PublicKey
+	for _, d := range a.services {
+		if requestedCert.SignersMask&d.signerMask != 0 {
+			servicesThatSignedCert = append(servicesThatSignedCert, d)
+			pubKeys = append(pubKeys, d.pubKey)
+		}
+	}
+	signedBlob := serializeSignableFields(*requestedCert)
+	sigMatch, err := blsSignatures.VerifySignature(requestedCert.Sig, signedBlob, blsSignatures.AggregatePublicKeys(pubKeys))
+	if err != nil {
+		return nil, err
+	}
+	if !sigMatch {
+		return nil, errors.New("Signature of data in cert passed in doesn't match")
+	}
 
 	var blob []byte
 	// TODO make this async
-	for _, d := range a.services {
+	for _, d := range servicesThatSignedCert {
 		blob, err = d.service.Retrieve(ctx, cert)
 		if err != nil {
 			log.Warn("Retrieve from backend DAS failed", "err", err)
