@@ -71,6 +71,13 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 	return nil, errors.New("Data wasn't able to be retrieved from any DAS")
 }
 
+type storeResponse struct {
+	cert *arbstate.DataAvailabilityCertificate
+	err  error
+
+	details serviceDetails
+}
+
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	var aggSignersMask uint64
 	var pubKeys []blsSignatures.PublicKey
@@ -82,50 +89,65 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	if timeout == CALLEE_PICKS_TIMEOUT {
 		timeout = uint64(time.Now().Add(a.config.retentionPeriod).Unix())
 	}
-	for i, d := range a.services {
-		// TODO make this asnyc
-		cert, err := d.service.Store(ctx, message, timeout)
-		if err != nil {
-			storeFailures++
-			log.Warn("Failed to store message to DAS", "err", err)
-			if storeFailures <= a.maxAllowedServiceStoreFailures {
-				continue
-			} else {
-				return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.assumedHonest)
-			}
-		}
-		verified, err := blsSignatures.VerifySignature(cert.Sig, serializeSignableFields(*cert), d.pubKey)
-		if err != nil {
-			return nil, err
-		}
-		if !verified {
-			return nil, errors.New("Failed signature check")
-		}
 
-		// TODO need to think more about these bits
-		// how to support downstream combining of signatures?
-		prevPopCount := bits.OnesCount64(aggSignersMask)
-		certPopCount := bits.OnesCount64(cert.SignersMask)
-		aggSignersMask |= cert.SignersMask
-		newPopCount := bits.OnesCount64(aggSignersMask)
-		if prevPopCount+certPopCount != newPopCount {
-			return nil, errors.New("Duplicate signers error.")
-		}
-		pubKeys = append(pubKeys, d.pubKey)
-		sigs = append(sigs, cert.Sig)
-		if !initialStoreSucceeded {
-			initialStoreSucceeded = true
-			aggCert.DataHash = cert.DataHash
-			aggCert.Timeout = cert.Timeout
-		} else {
-			if aggCert.DataHash != cert.DataHash {
-				return nil, fmt.Errorf("Mismatched DataHash from DAS %d", i)
+	responses := make(chan storeResponse)
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	for _, d := range a.services {
+		go func(ctx context.Context, d serviceDetails) {
+			cert, err := d.service.Store(ctx, message, timeout)
+			responses <- storeResponse{cert, err, d}
+		}(subCtx, d)
+	}
+
+	for i := 0; i < len(a.services); i++ {
+		select {
+		case <-subCtx.Done():
+			return nil, errors.New("Terminated das.Aggregator.Store() with resquests outstanding")
+		case r := <-responses:
+			if r.err != nil {
+				storeFailures++
+				log.Warn("Failed to store message to DAS", "err", r.err)
+				if storeFailures <= a.maxAllowedServiceStoreFailures {
+					continue
+				} else {
+					return nil, fmt.Errorf("Aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest)", a.requiredServicesForStore, len(a.services), a.config.assumedHonest)
+				}
 			}
-			if aggCert.Timeout != cert.Timeout {
-				// TODO there is an issue here where each backend DAS currently
-				// sets its own timeout and so they can be mismatched.
-				// This needs to be aggregator controlled
-				return nil, fmt.Errorf("Mismatched Timeout from DAS %d", i)
+			verified, err := blsSignatures.VerifySignature(r.cert.Sig, serializeSignableFields(*r.cert), r.details.pubKey)
+			if err != nil {
+				return nil, err
+			}
+			if !verified {
+				return nil, errors.New("Failed signature check")
+			}
+
+			// TODO need to think more about these bits
+			// how to support downstream combining of signatures?
+			prevPopCount := bits.OnesCount64(aggSignersMask)
+			certPopCount := bits.OnesCount64(r.cert.SignersMask)
+			aggSignersMask |= r.cert.SignersMask
+			newPopCount := bits.OnesCount64(aggSignersMask)
+			if prevPopCount+certPopCount != newPopCount {
+				return nil, errors.New("Duplicate signers error.")
+			}
+			pubKeys = append(pubKeys, r.details.pubKey)
+			sigs = append(sigs, r.cert.Sig)
+			if !initialStoreSucceeded {
+				initialStoreSucceeded = true
+				aggCert.DataHash = r.cert.DataHash
+				aggCert.Timeout = r.cert.Timeout
+			} else {
+				if aggCert.DataHash != r.cert.DataHash {
+					return nil, fmt.Errorf("Mismatched DataHash from DAS %v", r.details)
+				}
+				if aggCert.Timeout != r.cert.Timeout {
+					// TODO there is an issue here where each backend DAS currently
+					// sets its own timeout and so they can be mismatched.
+					// This needs to be aggregator controlled
+					return nil, fmt.Errorf("Mismatched Timeout from DAS %v", r.details)
+				}
 			}
 		}
 	}
