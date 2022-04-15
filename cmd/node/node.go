@@ -378,12 +378,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.MetricsServerAddOptions("metrics-server", f)
 }
 
-func setStringIfEmpty(str *string, newstr string) {
-	if *str == "" {
-		*str = newstr
-	}
-}
-
 func (c *NodeConfig) ResolveDirectoryNames() error {
 	err := c.Persistent.ResolveDirectoryNames()
 	if err != nil {
