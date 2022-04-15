@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 //go:build redistest
 // +build redistest
 
@@ -12,9 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -74,12 +79,26 @@ func TestSeqCoordinatorPriorities(t *testing.T) {
 		node := nodes[nodeNum]
 		curMsgs, err := node.TxStreamer.GetMessageCountSync()
 		Require(t, err)
-		err = node.SeqCoordinator.SequencingMessage(curMsgs, &arbstate.MessageWithMetadata{})
+		emptyMessage := arbstate.MessageWithMetadata{
+			Message: &arbos.L1IncomingMessage{
+				Header: &arbos.L1IncomingMessageHeader{
+					Kind:        0,
+					Poster:      common.Address{},
+					BlockNumber: 0,
+					Timestamp:   0,
+					RequestId:   &common.Hash{},
+					L1BaseFee:   common.Big0,
+				},
+				L2msg: nil,
+			},
+			DelayedMessagesRead: 0,
+		}
+		err = node.SeqCoordinator.SequencingMessage(curMsgs, &emptyMessage)
 		if errors.Is(err, arbnode.ErrNotMainSequencer) {
 			return false
 		}
 		Require(t, err)
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{{}}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbstate.MessageWithMetadata{emptyMessage}))
 		return true
 	}
 
@@ -285,10 +304,10 @@ func TestSeqCoordinatorMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 	l2balance, err := clientB.BalanceAt(ctx, l2Info.GetAddress("User2"), nil)
 	Require(t, err)
@@ -342,10 +361,10 @@ func TestSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	err = clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, clientA, tx)
 	Require(t, err)
 
-	_, err = arbutil.WaitForTx(ctx, clientB, tx.Hash(), time.Second)
+	_, err = WaitForTx(ctx, clientB, tx.Hash(), time.Second)
 	if err == nil {
 		Fail(t, "tx received by node with different seq coordinator signing key")
 	}

@@ -1,13 +1,18 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package arbtest
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"errors"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/util"
 	"math/big"
 	"testing"
+
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -149,7 +154,7 @@ func (b *BlockchainTestInfo) GetInfoWithPrivKey(name string) *AccountInfo {
 	return info
 }
 
-func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOpts {
+func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Context) bind.TransactOpts {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(name)
 	return bind.TransactOpts{
@@ -166,12 +171,13 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string) bind.TransactOp
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%
+		Context:   ctx,
 	}
 }
 
-func (b *BlockchainTestInfo) GetDefaultCallOpts(name string) *bind.CallOpts {
+func (b *BlockchainTestInfo) GetDefaultCallOpts(name string, ctx context.Context) *bind.CallOpts {
 	b.T.Helper()
-	auth := b.GetDefaultTransactOpts(name)
+	auth := b.GetDefaultTransactOpts(name, ctx)
 	return &bind.CallOpts{
 		From: auth.From,
 	}

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -68,7 +67,9 @@ type ChallengeManager struct {
 	inboxTracker      InboxTrackerInterface
 	txStreamer        TransactionStreamerInterface
 	blockchain        *core.BlockChain
+	machineLoader     *NitroMachineLoader
 	targetNumMachines int
+	wasmModuleRoot    common.Hash
 
 	initialMachine        *ArbitratorMachine
 	initialMachineBlockNr int64
@@ -77,6 +78,7 @@ type ChallengeManager struct {
 	executionChallengeBackend *ExecutionChallengeBackend
 }
 
+// latestMachineLoader may be nil if the block validator is disabled
 func NewChallengeManager(
 	ctx context.Context,
 	l1client bind.ContractBackend,
@@ -88,6 +90,7 @@ func NewChallengeManager(
 	inboxReader InboxReaderInterface,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
+	machineLoader *NitroMachineLoader,
 	startL1Block uint64,
 	targetNumMachines int,
 	confirmationBlocks int64,
@@ -112,6 +115,12 @@ func NewChallengeManager(
 	// We'll use the most recent log to be safe.
 	evmLog := logs[len(logs)-1]
 	parsedLog, err := con.ParseInitiatedChallenge(evmLog)
+	if err != nil {
+		return nil, err
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	challengeInfo, err := con.Challenges(callOpts, new(big.Int).SetUint64(challengeIndex))
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +154,9 @@ func NewChallengeManager(
 		inboxTracker:          inboxTracker,
 		txStreamer:            txStreamer,
 		blockchain:            l2blockChain,
+		machineLoader:         machineLoader,
 		targetNumMachines:     targetNumMachines,
+		wasmModuleRoot:        challengeInfo.WasmModuleRoot,
 	}, nil
 }
 
@@ -381,7 +392,7 @@ func (m *ChallengeManager) createInitialMachine(ctx context.Context, blockNum in
 	if m.initialMachine != nil && m.initialMachineBlockNr == blockNum {
 		return nil
 	}
-	initialFrozenMachine, err := GetZeroStepMachine(ctx)
+	initialFrozenMachine, err := m.machineLoader.GetMachine(ctx, m.wasmModuleRoot, false)
 	if err != nil {
 		return err
 	}

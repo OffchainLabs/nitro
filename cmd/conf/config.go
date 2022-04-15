@@ -1,6 +1,9 @@
 package conf
 
 import (
+	"errors"
+
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	flag "github.com/spf13/pflag"
@@ -57,23 +60,26 @@ var DefaultS3Config = S3Config{
 }
 
 type L1Config struct {
-	ChainID    uint64       `koanf:"chain-id"`
-	Deployment string       `koanf:"deployment"`
-	URL        string       `koanf:"url"`
-	Wallet     WalletConfig `koanf:"wallet"`
+	ChainID            uint64       `koanf:"chain-id"`
+	Deployment         string       `koanf:"deployment"`
+	URL                string       `koanf:"url"`
+	ConnectionAttempts int          `koanf:"connection-attempts"`
+	Wallet             WalletConfig `koanf:"wallet"`
 }
 
 var L1ConfigDefault = L1Config{
-	ChainID:    1337,
-	Deployment: "",
-	URL:        "",
-	Wallet:     WalletConfigDefault,
+	ChainID:            1337,
+	Deployment:         "",
+	URL:                "",
+	ConnectionAttempts: 15,
+	Wallet:             WalletConfigDefault,
 }
 
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".chain-id", L1ConfigDefault.ChainID, "if set other than 0, will be used to validate database and L1 connection")
 	f.String(prefix+".deployment", L1ConfigDefault.Deployment, "json file including the existing deployment information")
 	f.String(prefix+".url", L1ConfigDefault.URL, "layer 1 ethereum node RPC URL")
+	f.Int(prefix+".connection-attempts", L1ConfigDefault.ConnectionAttempts, "layer 1 RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely)")
 	WalletConfigAddOptions(prefix+".wallet", f)
 }
 
@@ -190,4 +196,28 @@ func WSConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".rpcprefix", WSConfigDefault.RPCPrefix, "WS path path prefix on which JSON-RPC is served. Use '/' to serve on all paths")
 	f.StringSlice(prefix+".origins", WSConfigDefault.Origins, "Origins from which to accept websockets requests")
 	f.Bool(prefix+".expose-all", WSConfigDefault.ExposeAll, "expose private api via websocket")
+}
+
+func ParseLogType(logType string) (log.Format, error) {
+	if logType == "plaintext" {
+		return log.TerminalFormat(false), nil
+	} else if logType == "json" {
+		return log.JSONFormat(), nil
+	}
+	return nil, errors.New("invalid log type")
+}
+
+type MetricsServerConfig struct {
+	Addr string `koanf:"addr"`
+	Port int    `koanf:"port"`
+}
+
+var MetricsServerConfigDefault = MetricsServerConfig{
+	Addr: "127.0.0.1",
+	Port: 6070,
+}
+
+func MetricsServerAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".addr", MetricsServerConfigDefault.Addr, "metrics server address")
+	f.Int(prefix+".port", MetricsServerConfigDefault.Port, "metrics server port")
 }

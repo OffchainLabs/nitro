@@ -1,16 +1,19 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
 import (
 	"context"
+	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
@@ -23,8 +26,8 @@ func TestTips(t *testing.T) {
 	l2info, _, l2client, l1info, _, l1client, stack := CreateTestNodeOnL1(t, ctx, true)
 	defer stack.Close()
 
-	auth := l2info.GetDefaultTransactOpts("Owner")
-	callOpts := l2info.GetDefaultCallOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
 	aggregator := testhelpers.RandomAddress()
 
 	// get the network fee account
@@ -38,7 +41,7 @@ func TestTips(t *testing.T) {
 	Require(t, err, "could not deploy ArbAggregator contract")
 	tx, err := arbAggregator.SetPreferredAggregator(&auth, aggregator)
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	basefee := GetBaseFee(t, l2client, ctx)
@@ -67,17 +70,13 @@ func TestTips(t *testing.T) {
 	}
 
 	tip := arbmath.BigMulByUint(arbmath.BigSub(tx.GasPrice(), basefee), receipt.GasUsed)
-	full := arbmath.BigMulByUint(tx.GasPrice(), receipt.GasUsed)
+	full := arbmath.BigMulByUint(basefee, receipt.GasUsed) // was gasprice before upgrade
 	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
-	colors.PrintMint("tip: ", tip, full, networkRevenue)
-
+	colors.PrintMint("price: ", tip, full, networkRevenue)
 	colors.PrintRed("used: ", receipt.GasUsed, basefee)
 
-	if !arbmath.BigEquals(tip, arbmath.BigMulByFrac(networkRevenue, 1, 5)) {
-		Fail(t, "1/5th of the network's revenue should be the tip")
-	}
 	if !arbmath.BigEquals(full, networkRevenue) {
-		Fail(t, "the network didn't receive the tip")
+		Fail(t, "the network didn't receive the funds")
 	}
 }
 
@@ -87,14 +86,14 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 	defer cancel()
 
 	l2info, _, client := CreateTestL2(t, ctx)
-	auth := l2info.GetDefaultTransactOpts("Owner")
+	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 	// prefer a 3rd party aggregator
 	arbAggregator, err := precompilesgen.NewArbAggregator(common.HexToAddress("0x6d"), client)
 	Require(t, err, "could not deploy ArbAggregator contract")
 	tx, err := arbAggregator.SetPreferredAggregator(&auth, testhelpers.RandomAddress())
 	Require(t, err, "could not set L2 gas price")
-	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	// get the network fee account
@@ -103,4 +102,56 @@ func TestSequencerWontPostWhenNotPreferred(t *testing.T) {
 	if err == nil {
 		Fail(t, "the sequencer should have rejected this tx")
 	}
+}
+
+func TestSequencerFeePaid(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l2info, _, l2client, _, _, _, stack := CreateTestNodeOnL1(t, ctx, true)
+	defer stack.Close()
+
+	callOpts := l2info.GetDefaultCallOpts("Owner", ctx)
+
+	// get the network fee account
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), l2client)
+	Require(t, err, "could not deploy ArbOwner contract")
+	arbGasInfo, err := precompilesgen.NewArbGasInfo(common.HexToAddress("0x6c"), l2client)
+	Require(t, err, "could not deploy ArbOwner contract")
+	networkFeeAccount, err := arbOwnerPublic.GetNetworkFeeAccount(callOpts)
+	Require(t, err, "could not get the network fee account")
+
+	l1Estimate, err := arbGasInfo.GetL1GasPriceEstimate(callOpts)
+	Require(t, err)
+	networkBefore := GetBalance(t, ctx, l2client, networkFeeAccount)
+	seqBefore := GetBalance(t, ctx, l2client, l1pricing.SequencerAddress)
+
+	l2info.GasPrice = GetBaseFee(t, l2client, ctx)
+	tx, receipt := TransferBalance(t, "Faucet", "Faucet", big.NewInt(0), l2info, l2client, ctx)
+
+	networkAfter := GetBalance(t, ctx, l2client, networkFeeAccount)
+	seqAfter := GetBalance(t, ctx, l2client, l1pricing.SequencerAddress)
+
+	networkRevenue := arbmath.BigSub(networkAfter, networkBefore)
+	seqRevenue := arbmath.BigSub(seqAfter, seqBefore)
+
+	gasUsedForL2 := receipt.GasUsed - receipt.GasUsedForL1
+
+	if !arbmath.BigEquals(seqRevenue, arbmath.BigMulByUint(tx.GasPrice(), receipt.GasUsedForL1)) {
+		Fail(t, "sequencer didn't receive expected payment")
+	}
+	if !arbmath.BigEquals(networkRevenue, arbmath.BigMulByUint(tx.GasPrice(), gasUsedForL2)) {
+		Fail(t, "network didn't receive expected payment")
+	}
+
+	paidBytes := arbmath.BigDiv(seqRevenue, l1Estimate).Uint64() / params.TxDataNonZeroGasEIP2028
+
+	txBin, err := tx.MarshalBinary()
+	Require(t, err)
+	compressed, err := arbcompress.CompressFast(txBin)
+	Require(t, err)
+
+	if uint64(len(compressed)) != paidBytes {
+		t.Fatal("unexpected number of bytes paid for")
+	}
+
 }

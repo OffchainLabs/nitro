@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package arbnode
 
 import (
@@ -26,7 +29,7 @@ import (
 
 type BatchPoster struct {
 	util.StopWaiter
-	client        arbutil.L1Interface
+	l1Reader      *L1Reader
 	inbox         *InboxTracker
 	streamer      *TransactionStreamer
 	config        *BatchPosterConfig
@@ -57,29 +60,29 @@ func BatchPosterConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:               false,
-	MaxBatchSize:         500,
-	BatchPollDelay:       time.Second,
-	PostingErrorDelay:    time.Second * 5,
-	MaxBatchPostInterval: time.Minute,
+	MaxBatchSize:         100000,
+	BatchPollDelay:       time.Second * 10,
+	PostingErrorDelay:    time.Second * 10,
+	MaxBatchPostInterval: time.Hour,
 	CompressionLevel:     brotli.DefaultCompression,
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
 	Enable:               true,
-	MaxBatchSize:         10000,
+	MaxBatchSize:         100000,
 	BatchPollDelay:       time.Millisecond * 10,
 	PostingErrorDelay:    time.Millisecond * 10,
 	MaxBatchPostInterval: 0,
 	CompressionLevel:     2,
 }
 
-func NewBatchPoster(client arbutil.L1Interface, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
-	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, client)
+func NewBatchPoster(l1Reader *L1Reader, inbox *InboxTracker, streamer *TransactionStreamer, config *BatchPosterConfig, contractAddress common.Address, refunder common.Address, transactOpts *bind.TransactOpts, das das.DataAvailabilityService) (*BatchPoster, error) {
+	inboxContract, err := bridgegen.NewSequencerInbox(contractAddress, l1Reader.Client())
 	if err != nil {
 		return nil, err
 	}
 	return &BatchPoster{
-		client:        client,
+		l1Reader:      l1Reader,
 		inbox:         inbox,
 		streamer:      streamer,
 		config:        config,
@@ -395,7 +398,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 		}
 		if tx != nil {
 			b.building = nil
-			_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, b.client, tx, time.Minute)
+			_, err = b.l1Reader.WaitForTxApproval(ctx, tx)
 			if err != nil {
 				log.Error("failed ensuring batch tx succeeded", "err", err)
 			} else {

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -9,13 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -54,56 +54,57 @@ type RollupAddresses struct {
 	DeployedAt             uint64
 }
 
-func andTxSucceeded(ctx context.Context, l1client arbutil.L1Interface, txTimeout time.Duration, tx *types.Transaction, err error) error {
+func andTxSucceeded(ctx context.Context, l1Reader *L1Reader, tx *types.Transaction, err error) error {
 	if err != nil {
 		return fmt.Errorf("error submitting tx: %w", err)
 	}
-	_, err = arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	_, err = l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("error executing tx: %w", err)
 	}
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, error) {
+	client := l1Reader.Client()
 	bridgeTemplate, tx, _, err := bridgegen.DeployBridge(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
 	}
 
 	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
 	}
 
 	inboxTemplate, tx, _, err := bridgegen.DeployInbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("inbox deploy error: %w", err)
 	}
 
 	rollupEventBridgeTemplate, tx, _, err := rollupgen.DeployRollupEventBridge(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("rollup event bridge deploy error: %w", err)
 	}
 
 	outboxTemplate, tx, _, err := bridgegen.DeployOutbox(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("outbox deploy error: %w", err)
 	}
 
 	bridgeCreatorAddr, tx, bridgeCreator, err := rollupgen.DeployBridgeCreator(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
 
 	tx, err = bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge creator update templates error: %w", err)
 	}
@@ -111,44 +112,40 @@ func deployBridgeCreator(ctx context.Context, client arbutil.L1Interface, auth *
 	return bridgeCreatorAddr, nil
 }
 
-func deployChallengeFactory(
-	ctx context.Context,
-	client arbutil.L1Interface,
-	auth *bind.TransactOpts,
-	txTimeout time.Duration,
-) (common.Address, common.Address, error) {
+func deployChallengeFactory(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (common.Address, common.Address, error) {
+	client := l1Reader.Client()
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("osp0 deploy error: %w", err)
 	}
 
 	ospMem, _, _, err := ospgen.DeployOneStepProverMemory(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMemory deploy error: %w", err)
 	}
 
 	ospMath, _, _, err := ospgen.DeployOneStepProverMath(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospMath deploy error: %w", err)
 	}
 
 	ospHostIo, _, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospHostIo deploy error: %w", err)
 	}
 
 	ospEntryAddr, tx, _, err := ospgen.DeployOneStepProofEntry(auth, client, osp0, ospMem, ospMath, ospHostIo)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
 
 	challengeManagerAddr, tx, _, err := challengegen.DeployChallengeManager(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, common.Address{}, fmt.Errorf("ospEntry deploy error: %w", err)
 	}
@@ -156,33 +153,33 @@ func deployChallengeFactory(
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *bind.TransactOpts, txTimeout time.Duration) (*rollupgen.RollupCreator, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, client, auth, txTimeout)
+func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.TransactOpts) (*rollupgen.RollupCreator, common.Address, error) {
+	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, client, auth, txTimeout)
+	ospEntryAddr, challengeManagerAddr, err := deployChallengeFactory(ctx, l1Reader, auth)
 	if err != nil {
 		return nil, common.Address{}, err
 	}
 
-	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupAdminLogic, tx, _, err := rollupgen.DeployRollupAdminLogic(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup admin logic deploy error: %w", err)
 	}
 
-	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupUserLogic, tx, _, err := rollupgen.DeployRollupUserLogic(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
 	}
 
-	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, client)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	rollupCreatorAddress, tx, rollupCreator, err := rollupgen.DeployRollupCreator(auth, l1Reader.Client())
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup creator deploy error: %w", err)
 	}
 
 	tx, err = rollupCreator.SetTemplates(
@@ -193,16 +190,28 @@ func deployRollupCreator(ctx context.Context, client arbutil.L1Interface, auth *
 		rollupAdminLogic,
 		rollupUserLogic,
 	)
-	err = andTxSucceeded(ctx, client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("rollup user logic deploy error: %w", err)
+		return nil, common.Address{}, fmt.Errorf("rollup set template error: %w", err)
 	}
 
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, txTimeout time.Duration) (*RollupAddresses, error) {
-	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1client, deployAuth, txTimeout)
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig) (*RollupAddresses, error) {
+	l1Reader := NewL1Reader(l1client, readerConfig)
+	l1Reader.Start(ctx)
+	defer l1Reader.StopAndWait()
+
+	if wasmModuleRoot == (common.Hash{}) {
+		var err error
+		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	rollupCreator, rollupCreatorAddress, err := deployRollupCreator(ctx, l1Reader, deployAuth)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -238,7 +247,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	if err != nil {
 		return nil, fmt.Errorf("error submitting create rollup tx: %w", err)
 	}
-	receipt, err := arbutil.EnsureTxSucceededWithTimeout(ctx, l1client, tx, txTimeout)
+	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)
 	if err != nil {
 		return nil, fmt.Errorf("error executing create rollup tx: %w", err)
 	}
@@ -252,19 +261,19 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 		return nil, fmt.Errorf("error getting rollup admin: %w", err)
 	}
 	tx, err = rollup.SetIsBatchPoster(deployAuth, sequencer, true)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("error setting is batch poster: %w", err)
 	}
 
 	validatorUtils, tx, _, err := rollupgen.DeployValidatorUtils(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("validator utils deploy error: %w", err)
 	}
 
 	validatorWalletCreator, tx, _, err := rollupgen.DeployValidatorWalletCreator(deployAuth, l1client)
-	err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return nil, fmt.Errorf("validator utils deploy error: %w", err)
 	}
@@ -277,7 +286,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 	}
 	if len(validatorAddrs) > 0 {
 		tx, err = rollup.SetValidator(deployAuth, validatorAddrs, allowValidators)
-		err = andTxSucceeded(ctx, l1client, txTimeout, tx, err)
+		err = andTxSucceeded(ctx, l1Reader, tx, err)
 		if err != nil {
 			return nil, fmt.Errorf("error setting validator: %w", err)
 		}
@@ -297,7 +306,7 @@ func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *b
 type Config struct {
 	RPC                  arbitrum.Config                `koanf:"rpc"`
 	Sequencer            SequencerConfig                `koanf:"sequencer"`
-	EnableL1Reader       bool                           `koanf:"enable-l1-reader"`
+	L1Reader             L1ReaderConfig                 `koanf:"l1-reader"`
 	InboxReader          InboxReaderConfig              `koanf:"inbox-reader"`
 	DelayedSequencer     DelayedSequencerConfig         `koanf:"delayed-sequencer"`
 	BatchPoster          BatchPosterConfig              `koanf:"batch-poster"`
@@ -323,7 +332,7 @@ func (c *Config) ForwardingTarget() string {
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	arbitrum.ConfigAddOptions(prefix+".rpc", f)
 	SequencerConfigAddOptions(prefix+".sequencer", f)
-	f.Bool(prefix+".enable-l1-reader", ConfigDefault.EnableL1Reader, "enable l1 reader")
+	L1ReaderAddOptions(prefix+".l1-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
 	BatchPosterConfigAddOptions(prefix+".batch-poster", f)
@@ -341,7 +350,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 var ConfigDefault = Config{
 	RPC:                  arbitrum.DefaultConfig,
 	Sequencer:            DefaultSequencerConfig,
-	EnableL1Reader:       true,
+	L1Reader:             DefaultL1ReaderConfig,
 	InboxReader:          DefaultInboxReaderConfig,
 	DelayedSequencer:     DefaultDelayedSequencerConfig,
 	BatchPoster:          DefaultBatchPosterConfig,
@@ -359,10 +368,13 @@ var ConfigDefault = Config{
 func ConfigDefaultL1Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
+	config.L1Reader = TestL1ReaderConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer = TestDelayedSequencerConfig
 	config.BatchPoster = TestBatchPosterConfig
 	config.SeqCoordinator = TestSeqCoordinatorConfig
+	config.Wasm.RootPath = validator.DefaultNitroMachineConfig.RootPath
+	config.BlockValidator = validator.TestBlockValidatorConfig
 
 	return &config
 }
@@ -370,7 +382,7 @@ func ConfigDefaultL1Test() *Config {
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.EnableL1Reader = false
+	config.L1Reader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 
 	return &config
@@ -405,46 +417,56 @@ func DangerousSequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type SequencerConfig struct {
-	Enable    bool                     `koanf:"enable"`
-	Dangerous DangerousSequencerConfig `koanf:"dangerous"`
+	Enable                      bool                     `koanf:"enable"`
+	MaxBlockSpeed               time.Duration            `koanf:"max-block-speed"`
+	MaxRevertGasReject          uint64                   `koanf:"max-revert-gas-reject"`
+	MaxAcceptableTimestampDelta time.Duration            `koanf:"max-acceptable-timestamp-delta"`
+	Dangerous                   DangerousSequencerConfig `koanf:"dangerous"`
 }
 
 var DefaultSequencerConfig = SequencerConfig{
-	Enable:    false,
-	Dangerous: DefaultDangerousSequencerConfig,
+	Enable:                      false,
+	MaxBlockSpeed:               time.Millisecond * 100,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	Dangerous:                   DefaultDangerousSequencerConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
-	Enable:    true,
-	Dangerous: TestDangerousSequencerConfig,
+	Enable:                      true,
+	MaxBlockSpeed:               time.Millisecond * 10,
+	MaxRevertGasReject:          params.TxGas + 10000,
+	MaxAcceptableTimestampDelta: time.Hour,
+	Dangerous:                   TestDangerousSequencerConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
+	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
+	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
+	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	DangerousSequencerConfigAddOptions(prefix+".dangerous", f)
 }
 
 type WasmConfig struct {
-	RootPath   string `koanf:"root-path"`
-	ModuleRoot string `koanf:"module-root"`
-	CachePath  string `koanf:"cache-path"`
+	RootPath  string `koanf:"root-path"`
+	CachePath string `koanf:"cache-path"`
 }
 
 func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
-	f.String(prefix+".module-root", DefaultWasmConfig.RootPath, "wasm module root (if empty, read from <wasmrootpath>/module_root)")
+	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (replay.wasm, wasi_stub.wasm, soft-float.wasm, go_stub.wasm, host_io.wasm, brotli.wasm")
 	f.String(prefix+".cache-path", DefaultWasmConfig.RootPath, "path for cache of wasm machines")
 }
 
 var DefaultWasmConfig = WasmConfig{
-	RootPath:   "",
-	ModuleRoot: "",
-	CachePath:  "",
+	RootPath:  "",
+	CachePath: "",
 }
 
 type Node struct {
 	Backend          *arbitrum.Backend
 	ArbInterface     *ArbInterface
+	L1Reader         *L1Reader
 	TxStreamer       *TransactionStreamer
 	TxPublisher      TransactionPublisher
 	DeployInfo       *RollupAddresses
@@ -478,6 +500,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		}
 	}
 
+	var l1Reader *L1Reader
+	if config.L1Reader.Enable {
+		l1Reader = NewL1Reader(l1client, config.L1Reader)
+	}
+
 	txStreamer, err := NewTransactionStreamer(chainDb, l2BlockChain, broadcastServer)
 	if err != nil {
 		return nil, err
@@ -492,13 +519,13 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if !(config.SeqCoordinator.Enable || config.Sequencer.Dangerous.NoCoordinator) {
 			return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-coordinator set")
 		}
-		if config.EnableL1Reader {
+		if config.L1Reader.Enable {
 			if l1client == nil {
 				return nil, errors.New("l1client is nil")
 			}
-			sequencer, err = NewSequencer(txStreamer, l1client)
+			sequencer, err = NewSequencer(txStreamer, l1Reader, config.Sequencer)
 		} else {
-			sequencer, err = NewSequencer(txStreamer, nil)
+			sequencer, err = NewSequencer(txStreamer, nil, config.Sequencer)
 		}
 		if err != nil {
 			return nil, err
@@ -535,8 +562,8 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 			broadcastClients = append(broadcastClients, broadcastclient.NewBroadcastClient(address, nil, config.Feed.Input.Timeout, txStreamer))
 		}
 	}
-	if !config.EnableL1Reader {
-		return &Node{backend, arbInterface, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
+	if !config.L1Reader.Enable {
+		return &Node{backend, arbInterface, nil, txStreamer, txPublisher, nil, nil, nil, nil, nil, nil, nil, broadcastServer, broadcastClients, coordinator}, nil
 	}
 
 	if deployInfo == nil {
@@ -559,9 +586,25 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, err
 	}
 
+	nitroMachineConfig := validator.DefaultNitroMachineConfig
+	if config.Wasm.RootPath != "" {
+		nitroMachineConfig.RootPath = config.Wasm.RootPath
+	} else {
+		execfile, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+		targetDir := filepath.Dir(filepath.Dir(execfile))
+		nitroMachineConfig.RootPath = filepath.Join(targetDir, "machines")
+	}
+	if config.Wasm.CachePath != "" {
+		nitroMachineConfig.InitialMachineCachePath = config.Wasm.CachePath
+	}
+	nitroMachineLoader := validator.NewNitroMachineLoader(nitroMachineConfig)
+
 	var blockValidator *validator.BlockValidator
 	if config.BlockValidator.Enable {
-		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, dataAvailabilityService)
+		blockValidator, err = validator.NewBlockValidator(inboxReader, inboxTracker, txStreamer, l2BlockChain, rawdb.NewTable(chainDb, blockValidatorPrefix), &config.BlockValidator, nitroMachineLoader, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
@@ -570,11 +613,11 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 	var staker *validator.Staker
 	if config.Validator.Enable {
 		// TODO: remember validator wallet in JSON instead of querying it from L1 every time
-		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1client, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
+		wallet, err := validator.NewValidatorWallet(nil, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOpts, int64(deployInfo.DeployedAt), func(common.Address) {})
 		if err != nil {
 			return nil, err
 		}
-		staker, err = validator.NewStaker(l1client, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, deployInfo.ValidatorUtils)
+		staker, err = validator.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Validator, l2BlockChain, inboxReader, inboxTracker, txStreamer, blockValidator, nitroMachineLoader, deployInfo.ValidatorUtils)
 		if err != nil {
 			return nil, err
 		}
@@ -586,13 +629,13 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		if txOpts == nil {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		batchPoster, err = NewBatchPoster(l1client, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
+		batchPoster, err = NewBatchPoster(l1Reader, inboxTracker, txStreamer, &config.BatchPoster, deployInfo.SequencerInbox, common.Address{}, txOpts, dataAvailabilityService)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if config.DelayedSequencer.Enable {
-		delayedSequencer, err = NewDelayedSequencer(l1client, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
+		delayedSequencer, err = NewDelayedSequencer(l1Reader, inboxReader, txStreamer, coordinator, &(config.DelayedSequencer))
 		if err != nil {
 			return nil, err
 		}
@@ -600,7 +643,7 @@ func createNodeImpl(stack *node.Node, chainDb ethdb.Database, config *Config, l2
 		return nil, errors.New("sequencer and l1 reader, without delayed sequencer")
 	}
 
-	return &Node{backend, arbInterface, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
+	return &Node{backend, arbInterface, l1Reader, txStreamer, txPublisher, deployInfo, inboxReader, inboxTracker, delayedSequencer, batchPoster, blockValidator, staker, broadcastServer, broadcastClients, coordinator}, nil
 }
 
 type arbNodeLifecycle struct {
@@ -637,7 +680,12 @@ func CreateNode(stack *node.Node, chainDb ethdb.Database, config *Config, l2Bloc
 }
 
 func (n *Node) Start(ctx context.Context) error {
-	err := n.TxPublisher.Initialize(ctx)
+	n.ArbInterface.Initialize(n)
+	err := n.Backend.Start()
+	if err != nil {
+		return err
+	}
+	err = n.TxPublisher.Initialize(ctx)
 	if err != nil {
 		return err
 	}
@@ -671,18 +719,27 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.BatchPoster != nil {
 		n.BatchPoster.Start(ctx)
 	}
+	if n.Staker != nil {
+		err = n.Staker.Initialize(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	if n.BlockValidator != nil {
+		err = n.BlockValidator.Initialize()
+		if err != nil {
+			return err
+		}
 		err = n.BlockValidator.Start(ctx)
 		if err != nil {
 			return err
 		}
 	}
 	if n.Staker != nil {
-		err = n.Staker.Initialize(ctx)
-		if err != nil {
-			return err
-		}
 		n.Staker.Start(ctx)
+	}
+	if n.L1Reader != nil {
+		n.L1Reader.Start(ctx)
 	}
 	if n.BroadcastServer != nil {
 		err = n.BroadcastServer.Start(ctx)
@@ -703,6 +760,9 @@ func (n *Node) StopAndWait() {
 	if n.BroadcastServer != nil {
 		n.BroadcastServer.StopAndWait()
 	}
+	if n.L1Reader != nil {
+		n.L1Reader.StopAndWait()
+	}
 	if n.BlockValidator != nil {
 		n.BlockValidator.StopAndWait()
 	}
@@ -721,6 +781,9 @@ func (n *Node) StopAndWait() {
 	}
 	n.TxStreamer.StopAndWait()
 	n.ArbInterface.BlockChain().Stop()
+	if err := n.Backend.Stop(); err != nil {
+		log.Error("backend stop", "err", err)
+	}
 }
 
 func CreateDefaultStack() (*node.Node, error) {
@@ -781,7 +844,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 			// validate db and import match
 			hashInDb := rawdb.ReadCanonicalHash(chainDb, blockNum)
 			if storedBlockHash != hashInDb {
-				utils.Fatalf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb)
+				panic(fmt.Sprintf("Import and Database disagree on hashes import: %v, Db: %v", storedBlockHash, hashInDb))
 			}
 		}
 		if blockNum+1 == blocksInDb && blockNum > 0 {
@@ -790,7 +853,7 @@ func ImportBlocksToChainDb(chainDb ethdb.Database, initDataReader statetransfer.
 			td = rawdb.ReadTd(chainDb, prevHash, blockNum-1)
 		}
 		if storedBlock.Header.ParentHash != prevHash {
-			utils.Fatalf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash)
+			panic(fmt.Sprintf("Import Block %d, parent hash %v, expected %v", blockNum, storedBlock.Header.ParentHash, prevHash))
 		}
 		if storedBlock.Header.Number.Cmp(new(big.Int).SetUint64(blockNum)) != 0 {
 			panic("unexpected block number in import")

@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use crate::{
     binary::{
         BlockType, Code, ElementMode, ExportKind, FloatInstruction, HirInstruction, ImportKind,
@@ -1184,7 +1187,18 @@ impl Machine {
                 }
             }
         }
+        self.step_impl();
+        if self.is_halted() && !self.stdio_output.is_empty() {
+            // If we halted, print out any trailing output that didn't have a newline.
+            println!(
+                "\x1b[33mWASM says:\x1b[0m {}",
+                String::from_utf8_lossy(&self.stdio_output),
+            );
+            self.stdio_output.clear();
+        }
+    }
 
+    fn step_impl(&mut self) {
         // Updates the modules_merkle on drop
         let mut module = LazyModuleMerkle(
             &mut self.modules[self.pc.module],
@@ -1744,10 +1758,12 @@ impl Machine {
         match (module_name, name) {
             ("wasi_snapshot_preview1", "proc_exit") | ("env", "exit") => {
                 let exit_code = pull_arg!(0, I32);
-                println!(
-                    "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
-                    exit_code,
-                );
+                if exit_code != 0 {
+                    println!(
+                        "\x1b[31mWASM exiting\x1b[0m with exit code \x1b[31m{}\x1b[0m",
+                        exit_code,
+                    );
+                }
                 Ok(())
             }
             ("wasi_snapshot_preview1", "fd_write") => {
@@ -1756,7 +1772,6 @@ impl Machine {
                     // Not stdout or stderr, ignore
                     return Ok(());
                 }
-                let mut data = Vec::new();
                 let iovecs_ptr = pull_arg!(2, I32);
                 let iovecs_len = pull_arg!(1, I32);
                 for offset in 0..iovecs_len {
@@ -1766,10 +1781,19 @@ impl Machine {
 
                     let data_ptr = read_u32_ptr!(data_ptr_ptr);
                     let data_size = read_u32_ptr!(data_size_ptr);
-                    data.extend_from_slice(read_bytes_segment!(data_ptr, data_size));
+                    self.stdio_output
+                        .extend_from_slice(read_bytes_segment!(data_ptr, data_size));
                 }
-                println!("WASM says: {:?}", String::from_utf8_lossy(&data));
-                self.stdio_output.extend(data);
+                while let Some(mut idx) = self.stdio_output.iter().position(|&c| c == b'\n') {
+                    println!(
+                        "\x1b[33mWASM says:\x1b[0m {}",
+                        String::from_utf8_lossy(&self.stdio_output[..idx]),
+                    );
+                    if self.stdio_output.get(idx + 1) == Some(&b'\r') {
+                        idx += 1;
+                    }
+                    self.stdio_output = self.stdio_output.split_off(idx + 1);
+                }
                 Ok(())
             }
             _ => Ok(()),
@@ -2111,9 +2135,5 @@ impl Machine {
             }
         }
         res
-    }
-
-    pub fn get_stdio_output(&self) -> &[u8] {
-        &self.stdio_output
     }
 }

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbnode
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type InboxReaderConfig struct {
@@ -33,13 +33,13 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks: 4,
 	CheckDelay:  2 * time.Second,
-	HardReorg:   true,
+	HardReorg:   false,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks: 0,
 	CheckDelay:  time.Millisecond * 10,
-	HardReorg:   true,
+	HardReorg:   false,
 }
 
 type InboxReader struct {
@@ -344,11 +344,13 @@ func (ir *InboxReader) run(ctx context.Context) error {
 				}
 			}
 		}
-		// TODO feed reading
+
+		timer := time.NewTimer(ir.config.CheckDelay)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return nil
-		case <-time.After(ir.config.CheckDelay):
+		case <-timer.C:
 		}
 	}
 }
@@ -390,7 +392,13 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return msg.Header.RequestId.Big(), nil
+	msgBlock := new(big.Int).SetUint64(msg.Header.BlockNumber)
+	// Re-check the last few blocks just in case there are delayed messages we missed
+	msgBlock.Sub(msgBlock, big.NewInt(20))
+	if arbmath.BigLessThan(msgBlock, r.firstMessageBlock) {
+		return new(big.Int).Set(r.firstMessageBlock), nil
+	}
+	return msgBlock, nil
 }
 
 func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {

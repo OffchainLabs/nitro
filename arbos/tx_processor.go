@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -65,6 +64,10 @@ func (p *TxProcessor) PushCaller(addr common.Address) {
 
 func (p *TxProcessor) PopCaller() {
 	p.Callers = p.Callers[:len(p.Callers)-1]
+}
+
+func (p *TxProcessor) DropTip() bool {
+	return p.state.FormatVersion() >= 2
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
@@ -424,12 +427,25 @@ func (p *TxProcessor) L1BlockNumber(blockCtx vm.BlockContext) (uint64, error) {
 	return state.Blockhashes().NextBlockNumber()
 }
 
-func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlocKNumber uint64) (common.Hash, error) {
+func (p *TxProcessor) L1BlockHash(blockCtx vm.BlockContext, l1BlockNumber uint64) (common.Hash, error) {
 	state, err := arbosState.OpenSystemArbosState(p.evm.StateDB, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return state.Blockhashes().BlockHash(l1BlocKNumber)
+	if state.FormatVersion() < 2 {
+		// Support the old broken behavior
+		var lower, upper uint64
+		upper = p.evm.Context.BlockNumber.Uint64()
+		if upper < 257 {
+			lower = 0
+		} else {
+			lower = upper - 256
+		}
+		if l1BlockNumber < lower || l1BlockNumber >= upper {
+			return common.Hash{}, nil
+		}
+	}
+	return state.Blockhashes().BlockHash(l1BlockNumber)
 }
 
 func (p *TxProcessor) FillReceiptInfo(receipt *types.Receipt) {

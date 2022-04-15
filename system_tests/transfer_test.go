@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -9,8 +8,6 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
-
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func TestTransfer(t *testing.T) {
@@ -25,7 +22,7 @@ func TestTransfer(t *testing.T) {
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
+	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
 	bal, err := client.BalanceAt(ctx, l2info.GetAddress("Owner"), nil)

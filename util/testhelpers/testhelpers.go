@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package testhelpers
 
@@ -13,10 +12,10 @@ import (
 )
 
 // Fail a test should an error occur
-func RequireImpl(t *testing.T, err error, text ...string) {
+func RequireImpl(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	if err != nil {
-		t.Fatal(colors.Red, text, err, colors.Clear)
+		t.Fatal(colors.Red, printables, err, colors.Clear)
 	}
 }
 

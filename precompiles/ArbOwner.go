@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -103,4 +102,9 @@ func (con ArbOwner) GetNetworkFeeAccount(c ctx, evm mech) (addr, error) {
 // Sets the network fee collector
 func (con ArbOwner) SetNetworkFeeAccount(c ctx, evm mech, newNetworkFeeAccount addr) error {
 	return c.state.SetNetworkFeeAccount(newNetworkFeeAccount)
+}
+
+// Upgrades ArbOS to the requested version at the requested timestamp
+func (con ArbOwner) ScheduleArbOSUpgrade(c ctx, evm mech, newVersion uint64, timestamp uint64) error {
+	return c.state.ScheduleArbOSUpgrade(newVersion, timestamp)
 }

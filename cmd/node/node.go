@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
@@ -9,18 +8,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"math/big"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
+
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -39,7 +40,6 @@ import (
 	cmdutil "github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
 	nitroutil "github.com/offchainlabs/nitro/util"
-	"github.com/offchainlabs/nitro/validator"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -63,25 +63,33 @@ func main() {
 
 		return
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	logFormat, err := conf.ParseLogType(nodeConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(nodeConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
 	log.Info("Running Arbitrum nitro node")
 
 	if nodeConfig.Node.Dangerous.NoL1Listener {
-		nodeConfig.Node.EnableL1Reader = false
+		nodeConfig.Node.L1Reader.Enable = false
 		nodeConfig.Node.Sequencer.Enable = true // we sequence messages, but not to l1
 		nodeConfig.Node.BatchPoster.Enable = false
 		nodeConfig.Node.DelayedSequencer.Enable = false
 	} else {
-		nodeConfig.Node.EnableL1Reader = true
+		nodeConfig.Node.L1Reader.Enable = true
 	}
 
 	if nodeConfig.Node.Sequencer.Enable {
 		if nodeConfig.Node.ForwardingTarget() != "" {
 			flag.Usage()
 			panic("forwarding-target set when sequencer enabled")
+		}
+		if nodeConfig.Node.L1Reader.Enable && nodeConfig.Node.InboxReader.HardReorg {
+			panic("hard reorgs cannot safely be enabled with sequencer mode enabled")
 		}
 	} else if nodeConfig.Node.ForwardingTargetImpl == "" {
 		flag.Usage()
@@ -100,66 +108,36 @@ func main() {
 		panic(err.Error())
 	}
 
-	if nodeConfig.Node.Wasm.RootPath != "" {
-		validator.StaticNitroMachineConfig.RootPath = nodeConfig.Node.Wasm.RootPath
-	} else {
-		execfile, err := os.Executable()
-		if err != nil {
-			panic(err)
-		}
-		targetDir := filepath.Dir(filepath.Dir(execfile))
-		validator.StaticNitroMachineConfig.RootPath = filepath.Join(targetDir, "machine")
-	}
-
-	var wasmModuleRoot common.Hash
-	if nodeConfig.Node.Wasm.ModuleRoot != "" {
-		wasmModuleRoot = common.HexToHash(nodeConfig.Node.Wasm.ModuleRoot)
-	} else {
-		wasmModuleRoot, err = validator.ReadWasmModuleRoot()
-		if err != nil {
-			if nodeConfig.Node.Validator.Enable && !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
-				panic(fmt.Errorf("failed reading wasmModuleRoot from file, err %w", err))
-			} else {
-				wasmModuleRoot = common.Hash{}
-			}
-		}
-	}
-
 	if nodeConfig.Node.Validator.Enable {
-		if !nodeConfig.Node.EnableL1Reader {
+		if !nodeConfig.Node.L1Reader.Enable {
 			flag.Usage()
 			panic("validator must read from L1")
 		}
 		if !nodeConfig.Node.Validator.Dangerous.WithoutBlockValidator {
 			nodeConfig.Node.BlockValidator.Enable = true
-			if nodeConfig.Node.Wasm.CachePath != "" {
-				validator.StaticNitroMachineConfig.InitialMachineCachePath = nodeConfig.Node.Wasm.CachePath
-			}
-			go func() {
-				expectedRoot := wasmModuleRoot
-				foundRoot, err := validator.GetInitialModuleRoot(ctx)
-				if err != nil {
-					panic(fmt.Errorf("failed reading wasmModuleRoot from machine: %w", err))
-				}
-				if foundRoot != expectedRoot {
-					panic(fmt.Errorf("incompatible wasmModuleRoot expected: %v found %v", expectedRoot, foundRoot))
-				} else {
-					log.Info("loaded wasm machine", "wasmModuleRoot", foundRoot)
-				}
-			}()
 		}
 	}
 
 	var l1client *ethclient.Client
 	var deployInfo arbnode.RollupAddresses
 	var l1TransactionOpts *bind.TransactOpts
-	if nodeConfig.Node.EnableL1Reader {
+	if nodeConfig.Node.L1Reader.Enable {
 		var err error
 
-		l1client, err = ethclient.Dial(nodeConfig.L1.URL)
-		if err != nil {
-			flag.Usage()
-			panic(err)
+		if nodeConfig.L1.ConnectionAttempts <= 0 {
+			nodeConfig.L1.ConnectionAttempts = math.MaxInt
+		}
+		for i := 1; i <= nodeConfig.L1.ConnectionAttempts; i++ {
+			l1client, err = ethclient.DialContext(ctx, nodeConfig.L1.URL)
+			if err == nil {
+				break
+			}
+			if i < nodeConfig.L1.ConnectionAttempts {
+				log.Warn("error connecting to L1", "err", err)
+			} else {
+				panic(err)
+			}
+			time.Sleep(time.Second)
 		}
 		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
 			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(
@@ -247,7 +225,7 @@ func main() {
 
 	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", false)
 	if err != nil {
-		utils.Fatalf("Failed to open database: %v", err)
+		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
 
 	if nodeConfig.ImportFile != "" {
@@ -269,9 +247,6 @@ func main() {
 			}
 		}
 		initDataReader = statetransfer.NewMemoryInitDataReader(&initData)
-		if err != nil {
-			panic(err)
-		}
 	}
 
 	chainConfig, err := arbos.GetChainConfig(new(big.Int).SetUint64(nodeConfig.L2.ChainID))
@@ -326,6 +301,15 @@ func main() {
 		}
 	}
 
+	if nodeConfig.Metrics {
+		go metrics.CollectProcessMetrics(3 * time.Second)
+
+		if nodeConfig.MetricsServer.Addr != "" {
+			address := fmt.Sprintf("%v:%v", nodeConfig.MetricsServer.Addr, nodeConfig.MetricsServer.Port)
+			exp.Setup(address)
+		}
+	}
+
 	node, err := arbnode.CreateNode(stack, chainDb, &nodeConfig.Node, l2BlockChain, l1client, &deployInfo, l1TransactionOpts)
 	if err != nil {
 		panic(err)
@@ -345,7 +329,7 @@ func main() {
 		}
 	}
 	if err := stack.Start(); err != nil {
-		utils.Fatalf("Error starting protocol stack: %v\n", err)
+		panic(fmt.Sprintf("Error starting protocol stack: %v\n", err))
 	}
 
 	sigint := make(chan os.Signal, 1)
@@ -356,35 +340,41 @@ func main() {
 	close(sigint)
 
 	if err := stack.Close(); err != nil {
-		utils.Fatalf("Error closing stack: %v\n", err)
+		panic(fmt.Sprintf("Error closing stack: %v\n", err))
 	}
 }
 
 type NodeConfig struct {
-	Conf       conf.ConfConfig       `koanf:"conf"`
-	Node       arbnode.Config        `koanf:"node"`
-	L1         conf.L1Config         `koanf:"l1"`
-	L2         conf.L2Config         `koanf:"l2"`
-	LogLevel   int                   `koanf:"log-level"`
-	Persistent conf.PersistentConfig `koanf:"persistent"`
-	HTTP       conf.HTTPConfig       `koanf:"http"`
-	WS         conf.WSConfig         `koanf:"ws"`
-	DevInit    bool                  `koanf:"dev-init"`
-	NoInit     bool                  `koanf:"no-init"`
-	ImportFile string                `koanf:"import-file"`
+	Conf          conf.ConfConfig          `koanf:"conf"`
+	Node          arbnode.Config           `koanf:"node"`
+	L1            conf.L1Config            `koanf:"l1"`
+	L2            conf.L2Config            `koanf:"l2"`
+	LogLevel      int                      `koanf:"log-level"`
+	LogType       string                   `koanf:"log-type"`
+	Persistent    conf.PersistentConfig    `koanf:"persistent"`
+	HTTP          conf.HTTPConfig          `koanf:"http"`
+	WS            conf.WSConfig            `koanf:"ws"`
+	DevInit       bool                     `koanf:"dev-init"`
+	NoInit        bool                     `koanf:"no-init"`
+	ImportFile    string                   `koanf:"import-file"`
+	Metrics       bool                     `koanf:"metrics"`
+	MetricsServer conf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:       conf.ConfConfigDefault,
-	Node:       arbnode.ConfigDefault,
-	L1:         conf.L1ConfigDefault,
-	L2:         conf.L2ConfigDefault,
-	LogLevel:   int(log.LvlInfo),
-	Persistent: conf.PersistentConfigDefault,
-	HTTP:       conf.HTTPConfigDefault,
-	WS:         conf.WSConfigDefault,
-	DevInit:    false,
-	ImportFile: "",
+	Conf:          conf.ConfConfigDefault,
+	Node:          arbnode.ConfigDefault,
+	L1:            conf.L1ConfigDefault,
+	L2:            conf.L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	Persistent:    conf.PersistentConfigDefault,
+	HTTP:          conf.HTTPConfigDefault,
+	WS:            conf.WSConfigDefault,
+	DevInit:       false,
+	ImportFile:    "",
+	Metrics:       false,
+	MetricsServer: conf.MetricsServerConfigDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -393,12 +383,15 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.L1ConfigAddOptions("l1", f)
 	conf.L2ConfigAddOptions("l2", f)
 	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	conf.PersistentConfigAddOptions("persistent", f)
 	conf.HTTPConfigAddOptions("http", f)
 	conf.WSConfigAddOptions("ws", f)
 	f.Bool("dev-init", NodeConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
 	f.Bool("no-init", NodeConfigDefault.DevInit, "Do not init chain. Data must be valid in database.")
 	f.String("import-file", NodeConfigDefault.ImportFile, "path for json data to import")
+	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
+	conf.MetricsServerAddOptions("metrics-server", f)
 }
 
 func ParseNode(_ context.Context, args []string) (*NodeConfig, *conf.WalletConfig, *conf.WalletConfig, error) {

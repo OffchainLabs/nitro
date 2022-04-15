@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
 
@@ -24,20 +23,24 @@ const (
 func InternalTxStartBlock(
 	chainId,
 	l1BaseFee *big.Int,
-	l1BlockNum,
-	l2BlockNum uint64,
-	header *types.Header,
+	l1BlockNum uint64,
+	header,
+	lastHeader *types.Header,
 ) *types.ArbitrumInternalTx {
+
+	l2BlockNum := header.Number.Uint64()
+	timePassed := header.Time - lastHeader.Time
+
 	if l1BaseFee == nil {
 		l1BaseFee = big.NewInt(0)
 	}
-	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, header.BaseFee, l1BlockNum, header.Time)
+	data, err := util.PackInternalTxDataStartBlock(l1BaseFee, lastHeader.BaseFee, l1BlockNum, timePassed)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to pack internal tx %v", err))
 	}
 	return &types.ArbitrumInternalTx{
 		ChainId:       chainId,
-		Type:          arbInternalTxStartBlock,
+		SubType:       arbInternalTxStartBlock,
 		Data:          data,
 		L2BlockNumber: l2BlockNum,
 	}
@@ -48,10 +51,10 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 	if err != nil {
 		panic(err)
 	}
-	l1BaseFee, _ := inputs[0].(*big.Int)
-	l2BaseFee, _ := inputs[1].(*big.Int)
-	l1BlockNumber, _ := inputs[2].(uint64)
-	timeLastBlock, _ := inputs[3].(uint64)
+	l1BaseFee, _ := inputs[0].(*big.Int)   // current block's
+	l2BaseFee, _ := inputs[1].(*big.Int)   // last block's
+	l1BlockNumber, _ := inputs[2].(uint64) // current block's
+	timePassed, _ := inputs[3].(uint64)    // since last block
 
 	nextL1BlockNumber, err := state.Blockhashes().NextBlockNumber()
 	state.Restrict(err)
@@ -64,13 +67,14 @@ func ApplyInternalTxUpdate(tx *types.ArbitrumInternalTx, state *arbosState.Arbos
 		state.Restrict(state.Blockhashes().RecordNewL1Block(l1BlockNumber, prevHash))
 	}
 
+	currentTime := evm.Context.Time.Uint64()
+
 	// Try to reap 2 retryables
-	_ = state.RetryableState().TryToReapOneRetryable(timeLastBlock, evm, util.TracingDuringEVM)
-	_ = state.RetryableState().TryToReapOneRetryable(timeLastBlock, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
+	_ = state.RetryableState().TryToReapOneRetryable(currentTime, evm, util.TracingDuringEVM)
 
-	timePassed := state.SetLastTimestampSeen(timeLastBlock)
 	state.L2PricingState().UpdatePricingModel(l2BaseFee, timePassed, false)
-	state.L1PricingState().UpdatePricingModel(l1BaseFee, timePassed)
+	state.L1PricingState().UpdatePricingModel(l1BaseFee, currentTime)
 
-	state.UpgradeArbosVersionIfNecessary(timeLastBlock)
+	state.UpgradeArbosVersionIfNecessary(currentTime, evm.ChainConfig())
 }

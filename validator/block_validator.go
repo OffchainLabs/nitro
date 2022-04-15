@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -47,6 +46,8 @@ type BlockValidator struct {
 	lastBlockValidatedMutex sync.Mutex
 	earliestBatchKept       uint64
 	nextBatchKept           uint64 // 1 + the last batch number kept
+	currentWasmModuleRoot   common.Hash
+	pendingWasmModuleRoot   common.Hash
 
 	nextBlockToValidate      uint64
 	nextValidationEntryBlock uint64
@@ -62,21 +63,35 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable              bool   `koanf:"enable"`
-	OutputPath          string `koanf:"output-path"`
-	ConcurrentRunsLimit int    `koanf:"concurrent-runs-limit"`
+	Enable                   bool   `koanf:"enable"`
+	OutputPath               string `koanf:"output-path"`
+	ConcurrentRunsLimit      int    `koanf:"concurrent-runs-limit"`
+	CurrentModuleRoot        string `koanf:"current-module-root"`
+	PendingUpgradeModuleRoot string `koanf:"pending-upgrade-module-root"`
 }
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block validator")
 	f.String(prefix+".output-path", DefaultBlockValidatorConfig.OutputPath, "")
 	f.Int(prefix+".concurrent-runs-limit", DefaultBlockValidatorConfig.ConcurrentRunsLimit, "")
+	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
+	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:              false,
-	OutputPath:          "./target/output",
-	ConcurrentRunsLimit: 0,
+	Enable:                   false,
+	OutputPath:               "./target/output",
+	ConcurrentRunsLimit:      0,
+	CurrentModuleRoot:        "current",
+	PendingUpgradeModuleRoot: "latest",
+}
+
+var TestBlockValidatorConfig = BlockValidatorConfig{
+	Enable:                   false,
+	OutputPath:               "./target/output",
+	ConcurrentRunsLimit:      0,
+	CurrentModuleRoot:        "latest",
+	PendingUpgradeModuleRoot: "latest",
 }
 
 const validationStatusUnprepared uint32 = 0 // waiting for validationEntry to be populated
@@ -84,18 +99,20 @@ const validationStatusPrepared uint32 = 1   // ready to undergo validation
 const validationStatusValid uint32 = 2      // validation succeeded
 
 type validationStatus struct {
-	Status    uint32           // atomic: value is one of validationStatus*
-	Cancel    func()           // non-atomic: only read/written to with reorg mutex
-	Entry     *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
-	Preimages []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
+	Status      uint32           // atomic: value is one of validationStatus*
+	Cancel      func()           // non-atomic: only read/written to with reorg mutex
+	Entry       *validationEntry // non-atomic: only read if Status >= validationStatusPrepared
+	Preimages   []common.Hash    // non-atomic: only read if Status >= validationStatusPrepared
+	ModuleRoots []common.Hash    // non-atomic: present from the start
 }
 
-func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, das das.DataAvailabilityService) (*BlockValidator, error) {
+func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInterface, streamer TransactionStreamerInterface, blockchain *core.BlockChain, db ethdb.Database, config *BlockValidatorConfig, machineLoader *NitroMachineLoader, das das.DataAvailabilityService) (*BlockValidator, error) {
 	concurrent := config.ConcurrentRunsLimit
 	if concurrent == 0 {
 		concurrent = runtime.NumCPU()
 	}
 	statelessVal, err := NewStatelessBlockValidator(
+		machineLoader,
 		inboxReader,
 		inbox,
 		streamer,
@@ -117,6 +134,23 @@ func NewBlockValidator(inboxReader InboxReaderInterface, inbox InboxTrackerInter
 	err = validator.readLastBlockValidatedDbInfo()
 	if err != nil {
 		return nil, err
+	}
+	if config.PendingUpgradeModuleRoot != "" {
+		if config.PendingUpgradeModuleRoot == "latest" {
+			latest, err := machineLoader.GetConfig().ReadLatestWasmModuleRoot()
+			if err != nil {
+				return nil, err
+			}
+			validator.pendingWasmModuleRoot = latest
+		} else {
+			validator.pendingWasmModuleRoot = common.HexToHash(config.PendingUpgradeModuleRoot)
+			if (validator.pendingWasmModuleRoot == common.Hash{}) {
+				return nil, errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+		if err := machineLoader.CreateMachine(validator.pendingWasmModuleRoot, true); err != nil {
+			return nil, err
+		}
 	}
 	streamer.SetBlockValidator(validator)
 	inbox.SetBlockValidator(validator)
@@ -187,14 +221,34 @@ func (v *BlockValidator) prepareBlock(header *types.Header, prevHeader *types.He
 	v.sendValidationsChan <- struct{}{}
 }
 
+func (v *BlockValidator) getModuleRootsToValidateLocked() []common.Hash {
+	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if (v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != common.Hash{}) {
+		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
+	}
+	return validatingModuleRoots
+}
+
+func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+	return v.getModuleRootsToValidateLocked()
+}
+
 func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, msg arbstate.MessageWithMetadata) {
 	v.blockMutex.Lock()
 	defer v.blockMutex.Unlock()
 	status := &validationStatus{
-		Status: validationStatusUnprepared,
-		Entry:  nil,
+		Status:      validationStatusUnprepared,
+		Entry:       nil,
+		ModuleRoots: v.getModuleRootsToValidateLocked(),
 	}
 	blockNum := block.NumberU64()
+	// It's fine to separately load and then store as we have the blockMutex acquired
+	_, present := v.validationEntries.Load(blockNum)
+	if present {
+		return
+	}
 	v.validationEntries.Store(blockNum, status)
 	if v.nextValidationEntryBlock <= blockNum {
 		v.nextValidationEntryBlock = blockNum + 1
@@ -205,8 +259,9 @@ func (v *BlockValidator) NewBlock(block *types.Block, prevHeader *types.Header, 
 var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
-	outDirPath := filepath.Join(StaticNitroMachineConfig.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash, start, end GlobalStatePosition, preimages map[common.Hash][]byte, sequencerMsg, delayedMsg []byte) error {
+	machConf := v.MachineLoader.GetConfig()
+	outDirPath := filepath.Join(machConf.RootPath, v.config.OutputPath, launchTime, fmt.Sprintf("block_%d", validationEntry.BlockNumber))
 	err := os.MkdirAll(outDirPath, 0777)
 	if err != nil {
 		return err
@@ -219,20 +274,20 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	defer cmdFile.Close()
 	_, err = cmdFile.WriteString("#!/bin/bash\n" +
 		fmt.Sprintf("# expected output: batch %d, postion %d, hash %s\n", end.BatchNumber, end.PosInBatch, validationEntry.BlockHash) +
-		"ROOTPATH=\"" + StaticNitroMachineConfig.RootPath + "\"\n" +
+		"MACHPATH=\"" + machConf.getMachinePath(moduleRoot) + "\"\n" +
 		"if (( $# > 1 )); then\n" +
-		"	if [[ $1 == \"-r\" ]]; then\n" +
-		"		ROOTPATH=$2\n" +
+		"	if [[ $1 == \"-m\" ]]; then\n" +
+		"		MACHPATH=$2\n" +
 		"		shift\n" +
 		"		shift\n" +
 		"	fi\n" +
 		"fi\n" +
-		"${ROOTPATH}/bin/prover ${ROOTPATH}/" + StaticNitroMachineConfig.ProverBinPath)
+		"${ROOTPATH}/bin/prover ${MACHPATH}/" + machConf.ProverBinPath)
 	if err != nil {
 		return err
 	}
 
-	for _, module := range StaticNitroMachineConfig.ModulePaths {
+	for _, module := range machConf.ModulePaths {
 		_, err = cmdFile.WriteString(" -l " + "${ROOTPATH}/" + module)
 		if err != nil {
 			return err
@@ -303,13 +358,37 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, start, en
 	return nil
 }
 
+func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
+	v.blockMutex.Lock()
+	defer v.blockMutex.Unlock()
+
+	if (hash == common.Hash{}) {
+		return errors.New("trying to set zero as wsmModuleRoot")
+	}
+	if hash == v.currentWasmModuleRoot {
+		return nil
+	}
+	if (v.currentWasmModuleRoot == common.Hash{}) {
+		v.currentWasmModuleRoot = hash
+		return nil
+	}
+	if v.pendingWasmModuleRoot == hash {
+		log.Info("Block validator: detected progressing to pending machine", "hash", hash)
+		v.currentWasmModuleRoot = hash
+		return nil
+	}
+	if v.config.CurrentModuleRoot != "current" {
+		return nil
+	}
+	return fmt.Errorf("unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v", hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot)
+}
+
 func (v *BlockValidator) validate(ctx context.Context, validationStatus *validationStatus, seqMsg []byte) {
 	if atomic.LoadUint32(&validationStatus.Status) < validationStatusPrepared {
 		log.Error("attempted to validate unprepared validation entry")
 		return
 	}
 	entry := validationStatus.Entry
-	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
 	preimages, err := v.preimageCache.FillHashedValues(validationStatus.Preimages)
 	if err != nil {
 		log.Error("validator: failed prepare arrays", "err", err)
@@ -324,33 +403,38 @@ func (v *BlockValidator) validate(ctx context.Context, validationStatus *validat
 		}
 	})()
 	log.Info("starting validation for block", "blockNr", entry.BlockNumber)
-	gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg)
-	if err != nil {
-		log.Error("Validation of block failed", "err", err)
-		return
-	}
-	gsExpected := entry.expectedEnd()
-	resultValid := gsEnd == gsExpected
-
-	writeThisBlock := false
-	if !resultValid {
-		writeThisBlock = true
-	}
-
-	if writeThisBlock {
-		err = v.writeToFile(entry, entry.StartPosition, entry.EndPosition, preimages, seqMsg, delayedMsg)
+	for _, moduleRoot := range validationStatus.ModuleRoots {
+		gsEnd, delayedMsg, err := v.executeBlock(ctx, entry, preimages, seqMsg, moduleRoot)
 		if err != nil {
-			log.Error("failed to write file", "err", err)
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				log.Error("Validation of block failed", "err", err)
+			}
+			return
 		}
-	}
+		gsExpected := entry.expectedEnd()
+		resultValid := gsEnd == gsExpected
 
-	if !resultValid {
-		log.Error("validation failed", "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
-		return
+		writeThisBlock := false
+		if !resultValid {
+			writeThisBlock = true
+		}
+
+		if writeThisBlock {
+			err = v.writeToFile(entry, moduleRoot, entry.StartPosition, entry.EndPosition, preimages, seqMsg, delayedMsg)
+			if err != nil {
+				log.Error("failed to write file", "err", err)
+			}
+		}
+
+		if !resultValid {
+			log.Error("validation failed", "moduleRoot", moduleRoot, "got", gsEnd, "expected", gsExpected, "expHeader", entry.BlockHeader)
+			return
+		}
+
+		log.Info("validation succeeded", "blockNr", entry.BlockNumber, "moduleRoot", moduleRoot)
 	}
 
 	atomic.StoreUint32(&validationStatus.Status, validationStatusValid) // after that - validation entry could be deleted from map
-	log.Info("validation succeeded", "blockNr", entry.BlockNumber)
 	v.checkProgressChan <- struct{}{}
 }
 
@@ -375,11 +459,39 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 		}
 		seqBatchEntry, haveBatch := v.sequencerBatches.Load(v.globalPosNextSend.BatchNumber)
 		if !haveBatch {
-			return
+			if batchCount == v.globalPosNextSend.BatchNumber+1 {
+				// This is the latest batch.
+				// To avoid re-querying it unnecessarily, wait for the inbox tracker to provide it to us.
+				return
+			}
+			seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, v.globalPosNextSend.BatchNumber)
+			if err != nil {
+				log.Error("validator failed to read sequencer message", "err", err)
+				return
+			}
+			v.ProcessBatches(v.globalPosNextSend.BatchNumber, [][]byte{seqMsg})
+			seqBatchEntry = seqMsg
 		}
+		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		// valdationEntries is By blockNumber
 		entry, found := v.validationEntries.Load(v.nextBlockToValidate)
 		if !found {
+			block := v.blockchain.GetBlockByNumber(v.nextBlockToValidate)
+			if block == nil {
+				// This block hasn't been created yet.
+				return
+			}
+			prevHeader := v.blockchain.GetHeaderByHash(block.ParentHash())
+			if prevHeader == nil && block.ParentHash() != (common.Hash{}) {
+				log.Warn("failed to get prevHeader in block validator", "num", v.nextBlockToValidate-1, "hash", block.ParentHash())
+				return
+			}
+			msg, err := v.streamer.GetMessage(nextMsg)
+			if err != nil {
+				log.Warn("failed to get message in block validator", "err", err)
+				return
+			}
+			v.NewBlock(block, prevHeader, msg)
 			return
 		}
 		validationStatus, ok := entry.(*validationStatus)
@@ -387,10 +499,9 @@ func (v *BlockValidator) sendValidations(ctx context.Context) {
 			log.Error("bad entry trying to validate batch")
 			return
 		}
-		if atomic.LoadUint32(&validationStatus.Status) == 0 {
+		if atomic.LoadUint32(&validationStatus.Status) == validationStatusUnprepared {
 			return
 		}
-		nextMsg := arbutil.BlockNumberToMessageCount(v.nextBlockToValidate, v.genesisBlockNum) - 1
 		startPos, endPos, err := GlobalStatePositionsFor(v.inboxTracker, nextMsg, v.globalPosNextSend.BatchNumber)
 		if err != nil {
 			log.Error("failed calculating position for validation", "err", err, "msg", nextMsg, "batch", v.globalPosNextSend.BatchNumber)
@@ -499,11 +610,16 @@ func (v *BlockValidator) LastBlockValidated() uint64 {
 	return atomic.LoadUint64(&v.lastBlockValidated)
 }
 
-func (v *BlockValidator) LastBlockValidatedAndHash() (uint64, common.Hash) {
+func (v *BlockValidator) LastBlockValidatedAndHash() (blockNumber uint64, blockHash common.Hash, wasmModuleRoots []common.Hash) {
 	v.lastBlockValidatedMutex.Lock()
-	defer v.lastBlockValidatedMutex.Unlock()
+	blockValidated := v.lastBlockValidated
+	blockValidatedHash := v.lastBlockValidatedHash
+	v.lastBlockValidatedMutex.Unlock()
 
-	return v.lastBlockValidated, v.lastBlockValidatedHash
+	// things can be removed from, but not added to, moduleRootsToValidate. By taking root hashes fter the block we know result is valid
+	moduleRootsValidated := v.GetModuleRootsToValidate()
+
+	return blockValidated, blockValidatedHash, moduleRootsValidated
 }
 
 // Because batches and blocks are handled at separate layers in the node,
@@ -644,6 +760,33 @@ func (v *BlockValidator) reorgToBlockImpl(blockNum uint64, blockHash common.Hash
 	return nil
 }
 
+// Must be called after SetCurrentWasmModuleRoot sets the current one
+func (v *BlockValidator) Initialize() error {
+	switch v.config.CurrentModuleRoot {
+	case "latest":
+		latest, err := v.MachineLoader.GetConfig().ReadLatestWasmModuleRoot()
+		if err != nil {
+			return err
+		}
+		v.currentWasmModuleRoot = latest
+	case "current":
+		if (v.currentWasmModuleRoot == common.Hash{}) {
+			return errors.New("wasmModuleRoot set to 'current' - but info not set from chain")
+		}
+	default:
+		v.currentWasmModuleRoot = common.HexToHash(v.config.CurrentModuleRoot)
+		if (v.currentWasmModuleRoot == common.Hash{}) {
+			return errors.New("current-module-root config value illegal")
+		}
+	}
+	if err := v.MachineLoader.CreateMachine(v.currentWasmModuleRoot, true); err != nil {
+		return err
+	}
+
+	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
+	return nil
+}
+
 func (v *BlockValidator) Start(ctxIn context.Context) error {
 	v.StopWaiter.Start(ctxIn)
 	v.LaunchThread(func(ctx context.Context) {
@@ -671,13 +814,14 @@ func (v *BlockValidator) Start(ctxIn context.Context) error {
 
 // can only be used from One thread
 func (v *BlockValidator) WaitForBlock(blockNumber uint64, timeout time.Duration) bool {
-	timeoutChan := time.After(timeout)
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	for {
 		if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 			return true
 		}
 		select {
-		case <-timeoutChan:
+		case <-timer.C:
 			if atomic.LoadUint64(&v.lastBlockValidated) >= blockNumber {
 				return true
 			}

@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
@@ -43,8 +42,6 @@ func printSampleUsage() {
 }
 
 func startup() error {
-	loglevel := flag.Int("loglevel", int(log.LvlInfo), "log level")
-
 	relayConfig, err := ParseRelay(context.Background(), os.Args[1:])
 	if err != nil {
 		printSampleUsage()
@@ -55,8 +52,13 @@ func startup() error {
 		return nil
 	}
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.Lvl(*loglevel))
+	logFormat, err := conf.ParseLogType(relayConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
+	glogger.Verbosity(log.Lvl(relayConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
 	serverConf := wsbroadcastserver.BroadcasterConfig{
@@ -93,18 +95,21 @@ func startup() error {
 type RelayConfig struct {
 	Conf     conf.ConfConfig `koanf:"conf"`
 	LogLevel int             `koanf:"log-level"`
+	LogType  string          `koanf:"log-type"`
 	Node     RelayNodeConfig `koanf:"node"`
 }
 
 var RelayConfigDefault = RelayConfig{
 	Conf:     conf.ConfConfigDefault,
 	LogLevel: int(log.LvlInfo),
+	LogType:  "plaintext",
 	Node:     RelayNodeConfigDefault,
 }
 
 func RelayConfigAddOptions(f *flag.FlagSet) {
 	conf.ConfConfigAddOptions("conf", f)
 	f.Int("log-level", RelayConfigDefault.LogLevel, "log level")
+	f.String("log-type", RelayConfigDefault.LogType, "log type")
 	RelayNodeConfigAddOptions("node", f)
 }
 

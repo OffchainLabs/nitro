@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package precompiles
 
@@ -91,7 +90,7 @@ func (wrapper *OwnerPrecompile) Call(
 		return nil, burner.gasLeft, err
 	}
 
-	if !isOwner {
+	if !isOwner && (state.FormatVersion() >= 2 || caller != arbosState.TestnetUpgrade2Owner) {
 		return nil, burner.gasLeft, errors.New("unauthorized caller to access-controlled method")
 	}
 

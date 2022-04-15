@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -25,6 +24,7 @@ type MachineInterface interface {
 	ValidForStep(uint64) bool
 	Step(context.Context, uint64) error
 	Hash() common.Hash
+	GetGlobalState() GoGlobalState
 	ProveNextStep() []byte
 }
 

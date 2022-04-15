@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package validator
 
@@ -48,10 +47,11 @@ type L1Validator struct {
 	callOpts                bind.CallOpts
 	genesisBlockNumber      uint64
 
-	l2Blockchain   *core.BlockChain
-	inboxTracker   InboxTrackerInterface
-	txStreamer     TransactionStreamerInterface
-	blockValidator *BlockValidator
+	l2Blockchain       *core.BlockChain
+	inboxTracker       InboxTrackerInterface
+	txStreamer         TransactionStreamerInterface
+	blockValidator     *BlockValidator
+	lastWasmModuleRoot common.Hash
 }
 
 func NewL1Validator(
@@ -111,7 +111,30 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 		return err
 	}
 	v.challengeManagerAddress, err = v.rollup.ChallengeManager(v.getCallOpts(ctx))
-	return err
+	if err != nil {
+		return err
+	}
+	return v.updateBlockValidatorModuleRoot(ctx)
+}
+
+func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error {
+	if v.blockValidator == nil {
+		return nil
+	}
+	moduleRoot, err := v.rollup.WasmModuleRoot(v.getCallOpts(ctx))
+	if err != nil {
+		return err
+	}
+	if moduleRoot != v.lastWasmModuleRoot {
+		err := v.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
+		if err != nil {
+			return err
+		}
+		v.lastWasmModuleRoot = moduleRoot
+	} else if (moduleRoot == common.Hash{}) {
+		return errors.New("wasmModuleRoot in rollup is zero")
+	}
+	return nil
 }
 
 func (v *L1Validator) resolveTimedOutChallenges(ctx context.Context) (*types.Transaction, error) {
@@ -263,10 +286,24 @@ func (v *L1Validator) generateNodeAction(ctx context.Context, stakerInfo *OurSta
 	var lastBlockValidated uint64
 	if v.blockValidator != nil {
 		var expectedHash common.Hash
-		lastBlockValidated, expectedHash = v.blockValidator.LastBlockValidatedAndHash()
+		var validRoots []common.Hash
+		lastBlockValidated, expectedHash, validRoots = v.blockValidator.LastBlockValidatedAndHash()
 		haveHash := v.l2Blockchain.GetCanonicalHash(lastBlockValidated)
 		if haveHash != expectedHash {
 			return nil, false, fmt.Errorf("block validator validated block %v as hash %v but blockchain has hash %v", lastBlockValidated, expectedHash, haveHash)
+		}
+		if err := v.updateBlockValidatorModuleRoot(ctx); err != nil {
+			return nil, false, err
+		}
+		wasmRootValid := false
+		for _, root := range validRoots {
+			if v.lastWasmModuleRoot == root {
+				wasmRootValid = true
+				break
+			}
+		}
+		if !wasmRootValid {
+			return nil, false, fmt.Errorf("wasmroot doesn't match rollup : %v, valid: %v", v.lastWasmModuleRoot, validRoots)
 		}
 	} else {
 		lastBlockValidated = v.l2Blockchain.CurrentBlock().Header().Number.Uint64()

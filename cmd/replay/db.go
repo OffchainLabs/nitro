@@ -1,12 +1,15 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
 
 import (
+	"bytes"
+	"encoding/hex"
 	"errors"
+	"fmt"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -21,11 +24,16 @@ func (db PreimageDb) Has(key []byte) (bool, error) {
 }
 
 func (db PreimageDb) Get(key []byte) ([]byte, error) {
-	if len(key) != 32 {
-		return nil, errors.New("Preimage DB keys must be 32 bytes long")
-	}
 	var hash [32]byte
 	copy(hash[:], key)
+	if len(key) == 32 {
+		copy(hash[:], key)
+	} else if len(key) == len(rawdb.CodePrefix)+32 && bytes.HasPrefix(key, rawdb.CodePrefix) {
+		// Retrieving code
+		copy(hash[:], key[len(rawdb.CodePrefix):])
+	} else {
+		return nil, fmt.Errorf("preimage DB attempted to access non-hash key %v", hex.EncodeToString(key))
+	}
 	return wavmio.ResolvePreImage(hash), nil
 }
 

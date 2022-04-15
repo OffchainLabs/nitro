@@ -1,6 +1,5 @@
-//
-// Copyright 2021-2022, Offchain Labs, Inc. All rights reserved.
-//
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
 
@@ -15,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbutil"
 )
 
 func testTwoNodesSimple(t *testing.T, dasModeStr string) {
@@ -53,7 +51,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 	err = l2clientA.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = arbutil.EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
 	Require(t, err)
 
 	// give the inbox reader a bit of time to pick up the delayed message
@@ -66,7 +64,7 @@ func testTwoNodesSimple(t *testing.T, dasModeStr string) {
 		})
 	}
 
-	_, err = arbutil.WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
+	_, err = WaitForTx(ctx, l2clientB, tx.Hash(), time.Second*5)
 	Require(t, err)
 
 	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)

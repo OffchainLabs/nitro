@@ -1,3 +1,6 @@
+// Copyright 2021-2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::machine::{InboxIdentifier, MachineStatus};
@@ -121,8 +124,8 @@ struct SimpleProfile {
     local_cycles: u64,
 }
 
-const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & solgen's OneStepProverHostIo.sol
-const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & solgen's OneStepProverHostIo.sol
+const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
+const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 
 fn main() -> Result<()> {
     let opts = Opts::from_args();
@@ -343,13 +346,6 @@ fn main() -> Result<()> {
             module, func, pc
         );
     }
-    let output = mach.get_stdio_output();
-    println!("End machine output:");
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
-    stdout
-        .write_all(output)
-        .expect("Failed to write machine output to stdout");
 
     if let Some(out) = opts.output {
         let out = File::create(out)?;
