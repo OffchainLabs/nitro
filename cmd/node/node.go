@@ -5,11 +5,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/knadh/koanf"
-	"io/ioutil"
 	"math"
 	"math/big"
 	"os"
@@ -380,33 +378,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	conf.MetricsServerAddOptions("metrics-server", f)
 }
 
-func (c *NodeConfig) SetRollupParametersUsingChainID() {
-	if c.L1.ChainID == 5 {
-		if c.L1.Rollup.Rollup == "" {
-			c.L1.Rollup.Rollup = "0x767cff8d8de386d7cbe91dbd39675132ba2f5967"
-		}
-
-		if c.L1.Rollup.Rollup == "0x767cff8d8de386d7cbe91dbd39675132ba2f5967" {
-			setStringIfEmpty(&c.Persistent.Chain, "goerli")
-			setStringIfEmpty(&c.Node.ForwardingTargetImpl, "https://nitro-devnet.arbitrum.io/rpc")
-			if len(c.Node.Feed.Input.URLs) == 0 {
-				c.Node.Feed.Input.URLs = []string{"https://nitro-devnet.arbitrum.io/rpc"}
-			}
-			setStringIfEmpty(&c.L1.Rollup.Bridge, "0x9903a892da86c1e04522d63b08e5514a921e81df")
-			setStringIfEmpty(&c.L1.Rollup.Inbox, "0x1fdbbcc914e84af593884bf8e8dd6877c29035a2")
-			setStringIfEmpty(&c.L1.Rollup.SequencerInbox, "0xb32f4257e05c56c53d46bbec9e85770eb52425d6")
-			setStringIfEmpty(&c.L1.Rollup.ValidatorUtils, "0x96f42d78bac19a050595c4ea6f64fe355e0af90a")
-			setStringIfEmpty(&c.L1.Rollup.ValidatorWalletCreator, "0xd562adc7ff479461d29e3a3c602a017c34196add")
-			if c.L1.Rollup.DeployedAt == 0 {
-				c.L1.Rollup.DeployedAt = 6664425
-			}
-			if c.L2.ChainID == 0 {
-				c.L2.ChainID = 421612
-			}
-		}
-	}
-}
-
 func setStringIfEmpty(str *string, newstr string) {
 	if *str == "" {
 		*str = newstr
@@ -545,16 +516,6 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 
 		fmt.Println(string(c))
 		os.Exit(0)
-	}
-
-	if nodeConfig.L1.Deployment != "" {
-		rawDeployment, err := ioutil.ReadFile(nodeConfig.L1.Deployment)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal(rawDeployment, &nodeConfig.L1.Rollup); err != nil {
-			panic(err)
-		}
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
