@@ -143,9 +143,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					return nil, fmt.Errorf("Mismatched DataHash from DAS %v", r.details)
 				}
 				if aggCert.Timeout != r.cert.Timeout {
-					// TODO there is an issue here where each backend DAS currently
-					// sets its own timeout and so they can be mismatched.
-					// This needs to be aggregator controlled
 					return nil, fmt.Errorf("Mismatched Timeout from DAS %v", r.details)
 				}
 			}
