@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/knadh/koanf"
 	"io/ioutil"
 	"math"
@@ -168,37 +169,42 @@ func main() {
 		panic(err)
 	}
 
-	devPrivKeyStr := "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-	devPrivKey, err := crypto.HexToECDSA(devPrivKeyStr)
-	if err != nil {
-		panic(err)
-	}
-	devAddr := crypto.PubkeyToAddress(devPrivKey.PublicKey)
-	log.Info("Dev node funded private key", "priv", devPrivKeyStr)
-	log.Info("Funded public address", "addr", devAddr)
+	// temporary until test-node is updated to pass dev private key in on startup
+	var devAddr common.Address
+	if nodeConfig.L1.ChainID == 1337 {
+		devPrivKeyStr := "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
+		devPrivKey, err := crypto.HexToECDSA(devPrivKeyStr)
+		if err != nil {
+			panic(err)
+		}
 
-	if l2DevWallet.Pathname != "" {
-		mykeystore := keystore.NewPlaintextKeyStore(l2DevWallet.Pathname)
-		stack.AccountManager().AddBackend(mykeystore)
-		var account accounts.Account
-		if mykeystore.HasAddress(devAddr) {
-			account.Address = devAddr
-			account, err = mykeystore.Find(account)
-		} else {
+		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
+		log.Info("Dev node funded private key", "priv", devPrivKeyStr)
+		log.Info("Funded public address", "addr", devAddr)
+
+		if l2DevWallet.Pathname != "" {
+			mykeystore := keystore.NewPlaintextKeyStore(l2DevWallet.Pathname)
+			stack.AccountManager().AddBackend(mykeystore)
+			var account accounts.Account
+			if mykeystore.HasAddress(devAddr) {
+				account.Address = devAddr
+				account, err = mykeystore.Find(account)
+			} else {
+				if l2DevWallet.Password() == nil {
+					panic("l2 password not set")
+				}
+				account, err = mykeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
+			}
+			if err != nil {
+				panic(err)
+			}
 			if l2DevWallet.Password() == nil {
 				panic("l2 password not set")
 			}
-			account, err = mykeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
-		}
-		if err != nil {
-			panic(err)
-		}
-		if l2DevWallet.Password() == nil {
-			panic("l2 password not set")
-		}
-		err = mykeystore.Unlock(account, *l2DevWallet.Password())
-		if err != nil {
-			panic(err)
+			err = mykeystore.Unlock(account, *l2DevWallet.Password())
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	var initDataReader statetransfer.InitDataReader = nil
@@ -399,8 +405,6 @@ func (c *NodeConfig) SetRollupParametersUsingChainID() {
 			}
 		}
 	}
-
-	return
 }
 
 func setStringIfEmpty(str *string, newstr string) {
@@ -497,7 +501,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 	case 1337: // local testnet
 		// Just set l2 chain id here until deployment.json gets fixed for test-node
 		err := k.Load(confmap.Provider(map[string]interface{}{
-			"l2.chain-id": 421612,
+			"l2.chain-id":      421612,
+			"persistent.chain": "local-devnet",
 		}, "."), nil)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
