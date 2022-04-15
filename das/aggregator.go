@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -17,7 +18,8 @@ import (
 )
 
 type AggregatorConfig struct {
-	assumedHonest int
+	assumedHonest   int
+	retentionPeriod time.Duration
 }
 
 type Aggregator struct {
@@ -69,7 +71,7 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 	return nil, errors.New("Data wasn't able to be retrieved from any DAS")
 }
 
-func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	var aggSignersMask uint64
 	var pubKeys []blsSignatures.PublicKey
 	var sigs []blsSignatures.Signature
@@ -77,9 +79,12 @@ func (a *Aggregator) Store(ctx context.Context, message []byte) (*arbstate.DataA
 
 	var initialStoreSucceeded bool
 	storeFailures := 0
+	if timeout == CALLEE_PICKS_TIMEOUT {
+		timeout = uint64(time.Now().Add(a.config.retentionPeriod).Unix())
+	}
 	for i, d := range a.services {
 		// TODO make this asnyc
-		cert, err := d.service.Store(ctx, message)
+		cert, err := d.service.Store(ctx, message, timeout)
 		if err != nil {
 			storeFailures++
 			log.Warn("Failed to store message to DAS", "err", err)

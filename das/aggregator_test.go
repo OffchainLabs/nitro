@@ -36,11 +36,11 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 		backends = append(backends, serviceDetails{das, *das.pubKey})
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{1}, backends)
+	aggregator := NewAggregator(AggregatorConfig{1, 7 * 24 * time.Hour}, backends)
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg)
+	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
 	Require(t, err, "Error storing message")
 
 	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
@@ -118,10 +118,10 @@ func (w *WrapRetrieve) Retrieve(ctx context.Context, cert []byte) ([]byte, error
 	return nil, nil
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*arbstate.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityService.Store(ctx, message)
+		return w.DataAvailabilityService.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("Expected Store failure")
 	}
@@ -177,11 +177,11 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 		backends = append(backends, details)
 	}
 
-	aggregator := NewAggregator(AggregatorConfig{assumedHonest}, backends)
+	aggregator := NewAggregator(AggregatorConfig{assumedHonest, 7 * 24 * time.Hour}, backends)
 	ctx := context.Background()
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg)
+	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {
