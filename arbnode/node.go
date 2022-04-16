@@ -55,13 +55,13 @@ type RollupAddresses struct {
 }
 
 type RollupAddressesConfig struct {
-	Bridge                 string `koanf:"bridge" json:"bridge"`
-	Inbox                  string `koanf:"inbox" json:"inbox"`
-	SequencerInbox         string `koanf:"sequencer-inbox" json:"sequencer-inbox"`
-	Rollup                 string `koanf:"rollup" json:"rollup"`
-	ValidatorUtils         string `koanf:"validator-utils" json:"validator-utils"`
-	ValidatorWalletCreator string `koanf:"validator-wallet-creator" json:"validator-wallet-creator"`
-	DeployedAt             uint64 `koanf:"deployed-at" json:"deployed-at"`
+	Bridge                 string `koanf:"bridge"`
+	Inbox                  string `koanf:"inbox"`
+	SequencerInbox         string `koanf:"sequencer-inbox"`
+	Rollup                 string `koanf:"rollup"`
+	ValidatorUtils         string `koanf:"validator-utils"`
+	ValidatorWalletCreator string `koanf:"validator-wallet-creator"`
+	DeployedAt             uint64 `koanf:"deployed-at"`
 }
 
 var RollupAddressesConfigDefault = RollupAddressesConfig{}
