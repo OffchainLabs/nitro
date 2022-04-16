@@ -94,17 +94,17 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
-        let codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
+        let mut codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
 
         Instruction::extend_from_hir(
             &mut insts,
-            codegen_state,
+            &mut codegen_state,
             crate::binary::HirInstruction::Block(func_block_ty, code.expr),
         )?;
 
         Instruction::extend_from_hir(
             &mut insts,
-            codegen_state,
+            &mut codegen_state,
             crate::binary::HirInstruction::Simple(Opcode::Return),
         )?;
 
@@ -1217,19 +1217,14 @@ impl Machine {
             Opcode::Block => {
                 let idx = inst.argument_data as usize;
                 self.block_stack.push(idx);
-                self.pc.block_depth += 1;
                 assert!(module.funcs[self.pc.func].code.len() > idx);
             }
             Opcode::EndBlock => {
-                assert!(self.pc.block_depth > 0);
-                self.pc.block_depth -= 1;
                 self.block_stack.pop();
             }
             Opcode::EndBlockIf => {
                 let x = self.value_stack.last().unwrap();
                 if !x.is_i32_zero() {
-                    assert!(self.pc.block_depth > 0);
-                    self.pc.block_depth -= 1;
                     self.block_stack.pop().unwrap();
                 }
             }
@@ -1249,6 +1244,10 @@ impl Machine {
                     caller_module_internals,
                 });
             }
+            Opcode::ArbitraryJump => {
+                self.pc.inst = inst.argument_data as usize;
+                Machine::test_next_instruction(&module, &self.pc);
+            }
             Opcode::ArbitraryJumpIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
@@ -1257,16 +1256,12 @@ impl Machine {
                 }
             }
             Opcode::Branch => {
-                assert!(self.pc.block_depth > 0);
-                self.pc.block_depth -= 1;
                 self.pc.inst = self.block_stack.pop().unwrap();
                 Machine::test_next_instruction(&module, &self.pc);
             }
             Opcode::BranchIf => {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
-                    assert!(self.pc.block_depth > 0);
-                    self.pc.block_depth -= 1;
                     self.pc.inst = self.block_stack.pop().unwrap();
                     Machine::test_next_instruction(&module, &self.pc);
                 }
@@ -1290,7 +1285,6 @@ impl Machine {
                     .push(Value::I32(current_frame.caller_module_internals));
                 self.pc.func = inst.argument_data as usize;
                 self.pc.inst = 0;
-                self.pc.block_depth = 0;
             }
             Opcode::CrossModuleCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1300,7 +1294,6 @@ impl Machine {
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
                 self.pc.inst = 0;
-                self.pc.block_depth = 0;
             }
             Opcode::CallerModuleInternalCall => {
                 self.value_stack.push(Value::InternalRef(self.pc));
@@ -1316,7 +1309,6 @@ impl Machine {
                     self.pc.module = current_frame.caller_module as usize;
                     self.pc.func = func_idx as usize;
                     self.pc.inst = 0;
-                    self.pc.block_depth = 0;
                 } else {
                     // The caller module has no internals
                     self.status = MachineStatus::Errored;
@@ -1344,7 +1336,6 @@ impl Machine {
                                 .push(Value::I32(current_frame.caller_module_internals));
                             self.pc.func = func as usize;
                             self.pc.inst = 0;
-                            self.pc.block_depth = 0;
                         }
                         Value::RefNull => {
                             self.status = MachineStatus::Errored;
