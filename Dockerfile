@@ -157,7 +157,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y wabt
 COPY --from=node-builder /workspace/target/ target/
 COPY --from=machine-versions /workspace/machines target/machines
-ENTRYPOINT [ "./target/bin/node" ]
+ENTRYPOINT [ "./target/bin/nitro" ]
 
 FROM nitro-node as nitro-node-dist
 WORKDIR /workspace
