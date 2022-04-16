@@ -58,7 +58,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node
+      target: nitro-node-dist
     ports:
       - "7545:7545"
       - "7546:7546"
@@ -117,7 +117,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node
+      target: nitro-node-dist
     ports:
       - "7545"
       - "7546"
@@ -149,7 +149,7 @@ services:
     pid: host # allow debugging
     build:
       context: .
-      target: nitro-node
+      target: nitro-node-dist
     ports:
       - "7547:7547"
       - "7548:7548"
@@ -174,7 +174,7 @@ services:
     pid: host
     build:
       context: .
-      target: nitro-node
+      target: nitro-node-dist
     ports:
       - "9652:9652"
     entrypoint: target/bin/relay

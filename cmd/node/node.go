@@ -5,9 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/knadh/koanf"
 	"math"
 	"math/big"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/knadh/koanf"
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/pkg/errors"
@@ -36,9 +37,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/cmd/conf"
-	cmdutil "github.com/offchainlabs/nitro/cmd/util"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/statetransfer"
-	nitroutil "github.com/offchainlabs/nitro/util"
 
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/native"
@@ -117,10 +117,8 @@ func main() {
 		}
 
 		if nodeConfig.Node.BatchPoster.Enable || nodeConfig.Node.Validator.Enable {
-			l1TransactionOpts, err = nitroutil.GetTransactOptsFromKeystore(
-				l1Wallet.Pathname,
-				l1Wallet.Account,
-				*l1Wallet.Password(),
+			l1TransactionOpts, err = util.GetTransactOptsFromWallet(
+				l1Wallet,
 				new(big.Int).SetUint64(nodeConfig.L1.ChainID),
 			)
 			if err != nil {
@@ -167,42 +165,48 @@ func main() {
 		panic(err)
 	}
 
-	// temporary until test-node is updated to pass dev private key in on startup
 	var devAddr common.Address
-	if nodeConfig.L1.ChainID == 1337 {
-		devPrivKeyStr := "e887f7d17d07cc7b8004053fb8826f6657084e88904bb61590e498ca04704cf2"
-		devPrivKey, err := crypto.HexToECDSA(devPrivKeyStr)
+	var devPrivKey *ecdsa.PrivateKey
+	if l2DevWallet.PrivateKey != "" {
+		devPrivKey, err = crypto.HexToECDSA(l2DevWallet.PrivateKey)
 		if err != nil {
 			panic(err)
 		}
 
 		devAddr = crypto.PubkeyToAddress(devPrivKey.PublicKey)
-		log.Info("Dev node funded private key", "priv", devPrivKeyStr)
-		log.Info("Funded public address", "addr", devAddr)
 
-		if l2DevWallet.Pathname != "" {
-			mykeystore := keystore.NewPlaintextKeyStore(l2DevWallet.Pathname)
-			stack.AccountManager().AddBackend(mykeystore)
-			var account accounts.Account
-			if mykeystore.HasAddress(devAddr) {
-				account.Address = devAddr
-				account, err = mykeystore.Find(account)
-			} else {
-				if l2DevWallet.Password() == nil {
-					panic("l2 password not set")
-				}
-				account, err = mykeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
-			}
-			if err != nil {
-				panic(err)
-			}
+		log.Info("Dev node funded private key", "priv", l2DevWallet.PrivateKey)
+		log.Info("Funded public address", "addr", devAddr)
+	}
+
+	if l2DevWallet.Pathname != "" {
+		myKeystore := keystore.NewKeyStore(l2DevWallet.Pathname, keystore.StandardScryptN, keystore.StandardScryptP)
+		stack.AccountManager().AddBackend(myKeystore)
+		var account accounts.Account
+		if myKeystore.HasAddress(devAddr) {
+			account.Address = devAddr
+			account, err = myKeystore.Find(account)
+		} else if l2DevWallet.Account != "" && myKeystore.HasAddress(common.HexToAddress(l2DevWallet.Account)) {
+			account.Address = common.HexToAddress(l2DevWallet.Account)
+			account, err = myKeystore.Find(account)
+		} else {
 			if l2DevWallet.Password() == nil {
 				panic("l2 password not set")
 			}
-			err = mykeystore.Unlock(account, *l2DevWallet.Password())
-			if err != nil {
-				panic(err)
+			if devPrivKey == nil {
+				panic("l2 private key not set")
 			}
+			account, err = myKeystore.ImportECDSA(devPrivKey, *l2DevWallet.Password())
+		}
+		if err != nil {
+			panic(err)
+		}
+		if l2DevWallet.Password() == nil {
+			panic("l2 password not set")
+		}
+		err = myKeystore.Unlock(account, *l2DevWallet.Password())
+		if err != nil {
+			panic(err)
 		}
 	}
 	var initDataReader statetransfer.InitDataReader = nil
@@ -394,7 +398,7 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 
 	NodeConfigAddOptions(f)
 
-	k, err := cmdutil.BeginCommonParse(f, args)
+	k, err := util.BeginCommonParse(f, args)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -469,13 +473,13 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 		}
 	}
 
-	err = cmdutil.ApplyOverrides(f, k)
+	err = util.ApplyOverrides(f, k)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
-	if err := cmdutil.EndCommonParse(k, &nodeConfig); err != nil {
+	if err := util.EndCommonParse(k, &nodeConfig); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
