@@ -460,13 +460,14 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *conf.WalletCon
 	}
 
 	switch l1ChainId.Uint64() {
+	case 1: // mainnet
+		switch k.String("l2.rollup.rollup") {
+		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+			return nil, nil, nil, nil, nil, errors.New("mainnet not supported yet")
+		}
 	case 5: // goerli
 		switch k.String("l2.rollup.rollup") {
-		case "":
-			if err := applyNitroDevNetRollupParameters(k); err != nil {
-				return nil, nil, nil, nil, nil, err
-			}
-		case "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
+		case "", "0x767cff8d8de386d7cbe91dbd39675132ba2f5967":
 			if err := applyNitroDevNetRollupParameters(k); err != nil {
 				return nil, nil, nil, nil, nil, err
 			}
