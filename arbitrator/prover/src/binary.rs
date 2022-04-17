@@ -309,8 +309,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                     code.expr.push(ops.read()?);
                 }
 
-                println!("COUNT: {}", index);
-
                 binary.codes.push(code);
             }
             ImportSection(imports) => process!(binary.imports, imports),
