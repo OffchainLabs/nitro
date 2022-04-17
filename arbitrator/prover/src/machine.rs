@@ -74,6 +74,8 @@ impl Function {
         let mut locals_with_params = func_ty.inputs.clone();
         locals_with_params.extend(locals.iter().map(|x| x.value.clone()));
 
+        println!("LOCALS: {} {}", locals.len(), locals_with_params.len());
+
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
             .iter()
@@ -98,7 +100,7 @@ impl Function {
 
         add_body(&mut insts)?;
         wasm_to_wavm(
-            &mut vec![Operator::Return],
+            &[Operator::Return],
             &mut insts,
             fp_impls,
             func_ty.outputs.len(),
@@ -358,10 +360,11 @@ impl Module {
 
         let mut globals = vec![];
         for global in &bin.globals {
-            let mut reader = global.init_expr.get_operators_reader();
-            let value = match reader.read() {
-                Ok(op) if reader.eof() => crate::binary::op_as_const(op)?,
-                _ => bail!("Global initializer isn't a constant"),
+            let mut init = global.init_expr.get_operators_reader();
+
+            let value = match (init.read()?, init.read()?, init.eof()) {
+                (op, Operator::End, true) => crate::binary::op_as_const(op)?,
+                _ => bail!("Non-constant global initializer"),
             };
             globals.push(value);
         }
@@ -385,9 +388,9 @@ impl Module {
                 "Attempted to write to nonexistant memory"
             );
 
-            let offset = match init.read()? {
-                Operator::I32Const { value } if init.eof() => value as usize,
-                _ => bail!("Non-constant data offset expression"),
+            let offset = match (init.read()?, init.read()?, init.eof()) {
+                (Operator::I32Const { value }, Operator::End, true) => value as usize,
+                x => bail!("Non-constant element segment offset expression {:?}", x),
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
@@ -418,9 +421,9 @@ impl Module {
                 } => (table_index, init_expr.get_operators_reader()),
                 _ => continue,
             };
-            let offset = match init.read()? {
-                Operator::I32Const { value } if init.eof() => value as usize,
-                _ => bail!("Non-constant element segment offset expression"),
+            let offset = match (init.read()?, init.read()?, init.eof()) {
+                (Operator::I32Const { value }, Operator::End, true) => value as usize,
+                x => bail!("Non-constant element segment offset expression {:?}", x),
             };
             let table = match tables.get_mut(t as usize) {
                 Some(t) => t,
@@ -1022,7 +1025,6 @@ impl Machine {
         let mut entrypoint_names = NameCustomSection {
             module: "entry".into(),
             functions: HashMap::default(),
-            locals: HashMap::default(),
         };
         entrypoint_names
             .functions

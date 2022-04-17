@@ -713,27 +713,32 @@ pub fn wasm_to_wavm<'a>(
 
             // Reinterpret returned ints that should be floats into floats
             let outputs = sig.outputs;
-            match outputs.get(0) {
-                Some(ArbValueType::F32) if outputs.len() == 1 => reinterpret!(F32, I32),
-                Some(ArbValueType::F64) if outputs.len() == 1 => reinterpret!(F64, I64),
+            match outputs.as_slice() {
+                &[ArbValueType::I32] => {}
+                &[ArbValueType::I64] => {}
+                &[ArbValueType::F32] => reinterpret!(F32, I32),
+                &[ArbValueType::F64] => reinterpret!(F64, I64),
                 _ => panic!("Floating point op {:?} should have 1 output but has {}", func, outputs.len()),
             }
         }};
     }
 
+    #[derive(Debug)]
     enum Scope {
         Simple(Vec<usize>),
         Loop(usize),
+        IfElse(Vec<usize>, Option<usize>),
     }
     let mut scopes = vec![Scope::Simple(vec![])]; // start with the func's scope
 
     macro_rules! branch {
         ($kind:ident, $depth:expr) => {{
+            use Scope::*;
             let mut dest = 0;
             let scope = scopes.len() - $depth as usize - 1;
             match &mut scopes[scope] {
-                Scope::Simple(jumps) => jumps.push(out.len()), // dest not yet known
-                Scope::Loop(start) => dest = *start,
+                Simple(jumps) | IfElse(jumps, _) => jumps.push(out.len()), // dest not yet known
+                Loop(start) => dest = *start,
             };
             opcode!($kind, dest as u64)
         }};
@@ -753,10 +758,19 @@ pub fn wasm_to_wavm<'a>(
                 scopes.push(Scope::Loop(out.len()));
             }
             If { .. } => {
-                //blocks.push(Scope::Simple(vec![]));
+                opcode!(I32Eqz);
+                scopes.push(Scope::IfElse(vec![], Some(out.len())));
+                opcode!(ArbitraryJumpIf);
             }
             Else => {
-                //blocks.push(Scope::Simple(vec![]));
+                branch!(ArbitraryJump, 0);
+                match scopes.last_mut() {
+                    Some(Scope::IfElse(_, cond)) if cond.is_some() => {
+                        out[cond.unwrap()].argument_data = out.len() as u64;
+                        *cond = None;
+                    }
+                    x => bail!("malformed if-else scope {:?}", x),
+                }
             }
 
             unsupported @ dot!(Try, Catch, Throw, Rethrow) => {
@@ -767,6 +781,10 @@ pub fn wasm_to_wavm<'a>(
                 let (jumps, dest) = match scopes.pop().unwrap() {
                     Scope::Simple(jumps) => (jumps, out.len()),
                     Scope::Loop(dest) => (vec![], dest),
+                    Scope::IfElse(mut jumps, cond) => {
+                        jumps.extend(cond);
+                        (jumps, out.len())
+                    },
                 };
                 for jump in jumps {
                     out[jump].argument_data = dest as u64;

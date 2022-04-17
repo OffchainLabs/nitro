@@ -5,7 +5,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue},
     wavm::Opcode,
 };
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use nom::{
     branch::alt,
@@ -15,8 +15,8 @@ use nom::{
 };
 use std::{convert::TryInto, hash::Hash, str::FromStr};
 use wasmparser::{
-    Data, Element, Export, Global, Import, MemoryType, Operator, Parser, Payload, TableType,
-    TypeDef,
+    Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
+    Parser, Payload, TableType, TypeDef,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,29 +269,22 @@ pub enum RefType {
 pub struct NameCustomSection {
     pub module: String,
     pub functions: HashMap<u32, String>,
-    pub locals: HashMap<u32, HashMap<u32, String>>,
-}
-
-#[derive(Clone, Debug)]
-pub enum CustomSection {
-    Name(NameCustomSection),
-    Unknown(String, Vec<u8>),
 }
 
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
-    pub types: Vec<FunctionType>,   //
-    pub imports: Vec<Import<'a>>,   // fix compare to element
-    pub functions: Vec<u32>,        //
-    pub tables: Vec<TableType>,     //
-    pub memories: Vec<MemoryType>,  //
-    pub globals: Vec<Global<'a>>,   //
-    pub exports: Vec<Export<'a>>,   //
-    pub start: Option<u32>,         //
-    pub elements: Vec<Element<'a>>, //
+    pub types: Vec<FunctionType>,
+    pub imports: Vec<Import<'a>>,
+    pub functions: Vec<u32>,
+    pub tables: Vec<TableType>,
+    pub memories: Vec<MemoryType>,
+    pub globals: Vec<Global<'a>>,
+    pub exports: Vec<Export<'a>>,
+    pub start: Option<u32>,
+    pub elements: Vec<Element<'a>>,
     pub codes: Vec<Code<'a>>,
-    pub datas: Vec<Data<'a>>,     //
-    pub names: NameCustomSection, // do later
+    pub datas: Vec<Data<'a>>,
+    pub names: NameCustomSection,
 }
 
 pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
@@ -322,10 +315,8 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
     let mut binary = WasmBinary::default();
 
-    for (index, mut section) in sections.into_iter().enumerate() {
+    for mut section in sections.into_iter() {
         use Payload::*;
-
-        println!("{} {:?}", index, &section);
 
         macro_rules! process {
             ($dest:expr, $source:expr) => {{
@@ -337,7 +328,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         }
 
         match &mut section {
-            Payload::TypeSection(type_section) => {
+            TypeSection(type_section) => {
                 for _ in 0..type_section.get_count() {
                     let TypeDef::Func(ty) = type_section.read()?;
                     binary.types.push(ty.try_into()?);
@@ -347,6 +338,8 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
+
+                println!("COUNT: {}", locals.get_count());
 
                 for _ in 0..locals.get_count() {
                     let (index, value) = locals.read()?;
@@ -361,7 +354,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
                 binary.codes.push(code);
             }
-            Payload::ImportSection(imports) => process!(binary.imports, imports),
+            ImportSection(imports) => process!(binary.imports, imports),
             FunctionSection(functions) => process!(binary.functions, functions),
             TableSection(tables) => process!(binary.tables, tables),
             MemorySection(memories) => process!(binary.memories, memories),
@@ -370,10 +363,35 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             StartSection { func, .. } => binary.start = Some(*func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
-            //NameCustomSection(names) => process!(binary.names, names),
             CodeSectionStart { .. } => {}
-            UnknownSection { .. } => {}
-            Version { .. } => {}
+            CustomSection {
+                name,
+                data_offset,
+                data,
+                ..
+            } => {
+                if *name != "name" {
+                    continue;
+                }
+
+                let mut name_reader = NameSectionReader::new(data, *data_offset)?;
+
+                while !name_reader.eof() {
+                    match name_reader.read()? {
+                        Name::Module(name) => binary.names.module = name.get_name()?.to_owned(),
+                        Name::Function(namemap) => {
+                            let mut map_reader = namemap.get_map()?;
+                            for _ in 0..map_reader.get_count() {
+                                let Naming { index, name } = map_reader.read()?;
+                                binary.names.functions.insert(index, name.to_owned());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
+            UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
             End(_offset) => {}
             x => bail!("unsupported section type {:?}", x),
         }
