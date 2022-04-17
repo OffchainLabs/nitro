@@ -74,8 +74,6 @@ impl Function {
         let mut locals_with_params = func_ty.inputs.clone();
         locals_with_params.extend(locals.iter().map(|x| x.value.clone()));
 
-        println!("LOCALS: {} {}", locals.len(), locals_with_params.len());
-
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
             .iter()

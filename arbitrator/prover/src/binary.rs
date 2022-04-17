@@ -1,10 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{
-    value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue},
-    wavm::Opcode,
-};
+use crate::value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue};
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use nom::{
@@ -18,19 +15,6 @@ use wasmparser::{
     Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
     Parser, Payload, TableType, TypeDef,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BlockType {
-    Empty,
-    ArbValueType(ArbValueType),
-    TypeIndex(u32),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MemoryArg {
-    pub alignment: u32,
-    pub offset: u32,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
@@ -213,30 +197,6 @@ impl FromStr for FloatInstruction {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum HirInstruction {
-    Simple(Opcode),
-    WithIdx(Opcode, u32),
-    /// Separate from LocalGet and LocalSet (which are in WithIdx),
-    /// as this is translated out of existence.
-    LocalTee(u32),
-    LoadOrStore(Opcode, MemoryArg),
-    Block(BlockType, Vec<HirInstruction>),
-    Loop(BlockType, Vec<HirInstruction>),
-    IfElse(BlockType, Vec<HirInstruction>, Vec<HirInstruction>),
-    Branch(u32),
-    BranchIf(u32),
-    BranchTable(Vec<u32>, u32),
-    I32Const(i32),
-    I64Const(i64),
-    F32Const(f32),
-    F64Const(f64),
-    FloatingPointOp(FloatInstruction),
-    CallIndirect(u32, u32),
-    /// Warning: internal and should not be parseable
-    CrossModuleCall(u32, u32),
-}
-
 pub fn op_as_const(op: Operator) -> Result<LirValue> {
     match op {
         Operator::I32Const { value } => Ok(LirValue::I32(value as u32)),
@@ -257,12 +217,6 @@ pub struct Code<'a> {
 pub struct Local {
     pub index: u32,
     pub value: ArbValueType,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RefType {
-    FuncRef,
-    ExternRef,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -339,18 +293,23 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
 
-                println!("COUNT: {}", locals.get_count());
+                let mut index = 0;
 
                 for _ in 0..locals.get_count() {
-                    let (index, value) = locals.read()?;
-                    code.locals.push(Local {
-                        index,
-                        value: value.try_into()?,
-                    })
+                    let (count, value) = locals.read()?;
+                    for _ in 0..count {
+                        code.locals.push(Local {
+                            index,
+                            value: value.try_into()?,
+                        });
+                        index += 1;
+                    }
                 }
                 while !ops.eof() {
                     code.expr.push(ops.read()?);
                 }
+
+                println!("COUNT: {}", index);
 
                 binary.codes.push(code);
             }

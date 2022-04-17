@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{BlockType, FloatInstruction, HirInstruction},
+    binary::FloatInstruction,
     utils::Bytes32,
     value::{ArbValueType, IntegerValType},
 };
@@ -10,7 +10,6 @@ use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use sha3::Keccak256;
-use std::convert::TryFrom;
 use wasmparser::Operator;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -289,31 +288,6 @@ impl Opcode {
 
 pub type FloatingPointImpls = HashMap<FloatInstruction, (u32, u32)>;
 
-#[derive(Clone, Debug)]
-pub struct FunctionCodegenState<'a> {
-    return_values: usize,
-    /// For each block, contains a list of br/br_if instruction indicies targeting it
-    blocks: Vec<Vec<usize>>,
-    floating_point_impls: &'a FloatingPointImpls,
-}
-
-impl<'a> FunctionCodegenState<'a> {
-    pub fn new(return_values: usize, floating_point_impls: &'a FloatingPointImpls) -> Self {
-        FunctionCodegenState {
-            return_values,
-            blocks: Vec::new(),
-            floating_point_impls,
-        }
-    }
-
-    fn mark_branch(&mut self, block: u32, op_idx: usize) {
-        let block = usize::try_from(block).unwrap();
-        assert!(block < self.blocks.len());
-        let absolute_idx = self.blocks.len() - block - 1;
-        self.blocks[absolute_idx].push(op_idx);
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Instruction {
     pub opcode: Opcode,
@@ -377,221 +351,6 @@ impl Instruction {
         h.update(self.opcode.repr().to_be_bytes());
         h.update(self.get_proving_argument_data());
         h.finalize().into()
-    }
-
-    pub fn extend_from_hir(
-        ops: &mut Vec<Instruction>,
-        state: &mut FunctionCodegenState,
-        inst: HirInstruction,
-    ) -> Result<()> {
-        match inst {
-            HirInstruction::Block(_, insts) => {
-                state.blocks.push(Vec::new());
-                for inst in insts {
-                    Self::extend_from_hir(ops, state, inst)?;
-                }
-                for idx in state.blocks.pop().unwrap() {
-                    ops[idx].argument_data = ops.len() as u64;
-                }
-            }
-            HirInstruction::Loop(_, insts) => {
-                let loop_start = ops.len();
-                state.blocks.push(Vec::new());
-                for inst in insts {
-                    Self::extend_from_hir(ops, state, inst)?;
-                }
-                for idx in state.blocks.pop().unwrap() {
-                    ops[idx].argument_data = loop_start as u64;
-                }
-            }
-            HirInstruction::IfElse(_, if_insts, else_insts) => {
-                // begin block with endpoint end
-                //   conditional jump to else
-                //   [instructions inside if statement]
-                //   branch
-                //   else: [instructions inside else statement]
-                // end
-
-                state.blocks.push(Vec::new());
-                ops.push(Instruction::simple(Opcode::I32Eqz));
-                let jump_idx = ops.len();
-                ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
-
-                for inst in if_insts {
-                    Self::extend_from_hir(ops, state, inst)?;
-                }
-                Self::extend_from_hir(ops, state, HirInstruction::Branch(0))?;
-
-                ops[jump_idx].argument_data = ops.len() as u64;
-                for inst in else_insts {
-                    Self::extend_from_hir(ops, state, inst)?;
-                }
-                for idx in state.blocks.pop().unwrap() {
-                    ops[idx].argument_data = ops.len() as u64;
-                }
-            }
-            HirInstruction::Branch(x) => {
-                state.mark_branch(x, ops.len());
-                ops.push(Instruction::simple(Opcode::ArbitraryJump));
-            }
-            HirInstruction::BranchIf(x) => {
-                state.mark_branch(x, ops.len());
-                ops.push(Instruction::simple(Opcode::ArbitraryJumpIf));
-            }
-            HirInstruction::BranchTable(options, default) => {
-                // Build an equivalent HirInstruction sequence without BranchTable
-                for (i, &option) in options.iter().enumerate() {
-                    let i = u32::try_from(i).unwrap();
-                    // Evaluate this branch
-                    ops.push(Instruction::simple(Opcode::Dup));
-                    ops.push(Instruction::with_data(Opcode::I32Const, i.into()));
-                    ops.push(Instruction::simple(Opcode::IBinOp(
-                        IntegerValType::I32,
-                        IBinOpType::Sub,
-                    )));
-                    // Jump if the subtraction resulted in 0, i.e. it matched the index
-                    ops.push(Instruction::simple(Opcode::I32Eqz));
-                    Instruction::extend_from_hir(ops, state, HirInstruction::BranchIf(option))?;
-                }
-                // Nothing matched. Drop the index and jump to the default.
-                ops.push(Instruction::simple(Opcode::Drop));
-                Instruction::extend_from_hir(ops, state, HirInstruction::Branch(default))?;
-            }
-            HirInstruction::LocalTee(x) => {
-                // Translate into a dup then local.set
-                Self::extend_from_hir(ops, state, HirInstruction::Simple(Opcode::Dup))?;
-                Self::extend_from_hir(ops, state, HirInstruction::WithIdx(Opcode::LocalSet, x))?;
-            }
-            HirInstruction::WithIdx(op, x) => {
-                assert!(
-                    matches!(
-                        op,
-                        Opcode::LocalGet
-                            | Opcode::LocalSet
-                            | Opcode::GlobalGet
-                            | Opcode::GlobalSet
-                            | Opcode::Call
-                            | Opcode::CallerModuleInternalCall
-                            | Opcode::ReadInboxMessage
-                    ),
-                    "WithIdx HirInstruction has bad WithIdx opcode {:?}",
-                    op,
-                );
-                ops.push(Instruction::with_data(op, x.into()));
-            }
-            HirInstruction::CallIndirect(table, ty) => {
-                ops.push(Instruction::with_data(
-                    Opcode::CallIndirect,
-                    pack_call_indirect(table, ty),
-                ));
-            }
-            HirInstruction::CrossModuleCall(module, func) => {
-                ops.push(Instruction::with_data(
-                    Opcode::CrossModuleCall,
-                    pack_cross_module_call(func, module),
-                ));
-            }
-            HirInstruction::LoadOrStore(op, mem_arg) => ops.push(Instruction {
-                opcode: op,
-                argument_data: mem_arg.offset.into(), // we ignore the alignment
-                proving_argument_data: None,
-            }),
-            HirInstruction::I32Const(x) => ops.push(Instruction {
-                opcode: Opcode::I32Const,
-                argument_data: x as u32 as u64,
-                proving_argument_data: None,
-            }),
-            HirInstruction::I64Const(x) => ops.push(Instruction {
-                opcode: Opcode::I64Const,
-                argument_data: x as u64,
-                proving_argument_data: None,
-            }),
-            HirInstruction::F32Const(x) => ops.push(Instruction {
-                opcode: Opcode::F32Const,
-                argument_data: x.to_bits().into(),
-                proving_argument_data: None,
-            }),
-            HirInstruction::F64Const(x) => ops.push(Instruction {
-                opcode: Opcode::F64Const,
-                argument_data: x.to_bits(),
-                proving_argument_data: None,
-            }),
-            HirInstruction::FloatingPointOp(inst) => {
-                if let Some(&(module, func)) = state.floating_point_impls.get(&inst) {
-                    let sig = inst.signature();
-                    // Reinterpret float args into ints
-                    for &arg in sig.inputs.iter().rev() {
-                        if arg == ArbValueType::F32 {
-                            ops.push(Instruction::simple(Opcode::Reinterpret(
-                                ArbValueType::I32,
-                                ArbValueType::F32,
-                            )));
-                        } else if arg == ArbValueType::F64 {
-                            ops.push(Instruction::simple(Opcode::Reinterpret(
-                                ArbValueType::I64,
-                                ArbValueType::F64,
-                            )));
-                        }
-                        ops.push(Instruction::simple(Opcode::MoveFromStackToInternal));
-                    }
-                    for _ in sig.inputs.iter() {
-                        ops.push(Instruction::simple(Opcode::MoveFromInternalToStack));
-                    }
-                    Self::extend_from_hir(
-                        ops,
-                        state,
-                        HirInstruction::CrossModuleCall(module, func),
-                    )?;
-                    // Reinterpret returned ints that should be floats into floats
-                    assert!(
-                        sig.outputs.len() <= 1,
-                        "Floating point inst has multiple outputs"
-                    );
-                    let output = sig.outputs.get(0).cloned();
-                    if output == Some(ArbValueType::F32) {
-                        ops.push(Instruction::simple(Opcode::Reinterpret(
-                            ArbValueType::F32,
-                            ArbValueType::I32,
-                        )));
-                    } else if output == Some(ArbValueType::F64) {
-                        ops.push(Instruction::simple(Opcode::Reinterpret(
-                            ArbValueType::F64,
-                            ArbValueType::I64,
-                        )));
-                    }
-                } else {
-                    bail!("No implementation for floating point operation {:?}", inst);
-                }
-            }
-            HirInstruction::Simple(Opcode::Return) => {
-                // Hold the return values on the internal stack while we drop extraneous stack values
-                ops.extend(
-                    std::iter::repeat(Instruction::simple(Opcode::MoveFromStackToInternal))
-                        .take(state.return_values),
-                );
-                // Keep dropping values until we drop the stack boundary, then exit the loop
-                Self::extend_from_hir(
-                    ops,
-                    state,
-                    HirInstruction::Loop(
-                        BlockType::Empty,
-                        vec![
-                            HirInstruction::Simple(Opcode::IsStackBoundary),
-                            HirInstruction::Simple(Opcode::I32Eqz),
-                            HirInstruction::BranchIf(0),
-                        ],
-                    ),
-                )?;
-                // Move the return values back from the internal stack to the value stack
-                ops.extend(
-                    std::iter::repeat(Instruction::simple(Opcode::MoveFromInternalToStack))
-                        .take(state.return_values),
-                );
-                ops.push(Instruction::simple(Opcode::Return));
-            }
-            HirInstruction::Simple(op) => ops.push(Instruction::simple(op)),
-        }
-        Ok(())
     }
 }
 
