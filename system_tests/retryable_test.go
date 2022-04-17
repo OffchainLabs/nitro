@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,8 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/arbutil"
 
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
@@ -69,6 +67,18 @@ func retryableSetup(t *testing.T) (
 	TransferBalance(t, "Faucet", "Burn", discard, l2info, l2client, ctx)
 
 	teardown := func() {
+
+		// check the integrity of the RPC
+		blockNum, err := l2client.BlockNumber(ctx)
+		Require(t, err, "failed to get L2 block number")
+		for number := uint64(0); number < blockNum; number++ {
+			block, err := l2client.BlockByNumber(ctx, arbmath.UintToBig(number))
+			Require(t, err, "failed to get L2 block", number, "of", blockNum)
+			if block.Number().Uint64() != number {
+				Fail(t, "block number mismatch", number, block.Number().Uint64())
+			}
+		}
+
 		cancel()
 		stack.Close()
 	}
@@ -102,7 +112,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	Require(t, err, "failed to deploy NodeInterface")
 
 	// estimate the gas needed to auto-redeem the retryable
-	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL2 := l2info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL2.NoSend = true
 	usertxoptsL2.GasMargin = 0
 	tx, err := nodeInterface.EstimateRetryableTicket(
@@ -120,7 +130,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	colors.PrintBlue("estimate: ", estimate)
 
 	// submit & auto-redeem the retryable using the gas estimate
-	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet")
+	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxoptsL1.Value = deposit
 	l1tx, err := delayedInbox.CreateRetryableTicket(
 		&usertxoptsL1,
@@ -135,7 +145,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
@@ -143,7 +153,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbutil.WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -161,8 +171,8 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, lookupSubmitRetryableL2TxHash, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner")
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	simpleAddr, _, simple, err := mocksgen.DeploySimple(&ownerTxOpts, l2client)
@@ -185,7 +195,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")
@@ -193,7 +203,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, l1client, l1info)
 
-	receipt, err := arbutil.WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, lookupSubmitRetryableL2TxHash(l1receipt), time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t)
@@ -205,7 +215,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	firstRetryTxId := receipt.Logs[1].Topics[2]
 
 	// get receipt for the auto-redeem, make sure it failed
-	receipt, err = arbutil.WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	receipt, err = WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
 		Fail(t, receipt.GasUsed)
@@ -215,13 +225,13 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	tx, err := arbRetryableTx.Redeem(&ownerTxOpts, ticketId)
 	Require(t, err)
-	receipt, err = arbutil.EnsureTxSucceeded(ctx, l2client, tx)
+	receipt, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
 	// check the receipt for the retry
-	receipt, err = arbutil.WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	receipt, err = WaitForTx(ctx, l2client, retryTxId, time.Second*1)
 	Require(t, err)
 	if receipt.Status != 1 {
 		Fail(t, receipt.Status)
@@ -240,7 +250,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	l2info, l1info, l2client, l1client, delayedInbox, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
 
-	usertxopts := l1info.GetDefaultTransactOpts("Faucet")
+	usertxopts := l1info.GetDefaultTransactOpts("Faucet", ctx)
 	usertxopts.Value = arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 
 	l2info.GenerateAccount("Refund")
@@ -278,7 +288,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	)
 	Require(t, err)
 
-	l1receipt, err := arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	l1receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 	if l1receipt.Status != types.ReceiptStatusSuccessful {
 		Fail(t, "l1receipt indicated failure")

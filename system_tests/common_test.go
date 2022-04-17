@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -43,7 +42,7 @@ func SendWaitTestTransactions(t *testing.T, ctx context.Context, client client, 
 		Require(t, client.SendTransaction(ctx, tx))
 	}
 	for _, tx := range txs {
-		_, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
+		_, err := EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 }
@@ -52,7 +51,7 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 	tx := l2info.PrepareTx(from, to, l2info.TransferGas, amount, nil)
 	err := client.SendTransaction(ctx, tx)
 	Require(t, err)
-	res, err := arbutil.EnsureTxSucceeded(ctx, client, tx)
+	res, err := EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 	return tx, res
 }
@@ -60,14 +59,14 @@ func TransferBalance(t *testing.T, from, to string, amount *big.Int, l2info info
 func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTestInfo, l1client arbutil.L1Interface, l2client arbutil.L1Interface, delayedTx *types.Transaction) *types.Receipt {
 	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
 	Require(t, err)
-	usertxopts := l1info.GetDefaultTransactOpts("User")
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
 
 	txbytes, err := delayedTx.MarshalBinary()
 	Require(t, err)
 	txwrapped := append([]byte{arbos.L2MessageKind_SignedTx}, txbytes...)
 	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, txwrapped)
 	Require(t, err)
-	_, err = arbutil.EnsureTxSucceeded(ctx, l1client, l1tx)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
 	Require(t, err)
 
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
@@ -76,7 +75,7 @@ func SendSignedTxViaL1(t *testing.T, ctx context.Context, l1info *BlockchainTest
 			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
 		})
 	}
-	receipt, err := arbutil.WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
+	receipt, err := WaitForTx(ctx, l2client, delayedTx.Hash(), time.Second*5)
 	Require(t, err)
 	return receipt
 }
@@ -149,10 +148,8 @@ func DeployOnTestL1(t *testing.T, ctx context.Context, l1info info, l1client cli
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
-	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner")
-	wasmModuleRoot, err := validator.ReadWasmModuleRoot()
-	Require(t, err)
-	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, wasmModuleRoot, chainId, 5*time.Second)
+	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	addresses, err := arbnode.DeployOnL1(ctx, l1client, &l1TransactionOpts, l1info.GetAddress("Sequencer"), 0, common.Hash{}, chainId, arbnode.TestL1ReaderConfig)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
@@ -198,7 +195,7 @@ func CreateTestNodeOnL1WithConfig(t *testing.T, ctx context.Context, isSequencer
 	addresses := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig.ChainID)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	if isSequencer {
-		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer")
+		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
 	}
 
@@ -233,7 +230,7 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 	client := ClientForArbBackend(t, node.Backend)
 
 	if takeOwnership {
-		debugAuth := l2info.GetDefaultTransactOpts("Owner")
+		debugAuth := l2info.GetDefaultTransactOpts("Owner", ctx)
 
 		// make auth a chain owner
 		arbdebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
@@ -242,14 +239,14 @@ func CreateTestL2WithConfig(t *testing.T, ctx context.Context, l2Info *Blockchai
 		tx, err := arbdebug.BecomeChainOwner(&debugAuth)
 		Require(t, err, "failed to deploy ArbDebug")
 
-		_, err = arbutil.EnsureTxSucceeded(ctx, client, tx)
+		_, err = EnsureTxSucceeded(ctx, client, tx)
 		Require(t, err)
 	}
 
 	return l2info, node, client
 }
 
-func Require(t *testing.T, err error, text ...string) {
+func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
 	testhelpers.RequireImpl(t, err, text...)
 }

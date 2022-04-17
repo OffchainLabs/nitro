@@ -119,8 +119,15 @@ COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-FROM scratch as machine-export
-COPY --from=module-root-calc /workspace/target/machine/ /machine
+FROM debian:bullseye-slim as machine-versions
+RUN apt-get update && apt-get install -y unzip wget
+WORKDIR /workspace
+# Download old WASM module roots
+RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/wasm-0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810.zip
+RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/wasm-0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3.zip
+RUN for f in *.zip; do unzip -d machines -- "$f"; done
+# Copy in latest WASM module root
+COPY --from=module-root-calc /workspace/target/machines/latest /workspace/machines/latest
 
 
 FROM golang:1.17-bullseye as node-builder
@@ -149,7 +156,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y wabt
 COPY --from=node-builder /workspace/target/ target/
-COPY --from=machine-export / target/
+COPY --from=machine-versions /workspace/machines target/machines
 ENTRYPOINT [ "./target/bin/node" ]
 
 FROM nitro-node as nitro-node-dist
