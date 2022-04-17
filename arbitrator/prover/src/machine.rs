@@ -1072,7 +1072,7 @@ impl Machine {
 
     pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
-        let decompressor = brotli2::read::BrotliDecoder::new(f);
+        let decompressor = lz4_flex::frame::FrameDecoder::new(f);
         let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
@@ -1124,8 +1124,9 @@ impl Machine {
             "serialize_binary can only be called on initial machine",
         );
         let mut f = File::create(path)?;
-        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
+        let mut compressor = lz4_flex::frame::FrameEncoder::new(BufWriter::new(&mut f));
         bincode::serialize_into(&mut compressor, &self.modules)?;
+
         compressor.flush()?;
         drop(compressor);
         f.sync_data()?;
