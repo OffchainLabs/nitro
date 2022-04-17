@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{BlockType, FloatBinOp, FloatInstruction, FloatRelOp, FloatType, HirInstruction},
+    binary::{BlockType, FloatInstruction, HirInstruction},
     utils::Bytes32,
     value::{ArbValueType, IntegerValType},
 };
@@ -625,7 +625,7 @@ pub fn wasm_to_wavm<'a>(
         (@cross, $func:expr, $module:expr) => {
             out.push(Instruction::with_data(
                 Opcode::CrossModuleCall,
-                u64::from($func) | (u64::from($module) << 32),
+                pack_cross_module_call($func, $module),
             ));
         };
     }
@@ -708,7 +708,7 @@ pub fn wasm_to_wavm<'a>(
             for _ in &sig.inputs {
                 opcode!(MoveFromInternalToStack)
             }
-            opcode!(@cross, *module, *func);
+            opcode!(@cross, *func, *module);
 
             // Reinterpret returned ints that should be floats into floats
             let outputs = sig.outputs;
@@ -720,33 +720,83 @@ pub fn wasm_to_wavm<'a>(
         }};
     }
 
+    enum Scope {
+        Simple(Vec<usize>),
+        Loop(usize),
+    }
+    let mut scopes = vec![Scope::Simple(vec![])]; // start with the func's scope
+
+    macro_rules! branch {
+        ($kind:ident, $depth:expr) => {{
+            let mut dest = 0;
+            let scope = scopes.len() - $depth as usize - 1;
+            match &mut scopes[scope] {
+                Scope::Simple(jumps) => jumps.push(out.len()), // dest not yet known
+                Scope::Loop(start) => dest = *start,
+            };
+            opcode!($kind, dest as u64)
+        }};
+    }
+
     for op in code {
+
+        println!("{:?}", op);
+        
         #[rustfmt::skip]
         match op {
             Unreachable => opcode!(Unreachable),
             Nop => opcode!(Nop),
-            Block { ty } => {}
-            Loop { ty } => {}
-            If { ty } => {}
-            Else => {}
+            Block { ty } => {
+                scopes.push(Scope::Simple(vec![]));
+            }
+            Loop { ty } => {
+                scopes.push(Scope::Loop(out.len()));
+            }
+            If { ty } => {
+                //blocks.push(Scope::Simple(vec![]));
+            }
+            Else => {
+                //blocks.push(Scope::Simple(vec![]));
+            }
 
             unsupported @ dot!(Try, Catch, Throw, Rethrow) => {
                 bail!("exception-handling extension not supported {:?}", unsupported)
             },
 
-            End => {}
-            Br { relative_depth } => {}
-            BrIf { relative_depth } => {}
-            BrTable { table } => {}
+            End => {
+                let (jumps, dest) = match scopes.pop().unwrap() {
+                    Scope::Simple(jumps) => (jumps, out.len()),
+                    Scope::Loop(dest) => (vec![], dest),
+                };
+                for jump in jumps {
+                    out[jump].argument_data = dest as u64;
+                }
+            }
+            Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
+            BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
+            BrTable { table } => {
+
+                // Evaluate each branch
+                for (index, target) in table.targets().enumerate() {
+                    opcode!(Dup);
+                    opcode!(I32Const, index as u64);
+                    compare!(I32, Eq, false);
+                    branch!(ArbitraryJumpIf, target?);
+                }
+
+                // Nothing matched. Drop the index and jump to the default.
+                opcode!(Drop);
+                branch!(ArbitraryJump, table.default());
+            }
             Return => {}
             Call { function_index } => {}
-            CallIndirect {
-                index,
-                table_index,
-                table_byte,
-            } => {}
-            ReturnCall { function_index } => {}
-            ReturnCallIndirect { index, table_index } => {}
+            CallIndirect { index, table_index, .. } => {
+                opcode!(CallIndirect, pack_call_indirect(*table_index, *index));
+            }
+
+            unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
+                bail!("tail-call extension not supported {:?}", unsupported)
+            }
 
             unsupported @ (dot!(Delegate) | op!(CatchAll)) => {
                 bail!("exception-handling extension not supported {:?}", unsupported)

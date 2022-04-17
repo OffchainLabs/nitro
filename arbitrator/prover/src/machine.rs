@@ -939,7 +939,7 @@ impl Machine {
             (@cross, $func:expr, $module:expr) => {
                 entrypoint.push(Instruction::with_data(
                     Opcode::CrossModuleCall,
-                    u64::from($func) | (u64::from($module) << 32),
+                    pack_cross_module_call($func, $module),
                 ));
             };
         }
@@ -949,7 +949,8 @@ impl Machine {
                     module.func_types[s as usize] == FunctionType::default(),
                     "Start function takes inputs or outputs",
                 );
-                entry!(@cross, u32::try_from(i).unwrap(), s);
+                println!("CROSS: {}", s);
+                entry!(@cross, s, u32::try_from(i).unwrap());
             }
         }
         let main_module_idx = modules.len() - 1;
