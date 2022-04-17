@@ -3,7 +3,8 @@
 
 use crate::{
     binary::{
-        parse, BlockType, Code, FloatInstruction, HirInstruction, NameCustomSection, WasmBinary,
+        parse, BlockType, Code, FloatInstruction, HirInstruction, Local, NameCustomSection,
+        WasmBinary,
     },
     host::get_host_impl,
     memory::Memory,
@@ -11,7 +12,10 @@ use crate::{
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, Bytes32},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
-    wavm::{pack_cross_module_call, unpack_cross_module_call, FloatingPointImpls, Instruction},
+    wavm::{
+        pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
+        Instruction, WavmSource,
+    },
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
@@ -67,14 +71,15 @@ pub struct Function {
 
 impl Function {
     pub fn new(
-        code: &Code,
+        locals: &[Local],
+        body: &[Instruction],
         func_ty: FunctionType,
         func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
         let mut locals_with_params = func_ty.inputs.clone();
-        locals_with_params.extend(code.locals.iter().map(|x| x.value.clone()));
+        locals_with_params.extend(locals.iter().map(|x| x.value.clone()));
 
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
@@ -99,11 +104,11 @@ impl Function {
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
         let codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
 
-        Instruction::extend_from_hir(
-            &mut insts,
-            codegen_state,
-            crate::binary::HirInstruction::Block(func_block_ty, code.expr.clone()),
-        )?;
+        let block_start = insts.len();
+        insts.push(Instruction::simple(Opcode::Block));
+        insts.extend(body);
+        insts.push(Instruction::simple(Opcode::EndBlock));
+        insts[block_start].argument_data = insts.len() as u64;
 
         Instruction::extend_from_hir(
             &mut insts,
@@ -344,7 +349,8 @@ impl Module {
         for c in &bin.codes {
             let idx = code.len();
             code.push(Function::new(
-                c,
+                &c.locals,
+                &wasm_to_wavm(&c.expr)?,
                 func_types[idx].clone(),
                 BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
@@ -929,16 +935,30 @@ impl Machine {
 
         // Build the entrypoint module
         let mut entrypoint = Vec::new();
+        macro_rules! entry {
+            ($opcode:ident) => {
+                entrypoint.push(Instruction::simple(Opcode::$opcode));
+            };
+            ($opcode:ident, $value:expr) => {
+                entrypoint.push(Instruction::with_data(Opcode::$opcode, $value));
+            };
+            ($opcode:ident ($inside:expr)) => {
+                entrypoint.push(Instruction::simple(Opcode::$opcode($inside)));
+            };
+            (@cross, $func:expr, $module:expr) => {
+                entrypoint.push(Instruction::with_data(
+                    Opcode::CrossModuleCall,
+                    u64::from($func) | (u64::from($module) << 32),
+                ));
+            };
+        }
         for (i, module) in modules.iter().enumerate() {
             if let Some(s) = module.start_function {
                 ensure!(
                     module.func_types[s as usize] == FunctionType::default(),
                     "Start function takes inputs or outputs",
                 );
-                entrypoint.push(HirInstruction::CrossModuleCall(
-                    u32::try_from(i).unwrap(),
-                    s,
-                ));
+                entry!(@cross, u32::try_from(i).unwrap(), s);
             }
         }
         let main_module_idx = modules.len() - 1;
@@ -953,14 +973,11 @@ impl Machine {
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [argc, argv] -> [ret]",
             );
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(HirInstruction::CrossModuleCall(
-                u32::try_from(main_module_idx).unwrap(),
-                f,
-            ));
-            entrypoint.push(HirInstruction::Simple(Opcode::Drop));
-            entrypoint.push(HirInstruction::Simple(Opcode::HaltAndSetFinished));
+            entry!(I32Const, 0);
+            entry!(I32Const, 0);
+            entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
+            entry!(Drop);
+            entry!(HaltAndSetFinished);
         }
         // Go support
         if let Some(&f) = main_module.exports.get("run") {
@@ -986,32 +1003,34 @@ impl Machine {
                 "Main module doesn't have internals"
             );
             let main_module_idx = u32::try_from(main_module_idx).unwrap();
-            let main_module_store32 =
-                HirInstruction::CrossModuleCall(main_module_idx, main_module.internals_offset + 3);
+            let main_module_store32 = main_module.internals_offset + 3;
+
             // Write "js\0" to name_str_ptr, to match what the actual JS environment does
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
-            entrypoint.push(HirInstruction::I32Const(0x736a)); // b"js\0"
-            entrypoint.push(main_module_store32.clone());
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr + 4));
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(main_module_store32.clone());
+            entry!(I32Const, name_str_ptr);
+            entry!(I32Const, 0x736a); // b"js\0"
+            entry!(@cross, main_module_idx, main_module_store32);
+            entry!(I32Const, name_str_ptr + 4);
+            entry!(I32Const, 0);
+            entry!(@cross, main_module_idx, main_module_store32);
+
             // Write name_str_ptr to argv_ptr
-            entrypoint.push(HirInstruction::I32Const(argv_ptr));
-            entrypoint.push(HirInstruction::I32Const(name_str_ptr));
-            entrypoint.push(main_module_store32.clone());
-            entrypoint.push(HirInstruction::I32Const(argv_ptr + 4));
-            entrypoint.push(HirInstruction::I32Const(0));
-            entrypoint.push(main_module_store32);
+            entry!(I32Const, argv_ptr);
+            entry!(I32Const, name_str_ptr);
+            entry!(@cross, main_module_idx, main_module_store32);
+            entry!(I32Const, argv_ptr + 4);
+            entry!(I32Const, 0);
+            entry!(@cross, main_module_idx, main_module_store32);
+
             // Launch main with an argument count of 1 and argv_ptr
-            entrypoint.push(HirInstruction::I32Const(1));
-            entrypoint.push(HirInstruction::I32Const(argv_ptr));
-            entrypoint.push(HirInstruction::CrossModuleCall(main_module_idx, f));
+            entry!(I32Const, 1);
+            entry!(I32Const, argv_ptr);
+            entry!(@cross, main_module_idx, f);
             if let Some(i) = available_imports.get("wavm__go_after_run") {
                 ensure!(
                     i.ty == FunctionType::default(),
                     "Resume function has non-empty function signature",
                 );
-                entrypoint.push(HirInstruction::CrossModuleCall(i.module, i.func));
+                entry!(@cross, i.module, i.func);
             }
         }
         let entrypoint_types = vec![FunctionType::default()];
@@ -1024,10 +1043,8 @@ impl Machine {
             .functions
             .insert(0, "wavm_entrypoint".into());
         let entrypoint_funcs = vec![Function::new(
-            &Code {
-                locals: Vec::new(),
-                expr: entrypoint,
-            },
+            &[],
+            &entrypoint,
             FunctionType::default(),
             BlockType::TypeIndex(0),
             &entrypoint_types,

@@ -3,7 +3,7 @@
 
 use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue},
-    wavm::{IBinOpType, IRelOpType, IUnOpType, Opcode},
+    wavm::Opcode,
 };
 use eyre::{bail, Result};
 use fnv::FnvHashMap as HashMap;
@@ -13,7 +13,7 @@ use nom::{
     combinator::{all_consuming, map, value},
     sequence::{preceded, tuple},
 };
-use std::{convert::TryInto, hash::Hash, slice::SliceIndex, str::FromStr};
+use std::{convert::TryInto, hash::Hash, str::FromStr};
 use wasmparser::{
     Data, Element, Export, ExternalKind, FuncType, Global, Import, MemoryType, Operator, Parser,
     Payload, Range, TableType, Type, TypeDef, TypeRef,
@@ -295,7 +295,25 @@ pub struct WasmBinary<'a> {
 }
 
 pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
-    wasmparser::validate(&input)?;
+    let features = wasmparser::WasmFeatures {
+        mutable_global: true,
+        saturating_float_to_int: true,
+        sign_extension: true,
+        reference_types: false,
+        multi_value: true,
+        bulk_memory: false,
+        simd: false,
+        relaxed_simd: false,
+        threads: false,
+        tail_call: false,
+        deterministic_only: false,
+        multi_memory: false,
+        exceptions: false,
+        memory64: false,
+        extended_const: false,
+        component_model: false,
+    };
+    wasmparser::Validator::new_with_features(features).validate_all(&input)?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)

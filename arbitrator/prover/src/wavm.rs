@@ -3,11 +3,12 @@
 
 use crate::{
     binary::{BlockType, FloatInstruction, HirInstruction},
+    memory,
     utils::Bytes32,
     value::{ArbValueType, IntegerValType},
 };
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use sha3::Keccak256;
 use std::convert::TryFrom;
@@ -624,28 +625,107 @@ impl Instruction {
     }
 }
 
-pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
+/// Represents something compilable to wavm
+pub enum WavmSource<'a> {
+    /// A standard wasm operator
+    Operator(&'a Operator<'a>),
+    OperatorOwned(Operator<'a>),
+    /// Provides a mechanism to embed pre-compiled wavm instructions in wasm source code.
+    /// These are necessary for operations like `ReadInboxmessage` that aren't in the wasm spec.
+    Instruction(Instruction),
+}
+
+impl<'a> From<&'a Operator<'a>> for WavmSource<'a> {
+    fn from(item: &'a Operator) -> Self {
+        Self::Operator(item)
+    }
+}
+
+pub fn wasm_to_wavm<'a, T>(code: &'a [T]) -> Result<Vec<Instruction>>
+where
+    &'a T: Into<WavmSource<'a>>,
+{
     use Operator::*;
 
     let mut out = vec![];
 
-    macro_rules! opcode {
-        ($opcode:ident) => {
-            out.push(Instruction::simple(Opcode::$opcode))
-        };
-    }
-
-    for op in code {
-        macro_rules! op {
+    macro_rules! op {
             ($first:ident $(,$opcode:ident)*) => {
                 $first $(| $opcode)*
             };
         }
-        macro_rules! dot {
+    macro_rules! dot {
             ($first:ident $(,$opcode:ident)*) => {
                 $first { .. } $(| $opcode { .. })*
             };
         }
+    macro_rules! opcode {
+        ($opcode:ident ($inside:expr)) => {{
+            out.push(Instruction::simple(Opcode::$opcode($inside)))
+        }};
+        ($opcode:ident) => {{
+            out.push(Instruction::simple(Opcode::$opcode))
+        }};
+        ($opcode:ident, $value:expr) => {
+            out.push(Instruction::with_data(Opcode::$opcode, $value))
+        };
+    }
+    macro_rules! load {
+        ($type:ident, $memory:expr, $bytes:expr, $signed:ident) => {{
+            ensure!($memory.memory == 0, "multi-memory proposal not supported");
+            let op = Opcode::MemoryLoad {
+                ty: ArbValueType::$type,
+                bytes: $bytes,
+                signed: $signed,
+            };
+            Instruction::with_data(op, $memory.offset);
+        }};
+    }
+    macro_rules! store {
+        ($type:ident, $memory:expr, $bytes:expr) => {{
+            ensure!($memory.memory == 0, "multi-memory proposal not supported");
+            let op = Opcode::MemoryStore {
+                ty: ArbValueType::$type,
+                bytes: $bytes,
+            };
+            Instruction::with_data(op, $memory.offset);
+        }};
+    }
+    macro_rules! compare {
+        ($type:ident, $rel:ident, $signed:expr) => {{
+            let op = Opcode::IRelOp(IntegerValType::$type, IRelOpType::$rel, $signed);
+            out.push(Instruction::simple(op));
+        }};
+    }
+    macro_rules! unary {
+        ($type:ident, $op:ident) => {{
+            let op = Opcode::IUnOp(IntegerValType::$type, IUnOpType::$op);
+            out.push(Instruction::simple(op));
+        }};
+    }
+    macro_rules! binary {
+        ($type:ident, $op:ident) => {{
+            let op = Opcode::IBinOp(IntegerValType::$type, IBinOpType::$op);
+            out.push(Instruction::simple(op));
+        }};
+    }
+    macro_rules! reinterpret {
+        ($dest:ident, $source:ident) => {{
+            let op = Opcode::Reinterpret(ArbValueType::$dest, ArbValueType::$source);
+            out.push(Instruction::simple(op));
+        }};
+    }
+
+    for op in code {
+        let src = op.into();
+        let op = match src {
+            WavmSource::Operator(op) => op,
+            WavmSource::OperatorOwned(op) => &op,
+            WavmSource::Instruction(inst) => {
+                out.push(inst);
+                continue;
+            }
+        };
 
         #[rustfmt::skip]
         match op {
@@ -655,9 +735,11 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             Loop { ty } => {}
             If { ty } => {}
             Else => {}
-            Try { .. } | Catch { .. } | Throw { .. } | Rethrow { .. } | CatchAll => {
-                bail!("exception extension not supported")
-            }
+
+            unsupported @ dot!(Try, Catch, Throw, Rethrow) => {
+                bail!("exception-handling extension not supported {:?}", unsupported)
+            },
+
             End => {}
             Br { relative_depth } => {}
             BrIf { relative_depth } => {}
@@ -671,7 +753,11 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             } => {}
             ReturnCall { function_index } => {}
             ReturnCallIndirect { index, table_index } => {}
-            Delegate { relative_depth } => {}
+
+            unsupported @ (dot!(Delegate) | op!(CatchAll)) => {
+                bail!("exception-handling extension not supported {:?}", unsupported)
+            },
+
             Drop => opcode!(Drop),
             Select => opcode!(Select),
             TypedSelect { ty } => {}
@@ -680,60 +766,68 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             LocalTee { local_index } => {}
             GlobalGet { global_index } => {}
             GlobalSet { global_index } => {}
-            I32Load { memarg } => {}
-            I64Load { memarg } => {}
-            F32Load { memarg } => {}
-            F64Load { memarg } => {}
-            I32Load8S { memarg } => {}
-            I32Load8U { memarg } => {}
-            I32Load16S { memarg } => {}
-            I32Load16U { memarg } => {}
-            I64Load8S { memarg } => {}
-            I64Load8U { memarg } => {}
-            I64Load16S { memarg } => {}
-            I64Load16U { memarg } => {}
-            I64Load32S { memarg } => {}
-            I64Load32U { memarg } => {}
-            I32Store { memarg } => {}
-            I64Store { memarg } => {}
-            F32Store { memarg } => {}
-            F64Store { memarg } => {}
-            I32Store8 { memarg } => {}
-            I32Store16 { memarg } => {}
-            I64Store8 { memarg } => {}
-            I64Store16 { memarg } => {}
-            I64Store32 { memarg } => {}
-            MemorySize { mem, mem_byte } => {}
-            MemoryGrow { mem, mem_byte } => {}
-            I32Const { value } => {}
-            I64Const { value } => {}
-            F32Const { value } => {}
-            F64Const { value } => {}
-            RefNull { ty } => {}
-            RefIsNull => {}
-            RefFunc { function_index } => {}
-            I32Eqz => {}
-            I32Eq => {}
-            I32Ne => {}
-            I32LtS => {}
-            I32LtU => {}
-            I32GtS => {}
-            I32GtU => {}
-            I32LeS => {}
-            I32LeU => {}
-            I32GeS => {}
-            I32GeU => {}
-            I64Eqz => {}
-            I64Eq => {}
-            I64Ne => {}
-            I64LtS => {}
-            I64LtU => {}
-            I64GtS => {}
-            I64GtU => {}
-            I64LeS => {}
-            I64LeU => {}
-            I64GeS => {}
-            I64GeU => {}
+            I32Load { memarg } => load!(I32, memarg, 4, false),
+            I64Load { memarg } => load!(I64, memarg, 8, false),
+            F32Load { memarg } => load!(F32, memarg, 4, false),
+            F64Load { memarg } => load!(F64, memarg, 8, false),
+            I32Load8S { memarg } => load!(I32, memarg, 1, true),
+            I32Load8U { memarg } => load!(I32, memarg, 1, false),
+            I32Load16S { memarg } => load!(I32, memarg, 2, true),
+            I32Load16U { memarg } => load!(I32, memarg, 1, false),
+            I64Load8S { memarg } => load!(I64, memarg, 1, true),
+            I64Load8U { memarg } => load!(I64, memarg, 1, false),
+            I64Load16S { memarg } => load!(I64, memarg, 2, true),
+            I64Load16U { memarg } => load!(I64, memarg, 2, false),
+            I64Load32S { memarg } => load!(I64, memarg, 4, true),
+            I64Load32U { memarg } => load!(I64, memarg, 4, false),
+            I32Store { memarg } => store!(I32, memarg, 4),
+            I64Store { memarg } => store!(I64, memarg, 8),
+            F32Store { memarg } => store!(F32, memarg, 4),
+            F64Store { memarg } => store!(F64, memarg, 8),
+            I32Store8 { memarg } => store!(I32, memarg, 1),
+            I32Store16 { memarg } => store!(I32, memarg, 2),
+            I64Store8 { memarg } => store!(I64, memarg, 1),
+            I64Store16 { memarg } => store!(I64, memarg, 2),
+            I64Store32 { memarg } => store!(I64, memarg, 4),
+            MemorySize { mem, mem_byte } => {
+                ensure!(*mem == 0 && *mem_byte == 0, "MemorySize args must be 0");
+                opcode!(MemorySize)
+            }
+            MemoryGrow { mem, mem_byte } => {
+                ensure!(*mem == 0 && *mem_byte == 0, "MemoryGrow args must be 0");
+                opcode!(MemoryGrow)
+            }
+            I32Const { value } => opcode!(I32Const, *value as u64),
+            I64Const { value } => opcode!(I64Const, *value as u64),
+            F32Const { value } => opcode!(F32Const, value.bits() as u64),
+            F64Const { value } => opcode!(F64Const, value.bits()),
+
+            unsupported @ (dot!(RefNull) | op!(RefIsNull) | dot!(RefFunc)) => {
+                bail!("reference-types extension not supported {:?}", unsupported)
+            },
+
+            I32Eqz => opcode!(I32Eqz),
+            I32Eq => compare!(I32, Eq, false),
+            I32Ne => compare!(I32, Ne, false),
+            I32LtS => compare!(I32, Lt, true),
+            I32LtU => compare!(I32, Lt, false),
+            I32GtS => compare!(I32, Gt, true),
+            I32GtU => compare!(I32, Gt, false),
+            I32LeS => compare!(I32, Le, true),
+            I32LeU => compare!(I32, Le, false),
+            I32GeS => compare!(I32, Ge, true),
+            I32GeU => compare!(I32, Ge, false),
+            I64Eqz => opcode!(I64Eqz),
+            I64Eq => compare!(I64, Eq, false),
+            I64Ne => compare!(I64, Ne, false),
+            I64LtS => compare!(I64, Lt, true),
+            I64LtU => compare!(I64, Lt, false),
+            I64GtS => compare!(I64, Gt, true),
+            I64GtU => compare!(I64, Gt, false),
+            I64LeS => compare!(I64, Le, true),
+            I64LeU => compare!(I64, Le, false),
+            I64GeS => compare!(I64, Ge, true),
+            I64GeU => compare!(I64, Ge, false),
             F32Eq => {}
             F32Ne => {}
             F32Lt => {}
@@ -746,42 +840,42 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             F64Gt => {}
             F64Le => {}
             F64Ge => {}
-            I32Clz => {}
-            I32Ctz => {}
-            I32Popcnt => {}
-            I32Add => {}
-            I32Sub => {}
-            I32Mul => {}
-            I32DivS => {}
-            I32DivU => {}
-            I32RemS => {}
-            I32RemU => {}
-            I32And => {}
-            I32Or => {}
-            I32Xor => {}
-            I32Shl => {}
-            I32ShrS => {}
-            I32ShrU => {}
-            I32Rotl => {}
-            I32Rotr => {}
-            I64Clz => {}
-            I64Ctz => {}
-            I64Popcnt => {}
-            I64Add => {}
-            I64Sub => {}
-            I64Mul => {}
-            I64DivS => {}
-            I64DivU => {}
-            I64RemS => {}
-            I64RemU => {}
-            I64And => {}
-            I64Or => {}
-            I64Xor => {}
-            I64Shl => {}
-            I64ShrS => {}
-            I64ShrU => {}
-            I64Rotl => {}
-            I64Rotr => {}
+            I32Clz => unary!(I32, Clz),
+            I32Ctz => unary!(I32, Ctz),
+            I32Popcnt => unary!(I32, Popcnt),
+            I32Add => binary!(I32, Add),
+            I32Sub => binary!(I32, Sub),
+            I32Mul => binary!(I32, Mul),
+            I32DivS => binary!(I32, DivS),
+            I32DivU => binary!(I32, DivU),
+            I32RemS => binary!(I32, RemS),
+            I32RemU => binary!(I32, RemU),
+            I32And => binary!(I32, And),
+            I32Or => binary!(I32, Or),
+            I32Xor => binary!(I32, Xor),
+            I32Shl => binary!(I32, Shl),
+            I32ShrS => binary!(I32, ShrS),
+            I32ShrU => binary!(I32, ShrU),
+            I32Rotl => binary!(I32, Rotl),
+            I32Rotr => binary!(I32, Rotr),
+            I64Clz => unary!(I64, Clz),
+            I64Ctz => unary!(I64, Ctz),
+            I64Popcnt => unary!(I64, Popcnt),
+            I64Add => binary!(I64, Add),
+            I64Sub => binary!(I64, Sub),
+            I64Mul => binary!(I64, Mul),
+            I64DivS => binary!(I64, DivS),
+            I64DivU => binary!(I64, DivU),
+            I64RemS => binary!(I64, RemS),
+            I64RemU => binary!(I64, RemU),
+            I64And => binary!(I64, And),
+            I64Or => binary!(I64, Or),
+            I64Xor => binary!(I64, Xor),
+            I64Shl => binary!(I64, Shl),
+            I64ShrS => binary!(I64, ShrS),
+            I64ShrU => binary!(I64, ShrU),
+            I64Rotl => binary!(I64, Rotl),
+            I64Rotr => binary!(I64, Rotr),
             F32Abs => {}
             F32Neg => {}
             F32Ceil => {}
@@ -810,13 +904,13 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             F64Min => {}
             F64Max => {}
             F64Copysign => {}
-            I32WrapI64 => {}
+            I32WrapI64 => opcode!(I32WrapI64),
             I32TruncF32S => {}
             I32TruncF32U => {}
             I32TruncF64S => {}
             I32TruncF64U => {}
-            I64ExtendI32S => {}
-            I64ExtendI32U => {}
+            I64ExtendI32S => opcode!(I64ExtendI32(true)),
+            I64ExtendI32U => opcode!(I64ExtendI32(false)),
             I64TruncF32S => {}
             I64TruncF32U => {}
             I64TruncF64S => {}
@@ -831,15 +925,15 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             F64ConvertI64S => {}
             F64ConvertI64U => {}
             F64PromoteF32 => {}
-            I32ReinterpretF32 => {}
-            I64ReinterpretF64 => {}
-            F32ReinterpretI32 => {}
-            F64ReinterpretI64 => {}
-            I32Extend8S => {}
-            I32Extend16S => {}
-            I64Extend8S => {}
-            I64Extend16S => {}
-            I64Extend32S => {}
+            I32ReinterpretF32 => reinterpret!(I32, F32),
+            I64ReinterpretF64 => reinterpret!(I64, F64),
+            F32ReinterpretI32 => reinterpret!(F32, I32),
+            F64ReinterpretI64 => reinterpret!(F64, I64),
+            I32Extend8S => opcode!(I32ExtendS(8)),
+            I32Extend16S => opcode!(I32ExtendS(16)),
+            I64Extend8S => opcode!(I64ExtendS(8)),
+            I64Extend16S => opcode!(I64ExtendS(16)),
+            I64Extend32S => opcode!(I64ExtendS(32)),
             I32TruncSatF32S => {}
             I32TruncSatF32U => {}
             I32TruncSatF64S => {}
@@ -848,21 +942,13 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
             I64TruncSatF32U => {}
             I64TruncSatF64S => {}
             I64TruncSatF64U => {}
-            MemoryInit { segment, mem } => {}
-            DataDrop { segment } => {}
-            MemoryCopy { src, dst } => {}
-            MemoryFill { mem } => {}
-            TableInit { segment, table } => {}
-            ElemDrop { segment } => {}
-            TableCopy {
-                dst_table,
-                src_table,
-            } => {}
-            TableFill { table } => {}
-            TableGet { table } => {}
-            TableSet { table } => {}
-            TableGrow { table } => {}
-            TableSize { table } => {}
+
+            unsupported @ (
+                dot!(
+                    MemoryInit, DataDrop, MemoryCopy, MemoryFill, TableInit, ElemDrop,
+                    TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
+                )
+            ) => bail!("bulk-memory-operations extension not supported {:?}", unsupported),
 
             unsupported @ (
                 dot!(
@@ -881,42 +967,25 @@ pub fn wasm_to_wavm(code: Vec<Operator<'_>>) -> Result<Vec<Instruction>> {
                     I64AtomicRmw32XchgU, I32AtomicRmwCmpxchg, I64AtomicRmwCmpxchg, I32AtomicRmw8CmpxchgU,
                     I32AtomicRmw16CmpxchgU, I64AtomicRmw8CmpxchgU, I64AtomicRmw16CmpxchgU, I64AtomicRmw32CmpxchgU
                 )
-            ) => bail!("concurrency extension not supported {:?}", unsupported),
+            ) => bail!("threads extension not supported {:?}", unsupported),
 
             unsupported @ (
                 dot!(
                     V128Load, V128Load8x8S, V128Load8x8U, V128Load16x4S, V128Load16x4U, V128Load32x2S, V128Load32x2U,
                     V128Load8Splat, V128Load16Splat, V128Load32Splat, V128Load64Splat, V128Load32Zero, V128Load64Zero,
                     V128Store, V128Load8Lane, V128Load16Lane, V128Load32Lane, V128Load64Lane, V128Store8Lane,
-                    V128Store16Lane, V128Store32Lane, V128Store64Lane, V128Const
-                )
-            ) => bail!("128-bit extension not supported {:?}", unsupported),
-
-            unsupported @ (
-              dot!(
-                  I8x16Shuffle, I8x16ExtractLaneS, I8x16ExtractLaneU, I8x16ReplaceLane, I16x8ExtractLaneS,
-                  I16x8ExtractLaneU, I16x8ReplaceLane, I32x4ExtractLane, I32x4ReplaceLane, I64x2ExtractLane,
-                  I64x2ReplaceLane, F32x4ExtractLane, F32x4ReplaceLane, F64x2ExtractLane, F64x2ReplaceLane
-              ) |
-              op!(
-                  I8x16Swizzle, I8x16Splat, I16x8Splat, I32x4Splat, I64x2Splat, F32x4Splat, F64x2Splat, I8x16Eq,
-                  I8x16Ne, I8x16LtS, I8x16LtU, I8x16GtS, I8x16GtU, I8x16LeS, I8x16LeU, I8x16GeS, I8x16GeU, I16x8Eq,
-                  I16x8Ne, I16x8LtS, I16x8LtU, I16x8GtS, I16x8GtU, I16x8LeS, I16x8LeU, I16x8GeS, I16x8GeU, I32x4Eq,
-                  I32x4Ne, I32x4LtS, I32x4LtU, I32x4GtS, I32x4GtU, I32x4LeS, I32x4LeU, I32x4GeS, I32x4GeU, I64x2Eq,
-                  I64x2Ne, I64x2LtS, I64x2GtS, I64x2LeS, I64x2GeS,
-                  F32x4Eq, F32x4Ne, F32x4Lt, F32x4Gt, F32x4Le, F32x4Ge,
-                  F64x2Eq, F64x2Ne, F64x2Lt, F64x2Gt, F64x2Le, F64x2Ge
-              )
-            ) => bail!("SIMD extension not supported {:?}", unsupported),
-
-            unsupported @ (
-                op!(
-                    V128Not, V128And, V128AndNot, V128Or, V128Xor, V128Bitselect, V128AnyTrue
-                )
-            ) => bail!("128-bit extension not supported {:?}", unsupported),
-
-            unsupported @ (
-                op!(
+                    V128Store16Lane, V128Store32Lane, V128Store64Lane, V128Const,
+                    I8x16Shuffle, I8x16ExtractLaneS, I8x16ExtractLaneU, I8x16ReplaceLane, I16x8ExtractLaneS,
+                    I16x8ExtractLaneU, I16x8ReplaceLane, I32x4ExtractLane, I32x4ReplaceLane, I64x2ExtractLane,
+                    I64x2ReplaceLane, F32x4ExtractLane, F32x4ReplaceLane, F64x2ExtractLane, F64x2ReplaceLane,
+                    I8x16Swizzle, I8x16Splat, I16x8Splat, I32x4Splat, I64x2Splat, F32x4Splat, F64x2Splat, I8x16Eq,
+                    I8x16Ne, I8x16LtS, I8x16LtU, I8x16GtS, I8x16GtU, I8x16LeS, I8x16LeU, I8x16GeS, I8x16GeU, I16x8Eq,
+                    I16x8Ne, I16x8LtS, I16x8LtU, I16x8GtS, I16x8GtU, I16x8LeS, I16x8LeU, I16x8GeS, I16x8GeU, I32x4Eq,
+                    I32x4Ne, I32x4LtS, I32x4LtU, I32x4GtS, I32x4GtU, I32x4LeS, I32x4LeU, I32x4GeS, I32x4GeU, I64x2Eq,
+                    I64x2Ne, I64x2LtS, I64x2GtS, I64x2LeS, I64x2GeS,
+                    F32x4Eq, F32x4Ne, F32x4Lt, F32x4Gt, F32x4Le, F32x4Ge,
+                    F64x2Eq, F64x2Ne, F64x2Lt, F64x2Gt, F64x2Le, F64x2Ge,
+                    V128Not, V128And, V128AndNot, V128Or, V128Xor, V128Bitselect, V128AnyTrue,
                     I8x16Abs, I8x16Neg, I8x16Popcnt, I8x16AllTrue, I8x16Bitmask, I8x16NarrowI16x8S, I8x16NarrowI16x8U,
                     I8x16Shl, I8x16ShrS, I8x16ShrU, I8x16Add, I8x16AddSatS, I8x16AddSatU, I8x16Sub, I8x16SubSatS,
                     I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16RoundingAverageU,

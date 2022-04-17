@@ -58,15 +58,6 @@ impl From<FloatType> for ArbValueType {
     }
 }
 
-/*impl From<RefType> for ArbValueType {
-    fn from(ty: RefType) -> ArbValueType {
-        match ty {
-            RefType::FuncRef => ArbValueType::FuncRef,
-            RefType::ExternRef => panic!("Extern refs not supported"),
-        }
-    }
-}*/
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum IntegerValType {
     I32,
