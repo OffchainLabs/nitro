@@ -20,11 +20,12 @@ This means that WAVM interpreters don't need to track blocks, and thus block ins
 These are translated to a block with an `ArbitraryJumpIf` as follows:
 
 ```
-conditional jump to else
-[instructions inside if statement]
-jump to end
-else: [instructions inside else statement]
-end:
+begin block with endpoint end
+  conditional jump to else
+  [instructions inside if statement]
+  branch
+  else: [instructions inside else statement]
+end
 ```
 
 ## `br` and `br_if`
