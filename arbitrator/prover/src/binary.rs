@@ -371,7 +371,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
             //NameCustomSection(names) => process!(binary.names, names),
-            CodeSectionStart { count, range, size } => {}
+            CodeSectionStart { .. } => {}
             UnknownSection { .. } => {}
             Version { .. } => {}
             End(_offset) => {}

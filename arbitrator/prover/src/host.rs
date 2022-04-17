@@ -2,13 +2,12 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::BlockType,
     machine::{Function, InboxIdentifier},
     value::{ArbValueType, FunctionType},
     wavm::{FloatingPointImpls, Instruction, Opcode},
 };
 
-pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result<Function> {
+pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
     let mut out = vec![];
     let ty;
 
@@ -105,5 +104,5 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         Ok(())
     };
 
-    Function::new(&[], append, ty, btype, &[], &FloatingPointImpls::default())
+    Function::new(&[], append, ty, &[], &FloatingPointImpls::default())
 }

@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{parse, BlockType, FloatInstruction, Local, NameCustomSection, WasmBinary},
+    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -68,7 +68,6 @@ impl Function {
         locals: &[Local],
         add_body: F,
         func_ty: FunctionType,
-        func_block_ty: BlockType,
         module_types: &[FunctionType],
         fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
@@ -306,11 +305,7 @@ impl Module {
                     ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(
-                        &import.module,
-                        &import.name,
-                        BlockType::TypeIndex(ty as u32),
-                    )?;
+                    func = get_host_impl(&import.module, &import.name)?;
                     ensure!(
                         &func.ty == have_ty,
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
@@ -343,7 +338,6 @@ impl Module {
                 &c.locals,
                 |code| wasm_to_wavm(&c.expr, code, floating_point_impls, return_count),
                 func_ty,
-                BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
                 floating_point_impls,
             )?);
@@ -1040,7 +1034,6 @@ impl Machine {
                 Ok(())
             },
             FunctionType::default(),
-            BlockType::TypeIndex(0),
             &entrypoint_types,
             &floating_point_impls,
         )?];

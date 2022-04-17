@@ -746,13 +746,13 @@ pub fn wasm_to_wavm<'a>(
         match op {
             Unreachable => opcode!(Unreachable),
             Nop => opcode!(Nop),
-            Block { ty } => {
+            Block { .. } => {
                 scopes.push(Scope::Simple(vec![]));
             }
-            Loop { ty } => {
+            Loop { .. } => {
                 scopes.push(Scope::Loop(out.len()));
             }
-            If { ty } => {
+            If { .. } => {
                 //blocks.push(Scope::Simple(vec![]));
             }
             Else => {
@@ -806,7 +806,7 @@ pub fn wasm_to_wavm<'a>(
                 }
                 opcode!(Return);
             }
-            Call { function_index } => {}
+            Call { function_index } => opcode!(Call, *function_index as u64),
             CallIndirect { index, table_index, .. } => {
                 opcode!(CallIndirect, pack_call_indirect(*table_index, *index));
             }
@@ -829,8 +829,8 @@ pub fn wasm_to_wavm<'a>(
             LocalGet { local_index } => opcode!(LocalGet, *local_index as u64),
             LocalSet { local_index } => opcode!(LocalSet, *local_index as u64),
             LocalTee { local_index } => {
+                opcode!(Dup);
                 opcode!(LocalSet, *local_index as u64);
-                opcode!(LocalGet, *local_index as u64);
             },
             GlobalGet { global_index } => opcode!(GlobalGet, *global_index as u64),
             GlobalSet { global_index } => opcode!(GlobalSet, *global_index as u64),
