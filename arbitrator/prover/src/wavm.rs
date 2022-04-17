@@ -599,6 +599,7 @@ pub fn wasm_to_wavm<'a>(
     code: &[Operator<'a>],
     out: &mut Vec<Instruction>,
     fp_impls: &FloatingPointImpls,
+    return_count: usize,
 ) -> Result<()> {
     use Operator::*;
 
@@ -739,9 +740,8 @@ pub fn wasm_to_wavm<'a>(
     }
 
     for op in code {
+        //println!("{:?}", op);
 
-        println!("{:?}", op);
-        
         #[rustfmt::skip]
         match op {
             Unreachable => opcode!(Unreachable),
@@ -775,7 +775,6 @@ pub fn wasm_to_wavm<'a>(
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
             BrTable { table } => {
-
                 // Evaluate each branch
                 for (index, target) in table.targets().enumerate() {
                     opcode!(Dup);
@@ -788,7 +787,25 @@ pub fn wasm_to_wavm<'a>(
                 opcode!(Drop);
                 branch!(ArbitraryJump, table.default());
             }
-            Return => {}
+            Return => {
+                // Hold the return values on the internal stack while we drop extraneous stack values
+                for _ in 0..return_count {
+                    opcode!(MoveFromStackToInternal);
+                }
+
+                // Keep dropping values until we drop the stack boundary, then exit the loop
+                scopes.push(Scope::Loop(out.len()));
+                opcode!(IsStackBoundary);
+                opcode!(I32Eqz);
+                branch!(ArbitraryJumpIf, 0);
+                scopes.pop();
+
+                // Move the return values back from the internal stack to the value stack
+                for _ in 0..return_count {
+                    opcode!(MoveFromInternalToStack);
+                }
+                opcode!(Return);
+            }
             Call { function_index } => {}
             CallIndirect { index, table_index, .. } => {
                 opcode!(CallIndirect, pack_call_indirect(*table_index, *index));

@@ -11,9 +11,8 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
-        Instruction,
+        IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
-    wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
@@ -97,14 +96,13 @@ impl Function {
             });
         }
         insts.push(Instruction::simple(Opcode::PushStackBoundary));
-        let mut codegen_state = FunctionCodegenState::new(func_ty.outputs.len(), fp_impls);
 
         add_body(&mut insts)?;
-
-        Instruction::extend_from_hir(
+        wasm_to_wavm(
+            &mut vec![Operator::Return],
             &mut insts,
-            &mut codegen_state,
-            crate::binary::HirInstruction::Simple(Opcode::Return),
+            fp_impls,
+            func_ty.outputs.len(),
         )?;
 
         // Insert missing proving argument data
@@ -339,10 +337,12 @@ impl Module {
             .collect();
         for c in &bin.codes {
             let idx = code.len();
+            let func_ty = func_types[idx].clone();
+            let return_count = func_ty.outputs.len();
             code.push(Function::new(
                 &c.locals,
-                |code| wasm_to_wavm(&c.expr, code, floating_point_impls),
-                func_types[idx].clone(),
+                |code| wasm_to_wavm(&c.expr, code, floating_point_impls, return_count),
+                func_ty,
                 BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
                 floating_point_impls,
@@ -949,7 +949,6 @@ impl Machine {
                     module.func_types[s as usize] == FunctionType::default(),
                     "Start function takes inputs or outputs",
                 );
-                println!("CROSS: {}", s);
                 entry!(@cross, s, u32::try_from(i).unwrap());
             }
         }
