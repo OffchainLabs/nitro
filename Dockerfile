@@ -121,14 +121,12 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bullseye-slim as machine-versions
 RUN apt-get update && apt-get install -y unzip wget
-WORKDIR /workspace
+WORKDIR /workspace/machines
 # Download old WASM module roots
-RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/wasm-0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810.zip
-RUN wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/wasm-0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3.zip
-RUN for f in *.zip; do unzip -d machines -- "$f"; done
+RUN mkdir 0x21f708e444c3afb7689fa5d0737b3942fd19012c0081d359ba3d59b7643d7810 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v1/machine.wavm.br
+RUN mkdir 0xb7905959ec167e0777bbbd6c339b0c98d676729cb502722aa01a34964f817ca3 && cd $_ && wget https://github.com/OffchainLabs/nitro/releases/download/devnet-consensus-v2/machine.wavm.br
 # Copy in latest WASM module root
-COPY --from=module-root-calc /workspace/target/machines/latest /workspace/machines/latest
-
+COPY --from=module-root-calc /workspace/target/machines/latest latest
 
 FROM golang:1.17-bullseye as node-builder
 WORKDIR /workspace
