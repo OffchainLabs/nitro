@@ -820,6 +820,8 @@ where
     Value::I32(res as u32)
 }
 
+const BROTLI_BUFFER_SIZE: usize = 8096;
+
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
@@ -1072,7 +1074,8 @@ impl Machine {
 
     pub fn new_from_wavm(wavm_binary: &Path) -> eyre::Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
-        let mut modules: Vec<Module> = bincode::deserialize_from(f)?;
+        let decompressor = brotli::Decompressor::new(f, BROTLI_BUFFER_SIZE);
+        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
                 table.elems_merkle = Merkle::new(
@@ -1123,10 +1126,11 @@ impl Machine {
             "serialize_binary can only be called on initial machine",
         );
         let mut f = File::create(path)?;
-        let mut writer = BufWriter::new(&mut f);
-        bincode::serialize_into(&mut writer, &self.modules)?;
-        writer.flush()?;
-        drop(writer);
+        let mut compressor =
+            brotli::CompressorWriter::new(BufWriter::new(&mut f), BROTLI_BUFFER_SIZE, 9, 22);
+        bincode::serialize_into(&mut compressor, &self.modules)?;
+        compressor.flush()?;
+        drop(compressor);
         f.sync_data()?;
         Ok(())
     }

@@ -37,7 +37,7 @@ type NitroMachineConfig struct {
 
 var DefaultNitroMachineConfig = NitroMachineConfig{
 	RootPath:             "./target/machines/",
-	WavmBinaryPath:       "machine.wavm",
+	WavmBinaryPath:       "machine.wavm.br",
 	UntilHostIoStatePath: "until-host-io-state.bin",
 
 	ProverBinPath: "replay.wasm",
