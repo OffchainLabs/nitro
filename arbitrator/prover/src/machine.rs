@@ -1214,6 +1214,20 @@ impl Machine {
                 self.status = MachineStatus::Errored;
             }
             Opcode::Nop => {}
+            Opcode::Block => {
+                let idx = inst.argument_data as usize;
+                self.block_stack.push(idx);
+                assert!(module.funcs[self.pc.func].code.len() > idx);
+            }
+            Opcode::EndBlock => {
+                self.block_stack.pop();
+            }
+            Opcode::EndBlockIf => {
+                let x = self.value_stack.last().unwrap();
+                if !x.is_i32_zero() {
+                    self.block_stack.pop().unwrap();
+                }
+            }
             Opcode::InitFrame => {
                 let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
                 let caller_module = self.value_stack.pop().unwrap().assume_u32();
@@ -1238,6 +1252,17 @@ impl Machine {
                 let x = self.value_stack.pop().unwrap();
                 if !x.is_i32_zero() {
                     self.pc.inst = inst.argument_data as usize;
+                    Machine::test_next_instruction(&module, &self.pc);
+                }
+            }
+            Opcode::Branch => {
+                self.pc.inst = self.block_stack.pop().unwrap();
+                Machine::test_next_instruction(&module, &self.pc);
+            }
+            Opcode::BranchIf => {
+                let x = self.value_stack.pop().unwrap();
+                if !x.is_i32_zero() {
+                    self.pc.inst = self.block_stack.pop().unwrap();
                     Machine::test_next_instruction(&module, &self.pc);
                 }
             }
