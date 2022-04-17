@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 bincode = "1.3.3"
-brotli = "3.3.4"
+brotli = { version = "3.3.4", default-features = false, features = ["std"] }
 digest = "0.9.0"
 eyre = "0.6.5"
 fnv = "1.0.7"
