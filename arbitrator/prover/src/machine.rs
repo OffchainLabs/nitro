@@ -2,10 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{
-        parse, BlockType, Code, FloatInstruction, HirInstruction, Local, NameCustomSection,
-        WasmBinary,
-    },
+    binary::{parse, BlockType, FloatInstruction, Local, NameCustomSection, WasmBinary},
     host::get_host_impl,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -14,7 +11,7 @@ use crate::{
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
         pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
-        Instruction, WavmSource,
+        Instruction,
     },
     wavm::{FunctionCodegenState, IBinOpType, IRelOpType, IUnOpType, Opcode},
 };
@@ -35,9 +32,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{
-    DataKind, ElementItem, ElementKind, ExternalKind, FuncType, Operator, TableType, TypeRef,
-};
+use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -70,9 +65,9 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn new(
+    pub fn new<F: FnOnce(&mut Vec<Instruction>) -> Result<()>>(
         locals: &[Local],
-        body: &[Instruction],
+        add_body: F,
         func_ty: FunctionType,
         func_block_ty: BlockType,
         module_types: &[FunctionType],
@@ -106,7 +101,7 @@ impl Function {
 
         let block_start = insts.len();
         insts.push(Instruction::simple(Opcode::Block));
-        insts.extend(body);
+        add_body(&mut insts)?;
         insts.push(Instruction::simple(Opcode::EndBlock));
         insts[block_start].argument_data = insts.len() as u64;
 
@@ -350,7 +345,7 @@ impl Module {
             let idx = code.len();
             code.push(Function::new(
                 &c.locals,
-                &wasm_to_wavm(&c.expr)?,
+                |code| wasm_to_wavm(&c.expr, code, floating_point_impls),
                 func_types[idx].clone(),
                 BlockType::TypeIndex(func_type_idxs[idx]),
                 &bin.types,
@@ -1044,7 +1039,10 @@ impl Machine {
             .insert(0, "wavm_entrypoint".into());
         let entrypoint_funcs = vec![Function::new(
             &[],
-            &entrypoint,
+            |code| {
+                code.extend(entrypoint);
+                Ok(())
+            },
             FunctionType::default(),
             BlockType::TypeIndex(0),
             &entrypoint_types,

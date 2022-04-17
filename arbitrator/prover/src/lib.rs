@@ -14,21 +14,15 @@ pub mod utils;
 mod value;
 pub mod wavm;
 
-use crate::{
-    binary::WasmBinary,
-    machine::{argument_data_to_inbox, Machine},
-    utils::file_bytes,
-};
-use eyre::{bail, Context, Result};
+use crate::machine::{argument_data_to_inbox, Machine};
+use eyre::Result;
 use machine::{GlobalState, MachineStatus};
 use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
-    fs::File,
-    io::Read,
     os::raw::{c_char, c_int},
-    path::{Path, PathBuf},
+    path::Path,
     sync::atomic::{self, AtomicU8},
 };
 

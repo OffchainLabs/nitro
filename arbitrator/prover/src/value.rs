@@ -3,10 +3,7 @@
 
 use std::convert::TryFrom;
 
-use crate::{
-    binary::{FloatType, RefType},
-    utils::Bytes32,
-};
+use crate::{binary::FloatType, utils::Bytes32};
 use digest::Digest;
 use eyre::{bail, Result};
 use serde::{Deserialize, Serialize};
@@ -251,7 +248,7 @@ impl TryFrom<FuncType> for FunctionType {
             inputs.push(ArbValueType::try_from(*input)?)
         }
         for output in func.returns.into_iter() {
-            inputs.push(ArbValueType::try_from(*output)?)
+            outputs.push(ArbValueType::try_from(*output)?)
         }
 
         Ok(Self { inputs, outputs })

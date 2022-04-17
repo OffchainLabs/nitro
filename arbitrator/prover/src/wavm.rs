@@ -2,8 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    binary::{BlockType, FloatInstruction, HirInstruction},
-    memory,
+    binary::{BlockType, FloatBinOp, FloatInstruction, FloatRelOp, FloatType, HirInstruction},
     utils::Bytes32,
     value::{ArbValueType, IntegerValType},
 };
@@ -12,7 +11,7 @@ use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
 use sha3::Keccak256;
 use std::convert::TryFrom;
-use wasmparser::{GlobalSectionReader, Operator};
+use wasmparser::Operator;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IRelOpType {
@@ -625,49 +624,38 @@ impl Instruction {
     }
 }
 
-/// Represents something compilable to wavm
-pub enum WavmSource<'a> {
-    /// A standard wasm operator
-    Operator(&'a Operator<'a>),
-    OperatorOwned(Operator<'a>),
-    /// Provides a mechanism to embed pre-compiled wavm instructions in wasm source code.
-    /// These are necessary for operations like `ReadInboxmessage` that aren't in the wasm spec.
-    Instruction(Instruction),
-}
-
-impl<'a> From<&'a Operator<'a>> for WavmSource<'a> {
-    fn from(item: &'a Operator) -> Self {
-        Self::Operator(item)
-    }
-}
-
-pub fn wasm_to_wavm<'a, T>(code: &'a [T]) -> Result<Vec<Instruction>>
-where
-    &'a T: Into<WavmSource<'a>>,
-{
+pub fn wasm_to_wavm<'a>(
+    code: &[Operator<'a>],
+    out: &mut Vec<Instruction>,
+    fp_impls: &FloatingPointImpls,
+) -> Result<()> {
     use Operator::*;
 
-    let mut out = vec![];
-
     macro_rules! op {
-            ($first:ident $(,$opcode:ident)*) => {
-                $first $(| $opcode)*
-            };
-        }
+        ($first:ident $(,$opcode:ident)*) => {
+            $first $(| $opcode)*
+        };
+    }
     macro_rules! dot {
-            ($first:ident $(,$opcode:ident)*) => {
-                $first { .. } $(| $opcode { .. })*
-            };
-        }
+        ($first:ident $(,$opcode:ident)*) => {
+            $first { .. } $(| $opcode { .. })*
+        };
+    }
     macro_rules! opcode {
-        ($opcode:ident ($inside:expr)) => {{
-            out.push(Instruction::simple(Opcode::$opcode($inside)))
+        ($opcode:ident ($($inside:expr),*)) => {{
+            out.push(Instruction::simple(Opcode::$opcode($($inside,)*)))
         }};
         ($opcode:ident) => {{
             out.push(Instruction::simple(Opcode::$opcode))
         }};
         ($opcode:ident, $value:expr) => {
             out.push(Instruction::with_data(Opcode::$opcode, $value))
+        };
+        (@cross, $func:expr, $module:expr) => {
+            out.push(Instruction::with_data(
+                Opcode::CrossModuleCall,
+                u64::from($func) | (u64::from($module) << 32),
+            ));
         };
     }
     macro_rules! load {
@@ -715,18 +703,53 @@ where
             out.push(Instruction::simple(op));
         }};
     }
+    macro_rules! float {
+        ($func:ident) => {
+            float!(@impl $func)
+        };
+        ($func:ident $(,$data:ident)+) => {
+            float!(@impl $func($($data),+))
+        };
+        (@impl $func:expr) => {{
+            #[allow(unused_imports)]
+            use crate::{
+                binary::{FloatInstruction::*, FloatType::*, FloatUnOp::*, FloatBinOp::*, FloatRelOp::*},
+                value::IntegerValType::*,
+            };
+
+            let func = $func;
+            let sig = func.signature();
+            let (module, func) = match fp_impls.get(&func) {
+                Some((module, func)) => (module, func),
+                None => bail!("No implementation for floating point operation {:?}", &func),
+            };
+
+            // Reinterpret float args into ints
+            for &arg in sig.inputs.iter().rev() {
+                match arg {
+                    ArbValueType::I32 | ArbValueType::I64 => {}
+                    ArbValueType::F32 => opcode!(Reinterpret(ArbValueType::I32, ArbValueType::F32)),
+                    ArbValueType::F64 => opcode!(Reinterpret(ArbValueType::I64, ArbValueType::F64)),
+                    _ => bail!("Floating point operation {:?} has bad args", &func),
+                }
+                opcode!(MoveFromStackToInternal)
+            }
+            for _ in &sig.inputs {
+                opcode!(MoveFromInternalToStack)
+            }
+            opcode!(@cross, *module, *func);
+
+            // Reinterpret returned ints that should be floats into floats
+            let outputs = sig.outputs;
+            match outputs.get(0) {
+                Some(ArbValueType::F32) if outputs.len() == 1 => reinterpret!(F32, I32),
+                Some(ArbValueType::F64) if outputs.len() == 1 => reinterpret!(F64, I64),
+                _ => panic!("Floating point op {:?} should have 1 output but has {}", func, outputs.len()),
+            }
+        }};
+    }
 
     for op in code {
-        let src = op.into();
-        let op = match src {
-            WavmSource::Operator(op) => op,
-            WavmSource::OperatorOwned(op) => &op,
-            WavmSource::Instruction(inst) => {
-                out.push(inst);
-                continue;
-            }
-        };
-
         #[rustfmt::skip]
         match op {
             Unreachable => opcode!(Unreachable),
@@ -760,12 +783,19 @@ where
 
             Drop => opcode!(Drop),
             Select => opcode!(Select),
-            TypedSelect { ty } => {}
-            LocalGet { local_index } => {}
-            LocalSet { local_index } => {}
-            LocalTee { local_index } => {}
-            GlobalGet { global_index } => {}
-            GlobalSet { global_index } => {}
+
+            unsupported @ dot!(TypedSelect) => {
+                bail!("reference-types extension not supported {:?}", unsupported)
+            },
+
+            LocalGet { local_index } => opcode!(LocalGet, *local_index as u64),
+            LocalSet { local_index } => opcode!(LocalSet, *local_index as u64),
+            LocalTee { local_index } => {
+                opcode!(LocalSet, *local_index as u64);
+                opcode!(LocalGet, *local_index as u64);
+            },
+            GlobalGet { global_index } => opcode!(GlobalGet, *global_index as u64),
+            GlobalSet { global_index } => opcode!(GlobalSet, *global_index as u64),
             I32Load { memarg } => load!(I32, memarg, 4, false),
             I64Load { memarg } => load!(I64, memarg, 8, false),
             F32Load { memarg } => load!(F32, memarg, 4, false),
@@ -828,18 +858,18 @@ where
             I64LeU => compare!(I64, Le, false),
             I64GeS => compare!(I64, Ge, true),
             I64GeU => compare!(I64, Ge, false),
-            F32Eq => {}
-            F32Ne => {}
-            F32Lt => {}
-            F32Gt => {}
-            F32Le => {}
-            F32Ge => {}
-            F64Eq => {}
-            F64Ne => {}
-            F64Lt => {}
-            F64Gt => {}
-            F64Le => {}
-            F64Ge => {}
+            F32Eq => float!(RelOp, F32, Eq),
+            F32Ne => float!(RelOp, F32, Ne),
+            F32Lt => float!(RelOp, F32, Lt),
+            F32Gt => float!(RelOp, F32, Gt),
+            F32Le => float!(RelOp, F32, Le),
+            F32Ge => float!(RelOp, F32, Ge),
+            F64Eq => float!(RelOp, F64, Eq),
+            F64Ne => float!(RelOp, F64, Ne),
+            F64Lt => float!(RelOp, F64, Lt),
+            F64Gt => float!(RelOp, F64, Gt),
+            F64Le => float!(RelOp, F64, Le),
+            F64Ge => float!(RelOp, F64, Ge),
             I32Clz => unary!(I32, Clz),
             I32Ctz => unary!(I32, Ctz),
             I32Popcnt => unary!(I32, Popcnt),
@@ -876,55 +906,55 @@ where
             I64ShrU => binary!(I64, ShrU),
             I64Rotl => binary!(I64, Rotl),
             I64Rotr => binary!(I64, Rotr),
-            F32Abs => {}
-            F32Neg => {}
-            F32Ceil => {}
-            F32Floor => {}
-            F32Trunc => {}
-            F32Nearest => {}
-            F32Sqrt => {}
-            F32Add => {}
-            F32Sub => {}
-            F32Mul => {}
-            F32Div => {}
-            F32Min => {}
-            F32Max => {}
-            F32Copysign => {}
-            F64Abs => {}
-            F64Neg => {}
-            F64Ceil => {}
-            F64Floor => {}
-            F64Trunc => {}
-            F64Nearest => {}
-            F64Sqrt => {}
-            F64Add => {}
-            F64Sub => {}
-            F64Mul => {}
-            F64Div => {}
-            F64Min => {}
-            F64Max => {}
-            F64Copysign => {}
+            F32Abs => float!(UnOp, F32, Abs),
+            F32Neg => float!(UnOp, F32, Neg),
+            F32Ceil => float!(UnOp, F32, Ceil),
+            F32Floor => float!(UnOp, F32, Floor),
+            F32Trunc => float!(UnOp, F32, Trunc),
+            F32Nearest => float!(UnOp, F32, Nearest),
+            F32Sqrt => float!(UnOp, F32, Sqrt),
+            F32Add => float!(BinOp, F32, Add),
+            F32Sub => float!(BinOp, F32, Sub),
+            F32Mul => float!(BinOp, F32, Mul),
+            F32Div => float!(BinOp, F32, Div),
+            F32Min => float!(BinOp, F32, Min),
+            F32Max => float!(BinOp, F32, Max),
+            F32Copysign => float!(BinOp, F32, CopySign),
+            F64Abs => float!(UnOp, F64, Abs),
+            F64Neg => float!(UnOp, F64, Neg),
+            F64Ceil => float!(UnOp, F64, Ceil),
+            F64Floor => float!(UnOp, F64, Floor),
+            F64Trunc => float!(UnOp, F64, Trunc),
+            F64Nearest => float!(UnOp, F64, Nearest),
+            F64Sqrt => float!(UnOp, F64, Sqrt),
+            F64Add => float!(BinOp, F64, Add),
+            F64Sub => float!(BinOp, F64, Sub),
+            F64Mul => float!(BinOp, F64, Mul),
+            F64Div => float!(BinOp, F64, Div),
+            F64Min => float!(BinOp, F64, Min),
+            F64Max => float!(BinOp, F64, Max),
+            F64Copysign => float!(BinOp, F64, CopySign),
             I32WrapI64 => opcode!(I32WrapI64),
-            I32TruncF32S => {}
-            I32TruncF32U => {}
-            I32TruncF64S => {}
-            I32TruncF64U => {}
+            I32TruncF32S => float!(TruncIntOp, I32, F32, true),
+            I32TruncF32U => float!(TruncIntOp, I32, F32, false),
+            I32TruncF64S => float!(TruncIntOp, I32, F64, true),
+            I32TruncF64U => float!(TruncIntOp, I32, F64, false),
             I64ExtendI32S => opcode!(I64ExtendI32(true)),
             I64ExtendI32U => opcode!(I64ExtendI32(false)),
-            I64TruncF32S => {}
-            I64TruncF32U => {}
-            I64TruncF64S => {}
-            I64TruncF64U => {}
-            F32ConvertI32S => {}
-            F32ConvertI32U => {}
-            F32ConvertI64S => {}
-            F32ConvertI64U => {}
-            F32DemoteF64 => {}
-            F64ConvertI32S => {}
-            F64ConvertI32U => {}
-            F64ConvertI64S => {}
-            F64ConvertI64U => {}
-            F64PromoteF32 => {}
+            I64TruncF32S => float!(TruncIntOp, I64, F32, true),
+            I64TruncF32U => float!(TruncIntOp, I64, F32, false),
+            I64TruncF64S => float!(TruncIntOp, I64, F64, true),
+            I64TruncF64U => float!(TruncIntOp, I64, F64, false),
+            F32ConvertI32S => float!(ConvertIntOp, F32, I32, true),
+            F32ConvertI32U => float!(ConvertIntOp, F32, I32, false),
+            F32ConvertI64S => float!(ConvertIntOp, F32, I64, true),
+            F32ConvertI64U => float!(ConvertIntOp, F32, I64, false),
+            F32DemoteF64 => float!(F32DemoteF64),
+            F64ConvertI32S => float!(ConvertIntOp, F64, I32, true),
+            F64ConvertI32U => float!(ConvertIntOp, F64, I32, false),
+            F64ConvertI64S => float!(ConvertIntOp, F64, I64, true),
+            F64ConvertI64U => float!(ConvertIntOp, F64, I64, false),
+            F64PromoteF32 => float!(F64PromoteF32),
             I32ReinterpretF32 => reinterpret!(I32, F32),
             I64ReinterpretF64 => reinterpret!(I64, F64),
             F32ReinterpretI32 => reinterpret!(F32, I32),
@@ -934,14 +964,14 @@ where
             I64Extend8S => opcode!(I64ExtendS(8)),
             I64Extend16S => opcode!(I64ExtendS(16)),
             I64Extend32S => opcode!(I64ExtendS(32)),
-            I32TruncSatF32S => {}
-            I32TruncSatF32U => {}
-            I32TruncSatF64S => {}
-            I32TruncSatF64U => {}
-            I64TruncSatF32S => {}
-            I64TruncSatF32U => {}
-            I64TruncSatF64S => {}
-            I64TruncSatF64U => {}
+            I32TruncSatF32S => float!(TruncIntOp, I32, F32, true),
+            I32TruncSatF32U => float!(TruncIntOp, I32, F32, false),
+            I32TruncSatF64S => float!(TruncIntOp, I32, F64, true),
+            I32TruncSatF64U => float!(TruncIntOp, I32, F64, false),
+            I64TruncSatF32S => float!(TruncIntOp, I64, F32, true),
+            I64TruncSatF32U => float!(TruncIntOp, I64, F32, false),
+            I64TruncSatF64S => float!(TruncIntOp, I64, F64, true),
+            I64TruncSatF64U => float!(TruncIntOp, I64, F64, false),
 
             unsupported @ (
                 dot!(
@@ -1017,5 +1047,5 @@ where
         };
     }
 
-    Ok(out)
+    Ok(())
 }

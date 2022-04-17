@@ -126,5 +126,11 @@ pub fn get_host_impl(module: &str, name: &str, btype: BlockType) -> eyre::Result
         }
         _ => eyre::bail!("Unsupported import of {:?} {:?}", module, name),
     }
-    Function::new(&[], &out, ty, btype, &[], &FloatingPointImpls::default())
+
+    let append = |code: &mut Vec<Instruction>| {
+        code.extend(out);
+        Ok(())
+    };
+
+    Function::new(&[], append, ty, btype, &[], &FloatingPointImpls::default())
 }

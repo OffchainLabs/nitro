@@ -15,8 +15,8 @@ use nom::{
 };
 use std::{convert::TryInto, hash::Hash, str::FromStr};
 use wasmparser::{
-    Data, Element, Export, ExternalKind, FuncType, Global, Import, MemoryType, Operator, Parser,
-    Payload, Range, TableType, Type, TypeDef, TypeRef,
+    Data, Element, Export, Global, Import, MemoryType, Operator, Parser, Payload, TableType,
+    TypeDef,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -378,5 +378,6 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
             x => bail!("unsupported section type {:?}", x),
         }
     }
-    panic!();
+
+    Ok(binary)
 }
