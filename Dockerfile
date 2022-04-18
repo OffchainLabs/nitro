@@ -152,7 +152,7 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node
 WORKDIR /home/user
-COPY --from=node-builder /workspace/target/bin /home/user/bin
+COPY --from=node-builder /workspace/target/bin /usr/local/bin
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -164,8 +164,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     chown -R user:user /home/user
 
 WORKDIR /home/user/
-ENTRYPOINT [ "/home/user/bin/nitro" ]
-ENV PATH="/home/user/bin:${PATH}"
+ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
 FROM nitro-node as nitro-node-dist
 RUN export DEBIAN_FRONTEND=noninteractive && \
