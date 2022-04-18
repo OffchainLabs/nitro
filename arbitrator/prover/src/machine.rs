@@ -299,7 +299,7 @@ impl Module {
                         Instruction::simple(Opcode::InitFrame),
                         Instruction::with_data(
                             Opcode::CrossModuleCall,
-                            pack_cross_module_call(import.func, import.module),
+                            pack_cross_module_call(import.module, import.func),
                         ),
                         Instruction::simple(Opcode::Return),
                     ];
@@ -931,10 +931,10 @@ impl Machine {
             ($opcode:ident ($inside:expr)) => {
                 entrypoint.push(Instruction::simple(Opcode::$opcode($inside)));
             };
-            (@cross, $func:expr, $module:expr) => {
+            (@cross, $module:expr, $func:expr) => {
                 entrypoint.push(Instruction::with_data(
                     Opcode::CrossModuleCall,
-                    pack_cross_module_call($func, $module),
+                    pack_cross_module_call($module, $func),
                 ));
             };
         }
@@ -944,7 +944,7 @@ impl Machine {
                     module.func_types[s as usize] == FunctionType::default(),
                     "Start function takes inputs or outputs",
                 );
-                entry!(@cross, s, u32::try_from(i).unwrap());
+                entry!(@cross, u32::try_from(i).unwrap(), s);
             }
         }
         let main_module_idx = modules.len() - 1;
@@ -1300,7 +1300,7 @@ impl Machine {
                 self.value_stack.push(Value::InternalRef(self.pc));
                 self.value_stack.push(Value::I32(self.pc.module as u32));
                 self.value_stack.push(Value::I32(module.internals_offset));
-                let (func, module) = unpack_cross_module_call(inst.argument_data as u64);
+                let (module, func) = unpack_cross_module_call(inst.argument_data as u64);
                 self.pc.module = module as usize;
                 self.pc.func = func as usize;
                 self.pc.inst = 0;

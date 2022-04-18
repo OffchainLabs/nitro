@@ -303,15 +303,16 @@ pub fn unpack_call_indirect(data: u64) -> (u32, u32) {
     (data as u32, (data >> 32) as u32)
 }
 
-pub fn pack_cross_module_call(func: u32, module: u32) -> u64 {
+pub fn pack_cross_module_call(module: u32, func: u32) -> u64 {
     u64::from(func) | (u64::from(module) << 32)
 }
 
 pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
-    (data as u32, (data >> 32) as u32)
+    ((data >> 32) as u32, data as u32)
 }
 
 impl Instruction {
+    #[must_use]
     pub fn simple(opcode: Opcode) -> Instruction {
         Instruction {
             opcode,
@@ -320,6 +321,7 @@ impl Instruction {
         }
     }
 
+    #[must_use]
     pub fn with_data(opcode: Opcode, argument_data: u64) -> Instruction {
         Instruction {
             opcode,
@@ -382,10 +384,10 @@ pub fn wasm_to_wavm<'a>(
         ($opcode:ident, $value:expr) => {
             out.push(Instruction::with_data(Opcode::$opcode, $value))
         };
-        (@cross, $func:expr, $module:expr) => {
+        (@cross, $module:expr, $func:expr) => {
             out.push(Instruction::with_data(
                 Opcode::CrossModuleCall,
-                pack_cross_module_call($func, $module),
+                pack_cross_module_call($module, $func),
             ));
         };
     }
@@ -397,7 +399,7 @@ pub fn wasm_to_wavm<'a>(
                 bytes: $bytes,
                 signed: $signed,
             };
-            Instruction::with_data(op, $memory.offset);
+            out.push(Instruction::with_data(op, $memory.offset));
         }};
     }
     macro_rules! store {
@@ -407,7 +409,7 @@ pub fn wasm_to_wavm<'a>(
                 ty: ArbValueType::$type,
                 bytes: $bytes,
             };
-            Instruction::with_data(op, $memory.offset);
+            out.push(Instruction::with_data(op, $memory.offset));
         }};
     }
     macro_rules! compare {
@@ -459,8 +461,8 @@ pub fn wasm_to_wavm<'a>(
             for &arg in sig.inputs.iter().rev() {
                 match arg {
                     ArbValueType::I32 | ArbValueType::I64 => {}
-                    ArbValueType::F32 => opcode!(Reinterpret(ArbValueType::I32, ArbValueType::F32)),
-                    ArbValueType::F64 => opcode!(Reinterpret(ArbValueType::I64, ArbValueType::F64)),
+                    ArbValueType::F32 => reinterpret!(I32, F32),
+                    ArbValueType::F64 => reinterpret!(I64, F64),
                     _ => bail!("Floating point operation {:?} has bad args", &func),
                 }
                 opcode!(MoveFromStackToInternal)
@@ -468,7 +470,7 @@ pub fn wasm_to_wavm<'a>(
             for _ in &sig.inputs {
                 opcode!(MoveFromInternalToStack)
             }
-            opcode!(@cross, *func, *module);
+            opcode!(@cross, *module, *func);
 
             // Reinterpret returned ints that should be floats into floats
             let outputs = sig.outputs;
@@ -504,8 +506,6 @@ pub fn wasm_to_wavm<'a>(
     }
 
     for op in code {
-        //println!("{:?}", op);
-
         #[rustfmt::skip]
         match op {
             Unreachable => opcode!(Unreachable),
@@ -618,7 +618,7 @@ pub fn wasm_to_wavm<'a>(
             I32Load8S { memarg } => load!(I32, memarg, 1, true),
             I32Load8U { memarg } => load!(I32, memarg, 1, false),
             I32Load16S { memarg } => load!(I32, memarg, 2, true),
-            I32Load16U { memarg } => load!(I32, memarg, 1, false),
+            I32Load16U { memarg } => load!(I32, memarg, 2, false),
             I64Load8S { memarg } => load!(I64, memarg, 1, true),
             I64Load8U { memarg } => load!(I64, memarg, 1, false),
             I64Load16S { memarg } => load!(I64, memarg, 2, true),
@@ -642,7 +642,7 @@ pub fn wasm_to_wavm<'a>(
                 ensure!(*mem == 0 && *mem_byte == 0, "MemoryGrow args must be 0");
                 opcode!(MemoryGrow)
             }
-            I32Const { value } => opcode!(I32Const, *value as u64),
+            I32Const { value } => opcode!(I32Const, *value as u32 as u64),
             I64Const { value } => opcode!(I64Const, *value as u64),
             F32Const { value } => opcode!(F32Const, value.bits() as u64),
             F64Const { value } => opcode!(F64Const, value.bits()),
