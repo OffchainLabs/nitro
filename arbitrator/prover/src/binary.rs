@@ -260,7 +260,7 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         extended_const: false,
         component_model: false,
     };
-    wasmparser::Validator::new_with_features(features).validate_all(&input)?;
+    wasmparser::Validator::new_with_features(features).validate_all(input)?;
 
     let sections: Vec<_> = Parser::new(0)
         .parse_all(input)

@@ -234,10 +234,10 @@ impl TryFrom<FuncType> for FunctionType {
         let mut inputs = vec![];
         let mut outputs = vec![];
 
-        for input in func.params.into_iter() {
+        for input in func.params.iter() {
             inputs.push(ArbValueType::try_from(*input)?)
         }
-        for output in func.returns.into_iter() {
+        for output in func.returns.iter() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
 

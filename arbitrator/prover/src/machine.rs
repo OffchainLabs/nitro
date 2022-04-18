@@ -72,7 +72,7 @@ impl Function {
         fp_impls: &FloatingPointImpls,
     ) -> Result<Function> {
         let mut locals_with_params = func_ty.inputs.clone();
-        locals_with_params.extend(locals.iter().map(|x| x.value.clone()));
+        locals_with_params.extend(locals.iter().map(|x| x.value));
 
         let mut insts = Vec::new();
         let empty_local_hashes = locals_with_params
@@ -305,7 +305,7 @@ impl Module {
                     ];
                     func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
                 } else {
-                    func = get_host_impl(&import.module, &import.name)?;
+                    func = get_host_impl(import.module, import.name)?;
                     ensure!(
                         &func.ty == have_ty,
                         "Import has different function signature than host function. Expected {:?} but got {:?}",
@@ -400,13 +400,13 @@ impl Module {
                     data.data.len(),
                 );
             }
-            memory.set_range(offset, &data.data);
+            memory.set_range(offset, data.data);
         }
 
         for table in &bin.tables {
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
-                ty: table.clone(),
+                ty: *table,
                 elems_merkle: Merkle::default(),
             });
         }
@@ -825,7 +825,7 @@ impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
 
     pub fn from_binary(
-        library_paths: &Vec<PathBuf>,
+        library_paths: &[PathBuf],
         binary_path: &Path,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
@@ -833,7 +833,7 @@ impl Machine {
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimages: HashMap<Bytes32, Vec<u8>>,
     ) -> Result<Machine> {
-        let bin_source = file_bytes(&binary_path)?;
+        let bin_source = file_bytes(binary_path)?;
         let bin = parse(&bin_source)
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
 
@@ -841,7 +841,7 @@ impl Machine {
         let mut lib_sources = vec![];
         for path in library_paths {
             let error_message = format!("failed to validate WASM binary at {:?}", path);
-            lib_sources.push((file_bytes(&path)?, error_message));
+            lib_sources.push((file_bytes(path)?, error_message));
         }
         for (source, error_message) in &lib_sources {
             let library = parse(source).wrap_err_with(|| error_message.clone())?;
