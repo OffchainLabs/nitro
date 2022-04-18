@@ -70,23 +70,44 @@ func (a *Aggregator) Retrieve(ctx context.Context, cert []byte) ([]byte, error) 
 		return nil, errors.New("Signature of data in cert passed in doesn't match")
 	}
 
-	var blob []byte
-	// TODO make this async
+	blobChan := make(chan []byte)
+	errorChan := make(chan error)
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	for _, d := range servicesThatSignedCert {
-		blob, err = d.service.Retrieve(ctx, cert)
-		if err != nil {
-			log.Warn("Retrieve from backend DAS failed", "err", err)
-			continue
-		}
-		var blobHash [32]byte
-		copy(blobHash[:], crypto.Keccak256(blob))
-		if blobHash == requestedCert.DataHash {
+		go func(ctx context.Context, d serviceDetails) {
+			// TODO wrap services with retry policy
+			blob, err := d.service.Retrieve(ctx, cert)
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			var blobHash [32]byte
+			copy(blobHash[:], crypto.Keccak256(blob))
+			if blobHash == requestedCert.DataHash {
+				blobChan <- blob
+			} else {
+				errorChan <- fmt.Errorf("DAS (mask %X) returned data that doesn't match requested hash!", d.signerMask)
+			}
+		}(subCtx, d)
+	}
+
+	errorCount := 0
+	var errorCollection []error
+	for errorCount < len(servicesThatSignedCert) {
+		select {
+		case blob := <-blobChan:
 			return blob, nil
+		case err = <-errorChan:
+			errorCollection = append(errorCollection, err)
+			log.Warn("Couldn't retrieve message from DAS", "err", err)
+			errorCount++
+		case <-ctx.Done():
 		}
 	}
 
-	// TODO better error reporting for each DAS that failed
-	return nil, errors.New("Data wasn't able to be retrieved from any DAS")
+	return nil, fmt.Errorf("Data wasn't able to be retrieved from any DAS: %v", errorCollection)
 }
 
 type storeResponse struct {
@@ -121,7 +142,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 	for i := 0; i < len(a.services); i++ {
 		select {
-		case <-subCtx.Done():
+		case <-ctx.Done():
 			return nil, errors.New("Terminated das.Aggregator.Store() with resquests outstanding")
 		case r := <-responses:
 			if r.err != nil {
@@ -141,8 +162,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 				return nil, errors.New("Failed signature check")
 			}
 
-			// TODO need to think more about these bits
-			// how to support downstream combining of signatures?
 			prevPopCount := bits.OnesCount64(aggSignersMask)
 			certPopCount := bits.OnesCount64(r.cert.SignersMask)
 			aggSignersMask |= r.cert.SignersMask

@@ -58,6 +58,7 @@ const (
 	success failureType = iota
 	immediateError
 	// TODO timeoutError
+	// TODO data corruption
 )
 
 type failureInjector interface {
@@ -205,7 +206,6 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	if !bytes.Equal(rawMsg, messageRetrieved) {
 		Fail(t, "Retrieved message is not the same as stored one.")
 	}
-
 }
 
 func TestDAS_LessThanHStorageFailures(t *testing.T) {
@@ -217,5 +217,73 @@ func TestDAS_LessThanHStorageFailures(t *testing.T) {
 func TestDAS_AtLeastHStorageFailures(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		testConfigurableStorageFailures(t, true)
+	}
+}
+
+func testConfigurableRetrieveFailures(t *testing.T, shouldFail bool) {
+	rand.Seed(time.Now().UnixNano())
+	numBackendDAS := (rand.Int() % 20) + 1
+	var nSuccesses, nImmediateErrors int
+	if shouldFail {
+		nSuccesses = 0
+		nImmediateErrors = numBackendDAS
+	} else {
+		nSuccesses = (rand.Int() % numBackendDAS) + 1
+		nImmediateErrors = numBackendDAS - nSuccesses
+	}
+
+	var backends []serviceDetails
+	injectedFailures := newRandomBagOfFailures(t, nSuccesses, nImmediateErrors)
+	for i := 0; i < numBackendDAS; i++ {
+		dbPath, err := ioutil.TempDir("/tmp", "das_test")
+		Require(t, err)
+		defer os.RemoveAll(dbPath)
+
+		signerMask := uint64(1 << i)
+		das, err := NewLocalDiskDataAvailabilityService(dbPath, signerMask)
+		Require(t, err)
+
+		details := serviceDetails{&WrapRetrieve{t, injectedFailures, das}, *das.pubKey, signerMask}
+
+		backends = append(backends, details)
+	}
+
+	aggregator := NewAggregator(AggregatorConfig{numBackendDAS, 7 * 24 * time.Hour}, backends)
+	ctx := context.Background()
+
+	rawMsg := []byte("It's time for you to see the fnords.")
+	cert, err := aggregator.Store(ctx, rawMsg, CALLEE_PICKS_TIMEOUT)
+	Require(t, err, "Error storing message")
+
+	messageRetrieved, err := aggregator.Retrieve(ctx, Serialize(*cert))
+	if !shouldFail {
+		Require(t, err, "Error retrieving message")
+	} else {
+		if err == nil {
+			Fail(t, "Expected error from too many failed DASes.")
+		}
+		return
+	}
+	if !bytes.Equal(rawMsg, messageRetrieved) {
+		Fail(t, "Retrieved message is not the same as stored one.")
+	}
+}
+
+func TestDAS_RetrieveFailureFromSomeDASes(t *testing.T) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+
+	for i := 0; i < 1; i++ {
+		testConfigurableRetrieveFailures(t, false)
+	}
+}
+
+func TestDAS_RetrieveFailureFromAllDASes(t *testing.T) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(glogger)
+	for i := 0; i < 1; i++ {
+		testConfigurableRetrieveFailures(t, true)
 	}
 }
