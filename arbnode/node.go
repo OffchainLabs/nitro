@@ -265,14 +265,14 @@ func deployRollupCreator(ctx context.Context, l1Reader *L1Reader, auth *bind.Tra
 	return rollupCreator, rollupCreatorAddress, nil
 }
 
-func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig) (*RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, l1client arbutil.L1Interface, deployAuth *bind.TransactOpts, sequencer common.Address, authorizeValidators uint64, wasmModuleRoot common.Hash, chainId *big.Int, readerConfig L1ReaderConfig, machineConfig validator.NitroMachineConfig) (*RollupAddresses, error) {
 	l1Reader := NewL1Reader(l1client, readerConfig)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
 
 	if wasmModuleRoot == (common.Hash{}) {
 		var err error
-		wasmModuleRoot, err = validator.DefaultNitroMachineConfig.ReadLatestWasmModuleRoot()
+		wasmModuleRoot, err = machineConfig.ReadLatestWasmModuleRoot()
 		if err != nil {
 			return nil, err
 		}

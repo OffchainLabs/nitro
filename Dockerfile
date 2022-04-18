@@ -151,23 +151,25 @@ RUN mkdir -p target/bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
 FROM debian:bullseye-slim as nitro-node
-WORKDIR /workspace
+WORKDIR /home/user
+COPY --from=node-builder /workspace/target/bin /home/user/bin
+COPY --from=machine-versions /workspace/machines /home/user/target/machines
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y wabt
-COPY --from=node-builder /workspace/target/ target/
-COPY --from=machine-versions /workspace/machines target/machines
-ENTRYPOINT [ "./target/bin/nitro" ]
+    apt-get install -y wabt \
+    curl procps jq rsync \
+    node-ws vim-tiny python3 \
+    dnsutils && \
+    useradd -ms /bin/bash user && \
+    chown -R user:user /home/user
+
+WORKDIR /home/user/
+ENTRYPOINT [ "/home/user/bin/nitro" ]
+ENV PATH="/home/user/bin:${PATH}"
 
 FROM nitro-node as nitro-node-dist
-WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y curl \
-        procps jq rsync \
-        node-ws vim-tiny libatomic1 python3 \
-        libgmp10 libssl1.1 \
-        libgoogle-perftools4 \
-        libgflags2.2 libsnappy1v5 libzstd1 dnsutils && \
-        apt-get clean && \
-        rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+USER user

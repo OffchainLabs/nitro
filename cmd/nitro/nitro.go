@@ -142,7 +142,7 @@ func main() {
 	}
 
 	stackConf := node.DefaultConfig
-	stackConf.DataDir = nodeConfig.Persistent.ChainData
+	stackConf.DataDir = nodeConfig.Persistent.Chain
 	stackConf.HTTPHost = nodeConfig.HTTP.Addr
 	stackConf.HTTPPort = nodeConfig.HTTP.Port
 	stackConf.HTTPVirtualHosts = nodeConfig.HTTP.VHosts
