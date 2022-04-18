@@ -29,7 +29,7 @@ pub fn get_host_impl(module: &str, name: &str) -> eyre::Result<Function> {
         ("env", "wavm_caller_load32") => {
             ty = FunctionType::new(vec![ArbValueType::I32], vec![ArbValueType::I32]);
             opcode!(LocalGet, 0);
-            opcode!(CallerModuleInternalCall, 0);
+            opcode!(CallerModuleInternalCall, 1);
         }
         ("env", "wavm_caller_store8") => {
             ty = FunctionType::new(vec![ArbValueType::I32; 2], vec![]);
